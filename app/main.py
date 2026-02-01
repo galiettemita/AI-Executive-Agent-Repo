@@ -1,30 +1,52 @@
-# starts FASTAPI + includes routes
-from fastapi import FastAPI
-from app.db.database import Base, engine
-import app.db.models
-from app.api.routes.health import router as health_router
-from app.api.routes.chat import router as chat_router
-from app.api.routes.device import router as device_router
-from app.api.routes.watch import router as watch_router
-from app.api.routes.discover import router as discover_router
-from app.api.routes.assist import router as assist_router
-from app.api.routes.watch_refresh import router as watch_refresh_router
-from dotenv import load_dotenv
-from app.api.routes.notifications import router as notifications_router
-from app.api.routes.agent_chat import router as agent_chat_router
-from app.api.routes import webhooks_whatsapp
-from app.api.routes.admin_google import router as admin_google_router
-from app.api.routes.admin_tasks import router as admin_tasks_router
+# app/main.py
+from __future__ import annotations
 
+import os
+from dotenv import load_dotenv
+
+# Load env FIRST (before importing modules that read env vars)
 load_dotenv()
 
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
+# Import DB AFTER env is loaded so DATABASE_URL is correct
+from app.db.database import Base, engine  # noqa: E402
+import app.db.models  # noqa: F401, E402
+
+from app.api.routes.health import router as health_router  # noqa: E402
+from app.api.routes.chat import router as chat_router  # noqa: E402
+from app.api.routes.device import router as device_router  # noqa: E402
+from app.api.routes.watch import router as watch_router  # noqa: E402
+from app.api.routes.discover import router as discover_router  # noqa: E402
+from app.api.routes.assist import router as assist_router  # noqa: E402
+from app.api.routes.watch_refresh import router as watch_refresh_router  # noqa: E402
+from app.api.routes.notifications import router as notifications_router  # noqa: E402
+from app.api.routes.agent_chat import router as agent_chat_router  # noqa: E402
+from app.api.routes import webhooks_whatsapp  # noqa: E402
+from app.api.routes.admin_google import router as admin_google_router  # noqa: E402
+from app.api.routes.admin_tasks import router as admin_tasks_router  # noqa: E402
 
 
-# Simple MVP table creation; later replace with migrations
-Base.metadata.create_all(bind=engine)
+app = FastAPI(
+    title="Shopping Assistant Backend",
+    version="0.1.0",
+)
 
-app = FastAPI(title="Shopping Assistant Backend", version="0.1.0")
+# --- Optional CORS (safe defaults; tighten later) ---
+# Set CORS_ORIGINS="https://yourdomain.com,https://www.yourdomain.com"
+cors_origins_raw = os.getenv("CORS_ORIGINS", "")
+origins = [o.strip() for o in cors_origins_raw.split(",") if o.strip()]
+if origins:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=origins,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
+# Routers
 app.include_router(health_router, tags=["health"])
 app.include_router(chat_router, prefix="/chat", tags=["chat"])
 app.include_router(device_router, prefix="/device", tags=["device"])
@@ -37,3 +59,13 @@ app.include_router(agent_chat_router)
 app.include_router(webhooks_whatsapp.router)
 app.include_router(admin_google_router)
 app.include_router(admin_tasks_router)
+
+# Friendly root so Render URL doesn't show 404
+@app.get("/")
+def root():
+    return {"ok": True, "service": "Shopping Assistant Backend"}
+
+# Create tables at startup (MVP). Later replace with Alembic migrations.
+@app.on_event("startup")
+def on_startup():
+    Base.metadata.create_all(bind=engine)
