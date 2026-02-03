@@ -45,8 +45,8 @@ Check items as you complete them.
 - [x] Implement daily brief worker (calendar + email summaries).
 - [x] Store brief as messages and/or memory notes.
 - [x] Add manual trigger endpoint for testing.
-- [ ] Add scheduled job (cron/queue).
-- [ ] Add Google OAuth redirect URL pointing to `https://<render-domain>/admin/google/callback`.
+- [x] Add scheduled job (cron/queue).
+- [x] Add Google OAuth redirect URL pointing to `https://<render-domain>/admin/google/callback`.
 
 ## Stage 6: Creative Studio + Wardrobe
 - [ ] Implement creative prompt flow + templates.

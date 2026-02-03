@@ -73,8 +73,27 @@ def root():
 
 # Create tables at startup (MVP). Later replace with Alembic migrations.
 
+# Global scheduler instance
+_scheduler = None
+
 @app.on_event("startup")
 def on_startup():
+    global _scheduler
+
     if os.getenv("ENABLE_CREATE_ALL") == "1":
         from app.db.database import Base, engine
         Base.metadata.create_all(bind=engine)
+
+    # Start background scheduler for daily briefs
+    if os.getenv("ENABLE_SCHEDULER", "1") == "1":
+        from app.services.scheduler import start_scheduler
+        _scheduler = start_scheduler()
+
+
+@app.on_event("shutdown")
+def on_shutdown():
+    global _scheduler
+
+    if _scheduler:
+        from app.services.scheduler import stop_scheduler
+        stop_scheduler(_scheduler)
