@@ -19,6 +19,7 @@ from app.services.subscriptions import (
     upgrade_prompt,
 )
 from app.services.usage import get_usage
+from app.services.proposals import create_proposal_with_link
 from app.services.agent import run_agent  # your existing shopping-focused agent
 
 
@@ -68,7 +69,20 @@ def run_orchestrator(
     # ROUTING
     if intent == Intent.SHOPPING:
         # You already built a shopping/watchlist agent
-        return run_agent(db=db, user_id=user_id, history=injected_history, user_message=user_message)
+        out = run_agent(db=db, user_id=user_id, history=injected_history, user_message=user_message)
+        if isinstance(out, dict):
+            if "proposal" in out:
+                proposal = out.get("proposal") or {}
+                created = create_proposal_with_link(
+                    db,
+                    user_id=user_id,
+                    proposal_type=proposal.get("type", "generic"),
+                    payload=proposal.get("payload", {}),
+                )
+                summary = proposal.get("summary", "I created a proposal for you.")
+                return f"{summary}\nApprove: {created['approval_url']}"
+            return out.get("assistant_message", "")
+        return str(out)
 
     # Placeholder handlers for other intents (you’ll expand these)
     if intent == Intent.CREATIVE:

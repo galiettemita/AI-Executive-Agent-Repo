@@ -379,7 +379,7 @@ def run_agent(
     user_id: str,
     history: List[Dict[str, str]],
     user_message: str,
-) -> str:
+) -> Dict[str, Any]:
     watchlist = _watch_list_payload(db, user_id)
     item_ids = [it["id"] for it in watchlist.get("items", []) if "id" in it]
     offers = _offers_for_items_payload(db, user_id, item_ids, limit_each=5) if item_ids else {"offers_by_item_id": {}}
@@ -486,4 +486,4 @@ def run_agent(
 
         reply = _append_track_directive(reply, title_hint=title_hint, url=track_url)
 
-    return reply
+    return {"assistant_message": reply}

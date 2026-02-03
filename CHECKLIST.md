@@ -31,9 +31,9 @@ Check items as you complete them.
 - [x] Add billing provider env vars on Render (e.g., Stripe keys + webhook secret).
 
 ## Stage 4: Proposal Engine + Approval Inbox
-- [ ] Add `proposals` table with status + payload.
-- [ ] Add proposal creation helper (service or model method).
-- [ ] Update agent output to emit `proposal` or `assistant_message`.
+- [x] Add `proposals` table with status + payload.
+- [x] Add proposal creation helper (service or model method).
+- [x] Update agent output to emit `proposal` or `assistant_message`.
 - [ ] Add signed, short-lived approval links (JWT).
 - [ ] Implement Approval Inbox page (mobile-first).
 - [ ] Implement approve/edit/cancel endpoints.

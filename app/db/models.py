@@ -235,3 +235,21 @@ class Usage(Base):
     proposals_count: Mapped[int] = mapped_column(Integer, default=0)
 
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+# -------------------
+# STAGE 4: PROPOSALS
+# -------------------
+
+class Proposal(Base):
+    __tablename__ = "proposals"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(String, ForeignKey("users.id"), index=True)
+
+    proposal_type: Mapped[str] = mapped_column(String, index=True)
+    status: Mapped[str] = mapped_column(String, default="pending", index=True)
+    payload_json: Mapped[str] = mapped_column(Text, default="{}")
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
