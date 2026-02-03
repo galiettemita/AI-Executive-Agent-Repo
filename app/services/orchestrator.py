@@ -11,7 +11,14 @@ from app.services.preferences import (
     is_onboarding_complete,
     update_preferences,
 )
-from app.services.subscriptions import get_entitlements, is_premium_user, upgrade_prompt
+from app.services.subscriptions import (
+    get_entitlements,
+    get_plan_limits,
+    is_premium_user,
+    limit_prompt,
+    upgrade_prompt,
+)
+from app.services.usage import get_usage
 from app.services.agent import run_agent  # your existing shopping-focused agent
 
 
@@ -34,6 +41,8 @@ def run_orchestrator(
             return reply
 
     entitlements = get_entitlements(db, user_id)
+    usage = get_usage(db, user_id)
+    limits = get_plan_limits(entitlements)
     intent = classify_intent(user_message)
     memory = get_user_memory(db, user_id)
 
@@ -46,6 +55,10 @@ def run_orchestrator(
         injected_history = [{"role": "system", "content": f"USER_ENTITLEMENTS:\n{entitlements}"}] + injected_history
     if memory:
         injected_history = [{"role": "system", "content": f"USER_MEMORY:\n{memory}"}] + injected_history
+
+    # Usage limits (monthly)
+    if usage.messages_count >= limits["messages"]:
+        return limit_prompt(user_id)
 
     # Entitlements gating (default policy)
     premium_intents = {Intent.ADMIN, Intent.SHOPPING, Intent.FOOD, Intent.TRAVEL}

@@ -48,3 +48,8 @@ def record_proposal(db: Session, user_id: str, *, count: int = 1) -> None:
     row = _get_or_create_usage(db, user_id, period)
     row.proposals_count += count
     db.commit()
+
+
+def get_usage(db: Session, user_id: str, period: str | None = None) -> Usage:
+    period = period or _period_key()
+    return _get_or_create_usage(db, user_id, period)

@@ -12,6 +12,13 @@ from app.db.models import Subscription
 
 PREMIUM_PLANS = {"starter", "plus", "pro"}
 
+PLAN_LIMITS = {
+    "free": {"messages": 20, "tokens": 2000, "proposals": 0},
+    "starter": {"messages": 300, "tokens": 30000, "proposals": 20},
+    "plus": {"messages": 1000, "tokens": 100000, "proposals": 100},
+    "pro": {"messages": 5000, "tokens": 500000, "proposals": 1000},
+}
+
 
 def is_premium_user(entitlements: Dict[str, str]) -> bool:
     plan = (entitlements.get("plan") or "free").lower()
@@ -25,6 +32,19 @@ def upgrade_prompt(user_id: str) -> str:
         "Upgrade here: "
         f"https://ai-shopping-assistant-backend-6bgf.onrender.com/billing/stripe/checkout?user_id={user_id}"
     )
+
+
+def limit_prompt(user_id: str) -> str:
+    return (
+        "You’ve hit your monthly limit. "
+        "Upgrade to keep going: "
+        f"https://ai-shopping-assistant-backend-6bgf.onrender.com/billing/stripe/checkout?user_id={user_id}"
+    )
+
+
+def get_plan_limits(entitlements: Dict[str, str]) -> Dict[str, int]:
+    plan = (entitlements.get("plan") or "free").lower()
+    return PLAN_LIMITS.get(plan, PLAN_LIMITS["free"])
 
 
 def get_subscription(db: Session, user_id: str) -> Subscription | None:
