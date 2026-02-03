@@ -34,6 +34,14 @@ class MemoryNote(Base):
     summary: Mapped[str] = mapped_column(Text, default="")
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
+
+class UserPreference(Base):
+    __tablename__ = "preferences"
+
+    user_id: Mapped[str] = mapped_column(String, ForeignKey("users.id"), primary_key=True)
+    data_json: Mapped[str] = mapped_column(Text, default="{}")
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
 class Conversation(Base):
     __tablename__ = "conversations"
 
@@ -193,3 +201,37 @@ class TaskItem(Base):
     completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+
+# -------------------
+# STAGE 3: BILLING
+# -------------------
+
+class Subscription(Base):
+    __tablename__ = "subscriptions"
+
+    user_id: Mapped[str] = mapped_column(String, ForeignKey("users.id"), primary_key=True)
+
+    plan: Mapped[str] = mapped_column(String, default="free")  # free/starter/plus/pro
+    status: Mapped[str] = mapped_column(String, default="active")  # active/past_due/canceled/trialing
+
+    provider: Mapped[str | None] = mapped_column(String, nullable=True)  # e.g. "stripe"
+    provider_customer_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    provider_subscription_id: Mapped[str | None] = mapped_column(String, nullable=True)
+
+    current_period_end: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class Usage(Base):
+    __tablename__ = "usage"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(String, ForeignKey("users.id"), index=True)
+
+    period: Mapped[str] = mapped_column(String, index=True)  # YYYY-MM
+    messages_count: Mapped[int] = mapped_column(Integer, default=0)
+    tokens_count: Mapped[int] = mapped_column(Integer, default=0)
+    proposals_count: Mapped[int] = mapped_column(Integer, default=0)
+
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

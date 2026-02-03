@@ -5,6 +5,13 @@ from sqlalchemy.orm import Session
 from app.services.admin_handler import handle_admin
 from app.services.intent import classify_intent, Intent
 from app.services.memory import get_user_memory
+from app.services.preferences import (
+    get_preferences,
+    handle_onboarding_step,
+    is_onboarding_complete,
+    update_preferences,
+)
+from app.services.subscriptions import get_entitlements
 from app.services.agent import run_agent  # your existing shopping-focused agent
 
 
@@ -19,12 +26,24 @@ def run_orchestrator(
     Routes the request to the correct skill based on intent.
     Adds user memory to the context (without replaying entire chat).
     """
+    prefs = get_preferences(db, user_id)
+    if not is_onboarding_complete(prefs):
+        reply, updated = handle_onboarding_step(user_message, prefs)
+        if reply:
+            update_preferences(db, user_id, updated)
+            return reply
+
+    entitlements = get_entitlements(db, user_id)
     intent = classify_intent(user_message)
     memory = get_user_memory(db, user_id)
 
     # Lightweight “context injection” for any downstream skill:
     # We prepend a synthetic system message into history.
     injected_history = history[:]
+    if prefs:
+        injected_history = [{"role": "system", "content": f"USER_PREFERENCES:\n{prefs}"}] + injected_history
+    if entitlements:
+        injected_history = [{"role": "system", "content": f"USER_ENTITLEMENTS:\n{entitlements}"}] + injected_history
     if memory:
         injected_history = [{"role": "system", "content": f"USER_MEMORY:\n{memory}"}] + injected_history
 

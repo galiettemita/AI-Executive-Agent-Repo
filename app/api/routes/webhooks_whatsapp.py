@@ -5,9 +5,17 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException, Request, Query
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_db
+from app.api.deps import get_db, get_or_create_user
 from app.channels.whatsapp import normalize_whatsapp_webhook, send_whatsapp_text
 from app.services.inbound_events import already_processed, record_inbound
+from app.services.history import (
+    get_or_create_conversation,
+    get_recent_history,
+    store_message,
+    trim_history,
+)
+from app.services.memory import update_memory_from_turn
+from app.services.usage import record_message
 from app.services.orchestrator import run_orchestrator
 
 # Set up logging
@@ -83,14 +91,15 @@ async def receive(request: Request, db: Session = Depends(get_db)):
         
         # Use phone as user_id for now (simple MVP). Later map to a real users table row.
         user_id = from_phone
+        get_or_create_user(db, user_id)
         
         # Idempotency: avoid processing the same message twice
         if already_processed(db, external_id):
             logger.info(f"⏭️  Message {external_id} already processed (deduped)")
             return {"ok": True, "deduped": True}
         
-        # Load last messages for this user if you store them by user_id (optional)
-        history = []  # keep empty for now, or integrate with your ChatMessage if desired
+        # Load last messages for this user (minimal history)
+        history = get_recent_history(db, user_id)
         
         logger.info("🤖 Running orchestrator to generate reply...")
         reply = run_orchestrator(db=db, user_id=user_id, history=history, user_message=text)
@@ -100,7 +109,25 @@ async def receive(request: Request, db: Session = Depends(get_db)):
         logger.info(f"📤 Sending reply to {from_phone}...")
         send_whatsapp_text(to_phone_e164=from_phone, text=reply)
         logger.info("✅ Reply sent successfully")
-        
+
+        # Persist conversation + messages
+        convo = get_or_create_conversation(db, user_id)
+        store_message(db, user_id, convo.id, "user", text)
+        store_message(db, user_id, convo.id, "assistant", reply)
+        trim_history(db, user_id)
+        record_message(db, user_id, count=1)
+
+        # Update rolling memory (non-blocking)
+        try:
+            update_memory_from_turn(
+                db=db,
+                user_id=user_id,
+                user_message=text,
+                assistant_message=reply,
+            )
+        except Exception:
+            pass
+
         # Record this message as processed
         record_inbound(db, channel="whatsapp", external_id=external_id, user_id=user_id)
         logger.info(f"💾 Recorded inbound message {external_id}")

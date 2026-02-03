@@ -26,6 +26,8 @@ from app.api.routes.agent_chat import router as agent_chat_router  # noqa: E402
 from app.api.routes import webhooks_whatsapp  # noqa: E402
 from app.api.routes.admin_google import router as admin_google_router  # noqa: E402
 from app.api.routes.admin_tasks import router as admin_tasks_router  # noqa: E402
+from app.api.routes.billing import router as billing_router  # noqa: E402
+from app.api.routes.billing_stripe import router as billing_stripe_router  # noqa: E402
 
 
 app = FastAPI(
@@ -59,6 +61,8 @@ app.include_router(agent_chat_router)
 app.include_router(webhooks_whatsapp.router)
 app.include_router(admin_google_router)
 app.include_router(admin_tasks_router)
+app.include_router(billing_router)
+app.include_router(billing_stripe_router)
 
 # Friendly root so Render URL doesn't show 404
 @app.get("/")
