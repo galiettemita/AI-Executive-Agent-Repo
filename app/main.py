@@ -66,6 +66,9 @@ def root():
     return {"ok": True, "service": "Shopping Assistant Backend"}
 
 # Create tables at startup (MVP). Later replace with Alembic migrations.
+
 @app.on_event("startup")
 def on_startup():
-    Base.metadata.create_all(bind=engine)
+    if os.getenv("ENABLE_CREATE_ALL") == "1":
+        from app.db.database import Base, engine
+        Base.metadata.create_all(bind=engine)
