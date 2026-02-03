@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import base64
 from email.message import EmailMessage
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from googleapiclient.discovery import build
 from sqlalchemy.orm import Session
@@ -76,3 +76,71 @@ def create_draft(
     encoded = base64.urlsafe_b64encode(msg.as_bytes()).decode("utf-8")
     draft = service.users().drafts().create(userId="me", body={"message": {"raw": encoded}}).execute()
     return {"id": draft.get("id"), "messageId": (draft.get("message") or {}).get("id")}
+
+
+def get_recent_emails_for_daily_brief(
+    db: Session,
+    user_id: str,
+    max_results: int = 10,
+    hours_back: int = 24,
+) -> List[Dict[str, Any]]:
+    """
+    Fetch recent emails for the daily brief.
+
+    Args:
+        db: Database session
+        user_id: User ID
+        max_results: Maximum number of emails to fetch
+        hours_back: How many hours back to look for emails
+
+    Returns:
+        List of email summaries with sender, subject, snippet
+    """
+    creds = get_valid_google_credentials(db=db, user_id=user_id)
+    if not creds:
+        return []
+
+    try:
+        service = build("gmail", "v1", credentials=creds)
+
+        # Query for unread emails in inbox from last N hours
+        # You can customize this query based on your needs
+        query = f"in:inbox is:unread newer_than:{hours_back}h"
+
+        # List messages
+        results = (
+            service.users()
+            .messages()
+            .list(userId="me", q=query, maxResults=max_results)
+            .execute()
+        )
+
+        messages = results.get("messages", [])
+
+        email_summaries = []
+        for msg in messages:
+            # Get full message details
+            msg_data = (
+                service.users()
+                .messages()
+                .get(userId="me", id=msg["id"], format="metadata", metadataHeaders=["From", "Subject", "Date"])
+                .execute()
+            )
+
+            headers = {h["name"]: h["value"] for h in msg_data.get("payload", {}).get("headers", [])}
+
+            email_summaries.append({
+                "id": msg_data.get("id"),
+                "thread_id": msg_data.get("threadId"),
+                "from": headers.get("From", "Unknown"),
+                "subject": headers.get("Subject", "No subject"),
+                "date": headers.get("Date"),
+                "snippet": msg_data.get("snippet", ""),
+                "labels": msg_data.get("labelIds", []),
+            })
+
+        return email_summaries
+
+    except Exception as e:
+        print(f"Error fetching emails for daily brief (user {user_id}): {e}")
+        return []

@@ -253,3 +253,23 @@ class Proposal(Base):
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
     expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class ProposalAuditLog(Base):
+    __tablename__ = "proposal_audit_logs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    proposal_id: Mapped[int] = mapped_column(Integer, ForeignKey("proposals.id"), index=True)
+    user_id: Mapped[str] = mapped_column(String, ForeignKey("users.id"), index=True)
+
+    action: Mapped[str] = mapped_column(String, index=True)  # "created", "approved", "canceled", "edited"
+    old_status: Mapped[str | None] = mapped_column(String, nullable=True)
+    new_status: Mapped[str | None] = mapped_column(String, nullable=True)
+
+    # Store changes for edit actions (JSON)
+    changes_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # Optional metadata (IP, user agent, etc.)
+    metadata_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 from googleapiclient.discovery import build
@@ -90,3 +90,78 @@ def list_upcoming_events(
             }
         )
     return out
+
+
+def get_events_for_daily_brief(
+    db: Session,
+    user_id: str,
+    days_ahead: int = 1,
+) -> List[Dict[str, Any]]:
+    """
+    Fetch calendar events for the daily brief.
+
+    Args:
+        db: Database session
+        user_id: User ID
+        days_ahead: Number of days ahead to fetch (default: 1 = today + tomorrow)
+
+    Returns:
+        List of events with full details for summarization
+    """
+    creds = get_valid_google_credentials(db=db, user_id=user_id)
+    if not creds:
+        return []
+
+    try:
+        service = build("calendar", "v3", credentials=creds)
+
+        # Time range: now to N days ahead
+        now = datetime.now(timezone.utc)
+        time_min = now.isoformat()
+        time_max = (now + timedelta(days=days_ahead)).isoformat()
+
+        events_result = (
+            service.events()
+            .list(
+                calendarId="primary",
+                timeMin=time_min,
+                timeMax=time_max,
+                maxResults=20,
+                singleEvents=True,
+                orderBy="startTime",
+            )
+            .execute()
+        )
+
+        events = events_result.get("items", [])
+
+        # Extract relevant fields
+        simplified_events = []
+        for event in events:
+            start = event.get("start", {})
+            end = event.get("end", {})
+
+            # Handle all-day events vs timed events
+            start_time = start.get("dateTime", start.get("date"))
+            end_time = end.get("dateTime", end.get("date"))
+
+            simplified_events.append({
+                "id": event.get("id"),
+                "summary": event.get("summary", "No title"),
+                "description": event.get("description"),
+                "start": start_time,
+                "end": end_time,
+                "location": event.get("location"),
+                "attendees": [
+                    {"email": a.get("email"), "responseStatus": a.get("responseStatus")}
+                    for a in event.get("attendees", [])
+                ],
+                "link": event.get("htmlLink"),
+                "is_all_day": "date" in start,
+            })
+
+        return simplified_events
+
+    except Exception as e:
+        print(f"Error fetching calendar events for daily brief (user {user_id}): {e}")
+        return []

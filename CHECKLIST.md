@@ -34,17 +34,17 @@ Check items as you complete them.
 - [x] Add `proposals` table with status + payload.
 - [x] Add proposal creation helper (service or model method).
 - [x] Update agent output to emit `proposal` or `assistant_message`.
-- [ ] Add signed, short-lived approval links (JWT).
-- [ ] Implement Approval Inbox page (mobile-first).
-- [ ] Implement approve/edit/cancel endpoints.
-- [ ] Add audit log for proposal approvals.
-- [ ] Configure CORS for Approval Inbox domain in Render (`CORS_ORIGINS`).
+- [x] Add signed, short-lived approval links (JWT).
+- [x] Implement Approval Inbox page (mobile-first).
+- [x] Implement approve/edit/cancel endpoints.
+- [x] Add audit log for proposal approvals.
+- [x] Configure CORS for Approval Inbox domain in Render (`CORS_ORIGINS`).
 
 ## Stage 5: Email + Calendar (Read-Only) + Daily Brief
-- [ ] Confirm OAuth token storage is encrypted at rest.
-- [ ] Implement daily brief worker (calendar + email summaries).
-- [ ] Store brief as messages and/or memory notes.
-- [ ] Add manual trigger endpoint for testing.
+- [x] Confirm OAuth token storage is encrypted at rest.
+- [x] Implement daily brief worker (calendar + email summaries).
+- [x] Store brief as messages and/or memory notes.
+- [x] Add manual trigger endpoint for testing.
 - [ ] Add scheduled job (cron/queue).
 - [ ] Add Google OAuth redirect URL pointing to `https://<render-domain>/admin/google/callback`.
 
