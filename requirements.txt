@@ -14,3 +14,5 @@ google-auth==2.33.0
 google-auth-oauthlib==1.2.1
 google-api-python-client==2.143.0
 psycopg[binary]
+alembic==1.13.2
+psycopg[binary]
