@@ -10,6 +10,23 @@ from sqlalchemy.orm import Session
 from app.db.models import Subscription
 
 
+PREMIUM_PLANS = {"starter", "plus", "pro"}
+
+
+def is_premium_user(entitlements: Dict[str, str]) -> bool:
+    plan = (entitlements.get("plan") or "free").lower()
+    status = (entitlements.get("status") or "active").lower()
+    return plan in PREMIUM_PLANS and status == "active"
+
+
+def upgrade_prompt(user_id: str) -> str:
+    return (
+        "This feature is part of the Starter plan. "
+        "Upgrade here: "
+        f"https://ai-shopping-assistant-backend-6bgf.onrender.com/billing/stripe/checkout?user_id={user_id}"
+    )
+
+
 def get_subscription(db: Session, user_id: str) -> Subscription | None:
     return db.query(Subscription).filter(Subscription.user_id == user_id).first()
 

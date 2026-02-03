@@ -77,6 +77,14 @@ def stripe_checkout(
     return {"checkout_url": session.url}
 
 
+@router.get("/checkout")
+def stripe_checkout_get(
+    user_id: str,
+    db: Session = Depends(get_db),
+):
+    return stripe_checkout(user_id=user_id, db=db)
+
+
 @router.post("/webhook")
 async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
     _stripe_client()

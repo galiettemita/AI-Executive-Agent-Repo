@@ -25,8 +25,8 @@ Check items as you complete them.
 - [x] Add `subscriptions` table.
 - [x] Add `usage` table (monthly period buckets).
 - [x] Implement usage counters (messages, tokens, proposals).
-- [ ] Add entitlements check before skill execution.
-- [ ] Add “limit hit” response with upgrade link.
+- [x] Add entitlements check before skill execution.
+- [x] Add “limit hit” response with upgrade link.
 - [x] Add webhook handler to update subscription state.
 - [x] Add billing provider env vars on Render (e.g., Stripe keys + webhook secret).
 

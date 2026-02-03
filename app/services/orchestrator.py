@@ -11,7 +11,7 @@ from app.services.preferences import (
     is_onboarding_complete,
     update_preferences,
 )
-from app.services.subscriptions import get_entitlements
+from app.services.subscriptions import get_entitlements, is_premium_user, upgrade_prompt
 from app.services.agent import run_agent  # your existing shopping-focused agent
 
 
@@ -46,6 +46,11 @@ def run_orchestrator(
         injected_history = [{"role": "system", "content": f"USER_ENTITLEMENTS:\n{entitlements}"}] + injected_history
     if memory:
         injected_history = [{"role": "system", "content": f"USER_MEMORY:\n{memory}"}] + injected_history
+
+    # Entitlements gating (default policy)
+    premium_intents = {Intent.ADMIN, Intent.SHOPPING, Intent.FOOD, Intent.TRAVEL}
+    if intent in premium_intents and not is_premium_user(entitlements):
+        return upgrade_prompt(user_id)
 
     # ROUTING
     if intent == Intent.SHOPPING:
