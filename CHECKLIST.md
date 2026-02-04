@@ -140,7 +140,7 @@ Check items as you complete them.
 - [x] Add execution status webhooks to notify user of progress.
 - [x] Implement "dry run" mode for testing without actual charges.
 - [x] Add manual intervention queue for flagged transactions.
-- [ ] Build execution dashboard for monitoring pending/failed executions.
+- [x] Build execution dashboard for monitoring pending/failed executions.
 
 ## Stage 15: Safety, Security & Compliance
 - [x] Enforce "no purchases without proposal + approval" (verify JWT signature).

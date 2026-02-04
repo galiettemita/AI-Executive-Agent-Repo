@@ -34,6 +34,7 @@ from app.api.routes.payment import router as payment_router  # noqa: E402
 from app.api.routes.execution import router as execution_router  # noqa: E402
 from app.api.routes.webhooks import router as webhooks_router  # noqa: E402
 from app.api.routes.intervention import router as intervention_router  # noqa: E402
+from app.api.routes.dashboard import router as dashboard_router  # noqa: E402
 
 
 app = FastAPI(
@@ -75,6 +76,7 @@ app.include_router(payment_router)
 app.include_router(execution_router)
 app.include_router(webhooks_router)
 app.include_router(intervention_router)
+app.include_router(dashboard_router)
 
 # Friendly root so Render URL doesn't show 404
 @app.get("/")
