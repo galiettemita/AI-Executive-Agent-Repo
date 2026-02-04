@@ -273,3 +273,156 @@ class ProposalAuditLog(Base):
     metadata_json: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+
+# -------------------
+# EXECUTION ENGINE - STAGE 10-16
+# -------------------
+
+class PaymentMethod(Base):
+    """Stores user payment methods (Stripe payment method IDs)"""
+    __tablename__ = "payment_methods"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(String, ForeignKey("users.id"), index=True)
+
+    # Stripe payment method ID
+    stripe_payment_method_id: Mapped[str] = mapped_column(String, unique=True, index=True)
+
+    # Payment method type (card, bank_account, etc.)
+    type: Mapped[str] = mapped_column(String, default="card")  # card, bank_account, etc.
+
+    # Card details (for display only, not for processing)
+    brand: Mapped[str | None] = mapped_column(String, nullable=True)  # visa, mastercard, amex, etc.
+    last4: Mapped[str | None] = mapped_column(String, nullable=True)
+    exp_month: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    exp_year: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    # Default payment method flag
+    is_default: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    # Metadata
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class Transaction(Base):
+    """Records all financial transactions"""
+    __tablename__ = "transactions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(String, ForeignKey("users.id"), index=True)
+    proposal_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("proposals.id"), nullable=True, index=True)
+
+    # Transaction details
+    amount: Mapped[float] = mapped_column(Float)  # in currency's smallest unit (e.g., cents)
+    currency: Mapped[str] = mapped_column(String, default="USD")
+    status: Mapped[str] = mapped_column(String, default="pending", index=True)  # pending, succeeded, failed, refunded, canceled
+
+    # Stripe payment intent ID
+    stripe_payment_intent_id: Mapped[str | None] = mapped_column(String, unique=True, nullable=True, index=True)
+    stripe_charge_id: Mapped[str | None] = mapped_column(String, nullable=True)
+
+    # Payment method used
+    payment_method_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("payment_methods.id"), nullable=True)
+
+    # Transaction type and metadata
+    transaction_type: Mapped[str] = mapped_column(String, index=True)  # food_order, flight_booking, hotel_booking, retail_purchase
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    metadata_json: Mapped[str | None] = mapped_column(Text, nullable=True)  # Store additional data as JSON
+
+    # Refund tracking
+    refund_amount: Mapped[float | None] = mapped_column(Float, nullable=True)
+    refund_reason: Mapped[str | None] = mapped_column(String, nullable=True)
+    refunded_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    # Timestamps
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class SpendingLimit(Base):
+    """Enforces spending caps per user/plan"""
+    __tablename__ = "spending_limits"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(String, ForeignKey("users.id"), index=True)
+
+    # Limit configuration
+    period: Mapped[str] = mapped_column(String, index=True)  # daily, weekly, monthly
+    limit_amount: Mapped[float] = mapped_column(Float)  # Max spend in this period
+    spent_amount: Mapped[float] = mapped_column(Float, default=0.0)  # Current spend
+
+    # Period tracking
+    period_start: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    period_end: Mapped[datetime] = mapped_column(DateTime)
+
+    # Transaction limits
+    max_transaction_amount: Mapped[float | None] = mapped_column(Float, nullable=True)  # Max per transaction
+    max_transactions_per_hour: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    # Timestamps
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class ExecutionLog(Base):
+    """Tracks execution steps for debugging and audit"""
+    __tablename__ = "execution_logs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    proposal_id: Mapped[int] = mapped_column(Integer, ForeignKey("proposals.id"), index=True)
+    transaction_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("transactions.id"), nullable=True, index=True)
+
+    # Execution step details
+    step: Mapped[str] = mapped_column(String, index=True)  # validate_approval, create_payment_intent, execute_booking, send_confirmation
+    status: Mapped[str] = mapped_column(String, index=True)  # started, completed, failed, retrying
+
+    # Error tracking
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    error_code: Mapped[str | None] = mapped_column(String, nullable=True)
+    stack_trace: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # Retry tracking
+    retry_count: Mapped[int] = mapped_column(Integer, default=0)
+
+    # Metadata
+    metadata_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # Timestamps
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+
+class Booking(Base):
+    """Stores booking details for flights, hotels, food orders, retail purchases"""
+    __tablename__ = "bookings"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(String, ForeignKey("users.id"), index=True)
+    proposal_id: Mapped[int] = mapped_column(Integer, ForeignKey("proposals.id"), index=True)
+    transaction_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("transactions.id"), nullable=True, index=True)
+
+    # Booking type and provider
+    booking_type: Mapped[str] = mapped_column(String, index=True)  # flight, hotel, food_order, retail_purchase
+    provider: Mapped[str] = mapped_column(String, index=True)  # amadeus, doordash, amazon, walmart, etc.
+
+    # Booking status
+    status: Mapped[str] = mapped_column(String, default="pending", index=True)  # pending, confirmed, in_progress, completed, canceled, failed
+
+    # Confirmation details
+    confirmation_number: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    provider_booking_id: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+
+    # PNR for travel bookings
+    pnr: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+
+    # Booking payload (full details as JSON)
+    payload_json: Mapped[str] = mapped_column(Text, default="{}")
+
+    # Cancellation tracking
+    canceled_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    cancellation_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # Timestamps
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

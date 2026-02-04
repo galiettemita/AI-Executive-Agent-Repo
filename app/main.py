@@ -29,6 +29,9 @@ from app.api.routes.admin_tasks import router as admin_tasks_router  # noqa: E40
 from app.api.routes.billing import router as billing_router  # noqa: E402
 from app.api.routes.billing_stripe import router as billing_stripe_router  # noqa: E402
 from app.api.routes.proposals import router as proposals_router  # noqa: E402
+from app.api.routes.monitoring import router as monitoring_router  # noqa: E402
+from app.api.routes.payment import router as payment_router  # noqa: E402
+from app.api.routes.execution import router as execution_router  # noqa: E402
 
 
 app = FastAPI(
@@ -65,6 +68,9 @@ app.include_router(admin_tasks_router)
 app.include_router(billing_router)
 app.include_router(billing_stripe_router)
 app.include_router(proposals_router)
+app.include_router(monitoring_router)
+app.include_router(payment_router)
+app.include_router(execution_router)
 
 # Friendly root so Render URL doesn't show 404
 @app.get("/")

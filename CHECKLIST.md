@@ -49,41 +49,154 @@ Check items as you complete them.
 - [x] Add Google OAuth redirect URL pointing to `https://<render-domain>/admin/google/callback`.
 
 ## Stage 6: Creative Studio + Wardrobe
-- [ ] Implement creative prompt flow + templates.
-- [ ] Add wardrobe onboarding (vibe, sizes, colors, budget).
-- [ ] Add outfit generation responses.
-- [ ] Add wardrobe shopping list proposals.
+- [x] Implement creative prompt flow + templates.
+- [x] Add wardrobe onboarding (vibe, sizes, colors, budget).
+- [x] Add outfit generation responses.
+- [x] Add wardrobe shopping list proposals.
 
 ## Stage 7: Commerce Proposals (Shopping/Food/Travel)
-- [ ] Add proposal types: `purchase_cart`, `booking_plan`.
-- [ ] Implement shopping compare + cart proposal builder.
-- [ ] Implement food reorder + cart proposal builder.
-- [ ] Implement travel shortlist + itinerary proposal builder.
+- [x] Add proposal types: `food_order`, `travel_itinerary`, `purchase_cart`.
+- [x] Implement shopping compare + cart proposal builder.
+- [x] Implement food order + cart proposal builder.
+- [x] Implement travel shortlist + itinerary proposal builder.
 
 ## Stage 8: Monitoring/Alerts Workers
-- [ ] Add queue + worker for monitoring jobs.
-- [ ] Implement price/availability alert logic.
-- [ ] Add user notification delivery.
+- [x] Add queue + worker for monitoring jobs.
+- [x] Implement price/availability alert logic.
+- [x] Add user notification delivery.
 
-## Stage 9: Apple Messages Adapter
-- [ ] Add Messages for Business adapter (provider webhook).
-- [ ] Normalize inbound events to core agent format.
-- [ ] Configure outbound messages.
+## Stage 9: Apple Messages Adapter (DEFERRED)
+- [ ] SKIPPED - Focus on execution engine first
+- [ ] Can revisit after booking/checkout is production-ready
 
-## Safety, Privacy, Reliability (Non-Negotiable)
-- [ ] Enforce “no purchases without proposal + approval.”
-- [ ] Add spending caps + merchant allowlist checks.
-- [ ] Add data deletion endpoint.
-- [ ] Add structured logs with `conversation_id`.
-- [ ] Add feature flags + gradual rollout.
-- [ ] Add abuse detection + blocklist.
+---
+
+# EXECUTION ENGINE - Production-Grade Booking & Checkout
+
+## Stage 10: Payment Infrastructure (Stripe)
+- [ ] Add `payment_methods` table (user_id, stripe_payment_method_id, type, last4, exp_date).
+- [ ] Add `transactions` table (id, user_id, proposal_id, amount, currency, status, stripe_payment_intent_id, created_at).
+- [ ] Implement Stripe SDK integration for payment intents.
+- [ ] Add payment method registration endpoint (tokenize card via Stripe Elements).
+- [ ] Add 3D Secure (SCA) authentication flow.
+- [ ] Implement payment intent creation with idempotency keys.
+- [ ] Add webhook handler for `payment_intent.succeeded` and `payment_intent.failed`.
+- [ ] Add refund/cancellation logic via Stripe API.
+- [ ] Store payment receipts and generate PDF invoices.
+- [ ] Add Stripe environment vars: `STRIPE_SECRET_KEY`, `STRIPE_PUBLISHABLE_KEY`, `STRIPE_WEBHOOK_SECRET`.
+
+## Stage 11: Travel Booking Execution
+- [ ] Add `bookings` table (id, user_id, proposal_id, booking_type, status, confirmation_number, provider, provider_booking_id, payload_json).
+- [ ] Research and select travel API provider (Amadeus Self-Service or Duffel recommended).
+- [ ] Register for Amadeus Self-Service API (free tier: 2000 requests/month).
+- [ ] Implement flight search via Amadeus Flight Offers Search API.
+- [ ] Implement flight booking via Amadeus Flight Create Orders API.
+- [ ] Implement hotel search via Amadeus Hotel Search API.
+- [ ] Implement hotel booking via Amadeus Hotel Booking API.
+- [ ] Add PNR (Passenger Name Record) storage and retrieval.
+- [ ] Implement booking confirmation email/WhatsApp delivery with e-ticket.
+- [ ] Add cancellation/modification logic with provider API.
+- [ ] Handle booking failures with automatic refund trigger.
+- [ ] Add traveler profile storage (passport info, TSA PreCheck, loyalty numbers).
+- [ ] Add environment vars: `AMADEUS_API_KEY`, `AMADEUS_API_SECRET`.
+
+## Stage 12: Food Delivery Execution
+- [ ] Research food delivery APIs (DoorDash Drive API or Uber Eats API).
+- [ ] Register for DoorDash Developer Platform.
+- [ ] Implement restaurant search and menu retrieval.
+- [ ] Implement cart creation and item validation.
+- [ ] Implement delivery address validation and geocoding.
+- [ ] Implement order placement via API.
+- [ ] Add real-time order tracking integration.
+- [ ] Implement order status webhooks (confirmed, preparing, out_for_delivery, delivered).
+- [ ] Add delivery instructions and contact preferences.
+- [ ] Implement order cancellation within allowed timeframe.
+- [ ] Add tip calculation and customization.
+- [ ] Store order receipts and send confirmation via WhatsApp.
+- [ ] Add environment vars: `DOORDASH_API_KEY`, `DOORDASH_DEVELOPER_ID`.
+
+## Stage 13: Retail Shopping Checkout Execution
+- [ ] Add `shipping_addresses` table (user_id, name, street, city, state, zip, country, is_default).
+- [ ] Implement shopping cart consolidation from multiple retailers.
+- [ ] Add address validation via USPS or SmartyStreets API.
+- [ ] Implement tax calculation via TaxJar or Avalara API.
+- [ ] Add shipping rate calculation (partner with ShipStation or EasyPost).
+- [ ] Implement Amazon Product Advertising API for direct purchase links.
+- [ ] Implement Walmart Affiliate API for purchase tracking.
+- [ ] Add order tracking integration (parse retailer emails or use AfterShip API).
+- [ ] Implement order confirmation scraping or email parsing.
+- [ ] Add return/refund request handling.
+- [ ] Store order history with itemized receipts.
+- [ ] Add environment vars: `TAXJAR_API_KEY`, `EASYPOST_API_KEY`, `AMAZON_ASSOCIATE_TAG`.
+
+## Stage 14: Proposal Approval & Execution Engine
+- [ ] Add `execution_logs` table (id, proposal_id, transaction_id, step, status, error_message, timestamp).
+- [ ] Implement JWT verification for approval links (check expiry, signature).
+- [ ] Add proposal state machine (pending → approved → executing → completed/failed).
+- [ ] Build centralized execution orchestrator service.
+- [ ] Implement pre-execution validation (budget check, payment method, required fields).
+- [ ] Add atomic execution steps with rollback on failure.
+- [ ] Implement retry logic with exponential backoff for transient failures.
+- [ ] Add execution status webhooks to notify user of progress.
+- [ ] Implement "dry run" mode for testing without actual charges.
+- [ ] Add manual intervention queue for flagged transactions.
+- [ ] Build execution dashboard for monitoring pending/failed executions.
+
+## Stage 15: Safety, Security & Compliance
+- [ ] Enforce "no purchases without proposal + approval" (verify JWT signature).
+- [ ] Add spending limits table (user_id, period, limit_amount, spent_amount, reset_date).
+- [ ] Implement daily/weekly/monthly spending caps per user tier.
+- [ ] Add transaction amount limits (e.g., max $500 per transaction for free tier).
+- [ ] Implement merchant/category allowlist (block crypto, gambling, etc.).
+- [ ] Add velocity checks (max 5 transactions per hour per user).
+- [ ] Implement fraud detection (unusual patterns, new device, geo mismatch).
+- [ ] Add 2FA requirement for transactions over threshold (e.g., $200).
+- [ ] Implement PII encryption for payment methods and traveler info.
+- [ ] Add GDPR-compliant data deletion endpoint.
+- [ ] Implement structured audit logging with `conversation_id`, `user_id`, `transaction_id`.
+- [ ] Add feature flags for gradual rollout (launch-darkly or custom).
+- [ ] Implement rate limiting (10 req/min per user, 100 req/min per IP).
+- [ ] Add abuse detection (block users with >3 chargebacks).
+- [ ] Implement circuit breakers for external API failures.
+
+## Stage 16: Transaction Management & Recovery
+- [ ] Implement transaction state persistence (in-flight tracking).
+- [ ] Add automatic refund on booking failure (within 24 hours).
+- [ ] Implement partial refund logic (e.g., cancellation fees).
+- [ ] Add dispute management integration with Stripe.
+- [ ] Implement chargeback notification and response handling.
+- [ ] Add reconciliation job (daily comparison of Stripe vs internal ledger).
+- [ ] Implement failed transaction retry queue with manual approval.
+- [ ] Add webhook replay for missed payment/booking events.
+- [ ] Implement idempotency for all payment and booking operations.
+- [ ] Add transaction receipt generation (PDF with itemized breakdown).
+- [ ] Implement notification delivery for transaction lifecycle events.
+
+## Stage 17: Testing & Validation
+- [ ] Create test suite for payment flow (mock Stripe).
+- [ ] Create test suite for travel booking flow (mock Amadeus).
+- [ ] Create test suite for food delivery flow (mock DoorDash).
+- [ ] Create test suite for retail checkout flow.
+- [ ] Add end-to-end tests for complete proposal → approval → execution flow.
+- [ ] Test rollback scenarios (payment fails, booking fails, etc.).
+- [ ] Test edge cases (expired approval link, insufficient funds, API timeout).
+- [ ] Implement load testing for concurrent execution requests.
+- [ ] Add chaos engineering tests (random API failures, network issues).
+- [ ] Test fraud detection scenarios (velocity limits, amount limits).
+- [ ] Validate PII encryption and secure data handling.
+- [ ] Test GDPR data deletion compliance.
 
 ## Deployment Checklist
 - [ ] Containerize services (Dockerfile).
 - [ ] Configure managed Postgres + Redis.
 - [ ] Configure queue (SQS/RabbitMQ/etc.).
-- [ ] Set up secrets manager.
-- [ ] Add monitoring and alerting.
-- [ ] Configure backups + retention.
-- [ ] Render env vars set: `DATABASE_URL`, `WHATSAPP_VERIFY_TOKEN`, `WHATSAPP_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`, `OPENAI_API_KEY`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`, `JWT_SECRET`.
+- [ ] Set up secrets manager (AWS Secrets Manager or Render env encryption).
+- [ ] Add monitoring and alerting (Datadog, New Relic, or CloudWatch).
+- [ ] Configure backups + retention (automated daily backups, 30-day retention).
+- [ ] Set up error tracking (Sentry or Rollbar).
+- [ ] Configure log aggregation (Logtail, Papertrail, or ELK stack).
+- [ ] Render env vars set: `DATABASE_URL`, `WHATSAPP_VERIFY_TOKEN`, `WHATSAPP_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`, `OPENAI_API_KEY`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`, `JWT_SECRET`, `STRIPE_SECRET_KEY`, `STRIPE_PUBLISHABLE_KEY`, `STRIPE_WEBHOOK_SECRET`, `AMADEUS_API_KEY`, `AMADEUS_API_SECRET`, `DOORDASH_API_KEY`, `TAXJAR_API_KEY`.
 - [ ] Render health check path set to `/health` (or `/` if preferred).
+- [ ] Set up SSL/TLS certificates (auto-managed by Render).
+- [ ] Configure CDN for static assets (Cloudflare or CloudFront).
+- [ ] Implement blue-green deployment strategy for zero-downtime updates.
