@@ -426,22 +426,27 @@ def run_agent(
         "DO NOT invent prices, retailers, drops, ratings, review counts, or links.\n"
         "Keep replies SHORT (1-4 sentences) unless the user explicitly asks for details.\n"
         "Do NOT summarize the user's watchlist or list items unless the user asks.\n"
+        "\n"
+        "TWO MODES:\n"
+        "1. TRACKING MODE: User wants to watch/track/monitor prices → use TRACK_ITEM\n"
+        "2. PURCHASE MODE: User wants to buy/purchase/order now → use CART_PROPOSAL\n"
+        "\n"
+        "TRACKING MODE:\n"
         "If the user asks to track something, ask only the minimum clarifying questions needed (model/size/color/retailer preference).\n"
         "For sale tracking: say you will check on refresh/app open (MVP) and alert when price drops or target is hit.\n"
+        'TRACK_ITEM {"title_hint":"...","url":"...","desired_price":null,"currency":"USD","product_key":null,"upc":null}\n'
+        "Only emit TRACK_ITEM if you have a real URL from context.discover results.\n"
+        "\n"
+        "PURCHASE MODE:\n"
+        "If the user wants to BUY/PURCHASE items NOW, create a shopping cart proposal:\n"
+        'CART_PROPOSAL {"items":[{"name":"item","url":"link","price":0.0,"quantity":1,"retailer":"store"}],"estimated_total":0.0,"notes":"any notes"}\n'
+        "Only emit CART_PROPOSAL when user confirms they want to purchase.\n"
+        "\n"
         "If a direct buy link is null, say 'Direct buy link unavailable' and do not provide a Google Shopping link.\n"
         "Never claim a price changed unless context.price_changes has prev_price and new_price with different timestamps.\n"
-        "If you decide to add an item to tracking, include EXACTLY ONE line in your reply in this format:\n"
-        "TRACK_ITEM {\"title_hint\":\"...\",\"url\":\"...\",\"desired_price\":null,\"currency\":\"USD\",\"product_key\":null,\"upc\":null}\n"
-        "Only include fields you know from context or discover results. If you don't have a direct URL, do NOT emit TRACK_ITEM.\n"
-        "When the user asks you to track something, do NOT list their existing watchlist unless they ask.\n"
-        "Keep replies short and casual.\n"
-        "If you are ready to add a tracked item, include EXACTLY ONE line at the end of your reply in this format:\n"
-        "TRACK_ITEM {\"title_hint\":\"...\",\"url\":\"...\",\"desired_price\":null,\"currency\":\"USD\",\"product_key\":null,\"upc\":null}\n"
-        "Only emit TRACK_ITEM if you have a real URL from context.discover results or an existing tracked item.\n"
-        "If you do not have a URL yet, ask a short clarifying question or say you need permission to search.\n"
-        "Never include any line that starts with TRACK_ITEM. The server will handle tracking directives.\n"
-        "If you claim a price dropped, you MUST include: prev_price, new_price, prev_fetched_at, new_fetched_at from context.price_changes for that item.\n"
         "If those fields are missing or delta is not negative, you MUST say you cannot confirm a drop.\n"
+        "\n"
+        "Keep replies short and casual.\n"
 
     )
 
@@ -469,6 +474,37 @@ def run_agent(
     )
 
     reply = resp.output_text.strip()
+
+    # Check if agent wants to create a shopping cart proposal
+    if "CART_PROPOSAL " in reply:
+        lines = reply.split("\n")
+        proposal_line = None
+        clean_lines = []
+
+        for line in lines:
+            if line.strip().startswith("CART_PROPOSAL "):
+                proposal_line = line.strip()
+            else:
+                clean_lines.append(line)
+
+        reply = "\n".join(clean_lines).strip()
+
+        if proposal_line:
+            try:
+                proposal_json = proposal_line.replace("CART_PROPOSAL ", "")
+                proposal_data = json.loads(proposal_json)
+
+                return {
+                    "proposal": {
+                        "type": "purchase_cart",
+                        "summary": reply or "I've created a shopping cart for you to review.",
+                        "payload": proposal_data,
+                    }
+                }
+            except json.JSONDecodeError:
+                pass  # If parsing fails, just return the message
+
+    # Handle tracking mode
     reply = _strip_track_lines(reply)
 
     if track_url:

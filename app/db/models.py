@@ -336,6 +336,9 @@ class Transaction(Base):
     refund_reason: Mapped[str | None] = mapped_column(String, nullable=True)
     refunded_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
+    # Invoice PDF
+    invoice_pdf_path: Mapped[str | None] = mapped_column(String, nullable=True)  # Path to generated PDF invoice
+
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

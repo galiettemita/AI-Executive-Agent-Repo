@@ -299,6 +299,16 @@ async def stripe_webhook(
         if transaction:
             transaction.status = "succeeded"
             transaction.stripe_charge_id = data.get("latest_charge")
+
+            # Generate invoice PDF if not already generated
+            if not transaction.invoice_pdf_path:
+                try:
+                    from app.services.invoice_service import InvoiceService
+                    invoice_path = InvoiceService.generate_invoice_pdf(db, transaction.id)
+                    transaction.invoice_pdf_path = invoice_path
+                except Exception as e:
+                    print(f"[Stripe Webhook] Failed to generate invoice for transaction {transaction.id}: {e}")
+
             db.commit()
 
             print(f"[Stripe Webhook] Payment succeeded for transaction {transaction.id}")
@@ -336,3 +346,85 @@ async def stripe_webhook(
             print(f"[Stripe Webhook] Refund processed for transaction {transaction.id}")
 
     return {"received": True}
+
+
+@router.get("/invoice/{transaction_id}")
+def get_invoice(
+    transaction_id: int,
+    db: Session = Depends(get_db),
+):
+    """
+    Generate or retrieve the PDF invoice for a transaction.
+
+    This endpoint will:
+    1. Check if invoice already exists
+    2. If not, generate a new invoice PDF
+    3. Return the PDF file
+
+    Args:
+        transaction_id: ID of the transaction
+        db: Database session
+
+    Returns:
+        FileResponse: PDF invoice file
+    """
+    from app.services.invoice_service import InvoiceService
+    from fastapi.responses import FileResponse
+    import os
+
+    # Check if invoice already exists
+    invoice_path = InvoiceService.get_invoice_path(db, transaction_id)
+
+    # If not exists or file is missing, generate new invoice
+    if not invoice_path or not os.path.exists(invoice_path):
+        try:
+            invoice_path = InvoiceService.generate_invoice_pdf(db, transaction_id)
+            InvoiceService.update_invoice_path(db, transaction_id, invoice_path)
+        except ValueError as e:
+            raise HTTPException(status_code=404, detail=str(e))
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to generate invoice: {str(e)}")
+
+    # Return PDF file
+    if not os.path.exists(invoice_path):
+        raise HTTPException(status_code=404, detail="Invoice file not found")
+
+    return FileResponse(
+        invoice_path,
+        media_type="application/pdf",
+        filename=f"invoice_{transaction_id}.pdf",
+    )
+
+
+@router.post("/invoice/{transaction_id}/regenerate")
+def regenerate_invoice(
+    transaction_id: int,
+    db: Session = Depends(get_db),
+):
+    """
+    Force regeneration of an invoice PDF.
+
+    Useful if transaction details were updated and invoice needs to be regenerated.
+
+    Args:
+        transaction_id: ID of the transaction
+        db: Database session
+
+    Returns:
+        Dict with success status and invoice path
+    """
+    from app.services.invoice_service import InvoiceService
+
+    try:
+        invoice_path = InvoiceService.generate_invoice_pdf(db, transaction_id)
+        InvoiceService.update_invoice_path(db, transaction_id, invoice_path)
+
+        return {
+            "ok": True,
+            "transaction_id": transaction_id,
+            "invoice_path": invoice_path,
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to regenerate invoice: {str(e)}")

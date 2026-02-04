@@ -20,13 +20,13 @@ def classify_intent(text: str) -> Intent:
     if any(k in t for k in ["email", "inbox", "calendar", "schedule", "meeting", "reschedule", "appointment"]):
         return Intent.ADMIN
 
+    # Food (check before shopping to catch "order pizza" etc.)
+    if any(k in t for k in ["doordash", "ubereats", "grubhub", "food", "pizza", "sushi", "burger", "pickup", "delivery", "restaurant", "hungry", "eat", "meal", "lunch", "dinner", "breakfast"]):
+        return Intent.FOOD
+
     # Shopping
     if any(k in t for k in ["buy", "purchase", "order", "cart", "price", "deal", "track", "watch", "amazon", "walmart"]):
         return Intent.SHOPPING
-
-    # Food
-    if any(k in t for k in ["doordash", "ubereats", "grubhub", "food", "pizza", "pickup", "delivery", "restaurant"]):
-        return Intent.FOOD
 
     # Travel
     if any(k in t for k in ["flight", "hotel", "airline", "itinerary", "trip", "rent a car", "boarding"]):
@@ -37,7 +37,7 @@ def classify_intent(text: str) -> Intent:
         return Intent.CREATIVE
 
     # Wardrobe
-    if any(k in t for k in ["outfit", "wardrobe", "what to wear", "style", "shoes", "jacket", "capsule wardrobe"]):
+    if any(k in t for k in ["outfit", "wardrobe", "what to wear", "what should i wear", "wear to", "style", "shoes", "jacket", "capsule wardrobe", "dress", "clothing"]):
         return Intent.WARDROBE
 
     return Intent.GENERAL

@@ -196,6 +196,16 @@ class StripeService:
         if intent.status == "succeeded":
             transaction.status = "succeeded"
             transaction.stripe_charge_id = intent.charges.data[0].id if intent.charges.data else None
+
+            # Generate invoice PDF automatically
+            try:
+                from app.services.invoice_service import InvoiceService
+                invoice_path = InvoiceService.generate_invoice_pdf(db, transaction.id)
+                transaction.invoice_pdf_path = invoice_path
+            except Exception as e:
+                print(f"[Stripe] Failed to generate invoice for transaction {transaction.id}: {e}")
+                # Don't fail the transaction if invoice generation fails
+
         elif intent.status == "requires_action":
             transaction.status = "requires_action"
         elif intent.status == "processing":

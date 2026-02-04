@@ -18,3 +18,4 @@ google-api-python-client==2.143.0
 psycopg[binary]
 alembic==1.13.2
 apscheduler==3.10.4
+reportlab==4.0.7

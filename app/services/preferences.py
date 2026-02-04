@@ -45,6 +45,10 @@ def is_onboarding_complete(prefs: Dict[str, str]) -> bool:
     return prefs.get("onboarding_complete") is True
 
 
+def is_wardrobe_onboarding_complete(prefs: Dict[str, str]) -> bool:
+    return prefs.get("wardrobe_onboarding_complete") is True
+
+
 def handle_onboarding_step(user_message: str, prefs: Dict[str, str]) -> Tuple[str, Dict[str, str]]:
     """
     Returns (reply, updated_prefs).
@@ -85,8 +89,64 @@ def handle_onboarding_step(user_message: str, prefs: Dict[str, str]) -> Tuple[st
         prefs["onboarding_step"] = 4
         prefs["onboarding_complete"] = True
         return (
-            "Perfect — you’re all set. "
-            "Tell me what you want to do, and I’ll help.",
+            "Perfect — you're all set. "
+            "Tell me what you want to do, and I'll help.",
+            prefs,
+        )
+
+    return "", prefs
+
+
+def handle_wardrobe_onboarding_step(user_message: str, prefs: Dict[str, str]) -> Tuple[str, Dict[str, str]]:
+    """
+    Returns (reply, updated_prefs) for wardrobe-specific onboarding.
+    If wardrobe onboarding is complete, reply will be "".
+    """
+    step = int(prefs.get("wardrobe_onboarding_step") or 0)
+    msg = (user_message or "").strip()
+
+    if step <= 0:
+        # Start wardrobe onboarding
+        prefs["wardrobe_onboarding_step"] = 1
+        return (
+            "Great! Let me learn about your style preferences. "
+            "What's your vibe? (e.g., classic, streetwear, minimal, sporty, boho, preppy)",
+            prefs,
+        )
+
+    if step == 1:
+        prefs["wardrobe_vibe"] = msg or "unspecified"
+        prefs["wardrobe_onboarding_step"] = 2
+        return (
+            "Perfect! What are your sizes? "
+            "Example: shirt M, pants 32x30, shoes 10",
+            prefs,
+        )
+
+    if step == 2:
+        prefs["wardrobe_sizes"] = msg or "unspecified"
+        prefs["wardrobe_onboarding_step"] = 3
+        return (
+            "Got it. Any colors you love or want to avoid? "
+            "Example: love navy and earth tones, avoid bright colors",
+            prefs,
+        )
+
+    if step == 3:
+        prefs["wardrobe_colors"] = msg or "unspecified"
+        prefs["wardrobe_onboarding_step"] = 4
+        return (
+            "Last one: what's your typical budget for clothing? "
+            "Example: $50-$150 per piece, or 'budget-friendly', 'mid-range', 'designer'",
+            prefs,
+        )
+
+    if step == 4:
+        prefs["wardrobe_budget"] = msg or "unspecified"
+        prefs["wardrobe_onboarding_step"] = 5
+        prefs["wardrobe_onboarding_complete"] = True
+        return (
+            "All set! Now tell me about the occasion or what you need help with.",
             prefs,
         )
 

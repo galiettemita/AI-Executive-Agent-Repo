@@ -82,7 +82,7 @@ Check items as you complete them.
 - [x] Implement payment intent creation with idempotency keys.
 - [x] Add webhook handler for `payment_intent.succeeded` and `payment_intent.failed`.
 - [x] Add refund/cancellation logic via Stripe API.
-- [ ] Store payment receipts and generate PDF invoices (receipts stored, PDF generation pending).
+- [x] Store payment receipts and generate PDF invoices.
 - [x] Add Stripe environment vars: `STRIPE_SECRET_KEY`, `STRIPE_PUBLISHABLE_KEY`, `STRIPE_WEBHOOK_SECRET`.
 
 ## Stage 11: Travel Booking Execution
