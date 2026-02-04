@@ -18,6 +18,7 @@ from app.db.models import (
 )
 from app.services.stripe_service import StripeService
 from app.services.webhook_service import WebhookService
+from app.services.intervention_service import InterventionService
 
 
 class ExecutionEngine:
@@ -201,6 +202,41 @@ class ExecutionEngine:
 
         ExecutionEngine._log_execution_step(
             db, proposal_id, None, "check_spending_limit", "completed"
+        )
+
+        # Step 3.5: Check if proposal should be flagged for manual review
+        should_flag, flag_reason = InterventionService.should_flag_for_review(
+            db=db,
+            user_id=proposal.user_id,
+            proposal_id=proposal_id,
+            amount=amount,
+        )
+
+        if should_flag:
+            ExecutionEngine._log_execution_step(
+                db,
+                proposal_id,
+                None,
+                "check_intervention",
+                "flagged",
+                error_message=f"Flagged for manual review: {flag_reason}",
+            )
+
+            # Add to intervention queue
+            InterventionService.add_to_intervention_queue(
+                db=db,
+                proposal_id=proposal_id,
+                reason=flag_reason,
+                metadata={"amount": amount, "proposal_type": proposal.proposal_type},
+            )
+
+            raise ValueError(
+                f"Proposal flagged for manual review: {flag_reason}. "
+                "A team member will review this transaction before proceeding."
+            )
+
+        ExecutionEngine._log_execution_step(
+            db, proposal_id, None, "check_intervention", "passed"
         )
 
         if dry_run:
