@@ -17,6 +17,7 @@ from app.db.models import (
     User,
 )
 from app.services.stripe_service import StripeService
+from app.services.webhook_service import WebhookService
 
 
 class ExecutionEngine:
@@ -149,6 +150,22 @@ class ExecutionEngine:
         proposal.status = "approved" if proposal.status == "pending" else proposal.status
         db.commit()
 
+        # Send webhook: execution started
+        try:
+            WebhookService.send_webhook(
+                db=db,
+                user_id=proposal.user_id,
+                event_type=WebhookService.EVENT_EXECUTION_STARTED,
+                payload={
+                    "proposal_id": proposal_id,
+                    "proposal_type": proposal.proposal_type,
+                    "status": "started",
+                },
+                proposal_id=proposal_id,
+            )
+        except Exception as e:
+            print(f"[Webhook] Failed to send execution.started: {e}")
+
         # Parse payload
         try:
             payload = json.loads(proposal.payload_json)
@@ -245,6 +262,25 @@ class ExecutionEngine:
                 db, proposal_id, transaction.id, "confirm_payment", "completed"
             )
 
+            # Send webhook: payment succeeded
+            try:
+                WebhookService.send_webhook(
+                    db=db,
+                    user_id=proposal.user_id,
+                    event_type=WebhookService.EVENT_PAYMENT_SUCCEEDED,
+                    payload={
+                        "proposal_id": proposal_id,
+                        "transaction_id": transaction.id,
+                        "amount": amount,
+                        "currency": payload.get("currency", "usd"),
+                        "status": "succeeded",
+                    },
+                    proposal_id=proposal_id,
+                    transaction_id=transaction.id,
+                )
+            except Exception as e:
+                print(f"[Webhook] Failed to send payment.succeeded: {e}")
+
         except Exception as e:
             ExecutionEngine._log_execution_step(
                 db, proposal_id, transaction.id, "confirm_payment", "failed", error_message=str(e)
@@ -282,6 +318,25 @@ class ExecutionEngine:
                 metadata=booking_result,
             )
 
+            # Send webhook: booking confirmed
+            try:
+                WebhookService.send_webhook(
+                    db=db,
+                    user_id=proposal.user_id,
+                    event_type=WebhookService.EVENT_BOOKING_CONFIRMED,
+                    payload={
+                        "proposal_id": proposal_id,
+                        "transaction_id": transaction.id,
+                        "booking_type": proposal.proposal_type,
+                        "booking_result": booking_result,
+                        "status": "confirmed",
+                    },
+                    proposal_id=proposal_id,
+                    transaction_id=transaction.id,
+                )
+            except Exception as e:
+                print(f"[Webhook] Failed to send booking.confirmed: {e}")
+
             # Update proposal status
             proposal.status = "completed"
             db.commit()
@@ -317,6 +372,43 @@ class ExecutionEngine:
                     error_message=str(refund_error),
                 )
 
+            # Send webhook: booking failed
+            try:
+                WebhookService.send_webhook(
+                    db=db,
+                    user_id=proposal.user_id,
+                    event_type=WebhookService.EVENT_BOOKING_FAILED,
+                    payload={
+                        "proposal_id": proposal_id,
+                        "transaction_id": transaction.id,
+                        "error": str(e),
+                        "status": "failed",
+                    },
+                    proposal_id=proposal_id,
+                    transaction_id=transaction.id,
+                )
+            except Exception as webhook_e:
+                print(f"[Webhook] Failed to send booking.failed: {webhook_e}")
+
+            # Send webhook: execution failed
+            try:
+                WebhookService.send_webhook(
+                    db=db,
+                    user_id=proposal.user_id,
+                    event_type=WebhookService.EVENT_EXECUTION_FAILED,
+                    payload={
+                        "proposal_id": proposal_id,
+                        "transaction_id": transaction.id,
+                        "error": str(e),
+                        "status": "failed",
+                        "refund_initiated": True,
+                    },
+                    proposal_id=proposal_id,
+                    transaction_id=transaction.id,
+                )
+            except Exception as webhook_e:
+                print(f"[Webhook] Failed to send execution.failed: {webhook_e}")
+
             proposal.status = "failed"
             db.commit()
             raise
@@ -336,6 +428,24 @@ class ExecutionEngine:
             ExecutionEngine._log_execution_step(
                 db, proposal_id, transaction.id, "send_confirmation", "failed", error_message=str(e)
             )
+
+        # Send webhook: execution completed
+        try:
+            WebhookService.send_webhook(
+                db=db,
+                user_id=proposal.user_id,
+                event_type=WebhookService.EVENT_EXECUTION_COMPLETED,
+                payload={
+                    "proposal_id": proposal_id,
+                    "transaction_id": transaction.id,
+                    "booking_result": booking_result,
+                    "status": "completed",
+                },
+                proposal_id=proposal_id,
+                transaction_id=transaction.id,
+            )
+        except Exception as e:
+            print(f"[Webhook] Failed to send execution.completed: {e}")
 
         return {
             "success": True,

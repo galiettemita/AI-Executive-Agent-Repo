@@ -429,3 +429,70 @@ class Booking(Base):
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+# -------------------
+# STAGE 14: WEBHOOKS
+# -------------------
+
+class WebhookEndpoint(Base):
+    """Stores user webhook endpoints for execution status notifications"""
+    __tablename__ = "webhook_endpoints"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(String, ForeignKey("users.id"), index=True)
+
+    # Webhook configuration
+    url: Mapped[str] = mapped_column(String)  # Webhook URL
+    secret: Mapped[str | None] = mapped_column(String, nullable=True)  # Optional secret for signature verification
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+
+    # Event filters (JSON list of event types to subscribe to)
+    # e.g., ["proposal.approved", "execution.started", "execution.completed", "execution.failed"]
+    event_types: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON array
+
+    # Metadata
+    description: Mapped[str | None] = mapped_column(String, nullable=True)
+
+    # Statistics
+    total_deliveries: Mapped[int] = mapped_column(Integer, default=0)
+    failed_deliveries: Mapped[int] = mapped_column(Integer, default=0)
+    last_delivery_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_failure_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    # Timestamps
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class WebhookDelivery(Base):
+    """Logs webhook delivery attempts for debugging and monitoring"""
+    __tablename__ = "webhook_deliveries"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    webhook_endpoint_id: Mapped[int] = mapped_column(Integer, ForeignKey("webhook_endpoints.id"), index=True)
+
+    # Event details
+    event_type: Mapped[str] = mapped_column(String, index=True)  # e.g., "execution.started"
+    event_id: Mapped[str] = mapped_column(String, index=True)  # Unique identifier for idempotency
+
+    # Related entities
+    proposal_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("proposals.id"), nullable=True, index=True)
+    transaction_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("transactions.id"), nullable=True, index=True)
+
+    # Delivery details
+    payload_json: Mapped[str] = mapped_column(Text)  # Full webhook payload
+    status: Mapped[str] = mapped_column(String, default="pending", index=True)  # pending, delivered, failed
+
+    # Response tracking
+    response_status_code: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    response_body: Mapped[str | None] = mapped_column(Text, nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # Retry tracking
+    retry_count: Mapped[int] = mapped_column(Integer, default=0)
+    next_retry_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    # Timestamps
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    delivered_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
