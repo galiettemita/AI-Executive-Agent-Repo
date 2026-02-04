@@ -9,6 +9,56 @@ This checklist is organized for **fastest time to market**:
 
 ## PRE-LAUNCH CRITICAL ✅ (Complete before deploying)
 
+### Stage 0: Landing Page & Domain Setup (NEW - Required for Public Launch)
+**Goal**: Professional website where users can discover and access your AI assistant
+
+#### Domain & Infrastructure
+- [ ] **CRITICAL**: Purchase domain name (recommended: Namecheap, Google Domains, or Cloudflare)
+  - Suggested format: `yourproductname.com` or `yourassistant.ai`
+  - Cost: ~$10-15/year
+  - Setup time: 5 minutes
+- [ ] Configure DNS records to point to Vercel (for landing page)
+- [ ] Configure custom domain on Render (for backend API)
+  - Example: `api.yourproductname.com` → Render backend
+  - Example: `yourproductname.com` → Vercel landing page
+
+#### WhatsApp Business Configuration
+- [ ] **CRITICAL**: Confirm WhatsApp Business phone number (production-ready)
+  - Is this number verified and active?
+  - Is it connected to Meta Business account?
+  - Current status: Testing or Production mode?
+- [ ] Switch Meta WhatsApp app from Test mode to Production mode (if applicable)
+- [ ] Verify WhatsApp webhook URL is configured in Meta dashboard
+- [ ] Test webhook delivery from Meta to Render backend
+- [ ] Generate WhatsApp direct link: `https://wa.me/YOUR_NUMBER?text=Hi`
+- [ ] Test link opens WhatsApp correctly on mobile and desktop
+
+#### Landing Page Development
+- [ ] **CRITICAL**: Build Next.js landing page with:
+  - Hero section with product value proposition
+  - Feature highlights (travel booking, shopping, food delivery)
+  - QR code that opens WhatsApp with your bot
+  - "Start Chatting" button (mobile-friendly WhatsApp link)
+  - Pricing tiers section
+  - FAQ section
+  - Privacy policy & Terms of Service links
+  - Responsive design (mobile-first)
+- [ ] Generate QR code image from WhatsApp link
+- [ ] Deploy landing page to Vercel
+- [ ] Configure custom domain on Vercel
+- [ ] Test landing page on mobile and desktop
+- [ ] Test QR code scanning from multiple devices
+- [ ] Verify QR code correctly opens WhatsApp with your bot
+- [ ] Add Google Analytics or Plausible for traffic tracking
+
+#### Integration Testing
+- [ ] End-to-end flow: User scans QR → WhatsApp opens → Bot responds
+- [ ] Test onboarding flow through WhatsApp
+- [ ] Verify all links on landing page work correctly
+- [ ] Test landing page load speed (should be <2 seconds)
+
+---
+
 ### Stage 11: Travel Booking - Final Items
 - [x] Add `bookings` table (id, user_id, proposal_id, booking_type, status, confirmation_number, provider, provider_booking_id, payload_json)
 - [x] Register for Amadeus Self-Service API (free tier: 2000 requests/month)
@@ -74,15 +124,41 @@ This checklist is organized for **fastest time to market**:
 - [ ] Confirm database migrations are up to date: `alembic current`
 - [ ] Test webhook endpoints are accessible (WhatsApp, Stripe)
 
-### Deployment to Render
-- [ ] Push latest code to GitHub main branch
+### Deployment to Render (Backend)
+- [ ] Push latest backend code to GitHub main branch
 - [ ] Verify Render auto-deploys from main branch
 - [ ] Monitor deployment logs for errors
 - [ ] Wait for health check to pass: `GET /health`
-- [ ] Verify service is live at `https://ai-shopping-assistant-backend-6bgf.onrender.com/`
+- [ ] Verify service is live at your backend URL (or custom domain if configured)
+
+### Deployment to Vercel (Landing Page)
+- [ ] Create Vercel account (free tier is sufficient)
+- [ ] Connect Vercel to your frontend GitHub repo
+- [ ] Configure build settings (Next.js auto-detected)
+- [ ] Add environment variables if needed (WhatsApp number, analytics keys)
+- [ ] Deploy landing page to Vercel
+- [ ] Verify deployment succeeded
+- [ ] Configure custom domain in Vercel dashboard
+- [ ] Verify SSL certificate is active (auto-provisioned by Vercel)
+- [ ] Test landing page at custom domain
 
 ### Post-Deployment Verification
-- [ ] Test WhatsApp webhook: Send "Hello" message to bot
+
+#### Landing Page Tests
+- [ ] Visit landing page at custom domain (e.g., `https://yourproductname.com`)
+- [ ] Verify QR code is visible and properly sized
+- [ ] Test QR code scanning from iPhone (opens WhatsApp correctly)
+- [ ] Test QR code scanning from Android (opens WhatsApp correctly)
+- [ ] Test "Start Chatting" button on mobile (opens WhatsApp app)
+- [ ] Test "Start Chatting" button on desktop (opens WhatsApp Web)
+- [ ] Verify all links work (Privacy Policy, Terms, Pricing, etc.)
+- [ ] Test landing page responsiveness on mobile/tablet/desktop
+- [ ] Check page load speed (use PageSpeed Insights)
+- [ ] Verify meta tags and OpenGraph images (for social sharing)
+
+#### Backend API Tests
+- [ ] Test WhatsApp webhook: Send "Hello" message to bot via WhatsApp
+- [ ] Verify bot responds correctly to first-time user
 - [ ] Test user onboarding flow via WhatsApp
 - [ ] Create test traveler profile via API
 - [ ] Search for test flight (JFK → LAX)
@@ -94,6 +170,20 @@ This checklist is organized for **fastest time to market**:
 - [ ] Check execution dashboard shows test data
 - [ ] Verify logs are being captured properly
 - [ ] Test error scenarios (invalid airport code, etc.)
+
+#### End-to-End User Journey
+- [ ] New user scans QR code from landing page
+- [ ] WhatsApp opens with your bot
+- [ ] User sends first message
+- [ ] Bot responds with onboarding flow
+- [ ] User completes onboarding (preferences, etc.)
+- [ ] User requests a flight search
+- [ ] Bot returns proposal with approval link
+- [ ] User clicks approval link (opens in browser)
+- [ ] User approves proposal
+- [ ] Execution engine processes booking
+- [ ] User receives confirmation via WhatsApp
+- [ ] User receives invoice PDF
 
 ### Production Monitoring Setup
 - [ ] Set up error tracking (Sentry or Rollbar)
@@ -122,11 +212,17 @@ Verify all required env vars are set:
 - [ ] `CORS_ORIGINS`
 
 ### Go-Live Decision
-- [ ] All critical tests passing
-- [ ] No errors in production logs
+- [ ] All critical backend tests passing
+- [ ] Landing page is live and accessible at custom domain
+- [ ] QR code correctly opens WhatsApp with bot
+- [ ] End-to-end user journey tested successfully
+- [ ] No errors in production logs (backend and landing page)
 - [ ] Monitoring dashboards operational
+- [ ] WhatsApp Business account is in Production mode
+- [ ] Custom domain DNS is fully propagated (check with DNS checker)
 - [ ] Team has reviewed deployment checklist
-- [ ] **DECISION**: Announce public launch 🎉
+- [ ] **DECISION**: Share landing page URL publicly 🎉
+- [ ] **DECISION**: Announce launch on social media/Product Hunt/etc.
 
 ---
 
