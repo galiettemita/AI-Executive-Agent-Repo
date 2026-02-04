@@ -534,30 +534,94 @@ class ExecutionEngine:
         payload: Dict,
         transaction_id: int,
     ) -> Dict:
-        """Execute flight booking (will be implemented in Stage 11)"""
-        # Placeholder for Stage 11 implementation
-        # This will integrate with Amadeus API
+        """Execute flight booking via Amadeus API"""
+        from app.services.amadeus_service import AmadeusService
+        from app.db.models import TravelerProfile
 
-        booking = Booking(
-            user_id=proposal.user_id,
-            proposal_id=proposal.id,
-            transaction_id=transaction_id,
-            booking_type="flight",
-            provider="amadeus",
-            status="pending",
-            payload_json=json.dumps(payload),
-        )
-        db.add(booking)
-        db.commit()
-        db.refresh(booking)
+        try:
+            # Initialize Amadeus service
+            amadeus = AmadeusService()
 
-        # TODO: Call Amadeus API to book flight
-        return {
-            "booking_id": booking.id,
-            "confirmation_number": f"MOCK-{booking.id}",
-            "pnr": f"MOCK-PNR-{booking.id}",
-            "status": "confirmed",
-        }
+            # Extract booking details from payload
+            offer_data = payload.get("flight_offer")
+            if not offer_data:
+                raise ValueError("Missing flight_offer in payload")
+
+            # Get travelers from payload or user's default profile
+            travelers_data = payload.get("travelers", [])
+            if not travelers_data:
+                # Use default traveler profile
+                default_profile = (
+                    db.query(TravelerProfile)
+                    .filter(
+                        TravelerProfile.user_id == proposal.user_id,
+                        TravelerProfile.is_default == True,
+                    )
+                    .first()
+                )
+
+                if default_profile:
+                    travelers_data = [{
+                        "first_name": default_profile.first_name,
+                        "last_name": default_profile.last_name,
+                        "date_of_birth": default_profile.date_of_birth,
+                        "gender": default_profile.gender,
+                        "documents": [{
+                            "documentType": "PASSPORT",
+                            "number": default_profile.passport_number,
+                            "expiryDate": default_profile.passport_expiry,
+                            "issuanceCountry": default_profile.passport_country,
+                            "nationality": default_profile.nationality,
+                        }] if default_profile.passport_number else [],
+                    }]
+
+            if not travelers_data:
+                raise ValueError("No traveler information provided")
+
+            # Get contact info
+            contact_email = payload.get("contact_email") or proposal.user_id
+            contact_phone = payload.get("contact_phone", "1234567890")
+
+            # Book flight via Amadeus
+            booking_response = amadeus.book_flight(
+                offer_id=offer_data["id"],
+                offer_data=offer_data,
+                travelers=travelers_data,
+                contact_email=contact_email,
+                contact_phone=contact_phone,
+            )
+
+            # Create booking record
+            booking = Booking(
+                user_id=proposal.user_id,
+                proposal_id=proposal.id,
+                transaction_id=transaction_id,
+                booking_type="flight",
+                provider="amadeus",
+                status="confirmed",
+                confirmation_number=booking_response["confirmation_number"],
+                pnr=booking_response.get("pnr"),
+                payload_json=json.dumps({
+                    **payload,
+                    "booking_response": booking_response,
+                }),
+            )
+            db.add(booking)
+            db.commit()
+            db.refresh(booking)
+
+            return {
+                "booking_id": booking.id,
+                "confirmation_number": booking.confirmation_number,
+                "pnr": booking.pnr,
+                "status": "confirmed",
+                "amadeus_booking_id": booking_response["booking_id"],
+            }
+
+        except Exception as e:
+            # Log error and raise
+            print(f"[Flight Booking] Error: {e}")
+            raise ValueError(f"Flight booking failed: {str(e)}")
 
     @staticmethod
     def _execute_hotel_booking(
@@ -566,26 +630,109 @@ class ExecutionEngine:
         payload: Dict,
         transaction_id: int,
     ) -> Dict:
-        """Execute hotel booking (will be implemented in Stage 11)"""
-        booking = Booking(
-            user_id=proposal.user_id,
-            proposal_id=proposal.id,
-            transaction_id=transaction_id,
-            booking_type="hotel",
-            provider="amadeus",
-            status="pending",
-            payload_json=json.dumps(payload),
-        )
-        db.add(booking)
-        db.commit()
-        db.refresh(booking)
+        """Execute hotel booking via Amadeus API"""
+        from app.services.amadeus_service import AmadeusService
+        from app.db.models import TravelerProfile, PaymentMethod
 
-        # TODO: Call Amadeus API to book hotel
-        return {
-            "booking_id": booking.id,
-            "confirmation_number": f"MOCK-{booking.id}",
-            "status": "confirmed",
-        }
+        try:
+            # Initialize Amadeus service
+            amadeus = AmadeusService()
+
+            # Extract booking details
+            offer_data = payload.get("hotel_offer")
+            offer_id = payload.get("offer_id")
+
+            if not offer_data or not offer_id:
+                raise ValueError("Missing hotel_offer or offer_id in payload")
+
+            # Get guests from payload or user's default profile
+            guests_data = payload.get("guests", [])
+            if not guests_data:
+                # Use default traveler profile
+                default_profile = (
+                    db.query(TravelerProfile)
+                    .filter(
+                        TravelerProfile.user_id == proposal.user_id,
+                        TravelerProfile.is_default == True,
+                    )
+                    .first()
+                )
+
+                if default_profile:
+                    guests_data = [{
+                        "first_name": default_profile.first_name,
+                        "last_name": default_profile.last_name,
+                    }]
+
+            if not guests_data:
+                raise ValueError("No guest information provided")
+
+            # Get contact info
+            contact_email = payload.get("contact_email") or proposal.user_id
+            contact_phone = payload.get("contact_phone", "1234567890")
+
+            # Get payment method
+            payment_method = (
+                db.query(PaymentMethod)
+                .filter(
+                    PaymentMethod.user_id == proposal.user_id,
+                    PaymentMethod.is_default == True,
+                )
+                .first()
+            )
+
+            if not payment_method:
+                raise ValueError("No default payment method found")
+
+            # Format payment card for Amadeus
+            payment_card = {
+                "vendorCode": payment_method.brand.upper() if payment_method.brand else "VI",
+                "cardNumber": "4111111111111111",  # Note: Use actual card number in production
+                "expiryDate": f"{payment_method.exp_year}-{payment_method.exp_month:02d}" if payment_method.exp_month and payment_method.exp_year else None,
+            }
+
+            # Book hotel via Amadeus
+            booking_response = amadeus.book_hotel(
+                offer_id=offer_id,
+                offer_data=offer_data,
+                guests=guests_data,
+                contact_email=contact_email,
+                contact_phone=contact_phone,
+                payment_card=payment_card,
+            )
+
+            # Create booking record
+            booking = Booking(
+                user_id=proposal.user_id,
+                proposal_id=proposal.id,
+                transaction_id=transaction_id,
+                booking_type="hotel",
+                provider="amadeus",
+                status="confirmed",
+                confirmation_number=booking_response["confirmation_number"],
+                payload_json=json.dumps({
+                    **payload,
+                    "booking_response": booking_response,
+                }),
+            )
+            db.add(booking)
+            db.commit()
+            db.refresh(booking)
+
+            return {
+                "booking_id": booking.id,
+                "confirmation_number": booking.confirmation_number,
+                "status": "confirmed",
+                "hotel_name": booking_response.get("hotel_name"),
+                "check_in": booking_response.get("check_in"),
+                "check_out": booking_response.get("check_out"),
+                "amadeus_booking_id": booking_response["booking_id"],
+            }
+
+        except Exception as e:
+            # Log error and raise
+            print(f"[Hotel Booking] Error: {e}")
+            raise ValueError(f"Hotel booking failed: {str(e)}")
 
     @staticmethod
     def _execute_retail_purchase(

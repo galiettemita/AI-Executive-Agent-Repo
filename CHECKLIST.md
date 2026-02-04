@@ -89,15 +89,15 @@ Check items as you complete them.
 - [x] Add `bookings` table (id, user_id, proposal_id, booking_type, status, confirmation_number, provider, provider_booking_id, payload_json).
 - [x] Research and select travel API provider (Amadeus Self-Service or Duffel recommended).
 - [x] Register for Amadeus Self-Service API (free tier: 2000 requests/month).
-- [ ] Implement flight search via Amadeus Flight Offers Search API.
-- [ ] Implement flight booking via Amadeus Flight Create Orders API.
-- [ ] Implement hotel search via Amadeus Hotel Search API.
-- [ ] Implement hotel booking via Amadeus Hotel Booking API.
-- [ ] Add PNR (Passenger Name Record) storage and retrieval.
+- [x] Implement flight search via Amadeus Flight Offers Search API.
+- [x] Implement flight booking via Amadeus Flight Create Orders API.
+- [x] Implement hotel search via Amadeus Hotel Search API.
+- [x] Implement hotel booking via Amadeus Hotel Booking API.
+- [x] Add PNR (Passenger Name Record) storage and retrieval.
 - [ ] Implement booking confirmation email/WhatsApp delivery with e-ticket.
 - [ ] Add cancellation/modification logic with provider API.
 - [x] Handle booking failures with automatic refund trigger.
-- [ ] Add traveler profile storage (passport info, TSA PreCheck, loyalty numbers).
+- [x] Add traveler profile storage (passport info, TSA PreCheck, loyalty numbers).
 - [x] Add environment vars: `AMADEUS_API_KEY`, `AMADEUS_API_SECRET`.
 
 ## Stage 12: Food Delivery Execution

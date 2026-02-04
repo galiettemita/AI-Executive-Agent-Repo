@@ -19,3 +19,4 @@ psycopg[binary]
 alembic==1.13.2
 apscheduler==3.10.4
 reportlab==4.0.7
+amadeus==8.1.0

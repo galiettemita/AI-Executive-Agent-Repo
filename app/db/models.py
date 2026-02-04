@@ -496,3 +496,48 @@ class WebhookDelivery(Base):
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
     delivered_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+# -------------------
+# STAGE 11: TRAVEL PROFILES
+# -------------------
+
+class TravelerProfile(Base):
+    """Stores traveler information for flight and hotel bookings"""
+    __tablename__ = "traveler_profiles"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(String, ForeignKey("users.id"), index=True)
+
+    # Personal information
+    first_name: Mapped[str] = mapped_column(String)
+    last_name: Mapped[str] = mapped_column(String)
+    middle_name: Mapped[str | None] = mapped_column(String, nullable=True)
+    date_of_birth: Mapped[str] = mapped_column(String)  # YYYY-MM-DD
+    gender: Mapped[str] = mapped_column(String)  # MALE, FEMALE, OTHER
+
+    # Contact information
+    email: Mapped[str | None] = mapped_column(String, nullable=True)
+    phone: Mapped[str | None] = mapped_column(String, nullable=True)
+
+    # Passport/ID information
+    passport_number: Mapped[str | None] = mapped_column(String, nullable=True)
+    passport_country: Mapped[str | None] = mapped_column(String, nullable=True)
+    passport_expiry: Mapped[str | None] = mapped_column(String, nullable=True)  # YYYY-MM-DD
+    nationality: Mapped[str | None] = mapped_column(String, nullable=True)
+
+    # Travel preferences
+    known_traveler_number: Mapped[str | None] = mapped_column(String, nullable=True)  # TSA PreCheck
+    redress_number: Mapped[str | None] = mapped_column(String, nullable=True)
+    seat_preference: Mapped[str | None] = mapped_column(String, nullable=True)  # WINDOW, AISLE, MIDDLE
+    meal_preference: Mapped[str | None] = mapped_column(String, nullable=True)  # VEGAN, VEGETARIAN, etc.
+
+    # Frequent flyer programs (JSON)
+    loyalty_programs: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON array
+
+    # Default profile flag
+    is_default: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    # Timestamps
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
