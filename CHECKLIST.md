@@ -73,22 +73,22 @@ Check items as you complete them.
 
 # EXECUTION ENGINE - Production-Grade Booking & Checkout
 
-## Stage 10: Payment Infrastructure (Stripe)
-- [ ] Add `payment_methods` table (user_id, stripe_payment_method_id, type, last4, exp_date).
-- [ ] Add `transactions` table (id, user_id, proposal_id, amount, currency, status, stripe_payment_intent_id, created_at).
-- [ ] Implement Stripe SDK integration for payment intents.
-- [ ] Add payment method registration endpoint (tokenize card via Stripe Elements).
-- [ ] Add 3D Secure (SCA) authentication flow.
-- [ ] Implement payment intent creation with idempotency keys.
-- [ ] Add webhook handler for `payment_intent.succeeded` and `payment_intent.failed`.
-- [ ] Add refund/cancellation logic via Stripe API.
-- [ ] Store payment receipts and generate PDF invoices.
-- [ ] Add Stripe environment vars: `STRIPE_SECRET_KEY`, `STRIPE_PUBLISHABLE_KEY`, `STRIPE_WEBHOOK_SECRET`.
+## Stage 10: Payment Infrastructure (Stripe) ✅
+- [x] Add `payment_methods` table (user_id, stripe_payment_method_id, type, last4, exp_date).
+- [x] Add `transactions` table (id, user_id, proposal_id, amount, currency, status, stripe_payment_intent_id, created_at).
+- [x] Implement Stripe SDK integration for payment intents.
+- [x] Add payment method registration endpoint (tokenize card via Stripe Elements).
+- [x] Add 3D Secure (SCA) authentication flow.
+- [x] Implement payment intent creation with idempotency keys.
+- [x] Add webhook handler for `payment_intent.succeeded` and `payment_intent.failed`.
+- [x] Add refund/cancellation logic via Stripe API.
+- [ ] Store payment receipts and generate PDF invoices (receipts stored, PDF generation pending).
+- [x] Add Stripe environment vars: `STRIPE_SECRET_KEY`, `STRIPE_PUBLISHABLE_KEY`, `STRIPE_WEBHOOK_SECRET`.
 
 ## Stage 11: Travel Booking Execution
-- [ ] Add `bookings` table (id, user_id, proposal_id, booking_type, status, confirmation_number, provider, provider_booking_id, payload_json).
-- [ ] Research and select travel API provider (Amadeus Self-Service or Duffel recommended).
-- [ ] Register for Amadeus Self-Service API (free tier: 2000 requests/month).
+- [x] Add `bookings` table (id, user_id, proposal_id, booking_type, status, confirmation_number, provider, provider_booking_id, payload_json).
+- [x] Research and select travel API provider (Amadeus Self-Service or Duffel recommended).
+- [x] Register for Amadeus Self-Service API (free tier: 2000 requests/month).
 - [ ] Implement flight search via Amadeus Flight Offers Search API.
 - [ ] Implement flight booking via Amadeus Flight Create Orders API.
 - [ ] Implement hotel search via Amadeus Hotel Search API.
@@ -96,9 +96,9 @@ Check items as you complete them.
 - [ ] Add PNR (Passenger Name Record) storage and retrieval.
 - [ ] Implement booking confirmation email/WhatsApp delivery with e-ticket.
 - [ ] Add cancellation/modification logic with provider API.
-- [ ] Handle booking failures with automatic refund trigger.
+- [x] Handle booking failures with automatic refund trigger.
 - [ ] Add traveler profile storage (passport info, TSA PreCheck, loyalty numbers).
-- [ ] Add environment vars: `AMADEUS_API_KEY`, `AMADEUS_API_SECRET`.
+- [x] Add environment vars: `AMADEUS_API_KEY`, `AMADEUS_API_SECRET`.
 
 ## Stage 12: Food Delivery Execution
 - [ ] Research food delivery APIs (DoorDash Drive API or Uber Eats API).
@@ -129,60 +129,60 @@ Check items as you complete them.
 - [ ] Store order history with itemized receipts.
 - [ ] Add environment vars: `TAXJAR_API_KEY`, `EASYPOST_API_KEY`, `AMAZON_ASSOCIATE_TAG`.
 
-## Stage 14: Proposal Approval & Execution Engine
-- [ ] Add `execution_logs` table (id, proposal_id, transaction_id, step, status, error_message, timestamp).
-- [ ] Implement JWT verification for approval links (check expiry, signature).
-- [ ] Add proposal state machine (pending → approved → executing → completed/failed).
-- [ ] Build centralized execution orchestrator service.
-- [ ] Implement pre-execution validation (budget check, payment method, required fields).
-- [ ] Add atomic execution steps with rollback on failure.
-- [ ] Implement retry logic with exponential backoff for transient failures.
-- [ ] Add execution status webhooks to notify user of progress.
-- [ ] Implement "dry run" mode for testing without actual charges.
+## Stage 14: Proposal Approval & Execution Engine ✅
+- [x] Add `execution_logs` table (id, proposal_id, transaction_id, step, status, error_message, timestamp).
+- [x] Implement JWT verification for approval links (check expiry, signature).
+- [x] Add proposal state machine (pending → approved → executing → completed/failed).
+- [x] Build centralized execution orchestrator service.
+- [x] Implement pre-execution validation (budget check, payment method, required fields).
+- [x] Add atomic execution steps with rollback on failure.
+- [x] Implement retry logic with exponential backoff for transient failures.
+- [ ] Add execution status webhooks to notify user of progress (framework ready).
+- [x] Implement "dry run" mode for testing without actual charges.
 - [ ] Add manual intervention queue for flagged transactions.
 - [ ] Build execution dashboard for monitoring pending/failed executions.
 
 ## Stage 15: Safety, Security & Compliance
-- [ ] Enforce "no purchases without proposal + approval" (verify JWT signature).
-- [ ] Add spending limits table (user_id, period, limit_amount, spent_amount, reset_date).
-- [ ] Implement daily/weekly/monthly spending caps per user tier.
-- [ ] Add transaction amount limits (e.g., max $500 per transaction for free tier).
+- [x] Enforce "no purchases without proposal + approval" (verify JWT signature).
+- [x] Add spending limits table (user_id, period, limit_amount, spent_amount, reset_date).
+- [x] Implement daily/weekly/monthly spending caps per user tier.
+- [x] Add transaction amount limits (e.g., max $500 per transaction for free tier).
 - [ ] Implement merchant/category allowlist (block crypto, gambling, etc.).
-- [ ] Add velocity checks (max 5 transactions per hour per user).
+- [x] Add velocity checks (max 5 transactions per hour per user).
 - [ ] Implement fraud detection (unusual patterns, new device, geo mismatch).
 - [ ] Add 2FA requirement for transactions over threshold (e.g., $200).
 - [ ] Implement PII encryption for payment methods and traveler info.
 - [ ] Add GDPR-compliant data deletion endpoint.
-- [ ] Implement structured audit logging with `conversation_id`, `user_id`, `transaction_id`.
+- [x] Implement structured audit logging with `conversation_id`, `user_id`, `transaction_id`.
 - [ ] Add feature flags for gradual rollout (launch-darkly or custom).
 - [ ] Implement rate limiting (10 req/min per user, 100 req/min per IP).
 - [ ] Add abuse detection (block users with >3 chargebacks).
 - [ ] Implement circuit breakers for external API failures.
 
 ## Stage 16: Transaction Management & Recovery
-- [ ] Implement transaction state persistence (in-flight tracking).
-- [ ] Add automatic refund on booking failure (within 24 hours).
-- [ ] Implement partial refund logic (e.g., cancellation fees).
+- [x] Implement transaction state persistence (in-flight tracking).
+- [x] Add automatic refund on booking failure (within 24 hours).
+- [x] Implement partial refund logic (e.g., cancellation fees).
 - [ ] Add dispute management integration with Stripe.
 - [ ] Implement chargeback notification and response handling.
 - [ ] Add reconciliation job (daily comparison of Stripe vs internal ledger).
 - [ ] Implement failed transaction retry queue with manual approval.
 - [ ] Add webhook replay for missed payment/booking events.
-- [ ] Implement idempotency for all payment and booking operations.
+- [x] Implement idempotency for all payment and booking operations.
 - [ ] Add transaction receipt generation (PDF with itemized breakdown).
 - [ ] Implement notification delivery for transaction lifecycle events.
 
 ## Stage 17: Testing & Validation
-- [ ] Create test suite for payment flow (mock Stripe).
+- [x] Create test suite for payment flow (mock Stripe).
 - [ ] Create test suite for travel booking flow (mock Amadeus).
 - [ ] Create test suite for food delivery flow (mock DoorDash).
 - [ ] Create test suite for retail checkout flow.
-- [ ] Add end-to-end tests for complete proposal → approval → execution flow.
-- [ ] Test rollback scenarios (payment fails, booking fails, etc.).
-- [ ] Test edge cases (expired approval link, insufficient funds, API timeout).
+- [x] Add end-to-end tests for complete proposal → approval → execution flow.
+- [x] Test rollback scenarios (payment fails, booking fails, etc.).
+- [x] Test edge cases (expired approval link, insufficient funds, API timeout).
 - [ ] Implement load testing for concurrent execution requests.
 - [ ] Add chaos engineering tests (random API failures, network issues).
-- [ ] Test fraud detection scenarios (velocity limits, amount limits).
+- [x] Test fraud detection scenarios (velocity limits, amount limits).
 - [ ] Validate PII encryption and secure data handling.
 - [ ] Test GDPR data deletion compliance.
 
