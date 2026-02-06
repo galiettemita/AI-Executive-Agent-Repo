@@ -13,20 +13,13 @@ This checklist is organized for **fastest time to market**:
 **Goal**: Professional website where users can discover and access your AI assistant
 
 #### Domain & Infrastructure
-- [ ] **CRITICAL**: Purchase domain name (recommended: Namecheap, Google Domains, or Cloudflare)
-  - Suggested format: `yourproductname.com` or `yourassistant.ai`
-  - Cost: ~$10-15/year
-  - Setup time: 5 minutes
-- [ ] Configure DNS records to point to Vercel (for landing page)
+- [x] **CRITICAL**: Purchase domain name (GoDaddy)
+- [x] Configure DNS records to point to Vercel (for landing page)
 - [ ] Configure custom domain on Render (for backend API)
   - Example: `api.yourproductname.com` → Render backend
-  - Example: `yourproductname.com` → Vercel landing page
 
-#### WhatsApp Business Configuration
+#### WhatsApp Business Configuration (SKIPPED FOR NOW)
 - [ ] **CRITICAL**: Confirm WhatsApp Business phone number (production-ready)
-  - Is this number verified and active?
-  - Is it connected to Meta Business account?
-  - Current status: Testing or Production mode?
 - [ ] Switch Meta WhatsApp app from Test mode to Production mode (if applicable)
 - [ ] Verify WhatsApp webhook URL is configured in Meta dashboard
 - [ ] Test webhook delivery from Meta to Render backend
@@ -34,7 +27,7 @@ This checklist is organized for **fastest time to market**:
 - [ ] Test link opens WhatsApp correctly on mobile and desktop
 
 #### Landing Page Development
-- [ ] **CRITICAL**: Build Next.js landing page with:
+- [x] **CRITICAL**: Build Next.js landing page with:
   - Hero section with product value proposition
   - Feature highlights (travel booking, shopping, food delivery)
   - QR code that opens WhatsApp with your bot
@@ -43,19 +36,17 @@ This checklist is organized for **fastest time to market**:
   - FAQ section
   - Privacy policy & Terms of Service links
   - Responsive design (mobile-first)
-- [ ] Generate QR code image from WhatsApp link
-- [ ] Deploy landing page to Vercel
-- [ ] Configure custom domain on Vercel
-- [ ] Test landing page on mobile and desktop
-- [ ] Test QR code scanning from multiple devices
-- [ ] Verify QR code correctly opens WhatsApp with your bot
-- [ ] Add Google Analytics or Plausible for traffic tracking
+- [x] Deploy landing page to Vercel
+- [x] Configure custom domain on Vercel
+- [x] Test landing page on mobile and desktop
+- [x] Verify all links on landing page work correctly
+- [ ] Generate QR code image from WhatsApp link (skipped - no WhatsApp yet)
+- [ ] Test QR code scanning (skipped - no WhatsApp yet)
+- [ ] Add Google Analytics or Plausible for traffic tracking (optional)
 
-#### Integration Testing
+#### Integration Testing (WhatsApp - SKIPPED FOR NOW)
 - [ ] End-to-end flow: User scans QR → WhatsApp opens → Bot responds
 - [ ] Test onboarding flow through WhatsApp
-- [ ] Verify all links on landing page work correctly
-- [ ] Test landing page load speed (should be <2 seconds)
 
 ---
 
@@ -70,8 +61,8 @@ This checklist is organized for **fastest time to market**:
 - [x] Handle booking failures with automatic refund trigger
 - [x] Add traveler profile storage (passport info, TSA PreCheck, loyalty numbers)
 - [x] Add environment vars: `AMADEUS_API_KEY`, `AMADEUS_API_SECRET`
-- [ ] **CRITICAL**: Implement booking confirmation email/WhatsApp delivery with e-ticket
-- [ ] **CRITICAL**: Add cancellation/modification logic with provider API
+- [x] **CRITICAL**: Implement booking confirmation email/WhatsApp delivery with e-ticket
+- [x] **CRITICAL**: Add cancellation/modification logic with provider API
 
 ### Stage 15: Safety & Security - Production Essentials
 - [x] Enforce "no purchases without proposal + approval" (verify JWT signature)
@@ -82,10 +73,10 @@ This checklist is organized for **fastest time to market**:
 - [x] Implement structured audit logging with `conversation_id`, `user_id`, `transaction_id`
 - [x] Implement transaction state persistence (in-flight tracking)
 - [x] Implement idempotency for all payment and booking operations
-- [ ] **CRITICAL**: Implement rate limiting (10 req/min per user, 100 req/min per IP)
-- [ ] **CRITICAL**: Implement PII encryption for payment methods and traveler info
-- [ ] **CRITICAL**: Add circuit breakers for external API failures (Amadeus, Stripe)
-- [ ] **CRITICAL**: Add GDPR-compliant data deletion endpoint
+- [x] **CRITICAL**: Implement rate limiting (10 req/min per user, 100 req/min per IP)
+- [x] **CRITICAL**: Implement PII encryption for payment methods and traveler info
+- [x] **CRITICAL**: Add circuit breakers for external API failures (Amadeus, Stripe)
+- [x] **CRITICAL**: Add GDPR-compliant data deletion endpoint
 - [ ] Add merchant/category allowlist (block crypto, gambling, etc.)
 - [ ] Implement fraud detection (unusual patterns, new device, geo mismatch)
 - [ ] Add 2FA requirement for transactions over threshold (e.g., $200)
@@ -107,9 +98,9 @@ This checklist is organized for **fastest time to market**:
 - [x] Test rollback scenarios (payment fails, booking fails, etc.)
 - [x] Test edge cases (expired approval link, insufficient funds, API timeout)
 - [x] Test fraud detection scenarios (velocity limits, amount limits)
-- [ ] **CRITICAL**: Create test suite for travel booking flow (mock Amadeus)
-- [ ] **CRITICAL**: Test GDPR data deletion compliance
-- [ ] **CRITICAL**: Validate PII encryption and secure data handling
+- [x] **CRITICAL**: Create test suite for travel booking flow (mock Amadeus)
+- [x] **CRITICAL**: Test GDPR data deletion compliance
+- [x] **CRITICAL**: Validate PII encryption and secure data handling
 - [ ] Implement load testing for concurrent execution requests
 - [ ] Add chaos engineering tests (random API failures, network issues)
 
@@ -437,5 +428,5 @@ flake8 app/ tests/
 
 ---
 
-**Last Updated**: 2026-02-04
-**Status**: PRE-LAUNCH - Ready for final critical items before deployment
+**Last Updated**: 2026-02-06
+**Status**: PRE-LAUNCH - Domain + Landing Page LIVE, Stage 15 + 17 Complete, WhatsApp skipped

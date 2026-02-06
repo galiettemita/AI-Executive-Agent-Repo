@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import stripe
 from typing import Dict, Optional
 from sqlalchemy.orm import Session
 
 from app.db.models import PaymentMethod, Transaction, SpendingLimit, User
+from app.services.circuit_breaker import stripe_breaker, CircuitBreakerError
+
+logger = logging.getLogger(__name__)
 
 # Initialize Stripe with secret key
 stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
@@ -35,8 +39,13 @@ class StripeService:
         Returns:
             PaymentMethod: Created or updated payment method
         """
-        # Retrieve payment method details from Stripe
-        pm = stripe.PaymentMethod.retrieve(stripe_payment_method_id)
+        # Retrieve payment method details from Stripe (with circuit breaker)
+        try:
+            with stripe_breaker:
+                pm = stripe.PaymentMethod.retrieve(stripe_payment_method_id)
+        except CircuitBreakerError as e:
+            logger.warning(f"Stripe circuit breaker open: {e}")
+            raise ValueError("Payment service is temporarily unavailable. Please try again later.")
 
         # If this is the default, unset other defaults
         if is_default:
@@ -145,7 +154,13 @@ class StripeService:
         if idempotency_key:
             request_options["idempotency_key"] = idempotency_key
 
-        payment_intent = stripe.PaymentIntent.create(**intent_params, **request_options)
+        # Create payment intent with circuit breaker
+        try:
+            with stripe_breaker:
+                payment_intent = stripe.PaymentIntent.create(**intent_params, **request_options)
+        except CircuitBreakerError as e:
+            logger.warning(f"Stripe circuit breaker open: {e}")
+            raise ValueError("Payment service is temporarily unavailable. Please try again later.")
 
         # Create transaction record
         transaction = Transaction(
@@ -189,8 +204,13 @@ class StripeService:
         if not transaction.stripe_payment_intent_id:
             raise ValueError("No payment intent associated with transaction")
 
-        # Confirm the payment intent
-        intent = stripe.PaymentIntent.confirm(transaction.stripe_payment_intent_id)
+        # Confirm the payment intent with circuit breaker
+        try:
+            with stripe_breaker:
+                intent = stripe.PaymentIntent.confirm(transaction.stripe_payment_intent_id)
+        except CircuitBreakerError as e:
+            logger.warning(f"Stripe circuit breaker open: {e}")
+            raise ValueError("Payment service is temporarily unavailable. Please try again later.")
 
         # Update transaction status based on intent status
         if intent.status == "succeeded":
@@ -253,12 +273,17 @@ class StripeService:
         # Calculate refund amount in cents
         refund_amount_cents = int(amount * 100) if amount else int(transaction.amount * 100)
 
-        # Create Stripe refund
-        refund = stripe.Refund.create(
-            payment_intent=transaction.stripe_payment_intent_id,
-            amount=refund_amount_cents,
-            reason=reason or "requested_by_customer",
-        )
+        # Create Stripe refund with circuit breaker
+        try:
+            with stripe_breaker:
+                refund = stripe.Refund.create(
+                    payment_intent=transaction.stripe_payment_intent_id,
+                    amount=refund_amount_cents,
+                    reason=reason or "requested_by_customer",
+                )
+        except CircuitBreakerError as e:
+            logger.warning(f"Stripe circuit breaker open: {e}")
+            raise ValueError("Payment service is temporarily unavailable. Please try again later.")
 
         # Update transaction
         transaction.status = "refunded" if not amount or amount == transaction.amount else "partially_refunded"

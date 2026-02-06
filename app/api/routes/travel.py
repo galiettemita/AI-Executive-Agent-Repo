@@ -11,6 +11,7 @@ import json
 from app.db.database import get_db
 from app.db.models import TravelerProfile
 from app.services.amadeus_service import AmadeusService
+from app.services.encryption_service import encrypt_pii, decrypt_pii
 
 router = APIRouter(prefix="/travel", tags=["travel"])
 
@@ -243,22 +244,22 @@ def create_traveler_profile(
             TravelerProfile.is_default == True,
         ).update({"is_default": False})
 
-    # Create profile
+    # Create profile with encrypted PII fields
     profile = TravelerProfile(
         user_id=user_id,
         first_name=request.first_name,
         last_name=request.last_name,
         middle_name=request.middle_name,
-        date_of_birth=request.date_of_birth,
+        date_of_birth=encrypt_pii(request.date_of_birth),  # Encrypted
         gender=request.gender,
-        email=request.email,
-        phone=request.phone,
-        passport_number=request.passport_number,
+        email=encrypt_pii(request.email),  # Encrypted
+        phone=encrypt_pii(request.phone),  # Encrypted
+        passport_number=encrypt_pii(request.passport_number),  # Encrypted
         passport_country=request.passport_country,
         passport_expiry=request.passport_expiry,
         nationality=request.nationality,
-        known_traveler_number=request.known_traveler_number,
-        redress_number=request.redress_number,
+        known_traveler_number=encrypt_pii(request.known_traveler_number),  # Encrypted
+        redress_number=encrypt_pii(request.redress_number),  # Encrypted
         seat_preference=request.seat_preference,
         meal_preference=request.meal_preference,
         loyalty_programs=json.dumps(request.loyalty_programs) if request.loyalty_programs else None,
@@ -275,7 +276,7 @@ def create_traveler_profile(
             "id": profile.id,
             "first_name": profile.first_name,
             "last_name": profile.last_name,
-            "date_of_birth": profile.date_of_birth,
+            "date_of_birth": decrypt_pii(profile.date_of_birth),  # Decrypted for response
             "is_default": profile.is_default,
             "created_at": profile.created_at.isoformat(),
         },
@@ -302,9 +303,9 @@ def list_traveler_profiles(
                 "first_name": p.first_name,
                 "last_name": p.last_name,
                 "middle_name": p.middle_name,
-                "date_of_birth": p.date_of_birth,
+                "date_of_birth": decrypt_pii(p.date_of_birth),  # Decrypted
                 "gender": p.gender,
-                "passport_number": p.passport_number,
+                "passport_number": decrypt_pii(p.passport_number),  # Decrypted (masked in list)
                 "is_default": p.is_default,
                 "created_at": p.created_at.isoformat(),
             }
@@ -333,16 +334,16 @@ def get_traveler_profile(
             "first_name": profile.first_name,
             "last_name": profile.last_name,
             "middle_name": profile.middle_name,
-            "date_of_birth": profile.date_of_birth,
+            "date_of_birth": decrypt_pii(profile.date_of_birth),  # Decrypted
             "gender": profile.gender,
-            "email": profile.email,
-            "phone": profile.phone,
-            "passport_number": profile.passport_number,
+            "email": decrypt_pii(profile.email),  # Decrypted
+            "phone": decrypt_pii(profile.phone),  # Decrypted
+            "passport_number": decrypt_pii(profile.passport_number),  # Decrypted
             "passport_country": profile.passport_country,
             "passport_expiry": profile.passport_expiry,
             "nationality": profile.nationality,
-            "known_traveler_number": profile.known_traveler_number,
-            "redress_number": profile.redress_number,
+            "known_traveler_number": decrypt_pii(profile.known_traveler_number),  # Decrypted
+            "redress_number": decrypt_pii(profile.redress_number),  # Decrypted
             "seat_preference": profile.seat_preference,
             "meal_preference": profile.meal_preference,
             "loyalty_programs": json.loads(profile.loyalty_programs) if profile.loyalty_programs else [],

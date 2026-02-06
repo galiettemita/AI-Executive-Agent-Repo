@@ -600,6 +600,7 @@ class ExecutionEngine:
                 provider="amadeus",
                 status="confirmed",
                 confirmation_number=booking_response["confirmation_number"],
+                provider_booking_id=booking_response["booking_id"],
                 pnr=booking_response.get("pnr"),
                 payload_json=json.dumps({
                     **payload,
@@ -710,6 +711,7 @@ class ExecutionEngine:
                 provider="amadeus",
                 status="confirmed",
                 confirmation_number=booking_response["confirmation_number"],
+                provider_booking_id=booking_response["booking_id"],
                 payload_json=json.dumps({
                     **payload,
                     "booking_response": booking_response,
@@ -769,7 +771,90 @@ class ExecutionEngine:
         booking_result: Dict,
     ):
         """Send booking confirmation via WhatsApp"""
-        # TODO: Implement WhatsApp confirmation message
-        # For now, just log
-        print(f"[ExecutionEngine] Booking confirmed: {booking_result}")
-        pass
+        from app.db.models import Booking, TravelerProfile
+        from app.services.email_service import send_booking_confirmation
+        from app.services.eticket_service import generate_eticket_pdf
+        from app.services.encryption_service import decrypt_pii
+        from app.services.notification_delivery import send_whatsapp_message
+
+        booking_id = booking_result.get("booking_id")
+        if not booking_id:
+            print("[ExecutionEngine] No booking_id in booking_result; skipping confirmation send")
+            return
+
+        booking = db.query(Booking).filter(Booking.id == booking_id).first()
+        if not booking:
+            print(f"[ExecutionEngine] Booking {booking_id} not found; skipping confirmation send")
+            return
+
+        try:
+            payload = json.loads(booking.payload_json) if booking.payload_json else {}
+        except json.JSONDecodeError:
+            payload = {}
+
+        # Determine contact email (payload, default profile, or user_id if it's an email)
+        contact_email = payload.get("contact_email")
+        if not contact_email:
+            default_profile = (
+                db.query(TravelerProfile)
+                .filter(
+                    TravelerProfile.user_id == booking.user_id,
+                    TravelerProfile.is_default == True,
+                )
+                .first()
+            )
+            if default_profile and default_profile.email:
+                contact_email = decrypt_pii(default_profile.email)
+
+        if not contact_email and "@" in proposal.user_id:
+            contact_email = proposal.user_id
+
+        # Generate e-ticket for flight bookings
+        eticket_path = None
+        if booking.booking_type == "flight":
+            eticket_path = generate_eticket_pdf(db, booking.id)
+
+        booking_details = {
+            "confirmation_number": booking.confirmation_number,
+            "pnr": booking.pnr,
+            "total_price": payload.get("total_price", 0),
+            "currency": payload.get("currency", "USD"),
+            "itineraries": payload.get("itineraries", []),
+            "hotel_name": payload.get("hotel_name"),
+            "check_in": payload.get("check_in"),
+            "check_out": payload.get("check_out"),
+        }
+
+        # Send confirmation email (best-effort)
+        if contact_email:
+            email_ok = send_booking_confirmation(
+                to_email=contact_email,
+                booking_type=booking.booking_type,
+                confirmation_number=booking.confirmation_number or str(booking.id),
+                booking_details=booking_details,
+                eticket_pdf_path=eticket_path,
+            )
+            if not email_ok:
+                print(f"[ExecutionEngine] Confirmation email failed for booking {booking.id}")
+
+        # Send WhatsApp confirmation (best-effort)
+        message_lines = [
+            "Your booking is confirmed.",
+            f"Type: {booking.booking_type}",
+            f"Confirmation: {booking.confirmation_number or booking.id}",
+        ]
+        if booking.pnr:
+            message_lines.append(f"PNR: {booking.pnr}")
+        if booking.booking_type == "hotel":
+            if booking_details.get("hotel_name"):
+                message_lines.append(f"Hotel: {booking_details.get('hotel_name')}")
+            if booking_details.get("check_in") and booking_details.get("check_out"):
+                message_lines.append(
+                    f"Dates: {booking_details.get('check_in')} to {booking_details.get('check_out')}"
+                )
+        if contact_email and booking.booking_type == "flight":
+            message_lines.append(f"E-ticket sent to: {contact_email}")
+        elif contact_email:
+            message_lines.append(f"Confirmation sent to: {contact_email}")
+
+        send_whatsapp_message(booking.user_id, "\n".join(message_lines))

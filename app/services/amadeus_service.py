@@ -4,9 +4,14 @@ from __future__ import annotations
 
 import os
 import json
+import logging
 from typing import Dict, List, Optional, Any
 from datetime import datetime, date
 from amadeus import Client, ResponseError
+
+from app.services.circuit_breaker import amadeus_breaker, CircuitBreakerError
+
+logger = logging.getLogger(__name__)
 
 
 class AmadeusService:
@@ -67,7 +72,9 @@ class AmadeusService:
             if return_date:
                 params["returnDate"] = return_date
 
-            response = self.client.shopping.flight_offers_search.get(**params)
+            # Use circuit breaker for API call
+            with amadeus_breaker:
+                response = self.client.shopping.flight_offers_search.get(**params)
 
             # Parse and format results
             offers = []
@@ -77,6 +84,9 @@ class AmadeusService:
 
             return offers
 
+        except CircuitBreakerError as e:
+            logger.warning(f"Amadeus circuit breaker open: {e}")
+            raise ValueError("Flight search service is temporarily unavailable. Please try again later.")
         except ResponseError as error:
             raise ValueError(f"Amadeus API error: {error}")
 
@@ -176,7 +186,9 @@ class AmadeusService:
                 }
             }
 
-            response = self.client.booking.flight_orders.post(booking_data)
+            # Use circuit breaker for API call
+            with amadeus_breaker:
+                response = self.client.booking.flight_orders.post(booking_data)
 
             # Parse booking response
             order = response.data
@@ -193,6 +205,9 @@ class AmadeusService:
                 "raw_order": order,
             }
 
+        except CircuitBreakerError as e:
+            logger.warning(f"Amadeus circuit breaker open: {e}")
+            raise ValueError("Flight booking service is temporarily unavailable. Please try again later.")
         except ResponseError as error:
             raise ValueError(f"Booking failed: {error}")
 
@@ -210,9 +225,11 @@ class AmadeusService:
             Dict with confirmed pricing
         """
         try:
-            response = self.client.shopping.flight_offers.pricing.post(
-                offer_data["raw_offer"]
-            )
+            # Use circuit breaker for API call
+            with amadeus_breaker:
+                response = self.client.shopping.flight_offers.pricing.post(
+                    offer_data["raw_offer"]
+                )
 
             confirmed_offer = response.data["flightOffers"][0]
 
@@ -223,6 +240,9 @@ class AmadeusService:
                 "offer_data": confirmed_offer,
             }
 
+        except CircuitBreakerError as e:
+            logger.warning(f"Amadeus circuit breaker open: {e}")
+            raise ValueError("Price confirmation service is temporarily unavailable. Please try again later.")
         except ResponseError as error:
             raise ValueError(f"Price confirmation failed: {error}")
 
@@ -256,10 +276,12 @@ class AmadeusService:
             List of hotel offers
         """
         try:
-            # First, get hotel list by city
-            hotels_response = self.client.reference_data.locations.hotels.by_city.get(
-                cityCode=city_code
-            )
+            # Use circuit breaker for API calls
+            with amadeus_breaker:
+                # First, get hotel list by city
+                hotels_response = self.client.reference_data.locations.hotels.by_city.get(
+                    cityCode=city_code
+                )
 
             if not hotels_response.data:
                 return []
@@ -267,13 +289,14 @@ class AmadeusService:
             # Get hotel IDs (limit to max_results)
             hotel_ids = [hotel["hotelId"] for hotel in hotels_response.data[:max_results]]
 
-            # Search for offers
-            offers_response = self.client.shopping.hotel_offers_search.get(
-                hotelIds=",".join(hotel_ids),
-                checkInDate=check_in_date,
-                checkOutDate=check_out_date,
-                adults=adults,
-            )
+            with amadeus_breaker:
+                # Search for offers
+                offers_response = self.client.shopping.hotel_offers_search.get(
+                    hotelIds=",".join(hotel_ids),
+                    checkInDate=check_in_date,
+                    checkOutDate=check_out_date,
+                    adults=adults,
+                )
 
             # Parse results
             hotels = []
@@ -283,6 +306,9 @@ class AmadeusService:
 
             return hotels
 
+        except CircuitBreakerError as e:
+            logger.warning(f"Amadeus circuit breaker open: {e}")
+            raise ValueError("Hotel search service is temporarily unavailable. Please try again later.")
         except ResponseError as error:
             raise ValueError(f"Hotel search failed: {error}")
 
@@ -312,12 +338,14 @@ class AmadeusService:
             List of hotel offers
         """
         try:
-            # Get hotels by geocode
-            hotels_response = self.client.reference_data.locations.hotels.by_geocode.get(
-                latitude=latitude,
-                longitude=longitude,
-                radius=radius,
-            )
+            # Use circuit breaker for API calls
+            with amadeus_breaker:
+                # Get hotels by geocode
+                hotels_response = self.client.reference_data.locations.hotels.by_geocode.get(
+                    latitude=latitude,
+                    longitude=longitude,
+                    radius=radius,
+                )
 
             if not hotels_response.data:
                 return []
@@ -325,13 +353,14 @@ class AmadeusService:
             # Get hotel IDs
             hotel_ids = [hotel["hotelId"] for hotel in hotels_response.data[:max_results]]
 
-            # Search for offers
-            offers_response = self.client.shopping.hotel_offers_search.get(
-                hotelIds=",".join(hotel_ids),
-                checkInDate=check_in_date,
-                checkOutDate=check_out_date,
-                adults=adults,
-            )
+            with amadeus_breaker:
+                # Search for offers
+                offers_response = self.client.shopping.hotel_offers_search.get(
+                    hotelIds=",".join(hotel_ids),
+                    checkInDate=check_in_date,
+                    checkOutDate=check_out_date,
+                    adults=adults,
+                )
 
             # Parse results
             hotels = []
@@ -341,6 +370,9 @@ class AmadeusService:
 
             return hotels
 
+        except CircuitBreakerError as e:
+            logger.warning(f"Amadeus circuit breaker open: {e}")
+            raise ValueError("Hotel search service is temporarily unavailable. Please try again later.")
         except ResponseError as error:
             raise ValueError(f"Hotel search failed: {error}")
 
@@ -425,7 +457,9 @@ class AmadeusService:
                 }
             }
 
-            response = self.client.booking.hotel_bookings.post(booking_data)
+            # Use circuit breaker for API call
+            with amadeus_breaker:
+                response = self.client.booking.hotel_bookings.post(booking_data)
 
             # Parse response
             booking = response.data[0]
@@ -443,6 +477,9 @@ class AmadeusService:
                 "raw_booking": booking,
             }
 
+        except CircuitBreakerError as e:
+            logger.warning(f"Amadeus circuit breaker open: {e}")
+            raise ValueError("Hotel booking service is temporarily unavailable. Please try again later.")
         except ResponseError as error:
             raise ValueError(f"Hotel booking failed: {error}")
 
@@ -481,3 +518,110 @@ class AmadeusService:
 
         except ResponseError as error:
             return None
+
+    # -------------------
+    # CANCELLATION METHODS
+    # -------------------
+
+    def cancel_flight_order(self, order_id: str) -> Dict:
+        """
+        Cancel a flight order.
+
+        Note: Amadeus Self-Service API has limited cancellation support.
+        This method attempts to delete the flight order.
+
+        Args:
+            order_id: The Amadeus flight order ID
+
+        Returns:
+            Dict with cancellation status
+        """
+        try:
+            with amadeus_breaker:
+                # Amadeus Flight Orders API - DELETE method
+                response = self.client.booking.flight_order(order_id).delete()
+
+            return {
+                "success": True,
+                "order_id": order_id,
+                "status": "cancelled",
+                "message": "Flight order cancelled successfully",
+            }
+
+        except CircuitBreakerError as e:
+            logger.warning(f"Amadeus circuit breaker open: {e}")
+            raise ValueError("Cancellation service is temporarily unavailable. Please try again later.")
+        except ResponseError as error:
+            # Check if it's a "not cancellable" error
+            error_detail = str(error)
+            if "UNABLE TO PROCESS" in error_detail.upper() or "NOT CANCELLABLE" in error_detail.upper():
+                raise ValueError(
+                    "This booking cannot be cancelled online. Please contact the airline directly."
+                )
+            raise ValueError(f"Cancellation failed: {error}")
+
+    def get_flight_order(self, order_id: str) -> Dict:
+        """
+        Get flight order details.
+
+        Args:
+            order_id: The Amadeus flight order ID
+
+        Returns:
+            Dict with order details
+        """
+        try:
+            with amadeus_breaker:
+                response = self.client.booking.flight_order(order_id).get()
+
+            order = response.data
+
+            return {
+                "order_id": order["id"],
+                "status": order.get("type", "flight-order"),
+                "travelers": order.get("travelers", []),
+                "flight_offers": order.get("flightOffers", []),
+                "raw_order": order,
+            }
+
+        except CircuitBreakerError as e:
+            logger.warning(f"Amadeus circuit breaker open: {e}")
+            raise ValueError("Service is temporarily unavailable. Please try again later.")
+        except ResponseError as error:
+            raise ValueError(f"Failed to retrieve order: {error}")
+
+    def cancel_hotel_booking(self, booking_id: str) -> Dict:
+        """
+        Cancel a hotel booking.
+
+        Note: Hotel cancellation support varies by property and rate.
+        Some bookings may be non-refundable.
+
+        Args:
+            booking_id: The Amadeus hotel booking ID
+
+        Returns:
+            Dict with cancellation status
+        """
+        try:
+            with amadeus_breaker:
+                # Amadeus Hotel Bookings API - DELETE method
+                response = self.client.booking.hotel_booking(booking_id).delete()
+
+            return {
+                "success": True,
+                "booking_id": booking_id,
+                "status": "cancelled",
+                "message": "Hotel booking cancelled successfully",
+            }
+
+        except CircuitBreakerError as e:
+            logger.warning(f"Amadeus circuit breaker open: {e}")
+            raise ValueError("Cancellation service is temporarily unavailable. Please try again later.")
+        except ResponseError as error:
+            error_detail = str(error)
+            if "NON-REFUNDABLE" in error_detail.upper():
+                raise ValueError(
+                    "This hotel booking is non-refundable and cannot be cancelled."
+                )
+            raise ValueError(f"Hotel cancellation failed: {error}")

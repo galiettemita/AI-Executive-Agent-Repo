@@ -7,12 +7,17 @@ from dotenv import load_dotenv
 # Load env FIRST (before importing modules that read env vars)
 load_dotenv()
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 # Import DB AFTER env is loaded so DATABASE_URL is correct
 from app.db.database import Base, engine  # noqa: E402
 import app.db.models  # noqa: F401, E402
+
+# Rate limiting
+from app.middleware.rate_limiter import limiter, setup_rate_limiting  # noqa: E402
+from slowapi.errors import RateLimitExceeded  # noqa: E402
 
 from app.api.routes.health import router as health_router  # noqa: E402
 from app.api.routes.chat import router as chat_router  # noqa: E402
@@ -36,6 +41,7 @@ from app.api.routes.webhooks import router as webhooks_router  # noqa: E402
 from app.api.routes.intervention import router as intervention_router  # noqa: E402
 from app.api.routes.dashboard import router as dashboard_router  # noqa: E402
 from app.api.routes.travel import router as travel_router  # noqa: E402
+from app.api.routes.gdpr import router as gdpr_router  # noqa: E402
 
 
 app = FastAPI(
@@ -55,6 +61,25 @@ if origins:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+# --- Rate Limiting ---
+# Add rate limiter to app state
+app.state.limiter = limiter
+
+# Custom rate limit exceeded handler
+@app.exception_handler(RateLimitExceeded)
+async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
+    return JSONResponse(
+        status_code=429,
+        content={
+            "error": "rate_limit_exceeded",
+            "message": "Too many requests. Please slow down.",
+            "retry_after": exc.detail,
+        },
+    )
+
+# Setup rate limiting middleware
+setup_rate_limiting(app)
 
 # Routers
 app.include_router(health_router, tags=["health"])
@@ -79,6 +104,7 @@ app.include_router(webhooks_router)
 app.include_router(intervention_router)
 app.include_router(dashboard_router)
 app.include_router(travel_router)
+app.include_router(gdpr_router)
 
 # Friendly root so Render URL doesn't show 404
 @app.get("/")
