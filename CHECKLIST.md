@@ -47,28 +47,28 @@
 
 These are specific changes to existing files to fix identity, config, and production readiness.
 
-### App identity & naming
+### App identity & naming ✅
 
-- [ ] **`app/main.py`**: Change `title="Shopping Assistant Backend"` → `"Executive AI Agent"`
-- [ ] **`app/main.py`**: Update root endpoint `"service"` value to `"Executive AI Agent"`
-- [ ] **`app/main.py`**: Remove comment `"Create tables at startup (MVP)"` — Alembic handles migrations
+- [x] **`app/main.py`**: Change `title="Shopping Assistant Backend"` → `"Executive AI Agent"`
+- [x] **`app/main.py`**: Update root endpoint `"service"` value to `"Executive AI Agent"`
+- [x] **`app/main.py`**: Remove comment `"Create tables at startup (MVP)"` — Alembic handles migrations
 
-### Config hardening (`app/core/config.py`)
+### Config hardening (`app/core/config.py`) ✅
 
-- [ ] Add production guard: raise error if `JWT_SECRET == "dev_only_change_me"` when `ENV != "dev"`
-- [ ] Add `ENV: str = "dev"` setting to distinguish environments
-- [ ] Centralize ALL env vars into `Settings` class — currently `STRIPE_*`, `AMADEUS_*`, `OPENAI_API_KEY`, `PII_ENCRYPTION_KEY` are read directly from `os.environ` in service files instead of from Settings
-- [ ] Add `REDIS_URL: str | None = None` to Settings
-- [ ] Add `MONGODB_URI: str | None = None` to Settings
-- [ ] Add `CELERY_BROKER_URL: str | None = None` to Settings
-- [ ] Add validation: warn on startup if critical keys are missing (OPENAI_API_KEY, DATABASE_URL, PII_ENCRYPTION_KEY)
+- [x] Add production guard: raise error if `JWT_SECRET == "dev_only_change_me"` when `ENV != "dev"`
+- [x] Add `ENV: str = "dev"` setting to distinguish environments
+- [x] Centralize ALL env vars into `Settings` class — all 55+ env vars now in Settings; all 33 service files updated to use `settings.*` instead of `os.getenv()`
+- [x] Add `REDIS_URL: str | None = None` to Settings
+- [x] Add `MONGODB_URI: str | None = None` to Settings
+- [x] Add `CELERY_BROKER_URL: str | None = None` to Settings
+- [x] Add validation: warn on startup if critical keys are missing (OPENAI_API_KEY, PII_ENCRYPTION_KEY)
 
-### Health & readiness (`app/api/routes/health.py`)
+### Health & readiness (`app/api/routes/health.py`) ✅
 
-- [ ] Add **readiness** endpoint (`/health/ready`): check DB connectivity (`SELECT 1`), Redis ping (when added), critical env vars present
-- [ ] Add **liveness** endpoint (`/health/live`): simple 200 (process is up) — for Kubernetes probes
-- [ ] Return `503` if any readiness check fails
-- [ ] Include version/commit hash in health response for deployment tracking
+- [x] Add **readiness** endpoint (`/health/ready`): check DB connectivity, Redis ping (when configured), critical env vars present
+- [x] Add **liveness** endpoint (`/health/live`): simple 200 (process is up) — for Kubernetes probes
+- [x] Return `503` if any readiness check fails
+- [x] Include version/commit hash in health response for deployment tracking
 
 ### Execution engine TODOs (`app/services/execution_engine.py`)
 
@@ -76,11 +76,19 @@ These are specific changes to existing files to fix identity, config, and produc
 - [ ] Replace `# TODO: Implement retail checkout` — either integrate a real retail/affiliate API or remove mock
 - [ ] These are the only remaining placeholder TODOs in the execution engine
 
-### Logging cleanup
+### Logging cleanup ✅
 
-- [ ] **`app/services/scheduler.py`**: Replace all `print(...)` with `logging.getLogger(__name__).info/error`
-- [ ] Audit all 49 service files: ensure no `print()` used for operational messages — use structured logging
-- [ ] Add a logging config module (`app/core/logging.py`) with JSON formatter for production
+- [x] **`app/services/scheduler.py`**: Replace all `print(...)` with `logging.getLogger(__name__).info/error`
+- [x] Audit all 49 service files: ensure no `print()` used for operational messages — use structured logging
+- [x] Add a logging config module (`app/core/logging_config.py`) with structured formatter for production
+
+### Production security hardening ✅
+
+- [x] Enforce auth middleware for non-webhook endpoints in staging/production (JWT or signed headers)
+- [x] Verify WhatsApp webhook signatures when `WHATSAPP_APP_SECRET` is configured
+- [x] Verify Twilio webhook signatures for voice callbacks
+- [x] Remove PII-heavy logs from WhatsApp flows + mask phone numbers in notifications
+- [x] Fix rate limiter import/indentation bug that could break startup
 
 ### API documentation
 

@@ -13,13 +13,14 @@ Uses in-memory storage by default, with optional Redis backend for production.
 
 from __future__ import annotations
 
-from typing import Optional, Callable
+from typing import Callable
 
-from fastapi import Request, Response
+from fastapi import Request
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 
+from app.core.config import settings
 
 def get_user_identifier(request: Request) -> str:
     """
@@ -157,7 +158,6 @@ def setup_rate_limiting(app):
     """
     from slowapi.middleware import SlowAPIMiddleware
     from slowapi.errors import RateLimitExceeded
-from app.core.config import settings
 
     # Add limiter to app state
     app.state.limiter = limiter

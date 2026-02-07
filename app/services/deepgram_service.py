@@ -156,7 +156,6 @@ class DeepgramLiveTranscription:
     async def connect(self):
         """Establish WebSocket connection to Deepgram."""
         import websockets
-from app.core.config import settings
 
         params = (
             f"?encoding={self.encoding}"

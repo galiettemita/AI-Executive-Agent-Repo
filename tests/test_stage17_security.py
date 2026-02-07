@@ -45,6 +45,7 @@ from app.services.encryption_service import (
     get_encryption_service,
     ENCRYPTED_FIELDS,
 )
+from app.core.config import settings
 
 # Clear the encryption service cache to pick up test env vars
 get_encryption_service.cache_clear()
@@ -531,6 +532,8 @@ class TestTravelBookingFlow:
             "AMADEUS_API_KEY": "test_key",
             "AMADEUS_API_SECRET": "test_secret"
         }):
+            settings.AMADEUS_API_KEY = "test_key"
+            settings.AMADEUS_API_SECRET = "test_secret"
             service = AmadeusService()
             offers = service.search_flights(
                 origin="JFK",
@@ -566,6 +569,8 @@ class TestTravelBookingFlow:
             "AMADEUS_API_KEY": "test_key",
             "AMADEUS_API_SECRET": "test_secret"
         }):
+            settings.AMADEUS_API_KEY = "test_key"
+            settings.AMADEUS_API_SECRET = "test_secret"
             service = AmadeusService()
 
             # Trigger failures

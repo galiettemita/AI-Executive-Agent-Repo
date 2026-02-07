@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+import logging
 from typing import Any, Dict, List, Optional
 
 from googleapiclient.discovery import build
 from sqlalchemy.orm import Session
 
 from app.services.google_oauth import get_valid_google_credentials
+
+logger = logging.getLogger(__name__)
 
 
 def create_calendar_event(
@@ -163,5 +166,5 @@ def get_events_for_daily_brief(
         return simplified_events
 
     except Exception as e:
-        print(f"Error fetching calendar events for daily brief (user {user_id}): {e}")
+        logger.error("Error fetching calendar events for daily brief (user %s): %s", user_id, e)
         return []

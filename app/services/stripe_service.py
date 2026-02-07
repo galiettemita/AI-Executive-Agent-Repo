@@ -223,7 +223,7 @@ class StripeService:
                 invoice_path = InvoiceService.generate_invoice_pdf(db, transaction.id)
                 transaction.invoice_pdf_path = invoice_path
             except Exception as e:
-                print(f"[Stripe] Failed to generate invoice for transaction {transaction.id}: {e}")
+                logger.error("[Stripe] Failed to generate invoice for transaction %s: %s", transaction.id, e)
                 # Don't fail the transaction if invoice generation fails
 
         elif intent.status == "requires_action":
@@ -324,7 +324,6 @@ class StripeService:
 
         # Get user's subscription to determine limits
         from app.db.models import Subscription
-from app.core.config import settings
 
         subscription = db.query(Subscription).filter(Subscription.user_id == user_id).first()
         plan = subscription.plan if subscription else "free"

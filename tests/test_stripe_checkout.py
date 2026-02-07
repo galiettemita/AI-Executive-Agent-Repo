@@ -4,6 +4,7 @@ from fastapi.testclient import TestClient
 
 from app.main import app
 import app.api.routes.billing_stripe as billing_stripe
+from app.core.config import settings
 
 
 def test_stripe_checkout_returns_url(monkeypatch):
@@ -12,6 +13,10 @@ def test_stripe_checkout_returns_url(monkeypatch):
     monkeypatch.setenv("STRIPE_PRICE_ID_STARTER", "price_dummy")
     monkeypatch.setenv("CHECKOUT_SUCCESS_URL", "https://example.com/success")
     monkeypatch.setenv("CHECKOUT_CANCEL_URL", "https://example.com/cancel")
+    settings.STRIPE_SECRET_KEY = "sk_test_dummy"
+    settings.STRIPE_PRICE_ID_STARTER = "price_dummy"
+    settings.CHECKOUT_SUCCESS_URL = "https://example.com/success"
+    settings.CHECKOUT_CANCEL_URL = "https://example.com/cancel"
 
     # Patch stripe client calls
     def fake_customer_create(metadata=None):

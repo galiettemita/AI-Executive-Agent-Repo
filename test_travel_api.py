@@ -1,15 +1,20 @@
 #!/usr/bin/env python3
 """
-Simple script to test travel booking API endpoints.
-Run this with: python test_travel_api.py
+Live integration tests for travel endpoints.
+Run with: RUN_LIVE_TESTS=1 BASE_URL=http://localhost:8000 python -m pytest -q
 """
 
+import os
 import httpx
 import json
 from datetime import datetime, timedelta
+import pytest
+
+if os.getenv("RUN_LIVE_TESTS") != "1":
+    pytest.skip("Set RUN_LIVE_TESTS=1 to run live travel API tests.", allow_module_level=True)
 
 # Base URL - update if testing on Render
-BASE_URL = "http://localhost:8000"
+BASE_URL = os.getenv("BASE_URL", "http://localhost:8000")
 
 # Test user ID
 TEST_USER_ID = "test_user_travel_123"

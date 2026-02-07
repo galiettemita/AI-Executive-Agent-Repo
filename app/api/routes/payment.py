@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import stripe
 from fastapi import APIRouter, Depends, HTTPException, Request, Header
@@ -11,6 +12,9 @@ from sqlalchemy.orm import Session
 from app.db.database import get_db
 from app.db.models import PaymentMethod, Transaction, User
 from app.services.stripe_service import StripeService
+from app.core.config import settings
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/payment", tags=["payment"])
 
@@ -307,11 +311,11 @@ async def stripe_webhook(
                     invoice_path = InvoiceService.generate_invoice_pdf(db, transaction.id)
                     transaction.invoice_pdf_path = invoice_path
                 except Exception as e:
-                    print(f"[Stripe Webhook] Failed to generate invoice for transaction {transaction.id}: {e}")
+                    logger.error("[Stripe Webhook] Failed to generate invoice for transaction %s: %s", transaction.id, e)
 
             db.commit()
 
-            print(f"[Stripe Webhook] Payment succeeded for transaction {transaction.id}")
+            logger.info("[Stripe Webhook] Payment succeeded for transaction %s", transaction.id)
 
     elif event_type == "payment_intent.payment_failed":
         # Update transaction status
@@ -324,7 +328,7 @@ async def stripe_webhook(
             transaction.status = "failed"
             db.commit()
 
-            print(f"[Stripe Webhook] Payment failed for transaction {transaction.id}")
+            logger.info("[Stripe Webhook] Payment failed for transaction %s", transaction.id)
 
     elif event_type == "charge.refunded":
         # Handle refund
@@ -343,7 +347,7 @@ async def stripe_webhook(
 
             db.commit()
 
-            print(f"[Stripe Webhook] Refund processed for transaction {transaction.id}")
+            logger.info("[Stripe Webhook] Refund processed for transaction %s", transaction.id)
 
     return {"received": True}
 
@@ -414,7 +418,6 @@ def regenerate_invoice(
         Dict with success status and invoice path
     """
     from app.services.invoice_service import InvoiceService
-from app.core.config import settings
 
     try:
         invoice_path = InvoiceService.generate_invoice_pdf(db, transaction_id)

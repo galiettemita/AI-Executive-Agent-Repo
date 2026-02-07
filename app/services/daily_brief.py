@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from datetime import datetime
+import logging
 from typing import Any, Dict
 
 from openai import OpenAI
@@ -13,6 +14,8 @@ from app.db.models import ChatMessage, MemoryNote
 from app.services.google_calendar import get_events_for_daily_brief
 from app.services.google_gmail import get_recent_emails_for_daily_brief
 from app.core.config import settings
+
+logger = logging.getLogger(__name__)
 
 client = OpenAI(api_key=settings.OPENAI_API_KEY)
 
@@ -115,7 +118,7 @@ def generate_daily_brief(
     except Exception as e:
         result["error"] = str(e)
         result["brief_text"] = f"Sorry, I couldn't generate your daily brief. Error: {str(e)}"
-        print(f"Error generating daily brief for user {user_id}: {e}")
+        logger.error("Error generating daily brief for user %s: %s", user_id, e)
         return result
 
 

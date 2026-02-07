@@ -4,12 +4,15 @@ from __future__ import annotations
 
 import base64
 from email.message import EmailMessage
+import logging
 from typing import Any, Dict, List, Optional
 
 from googleapiclient.discovery import build
 from sqlalchemy.orm import Session
 
 from app.services.google_oauth import get_valid_google_credentials
+
+logger = logging.getLogger(__name__)
 
 
 def send_email(
@@ -142,5 +145,5 @@ def get_recent_emails_for_daily_brief(
         return email_summaries
 
     except Exception as e:
-        print(f"Error fetching emails for daily brief (user {user_id}): {e}")
+        logger.error("Error fetching emails for daily brief (user %s): %s", user_id, e)
         return []

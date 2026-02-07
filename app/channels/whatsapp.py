@@ -24,7 +24,7 @@ def normalize_whatsapp_webhook(payload: Dict[str, Any]) -> Optional[Dict[str, An
     Returns None if payload doesn't contain a user message.
     """
     try:
-        logger.debug(f"Normalizing WhatsApp webhook payload: {payload}")
+        logger.debug("Normalizing WhatsApp webhook payload (keys=%s)", list(payload.keys()) if isinstance(payload, dict) else "unknown")
         
         # Check if payload has expected structure
         if "entry" not in payload:
@@ -61,10 +61,10 @@ def normalize_whatsapp_webhook(payload: Dict[str, Any]) -> Optional[Dict[str, An
         msg = messages[0]
         msg_type = msg.get("type")
         
-        logger.info(f"Message type: {msg_type}")
+        logger.info("WhatsApp message type: %s", msg_type)
         
         if msg_type != "text":
-            logger.info(f"Ignoring non-text message of type: {msg_type}")
+            logger.info("Ignoring non-text message of type: %s", msg_type)
             return None
         
         external_id = msg["id"]
@@ -77,15 +77,14 @@ def normalize_whatsapp_webhook(payload: Dict[str, Any]) -> Optional[Dict[str, An
             "text": text,
         }
         
-        logger.info(f"Successfully normalized message: {result}")
+        logger.info("Successfully normalized WhatsApp message: id=%s", result.get("external_id"))
         return result
         
     except KeyError as e:
-        logger.error(f"KeyError while normalizing webhook: {e}")
-        logger.error(f"Payload structure: {payload}")
+        logger.error("KeyError while normalizing webhook: %s", e)
         return None
     except Exception as e:
-        logger.error(f"Unexpected error normalizing webhook: {e}")
+        logger.error("Unexpected error normalizing webhook: %s", e)
         logger.exception("Full traceback:")
         return None
 
@@ -97,9 +96,7 @@ def send_whatsapp_text(to_phone_e164: str, text: str) -> None:
     If not configured, silently no-ops (useful for local testing).
     """
     if not WHATSAPP_TOKEN or not WHATSAPP_PHONE_NUMBER_ID:
-        logger.warning("⚠️  WhatsApp credentials not configured. Cannot send message.")
-        logger.warning(f"WHATSAPP_TOKEN present: {bool(WHATSAPP_TOKEN)}")
-        logger.warning(f"WHATSAPP_PHONE_NUMBER_ID present: {bool(WHATSAPP_PHONE_NUMBER_ID)}")
+        logger.warning("WhatsApp credentials not configured. Cannot send message.")
         return
     
     try:
@@ -115,22 +112,21 @@ def send_whatsapp_text(to_phone_e164: str, text: str) -> None:
             "text": {"body": text[:4096]},
         }
         
-        logger.info(f"Sending WhatsApp message to {to_phone_e164}")
-        logger.debug(f"Message payload: {data}")
+        masked = f"{to_phone_e164[:3]}***{to_phone_e164[-2:]}" if to_phone_e164 else "unknown"
+        logger.info("Sending WhatsApp message to %s", masked)
         
         response = requests.post(url, headers=headers, json=data, timeout=20)
         
-        logger.info(f"WhatsApp API response status: {response.status_code}")
-        logger.debug(f"WhatsApp API response: {response.text}")
+        logger.info("WhatsApp API response status: %s", response.status_code)
         
         if response.status_code != 200:
-            logger.error(f"Failed to send WhatsApp message: {response.text}")
+            logger.error("Failed to send WhatsApp message (status=%s)", response.status_code)
         else:
-            logger.info("✅ WhatsApp message sent successfully")
+            logger.info("WhatsApp message sent successfully")
             
     except requests.exceptions.RequestException as e:
-        logger.error(f"Error sending WhatsApp message: {e}")
+        logger.error("Error sending WhatsApp message: %s", e)
         logger.exception("Full traceback:")
     except Exception as e:
-        logger.error(f"Unexpected error sending WhatsApp message: {e}")
+        logger.error("Unexpected error sending WhatsApp message: %s", e)
         logger.exception("Full traceback:")

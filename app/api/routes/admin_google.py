@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
@@ -14,6 +15,7 @@ from app.services.google_oauth import (
 )
 
 router = APIRouter(prefix="/admin/google", tags=["admin"])
+logger = logging.getLogger(__name__)
 
 
 @router.get("/connect")
@@ -35,7 +37,7 @@ def google_callback(
     try:
         user_id = exchange_code_and_store_tokens(db=db, code=code, state=state)
     except Exception as e:
-        print("GOOGLE CALLBACK ERROR:", repr(e))
+        logger.error("GOOGLE CALLBACK ERROR: %s", repr(e))
         raise HTTPException(status_code=400, detail=str(e))
     return {
         "ok": True,

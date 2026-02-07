@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from datetime import datetime, timedelta
 from typing import Dict, Optional, Any
 from sqlalchemy.orm import Session
@@ -18,6 +19,9 @@ from app.db.models import (
 from app.services.stripe_service import StripeService
 from app.services.webhook_service import WebhookService
 from app.services.intervention_service import InterventionService
+from app.core.config import settings
+
+logger = logging.getLogger(__name__)
 
 
 class ExecutionEngine:
@@ -164,7 +168,7 @@ class ExecutionEngine:
                 proposal_id=proposal_id,
             )
         except Exception as e:
-            print(f"[Webhook] Failed to send execution.started: {e}")
+            logger.warning("[Webhook] Failed to send execution.started: %s", e)
 
         # Parse payload
         try:
@@ -314,7 +318,7 @@ class ExecutionEngine:
                     transaction_id=transaction.id,
                 )
             except Exception as e:
-                print(f"[Webhook] Failed to send payment.succeeded: {e}")
+                logger.warning("[Webhook] Failed to send payment.succeeded: %s", e)
 
         except Exception as e:
             ExecutionEngine._log_execution_step(
@@ -370,7 +374,7 @@ class ExecutionEngine:
                     transaction_id=transaction.id,
                 )
             except Exception as e:
-                print(f"[Webhook] Failed to send booking.confirmed: {e}")
+                logger.warning("[Webhook] Failed to send booking.confirmed: %s", e)
 
             # Update proposal status
             proposal.status = "completed"
@@ -423,7 +427,7 @@ class ExecutionEngine:
                     transaction_id=transaction.id,
                 )
             except Exception as webhook_e:
-                print(f"[Webhook] Failed to send booking.failed: {webhook_e}")
+                logger.warning("[Webhook] Failed to send booking.failed: %s", webhook_e)
 
             # Send webhook: execution failed
             try:
@@ -442,7 +446,7 @@ class ExecutionEngine:
                     transaction_id=transaction.id,
                 )
             except Exception as webhook_e:
-                print(f"[Webhook] Failed to send execution.failed: {webhook_e}")
+                logger.warning("[Webhook] Failed to send execution.failed: %s", webhook_e)
 
             proposal.status = "failed"
             db.commit()
@@ -480,7 +484,7 @@ class ExecutionEngine:
                 transaction_id=transaction.id,
             )
         except Exception as e:
-            print(f"[Webhook] Failed to send execution.completed: {e}")
+            logger.warning("[Webhook] Failed to send execution.completed: %s", e)
 
         return {
             "success": True,
@@ -620,7 +624,7 @@ class ExecutionEngine:
 
         except Exception as e:
             # Log error and raise
-            print(f"[Flight Booking] Error: {e}")
+            logger.error("[Flight Booking] Error: %s", e)
             raise ValueError(f"Flight booking failed: {str(e)}")
 
     @staticmethod
@@ -732,7 +736,7 @@ class ExecutionEngine:
 
         except Exception as e:
             # Log error and raise
-            print(f"[Hotel Booking] Error: {e}")
+            logger.error("[Hotel Booking] Error: %s", e)
             raise ValueError(f"Hotel booking failed: {str(e)}")
 
     @staticmethod
@@ -775,16 +779,15 @@ class ExecutionEngine:
         from app.services.eticket_service import generate_eticket_pdf
         from app.services.encryption_service import decrypt_pii
         from app.services.notification_delivery import send_whatsapp_message
-from app.core.config import settings
 
         booking_id = booking_result.get("booking_id")
         if not booking_id:
-            print("[ExecutionEngine] No booking_id in booking_result; skipping confirmation send")
+            logger.info("[ExecutionEngine] No booking_id in booking_result; skipping confirmation send")
             return
 
         booking = db.query(Booking).filter(Booking.id == booking_id).first()
         if not booking:
-            print(f"[ExecutionEngine] Booking {booking_id} not found; skipping confirmation send")
+            logger.info("[ExecutionEngine] Booking %s not found; skipping confirmation send", booking_id)
             return
 
         try:
@@ -835,7 +838,7 @@ from app.core.config import settings
                 eticket_pdf_path=eticket_path,
             )
             if not email_ok:
-                print(f"[ExecutionEngine] Confirmation email failed for booking {booking.id}")
+                logger.warning("[ExecutionEngine] Confirmation email failed for booking %s", booking.id)
 
         # Send WhatsApp confirmation (best-effort)
         message_lines = [

@@ -19,12 +19,15 @@ from app.db.models import (
 )
 from app.services.stripe_service import StripeService
 from app.services.execution_engine import ExecutionEngine
+from app.services.intervention_service import InterventionService
+from app.core.config import settings
 
 
 def test_verify_approval_token_valid():
     """Test verifying a valid approval token"""
     import os
     os.environ["JWT_SECRET"] = "test_secret_key"
+    settings.JWT_SECRET = "test_secret_key"
 
     # Create valid token
     payload = {
@@ -47,6 +50,7 @@ def test_verify_approval_token_expired():
     """Test verifying an expired approval token"""
     import os
     os.environ["JWT_SECRET"] = "test_secret_key"
+    settings.JWT_SECRET = "test_secret_key"
 
     # Create expired token
     payload = {
@@ -108,6 +112,7 @@ def test_execute_proposal_dry_run():
     """Test executing a proposal in dry-run mode"""
     import os
     os.environ["JWT_SECRET"] = "test_secret_key"
+    settings.JWT_SECRET = "test_secret_key"
 
     db = SessionLocal()
     user_id = f"test_user_{uuid.uuid4().hex[:8]}"
@@ -142,12 +147,18 @@ def test_execute_proposal_dry_run():
     }
     token = jwt.encode(payload, "test_secret_key", algorithm="HS256")
 
-    result = ExecutionEngine.execute_proposal(
-        db=db,
-        proposal_id=proposal.id,
-        approval_token=token,
-        dry_run=True,
-    )
+    # Avoid intervention flagging in dry-run test
+    original_flag = InterventionService.should_flag_for_review
+    InterventionService.should_flag_for_review = staticmethod(lambda **kwargs: (False, None))
+    try:
+        result = ExecutionEngine.execute_proposal(
+            db=db,
+            proposal_id=proposal.id,
+            approval_token=token,
+            dry_run=True,
+        )
+    finally:
+        InterventionService.should_flag_for_review = original_flag
 
     assert result["success"] is True
     assert result["dry_run"] is True

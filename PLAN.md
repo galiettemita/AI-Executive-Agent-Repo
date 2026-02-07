@@ -2,6 +2,8 @@
 
 CORE FOUNDATION SERVICES:
 ├── Messaging & Communication
+│   ├── Primary UI: WhatsApp (users message a dedicated number)
+│   ├── Access: QR code onboarding (scan to start WhatsApp chat)
 │   ├── WhatsApp integration
 │   ├── SMS/iMessage integration
 │   ├── Voice calling (outbound)

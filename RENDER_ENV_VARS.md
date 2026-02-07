@@ -94,6 +94,8 @@ Format: "hour minute" in UTC (e.g., "7 0" = 7:00 AM UTC)
 
 ```
 ENABLE_CREATE_ALL=0
+WHATSAPP_APP_SECRET=<meta-app-secret>     # Enables webhook signature verification
+APP_VERSION=<git-sha-or-release-tag>      # Optional health/version reporting
 ```
 Set to `1` only if you want to create tables on startup (not recommended for production - use Alembic migrations instead)
 

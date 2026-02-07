@@ -1,5 +1,8 @@
 # backend/app/api/routes/webhooks_whatsapp.py
 
+import hashlib
+import hmac
+import json
 import logging
 from fastapi import APIRouter, Depends, HTTPException, Request, Query
 from sqlalchemy.orm import Session
@@ -25,6 +28,25 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/webhooks/whatsapp", tags=["webhooks"])
 
 VERIFY_TOKEN = settings.WHATSAPP_VERIFY_TOKEN
+APP_SECRET = settings.WHATSAPP_APP_SECRET
+
+
+def _verify_signature(raw_body: bytes, signature_header: str) -> bool:
+    if not APP_SECRET:
+        # Allow in dev or if app secret not configured; log in production.
+        if settings.ENV in ("production", "staging"):
+            logger.warning("WHATSAPP_APP_SECRET not set; skipping signature verification")
+        return True
+    if not signature_header:
+        return False
+    try:
+        algo, sig = signature_header.split("=", 1)
+    except ValueError:
+        return False
+    if algo != "sha256":
+        return False
+    expected = hmac.new(APP_SECRET.encode("utf-8"), raw_body, hashlib.sha256).hexdigest()
+    return hmac.compare_digest(expected, sig)
 
 
 @router.get("")
@@ -64,30 +86,30 @@ async def receive(request: Request, db: Session = Depends(get_db)):
     Receives incoming WhatsApp messages from Facebook webhook.
     """
     try:
-        payload = await request.json()
-        
-        logger.info("=" * 80)
-        logger.info("📨 INCOMING WHATSAPP WEBHOOK")
-        logger.info(f"Raw payload: {payload}")
-        logger.info("=" * 80)
+        raw_body = await request.body()
+        sig_header = request.headers.get("X-Hub-Signature-256", "")
+        if not _verify_signature(raw_body, sig_header):
+            logger.warning("WhatsApp webhook signature verification failed")
+            raise HTTPException(status_code=403, detail="Invalid signature")
+
+        payload = json.loads(raw_body.decode("utf-8")) if raw_body else {}
+
+        logger.info("WhatsApp webhook received")
         
         # Normalize the webhook payload
         event = normalize_whatsapp_webhook(payload)
         
         if not event:
             logger.warning("⚠️  Event normalized to None (likely a status update or non-text message)")
-            logger.warning(f"Payload was: {payload}")
-            return {"ok": True, "reason": "ignored_non_text_or_status"}
-        
-        logger.info(f"✅ Normalized event: {event}")
+        logger.warning("WhatsApp webhook ignored (non-text/status)")
+        return {"ok": True, "reason": "ignored_non_text_or_status"}
         
         external_id = event["external_id"]
         from_phone = event["from"]
         text = event["text"]
-        
-        logger.info(f"📱 Message from: {from_phone}")
-        logger.info(f"💬 Message text: {text}")
-        logger.info(f"🆔 External ID: {external_id}")
+
+        masked_phone = f"{from_phone[:3]}***{from_phone[-2:]}" if from_phone else "unknown"
+        logger.info("WhatsApp message received: id=%s from=%s len=%s", external_id, masked_phone, len(text))
         
         # Use phone as user_id for now (simple MVP). Later map to a real users table row.
         user_id = from_phone
@@ -101,14 +123,14 @@ async def receive(request: Request, db: Session = Depends(get_db)):
         # Load last messages for this user (minimal history)
         history = get_recent_history(db, user_id)
         
-        logger.info("🤖 Running orchestrator to generate reply...")
+        logger.info("Running orchestrator to generate reply...")
         reply = run_orchestrator(db=db, user_id=user_id, history=history, user_message=text)
-        logger.info(f"💡 Generated reply: {reply}")
+        logger.info("Generated reply (len=%s)", len(reply or ""))
         
         # Send reply back to WhatsApp (no-op if not configured)
-        logger.info(f"📤 Sending reply to {from_phone}...")
+        logger.info("Sending reply to %s", masked_phone)
         send_whatsapp_text(to_phone_e164=from_phone, text=reply)
-        logger.info("✅ Reply sent successfully")
+        logger.info("Reply sent")
 
         # Persist conversation + messages
         convo = get_or_create_conversation(db, user_id)
@@ -130,8 +152,7 @@ async def receive(request: Request, db: Session = Depends(get_db)):
 
         # Record this message as processed
         record_inbound(db, channel="whatsapp", external_id=external_id, user_id=user_id)
-        logger.info(f"💾 Recorded inbound message {external_id}")
-        logger.info("=" * 80)
+        logger.info("Recorded inbound message %s", external_id)
         
         return {"ok": True}
     

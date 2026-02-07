@@ -22,6 +22,7 @@ class Settings(BaseSettings):
     DATABASE_URL: str = "sqlite:///./app.db"
     JWT_SECRET: str = "dev_only_change_me"
     APP_BASE_URL: str = "https://ai-shopping-assistant-backend-6bgf.onrender.com"
+    APP_VERSION: str = ""
 
     # ── OpenAI ──────────────────────────────────────────────────
     OPENAI_API_KEY: str | None = None
@@ -50,6 +51,7 @@ class Settings(BaseSettings):
     WHATSAPP_TOKEN: str = ""
     WHATSAPP_VERIFY_TOKEN: str = ""
     WHATSAPP_PHONE_NUMBER_ID: str = ""
+    WHATSAPP_APP_SECRET: str = ""
 
     # ── Twilio (Voice & SMS) ────────────────────────────────────
     TWILIO_ACCOUNT_SID: str | None = None

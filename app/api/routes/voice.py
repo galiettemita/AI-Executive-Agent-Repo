@@ -5,12 +5,14 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
+import logging
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import Response
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
+from twilio.request_validator import RequestValidator
 
 from app.db.database import get_db, SessionLocal
 from app.db.models import VoiceCall
@@ -28,6 +30,7 @@ from app.services.stt_deepgram import DeepgramStream
 from app.services.tts_elevenlabs import stream_tts_audio
 from app.core.config import settings
 
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/voice", tags=["voice"])
 webhook_router = APIRouter(prefix="/webhooks/voice", tags=["webhooks"])
@@ -39,6 +42,17 @@ class OutboundCallRequest(BaseModel):
     purpose: Optional[str] = None
     voice_profile: Optional[str] = None
     from_number: Optional[str] = None
+
+
+def _validate_twilio(request: Request, params: dict) -> bool:
+    auth_token = settings.TWILIO_AUTH_TOKEN
+    if not auth_token:
+        if settings.ENV in ("production", "staging"):
+            logger.warning("TWILIO_AUTH_TOKEN not set; skipping validation in production is unsafe")
+        return True
+    signature = request.headers.get("X-Twilio-Signature", "")
+    validator = RequestValidator(auth_token)
+    return validator.validate(str(request.url), params, signature)
 
 
 @router.get("/user/{user_id}")
@@ -142,6 +156,10 @@ async def twiml_webhook(request: Request):
     def _get(key: str) -> Optional[str]:
         return form.get(key) or params.get(key)
 
+    merged_params = {**params, **dict(form)}
+    if not _validate_twilio(request, merged_params):
+        raise HTTPException(status_code=403, detail="Invalid Twilio signature")
+
     call_sid = _get("CallSid")
     from_number = _get("From")
     to_number = _get("To")
@@ -189,6 +207,8 @@ async def voice_status_webhook(request: Request):
     Twilio status callback for call lifecycle updates.
     """
     form = await request.form()
+    if not _validate_twilio(request, dict(form)):
+        raise HTTPException(status_code=403, detail="Invalid Twilio signature")
     call_sid = form.get("CallSid")
     call_status = form.get("CallStatus")
     duration = form.get("CallDuration")
@@ -223,6 +243,8 @@ async def voice_recording_webhook(request: Request):
     Twilio recording callback to store recording URL.
     """
     form = await request.form()
+    if not _validate_twilio(request, dict(form)):
+        raise HTTPException(status_code=403, detail="Invalid Twilio signature")
     call_sid = form.get("CallSid")
     recording_url = form.get("RecordingUrl")
 

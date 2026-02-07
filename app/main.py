@@ -23,6 +23,7 @@ import app.db.models  # noqa: F401, E402
 # Rate limiting
 from app.middleware.rate_limiter import limiter, setup_rate_limiting  # noqa: E402
 from slowapi.errors import RateLimitExceeded  # noqa: E402
+from app.middleware.auth import AuthMiddleware  # noqa: E402
 
 from app.api.routes.health import router as health_router  # noqa: E402
 from app.api.routes.chat import router as chat_router  # noqa: E402
@@ -56,6 +57,9 @@ app = FastAPI(
     title="Executive AI Agent",
     version="1.0.0",
 )
+
+# --- Authentication ---
+app.add_middleware(AuthMiddleware)
 
 # --- Optional CORS (safe defaults; tighten later) ---
 origins = [o.strip() for o in settings.CORS_ORIGINS.split(",") if o.strip()]

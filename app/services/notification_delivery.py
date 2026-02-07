@@ -13,6 +13,11 @@ import logging
 from app.core.config import settings
 logger = logging.getLogger(__name__)
 
+def _mask_phone(value: str) -> str:
+    if not value:
+        return "unknown"
+    return f"{value[:3]}***{value[-2:]}" if len(value) > 4 else "***"
+
 
 def send_whatsapp_message(phone_number: str, message: str) -> bool:
     """
@@ -48,10 +53,10 @@ def send_whatsapp_message(phone_number: str, message: str) -> bool:
     try:
         resp = httpx.post(url, headers=headers, json=payload, timeout=10)
         resp.raise_for_status()
-        logger.info(f"[Notification] ✓ Sent WhatsApp to {phone_number}")
+        logger.info("[Notification] Sent WhatsApp to %s", _mask_phone(phone_number))
         return True
     except Exception as e:
-        logger.info(f"[Notification] ✗ Failed to send WhatsApp to {phone_number}: {e}")
+        logger.info("[Notification] Failed to send WhatsApp to %s: %s", _mask_phone(phone_number), e)
         return False
 
 

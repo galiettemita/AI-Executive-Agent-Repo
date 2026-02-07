@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import logging
 
+import os
+from sqlalchemy import text
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 
@@ -17,9 +19,15 @@ router = APIRouter(tags=["health"])
 @router.get("/health")
 def health():
     """General health check — returns key configuration status."""
+    version = (
+        settings.APP_VERSION
+        or os.getenv("RENDER_GIT_COMMIT", "")
+        or os.getenv("VERCEL_GIT_COMMIT_SHA", "")
+    )
     return {
         "status": "ok",
         "env": settings.ENV,
+        "version": version,
         "openai_configured": bool(settings.OPENAI_API_KEY),
         "stripe_configured": bool(settings.STRIPE_SECRET_KEY),
         "amadeus_configured": bool(settings.AMADEUS_API_KEY),
@@ -50,9 +58,11 @@ def readiness():
     try:
         from app.db.database import SessionLocal
         db = SessionLocal()
-        db.execute("SELECT 1" if hasattr(db, "execute") else None)
-        db.close()
-        checks["database"] = "ok"
+        try:
+            db.execute(text("SELECT 1"))
+            checks["database"] = "ok"
+        finally:
+            db.close()
     except Exception as e:
         logger.error("Readiness: DB check failed: %s", e)
         checks["database"] = "unavailable"
