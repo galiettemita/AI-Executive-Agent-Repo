@@ -1,14 +1,16 @@
 #updates the route to be async and handle specific errors from the discover provider
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from app.schemas.discover import DiscoverSearchResponse
 from app.services.discover_provider import discover_search, DiscoverNotConfiguredError
 import httpx
+from app.middleware.rate_limiter import rate_limit_user
 
 router = APIRouter()
 
+@rate_limit_user()
 @router.get("/search", response_model=DiscoverSearchResponse)
-async def search(q: str):
+async def search(request: Request, q: str):
     try:
         results = await discover_search(q)
         return DiscoverSearchResponse(results=results)

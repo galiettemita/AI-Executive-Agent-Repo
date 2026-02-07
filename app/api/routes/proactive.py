@@ -2,12 +2,13 @@ from __future__ import annotations
 
 from typing import Any, Dict, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.db.database import get_db
 from app.services.proactive_rules import create_rule, list_rules, get_rule, update_rule, run_rule
+from app.middleware.rate_limiter import rate_limit_user
 
 router = APIRouter(prefix="/proactive", tags=["proactive"])
 
@@ -64,41 +65,45 @@ def _serialize_rule(rule) -> dict:
     }
 
 
+@rate_limit_user()
 @router.get("/rules")
-def get_rules(user_id: str, db: Session = Depends(get_db)):
+def get_rules(request: Request, user_id: str, db: Session = Depends(get_db)):
     rules = list_rules(db, user_id)
     return {"items": [_serialize_rule(r) for r in rules]}
 
 
+@rate_limit_user()
 @router.post("/rules")
-def create_rule_endpoint(request: CreateRuleRequest, db: Session = Depends(get_db)):
+def create_rule_endpoint(request: Request, payload: CreateRuleRequest, db: Session = Depends(get_db)):
     rule = create_rule(
         db,
-        user_id=request.user_id,
-        name=request.name,
-        trigger_type=request.trigger_type,
-        trigger_config=request.trigger_config,
-        action_type=request.action_type,
-        action_payload=request.action_payload,
-        conditions=request.conditions,
-        is_active=request.is_active,
+        user_id=payload.user_id,
+        name=payload.name,
+        trigger_type=payload.trigger_type,
+        trigger_config=payload.trigger_config,
+        action_type=payload.action_type,
+        action_payload=payload.action_payload,
+        conditions=payload.conditions,
+        is_active=payload.is_active,
     )
     return {"ok": True, "rule": _serialize_rule(rule)}
 
 
+@rate_limit_user()
 @router.patch("/rules/{rule_id}")
-def update_rule_endpoint(rule_id: int, request: UpdateRuleRequest, db: Session = Depends(get_db)):
+def update_rule_endpoint(request: Request, rule_id: int, payload: UpdateRuleRequest, db: Session = Depends(get_db)):
     rule = get_rule(db, rule_id)
     if not rule:
         raise HTTPException(status_code=404, detail="Rule not found")
-    rule = update_rule(db, rule, request.model_dump(exclude_unset=True))
+    rule = update_rule(db, rule, payload.model_dump(exclude_unset=True))
     return {"ok": True, "rule": _serialize_rule(rule)}
 
 
+@rate_limit_user()
 @router.post("/rules/{rule_id}/run")
-def run_rule_endpoint(rule_id: int, request: RunRuleRequest, db: Session = Depends(get_db)):
+def run_rule_endpoint(request: Request, rule_id: int, payload: RunRuleRequest, db: Session = Depends(get_db)):
     rule = get_rule(db, rule_id)
     if not rule:
         raise HTTPException(status_code=404, detail="Rule not found")
-    result = run_rule(db, rule, force=request.force)
+    result = run_rule(db, rule, force=payload.force)
     return {"ok": True, "result": result}

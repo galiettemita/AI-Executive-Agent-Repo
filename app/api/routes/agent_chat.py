@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
 from app.db.database import get_db
@@ -8,12 +8,14 @@ from app.services.history import get_recent_history, get_or_create_conversation,
 from app.services.orchestrator import run_orchestrator
 from app.services.memory import update_memory_from_turn
 from app.services.usage import record_message
+from app.middleware.rate_limiter import rate_limit_user
 
 router = APIRouter(prefix="/agent", tags=["agent"])
 
 
+@rate_limit_user()
 @router.post("/chat", response_model=ChatResponse)
-def agent_chat(req: ChatRequest, db: Session = Depends(get_db)):
+def agent_chat(request: Request, req: ChatRequest, db: Session = Depends(get_db)):
     get_or_create_user(db, req.user_id)
     convo = get_or_create_conversation(db, req.user_id)
     conversation_id = req.conversation_id or convo.id

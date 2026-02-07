@@ -15,6 +15,7 @@ from app.db.database import SessionLocal
 from app.db.models import OAuthToken, User, WatchItem, SmartHomeEnergyAlert
 from app.services.daily_brief import generate_and_store_daily_brief
 from app.services.notification_delivery import deliver_pending_notifications
+from app.services.messaging_service import deliver_pending_messages
 from app.services.smart_home_service import evaluate_energy_alerts
 from app.services.proactive_rules import run_due_rules
 
@@ -205,6 +206,20 @@ def run_notification_delivery():
         db.close()
 
 
+def run_outbound_messages():
+    """
+    Deliver queued outbound messages (WhatsApp/SMS/etc).
+    """
+    db = SessionLocal()
+    try:
+        result = deliver_pending_messages(db)
+        logger.info("Outbound messaging completed: %s", result)
+    except Exception as e:
+        logger.error("Fatal error in outbound messaging job: %s", e)
+    finally:
+        db.close()
+
+
 def run_proactive_rules():
     """
     Evaluate proactive rules and enqueue actions.
@@ -286,6 +301,19 @@ def setup_scheduler() -> BackgroundScheduler:
     )
 
     logger.info("Notification delivery job scheduled every %d minutes", settings.NOTIFICATION_DELIVERY_INTERVAL_MINUTES)
+
+    if settings.ENABLE_MESSAGING == "1":
+        scheduler.add_job(
+            run_outbound_messages,
+            trigger="interval",
+            minutes=1,
+            id="outbound_messages_job",
+            name="Outbound Messages",
+            replace_existing=True,
+        )
+        logger.info("Outbound messaging job scheduled every 1 minute")
+    else:
+        logger.info("Messaging disabled; skipping outbound messaging scheduler")
 
     # Add proactive rules job
     scheduler.add_job(

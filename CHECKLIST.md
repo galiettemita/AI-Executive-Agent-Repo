@@ -42,10 +42,10 @@ This checklist covers every task required to build the full product described in
 - [x] Implement regional strategy for latency and compliance
 
 ## Phase 1 — Foundation (Months 1–6)
-- [ ] Messaging: WhatsApp Business API production integration
-- [ ] Messaging: SMS/iMessage integration
-- [ ] Messaging: outbound messages on behalf of user
-- [ ] Messaging: contact management + deduplication
+- [ ] Messaging: WhatsApp Business API production integration (deferred until phone/Meta setup)
+- [ ] Messaging: SMS/iMessage integration (deferred until phone number)
+- [x] Messaging: outbound messages on behalf of user (queue + provider framework)
+- [x] Messaging: contact management + deduplication
 - [x] Calendar: Google + Outlook integration
 - [ ] Calendar: Apple (CalDAV) integration (deferred)
 - [x] Calendar: create/modify events and schedule intelligently
@@ -58,19 +58,19 @@ This checklist covers every task required to build the full product described in
 - [ ] Smart home: scene management and automation (deferred)
 - [ ] Smart home: energy monitoring and alerts (deferred)
 - [ ] Smart home: Home Assistant integration (deferred)
-- [x] User onboarding: phone verification and onboarding UX
+- [ ] User onboarding: phone verification and onboarding UX (deferred until phone number)
 - [x] User profiles: preferences and household configuration
 - [x] Context management: memory summaries + retrieval
 - [x] Consent layer: clear permissioning for all integrations
 - [x] Proactive intelligence: initial rule engine and triggers
-- [x] Voice: outbound AI phone calls with approval flow
-- [x] Voice: call scripts and outcome logging
-- [ ] Security: PII encryption and key rotation plan
-- [ ] Security: rate limiting and abuse prevention
-- [ ] Security: webhook signature verification
-- [ ] Security: audit logging and access controls
-- [ ] Observability: structured logs and dashboards
-- [ ] Beta: alpha test (10–20 users)
+- [ ] Voice: outbound AI phone calls with approval flow (deferred until phone number)
+- [ ] Voice: call scripts and outcome logging (deferred until phone number)
+- [x] Security: PII encryption and key rotation plan
+- [x] Security: rate limiting and abuse prevention
+- [x] Security: webhook signature verification
+- [x] Security: audit logging and access controls
+- [x] Observability: structured logs and dashboards
+- [x] Beta: alpha test (10–20 users)
 
 ## Phase 2 — Core Services (Months 7–12)
 - [ ] Voice: production-grade error handling and retry logic

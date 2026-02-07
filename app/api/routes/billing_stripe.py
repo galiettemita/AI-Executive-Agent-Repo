@@ -13,6 +13,7 @@ from app.api.deps import get_db, get_or_create_user
 from app.db.models import Subscription
 from app.services.subscriptions import get_subscription, upsert_subscription
 from app.core.config import settings
+from app.middleware.rate_limiter import rate_limit_payment, rate_limit_webhook
 
 
 router = APIRouter(prefix="/billing/stripe", tags=["billing"])
@@ -31,8 +32,10 @@ def _plan_from_metadata(meta: Dict[str, Any] | None) -> str:
     return meta.get("plan") or "starter"
 
 
+@rate_limit_payment()
 @router.post("/checkout")
 def stripe_checkout(
+    request: Request,
     user_id: str,
     db: Session = Depends(get_db),
 ):
@@ -77,14 +80,17 @@ def stripe_checkout(
     return {"checkout_url": session.url}
 
 
+@rate_limit_payment()
 @router.get("/checkout")
 def stripe_checkout_get(
+    request: Request,
     user_id: str,
     db: Session = Depends(get_db),
 ):
-    return stripe_checkout(user_id=user_id, db=db)
+    return stripe_checkout(request=request, user_id=user_id, db=db)
 
 
+@rate_limit_webhook()
 @router.post("/webhook")
 async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
     _stripe_client()

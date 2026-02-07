@@ -1,10 +1,11 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from sqlalchemy.orm import Session
 
 from app.db.database import get_db
 from app.db.models import WatchItem
 from app.schemas.watch import WatchCreateRequest, WatchListResponse, WatchItemOut
 from app.api.deps import get_or_create_user
+from app.middleware.rate_limiter import rate_limit_user
 
 from fastapi import HTTPException
 from pydantic import BaseModel
@@ -20,8 +21,9 @@ def _direct_buy_link(url: str):
     return url
 
 
+@rate_limit_user()
 @router.post("")
-def add_watch(req: WatchCreateRequest, db: Session = Depends(get_db)):
+def add_watch(request: Request, req: WatchCreateRequest, db: Session = Depends(get_db)):
     get_or_create_user(db, req.user_id)
 
     existing = (
@@ -59,8 +61,9 @@ def add_watch(req: WatchCreateRequest, db: Session = Depends(get_db)):
     return {"ok": True}
 
 
+@rate_limit_user()
 @router.get("", response_model=WatchListResponse)
-def list_watch(user_id: str, db: Session = Depends(get_db)):
+def list_watch(request: Request, user_id: str, db: Session = Depends(get_db)):
     get_or_create_user(db, user_id)
 
     items = (
@@ -110,8 +113,9 @@ class TrackFromChatRequest(BaseModel):
     product_key: str | None = None
     upc: str | None = None
 
+@rate_limit_user()
 @router.post("/from-chat")
-def add_watch_from_chat(req: TrackFromChatRequest, db: Session = Depends(get_db)):
+def add_watch_from_chat(request: Request, req: TrackFromChatRequest, db: Session = Depends(get_db)):
     get_or_create_user(db, req.user_id)
 
     if not req.url:

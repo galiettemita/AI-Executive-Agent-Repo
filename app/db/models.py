@@ -17,6 +17,23 @@ class User(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
+# -------------------
+# BETA TESTERS
+# -------------------
+
+class BetaTester(Base):
+    __tablename__ = "beta_testers"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(String, unique=True, index=True)
+    email: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    status: Mapped[str] = mapped_column(String, default="active", index=True)  # active, paused, removed
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, index=True)
+
+
 class DeviceToken(Base):
     __tablename__ = "device_tokens"
 
@@ -144,6 +161,80 @@ class NotificationQueue(Base):
     sent_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+
+# -------------------
+# AUDIT LOGS
+# -------------------
+
+class AuditLog(Base):
+    __tablename__ = "audit_logs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str | None] = mapped_column(String, ForeignKey("users.id"), index=True, nullable=True)
+
+    actor_type: Mapped[str] = mapped_column(String, default="user", index=True)  # user, system, webhook
+    action: Mapped[str] = mapped_column(String, index=True)  # e.g., http_request
+
+    resource_type: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    resource_id: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+
+    method: Mapped[str | None] = mapped_column(String, nullable=True)
+    path: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    status_code: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    ip_address: Mapped[str | None] = mapped_column(String, nullable=True)
+    user_agent: Mapped[str | None] = mapped_column(Text, nullable=True)
+    metadata_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+
+# -------------------
+# CONTACTS & MESSAGING
+# -------------------
+
+class Contact(Base):
+    __tablename__ = "contacts"
+    __table_args__ = (
+        UniqueConstraint("user_id", "normalized_phone", name="uq_contacts_user_phone"),
+        UniqueConstraint("user_id", "normalized_email", name="uq_contacts_user_email"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(String, ForeignKey("users.id"), index=True)
+
+    name: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    phone: Mapped[str | None] = mapped_column(String, nullable=True)
+    email: Mapped[str | None] = mapped_column(String, nullable=True)
+    normalized_phone: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    normalized_email: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+
+    tags_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    metadata_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, index=True)
+
+
+class OutboundMessage(Base):
+    __tablename__ = "outbound_messages"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(String, ForeignKey("users.id"), index=True)
+    contact_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("contacts.id"), nullable=True, index=True)
+
+    channel: Mapped[str] = mapped_column(String, index=True)  # whatsapp, sms, email
+    to_address: Mapped[str] = mapped_column(String, index=True)
+    body: Mapped[str] = mapped_column(Text)
+
+    status: Mapped[str] = mapped_column(String, default="queued", index=True)  # queued, sending, sent, failed
+    provider_message_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    metadata_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
 
 
 # -------------------

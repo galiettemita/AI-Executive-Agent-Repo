@@ -19,7 +19,9 @@ from app.services.history import (
 from app.services.memory import update_memory_from_turn
 from app.services.usage import record_message
 from app.services.orchestrator import run_orchestrator
+from app.services.contacts_service import upsert_contact
 from app.core.config import settings
+from app.middleware.rate_limiter import rate_limit_webhook
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -33,9 +35,11 @@ APP_SECRET = settings.WHATSAPP_APP_SECRET
 
 def _verify_signature(raw_body: bytes, signature_header: str) -> bool:
     if not APP_SECRET:
-        # Allow in dev or if app secret not configured; log in production.
-        if settings.ENV in ("production", "staging"):
-            logger.warning("WHATSAPP_APP_SECRET not set; skipping signature verification")
+        # Enforce in staging/production when configured.
+        if settings.ENV in ("production", "staging") and settings.ENFORCE_WEBHOOK_SIGNATURES == "1":
+            logger.error("WHATSAPP_APP_SECRET not set; signature verification required")
+            return False
+        logger.warning("WHATSAPP_APP_SECRET not set; skipping signature verification")
         return True
     if not signature_header:
         return False
@@ -80,6 +84,7 @@ def verify_webhook(
     return int(hub_challenge)
 
 
+@rate_limit_webhook()
 @router.post("")
 async def receive(request: Request, db: Session = Depends(get_db)):
     """
@@ -101,8 +106,8 @@ async def receive(request: Request, db: Session = Depends(get_db)):
         
         if not event:
             logger.warning("⚠️  Event normalized to None (likely a status update or non-text message)")
-        logger.warning("WhatsApp webhook ignored (non-text/status)")
-        return {"ok": True, "reason": "ignored_non_text_or_status"}
+            logger.warning("WhatsApp webhook ignored (non-text/status)")
+            return {"ok": True, "reason": "ignored_non_text_or_status"}
         
         external_id = event["external_id"]
         from_phone = event["from"]
@@ -114,6 +119,11 @@ async def receive(request: Request, db: Session = Depends(get_db)):
         # Use phone as user_id for now (simple MVP). Later map to a real users table row.
         user_id = from_phone
         get_or_create_user(db, user_id)
+
+        try:
+            upsert_contact(db, user_id=user_id, name=None, phone=from_phone, tags=["whatsapp"])
+        except Exception:
+            pass
         
         # Idempotency: avoid processing the same message twice
         if already_processed(db, external_id):

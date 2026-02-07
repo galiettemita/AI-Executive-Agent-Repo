@@ -18,6 +18,7 @@ from app.core.sentry import setup_sentry  # noqa: E402
 from app.core.metrics import MetricsMiddleware  # noqa: E402
 from app.core.otel import setup_otel  # noqa: E402
 from app.middleware.request_context import RequestContextMiddleware  # noqa: E402
+from app.middleware.audit_log import AuditLogMiddleware  # noqa: E402
 
 # Configure structured logging before anything else
 setup_logging()
@@ -47,6 +48,7 @@ from app.api.routes.admin_google import router as admin_google_router  # noqa: E
 from app.api.routes.admin_microsoft import router as admin_microsoft_router  # noqa: E402
 from app.api.routes.admin_caldav import router as admin_caldav_router  # noqa: E402
 from app.api.routes.admin_tasks import router as admin_tasks_router  # noqa: E402
+from app.api.routes.admin_beta import router as admin_beta_router  # noqa: E402
 from app.api.routes.billing import router as billing_router  # noqa: E402
 from app.api.routes.billing_stripe import router as billing_stripe_router  # noqa: E402
 from app.api.routes.proposals import router as proposals_router  # noqa: E402
@@ -67,6 +69,9 @@ from app.api.routes.profile import router as profile_router  # noqa: E402
 from app.api.routes.consent import router as consent_router  # noqa: E402
 from app.api.routes.onboarding import router as onboarding_router  # noqa: E402
 from app.api.routes.proactive import router as proactive_router  # noqa: E402
+from app.api.routes.contacts import router as contacts_router  # noqa: E402
+from app.api.routes.messages import router as messages_router  # noqa: E402
+from app.api.routes.audit import router as audit_router  # noqa: E402
 from app.api.routes.smart_home import router as smart_home_router  # noqa: E402
 from app.api.routes.admin_smart_home import router as admin_smart_home_router  # noqa: E402
 
@@ -101,6 +106,7 @@ app = FastAPI(
 # --- Authentication ---
 app.add_middleware(AuthMiddleware)
 app.add_middleware(RequestContextMiddleware)
+app.add_middleware(AuditLogMiddleware)
 if settings.PROMETHEUS_ENABLED:
     app.add_middleware(MetricsMiddleware)
 
@@ -151,6 +157,7 @@ app.include_router(admin_google_router)
 app.include_router(admin_microsoft_router)
 app.include_router(admin_caldav_router)
 app.include_router(admin_tasks_router)
+app.include_router(admin_beta_router)
 app.include_router(billing_router)
 app.include_router(billing_stripe_router)
 app.include_router(proposals_router)
@@ -171,6 +178,9 @@ app.include_router(profile_router)
 app.include_router(consent_router)
 app.include_router(onboarding_router)
 app.include_router(proactive_router)
+app.include_router(contacts_router)
+app.include_router(messages_router)
+app.include_router(audit_router)
 if settings.ENABLE_SMART_HOME == "1":
     app.include_router(smart_home_router)
     app.include_router(admin_smart_home_router)

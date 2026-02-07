@@ -77,6 +77,7 @@ class Settings(BaseSettings):
     # ── Voice settings ──────────────────────────────────────────
     VOICE_CALL_MAX_DURATION_SECONDS: int = 1800  # 30 minutes
     VOICE_CALL_AUTO_EXECUTE_ON_APPROVAL: str = "1"
+    ENABLE_VOICE_CALLS: str = "0"
 
     # ── SerpAPI (Discovery) ─────────────────────────────────────
     SERPAPI_API_KEY: str | None = None
@@ -86,6 +87,9 @@ class Settings(BaseSettings):
 
     # ── Security & Encryption ───────────────────────────────────
     PII_ENCRYPTION_KEY: str | None = None
+    PII_ENCRYPTION_KEYS: str | None = None
+    ENFORCE_WEBHOOK_SIGNATURES: str = "1"
+    AUDIT_LOG_ENABLED: str = "1"
 
     # ── Email (SMTP) ────────────────────────────────────────────
     SMTP_HOST: str = "smtp.gmail.com"
@@ -130,6 +134,8 @@ class Settings(BaseSettings):
     REDIS_SESSION_TTL_SECONDS: int = 60 * 60 * 24  # 24h
     REDIS_PREFS_TTL_SECONDS: int = 60 * 60 * 6  # 6h
     REDIS_ENTITLEMENTS_TTL_SECONDS: int = 60 * 5  # 5m
+    BETA_MODE: str = "0"
+    BETA_ALLOWED_USER_IDS: str = ""
 
     # ── Foundation (future) ─────────────────────────────────────
     MONGODB_URI: str | None = None
@@ -176,6 +182,7 @@ class Settings(BaseSettings):
     # ── Smart Home ──────────────────────────────────────────────
     SMART_HOME_DEFAULT_PROVIDER: str = "home_assistant"
     ENABLE_SMART_HOME: str = "0"
+    ENABLE_MESSAGING: str = "0"
 
 
 settings = Settings()

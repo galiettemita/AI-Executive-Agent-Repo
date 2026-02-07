@@ -38,6 +38,7 @@ ELEVENLABS_API_KEY=<your-elevenlabs-api-key>
 ELEVENLABS_VOICE_ID=<default-voice-id>
 ELEVENLABS_MODEL_ID=eleven_multilingual_v2
 VOICE_CALL_AUTO_EXECUTE_ON_APPROVAL=1
+ENABLE_VOICE_CALLS=0
 ```
 
 ### Google OAuth (Stage 5)
@@ -78,6 +79,9 @@ CalDAV credentials are stored per-user (not global env vars). Use the CalDAV con
 ```
 STATE_SIGNING_SECRET=<generate-a-secure-random-string>
 TOKEN_ENCRYPTION_KEY=<generate-with-fernet-key-generator>
+PII_ENCRYPTION_KEYS=<comma-separated-old-and-new-keys-for-rotation>
+ENFORCE_WEBHOOK_SIGNATURES=1
+AUDIT_LOG_ENABLED=1
 ```
 
 To generate TOKEN_ENCRYPTION_KEY:
@@ -195,6 +199,17 @@ SMART_HOME_DEFAULT_PROVIDER=home_assistant
 ENABLE_SMART_HOME=0
 ```
 Smart home provider credentials are stored per-user via `/admin/smart_home/connect` (Home Assistant).
+
+### Messaging
+```
+ENABLE_MESSAGING=0
+```
+
+### Beta Gating (Optional)
+```
+BETA_MODE=0
+BETA_ALLOWED_USER_IDS=user1,user2
+```
 
 ## Optional Environment Variables
 

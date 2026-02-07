@@ -11,6 +11,7 @@ from app.api.deps import get_db
 from app.db.models import Proposal
 from app.services.proposal_links import verify_token
 from app.services.proposals import get_proposal, update_proposal_status, log_proposal_action
+from app.middleware.rate_limiter import rate_limit_user
 from app.core.config import settings
 
 
@@ -82,8 +83,9 @@ def proposal_view(proposal_id: int, request: Request, db: Session = Depends(get_
     return HTMLResponse(content=html)
 
 
+@rate_limit_user()
 @router.post("/{proposal_id}/approve")
-def proposal_approve(proposal_id: int, request: Request, db: Session = Depends(get_db)):
+def proposal_approve(request: Request, proposal_id: int, db: Session = Depends(get_db)):
     _require_token(request, proposal_id)
     row = get_proposal(db, proposal_id)
     if not row:
@@ -104,7 +106,11 @@ def proposal_approve(proposal_id: int, request: Request, db: Session = Depends(g
     )
 
     # Auto-execute voice call proposals if enabled
-    if row.proposal_type == "voice_call" and settings.VOICE_CALL_AUTO_EXECUTE_ON_APPROVAL == "1":
+    if (
+        row.proposal_type == "voice_call"
+        and settings.VOICE_CALL_AUTO_EXECUTE_ON_APPROVAL == "1"
+        and settings.ENABLE_VOICE_CALLS == "1"
+    ):
         from app.services.execution_engine import ExecutionEngine
         try:
             payload = json.loads(row.payload_json or "{}")
@@ -124,8 +130,9 @@ def proposal_approve(proposal_id: int, request: Request, db: Session = Depends(g
     return {"ok": True, "status": "approved"}
 
 
+@rate_limit_user()
 @router.post("/{proposal_id}/cancel")
-def proposal_cancel(proposal_id: int, request: Request, db: Session = Depends(get_db)):
+def proposal_cancel(request: Request, proposal_id: int, db: Session = Depends(get_db)):
     _require_token(request, proposal_id)
     row = get_proposal(db, proposal_id)
     if not row:
@@ -148,8 +155,9 @@ def proposal_cancel(proposal_id: int, request: Request, db: Session = Depends(ge
     return {"ok": True, "status": "canceled"}
 
 
+@rate_limit_user()
 @router.post("/{proposal_id}/edit")
-async def proposal_edit(proposal_id: int, request: Request, db: Session = Depends(get_db)):
+async def proposal_edit(request: Request, proposal_id: int, db: Session = Depends(get_db)):
     _require_token(request, proposal_id)
     row = get_proposal(db, proposal_id)
     if not row:

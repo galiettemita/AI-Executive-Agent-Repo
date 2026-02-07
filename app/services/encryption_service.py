@@ -35,28 +35,45 @@ class EncryptionService:
             key: Optional Fernet key. If not provided, uses PII_ENCRYPTION_KEY env var
                  or derives from JWT_SECRET.
         """
-        self._fernet = self._get_fernet(key)
+        self._primary_fernet, self._all_fernets = self._get_fernets(key)
 
-    def _get_fernet(self, key: Optional[str] = None) -> Fernet:
-        """Get or create Fernet instance."""
+    def _get_fernets(self, key: Optional[str] = None) -> tuple[Fernet, list[Fernet]]:
+        """
+        Get primary and fallback Fernet instances.
+
+        Supports key rotation via PII_ENCRYPTION_KEYS (comma-separated).
+        The first key is used for encryption; all keys are tried for decryption.
+        """
         if key:
-            return Fernet(key.encode("utf-8"))
+            f = Fernet(key.encode("utf-8"))
+            return f, [f]
 
-        # Try PII_ENCRYPTION_KEY first (preferred)
-        env_key = settings.PII_ENCRYPTION_KEY
-        if env_key:
-            return Fernet(env_key.encode("utf-8"))
+        keys: list[str] = []
 
-        # Fall back to deriving from JWT_SECRET
-        jwt_secret = settings.JWT_SECRET
-        if not jwt_secret:
-            raise RuntimeError(
-                "Missing encryption key. Set PII_ENCRYPTION_KEY (preferred) or JWT_SECRET env var."
-            )
+        # Rotation keys (comma-separated)
+        if settings.PII_ENCRYPTION_KEYS:
+            for raw in settings.PII_ENCRYPTION_KEYS.split(","):
+                candidate = raw.strip()
+                if candidate:
+                    keys.append(candidate)
 
-        # Derive a stable 32-byte key from JWT_SECRET
-        digest = hashlib.sha256(jwt_secret.encode("utf-8")).digest()
-        return Fernet(base64.urlsafe_b64encode(digest))
+        # Primary key (preferred)
+        if settings.PII_ENCRYPTION_KEY:
+            if settings.PII_ENCRYPTION_KEY not in keys:
+                keys.insert(0, settings.PII_ENCRYPTION_KEY)
+
+        # Fall back to deriving from JWT_SECRET if no keys
+        if not keys:
+            jwt_secret = settings.JWT_SECRET
+            if not jwt_secret:
+                raise RuntimeError(
+                    "Missing encryption key. Set PII_ENCRYPTION_KEY (preferred) or JWT_SECRET env var."
+                )
+            digest = hashlib.sha256(jwt_secret.encode("utf-8")).digest()
+            keys = [base64.urlsafe_b64encode(digest).decode("utf-8")]
+
+        fernets = [Fernet(k.encode("utf-8")) for k in keys]
+        return fernets[0], fernets
 
     def encrypt(self, plaintext: Optional[str]) -> Optional[str]:
         """
@@ -71,7 +88,7 @@ class EncryptionService:
         if not plaintext:
             return None
 
-        encrypted = self._fernet.encrypt(plaintext.encode("utf-8"))
+        encrypted = self._primary_fernet.encrypt(plaintext.encode("utf-8"))
         return encrypted.decode("utf-8")
 
     def decrypt(self, ciphertext: Optional[str]) -> Optional[str]:
@@ -90,13 +107,15 @@ class EncryptionService:
         if not ciphertext:
             return None
 
-        try:
-            decrypted = self._fernet.decrypt(ciphertext.encode("utf-8"))
-            return decrypted.decode("utf-8")
-        except InvalidToken:
-            raise ValueError(
-                "Failed to decrypt data. PII_ENCRYPTION_KEY may have changed."
-            )
+        for f in self._all_fernets:
+            try:
+                decrypted = f.decrypt(ciphertext.encode("utf-8"))
+                return decrypted.decode("utf-8")
+            except InvalidToken:
+                continue
+        raise ValueError(
+            "Failed to decrypt data. PII_ENCRYPTION_KEY may have changed."
+        )
 
     def is_encrypted(self, value: Optional[str]) -> bool:
         """

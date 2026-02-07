@@ -25,6 +25,7 @@ from app.services.voice_call_service import (
 )
 from app.services.proposals import create_proposal_with_link
 from app.services.consent_service import require_consent
+from app.middleware.rate_limiter import rate_limit_user, rate_limit_webhook
 from app.services.twilio_voice import create_outbound_call, generate_twiml_stream
 from app.services.voice_ai import generate_call_response, summarize_call
 from app.services.voice_profiles import resolve_voice_id
@@ -79,8 +80,10 @@ class VoiceOutcomeRequest(BaseModel):
 def _validate_twilio(request: Request, params: dict) -> bool:
     auth_token = settings.TWILIO_AUTH_TOKEN
     if not auth_token:
-        if settings.ENV in ("production", "staging"):
-            logger.warning("TWILIO_AUTH_TOKEN not set; skipping validation in production is unsafe")
+        if settings.ENV in ("production", "staging") and settings.ENFORCE_WEBHOOK_SIGNATURES == "1":
+            logger.error("TWILIO_AUTH_TOKEN not set; signature verification required")
+            return False
+        logger.warning("TWILIO_AUTH_TOKEN not set; skipping validation")
         return True
     signature = request.headers.get("X-Twilio-Signature", "")
     validator = RequestValidator(auth_token)
@@ -137,36 +140,40 @@ def get_call(call_id: int, db: Session = Depends(get_db)):
     }
 
 
+@rate_limit_user()
 @router.post("/outbound")
-def start_outbound_call(request: OutboundCallRequest, db: Session = Depends(get_db)):
+def start_outbound_call(request: Request, payload: OutboundCallRequest, db: Session = Depends(get_db)):
     """
     Initiate an outbound call via Twilio Voice.
     """
+    if settings.ENABLE_VOICE_CALLS != "1":
+        raise HTTPException(status_code=403, detail="Voice calls are disabled")
+
     app_base_url = settings.APP_BASE_URL
     if not app_base_url:
         raise HTTPException(status_code=500, detail="APP_BASE_URL not configured")
 
     try:
-        require_consent(db, request.user_id, "voice")
+        require_consent(db, payload.user_id, "voice")
     except Exception as exc:
         raise HTTPException(status_code=403, detail=str(exc))
 
     script_json = None
-    if request.script_id:
-        script_row = db.query(VoiceCallScript).filter(VoiceCallScript.id == request.script_id).first()
+    if payload.script_id:
+        script_row = db.query(VoiceCallScript).filter(VoiceCallScript.id == payload.script_id).first()
         if not script_row:
             raise HTTPException(status_code=404, detail="Voice script not found")
         script_json = script_row.script_json
 
     call = create_voice_call(
         db=db,
-        user_id=request.user_id,
+        user_id=payload.user_id,
         direction="outbound",
-        to_number=request.to_number,
-        from_number=request.from_number,
-        purpose=request.purpose,
-        voice_profile=request.voice_profile,
-        script_id=request.script_id,
+        to_number=payload.to_number,
+        from_number=payload.from_number,
+        purpose=payload.purpose,
+        voice_profile=payload.voice_profile,
+        script_id=payload.script_id,
         script_json=script_json,
         status="initiating",
     )
@@ -176,8 +183,8 @@ def start_outbound_call(request: OutboundCallRequest, db: Session = Depends(get_
     recording_url = f"{app_base_url}/webhooks/voice/recording"
 
     call_sid = create_outbound_call(
-        to_number=request.to_number,
-        from_number=request.from_number,
+        to_number=payload.to_number,
+        from_number=payload.from_number,
         twiml_url=twiml_url,
         status_callback_url=status_url,
         recording_status_callback_url=recording_url,
@@ -191,26 +198,29 @@ def start_outbound_call(request: OutboundCallRequest, db: Session = Depends(get_
     return {"ok": True, "call_id": call.id, "call_sid": call_sid}
 
 
+@rate_limit_user()
 @router.post("/proposals")
-def create_voice_call_proposal(request: VoiceCallProposalRequest, db: Session = Depends(get_db)):
-    payload = {
-        "to_number": request.to_number,
-        "from_number": request.from_number,
-        "purpose": request.purpose,
-        "voice_profile": request.voice_profile,
+def create_voice_call_proposal(request: Request, payload: VoiceCallProposalRequest, db: Session = Depends(get_db)):
+    if settings.ENABLE_VOICE_CALLS != "1":
+        raise HTTPException(status_code=403, detail="Voice calls are disabled")
+    proposal_payload = {
+        "to_number": payload.to_number,
+        "from_number": payload.from_number,
+        "purpose": payload.purpose,
+        "voice_profile": payload.voice_profile,
     }
-    if request.script_id:
-        payload["script_id"] = request.script_id
-    if request.script:
-        payload["script"] = request.script
+    if payload.script_id:
+        proposal_payload["script_id"] = payload.script_id
+    if payload.script:
+        proposal_payload["script"] = payload.script
 
     created = create_proposal_with_link(
         db,
-        user_id=request.user_id,
+        user_id=payload.user_id,
         proposal_type="voice_call",
-        payload=payload,
+        payload=proposal_payload,
     )
-    summary = request.summary or "Voice call proposal created."
+    summary = payload.summary or "Voice call proposal created."
     return {
         "ok": True,
         "proposal_id": created.get("proposal_id"),
@@ -219,13 +229,14 @@ def create_voice_call_proposal(request: VoiceCallProposalRequest, db: Session = 
     }
 
 
+@rate_limit_user()
 @router.post("/scripts")
-def create_voice_script(request: VoiceScriptRequest, db: Session = Depends(get_db)):
-    script_json = json.dumps(request.script or {}, ensure_ascii=False)
+def create_voice_script(request: Request, payload: VoiceScriptRequest, db: Session = Depends(get_db)):
+    script_json = json.dumps(payload.script or {}, ensure_ascii=False)
     row = VoiceCallScript(
-        user_id=request.user_id,
-        name=request.name,
-        description=request.description,
+        user_id=payload.user_id,
+        name=payload.name,
+        description=payload.description,
         script_json=script_json,
     )
     db.add(row)
@@ -234,8 +245,9 @@ def create_voice_script(request: VoiceScriptRequest, db: Session = Depends(get_d
     return {"ok": True, "script_id": row.id}
 
 
+@rate_limit_user()
 @router.get("/scripts")
-def list_voice_scripts(user_id: str, db: Session = Depends(get_db)):
+def list_voice_scripts(request: Request, user_id: str, db: Session = Depends(get_db)):
     rows = (
         db.query(VoiceCallScript)
         .filter(VoiceCallScript.user_id == user_id)
@@ -256,8 +268,9 @@ def list_voice_scripts(user_id: str, db: Session = Depends(get_db)):
     }
 
 
+@rate_limit_user()
 @router.get("/scripts/{script_id}")
-def get_voice_script(script_id: int, db: Session = Depends(get_db)):
+def get_voice_script(request: Request, script_id: int, db: Session = Depends(get_db)):
     row = db.query(VoiceCallScript).filter(VoiceCallScript.id == script_id).first()
     if not row:
         raise HTTPException(status_code=404, detail="Voice script not found")
@@ -271,24 +284,26 @@ def get_voice_script(script_id: int, db: Session = Depends(get_db)):
     }
 
 
+@rate_limit_user()
 @router.patch("/scripts/{script_id}")
-def update_voice_script(script_id: int, request: VoiceScriptUpdateRequest, db: Session = Depends(get_db)):
+def update_voice_script(request: Request, script_id: int, payload: VoiceScriptUpdateRequest, db: Session = Depends(get_db)):
     row = db.query(VoiceCallScript).filter(VoiceCallScript.id == script_id).first()
     if not row:
         raise HTTPException(status_code=404, detail="Voice script not found")
-    if request.name is not None:
-        row.name = request.name
-    if request.description is not None:
-        row.description = request.description
-    if request.script is not None:
-        row.script_json = json.dumps(request.script or {}, ensure_ascii=False)
+    if payload.name is not None:
+        row.name = payload.name
+    if payload.description is not None:
+        row.description = payload.description
+    if payload.script is not None:
+        row.script_json = json.dumps(payload.script or {}, ensure_ascii=False)
     db.commit()
     db.refresh(row)
     return {"ok": True, "script_id": row.id}
 
 
+@rate_limit_user()
 @router.post("/calls/{call_id}/outcome")
-def set_voice_call_outcome(call_id: int, request: VoiceOutcomeRequest, db: Session = Depends(get_db)):
+def set_voice_call_outcome(request: Request, call_id: int, payload: VoiceOutcomeRequest, db: Session = Depends(get_db)):
     call = db.query(VoiceCall).filter(VoiceCall.id == call_id).first()
     if not call:
         raise HTTPException(status_code=404, detail="Call not found")
@@ -296,12 +311,13 @@ def set_voice_call_outcome(call_id: int, request: VoiceOutcomeRequest, db: Sessi
         db,
         call,
         status=call.status,
-        outcome_status=request.outcome_status,
-        outcome_notes=request.outcome_notes,
+        outcome_status=payload.outcome_status,
+        outcome_notes=payload.outcome_notes,
     )
     return {"ok": True, "call_id": call.id, "outcome_status": call.outcome_status}
 
 
+@rate_limit_webhook()
 @webhook_router.api_route("/twiml", methods=["GET", "POST"])
 async def twiml_webhook(request: Request):
     """
@@ -358,6 +374,7 @@ async def twiml_webhook(request: Request):
         db.close()
 
 
+@rate_limit_webhook()
 @webhook_router.post("/status")
 async def voice_status_webhook(request: Request):
     """
@@ -414,6 +431,7 @@ async def voice_status_webhook(request: Request):
         db.close()
 
 
+@rate_limit_webhook()
 @webhook_router.post("/recording")
 async def voice_recording_webhook(request: Request):
     """

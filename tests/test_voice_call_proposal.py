@@ -15,6 +15,9 @@ def test_voice_call_proposal_execution(monkeypatch):
     db.add(User(id=user_id))
     db.commit()
 
+    from app.core import config as app_config
+    app_config.settings.ENABLE_VOICE_CALLS = "1"
+
     grant_consent(db, user_id, "voice")
 
     payload = {

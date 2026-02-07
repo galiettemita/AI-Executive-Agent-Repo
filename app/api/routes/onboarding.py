@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -15,6 +15,7 @@ from app.services.preferences import (
 )
 from app.services.profile_service import get_profile
 from app.services.phone_verification import request_phone_verification, verify_phone_code
+from app.middleware.rate_limiter import rate_limit_user
 
 router = APIRouter(prefix="/onboarding", tags=["onboarding"])
 
@@ -41,8 +42,9 @@ def _phone_verified(prefs: dict, profile: dict) -> bool:
     return bool(profile.get("phone_verified_at"))
 
 
+@rate_limit_user()
 @router.get("/status")
-def onboarding_status(user_id: str, db: Session = Depends(get_db)):
+def onboarding_status(request: Request, user_id: str, db: Session = Depends(get_db)):
     prefs = get_preferences(db, user_id)
     profile = get_profile(db, user_id)
 
@@ -68,12 +70,13 @@ def onboarding_status(user_id: str, db: Session = Depends(get_db)):
     }
 
 
+@rate_limit_user()
 @router.post("/answer")
-def onboarding_answer(request: OnboardingAnswerRequest, db: Session = Depends(get_db)):
-    prefs = get_preferences(db, request.user_id)
-    reply, updated = handle_onboarding_step(request.message or "", prefs)
+def onboarding_answer(request: Request, payload: OnboardingAnswerRequest, db: Session = Depends(get_db)):
+    prefs = get_preferences(db, payload.user_id)
+    reply, updated = handle_onboarding_step(payload.message or "", prefs)
     if reply:
-        update_preferences(db, request.user_id, updated)
+        update_preferences(db, payload.user_id, updated)
     return {
         "ok": True,
         "reply": reply,
@@ -82,19 +85,21 @@ def onboarding_answer(request: OnboardingAnswerRequest, db: Session = Depends(ge
     }
 
 
+@rate_limit_user()
 @router.post("/phone/start")
-def phone_start(request: PhoneStartRequest, db: Session = Depends(get_db)):
+def phone_start(request: Request, payload: PhoneStartRequest, db: Session = Depends(get_db)):
     try:
-        result = request_phone_verification(db, request.user_id, request.phone_number)
+        result = request_phone_verification(db, payload.user_id, payload.phone_number)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     return result
 
 
+@rate_limit_user()
 @router.post("/phone/verify")
-def phone_verify(request: PhoneVerifyRequest, db: Session = Depends(get_db)):
+def phone_verify(request: Request, payload: PhoneVerifyRequest, db: Session = Depends(get_db)):
     try:
-        result = verify_phone_code(db, request.user_id, request.phone_number, request.code)
+        result = verify_phone_code(db, payload.user_id, payload.phone_number, payload.code)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     return result

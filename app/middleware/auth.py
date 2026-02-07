@@ -123,6 +123,46 @@ class AuthMiddleware(BaseHTTPMiddleware):
         request.state.user_id = user_id
         set_user_id(user_id)
 
+        if settings.BETA_MODE == "1":
+            allowed = [u.strip() for u in (settings.BETA_ALLOWED_USER_IDS or "").split(",") if u.strip()]
+            if allowed and user_id in allowed:
+                pass
+            else:
+                # Optional DB-backed beta allowlist
+                try:
+                    from app.db.database import SessionLocal
+                    from app.services.beta_service import is_beta_user, has_beta_testers
+
+                    db = SessionLocal()
+                    try:
+                        has_any = has_beta_testers(db)
+                        is_allowed = is_beta_user(db, user_id)
+                    finally:
+                        db.close()
+                except Exception:
+                    logger.exception("Beta allowlist check failed")
+                    has_any = False
+                    is_allowed = False
+
+                if allowed:
+                    if not is_allowed:
+                        return JSONResponse(
+                            status_code=403,
+                            content={
+                                "error": "forbidden",
+                                "message": "Access restricted to beta users.",
+                            },
+                        )
+                else:
+                    if has_any and not is_allowed:
+                        return JSONResponse(
+                            status_code=403,
+                            content={
+                                "error": "forbidden",
+                                "message": "Access restricted to beta users.",
+                            },
+                        )
+
         # Optional: enforce that user_id in query/body matches authenticated user
         query_user_id = request.query_params.get("user_id")
         if query_user_id and query_user_id != user_id:

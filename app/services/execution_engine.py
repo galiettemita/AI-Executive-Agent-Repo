@@ -513,6 +513,8 @@ class ExecutionEngine:
         """
         Execute a voice call proposal (no payment required).
         """
+        if settings.ENABLE_VOICE_CALLS != "1":
+            raise ValueError("Voice calls are disabled")
         ExecutionEngine._log_execution_step(
             db, proposal.id, None, "voice_call_validate", "started"
         )

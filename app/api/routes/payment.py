@@ -13,6 +13,7 @@ from app.db.database import get_db
 from app.db.models import PaymentMethod, Transaction, User
 from app.services.stripe_service import StripeService
 from app.core.config import settings
+from app.middleware.rate_limiter import rate_limit_payment, rate_limit_webhook
 
 logger = logging.getLogger(__name__)
 
@@ -53,9 +54,11 @@ class RefundRequest(BaseModel):
 # ENDPOINTS
 # -------------------
 
+@rate_limit_payment()
 @router.post("/methods")
 def add_payment_method(
-    request: AddPaymentMethodRequest,
+    request: Request,
+    payload: AddPaymentMethodRequest,
     db: Session = Depends(get_db),
 ):
     """
@@ -67,9 +70,9 @@ def add_payment_method(
     try:
         payment_method = StripeService.create_payment_method(
             db=db,
-            user_id=request.user_id,
-            stripe_payment_method_id=request.stripe_payment_method_id,
-            is_default=request.is_default,
+            user_id=payload.user_id,
+            stripe_payment_method_id=payload.stripe_payment_method_id,
+            is_default=payload.is_default,
         )
 
         return {
@@ -112,9 +115,11 @@ def list_payment_methods(
     }
 
 
+@rate_limit_payment()
 @router.post("/intent/create")
 def create_payment_intent(
-    request: CreatePaymentIntentRequest,
+    request: Request,
+    payload: CreatePaymentIntentRequest,
     db: Session = Depends(get_db),
 ):
     """
@@ -127,8 +132,8 @@ def create_payment_intent(
         # Check spending limits first
         limit_check = StripeService.check_spending_limit(
             db=db,
-            user_id=request.user_id,
-            amount=request.amount,
+            user_id=payload.user_id,
+            amount=payload.amount,
         )
 
         if not limit_check["allowed"]:
@@ -144,14 +149,14 @@ def create_payment_intent(
         # Create payment intent
         transaction = StripeService.create_payment_intent(
             db=db,
-            user_id=request.user_id,
-            proposal_id=request.proposal_id,
-            amount=request.amount,
-            currency=request.currency,
-            transaction_type=request.transaction_type,
-            description=request.description,
-            payment_method_id=request.payment_method_id,
-            idempotency_key=f"proposal_{request.proposal_id}",
+            user_id=payload.user_id,
+            proposal_id=payload.proposal_id,
+            amount=payload.amount,
+            currency=payload.currency,
+            transaction_type=payload.transaction_type,
+            description=payload.description,
+            payment_method_id=payload.payment_method_id,
+            idempotency_key=f"proposal_{payload.proposal_id}",
         )
 
         return {
@@ -169,9 +174,11 @@ def create_payment_intent(
         raise HTTPException(status_code=400, detail=str(e))
 
 
+@rate_limit_payment()
 @router.post("/intent/confirm")
 def confirm_payment_intent(
-    request: ConfirmPaymentRequest,
+    request: Request,
+    payload: ConfirmPaymentRequest,
     db: Session = Depends(get_db),
 ):
     """
@@ -182,7 +189,7 @@ def confirm_payment_intent(
     try:
         result = StripeService.confirm_payment_intent(
             db=db,
-            transaction_id=request.transaction_id,
+            transaction_id=payload.transaction_id,
         )
 
         return {
@@ -194,9 +201,11 @@ def confirm_payment_intent(
         raise HTTPException(status_code=400, detail=str(e))
 
 
+@rate_limit_payment()
 @router.post("/refund")
 def refund_payment(
-    request: RefundRequest,
+    request: Request,
+    payload: RefundRequest,
     db: Session = Depends(get_db),
 ):
     """
@@ -207,9 +216,9 @@ def refund_payment(
     try:
         result = StripeService.refund_payment(
             db=db,
-            transaction_id=request.transaction_id,
-            amount=request.amount,
-            reason=request.reason,
+            transaction_id=payload.transaction_id,
+            amount=payload.amount,
+            reason=payload.reason,
         )
 
         return {
@@ -257,6 +266,7 @@ def list_transactions(
 # STRIPE WEBHOOKS
 # -------------------
 
+@rate_limit_webhook()
 @router.post("/webhooks/stripe")
 async def stripe_webhook(
     request: Request,
@@ -400,8 +410,10 @@ def get_invoice(
     )
 
 
+@rate_limit_payment()
 @router.post("/invoice/{transaction_id}/regenerate")
 def regenerate_invoice(
+    request: Request,
     transaction_id: int,
     db: Session = Depends(get_db),
 ):

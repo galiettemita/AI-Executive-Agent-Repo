@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.db.database import get_db
 from app.db.models import Proposal, ExecutionLog, Booking
 from app.services.execution_engine import ExecutionEngine
+from app.middleware.rate_limiter import rate_limit_user
 
 router = APIRouter(prefix="/execution", tags=["execution"])
 
@@ -27,9 +28,11 @@ class ExecuteProposalRequest(BaseModel):
 # ENDPOINTS
 # -------------------
 
+@rate_limit_user()
 @router.post("/execute")
 def execute_proposal(
-    request: ExecuteProposalRequest,
+    request: Request,
+    payload: ExecuteProposalRequest,
     db: Session = Depends(get_db),
 ):
     """
@@ -48,9 +51,9 @@ def execute_proposal(
     try:
         result = ExecutionEngine.execute_proposal(
             db=db,
-            proposal_id=request.proposal_id,
-            approval_token=request.approval_token,
-            dry_run=request.dry_run,
+            proposal_id=payload.proposal_id,
+            approval_token=payload.approval_token,
+            dry_run=payload.dry_run,
         )
 
         return {
