@@ -8,6 +8,8 @@ from typing import Dict
 from sqlalchemy.orm import Session
 
 from app.db.models import Subscription
+from app.core.config import settings
+from app.core.redis import cache_get_json, cache_set_json, cache_delete
 
 
 PREMIUM_PLANS = {"starter", "plus", "pro"}
@@ -55,13 +57,22 @@ def get_entitlements(db: Session, user_id: str) -> Dict[str, str]:
     """
     Minimal entitlements stub. Defaults to free if no record exists.
     """
+    cache_key = f"entitlements:{user_id}"
+    cached = cache_get_json(cache_key)
+    if isinstance(cached, dict):
+        return cached
+
     sub = get_subscription(db, user_id)
     if not sub:
-        return {"plan": "free", "status": "active"}
-    return {
+        entitlements = {"plan": "free", "status": "active"}
+        cache_set_json(cache_key, entitlements, ttl_seconds=settings.REDIS_ENTITLEMENTS_TTL_SECONDS)
+        return entitlements
+    entitlements = {
         "plan": sub.plan or "free",
         "status": sub.status or "active",
     }
+    cache_set_json(cache_key, entitlements, ttl_seconds=settings.REDIS_ENTITLEMENTS_TTL_SECONDS)
+    return entitlements
 
 
 def upsert_subscription(
@@ -95,3 +106,4 @@ def upsert_subscription(
         sub.provider_subscription_id = provider_subscription_id
         sub.current_period_end = current_period_end
     db.commit()
+    cache_delete(f"entitlements:{user_id}")

@@ -27,6 +27,7 @@ class Settings(BaseSettings):
     # ── OpenAI ──────────────────────────────────────────────────
     OPENAI_API_KEY: str | None = None
     OPENAI_MODEL: str = "gpt-4o-mini"
+    OPENAI_EMBEDDING_MODEL: str = "text-embedding-3-small"
 
     # ── Stripe ──────────────────────────────────────────────────
     STRIPE_SECRET_KEY: str | None = None
@@ -46,6 +47,12 @@ class Settings(BaseSettings):
     GOOGLE_REDIRECT_URI: str = ""
     STATE_SIGNING_SECRET: str | None = None
     TOKEN_ENCRYPTION_KEY: str | None = None
+
+    # ── Microsoft OAuth ────────────────────────────────────────
+    MS_CLIENT_ID: str | None = None
+    MS_CLIENT_SECRET: str | None = None
+    MS_REDIRECT_URI: str = ""
+    MS_TENANT_ID: str = "common"
 
     # ── WhatsApp ────────────────────────────────────────────────
     WHATSAPP_TOKEN: str = ""
@@ -69,6 +76,7 @@ class Settings(BaseSettings):
 
     # ── Voice settings ──────────────────────────────────────────
     VOICE_CALL_MAX_DURATION_SECONDS: int = 1800  # 30 minutes
+    VOICE_CALL_AUTO_EXECUTE_ON_APPROVAL: str = "1"
 
     # ── SerpAPI (Discovery) ─────────────────────────────────────
     SERPAPI_API_KEY: str | None = None
@@ -96,6 +104,16 @@ class Settings(BaseSettings):
     DAILY_BRIEF_SCHEDULE: str = "7 0"
     PRICE_MONITORING_INTERVAL_MINUTES: int = 60
     NOTIFICATION_DELIVERY_INTERVAL_MINUTES: int = 5
+    ENERGY_MONITOR_INTERVAL_MINUTES: int = 15
+    PROACTIVE_RULE_POLL_MINUTES: int = 5
+
+    # ── Onboarding / Phone verification ─────────────────────────
+    REQUIRE_PHONE_VERIFICATION: str = "0"
+    PHONE_VERIFICATION_CODE_LENGTH: int = 6
+    PHONE_VERIFICATION_CODE_TTL_MINUTES: int = 10
+    PHONE_VERIFICATION_MAX_ATTEMPTS: int = 5
+    PHONE_VERIFICATION_RESEND_COOLDOWN_SECONDS: int = 60
+    PHONE_VERIFICATION_ALLOW_DEV_CODE_ECHO: str = "1"
 
     # ── History ─────────────────────────────────────────────────
     HISTORY_TURNS: int = 6
@@ -109,11 +127,55 @@ class Settings(BaseSettings):
     REDIS_URL: str | None = None
     RATE_LIMIT_USER: str = "10/minute"
     RATE_LIMIT_IP: str = "100/minute"
+    REDIS_SESSION_TTL_SECONDS: int = 60 * 60 * 24  # 24h
+    REDIS_PREFS_TTL_SECONDS: int = 60 * 60 * 6  # 6h
+    REDIS_ENTITLEMENTS_TTL_SECONDS: int = 60 * 5  # 5m
 
     # ── Foundation (future) ─────────────────────────────────────
     MONGODB_URI: str | None = None
+    MONGODB_DB: str = "executive_ai_agent"
     CELERY_BROKER_URL: str | None = None
+    CELERY_RESULT_BACKEND: str | None = None
+    CELERY_TASK_ALWAYS_EAGER: bool = False
     SENTRY_DSN: str | None = None
+
+    # ── Observability ───────────────────────────────────────────
+    PROMETHEUS_ENABLED: bool = False
+    METRICS_TOKEN: str | None = None
+    SENTRY_TRACES_SAMPLE_RATE: float = 0.05
+    SENTRY_PROFILES_SAMPLE_RATE: float = 0.0
+
+    OTEL_ENABLED: bool = False
+    OTEL_SERVICE_NAME: str = "executive-ai-agent"
+    OTEL_EXPORTER_OTLP_ENDPOINT: str | None = None
+    OTEL_EXPORTER_OTLP_HEADERS: str | None = None
+
+    # ── Storage ────────────────────────────────────────────────
+    STORAGE_BACKEND: str = "local"  # local | s3
+    LOCAL_STORAGE_PATH: str = "./storage"
+    S3_BUCKET: str | None = None
+    S3_REGION: str | None = None
+    S3_ACCESS_KEY_ID: str | None = None
+    S3_SECRET_ACCESS_KEY: str | None = None
+    S3_ENDPOINT_URL: str | None = None
+
+    # ── Vector DB ──────────────────────────────────────────────
+    VECTOR_DB_BACKEND: str | None = None  # pinecone | weaviate | pgvector
+    PINECONE_API_KEY: str | None = None
+    PINECONE_ENVIRONMENT: str | None = None
+    PINECONE_INDEX: str | None = None
+    WEAVIATE_URL: str | None = None
+    WEAVIATE_API_KEY: str | None = None
+    PGVECTOR_DSN: str | None = None
+
+    # ── Alerting ───────────────────────────────────────────────
+    ALERTING_PROVIDER: str | None = None  # sentry | slack | pagerduty
+    SLACK_ALERT_WEBHOOK_URL: str | None = None
+    PAGERDUTY_ROUTING_KEY: str | None = None
+
+    # ── Smart Home ──────────────────────────────────────────────
+    SMART_HOME_DEFAULT_PROVIDER: str = "home_assistant"
+    ENABLE_SMART_HOME: str = "0"
 
 
 settings = Settings()
@@ -122,20 +184,30 @@ settings = Settings()
 # ── Production guards (run at import time) ──────────────────────
 def _validate_settings():
     """Warn or fail on dangerous configuration in non-dev environments."""
+    if settings.ENV not in ("dev", "staging", "production"):
+        logger.critical("ENV must be one of dev, staging, production. Got: %s", settings.ENV)
+        sys.exit(1)
+
     if settings.ENV in ("production", "staging"):
-        if settings.JWT_SECRET == "dev_only_change_me":
-            logger.critical(
-                "JWT_SECRET is still the default value in %s environment. "
-                "Set a secure random JWT_SECRET before deploying.",
-                settings.ENV,
-            )
-            sys.exit(1)
+        critical_missing: list[str] = []
+
+        if settings.JWT_SECRET == "dev_only_change_me" or not settings.JWT_SECRET:
+            critical_missing.append("JWT_SECRET")
 
         if settings.DATABASE_URL.startswith("sqlite"):
+            critical_missing.append("DATABASE_URL (must be PostgreSQL)")
+
+        if not settings.OPENAI_API_KEY:
+            critical_missing.append("OPENAI_API_KEY")
+
+        if not settings.PII_ENCRYPTION_KEY:
+            critical_missing.append("PII_ENCRYPTION_KEY")
+
+        if critical_missing:
             logger.critical(
-                "DATABASE_URL points to SQLite in %s environment. "
-                "Use PostgreSQL for production.",
+                "Missing or invalid critical settings in %s: %s",
                 settings.ENV,
+                ", ".join(critical_missing),
             )
             sys.exit(1)
 
@@ -143,7 +215,9 @@ def _validate_settings():
     if not settings.OPENAI_API_KEY:
         logger.warning("OPENAI_API_KEY not set — AI features will not work")
     if not settings.PII_ENCRYPTION_KEY:
-        logger.warning("PII_ENCRYPTION_KEY not set — PII encryption will fall back to JWT_SECRET")
+        logger.warning(
+            "PII_ENCRYPTION_KEY not set — PII encryption will fall back to JWT_SECRET"
+        )
 
 
 _validate_settings()

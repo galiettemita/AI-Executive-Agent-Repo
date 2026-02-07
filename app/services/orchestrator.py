@@ -27,6 +27,8 @@ from app.services.wardrobe_agent import run_wardrobe_agent
 from app.services.creative_agent import run_creative_agent
 from app.services.food_agent import run_food_agent
 from app.services.travel_agent import run_travel_agent
+from app.services.smart_home_agent import run_smart_home_agent
+from app.core.config import settings
 
 
 def run_orchestrator(
@@ -41,6 +43,11 @@ def run_orchestrator(
     Adds user memory to the context (without replaying entire chat).
     """
     prefs = get_preferences(db, user_id)
+    if settings.REQUIRE_PHONE_VERIFICATION == "1" and not prefs.get("phone_verified"):
+        return (
+            "Please verify your phone number to continue. "
+            "Use POST /onboarding/phone/start to request a code, then /onboarding/phone/verify to confirm."
+        )
     if not is_onboarding_complete(prefs):
         reply, updated = handle_onboarding_step(user_message, prefs)
         if reply:
@@ -165,6 +172,11 @@ def run_orchestrator(
 
     if intent == Intent.ADMIN:
         return handle_admin(db=db, user_id=user_id, history=injected_history, user_message=user_message)
+
+    if intent == Intent.SMART_HOME:
+        if settings.ENABLE_SMART_HOME != "1":
+            return "Smart home integration is currently disabled."
+        return run_smart_home_agent(db=db, user_id=user_id, history=injected_history, user_message=user_message)
 
     # Fallback
     return "Okay — tell me what you want to do, and any constraints (budget, timing, preferences)."

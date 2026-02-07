@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 # app/db/models.py
 
@@ -128,7 +128,7 @@ class NotificationQueue(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
 
     user_id: Mapped[str] = mapped_column(String, index=True)
-    watch_item_id: Mapped[int] = mapped_column(Integer, ForeignKey("watch_items.id"), index=True)
+    watch_item_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("watch_items.id"), index=True, nullable=True)
 
     event_type: Mapped[str] = mapped_column(String, index=True)  # "price_drop", "target_hit"
     title: Mapped[str] = mapped_column(String)
@@ -142,6 +142,71 @@ class NotificationQueue(Base):
 
     is_sent: Mapped[bool] = mapped_column(Boolean, default=False)
     sent_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+
+# -------------------
+# PHONE VERIFICATION
+# -------------------
+
+class PhoneVerification(Base):
+    __tablename__ = "phone_verifications"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(String, ForeignKey("users.id"), index=True)
+    phone_number: Mapped[str] = mapped_column(String, index=True)
+
+    code_hash: Mapped[str] = mapped_column(String, nullable=False)
+    status: Mapped[str] = mapped_column(String, default="pending", index=True)  # pending, verified, expired, locked
+
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    max_attempts: Mapped[int] = mapped_column(Integer, default=5)
+
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    verified_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_sent_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, index=True)
+
+
+# -------------------
+# PROACTIVE RULES
+# -------------------
+
+class ProactiveRule(Base):
+    __tablename__ = "proactive_rules"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(String, ForeignKey("users.id"), index=True)
+
+    name: Mapped[str] = mapped_column(String, index=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+    trigger_type: Mapped[str] = mapped_column(String, index=True)  # interval, daily, once
+    trigger_config_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    conditions_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    action_type: Mapped[str] = mapped_column(String, index=True)  # notify, create_proposal, voice_call_proposal
+    action_payload_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    last_run_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    next_run_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, index=True)
+
+
+class ProactiveRuleRun(Base):
+    __tablename__ = "proactive_rule_runs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    rule_id: Mapped[int] = mapped_column(Integer, ForeignKey("proactive_rules.id"), index=True)
+    user_id: Mapped[str] = mapped_column(String, ForeignKey("users.id"), index=True)
+
+    status: Mapped[str] = mapped_column(String, index=True)  # ok, skipped, failed
+    reason: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
 
@@ -188,6 +253,28 @@ class OAuthToken(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, index=True)
 
 
+class IntegrationCredential(Base):
+    __tablename__ = "integration_credentials"
+    __table_args__ = (
+        UniqueConstraint("user_id", "provider", name="uq_integration_credentials_user_provider"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(String, ForeignKey("users.id"), index=True)
+
+    # e.g. "caldav"
+    provider: Mapped[str] = mapped_column(String, index=True)
+
+    username: Mapped[str | None] = mapped_column(String, nullable=True)
+    secret_enc: Mapped[str | None] = mapped_column(Text, nullable=True)
+    server_url: Mapped[str | None] = mapped_column(String, nullable=True)
+
+    metadata_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, index=True)
+
+
 class TaskItem(Base):
     __tablename__ = "tasks"
 
@@ -202,6 +289,153 @@ class TaskItem(Base):
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
 
+
+class FileAsset(Base):
+    __tablename__ = "file_assets"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(String, ForeignKey("users.id"), index=True)
+
+    filename: Mapped[str] = mapped_column(String, index=True)
+    content_type: Mapped[str | None] = mapped_column(String, nullable=True)
+    size_bytes: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    storage_key: Mapped[str] = mapped_column(String, unique=True, index=True)
+
+    tags_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    metadata_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, index=True)
+
+
+class PhotoAsset(Base):
+    __tablename__ = "photo_assets"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(String, ForeignKey("users.id"), index=True)
+
+    filename: Mapped[str] = mapped_column(String, index=True)
+    content_type: Mapped[str | None] = mapped_column(String, nullable=True)
+    size_bytes: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    storage_key: Mapped[str] = mapped_column(String, unique=True, index=True)
+
+    tags_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    metadata_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, index=True)
+
+
+class UserProfile(Base):
+    __tablename__ = "user_profiles"
+
+    user_id: Mapped[str] = mapped_column(String, ForeignKey("users.id"), primary_key=True)
+    data_json: Mapped[str] = mapped_column(Text, default="{}")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, index=True)
+
+
+class UserConsent(Base):
+    __tablename__ = "user_consents"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(String, ForeignKey("users.id"), index=True)
+    integration: Mapped[str] = mapped_column(String, index=True)  # e.g. calendar, email, voice, files
+    granted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    metadata_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+# -------------------
+# STAGE 1: SMART HOME
+# -------------------
+
+class SmartHomeDevice(Base):
+    __tablename__ = "smart_home_devices"
+    __table_args__ = (
+        UniqueConstraint("user_id", "provider", "provider_device_id", name="uq_smart_home_device_provider"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(String, ForeignKey("users.id"), index=True)
+
+    provider: Mapped[str] = mapped_column(String, index=True)  # home_assistant, google, alexa, homekit
+    provider_device_id: Mapped[str] = mapped_column(String, index=True)
+
+    name: Mapped[str] = mapped_column(String, index=True)
+    device_type: Mapped[str | None] = mapped_column(String, nullable=True)  # light, switch, climate, etc.
+    room: Mapped[str | None] = mapped_column(String, nullable=True)
+
+    traits_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    state_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    online: Mapped[bool] = mapped_column(Boolean, default=True)
+
+    last_state_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_seen_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, index=True)
+
+
+class SmartHomeScene(Base):
+    __tablename__ = "smart_home_scenes"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(String, ForeignKey("users.id"), index=True)
+
+    name: Mapped[str] = mapped_column(String, index=True)
+    description: Mapped[str | None] = mapped_column(String, nullable=True)
+    actions_json: Mapped[str] = mapped_column(Text, default="[]")
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, index=True)
+
+
+class SmartHomeActionLog(Base):
+    __tablename__ = "smart_home_action_logs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(String, ForeignKey("users.id"), index=True)
+    device_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("smart_home_devices.id"), nullable=True)
+    scene_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("smart_home_scenes.id"), nullable=True)
+
+    action_type: Mapped[str] = mapped_column(String, index=True)  # execute, scene
+    status: Mapped[str] = mapped_column(String, index=True)  # ok, failed
+    request_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    response_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+
+class SmartHomeEnergyAlert(Base):
+    __tablename__ = "smart_home_energy_alerts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(String, ForeignKey("users.id"), index=True)
+    provider: Mapped[str] = mapped_column(String, index=True)
+    entity_id: Mapped[str] = mapped_column(String, index=True)
+
+    comparison: Mapped[str] = mapped_column(String, default="gt")  # gt, lt
+    threshold_value: Mapped[float] = mapped_column(Float, default=0.0)
+    unit: Mapped[str | None] = mapped_column(String, nullable=True)
+
+    last_triggered_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+
+class SmartHomeEnergyReading(Base):
+    __tablename__ = "smart_home_energy_readings"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(String, ForeignKey("users.id"), index=True)
+    provider: Mapped[str] = mapped_column(String, index=True)
+    entity_id: Mapped[str] = mapped_column(String, index=True)
+
+    reading_time: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    value: Mapped[float] = mapped_column(Float, default=0.0)
+    unit: Mapped[str | None] = mapped_column(String, nullable=True)
+    metadata_json: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 # -------------------
 # STAGE 3: BILLING
@@ -547,12 +781,28 @@ class TravelerProfile(Base):
 # STAGE 18: VOICE CALLS
 # -------------------
 
+class VoiceCallScript(Base):
+    __tablename__ = "voice_call_scripts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(String, ForeignKey("users.id"), index=True)
+
+    name: Mapped[str] = mapped_column(String, index=True)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    script_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, index=True)
+
+
 class VoiceCall(Base):
     """Stores voice call details for Twilio Voice"""
     __tablename__ = "voice_calls"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     user_id: Mapped[str] = mapped_column(String, ForeignKey("users.id"), index=True)
+    proposal_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("proposals.id"), nullable=True, index=True)
+    script_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("voice_call_scripts.id"), nullable=True, index=True)
 
     direction: Mapped[str] = mapped_column(String, index=True)  # inbound, outbound
     to_number: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
@@ -561,17 +811,21 @@ class VoiceCall(Base):
     purpose: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
     voice_profile: Mapped[str | None] = mapped_column(String, nullable=True)
     status: Mapped[str] = mapped_column(String, default="initiating", index=True)
+    script_json: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     duration_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
     recording_url: Mapped[str | None] = mapped_column(String, nullable=True)
+    answered_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     transcript: Mapped[str | None] = mapped_column(Text, nullable=True)
     summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     action_items_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    outcome_status: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    outcome_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     call_sid: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
     stream_sid: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-

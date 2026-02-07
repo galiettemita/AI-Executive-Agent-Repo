@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import base64
 import hashlib
-import hmac
-import json
 import os
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional
@@ -18,6 +16,7 @@ from sqlalchemy.orm import Session
 from app.db.models import User
 from app.db.models import OAuthToken
 from app.core.config import settings
+from app.services.oauth_state import make_state, parse_state
 
 def _to_naive_utc(dt):
     """
@@ -43,9 +42,6 @@ DEFAULT_SCOPES = [
     "https://www.googleapis.com/auth/userinfo.email",
 ]
 
-STATE_TTL_MINUTES = 20
-
-
 def _require_env(name: str) -> str:
     val = os.getenv(name)
     if not val:
@@ -65,43 +61,6 @@ def _fernet() -> Fernet:
     secret = _require_env("STATE_SIGNING_SECRET").encode("utf-8")
     digest = hashlib.sha256(secret).digest()
     return Fernet(base64.urlsafe_b64encode(digest))
-
-
-def _sign_state(payload_b64: str) -> str:
-    secret = _require_env("STATE_SIGNING_SECRET").encode("utf-8")
-    sig = hmac.new(secret, payload_b64.encode("utf-8"), hashlib.sha256).digest()
-    return base64.urlsafe_b64encode(sig).decode("utf-8").rstrip("=")
-
-
-def _make_state(user_id: str) -> str:
-    now = datetime.now(timezone.utc)
-    payload = {
-        "user_id": user_id,
-        "iat": int(now.timestamp()),
-        "exp": int((now + timedelta(minutes=STATE_TTL_MINUTES)).timestamp()),
-    }
-    payload_json = json.dumps(payload, separators=(",", ":")).encode("utf-8")
-    payload_b64 = base64.urlsafe_b64encode(payload_json).decode("utf-8").rstrip("=")
-    sig = _sign_state(payload_b64)
-    return f"{payload_b64}.{sig}"
-
-
-def _parse_state(state: str) -> str:
-    try:
-        payload_b64, sig = state.split(".", 1)
-    except ValueError:
-        raise ValueError("Invalid state format")
-
-    expected = _sign_state(payload_b64)
-    if not hmac.compare_digest(expected, sig):
-        raise ValueError("Invalid state signature")
-
-    padded = payload_b64 + "=" * (-len(payload_b64) % 4)
-    payload = json.loads(base64.urlsafe_b64decode(padded.encode("utf-8")))
-    now = int(datetime.now(timezone.utc).timestamp())
-    if now > int(payload.get("exp", 0)):
-        raise ValueError("State expired")
-    return str(payload["user_id"])
 
 
 def _build_flow(state: str) -> Flow:
@@ -127,7 +86,7 @@ def _build_flow(state: str) -> Flow:
 
 
 def build_google_auth_url(user_id: str) -> str:
-    state = _make_state(user_id)
+    state = make_state(user_id)
     flow = _build_flow(state)
     auth_url, _ = flow.authorization_url(
         access_type="offline",
@@ -138,7 +97,7 @@ def build_google_auth_url(user_id: str) -> str:
 
 
 def exchange_code_and_store_tokens(db: Session, code: str, state: str) -> str:
-    user_id = _parse_state(state)
+    user_id = parse_state(state)
     # Ensure user exists before writing oauth token row (prevents FK issues)
     user = db.get(User, user_id)
     if user is None:

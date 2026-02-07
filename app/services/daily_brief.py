@@ -11,8 +11,8 @@ from openai import OpenAI
 from sqlalchemy.orm import Session
 
 from app.db.models import ChatMessage, MemoryNote
-from app.services.google_calendar import get_events_for_daily_brief
-from app.services.google_gmail import get_recent_emails_for_daily_brief
+from app.services.calendar_router import get_events_for_daily_brief
+from app.services.email_router import get_recent_emails_for_daily_brief
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)

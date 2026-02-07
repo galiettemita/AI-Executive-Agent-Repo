@@ -19,17 +19,30 @@ def generate_call_response(
     purpose: Optional[str],
     conversation: List[Dict[str, str]],
     last_user_utterance: str,
+    script: Optional[str] = None,
 ) -> str:
     """
     Generate the next assistant response during a call.
     """
     scenario = get_scenario(purpose)
+
+    script_block = ""
+    if script:
+        try:
+            script_data = json.loads(script) if isinstance(script, str) else script
+            script_block = (
+                f"Call script (use as guidance): {json.dumps(script_data, ensure_ascii=False)}. "
+            )
+        except Exception:
+            script_block = f"Call script (use as guidance): {script}. "
+
     system = (
         "You are an AI phone agent speaking in real time. "
         "Be concise, polite, and goal-oriented. "
         "Confirm key details before ending. "
         f"Scenario: {scenario['title']}. Goal: {scenario['goal']}. "
         f"Required fields: {scenario['required_fields']}. "
+        f"{script_block}"
         "If you need missing details, ask one question at a time. "
         "If you confirm a detail, ask: 'Did I get that right?' "
         "Never mention you are an AI unless asked."

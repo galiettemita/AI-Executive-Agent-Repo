@@ -75,6 +75,8 @@ def readiness():
     if not settings.JWT_SECRET or settings.JWT_SECRET == "dev_only_change_me":
         if settings.ENV != "dev":
             critical_missing.append("JWT_SECRET")
+    if settings.ENV != "dev" and not settings.PII_ENCRYPTION_KEY:
+        critical_missing.append("PII_ENCRYPTION_KEY")
 
     if critical_missing:
         checks["env_vars"] = f"missing: {', '.join(critical_missing)}"
@@ -85,9 +87,8 @@ def readiness():
     # Redis (if configured)
     if settings.REDIS_URL:
         try:
-            import redis as redis_lib
-            r = redis_lib.from_url(settings.REDIS_URL, socket_timeout=2)
-            r.ping()
+            from app.core.redis import redis_ping
+            redis_ping()
             checks["redis"] = "ok"
         except Exception as e:
             logger.error("Readiness: Redis check failed: %s", e)

@@ -11,6 +11,7 @@ from app.api.deps import get_db
 from app.db.models import Proposal
 from app.services.proposal_links import verify_token
 from app.services.proposals import get_proposal, update_proposal_status, log_proposal_action
+from app.core.config import settings
 
 
 router = APIRouter(prefix="/proposals", tags=["proposals"])
@@ -101,6 +102,24 @@ def proposal_approve(proposal_id: int, request: Request, db: Session = Depends(g
         new_status="approved",
         metadata={"ip": request.client.host if request.client else None}
     )
+
+    # Auto-execute voice call proposals if enabled
+    if row.proposal_type == "voice_call" and settings.VOICE_CALL_AUTO_EXECUTE_ON_APPROVAL == "1":
+        from app.services.execution_engine import ExecutionEngine
+        try:
+            payload = json.loads(row.payload_json or "{}")
+        except Exception:
+            payload = {}
+        try:
+            result = ExecutionEngine._execute_voice_call_proposal(
+                db=db,
+                proposal=row,
+                payload=payload,
+                dry_run=False,
+            )
+            return {"ok": True, "status": "approved", "execution": result}
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=f"Voice call execution failed: {exc}")
 
     return {"ok": True, "status": "approved"}
 

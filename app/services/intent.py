@@ -1,6 +1,7 @@
 # backend/app/services/intent.py
 
 from enum import Enum
+import re
 
 
 class Intent(str, Enum):
@@ -10,6 +11,7 @@ class Intent(str, Enum):
     CREATIVE = "creative"
     WARDROBE = "wardrobe"
     ADMIN = "admin"        # email/calendar/tasks
+    SMART_HOME = "smart_home"
     GENERAL = "general"
 
 
@@ -19,6 +21,13 @@ def classify_intent(text: str) -> Intent:
     # Admin
     if any(k in t for k in ["email", "inbox", "calendar", "schedule", "meeting", "reschedule", "appointment"]):
         return Intent.ADMIN
+
+    # Smart home (use word boundaries to avoid matching "flight" -> "light")
+    smart_home_pattern = re.compile(
+        r"\b(smart home|lights?|lamp|thermostat|temperature|fan|garage|lock|unlock|door|scene|heater|ac|air conditioner)\b"
+    )
+    if smart_home_pattern.search(t):
+        return Intent.SMART_HOME
 
     # Food (check before shopping to catch "order pizza" etc.)
     if any(k in t for k in ["doordash", "ubereats", "grubhub", "food", "pizza", "sushi", "burger", "pickup", "delivery", "restaurant", "hungry", "eat", "meal", "lunch", "dinner", "breakfast"]):

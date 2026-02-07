@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import re
 from email.message import EmailMessage
 import logging
 from typing import Any, Dict, List, Optional
@@ -81,69 +82,158 @@ def create_draft(
     return {"id": draft.get("id"), "messageId": (draft.get("message") or {}).get("id")}
 
 
-def get_recent_emails_for_daily_brief(
+def _decode_base64(data: str) -> str:
+    if not data:
+        return ""
+    padding = "=" * (-len(data) % 4)
+    decoded = base64.urlsafe_b64decode((data + padding).encode("utf-8"))
+    return decoded.decode("utf-8", errors="replace")
+
+
+def _strip_html(html: str) -> str:
+    if not html:
+        return ""
+    text = re.sub(r"<[^>]+>", " ", html)
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
+
+
+def _extract_body(payload: Dict[str, Any]) -> str:
+    if not payload:
+        return ""
+    mime = payload.get("mimeType")
+    body = payload.get("body") or {}
+    data = body.get("data")
+    if data:
+        content = _decode_base64(data)
+        if mime == "text/html":
+            return _strip_html(content)
+        return content
+
+    parts = payload.get("parts") or []
+    plain_parts = []
+    html_parts = []
+    for part in parts:
+        part_mime = part.get("mimeType")
+        if part_mime == "text/plain":
+            plain_parts.append(_extract_body(part))
+        elif part_mime == "text/html":
+            html_parts.append(_extract_body(part))
+        else:
+            if part.get("parts"):
+                nested = _extract_body(part)
+                if nested:
+                    plain_parts.append(nested)
+    if plain_parts:
+        return "\n".join(p for p in plain_parts if p)
+    if html_parts:
+        return "\n".join(p for p in html_parts if p)
+    return ""
+
+
+def _fetch_gmail_messages(
     db: Session,
     user_id: str,
+    query: str,
     max_results: int = 10,
-    hours_back: int = 24,
+    include_body: bool = False,
 ) -> List[Dict[str, Any]]:
-    """
-    Fetch recent emails for the daily brief.
-
-    Args:
-        db: Database session
-        user_id: User ID
-        max_results: Maximum number of emails to fetch
-        hours_back: How many hours back to look for emails
-
-    Returns:
-        List of email summaries with sender, subject, snippet
-    """
     creds = get_valid_google_credentials(db=db, user_id=user_id)
     if not creds:
         return []
 
-    try:
-        service = build("gmail", "v1", credentials=creds)
+    service = build("gmail", "v1", credentials=creds)
+    results = service.users().messages().list(userId="me", q=query, maxResults=max_results).execute()
+    messages = results.get("messages", [])
 
-        # Query for unread emails in inbox from last N hours
-        # You can customize this query based on your needs
-        query = f"in:inbox is:unread newer_than:{hours_back}h"
-
-        # List messages
-        results = (
+    email_summaries = []
+    for msg in messages:
+        msg_data = (
             service.users()
             .messages()
-            .list(userId="me", q=query, maxResults=max_results)
+            .get(
+                userId="me",
+                id=msg["id"],
+                format="full" if include_body else "metadata",
+                metadataHeaders=["From", "Subject", "Date"],
+            )
             .execute()
         )
 
-        messages = results.get("messages", [])
+        headers = {h["name"]: h["value"] for h in msg_data.get("payload", {}).get("headers", [])}
+        body_text = _extract_body(msg_data.get("payload") or {}) if include_body else None
 
-        email_summaries = []
-        for msg in messages:
-            # Get full message details
-            msg_data = (
-                service.users()
-                .messages()
-                .get(userId="me", id=msg["id"], format="metadata", metadataHeaders=["From", "Subject", "Date"])
-                .execute()
-            )
-
-            headers = {h["name"]: h["value"] for h in msg_data.get("payload", {}).get("headers", [])}
-
-            email_summaries.append({
+        email_summaries.append(
+            {
                 "id": msg_data.get("id"),
                 "thread_id": msg_data.get("threadId"),
                 "from": headers.get("From", "Unknown"),
                 "subject": headers.get("Subject", "No subject"),
                 "date": headers.get("Date"),
                 "snippet": msg_data.get("snippet", ""),
+                "body": body_text,
                 "labels": msg_data.get("labelIds", []),
-            })
+            }
+        )
+    return email_summaries
 
-        return email_summaries
 
+def search_gmail_messages(
+    db: Session,
+    user_id: str,
+    query: str,
+    max_results: int = 10,
+    include_body: bool = False,
+) -> List[Dict[str, Any]]:
+    try:
+        return _fetch_gmail_messages(
+            db=db,
+            user_id=user_id,
+            query=query,
+            max_results=max_results,
+            include_body=include_body,
+        )
     except Exception as e:
-        logger.error("Error fetching emails for daily brief (user %s): %s", user_id, e)
+        logger.error("Error searching Gmail (user %s): %s", user_id, e)
         return []
+
+
+def list_recent_gmail_messages(
+    db: Session,
+    user_id: str,
+    max_results: int = 10,
+    hours_back: int = 24,
+    unread_only: bool = True,
+    include_body: bool = False,
+) -> List[Dict[str, Any]]:
+    query_parts = ["in:inbox", f"newer_than:{hours_back}h"]
+    if unread_only:
+        query_parts.append("is:unread")
+    query = " ".join(query_parts)
+    try:
+        return _fetch_gmail_messages(
+            db=db,
+            user_id=user_id,
+            query=query,
+            max_results=max_results,
+            include_body=include_body,
+        )
+    except Exception as e:
+        logger.error("Error fetching Gmail messages (user %s): %s", user_id, e)
+        return []
+
+
+def get_recent_emails_for_daily_brief(
+    db: Session,
+    user_id: str,
+    max_results: int = 10,
+    hours_back: int = 24,
+) -> List[Dict[str, Any]]:
+    return list_recent_gmail_messages(
+        db=db,
+        user_id=user_id,
+        max_results=max_results,
+        hours_back=hours_back,
+        unread_only=True,
+        include_body=False,
+    )

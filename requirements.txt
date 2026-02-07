@@ -15,6 +15,8 @@ cryptography==42.0.8
 google-auth==2.33.0
 google-auth-oauthlib==1.2.1
 google-api-python-client==2.143.0
+caldav==1.3.9
+icalendar==5.0.11
 psycopg[binary]
 alembic==1.13.2
 apscheduler==3.10.4
@@ -28,3 +30,10 @@ python-multipart==0.0.9
 celery[redis]==5.4.0
 motor==3.6.0
 sentry-sdk[fastapi]==2.14.0
+prometheus-client==0.20.0
+opentelemetry-sdk==1.26.0
+opentelemetry-instrumentation-fastapi==0.47b0
+opentelemetry-instrumentation-requests==0.47b0
+opentelemetry-exporter-otlp==1.26.0
+boto3>=1.33.0,<2.0
+pinecone-client==3.0.0

@@ -12,9 +12,11 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.db.database import SessionLocal
-from app.db.models import OAuthToken, User, WatchItem
+from app.db.models import OAuthToken, User, WatchItem, SmartHomeEnergyAlert
 from app.services.daily_brief import generate_and_store_daily_brief
 from app.services.notification_delivery import deliver_pending_notifications
+from app.services.smart_home_service import evaluate_energy_alerts
+from app.services.proactive_rules import run_due_rules
 
 logger = logging.getLogger(__name__)
 
@@ -203,6 +205,39 @@ def run_notification_delivery():
         db.close()
 
 
+def run_proactive_rules():
+    """
+    Evaluate proactive rules and enqueue actions.
+    """
+    db = SessionLocal()
+    try:
+        result = run_due_rules(db)
+        logger.info("Proactive rules run: %s", result)
+    except Exception as e:
+        logger.error("Fatal error in proactive rules job: %s", e)
+    finally:
+        db.close()
+
+
+def run_energy_monitoring():
+    """
+    Poll energy sensors and send alerts for smart home energy thresholds.
+    """
+    db = SessionLocal()
+    try:
+        providers = (
+            db.query(SmartHomeEnergyAlert.provider)
+            .distinct()
+            .all()
+        )
+        for (provider,) in providers:
+            evaluate_energy_alerts(db, provider_name=provider)
+    except Exception as e:
+        logger.error("Fatal error in energy monitoring job: %s", e)
+    finally:
+        db.close()
+
+
 def setup_scheduler() -> BackgroundScheduler:
     """
     Set up the APScheduler for background jobs.
@@ -251,6 +286,36 @@ def setup_scheduler() -> BackgroundScheduler:
     )
 
     logger.info("Notification delivery job scheduled every %d minutes", settings.NOTIFICATION_DELIVERY_INTERVAL_MINUTES)
+
+    # Add proactive rules job
+    scheduler.add_job(
+        run_proactive_rules,
+        trigger="interval",
+        minutes=settings.PROACTIVE_RULE_POLL_MINUTES,
+        id="proactive_rules_job",
+        name="Proactive Rules",
+        replace_existing=True,
+    )
+
+    logger.info("Proactive rules job scheduled every %d minutes", settings.PROACTIVE_RULE_POLL_MINUTES)
+
+    if settings.ENABLE_SMART_HOME == "1":
+        # Add energy monitoring job
+        scheduler.add_job(
+            run_energy_monitoring,
+            trigger="interval",
+            minutes=settings.ENERGY_MONITOR_INTERVAL_MINUTES,
+            id="energy_monitoring_job",
+            name="Energy Monitoring",
+            replace_existing=True,
+        )
+
+        logger.info(
+            "Energy monitoring job scheduled every %d minutes",
+            settings.ENERGY_MONITOR_INTERVAL_MINUTES,
+        )
+    else:
+        logger.info("Smart home disabled; skipping energy monitoring scheduler")
 
     return scheduler
 

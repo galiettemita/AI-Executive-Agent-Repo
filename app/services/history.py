@@ -9,6 +9,7 @@ from sqlalchemy import func
 
 from app.db.models import Conversation, ChatMessage
 from app.core.config import settings
+from app.core.redis import cache_get_json, cache_set_json
 
 
 def _history_turns_limit() -> int:
@@ -34,6 +35,11 @@ def get_or_create_conversation(db: Session, user_id: str) -> Conversation:
 def get_recent_history(db: Session, user_id: str) -> List[Dict[str, str]]:
     limit_turns = _history_turns_limit()
     limit_msgs = limit_turns * 2
+    cache_key = f"history:{user_id}"
+    cached = cache_get_json(cache_key)
+    if isinstance(cached, list):
+        return cached[-limit_msgs:]
+
     msgs = (
         db.query(ChatMessage)
         .filter(ChatMessage.user_id == user_id)
@@ -42,7 +48,9 @@ def get_recent_history(db: Session, user_id: str) -> List[Dict[str, str]]:
         .all()
     )
     msgs = list(reversed(msgs))
-    return [{"role": m.role, "content": m.content} for m in msgs]
+    payload = [{"role": m.role, "content": m.content} for m in msgs]
+    cache_set_json(cache_key, payload, ttl_seconds=settings.REDIS_SESSION_TTL_SECONDS)
+    return payload
 
 
 def store_message(db: Session, user_id: str, conversation_id: int, role: str, content: str) -> None:
@@ -55,6 +63,15 @@ def store_message(db: Session, user_id: str, conversation_id: int, role: str, co
         )
     )
     db.commit()
+    cache_key = f"history:{user_id}"
+    cached = cache_get_json(cache_key)
+    if not isinstance(cached, list):
+        cached = []
+    cached.append({"role": role, "content": content})
+    limit_msgs = _history_turns_limit() * 2
+    if len(cached) > limit_msgs:
+        cached = cached[-limit_msgs:]
+    cache_set_json(cache_key, cached, ttl_seconds=settings.REDIS_SESSION_TTL_SECONDS)
 
 
 def trim_history(db: Session, user_id: str) -> None:
@@ -78,3 +95,8 @@ def trim_history(db: Session, user_id: str) -> None:
     id_list = [row[0] for row in old_ids]
     db.query(ChatMessage).filter(ChatMessage.id.in_(id_list)).delete(synchronize_session=False)
     db.commit()
+    cache_key = f"history:{user_id}"
+    cached = cache_get_json(cache_key)
+    if isinstance(cached, list):
+        cached = cached[-limit_msgs:]
+        cache_set_json(cache_key, cached, ttl_seconds=settings.REDIS_SESSION_TTL_SECONDS)

@@ -9,15 +9,24 @@ from typing import Dict, Tuple
 from sqlalchemy.orm import Session
 
 from app.db.models import UserPreference
+from app.core.config import settings
+from app.core.redis import cache_get_json, cache_set_json
 
 
 def get_preferences(db: Session, user_id: str) -> Dict[str, str]:
+    cache_key = f"prefs:{user_id}"
+    cached = cache_get_json(cache_key)
+    if isinstance(cached, dict):
+        return cached
+
     pref = db.query(UserPreference).filter(UserPreference.user_id == user_id).first()
     if not pref or not pref.data_json:
         return {}
     try:
         data = json.loads(pref.data_json)
-        return data if isinstance(data, dict) else {}
+        payload = data if isinstance(data, dict) else {}
+        cache_set_json(cache_key, payload, ttl_seconds=settings.REDIS_PREFS_TTL_SECONDS)
+        return payload
     except Exception:
         return {}
 
@@ -32,6 +41,7 @@ def _upsert(db: Session, user_id: str, data: Dict[str, str]) -> Dict[str, str]:
         pref.data_json = payload
         pref.updated_at = datetime.utcnow()
     db.commit()
+    cache_set_json(f"prefs:{user_id}", data, ttl_seconds=settings.REDIS_PREFS_TTL_SECONDS)
     return data
 
 

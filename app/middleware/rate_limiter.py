@@ -65,13 +65,14 @@ def create_limiter() -> Limiter:
 
     if redis_url:
         # Use Redis for distributed rate limiting in production
-        from slowapi.middleware import SlowAPIMiddleware
         return Limiter(
             key_func=get_user_identifier,
             storage_uri=redis_url,
             strategy="fixed-window",
         )
     else:
+        if settings.ENV in ("production", "staging"):
+            raise RuntimeError("REDIS_URL is required for rate limiting in non-dev environments")
         # Use in-memory storage for development/single-instance
         return Limiter(
             key_func=get_user_identifier,

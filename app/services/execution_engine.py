@@ -176,6 +176,15 @@ class ExecutionEngine:
         except json.JSONDecodeError:
             raise ValueError("Invalid proposal payload")
 
+        # Voice calls are executed without payments
+        if proposal.proposal_type == "voice_call":
+            return ExecutionEngine._execute_voice_call_proposal(
+                db=db,
+                proposal=proposal,
+                payload=payload,
+                dry_run=dry_run,
+            )
+
         # Extract amount
         amount = payload.get("total_price") or payload.get("total_amount") or 0
         if amount <= 0:
@@ -492,6 +501,119 @@ class ExecutionEngine:
             "transaction_id": transaction.id,
             "booking": booking_result,
             "message": "Booking completed successfully",
+        }
+
+    @staticmethod
+    def _execute_voice_call_proposal(
+        db: Session,
+        proposal: Proposal,
+        payload: Dict[str, Any],
+        dry_run: bool = False,
+    ) -> Dict[str, Any]:
+        """
+        Execute a voice call proposal (no payment required).
+        """
+        ExecutionEngine._log_execution_step(
+            db, proposal.id, None, "voice_call_validate", "started"
+        )
+
+        to_number = payload.get("to_number")
+        if not to_number:
+            raise ValueError("Voice call proposal missing to_number")
+
+        from_number = payload.get("from_number")
+        purpose = payload.get("purpose")
+        voice_profile = payload.get("voice_profile")
+        script_id = payload.get("script_id")
+        script_payload = payload.get("script")
+
+        # Consent check
+        from app.services.consent_service import require_consent
+        require_consent(db, proposal.user_id, "voice")
+
+        script_json = None
+        if script_payload is not None:
+            try:
+                script_json = json.dumps(script_payload, ensure_ascii=False)
+            except Exception:
+                script_json = json.dumps({"script": str(script_payload)}, ensure_ascii=False)
+
+        if script_id:
+            from app.db.models import VoiceCallScript
+            script_row = db.query(VoiceCallScript).filter(VoiceCallScript.id == script_id).first()
+            if not script_row:
+                raise ValueError("Voice call script not found")
+            if not script_json:
+                script_json = script_row.script_json
+
+        ExecutionEngine._log_execution_step(
+            db, proposal.id, None, "voice_call_validate", "completed"
+        )
+
+        if dry_run:
+            return {
+                "success": True,
+                "dry_run": True,
+                "message": "Voice call validated (dry run mode)",
+                "proposal_id": proposal.id,
+            }
+
+        if not settings.APP_BASE_URL:
+            raise ValueError("APP_BASE_URL not configured")
+
+        from app.services.voice_call_service import create_voice_call
+        from app.services.twilio_voice import create_outbound_call
+
+        call = create_voice_call(
+            db=db,
+            user_id=proposal.user_id,
+            direction="outbound",
+            to_number=to_number,
+            from_number=from_number,
+            purpose=purpose,
+            voice_profile=voice_profile,
+            proposal_id=proposal.id,
+            script_id=script_id,
+            script_json=script_json,
+            status="initiating",
+        )
+
+        twiml_url = f"{settings.APP_BASE_URL}/webhooks/voice/twiml?call_id={call.id}"
+        status_url = f"{settings.APP_BASE_URL}/webhooks/voice/status"
+        recording_url = f"{settings.APP_BASE_URL}/webhooks/voice/recording"
+
+        ExecutionEngine._log_execution_step(
+            db, proposal.id, None, "voice_call_dial", "started"
+        )
+
+        call_sid = create_outbound_call(
+            to_number=to_number,
+            from_number=from_number,
+            twiml_url=twiml_url,
+            status_callback_url=status_url,
+            recording_status_callback_url=recording_url,
+        )
+
+        call.call_sid = call_sid
+        call.status = "ringing"
+        proposal.status = "executing"
+        db.commit()
+        db.refresh(call)
+
+        ExecutionEngine._log_execution_step(
+            db,
+            proposal.id,
+            None,
+            "voice_call_dial",
+            "completed",
+            metadata={"call_id": call.id, "call_sid": call_sid},
+        )
+
+        return {
+            "success": True,
+            "proposal_id": proposal.id,
+            "call_id": call.id,
+            "call_sid": call_sid,
         }
 
     # -------------------

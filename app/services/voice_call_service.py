@@ -19,6 +19,9 @@ def create_voice_call(
     from_number: Optional[str],
     purpose: Optional[str],
     voice_profile: Optional[str] = None,
+    proposal_id: Optional[int] = None,
+    script_id: Optional[int] = None,
+    script_json: Optional[str] = None,
     status: str = "initiating",
     call_sid: Optional[str] = None,
 ) -> VoiceCall:
@@ -29,6 +32,9 @@ def create_voice_call(
         from_number=from_number,
         purpose=purpose,
         voice_profile=voice_profile,
+        proposal_id=proposal_id,
+        script_id=script_id,
+        script_json=script_json,
         status=status,
         call_sid=call_sid,
     )
@@ -44,12 +50,23 @@ def update_call_status(
     status: str,
     duration_seconds: Optional[int] = None,
     recording_url: Optional[str] = None,
+    outcome_status: Optional[str] = None,
+    outcome_notes: Optional[str] = None,
 ) -> VoiceCall:
     call.status = status
+    now = datetime.utcnow()
+    if status in ("connected", "in-progress") and not call.answered_at:
+        call.answered_at = now
+    if status in ("ended", "failed") and not call.ended_at:
+        call.ended_at = now
     if duration_seconds is not None:
         call.duration_seconds = duration_seconds
     if recording_url:
         call.recording_url = recording_url
+    if outcome_status:
+        call.outcome_status = outcome_status
+    if outcome_notes:
+        call.outcome_notes = outcome_notes
     db.commit()
     db.refresh(call)
     return call

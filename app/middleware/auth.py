@@ -14,6 +14,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
 
 from app.core.config import settings
+from app.core.log_context import set_user_id
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +28,7 @@ ALLOWLIST_PATHS = {
     "/openapi.json",
     "/redoc",
     "/admin/google/callback",
+    "/metrics",
 }
 
 ALLOWLIST_PREFIXES = (
@@ -119,6 +121,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
             )
 
         request.state.user_id = user_id
+        set_user_id(user_id)
 
         # Optional: enforce that user_id in query/body matches authenticated user
         query_user_id = request.query_params.get("user_id")
