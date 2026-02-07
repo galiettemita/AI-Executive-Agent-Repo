@@ -47,7 +47,7 @@ def upgrade():
         sa.Column("id", sa.Integer(), primary_key=True, autoincrement=True),
         sa.Column("user_id", sa.String(), sa.ForeignKey("users.id"), index=True, nullable=False),
         sa.Column("name", sa.String(), nullable=False, index=True),
-        sa.Column("is_active", sa.Boolean(), nullable=False, server_default=sa.text("1")),
+        sa.Column("is_active", sa.Boolean(), nullable=False, server_default=sa.text("true")),
         sa.Column("trigger_type", sa.String(), nullable=False, index=True),
         sa.Column("trigger_config_json", sa.Text(), nullable=True),
         sa.Column("conditions_json", sa.Text(), nullable=True),
