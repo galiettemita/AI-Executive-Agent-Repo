@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 from datetime import datetime
 from typing import Any, Dict
 
@@ -13,13 +12,14 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_db, get_or_create_user
 from app.db.models import Subscription
 from app.services.subscriptions import get_subscription, upsert_subscription
+from app.core.config import settings
 
 
 router = APIRouter(prefix="/billing/stripe", tags=["billing"])
 
 
 def _stripe_client() -> None:
-    key = os.getenv("STRIPE_SECRET_KEY", "")
+    key = settings.STRIPE_SECRET_KEY or ""
     if not key:
         raise HTTPException(status_code=500, detail="Stripe not configured")
     stripe.api_key = key
@@ -39,12 +39,12 @@ def stripe_checkout(
     get_or_create_user(db, user_id)
     _stripe_client()
 
-    price_id = os.getenv("STRIPE_PRICE_ID_STARTER", "")
+    price_id = settings.STRIPE_PRICE_ID_STARTER or ""
     if not price_id:
         raise HTTPException(status_code=500, detail="STRIPE_PRICE_ID_STARTER not set")
 
-    success_url = os.getenv("CHECKOUT_SUCCESS_URL", "").strip()
-    cancel_url = os.getenv("CHECKOUT_CANCEL_URL", "").strip()
+    success_url = settings.CHECKOUT_SUCCESS_URL.strip()
+    cancel_url = settings.CHECKOUT_CANCEL_URL.strip()
     if not success_url or not cancel_url:
         raise HTTPException(status_code=500, detail="Checkout URLs not configured")
 
@@ -90,7 +90,7 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
     _stripe_client()
     payload = await request.body()
     sig = request.headers.get("stripe-signature", "")
-    secret = os.getenv("STRIPE_WEBHOOK_SECRET", "")
+    secret = settings.STRIPE_WEBHOOK_SECRET or ""
     if not secret:
         raise HTTPException(status_code=500, detail="STRIPE_WEBHOOK_SECRET not set")
 

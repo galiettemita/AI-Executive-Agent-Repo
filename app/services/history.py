@@ -2,20 +2,17 @@
 
 from __future__ import annotations
 
-import os
 from typing import Dict, List
 
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 
 from app.db.models import Conversation, ChatMessage
+from app.core.config import settings
 
 
 def _history_turns_limit() -> int:
-    try:
-        return max(1, int(os.getenv("HISTORY_TURNS", "6")))
-    except Exception:
-        return 6
+    return max(1, settings.HISTORY_TURNS)
 
 
 def get_or_create_conversation(db: Session, user_id: str) -> Conversation:

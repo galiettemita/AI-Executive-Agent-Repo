@@ -1,13 +1,13 @@
 # backend/app/services/memory.py
 
-import os
 from datetime import datetime
 from openai import OpenAI
 from sqlalchemy.orm import Session
 
 from app.db.models import MemoryNote
+from app.core.config import settings
 
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+client = OpenAI(api_key=settings.OPENAI_API_KEY)
 
 
 def get_user_memory(db: Session, user_id: str) -> str:
@@ -60,7 +60,7 @@ Return ONLY the updated memory text.
 """.strip()
 
     resp = client.responses.create(
-        model=os.getenv("OPENAI_MODEL", "gpt-4.1"),
+        model=settings.OPENAI_MODEL,
         input=[{"role": "user", "content": prompt}],
     )
 

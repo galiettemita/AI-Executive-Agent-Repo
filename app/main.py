@@ -1,7 +1,6 @@
 # app/main.py
 from __future__ import annotations
 
-import os
 from dotenv import load_dotenv
 
 # Load env FIRST (before importing modules that read env vars)
@@ -10,6 +9,12 @@ load_dotenv()
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+
+from app.core.config import settings  # noqa: E402
+from app.core.logging_config import setup_logging  # noqa: E402
+
+# Configure structured logging before anything else
+setup_logging()
 
 # Import DB AFTER env is loaded so DATABASE_URL is correct
 from app.db.database import Base, engine  # noqa: E402
@@ -42,17 +47,18 @@ from app.api.routes.intervention import router as intervention_router  # noqa: E
 from app.api.routes.dashboard import router as dashboard_router  # noqa: E402
 from app.api.routes.travel import router as travel_router  # noqa: E402
 from app.api.routes.gdpr import router as gdpr_router  # noqa: E402
+from app.api.routes.bookings import router as bookings_router  # noqa: E402
+from app.api.routes.voice import router as voice_router  # noqa: E402
+from app.api.routes.voice import webhook_router as voice_webhook_router  # noqa: E402
 
 
 app = FastAPI(
-    title="Shopping Assistant Backend",
-    version="0.1.0",
+    title="Executive AI Agent",
+    version="1.0.0",
 )
 
 # --- Optional CORS (safe defaults; tighten later) ---
-# Set CORS_ORIGINS="https://yourdomain.com,https://www.yourdomain.com"
-cors_origins_raw = os.getenv("CORS_ORIGINS", "")
-origins = [o.strip() for o in cors_origins_raw.split(",") if o.strip()]
+origins = [o.strip() for o in settings.CORS_ORIGINS.split(",") if o.strip()]
 if origins:
     app.add_middleware(
         CORSMiddleware,
@@ -105,13 +111,14 @@ app.include_router(intervention_router)
 app.include_router(dashboard_router)
 app.include_router(travel_router)
 app.include_router(gdpr_router)
+app.include_router(bookings_router)
+app.include_router(voice_router)
+app.include_router(voice_webhook_router)
 
 # Friendly root so Render URL doesn't show 404
 @app.get("/")
 def root():
-    return {"ok": True, "service": "Shopping Assistant Backend"}
-
-# Create tables at startup (MVP). Later replace with Alembic migrations.
+    return {"ok": True, "service": "Executive AI Agent"}
 
 # Global scheduler instance
 _scheduler = None
@@ -120,12 +127,12 @@ _scheduler = None
 def on_startup():
     global _scheduler
 
-    if os.getenv("ENABLE_CREATE_ALL") == "1":
+    if settings.ENABLE_CREATE_ALL == "1":
         from app.db.database import Base, engine
         Base.metadata.create_all(bind=engine)
 
     # Start background scheduler for daily briefs
-    if os.getenv("ENABLE_SCHEDULER", "1") == "1":
+    if settings.ENABLE_SCHEDULER == "1":
         from app.services.scheduler import start_scheduler
         _scheduler = start_scheduler()
 

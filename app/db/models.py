@@ -541,3 +541,37 @@ class TravelerProfile(Base):
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+# -------------------
+# STAGE 18: VOICE CALLS
+# -------------------
+
+class VoiceCall(Base):
+    """Stores voice call details for Twilio Voice"""
+    __tablename__ = "voice_calls"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(String, ForeignKey("users.id"), index=True)
+
+    direction: Mapped[str] = mapped_column(String, index=True)  # inbound, outbound
+    to_number: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    from_number: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+
+    purpose: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    voice_profile: Mapped[str | None] = mapped_column(String, nullable=True)
+    status: Mapped[str] = mapped_column(String, default="initiating", index=True)
+
+    duration_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    recording_url: Mapped[str | None] = mapped_column(String, nullable=True)
+
+    transcript: Mapped[str | None] = mapped_column(Text, nullable=True)
+    summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    action_items_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    call_sid: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    stream_sid: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+

@@ -1,6 +1,5 @@
 # backend/app/api/routes/webhooks_whatsapp.py
 
-import os
 import logging
 from fastapi import APIRouter, Depends, HTTPException, Request, Query
 from sqlalchemy.orm import Session
@@ -17,6 +16,7 @@ from app.services.history import (
 from app.services.memory import update_memory_from_turn
 from app.services.usage import record_message
 from app.services.orchestrator import run_orchestrator
+from app.core.config import settings
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/webhooks/whatsapp", tags=["webhooks"])
 
-VERIFY_TOKEN = os.getenv("WHATSAPP_VERIFY_TOKEN", "")
+VERIFY_TOKEN = settings.WHATSAPP_VERIFY_TOKEN
 
 
 @router.get("")

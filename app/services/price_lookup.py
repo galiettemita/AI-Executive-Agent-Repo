@@ -1,11 +1,11 @@
-import os
 import re
 import httpx
 from typing import Optional
+from app.core.config import settings
 
-SERPAPI_GL = os.getenv("SERPAPI_GL", "us")
-SERPAPI_HL = os.getenv("SERPAPI_HL", "en")
-SERPAPI_API_KEY = os.getenv("SERPAPI_API_KEY")
+SERPAPI_GL = settings.SERPAPI_GL
+SERPAPI_HL = settings.SERPAPI_HL
+SERPAPI_API_KEY = settings.SERPAPI_API_KEY
 
 
 class PriceLookupError(Exception):

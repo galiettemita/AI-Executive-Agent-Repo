@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import os
 from datetime import datetime, timedelta
 from typing import Dict, Optional
 
@@ -11,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.db.models import Proposal, ProposalAuditLog
 from app.services.proposal_links import sign_token
+from app.core.config import settings
 
 
 def create_proposal(
@@ -58,7 +58,7 @@ def update_proposal_status(db: Session, proposal_id: int, status: str) -> None:
 
 
 def build_proposal_link(proposal_id: int) -> str:
-    base = os.getenv("APP_BASE_URL", "https://ai-shopping-assistant-backend-6bgf.onrender.com")
+    base = settings.APP_BASE_URL
     token = sign_token({"proposal_id": proposal_id})
     return f"{base}/proposals/{proposal_id}?token={token}"
 

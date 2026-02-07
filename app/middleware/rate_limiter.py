@@ -13,7 +13,6 @@ Uses in-memory storage by default, with optional Redis backend for production.
 
 from __future__ import annotations
 
-import os
 from typing import Optional, Callable
 
 from fastapi import Request, Response
@@ -61,7 +60,7 @@ def create_limiter() -> Limiter:
 
     Uses Redis if REDIS_URL is set, otherwise uses in-memory storage.
     """
-    redis_url = os.getenv("REDIS_URL")
+    redis_url = settings.REDIS_URL
 
     if redis_url:
         # Use Redis for distributed rate limiting in production
@@ -84,8 +83,8 @@ limiter = create_limiter()
 
 
 # Rate limit configurations
-USER_RATE_LIMIT = os.getenv("RATE_LIMIT_USER", "10/minute")
-IP_RATE_LIMIT = os.getenv("RATE_LIMIT_IP", "100/minute")
+USER_RATE_LIMIT = settings.RATE_LIMIT_USER
+IP_RATE_LIMIT = settings.RATE_LIMIT_IP
 
 # Stricter limits for sensitive endpoints
 AUTH_RATE_LIMIT = "5/minute"  # Login/registration attempts
@@ -158,6 +157,7 @@ def setup_rate_limiting(app):
     """
     from slowapi.middleware import SlowAPIMiddleware
     from slowapi.errors import RateLimitExceeded
+from app.core.config import settings
 
     # Add limiter to app state
     app.state.limiter = limiter

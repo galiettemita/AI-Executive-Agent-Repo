@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 import json
 import logging
 from typing import Dict, List, Optional, Any
@@ -10,6 +9,7 @@ from datetime import datetime, date
 from amadeus import Client, ResponseError
 
 from app.services.circuit_breaker import amadeus_breaker, CircuitBreakerError
+from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -19,8 +19,8 @@ class AmadeusService:
 
     def __init__(self):
         """Initialize Amadeus client"""
-        api_key = os.getenv("AMADEUS_API_KEY")
-        api_secret = os.getenv("AMADEUS_API_SECRET")
+        api_key = settings.AMADEUS_API_KEY
+        api_secret = settings.AMADEUS_API_SECRET
 
         if not api_key or not api_secret:
             raise ValueError("AMADEUS_API_KEY and AMADEUS_API_SECRET must be set")

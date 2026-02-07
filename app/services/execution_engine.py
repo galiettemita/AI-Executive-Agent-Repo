@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import os
 from datetime import datetime, timedelta
 from typing import Dict, Optional, Any
 from sqlalchemy.orm import Session
@@ -69,7 +68,7 @@ class ExecutionEngine:
         Raises:
             ValueError if token is invalid or expired
         """
-        jwt_secret = os.getenv("JWT_SECRET")
+        jwt_secret = settings.JWT_SECRET
         if not jwt_secret:
             raise ValueError("JWT_SECRET not configured")
 
@@ -776,6 +775,7 @@ class ExecutionEngine:
         from app.services.eticket_service import generate_eticket_pdf
         from app.services.encryption_service import decrypt_pii
         from app.services.notification_delivery import send_whatsapp_message
+from app.core.config import settings
 
         booking_id = booking_result.get("booking_id")
         if not booking_id:

@@ -13,13 +13,13 @@ Supports SMTP (default) and can be extended for SendGrid/Mailgun.
 from __future__ import annotations
 
 import logging
-import os
 import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.application import MIMEApplication
 from typing import List, Optional, Dict, Any
 from pathlib import Path
+from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -29,12 +29,12 @@ class EmailService:
 
     def __init__(self):
         """Initialize email service with SMTP settings from environment."""
-        self.smtp_host = os.getenv("SMTP_HOST", "smtp.gmail.com")
-        self.smtp_port = int(os.getenv("SMTP_PORT", "587"))
-        self.smtp_user = os.getenv("SMTP_USER", "")
-        self.smtp_password = os.getenv("SMTP_PASSWORD", "")
-        self.from_email = os.getenv("FROM_EMAIL", "noreply@yourassistant.com")
-        self.from_name = os.getenv("FROM_NAME", "AI Shopping Assistant")
+        self.smtp_host = settings.SMTP_HOST
+        self.smtp_port = settings.SMTP_PORT
+        self.smtp_user = settings.SMTP_USER
+        self.smtp_password = settings.SMTP_PASSWORD
+        self.from_email = settings.FROM_EMAIL
+        self.from_name = settings.FROM_NAME
 
     def _get_smtp_connection(self):
         """Create SMTP connection."""

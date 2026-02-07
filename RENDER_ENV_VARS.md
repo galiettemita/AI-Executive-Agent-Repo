@@ -23,6 +23,18 @@ OPENAI_API_KEY=<your-openai-api-key>
 OPENAI_MODEL=gpt-4o-mini
 ```
 
+### Voice Calling (Stage 18)
+```
+APP_BASE_URL=https://your-render-domain.onrender.com
+TWILIO_ACCOUNT_SID=<your-twilio-account-sid>
+TWILIO_AUTH_TOKEN=<your-twilio-auth-token>
+TWILIO_PHONE_NUMBER=<your-twilio-number>
+DEEPGRAM_API_KEY=<your-deepgram-api-key>
+ELEVENLABS_API_KEY=<your-elevenlabs-api-key>
+ELEVENLABS_VOICE_ID=<default-voice-id>
+ELEVENLABS_MODEL_ID=eleven_multilingual_v2
+```
+
 ### Google OAuth (Stage 5)
 **IMPORTANT**: Update redirect URI to point to your Render domain
 ```

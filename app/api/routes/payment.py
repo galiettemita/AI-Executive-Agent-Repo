@@ -267,7 +267,7 @@ async def stripe_webhook(
     - payment_intent.payment_failed
     - charge.refunded
     """
-    webhook_secret = os.getenv("STRIPE_WEBHOOK_SECRET")
+    webhook_secret = settings.STRIPE_WEBHOOK_SECRET
 
     if not webhook_secret:
         raise HTTPException(status_code=500, detail="Webhook secret not configured")
@@ -414,6 +414,7 @@ def regenerate_invoice(
         Dict with success status and invoice path
     """
     from app.services.invoice_service import InvoiceService
+from app.core.config import settings
 
     try:
         invoice_path = InvoiceService.generate_invoice_pdf(db, transaction_id)

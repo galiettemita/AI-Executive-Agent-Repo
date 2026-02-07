@@ -5,14 +5,14 @@ from __future__ import annotations
 import base64
 import hmac
 import json
-import os
 import time
 from hashlib import sha256
 from typing import Dict
+from app.core.config import settings
 
 
 def _secret() -> bytes:
-    return os.getenv("JWT_SECRET", "dev_only_change_me").encode("utf-8")
+    return settings.JWT_SECRET.encode("utf-8")
 
 
 def _b64url(data: bytes) -> str:

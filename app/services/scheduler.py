@@ -3,17 +3,20 @@
 from __future__ import annotations
 
 import asyncio
-import os
+import logging
 from typing import List
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.db.database import SessionLocal
 from app.db.models import OAuthToken, User, WatchItem
 from app.services.daily_brief import generate_and_store_daily_brief
 from app.services.notification_delivery import deliver_pending_notifications
+
+logger = logging.getLogger(__name__)
 
 
 def run_daily_briefs_for_all_users():
@@ -33,7 +36,7 @@ def run_daily_briefs_for_all_users():
 
         user_ids = [token.user_id for token in oauth_users]
 
-        print(f"[Scheduler] Running daily briefs for {len(user_ids)} users with Google OAuth")
+        logger.info("Running daily briefs for %d users with Google OAuth", len(user_ids))
 
         success_count = 0
         error_count = 0
@@ -44,19 +47,19 @@ def run_daily_briefs_for_all_users():
 
                 if result.get("success"):
                     success_count += 1
-                    print(f"[Scheduler] ✓ Daily brief generated for user {user_id}")
+                    logger.info("Daily brief generated for user %s", user_id)
                 else:
                     error_count += 1
-                    print(f"[Scheduler] ✗ Failed to generate brief for user {user_id}: {result.get('error')}")
+                    logger.error("Failed to generate brief for user %s: %s", user_id, result.get("error"))
 
             except Exception as e:
                 error_count += 1
-                print(f"[Scheduler] ✗ Error generating brief for user {user_id}: {e}")
+                logger.error("Error generating brief for user %s: %s", user_id, e)
 
-        print(f"[Scheduler] Daily briefs completed: {success_count} success, {error_count} errors")
+        logger.info("Daily briefs completed: %d success, %d errors", success_count, error_count)
 
     except Exception as e:
-        print(f"[Scheduler] Fatal error in daily brief job: {e}")
+        logger.error("Fatal error in daily brief job: %s", e)
     finally:
         db.close()
 
@@ -78,10 +81,10 @@ def run_price_monitoring():
         watch_items = db.query(WatchItem).all()
 
         if not watch_items:
-            print("[Scheduler] No watch items to monitor")
+            logger.info("No watch items to monitor")
             return
 
-        print(f"[Scheduler] Monitoring {len(watch_items)} watch items")
+        logger.info("Monitoring %d watch items", len(watch_items))
 
         updated_count = 0
         error_count = 0
@@ -152,7 +155,7 @@ def run_price_monitoring():
                                 is_sent=False,
                             )
                         )
-                        print(f"[Scheduler] ✓ Price drop detected for item {item.id}")
+                        logger.info("Price drop detected for item %s", item.id)
 
                     if target_hit and not _already_queued("target_hit"):
                         db.add(
@@ -169,17 +172,17 @@ def run_price_monitoring():
                                 is_sent=False,
                             )
                         )
-                        print(f"[Scheduler] ✓ Target hit for item {item.id}")
+                        logger.info("Target hit for item %s", item.id)
 
             except Exception as e:
                 error_count += 1
-                print(f"[Scheduler] ✗ Error monitoring item {item.id}: {e}")
+                logger.error("Error monitoring item %s: %s", item.id, e)
 
         db.commit()
-        print(f"[Scheduler] Price monitoring completed: {updated_count} updated, {error_count} errors")
+        logger.info("Price monitoring completed: %d updated, %d errors", updated_count, error_count)
 
     except Exception as e:
-        print(f"[Scheduler] Fatal error in price monitoring job: {e}")
+        logger.error("Fatal error in price monitoring job: %s", e)
     finally:
         db.close()
 
@@ -192,10 +195,10 @@ def run_notification_delivery():
 
     try:
         result = deliver_pending_notifications(db)
-        print(f"[Scheduler] Notification delivery completed: {result}")
+        logger.info("Notification delivery completed: %s", result)
 
     except Exception as e:
-        print(f"[Scheduler] Fatal error in notification delivery job: {e}")
+        logger.error("Fatal error in notification delivery job: %s", e)
     finally:
         db.close()
 
@@ -209,9 +212,8 @@ def setup_scheduler() -> BackgroundScheduler:
     """
     scheduler = BackgroundScheduler()
 
-    # Get schedule from environment or use default (7 AM daily)
-    # Format: "hour minute" e.g., "7 0" for 7:00 AM
-    schedule_time = os.getenv("DAILY_BRIEF_SCHEDULE", "7 0").split()
+    # Get schedule from settings
+    schedule_time = settings.DAILY_BRIEF_SCHEDULE.split()
     hour = int(schedule_time[0])
     minute = int(schedule_time[1]) if len(schedule_time) > 1 else 0
 
@@ -224,35 +226,31 @@ def setup_scheduler() -> BackgroundScheduler:
         replace_existing=True,
     )
 
-    print(f"[Scheduler] Daily brief job scheduled for {hour:02d}:{minute:02d} UTC daily")
+    logger.info("Daily brief job scheduled for %02d:%02d UTC daily", hour, minute)
 
-    # Add price monitoring job (runs every hour)
-    # Can be customized with PRICE_MONITORING_INTERVAL_MINUTES env var
-    monitoring_interval = int(os.getenv("PRICE_MONITORING_INTERVAL_MINUTES", "60"))
+    # Add price monitoring job
     scheduler.add_job(
         run_price_monitoring,
         trigger="interval",
-        minutes=monitoring_interval,
+        minutes=settings.PRICE_MONITORING_INTERVAL_MINUTES,
         id="price_monitoring_job",
         name="Price Monitoring for Watch Items",
         replace_existing=True,
     )
 
-    print(f"[Scheduler] Price monitoring job scheduled every {monitoring_interval} minutes")
+    logger.info("Price monitoring job scheduled every %d minutes", settings.PRICE_MONITORING_INTERVAL_MINUTES)
 
-    # Add notification delivery job (runs every 5 minutes)
-    # Can be customized with NOTIFICATION_DELIVERY_INTERVAL_MINUTES env var
-    delivery_interval = int(os.getenv("NOTIFICATION_DELIVERY_INTERVAL_MINUTES", "5"))
+    # Add notification delivery job
     scheduler.add_job(
         run_notification_delivery,
         trigger="interval",
-        minutes=delivery_interval,
+        minutes=settings.NOTIFICATION_DELIVERY_INTERVAL_MINUTES,
         id="notification_delivery_job",
         name="Notification Delivery",
         replace_existing=True,
     )
 
-    print(f"[Scheduler] Notification delivery job scheduled every {delivery_interval} minutes")
+    logger.info("Notification delivery job scheduled every %d minutes", settings.NOTIFICATION_DELIVERY_INTERVAL_MINUTES)
 
     return scheduler
 
@@ -261,7 +259,7 @@ def start_scheduler():
     """Start the scheduler."""
     scheduler = setup_scheduler()
     scheduler.start()
-    print("[Scheduler] Background scheduler started")
+    logger.info("Background scheduler started")
     return scheduler
 
 
@@ -269,4 +267,4 @@ def stop_scheduler(scheduler: BackgroundScheduler):
     """Stop the scheduler gracefully."""
     if scheduler:
         scheduler.shutdown()
-        print("[Scheduler] Background scheduler stopped")
+        logger.info("Background scheduler stopped")

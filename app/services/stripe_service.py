@@ -3,18 +3,18 @@
 from __future__ import annotations
 
 import logging
-import os
 import stripe
 from typing import Dict, Optional
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.db.models import PaymentMethod, Transaction, SpendingLimit, User
 from app.services.circuit_breaker import stripe_breaker, CircuitBreakerError
 
 logger = logging.getLogger(__name__)
 
 # Initialize Stripe with secret key
-stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
+stripe.api_key = settings.STRIPE_SECRET_KEY
 
 
 class StripeService:
@@ -324,6 +324,7 @@ class StripeService:
 
         # Get user's subscription to determine limits
         from app.db.models import Subscription
+from app.core.config import settings
 
         subscription = db.query(Subscription).filter(Subscription.user_id == user_id).first()
         plan = subscription.plan if subscription else "free"

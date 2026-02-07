@@ -17,6 +17,7 @@ from google.auth.transport.requests import Request as GoogleRequest
 from sqlalchemy.orm import Session
 from app.db.models import User
 from app.db.models import OAuthToken
+from app.core.config import settings
 
 def _to_naive_utc(dt):
     """
@@ -57,7 +58,7 @@ def _fernet() -> Fernet:
     Uses TOKEN_ENCRYPTION_KEY (preferred) or derives a stable key from STATE_SIGNING_SECRET.
     TOKEN_ENCRYPTION_KEY must be a urlsafe base64-encoded 32-byte key (Fernet key).
     """
-    key = os.getenv("TOKEN_ENCRYPTION_KEY")
+    key = settings.TOKEN_ENCRYPTION_KEY
     if key:
         return Fernet(key.encode("utf-8"))
 

@@ -1,14 +1,14 @@
 # backend/app/channels/whatsapp.py
 
-import os
 import requests
 import logging
 from typing import Dict, Any, Optional
+from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
-WHATSAPP_TOKEN = os.getenv("WHATSAPP_TOKEN", "")
-WHATSAPP_PHONE_NUMBER_ID = os.getenv("WHATSAPP_PHONE_NUMBER_ID", "")
+WHATSAPP_TOKEN = settings.WHATSAPP_TOKEN
+WHATSAPP_PHONE_NUMBER_ID = settings.WHATSAPP_PHONE_NUMBER_ID
 
 GRAPH_URL = "https://graph.facebook.com/v20.0"
 

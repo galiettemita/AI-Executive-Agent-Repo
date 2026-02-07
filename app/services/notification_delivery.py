@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 from datetime import datetime
 from typing import Dict, List
 
@@ -10,6 +9,9 @@ import httpx
 from sqlalchemy.orm import Session
 
 from app.db.models import NotificationQueue
+import logging
+from app.core.config import settings
+logger = logging.getLogger(__name__)
 
 
 def send_whatsapp_message(phone_number: str, message: str) -> bool:
@@ -23,11 +25,11 @@ def send_whatsapp_message(phone_number: str, message: str) -> bool:
     Returns:
         True if sent successfully, False otherwise
     """
-    token = os.getenv("WHATSAPP_TOKEN")
-    phone_number_id = os.getenv("WHATSAPP_PHONE_NUMBER_ID")
+    token = settings.WHATSAPP_TOKEN
+    phone_number_id = settings.WHATSAPP_PHONE_NUMBER_ID
     
     if not token or not phone_number_id:
-        print("[Notification] WhatsApp credentials not configured")
+        logger.info("[Notification] WhatsApp credentials not configured")
         return False
     
     url = f"https://graph.facebook.com/v21.0/{phone_number_id}/messages"
@@ -46,10 +48,10 @@ def send_whatsapp_message(phone_number: str, message: str) -> bool:
     try:
         resp = httpx.post(url, headers=headers, json=payload, timeout=10)
         resp.raise_for_status()
-        print(f"[Notification] ✓ Sent WhatsApp to {phone_number}")
+        logger.info(f"[Notification] ✓ Sent WhatsApp to {phone_number}")
         return True
     except Exception as e:
-        print(f"[Notification] ✗ Failed to send WhatsApp to {phone_number}: {e}")
+        logger.info(f"[Notification] ✗ Failed to send WhatsApp to {phone_number}: {e}")
         return False
 
 
@@ -74,7 +76,7 @@ def deliver_pending_notifications(db: Session) -> Dict[str, int]:
     if not pending:
         return {"sent": 0, "failed": 0, "skipped": 0}
     
-    print(f"[Notification] Found {len(pending)} pending notifications")
+    logger.info(f"[Notification] Found {len(pending)} pending notifications")
     
     sent_count = 0
     failed_count = 0
@@ -104,7 +106,7 @@ def deliver_pending_notifications(db: Session) -> Dict[str, int]:
     
     db.commit()
     
-    print(f"[Notification] Delivery complete: {sent_count} sent, {failed_count} failed")
+    logger.info(f"[Notification] Delivery complete: {sent_count} sent, {failed_count} failed")
     
     return {"sent": sent_count, "failed": failed_count, "skipped": skipped_count}
 

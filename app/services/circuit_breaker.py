@@ -19,13 +19,13 @@ Configuration via environment variables:
 from __future__ import annotations
 
 import logging
-import os
 import time
 from dataclasses import dataclass, field
 from enum import Enum
 from functools import wraps
 from threading import Lock
 from typing import Any, Callable, Dict, Optional, Type, TypeVar, Union
+from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -97,13 +97,13 @@ class CircuitBreaker:
         # Load from env or use defaults
         self.config = CircuitBreakerConfig(
             failure_threshold=failure_threshold or int(
-                os.getenv("CIRCUIT_BREAKER_FAILURE_THRESHOLD", "5")
+                str(settings.CIRCUIT_BREAKER_FAILURE_THRESHOLD)
             ),
             recovery_timeout=recovery_timeout or float(
-                os.getenv("CIRCUIT_BREAKER_RECOVERY_TIMEOUT", "30")
+                str(settings.CIRCUIT_BREAKER_RECOVERY_TIMEOUT)
             ),
             success_threshold=success_threshold or int(
-                os.getenv("CIRCUIT_BREAKER_SUCCESS_THRESHOLD", "3")
+                str(settings.CIRCUIT_BREAKER_SUCCESS_THRESHOLD)
             ),
             excluded_exceptions=excluded_exceptions,
         )
@@ -324,6 +324,28 @@ stripe_breaker = get_circuit_breaker(
 google_breaker = get_circuit_breaker(
     "google",
     failure_threshold=5,
+    recovery_timeout=30.0,
+    success_threshold=2,
+)
+
+# Voice services circuit breakers (Stage 18)
+twilio_breaker = get_circuit_breaker(
+    "twilio",
+    failure_threshold=5,
+    recovery_timeout=60.0,  # 1 minute for telephony API
+    success_threshold=2,
+)
+
+elevenlabs_breaker = get_circuit_breaker(
+    "elevenlabs",
+    failure_threshold=3,
+    recovery_timeout=30.0,
+    success_threshold=2,
+)
+
+deepgram_breaker = get_circuit_breaker(
+    "deepgram",
+    failure_threshold=3,
     recovery_timeout=30.0,
     success_threshold=2,
 )

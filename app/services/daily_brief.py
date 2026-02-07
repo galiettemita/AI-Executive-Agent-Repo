@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import os
 from datetime import datetime
 from typing import Any, Dict
 
@@ -13,8 +12,9 @@ from sqlalchemy.orm import Session
 from app.db.models import ChatMessage, MemoryNote
 from app.services.google_calendar import get_events_for_daily_brief
 from app.services.google_gmail import get_recent_emails_for_daily_brief
+from app.core.config import settings
 
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+client = OpenAI(api_key=settings.OPENAI_API_KEY)
 
 
 def generate_daily_brief(
@@ -97,7 +97,7 @@ def generate_daily_brief(
         )
 
         response = client.chat.completions.create(
-            model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
+            model=settings.OPENAI_MODEL,
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},

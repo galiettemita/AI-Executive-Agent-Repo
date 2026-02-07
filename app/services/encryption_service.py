@@ -17,11 +17,11 @@ from __future__ import annotations
 
 import base64
 import hashlib
-import os
 from functools import lru_cache
 from typing import Optional
 
 from cryptography.fernet import Fernet, InvalidToken
+from app.core.config import settings
 
 
 class EncryptionService:
@@ -43,12 +43,12 @@ class EncryptionService:
             return Fernet(key.encode("utf-8"))
 
         # Try PII_ENCRYPTION_KEY first (preferred)
-        env_key = os.getenv("PII_ENCRYPTION_KEY")
+        env_key = settings.PII_ENCRYPTION_KEY
         if env_key:
             return Fernet(env_key.encode("utf-8"))
 
         # Fall back to deriving from JWT_SECRET
-        jwt_secret = os.getenv("JWT_SECRET")
+        jwt_secret = settings.JWT_SECRET
         if not jwt_secret:
             raise RuntimeError(
                 "Missing encryption key. Set PII_ENCRYPTION_KEY (preferred) or JWT_SECRET env var."

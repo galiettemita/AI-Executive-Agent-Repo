@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import os
 from datetime import datetime, timezone
 from typing import Any, Dict, List
 
@@ -14,9 +13,10 @@ from app.services.google_oauth import get_google_connection_status, build_google
 from app.services.google_calendar import create_calendar_event, list_upcoming_events
 from app.services.google_gmail import create_draft, send_email
 from app.db.models import TaskItem
+from app.core.config import settings
 
 
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+client = OpenAI(api_key=settings.OPENAI_API_KEY)
 
 
 def _iso_to_dt_utc(iso_str: str) -> datetime:
@@ -107,7 +107,7 @@ def handle_admin(
     )
 
     resp = client.chat.completions.create(
-        model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
+        model=settings.OPENAI_MODEL,
         messages=[
             {"role": "system", "content": system},
             *history[-10:],

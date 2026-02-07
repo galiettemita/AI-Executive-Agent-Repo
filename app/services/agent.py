@@ -1,4 +1,3 @@
-import os
 import json
 import asyncio
 from typing import Any, Dict, List, Optional
@@ -9,8 +8,9 @@ from datetime import datetime, timedelta
 from sqlalchemy import func
 from app.db.models import WatchItem, WatchOffer, NotificationQueue
 from app.services.discover_provider import discover_search
+from app.core.config import settings
 
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+client = OpenAI(api_key=settings.OPENAI_API_KEY)
 
 
 def _is_google_link(url: Optional[str]) -> bool:
@@ -469,7 +469,7 @@ def run_agent(
     )
 
     resp = client.responses.create(
-    model=os.getenv("OPENAI_MODEL", "gpt-4.1"),
+    model=settings.OPENAI_MODEL,
     input=input_messages,
     )
 

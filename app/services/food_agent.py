@@ -1,12 +1,12 @@
 # backend/app/services/food_agent.py
 
-import os
 import json
 from typing import Any, Dict, List
 from openai import OpenAI
 from sqlalchemy.orm import Session
+from app.core.config import settings
 
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+client = OpenAI(api_key=settings.OPENAI_API_KEY)
 
 
 def run_food_agent(
@@ -57,7 +57,7 @@ def run_food_agent(
     input_messages.append({"role": "user", "content": user_message})
 
     resp = client.responses.create(
-        model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
+        model=settings.OPENAI_MODEL,
         input=input_messages,
     )
 
