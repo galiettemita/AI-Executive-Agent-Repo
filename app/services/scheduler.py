@@ -18,6 +18,7 @@ from app.services.notification_delivery import deliver_pending_notifications
 from app.services.messaging_service import deliver_pending_messages
 from app.services.smart_home_service import evaluate_energy_alerts
 from app.services.proactive_rules import run_due_rules
+from app.services.voice_retention import purge_expired_calls
 
 logger = logging.getLogger(__name__)
 
@@ -253,6 +254,21 @@ def run_energy_monitoring():
         db.close()
 
 
+def run_voice_retention():
+    """
+    Purge expired voice call recordings/transcripts based on retention policy.
+    """
+    db = SessionLocal()
+    try:
+        retention_days = settings.VOICE_RECORDING_RETENTION_DAYS
+        purged = purge_expired_calls(db, retention_days)
+        logger.info("Voice retention purge completed: %d calls redacted", purged)
+    except Exception as e:
+        logger.error("Fatal error in voice retention job: %s", e)
+    finally:
+        db.close()
+
+
 def setup_scheduler() -> BackgroundScheduler:
     """
     Set up the APScheduler for background jobs.
@@ -344,6 +360,16 @@ def setup_scheduler() -> BackgroundScheduler:
         )
     else:
         logger.info("Smart home disabled; skipping energy monitoring scheduler")
+
+    # Voice data retention job (daily)
+    scheduler.add_job(
+        run_voice_retention,
+        trigger=CronTrigger(hour=2, minute=15),
+        id="voice_retention_job",
+        name="Voice Data Retention",
+        replace_existing=True,
+    )
+    logger.info("Voice retention job scheduled daily at 02:15 UTC")
 
     return scheduler
 

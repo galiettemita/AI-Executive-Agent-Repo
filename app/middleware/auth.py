@@ -34,6 +34,7 @@ ALLOWLIST_PATHS = {
 ALLOWLIST_PREFIXES = (
     "/webhooks/whatsapp",
     "/webhooks/voice",
+    "/webhooks/sms",
     "/billing/stripe/webhook",
     "/payment/webhooks/stripe",
 )

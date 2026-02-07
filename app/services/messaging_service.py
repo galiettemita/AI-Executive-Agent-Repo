@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from twilio.rest import Client
 
 from app.core.config import settings
-from app.db.models import OutboundMessage, Contact
+from app.db.models import OutboundMessage, OutboundMessageEvent, Contact
 from app.channels.whatsapp import send_whatsapp_text
 from app.services.contacts_service import normalize_phone, normalize_email
 
@@ -53,6 +53,7 @@ def queue_outbound_message(
         to_address=resolved_to,
         body=body,
         status="queued",
+        provider_status="queued",
         metadata_json=_to_json(metadata) if metadata else None,
     )
     db.add(message)
@@ -83,6 +84,99 @@ def _send_email(to_email: str, body: str) -> str:
     raise RuntimeError("Email outbound not wired yet")
 
 
+def _send_whatsapp(to_number: str, body: str) -> Optional[str]:
+    if not settings.WHATSAPP_TOKEN or not settings.WHATSAPP_PHONE_NUMBER_ID:
+        raise RuntimeError("WhatsApp credentials not configured")
+    return send_whatsapp_text(to_phone_e164=to_number, text=body)
+
+
+CHANNEL_PROVIDERS = {
+    "whatsapp": ("whatsapp", _send_whatsapp),
+    "sms": ("twilio", _send_sms),
+    "email": ("email", _send_email),
+}
+
+
+def _record_event(
+    db: Session,
+    *,
+    message_id: Optional[int],
+    provider: Optional[str],
+    event_type: str,
+    payload: Optional[Dict[str, Any]] = None,
+) -> None:
+    event = OutboundMessageEvent(
+        message_id=message_id,
+        provider=provider,
+        event_type=event_type,
+        payload_json=_to_json(payload) if payload else None,
+    )
+    db.add(event)
+    db.commit()
+
+
+def _apply_provider_status(msg: OutboundMessage, provider_status: str) -> None:
+    status = (provider_status or "").lower()
+    if status in {"delivered", "read"}:
+        msg.status = "delivered"
+        if not msg.delivered_at:
+            msg.delivered_at = datetime.utcnow()
+    elif status in {"failed", "undelivered"}:
+        msg.status = "failed"
+        if not msg.failed_at:
+            msg.failed_at = datetime.utcnow()
+    elif status in {"sent", "queued"}:
+        if msg.status not in {"delivered", "failed"}:
+            msg.status = "sent"
+
+
+def record_delivery_status(
+    db: Session,
+    *,
+    provider: str,
+    provider_message_id: str,
+    provider_status: str,
+    payload: Optional[Dict[str, Any]] = None,
+) -> Optional[OutboundMessage]:
+    if not provider_message_id:
+        return None
+
+    msg = (
+        db.query(OutboundMessage)
+        .filter(OutboundMessage.provider_message_id == provider_message_id)
+        .first()
+    )
+
+    if not msg:
+        _record_event(
+            db,
+            message_id=None,
+            provider=provider,
+            event_type=provider_status,
+            payload=payload,
+        )
+        return None
+
+    msg.provider = provider
+    msg.provider_status = provider_status
+    msg.last_status_at = datetime.utcnow()
+    if provider_status.lower() in {"failed", "undelivered"} and payload:
+        error = payload.get("ErrorMessage") or payload.get("error_message") or payload.get("error")
+        if error:
+            msg.error_message = str(error)
+    _apply_provider_status(msg, provider_status)
+    db.commit()
+
+    _record_event(
+        db,
+        message_id=msg.id,
+        provider=provider,
+        event_type=provider_status,
+        payload=payload,
+    )
+    return msg
+
+
 def deliver_pending_messages(db: Session, limit: int = 50) -> Dict[str, int]:
     if settings.ENABLE_MESSAGING != "1":
         return {"sent": 0, "failed": 0, "skipped": 0}
@@ -107,29 +201,43 @@ def deliver_pending_messages(db: Session, limit: int = 50) -> Dict[str, int]:
             msg.status = "sending"
             db.commit()
 
-            if msg.channel == "whatsapp":
-                if not settings.WHATSAPP_TOKEN or not settings.WHATSAPP_PHONE_NUMBER_ID:
-                    raise RuntimeError("WhatsApp credentials not configured")
-                to_phone = normalize_phone(msg.to_address) or msg.to_address
-                send_whatsapp_text(to_phone_e164=to_phone, text=msg.body)
-                msg.provider_message_id = None
-            elif msg.channel == "sms":
-                to_phone = normalize_phone(msg.to_address) or msg.to_address
-                msg.provider_message_id = _send_sms(to_phone, msg.body)
-            elif msg.channel == "email":
-                to_email = normalize_email(msg.to_address) or msg.to_address
-                msg.provider_message_id = _send_email(to_email, msg.body)
-            else:
+            provider_name, sender = CHANNEL_PROVIDERS.get(msg.channel, (None, None))
+            if not provider_name or not sender:
                 raise RuntimeError("Unsupported channel")
 
+            if msg.channel in {"whatsapp", "sms"}:
+                to_address = normalize_phone(msg.to_address) or msg.to_address
+            else:
+                to_address = normalize_email(msg.to_address) or msg.to_address
+
+            msg.provider = provider_name
+            msg.provider_message_id = sender(to_address, msg.body)
+
             msg.status = "sent"
+            msg.provider_status = "sent"
             msg.sent_at = datetime.utcnow()
             sent += 1
             db.commit()
+            _record_event(
+                db,
+                message_id=msg.id,
+                provider=msg.provider,
+                event_type="sent",
+                payload={"channel": msg.channel},
+            )
         except Exception as exc:
             msg.status = "failed"
+            msg.provider_status = "failed"
             msg.error_message = str(exc)
+            msg.failed_at = datetime.utcnow()
             db.commit()
+            _record_event(
+                db,
+                message_id=msg.id,
+                provider=msg.provider or msg.channel,
+                event_type="failed",
+                payload={"error": str(exc)},
+            )
             failed += 1
             logger.warning("Outbound message %s failed: %s", msg.id, exc)
 

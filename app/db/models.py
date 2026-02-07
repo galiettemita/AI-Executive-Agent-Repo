@@ -229,12 +229,29 @@ class OutboundMessage(Base):
     body: Mapped[str] = mapped_column(Text)
 
     status: Mapped[str] = mapped_column(String, default="queued", index=True)  # queued, sending, sent, failed
+    provider: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    provider_status: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
     provider_message_id: Mapped[str | None] = mapped_column(String, nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     metadata_json: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
     sent_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    delivered_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    failed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    last_status_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+
+
+class OutboundMessageEvent(Base):
+    __tablename__ = "outbound_message_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    message_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("outbound_messages.id"), nullable=True, index=True)
+    provider: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    event_type: Mapped[str] = mapped_column(String, index=True)
+    payload_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
 
 
 # -------------------
@@ -914,6 +931,7 @@ class VoiceCall(Base):
     action_items_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     outcome_status: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
     outcome_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     call_sid: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
     stream_sid: Mapped[str | None] = mapped_column(String, nullable=True, index=True)

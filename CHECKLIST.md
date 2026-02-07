@@ -73,10 +73,10 @@ This checklist covers every task required to build the full product described in
 - [x] Beta: alpha test (10–20 users)
 
 ## Phase 2 — Core Services (Months 7–12)
-- [ ] Voice: production-grade error handling and retry logic
-- [ ] Voice: call recording storage and retention policy
-- [ ] Messaging: multi-channel routing abstraction
-- [ ] Messaging: delivery tracking and receipts
+- [x] Voice: production-grade error handling and retry logic
+- [x] Voice: call recording storage and retention policy
+- [x] Messaging: multi-channel routing abstraction
+- [x] Messaging: delivery tracking and receipts
 - [ ] Email intelligence: monitoring config and alert pipeline
 - [ ] Email intelligence: AI summarization and priority scoring
 - [ ] Email intelligence: draft responses with approval

@@ -182,13 +182,24 @@ def start_outbound_call(request: Request, payload: OutboundCallRequest, db: Sess
     status_url = f"{app_base_url}/webhooks/voice/status"
     recording_url = f"{app_base_url}/webhooks/voice/recording"
 
-    call_sid = create_outbound_call(
-        to_number=payload.to_number,
-        from_number=payload.from_number,
-        twiml_url=twiml_url,
-        status_callback_url=status_url,
-        recording_status_callback_url=recording_url,
-    )
+    try:
+        call_sid = create_outbound_call(
+            to_number=payload.to_number,
+            from_number=payload.from_number,
+            twiml_url=twiml_url,
+            status_callback_url=status_url,
+            recording_status_callback_url=recording_url,
+        )
+    except Exception as exc:
+        update_call_status(
+            db,
+            call,
+            status="failed",
+            outcome_status="failed",
+            outcome_notes="Outbound call failed to start",
+            error_message=str(exc),
+        )
+        raise HTTPException(status_code=502, detail=f"Twilio outbound call failed: {exc}")
 
     call.call_sid = call_sid
     call.status = "ringing"

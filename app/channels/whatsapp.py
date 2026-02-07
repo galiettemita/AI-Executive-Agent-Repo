@@ -2,7 +2,7 @@
 
 import requests
 import logging
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -48,7 +48,7 @@ def normalize_whatsapp_webhook(payload: Dict[str, Any]) -> Optional[Dict[str, An
         change = entry["changes"][0]
         value = change["value"]
         
-        # Check for statuses (message delivery updates) - ignore these
+        # Check for statuses (message delivery updates) - ignore in message path
         if "statuses" in value:
             logger.info("Ignoring status update webhook")
             return None
@@ -89,7 +89,7 @@ def normalize_whatsapp_webhook(payload: Dict[str, Any]) -> Optional[Dict[str, An
         return None
 
 
-def send_whatsapp_text(to_phone_e164: str, text: str) -> None:
+def send_whatsapp_text(to_phone_e164: str, text: str) -> Optional[str]:
     """
     Sends a text message back to WhatsApp.
     Requires WHATSAPP_TOKEN + WHATSAPP_PHONE_NUMBER_ID.
@@ -97,7 +97,7 @@ def send_whatsapp_text(to_phone_e164: str, text: str) -> None:
     """
     if not WHATSAPP_TOKEN or not WHATSAPP_PHONE_NUMBER_ID:
         logger.warning("WhatsApp credentials not configured. Cannot send message.")
-        return
+        return None
     
     try:
         url = f"{GRAPH_URL}/{WHATSAPP_PHONE_NUMBER_ID}/messages"
@@ -121,12 +121,54 @@ def send_whatsapp_text(to_phone_e164: str, text: str) -> None:
         
         if response.status_code != 200:
             logger.error("Failed to send WhatsApp message (status=%s)", response.status_code)
+            return None
         else:
             logger.info("WhatsApp message sent successfully")
+            try:
+                payload = response.json()
+                messages = payload.get("messages") if isinstance(payload, dict) else None
+                if messages and isinstance(messages, list):
+                    return messages[0].get("id")
+            except Exception:
+                return None
             
     except requests.exceptions.RequestException as e:
         logger.error("Error sending WhatsApp message: %s", e)
         logger.exception("Full traceback:")
+        return None
     except Exception as e:
         logger.error("Unexpected error sending WhatsApp message: %s", e)
         logger.exception("Full traceback:")
+        return None
+
+
+def extract_whatsapp_statuses(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """
+    Extract delivery status updates from WhatsApp webhook payload.
+    Returns a list of status dicts: {"id": "...", "status": "...", "timestamp": "...", "recipient_id": "..."}
+    """
+    statuses: List[Dict[str, Any]] = []
+    try:
+        if not isinstance(payload, dict) or "entry" not in payload or not payload.get("entry"):
+            return statuses
+        entry = payload["entry"][0]
+        changes = entry.get("changes") or []
+        if not changes:
+            return statuses
+        value = changes[0].get("value") or {}
+        raw_statuses = value.get("statuses") or []
+        for status in raw_statuses:
+            if not isinstance(status, dict):
+                continue
+            statuses.append(
+                {
+                    "id": status.get("id"),
+                    "status": status.get("status"),
+                    "timestamp": status.get("timestamp"),
+                    "recipient_id": status.get("recipient_id"),
+                    "raw": status,
+                }
+            )
+    except Exception:
+        logger.exception("Failed to extract WhatsApp statuses")
+    return statuses

@@ -44,6 +44,7 @@ from app.api.routes.watch_refresh import router as watch_refresh_router  # noqa:
 from app.api.routes.notifications import router as notifications_router  # noqa: E402
 from app.api.routes.agent_chat import router as agent_chat_router  # noqa: E402
 from app.api.routes import webhooks_whatsapp  # noqa: E402
+from app.api.routes.webhooks_sms import router as webhooks_sms_router  # noqa: E402
 from app.api.routes.admin_google import router as admin_google_router  # noqa: E402
 from app.api.routes.admin_microsoft import router as admin_microsoft_router  # noqa: E402
 from app.api.routes.admin_caldav import router as admin_caldav_router  # noqa: E402
@@ -153,6 +154,7 @@ app.include_router(watch_refresh_router)
 app.include_router(notifications_router)
 app.include_router(agent_chat_router)
 app.include_router(webhooks_whatsapp.router)
+app.include_router(webhooks_sms_router)
 app.include_router(admin_google_router)
 app.include_router(admin_microsoft_router)
 app.include_router(admin_caldav_router)

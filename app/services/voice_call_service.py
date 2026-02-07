@@ -52,6 +52,7 @@ def update_call_status(
     recording_url: Optional[str] = None,
     outcome_status: Optional[str] = None,
     outcome_notes: Optional[str] = None,
+    error_message: Optional[str] = None,
 ) -> VoiceCall:
     call.status = status
     now = datetime.utcnow()
@@ -67,6 +68,8 @@ def update_call_status(
         call.outcome_status = outcome_status
     if outcome_notes:
         call.outcome_notes = outcome_notes
+    if error_message:
+        call.error_message = error_message
     db.commit()
     db.refresh(call)
     return call

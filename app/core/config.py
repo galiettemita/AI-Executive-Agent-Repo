@@ -78,6 +78,7 @@ class Settings(BaseSettings):
     VOICE_CALL_MAX_DURATION_SECONDS: int = 1800  # 30 minutes
     VOICE_CALL_AUTO_EXECUTE_ON_APPROVAL: str = "1"
     ENABLE_VOICE_CALLS: str = "0"
+    VOICE_RECORDING_RETENTION_DAYS: int = 30
 
     # ── SerpAPI (Discovery) ─────────────────────────────────────
     SERPAPI_API_KEY: str | None = None

@@ -57,9 +57,13 @@ def list_outbound(request: Request, user_id: str, limit: int = 50, db: Session =
                 "channel": m.channel,
                 "to": m.to_address,
                 "status": m.status,
+                "provider": m.provider,
+                "provider_status": m.provider_status,
                 "error": m.error_message,
                 "created_at": m.created_at.isoformat() if m.created_at else None,
                 "sent_at": m.sent_at.isoformat() if m.sent_at else None,
+                "delivered_at": m.delivered_at.isoformat() if m.delivered_at else None,
+                "failed_at": m.failed_at.isoformat() if m.failed_at else None,
             }
             for m in items
         ]
@@ -78,9 +82,13 @@ def get_outbound(request: Request, message_id: int, user_id: str, db: Session = 
         "to": msg.to_address,
         "body": msg.body,
         "status": msg.status,
+        "provider": msg.provider,
+        "provider_status": msg.provider_status,
         "error": msg.error_message,
         "created_at": msg.created_at.isoformat() if msg.created_at else None,
         "sent_at": msg.sent_at.isoformat() if msg.sent_at else None,
+        "delivered_at": msg.delivered_at.isoformat() if msg.delivered_at else None,
+        "failed_at": msg.failed_at.isoformat() if msg.failed_at else None,
     }
 
 

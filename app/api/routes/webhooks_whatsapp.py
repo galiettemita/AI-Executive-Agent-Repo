@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Query
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db, get_or_create_user
-from app.channels.whatsapp import normalize_whatsapp_webhook, send_whatsapp_text
+from app.channels.whatsapp import normalize_whatsapp_webhook, send_whatsapp_text, extract_whatsapp_statuses
 from app.services.inbound_events import already_processed, record_inbound
 from app.services.history import (
     get_or_create_conversation,
@@ -20,6 +20,7 @@ from app.services.memory import update_memory_from_turn
 from app.services.usage import record_message
 from app.services.orchestrator import run_orchestrator
 from app.services.contacts_service import upsert_contact
+from app.services.messaging_service import record_delivery_status
 from app.core.config import settings
 from app.middleware.rate_limiter import rate_limit_webhook
 
@@ -101,6 +102,23 @@ async def receive(request: Request, db: Session = Depends(get_db)):
 
         logger.info("WhatsApp webhook received")
         
+        # Handle delivery receipts
+        statuses = extract_whatsapp_statuses(payload)
+        if statuses:
+            processed = 0
+            for status in statuses:
+                message_id = status.get("id") or ""
+                provider_status = status.get("status") or ""
+                record_delivery_status(
+                    db,
+                    provider="whatsapp",
+                    provider_message_id=message_id,
+                    provider_status=provider_status,
+                    payload=status.get("raw") if isinstance(status.get("raw"), dict) else status,
+                )
+                processed += 1
+            return {"ok": True, "status_events": processed}
+
         # Normalize the webhook payload
         event = normalize_whatsapp_webhook(payload)
         
