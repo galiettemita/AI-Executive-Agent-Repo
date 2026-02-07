@@ -178,6 +178,49 @@ def _fetch_gmail_messages(
     return email_summaries
 
 
+def get_gmail_message(
+    db: Session,
+    user_id: str,
+    message_id: str,
+    include_body: bool = True,
+) -> Optional[Dict[str, Any]]:
+    creds = get_valid_google_credentials(db=db, user_id=user_id)
+    if not creds:
+        return None
+
+    service = build("gmail", "v1", credentials=creds)
+    try:
+        msg_data = (
+            service.users()
+            .messages()
+            .get(
+                userId="me",
+                id=message_id,
+                format="full" if include_body else "metadata",
+                metadataHeaders=["From", "Subject", "Date"],
+            )
+            .execute()
+        )
+    except Exception as e:
+        logger.error("Error fetching Gmail message %s: %s", message_id, e)
+        return None
+
+    headers = {h["name"]: h["value"] for h in msg_data.get("payload", {}).get("headers", [])}
+    body_text = _extract_body(msg_data.get("payload") or {}) if include_body else None
+
+    return {
+        "id": msg_data.get("id"),
+        "thread_id": msg_data.get("threadId"),
+        "from": headers.get("From", "Unknown"),
+        "subject": headers.get("Subject", "No subject"),
+        "date": headers.get("Date"),
+        "snippet": msg_data.get("snippet", ""),
+        "body": body_text,
+        "labels": msg_data.get("labelIds", []),
+        "provider": "google",
+    }
+
+
 def search_gmail_messages(
     db: Session,
     user_id: str,

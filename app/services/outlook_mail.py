@@ -188,6 +188,36 @@ def list_recent_outlook_messages(
     return [_parse_message(m, include_body=include_body) for m in items]
 
 
+def get_outlook_message(
+    db: Session,
+    user_id: str,
+    message_id: str,
+    include_body: bool = True,
+) -> Optional[Dict[str, Any]]:
+    access_token = get_valid_microsoft_access_token(db=db, user_id=user_id)
+    if not access_token:
+        return None
+
+    params = {}
+    if include_body:
+        params["$select"] = "id,conversationId,from,subject,receivedDateTime,bodyPreview,isRead,body"
+
+    resp = httpx.get(
+        f"{GRAPH_BASE_URL}/me/messages/{message_id}",
+        headers=_auth_headers(access_token, include_body=include_body),
+        params=params,
+        timeout=15.0,
+    )
+    if resp.status_code >= 400:
+        logger.error("Microsoft message fetch failed: %s", resp.text)
+        return None
+
+    msg = resp.json() or {}
+    parsed = _parse_message(msg, include_body=include_body)
+    parsed["provider"] = "microsoft"
+    return parsed
+
+
 def get_recent_outlook_emails_for_daily_brief(
     db: Session,
     user_id: str,

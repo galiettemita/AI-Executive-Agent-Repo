@@ -383,6 +383,30 @@ class IntegrationCredential(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, index=True)
 
 
+class EmailDraft(Base):
+    __tablename__ = "email_drafts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(String, ForeignKey("users.id"), index=True)
+
+    provider: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    to_email: Mapped[str] = mapped_column(String, index=True)
+    cc: Mapped[str | None] = mapped_column(String, nullable=True)
+    bcc: Mapped[str | None] = mapped_column(String, nullable=True)
+    subject: Mapped[str] = mapped_column(String)
+    body_text: Mapped[str] = mapped_column(Text)
+
+    source_message_id: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    provider_draft_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    status: Mapped[str] = mapped_column(String, default="pending", index=True)  # pending, sent, canceled, failed
+
+    metadata_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, index=True)
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+
+
 class TaskItem(Base):
     __tablename__ = "tasks"
 

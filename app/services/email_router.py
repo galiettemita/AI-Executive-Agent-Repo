@@ -15,6 +15,7 @@ from app.services.google_gmail import (
     create_draft as gmail_create_draft,
     search_gmail_messages,
     list_recent_gmail_messages,
+    get_gmail_message,
 )
 from app.services.outlook_mail import (
     send_outlook_email,
@@ -22,6 +23,7 @@ from app.services.outlook_mail import (
     search_outlook_messages,
     list_recent_outlook_messages,
     get_recent_outlook_emails_for_daily_brief,
+    get_outlook_message,
 )
 
 logger = logging.getLogger(__name__)
@@ -204,6 +206,24 @@ def list_recent_emails(
             msg["provider"] = "microsoft"
         return results
     return []
+
+
+def get_email_by_id(
+    db: Session,
+    user_id: str,
+    message_id: str,
+    provider: Optional[str] = None,
+    include_body: bool = True,
+) -> Optional[Dict[str, Any]]:
+    provider = pick_email_provider(db, user_id, preferred=provider)
+    if not provider:
+        return None
+
+    if provider == "google":
+        return get_gmail_message(db=db, user_id=user_id, message_id=message_id, include_body=include_body)
+    if provider == "microsoft":
+        return get_outlook_message(db=db, user_id=user_id, message_id=message_id, include_body=include_body)
+    return None
 
 
 def get_recent_emails_for_daily_brief(

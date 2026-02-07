@@ -78,14 +78,14 @@ This checklist covers every task required to build the full product described in
 - [x] Messaging: multi-channel routing abstraction
 - [x] Messaging: delivery tracking and receipts
 - [ ] Email intelligence: monitoring config and alert pipeline
-- [ ] Email intelligence: AI summarization and priority scoring
-- [ ] Email intelligence: draft responses with approval
+- [x] Email intelligence: AI summarization and priority scoring
+- [x] Email intelligence: draft responses with approval
 - [ ] Calendar intelligence: meeting prep briefs
 - [ ] Calendar intelligence: travel time and buffer logic
 - [ ] Calendar intelligence: follow-up automation
 - [ ] File search: vector embeddings and semantic queries
 - [ ] Photo search: computer vision tagging and search
-- [ ] Companion app foundation (React Native or Flutter)
+- [ ] Companion app foundation (React Native or Flutter) — APNs/FCM not required if WhatsApp-only notifications
 - [ ] Analytics: usage events, cost tracking, and telemetry
 - [ ] Documentation: API docs, runbooks, and support docs
 - [ ] Beta: 100–500 invited users

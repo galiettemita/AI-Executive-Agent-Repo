@@ -13,14 +13,45 @@ from app.services.google_oauth import get_google_connection_status, build_google
 from app.services.microsoft_oauth import get_microsoft_connection_status, build_microsoft_auth_url
 from app.services.integration_credentials import get_connection_status as get_integration_status
 from app.services.calendar_router import create_event as create_calendar_event, update_event as update_calendar_event, list_events_in_range
-from app.services.email_router import create_draft, send_email, search_emails
+from app.services.email_router import send_email, search_emails
 from app.services.email_semantic_search import semantic_search_emails, index_recent_emails
+from app.services.email_intelligence import summarize_inbox, draft_reply
+from app.services.email_draft_service import (
+    create_email_draft,
+    get_latest_pending_draft,
+    send_email_draft,
+    cancel_pending_draft,
+)
 from app.services.consent_service import require_consent
 from app.db.models import TaskItem
 from app.core.config import settings
 
 
 client = OpenAI(api_key=settings.OPENAI_API_KEY)
+
+
+def _normalize_text(value: str) -> str:
+    return " ".join((value or "").strip().lower().split())
+
+
+def _is_send_confirmation(message: str) -> bool:
+    text = _normalize_text(message)
+    if not text:
+        return False
+    if text in {"send", "send it", "yes send", "ok send", "approve", "approved", "confirm"}:
+        return True
+    last = text.split()[-1]
+    return last in {"send", "approve", "confirm"}
+
+
+def _is_cancel_confirmation(message: str) -> bool:
+    text = _normalize_text(message)
+    if not text:
+        return False
+    if text in {"cancel", "never mind", "nevermind", "discard", "stop"}:
+        return True
+    last = text.split()[-1]
+    return last in {"cancel", "discard"}
 
 
 def _iso_to_dt_utc(iso_str: str) -> datetime:
@@ -66,6 +97,23 @@ def handle_admin(
     connected_ms = bool(ms_status.get("connected"))
     connected_caldav = bool(caldav_status.get("connected"))
     connected_any_calendar = connected_google or connected_ms or connected_caldav
+
+    # Pending email draft confirmation
+    pending_draft = get_latest_pending_draft(db, user_id)
+    if pending_draft:
+        if _is_send_confirmation(user_message):
+            try:
+                require_consent(db, user_id, "email")
+            except Exception as e:
+                return str(e)
+            try:
+                sent = send_email_draft(db, pending_draft)
+                return f"✅ Email sent to {sent.to_email} with subject '{sent.subject}'."
+            except Exception as exc:
+                return f"Failed to send email: {exc}"
+        if _is_cancel_confirmation(user_message):
+            cancel_pending_draft(db, pending_draft)
+            return "Draft canceled."
 
     msg_lower = user_message.lower()
     preferred_provider = None
@@ -152,12 +200,14 @@ def handle_admin(
     system = (
         "You are an admin assistant. Output ONLY valid JSON.\n"
         "Pick one action:\n"
-        "create_calendar_event | update_calendar_event | list_upcoming_events | create_email_draft | send_email | search_email | semantic_search_email | create_task | list_tasks | need_clarification\n"
+        "create_calendar_event | update_calendar_event | list_upcoming_events | summarize_inbox | create_email_draft | draft_email_reply | send_email | search_email | semantic_search_email | create_task | list_tasks | need_clarification\n"
         "Rules:\n"
         "- Calendar: require title, start_time_iso, end_time_iso (UTC ISO like 2026-02-01T15:00:00Z).\n"
         "- Calendar: optional calendar_provider = google | microsoft | caldav.\n"
         "- Update: require event_id and at least one field to change.\n"
         "- Email: require to_email, subject, body.\n"
+        "- Summarize inbox: optional max_results, hours_back, email_provider.\n"
+        "- Draft reply: require message_id or query, optional tone, instruction, email_provider.\n"
         "- Search: require query (string), optional max_results, optional email_provider.\n"
         "- Semantic search: require query (string), optional max_results, optional email_provider.\n"
         "- Tasks: require title, optional due_time_iso (UTC ISO).\n"
@@ -256,7 +306,7 @@ def handle_admin(
                 require_consent(db, user_id, "email")
             except Exception as e:
                 return str(e)
-            d = create_draft(
+            draft = create_email_draft(
                 db=db,
                 user_id=user_id,
                 to_email=str(data["to_email"]),
@@ -265,15 +315,82 @@ def handle_admin(
                 cc=data.get("cc"),
                 bcc=data.get("bcc"),
                 provider=data.get("email_provider") or preferred_provider,
+                metadata={"origin": "admin"},
             )
-            draft_id = d.get("id")
-            return f"Draft created. Draft ID: {draft_id}" if draft_id else "Draft created."
+            preview = f"To: {draft.to_email}\nSubject: {draft.subject}\n\n{draft.body_text}"
+            return f"Draft ready. Reply 'send' to send.\n\n{preview}"
+
+        if action == "draft_email_reply":
+            try:
+                require_consent(db, user_id, "email")
+            except Exception as e:
+                return str(e)
+            try:
+                reply = draft_reply(
+                    db=db,
+                    user_id=user_id,
+                    message_id=data.get("message_id"),
+                    query=data.get("query"),
+                    tone=data.get("tone"),
+                    instruction=data.get("instruction"),
+                    provider=data.get("email_provider") or preferred_provider,
+                )
+            except Exception as exc:
+                return str(exc)
+            draft = create_email_draft(
+                db=db,
+                user_id=user_id,
+                to_email=reply.get("to_email") or "",
+                subject=reply.get("subject") or "",
+                body_text=reply.get("body") or "",
+                provider=reply.get("provider") or (data.get("email_provider") or preferred_provider),
+                source_message_id=reply.get("source_message_id"),
+                metadata={"origin": "reply"},
+            )
+            preview = f"To: {draft.to_email}\nSubject: {draft.subject}\n\n{draft.body_text}"
+            return f"Draft reply ready. Reply 'send' to send.\n\n{preview}"
+
+        if action == "summarize_inbox":
+            try:
+                require_consent(db, user_id, "email")
+            except Exception as e:
+                return str(e)
+            result = summarize_inbox(
+                db=db,
+                user_id=user_id,
+                max_results=int(data.get("max_results", 10)),
+                hours_back=int(data.get("hours_back", 24)),
+                provider=data.get("email_provider") or preferred_provider,
+            )
+            lines = [result.get("summary") or "Inbox summary:"]
+            priorities = result.get("priorities") or []
+            if priorities:
+                lines.append("Top priorities:")
+                for item in priorities[:5]:
+                    lines.append(
+                        f"- ({item.get('priority')}) {item.get('from')} — {item.get('subject')}: {item.get('reason')}"
+                    )
+            return "\n".join(lines)
 
         if action == "send_email":
             try:
                 require_consent(db, user_id, "email")
             except Exception as e:
                 return str(e)
+            if not _is_send_confirmation(user_message):
+                draft = create_email_draft(
+                    db=db,
+                    user_id=user_id,
+                    to_email=str(data["to_email"]),
+                    subject=str(data["subject"]),
+                    body_text=str(data["body"]),
+                    cc=data.get("cc"),
+                    bcc=data.get("bcc"),
+                    provider=data.get("email_provider") or preferred_provider,
+                    metadata={"origin": "send_request"},
+                )
+                preview = f"To: {draft.to_email}\nSubject: {draft.subject}\n\n{draft.body_text}"
+                return f"Draft ready. Reply 'send' to send.\n\n{preview}"
             s = send_email(
                 db=db,
                 user_id=user_id,

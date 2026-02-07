@@ -73,6 +73,7 @@ from app.api.routes.proactive import router as proactive_router  # noqa: E402
 from app.api.routes.contacts import router as contacts_router  # noqa: E402
 from app.api.routes.messages import router as messages_router  # noqa: E402
 from app.api.routes.audit import router as audit_router  # noqa: E402
+from app.api.routes.email_intelligence import router as email_intelligence_router  # noqa: E402
 from app.api.routes.smart_home import router as smart_home_router  # noqa: E402
 from app.api.routes.admin_smart_home import router as admin_smart_home_router  # noqa: E402
 
@@ -183,6 +184,7 @@ app.include_router(proactive_router)
 app.include_router(contacts_router)
 app.include_router(messages_router)
 app.include_router(audit_router)
+app.include_router(email_intelligence_router)
 if settings.ENABLE_SMART_HOME == "1":
     app.include_router(smart_home_router)
     app.include_router(admin_smart_home_router)
