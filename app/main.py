@@ -67,6 +67,7 @@ from app.api.routes.voice import router as voice_router  # noqa: E402
 from app.api.routes.voice import webhook_router as voice_webhook_router  # noqa: E402
 from app.api.routes.files import router as files_router  # noqa: E402
 from app.api.routes.photos import router as photos_router  # noqa: E402
+from app.api.routes.wardrobe import router as wardrobe_router  # noqa: E402
 from app.api.routes.profile import router as profile_router  # noqa: E402
 from app.api.routes.consent import router as consent_router  # noqa: E402
 from app.api.routes.onboarding import router as onboarding_router  # noqa: E402
@@ -181,6 +182,7 @@ app.include_router(voice_router)
 app.include_router(voice_webhook_router)
 app.include_router(files_router)
 app.include_router(photos_router)
+app.include_router(wardrobe_router)
 app.include_router(profile_router)
 app.include_router(consent_router)
 app.include_router(onboarding_router)

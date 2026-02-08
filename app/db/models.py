@@ -511,6 +511,52 @@ class PhotoAsset(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, index=True)
 
 
+# -------------------
+# WARDROBE
+# -------------------
+
+class WardrobeItem(Base):
+    __tablename__ = "wardrobe_items"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(String, ForeignKey("users.id"), index=True)
+
+    name: Mapped[str] = mapped_column(String, index=True)
+    category: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    subcategory: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    brand: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    color: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    size: Mapped[str | None] = mapped_column(String, nullable=True)
+    material: Mapped[str | None] = mapped_column(String, nullable=True)
+    season: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    condition: Mapped[str | None] = mapped_column(String, nullable=True)
+
+    purchase_date: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    currency: Mapped[str | None] = mapped_column(String, nullable=True)
+
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    tags_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    metadata_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, index=True)
+
+
+class WardrobeItemPhoto(Base):
+    __tablename__ = "wardrobe_item_photos"
+    __table_args__ = (
+        UniqueConstraint("wardrobe_item_id", "photo_asset_id", name="uq_wardrobe_item_photo"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    wardrobe_item_id: Mapped[int] = mapped_column(Integer, ForeignKey("wardrobe_items.id"), index=True)
+    photo_asset_id: Mapped[int] = mapped_column(Integer, ForeignKey("photo_assets.id"), index=True)
+
+    is_primary: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+
 class UserProfile(Base):
     __tablename__ = "user_profiles"
 

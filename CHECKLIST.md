@@ -108,7 +108,7 @@ This checklist covers every task required to build the full product described in
 - [ ] Beta: 100–500 invited users
 
 ## Phase 3 — Lifestyle & Personal Optimization (Months 13–18)
-- [ ] Wardrobe: item cataloging and image ingestion
+- [x] Wardrobe: item cataloging and image ingestion
 - [ ] Wardrobe: outfit suggestions based on weather + calendar
 - [ ] Wardrobe: wear frequency tracking and rotation reminders
 - [ ] Wardrobe: shopping recommendations

@@ -39,6 +39,17 @@ This is a high-level API reference. The canonical schema is the generated OpenAP
 - `POST /photos/upload`
 - `GET /photos/search?semantic=true`
 
+## Wardrobe
+- `POST /wardrobe/items` create wardrobe item
+- `GET /wardrobe/items` list wardrobe items
+- `GET /wardrobe/items/{item_id}` get wardrobe item
+- `PATCH /wardrobe/items/{item_id}` update wardrobe item
+- `DELETE /wardrobe/items/{item_id}` delete wardrobe item
+- `GET /wardrobe/items/{item_id}/photos` list item photos
+- `POST /wardrobe/items/{item_id}/photos` attach existing photos
+- `POST /wardrobe/items/{item_id}/photos/upload` upload and attach a photo
+- `DELETE /wardrobe/items/{item_id}/photos/{photo_id}` detach a photo
+
 ## Analytics
 - `GET /analytics/events`
 - `GET /analytics/summary`
