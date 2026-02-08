@@ -112,6 +112,7 @@ class Settings(BaseSettings):
     ENERGY_MONITOR_INTERVAL_MINUTES: int = 15
     PROACTIVE_RULE_POLL_MINUTES: int = 5
     EMAIL_MONITOR_INTERVAL_MINUTES: int = 10
+    EMAIL_MONITOR_TEST_MODE: str = "0"
 
     # ── Onboarding / Phone verification ─────────────────────────
     REQUIRE_PHONE_VERIFICATION: str = "0"

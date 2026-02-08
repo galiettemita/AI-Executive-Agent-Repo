@@ -25,7 +25,9 @@ from app.services.email_monitoring import (
     upsert_email_monitor_config,
     run_email_monitoring,
     list_email_alerts,
+    create_test_email_alert,
 )
+from app.core.config import settings
 
 router = APIRouter(prefix="/email/intelligence", tags=["email"])
 
@@ -77,6 +79,15 @@ class EmailMonitorConfigRequest(BaseModel):
 
 class EmailMonitorRunRequest(BaseModel):
     user_id: str
+
+
+class EmailMonitorTestRequest(BaseModel):
+    user_id: str
+    subject: Optional[str] = None
+    sender: Optional[str] = None
+    snippet: Optional[str] = None
+    priority: Optional[int] = None
+    alert_channel: str = "whatsapp"
 
 
 @rate_limit_user()
@@ -310,3 +321,30 @@ def get_email_alerts(
             for a in alerts
         ],
     }
+
+
+@rate_limit_user()
+@router.post("/monitoring/test")
+def create_test_email_alert_route(
+    request: Request,
+    payload: EmailMonitorTestRequest,
+    db: Session = Depends(get_db),
+):
+    try:
+        require_consent(db, payload.user_id, "email")
+    except Exception as e:
+        raise HTTPException(status_code=403, detail=str(e))
+
+    if settings.ENV == "production" and settings.EMAIL_MONITOR_TEST_MODE != "1":
+        raise HTTPException(status_code=403, detail="Test mode disabled in production")
+
+    alert = create_test_email_alert(
+        db,
+        user_id=payload.user_id,
+        subject=payload.subject,
+        sender=payload.sender,
+        snippet=payload.snippet,
+        priority=payload.priority,
+        alert_channel=(payload.alert_channel or "whatsapp").lower(),
+    )
+    return {"ok": True, "alert_id": alert.id}

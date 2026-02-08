@@ -5,6 +5,7 @@ import logging
 import math
 from datetime import datetime
 from typing import Any, Dict, List, Optional
+from uuid import uuid4
 
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -53,6 +54,77 @@ def list_email_alerts(db: Session, user_id: str, limit: int = 50) -> List[EmailA
         .limit(limit)
         .all()
     )
+
+
+def create_test_email_alert(
+    db: Session,
+    *,
+    user_id: str,
+    subject: Optional[str] = None,
+    sender: Optional[str] = None,
+    snippet: Optional[str] = None,
+    priority: Optional[int] = None,
+    alert_channel: str = "whatsapp",
+) -> EmailAlert:
+    message_id = f"test-{uuid4().hex}"
+    msg = {
+        "id": message_id,
+        "subject": subject or "Test email alert",
+        "from": sender or "test@example.com",
+        "snippet": snippet or "This is a test email alert.",
+    }
+    reason = "test"
+
+    alert = EmailAlert(
+        user_id=user_id,
+        provider="test",
+        message_id=message_id,
+        subject=msg.get("subject"),
+        sender=msg.get("from"),
+        priority=priority,
+        reason=reason,
+        alert_channel=alert_channel,
+        created_at=datetime.utcnow(),
+    )
+    db.add(alert)
+    try:
+        db.commit()
+        db.refresh(alert)
+    except IntegrityError:
+        db.rollback()
+        raise
+
+    alert_message = _build_alert_message(msg, reason, priority)
+    title = "Test email alert"
+
+    if alert_channel == "whatsapp":
+        db.add(
+            NotificationQueue(
+                user_id=user_id,
+                event_type="email_alert_test",
+                title=title,
+                message=alert_message,
+                deep_link_url=None,
+                is_sent=False,
+            )
+        )
+        db.commit()
+    else:
+        try:
+            provider = alert_channel if alert_channel in {"slack", "pagerduty", "sentry"} else None
+            send_alert(f"{title}\n\n{alert_message}", provider=provider)
+        except Exception as exc:
+            logger.warning("Alerting provider failed: %s", exc)
+
+    record_usage_event(
+        db,
+        user_id=user_id,
+        event_type="email_monitor_test_alert",
+        source="email_monitoring",
+        channel=alert_channel,
+        metadata={"message_id": message_id},
+    )
+    return alert
 
 
 def upsert_email_monitor_config(

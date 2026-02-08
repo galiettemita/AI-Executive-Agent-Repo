@@ -24,6 +24,7 @@ This is a high-level API reference. The canonical schema is the generated OpenAP
 - `POST /email/intelligence/monitoring/configs` upsert monitoring config
 - `POST /email/intelligence/monitoring/run` trigger monitoring
 - `GET /email/intelligence/monitoring/alerts` list alerts
+- `POST /email/intelligence/monitoring/test` create a test alert (non-prod unless enabled)
 
 ## Calendar
 - `GET /calendar/intelligence/meeting-prep` briefing
