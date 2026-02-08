@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 # app/db/models.py
 
@@ -573,6 +573,67 @@ class WardrobeWearEvent(Base):
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+
+class GiftOccasion(Base):
+    __tablename__ = "gift_occasions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(String, ForeignKey("users.id"), index=True)
+
+    recipient_name: Mapped[str] = mapped_column(String, index=True)
+    relationship: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    occasion_type: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    occasion_date: Mapped[datetime | None] = mapped_column(Date, nullable=True, index=True)
+    recurrence: Mapped[str | None] = mapped_column(String, nullable=True, index=True)  # annual, none
+
+    reminder_days_before: Mapped[int] = mapped_column(Integer, default=14)
+    last_reminder_sent_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+
+    budget: Mapped[float | None] = mapped_column(Float, nullable=True)
+    currency: Mapped[str | None] = mapped_column(String, nullable=True)
+
+    preferences_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, index=True)
+
+
+class GiftIdea(Base):
+    __tablename__ = "gift_ideas"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(String, ForeignKey("users.id"), index=True)
+    occasion_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("gift_occasions.id"), nullable=True, index=True)
+
+    title: Mapped[str] = mapped_column(String, index=True)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    link_url: Mapped[str | None] = mapped_column(String, nullable=True)
+    price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    currency: Mapped[str | None] = mapped_column(String, nullable=True)
+    status: Mapped[str] = mapped_column(String, default="idea", index=True)  # idea, shortlisted, purchased, gifted
+    source: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    tags_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, index=True)
+
+
+class GiftThankYouDraft(Base):
+    __tablename__ = "gift_thank_you_drafts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(String, ForeignKey("users.id"), index=True)
+    occasion_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("gift_occasions.id"), nullable=True, index=True)
+    gift_idea_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("gift_ideas.id"), nullable=True, index=True)
+
+    message: Mapped[str] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String, default="draft", index=True)  # draft, sent
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, index=True)
 
 
 class UserProfile(Base):

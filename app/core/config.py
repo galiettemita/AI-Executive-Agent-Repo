@@ -139,6 +139,12 @@ class Settings(BaseSettings):
     WARDROBE_WEAR_LOOKBACK_DAYS: int = 90
     WARDROBE_SHOPPING_MAX_RESULTS: int = 6
 
+    # ── Gifts ───────────────────────────────────────────────────
+    GIFT_LLM_ENABLED: str = "1"
+    GIFT_REMINDER_SCHEDULE: str = "9 0"
+    GIFT_REMINDER_DEFAULT_DAYS: int = 14
+    GIFT_SHOPPING_MAX_RESULTS: int = 6
+
     # ── Circuit breaker ─────────────────────────────────────────
     CIRCUIT_BREAKER_FAILURE_THRESHOLD: int = 5
     CIRCUIT_BREAKER_RECOVERY_TIMEOUT: int = 30

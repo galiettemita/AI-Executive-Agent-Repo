@@ -56,6 +56,20 @@ This is a high-level API reference. The canonical schema is the generated OpenAP
 - `GET /wardrobe/suggestions` outfit suggestions (weather + calendar)
 - `GET /wardrobe/recommendations` shopping recommendations
 
+## Gifts
+- `POST /gifts/occasions` create occasion
+- `GET /gifts/occasions` list occasions
+- `PATCH /gifts/occasions/{occasion_id}` update occasion
+- `DELETE /gifts/occasions/{occasion_id}` delete occasion
+- `POST /gifts/ideas` create gift idea
+- `GET /gifts/ideas` list gift ideas
+- `PATCH /gifts/ideas/{idea_id}` update gift idea
+- `DELETE /gifts/ideas/{idea_id}` delete gift idea
+- `POST /gifts/recommendations` gift recommendations (SerpAPI)
+- `POST /gifts/thank-you` generate thank-you note draft
+- `POST /gifts/ideas/{idea_id}/proposal` create gift purchase proposal
+- `POST /gifts/reminders/run` queue gift reminders for user
+
 ## Analytics
 - `GET /analytics/events`
 - `GET /analytics/summary`

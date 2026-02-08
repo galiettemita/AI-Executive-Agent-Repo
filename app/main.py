@@ -80,6 +80,7 @@ from app.api.routes.calendar_intelligence import router as calendar_intelligence
 from app.api.routes.analytics import router as analytics_router  # noqa: E402
 from app.api.routes.smart_home import router as smart_home_router  # noqa: E402
 from app.api.routes.admin_smart_home import router as admin_smart_home_router  # noqa: E402
+from app.api.routes.gifts import router as gifts_router  # noqa: E402
 
 
 _scheduler = None
@@ -193,6 +194,7 @@ app.include_router(audit_router)
 app.include_router(email_intelligence_router)
 app.include_router(calendar_intelligence_router)
 app.include_router(analytics_router)
+app.include_router(gifts_router)
 if settings.ENABLE_SMART_HOME == "1":
     app.include_router(smart_home_router)
     app.include_router(admin_smart_home_router)

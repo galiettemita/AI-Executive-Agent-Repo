@@ -54,6 +54,9 @@ from app.db.models import (
     WardrobeItem,
     WardrobeItemPhoto,
     WardrobeWearEvent,
+    GiftOccasion,
+    GiftIdea,
+    GiftThankYouDraft,
 )
 
 logger = logging.getLogger(__name__)
@@ -80,6 +83,9 @@ USER_DATA_MODELS = [
     WardrobeWearEvent,
     WardrobeItemPhoto,
     WardrobeItem,
+    GiftThankYouDraft,
+    GiftIdea,
+    GiftOccasion,
     # Shopping/watching
     WatchOffer,
     WatchItem,

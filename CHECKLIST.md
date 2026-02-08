@@ -112,9 +112,9 @@ This checklist covers every task required to build the full product described in
 - [x] Wardrobe: outfit suggestions based on weather + calendar
 - [x] Wardrobe: wear frequency tracking and rotation reminders
 - [x] Wardrobe: shopping recommendations
-- [ ] Gift management: occasions and reminders
-- [ ] Gift management: recommendations + purchase flow
-- [ ] Gift management: thank-you note automation
+- [x] Gift management: occasions and reminders
+- [x] Gift management: recommendations + purchase flow
+- [x] Gift management: thank-you note automation
 - [ ] Relationship manager: contact relationship tracking
 - [ ] Relationship manager: communication frequency tracking
 - [ ] Relationship manager: reach-out suggestions

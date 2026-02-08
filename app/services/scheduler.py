@@ -21,6 +21,7 @@ from app.services.proactive_rules import run_due_rules
 from app.services.voice_retention import purge_expired_calls
 from app.services.email_monitoring import run_email_monitoring as run_email_monitoring_service
 from app.services.wardrobe_rotation import run_rotation_for_all_users
+from app.services.gift_reminders import enqueue_gift_reminders
 
 logger = logging.getLogger(__name__)
 
@@ -299,6 +300,20 @@ def run_wardrobe_rotation():
         db.close()
 
 
+def run_gift_reminders():
+    """
+    Queue gift reminders for upcoming occasions.
+    """
+    db = SessionLocal()
+    try:
+        result = enqueue_gift_reminders(db)
+        logger.info("Gift reminders queued: %s", result)
+    except Exception as e:
+        logger.error("Fatal error in gift reminders job: %s", e)
+    finally:
+        db.close()
+
+
 def setup_scheduler() -> BackgroundScheduler:
     """
     Set up the APScheduler for background jobs.
@@ -424,6 +439,19 @@ def setup_scheduler() -> BackgroundScheduler:
         replace_existing=True,
     )
     logger.info("Wardrobe rotation reminders scheduled for %02d:%02d UTC daily", rotation_hour, rotation_minute)
+
+    # Gift reminders (daily)
+    gift_time = settings.GIFT_REMINDER_SCHEDULE.split()
+    gift_hour = int(gift_time[0])
+    gift_minute = int(gift_time[1]) if len(gift_time) > 1 else 0
+    scheduler.add_job(
+        run_gift_reminders,
+        trigger=CronTrigger(hour=gift_hour, minute=gift_minute),
+        id="gift_reminders_job",
+        name="Gift Reminders",
+        replace_existing=True,
+    )
+    logger.info("Gift reminders scheduled for %02d:%02d UTC daily", gift_hour, gift_minute)
 
     return scheduler
 
