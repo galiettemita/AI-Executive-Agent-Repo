@@ -25,6 +25,9 @@ This is a high-level API reference. The canonical schema is the generated OpenAP
 - `POST /email/intelligence/monitoring/run` trigger monitoring
 - `GET /email/intelligence/monitoring/alerts` list alerts
 - `POST /email/intelligence/monitoring/test` create a test alert (non-prod unless enabled)
+- `POST /admin/email/connect` connect iCloud or Yahoo (app-specific password)
+- `GET /admin/email/status` check iCloud/Yahoo status
+- `POST /admin/email/disconnect` disconnect iCloud/Yahoo
 
 ## Calendar
 - `GET /calendar/intelligence/meeting-prep` briefing

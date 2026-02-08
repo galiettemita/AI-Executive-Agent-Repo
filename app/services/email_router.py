@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.services.google_oauth import get_google_connection_status
 from app.services.microsoft_oauth import get_microsoft_connection_status
+from app.services.integration_credentials import get_connection_status as get_integration_status
 from app.services.preferences import get_preferences
 from app.services.google_gmail import (
     send_email as gmail_send_email,
@@ -25,19 +26,29 @@ from app.services.outlook_mail import (
     get_recent_outlook_emails_for_daily_brief,
     get_outlook_message,
 )
+from app.services.imap_email import (
+    send_imap_email,
+    search_imap_messages,
+    list_recent_imap_messages,
+    get_imap_message,
+)
 
 logger = logging.getLogger(__name__)
 
 
-PROVIDER_ORDER = ["google", "microsoft"]
+PROVIDER_ORDER = ["google", "microsoft", "icloud", "yahoo"]
 
 
 def get_email_connections(db: Session, user_id: str) -> Dict[str, bool]:
     google_status = get_google_connection_status(db=db, user_id=user_id)
     ms_status = get_microsoft_connection_status(db=db, user_id=user_id)
+    icloud_status = get_integration_status(db=db, user_id=user_id, provider="icloud")
+    yahoo_status = get_integration_status(db=db, user_id=user_id, provider="yahoo")
     return {
         "google": bool(google_status.get("connected")),
         "microsoft": bool(ms_status.get("connected")),
+        "icloud": bool(icloud_status.get("connected")),
+        "yahoo": bool(yahoo_status.get("connected")),
     }
 
 
@@ -91,6 +102,17 @@ def send_email(
             cc=cc,
             bcc=bcc,
         )
+    if provider in {"icloud", "yahoo"}:
+        return send_imap_email(
+            db=db,
+            user_id=user_id,
+            to_email=to_email,
+            subject=subject,
+            body_text=body_text,
+            cc=cc,
+            bcc=bcc,
+            provider=provider,
+        )
     raise RuntimeError(f"Unsupported email provider: {provider}")
 
 
@@ -128,6 +150,8 @@ def create_draft(
             cc=cc,
             bcc=bcc,
         )
+    if provider in {"icloud", "yahoo"}:
+        raise RuntimeError("Drafts are not supported for IMAP providers. Use send or internal drafts.")
     raise RuntimeError(f"Unsupported email provider: {provider}")
 
 
@@ -164,6 +188,18 @@ def search_emails(
         )
         for msg in results:
             msg["provider"] = "microsoft"
+        return results
+    if provider in {"icloud", "yahoo"}:
+        results = search_imap_messages(
+            db=db,
+            user_id=user_id,
+            query=query,
+            max_results=max_results,
+            provider=provider,
+            include_body=include_body,
+        )
+        for msg in results:
+            msg["provider"] = provider
         return results
     raise RuntimeError(f"Unsupported email provider: {provider}")
 
@@ -205,6 +241,19 @@ def list_recent_emails(
         for msg in results:
             msg["provider"] = "microsoft"
         return results
+    if provider in {"icloud", "yahoo"}:
+        results = list_recent_imap_messages(
+            db=db,
+            user_id=user_id,
+            max_results=max_results,
+            hours_back=hours_back,
+            unread_only=unread_only,
+            provider=provider,
+            include_body=include_body,
+        )
+        for msg in results:
+            msg["provider"] = provider
+        return results
     return []
 
 
@@ -223,6 +272,14 @@ def get_email_by_id(
         return get_gmail_message(db=db, user_id=user_id, message_id=message_id, include_body=include_body)
     if provider == "microsoft":
         return get_outlook_message(db=db, user_id=user_id, message_id=message_id, include_body=include_body)
+    if provider in {"icloud", "yahoo"}:
+        return get_imap_message(
+            db=db,
+            user_id=user_id,
+            message_id=message_id,
+            provider=provider,
+            include_body=include_body,
+        )
     return None
 
 
@@ -259,4 +316,20 @@ def get_recent_emails_for_daily_brief(
         emails.extend(results)
     except Exception as e:
         logger.warning("Outlook daily brief fetch failed: %s", e)
+    for provider in ("icloud", "yahoo"):
+        try:
+            results = list_recent_imap_messages(
+                db=db,
+                user_id=user_id,
+                max_results=max_results,
+                hours_back=hours_back,
+                unread_only=True,
+                provider=provider,
+                include_body=False,
+            )
+            for msg in results:
+                msg["provider"] = provider
+            emails.extend(results)
+        except Exception as e:
+            logger.warning("%s daily brief fetch failed: %s", provider, e)
     return emails

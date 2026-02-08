@@ -122,6 +122,10 @@ def handle_admin(
         preferred_provider = "microsoft"
     elif any(k in msg_lower for k in ["google", "gmail"]):
         preferred_provider = "google"
+    elif any(k in msg_lower for k in ["icloud", "apple mail"]):
+        preferred_provider = "icloud"
+    elif any(k in msg_lower for k in ["yahoo"]):
+        preferred_provider = "yahoo"
     elif any(k in msg_lower for k in ["apple", "icloud", "caldav"]):
         preferred_provider = "caldav"
 
@@ -153,6 +157,12 @@ def handle_admin(
             "To connect Apple/iCloud Calendar (CalDAV), you’ll need to add your CalDAV credentials.\n"
             "Use the CalDAV connect endpoint with your server URL, username, and app-specific password.\n"
             "If you want step-by-step setup instructions, just say: “How do I connect CalDAV?”"
+        )
+
+    if ("connect" in msg_lower or "link" in msg_lower) and any(k in msg_lower for k in ["icloud email", "apple mail", "yahoo email", "yahoo"]):
+        return (
+            "To connect iCloud or Yahoo email, use the email connect endpoint with your email + app-specific password.\n"
+            "If you want step-by-step instructions, say: “How do I connect iCloud email?” or “How do I connect Yahoo email?”"
         )
 
     # If user asks for calendar/email but not connected, provide connect link

@@ -48,6 +48,7 @@ from app.api.routes.webhooks_sms import router as webhooks_sms_router  # noqa: E
 from app.api.routes.admin_google import router as admin_google_router  # noqa: E402
 from app.api.routes.admin_microsoft import router as admin_microsoft_router  # noqa: E402
 from app.api.routes.admin_caldav import router as admin_caldav_router  # noqa: E402
+from app.api.routes.admin_email import router as admin_email_router  # noqa: E402
 from app.api.routes.admin_tasks import router as admin_tasks_router  # noqa: E402
 from app.api.routes.admin_beta import router as admin_beta_router  # noqa: E402
 from app.api.routes.billing import router as billing_router  # noqa: E402
@@ -161,6 +162,7 @@ app.include_router(webhooks_sms_router)
 app.include_router(admin_google_router)
 app.include_router(admin_microsoft_router)
 app.include_router(admin_caldav_router)
+app.include_router(admin_email_router)
 app.include_router(admin_tasks_router)
 app.include_router(admin_beta_router)
 app.include_router(billing_router)

@@ -99,7 +99,7 @@ This checklist covers every task required to build the full product described in
 - [x] Calendar intelligence: meeting prep briefs
 - [x] Calendar intelligence: travel time and buffer logic
 - [x] Calendar intelligence: follow-up automation
-- [ ] Email: iCloud/IMAP + Yahoo connector (inbox + send) with app-specific password 
+- [x] Email: iCloud/IMAP + Yahoo connector (inbox + send) with app-specific password 
 - [x] File search: vector embeddings and semantic queries
 - [x] Photo search: computer vision tagging and search
 - [ ] Companion app foundation (React Native or Flutter) — APNs/FCM not required if WhatsApp-only notifications
