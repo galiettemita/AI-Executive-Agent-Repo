@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Optional
+import json
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
@@ -19,8 +20,24 @@ from app.services.email_draft_service import (
     send_email_draft,
     cancel_pending_draft,
 )
+from app.services.email_monitoring import (
+    list_email_monitor_configs,
+    upsert_email_monitor_config,
+    run_email_monitoring,
+    list_email_alerts,
+)
 
 router = APIRouter(prefix="/email/intelligence", tags=["email"])
+
+
+def _safe_list(raw: Optional[str]) -> List[str]:
+    try:
+        data = json.loads(raw or "[]")
+        if isinstance(data, list):
+            return data
+    except Exception:
+        return []
+    return []
 
 
 class DraftReplyRequest(BaseModel):
@@ -40,6 +57,26 @@ class SendDraftRequest(BaseModel):
 class CancelDraftRequest(BaseModel):
     user_id: str
     draft_id: Optional[int] = None
+
+
+class EmailMonitorConfigRequest(BaseModel):
+    user_id: str
+    config_id: Optional[int] = None
+    provider: Optional[str] = None
+    enabled: bool = True
+    keywords: List[str] = []
+    senders: List[str] = []
+    subject_keywords: List[str] = []
+    priority_threshold: Optional[int] = None
+    use_ai_priority: bool = False
+    alert_channel: str = "whatsapp"
+    alert_title: Optional[str] = None
+    window_minutes: int = 60
+    max_results: int = 20
+
+
+class EmailMonitorRunRequest(BaseModel):
+    user_id: str
 
 
 @rate_limit_user()
@@ -157,3 +194,119 @@ def cancel_email_reply(
 
     draft = cancel_pending_draft(db, draft)
     return {"ok": True, "draft_id": draft.id, "status": draft.status}
+
+
+@rate_limit_user()
+@router.get("/monitoring/configs")
+def get_email_monitor_configs(
+    request: Request,
+    user_id: str,
+    db: Session = Depends(get_db),
+):
+    try:
+        require_consent(db, user_id, "email")
+    except Exception as e:
+        raise HTTPException(status_code=403, detail=str(e))
+    configs = list_email_monitor_configs(db, user_id)
+    return {
+        "ok": True,
+        "configs": [
+            {
+                "id": c.id,
+                "provider": c.provider,
+                "enabled": c.enabled,
+                "keywords": _safe_list(c.keywords_json),
+                "senders": _safe_list(c.sender_allowlist_json),
+                "subject_keywords": _safe_list(c.subject_keywords_json),
+                "priority_threshold": c.priority_threshold,
+                "use_ai_priority": c.use_ai_priority,
+                "alert_channel": c.alert_channel,
+                "alert_title": c.alert_title,
+                "window_minutes": c.window_minutes,
+                "max_results": c.max_results,
+                "last_checked_at": c.last_checked_at.isoformat() if c.last_checked_at else None,
+                "created_at": c.created_at.isoformat() if c.created_at else None,
+            }
+            for c in configs
+        ],
+    }
+
+
+@rate_limit_user()
+@router.post("/monitoring/configs")
+def upsert_email_monitor(
+    request: Request,
+    payload: EmailMonitorConfigRequest,
+    db: Session = Depends(get_db),
+):
+    try:
+        require_consent(db, payload.user_id, "email")
+    except Exception as e:
+        raise HTTPException(status_code=403, detail=str(e))
+
+    config = upsert_email_monitor_config(
+        db,
+        user_id=payload.user_id,
+        config_id=payload.config_id,
+        provider=payload.provider,
+        enabled=payload.enabled,
+        keywords=payload.keywords,
+        senders=payload.senders,
+        subject_keywords=payload.subject_keywords,
+        priority_threshold=payload.priority_threshold,
+        use_ai_priority=payload.use_ai_priority,
+        alert_channel=payload.alert_channel,
+        alert_title=payload.alert_title,
+        window_minutes=payload.window_minutes,
+        max_results=payload.max_results,
+    )
+    return {"ok": True, "config_id": config.id, "enabled": config.enabled}
+
+
+@rate_limit_user()
+@router.post("/monitoring/run")
+def run_email_monitoring_for_user(
+    request: Request,
+    payload: EmailMonitorRunRequest,
+    db: Session = Depends(get_db),
+):
+    try:
+        require_consent(db, payload.user_id, "email")
+    except Exception as e:
+        raise HTTPException(status_code=403, detail=str(e))
+
+    result = run_email_monitoring(db, user_id=payload.user_id)
+    return {"ok": True, "result": result}
+
+
+@rate_limit_user()
+@router.get("/monitoring/alerts")
+def get_email_alerts(
+    request: Request,
+    user_id: str,
+    limit: int = 50,
+    db: Session = Depends(get_db),
+):
+    try:
+        require_consent(db, user_id, "email")
+    except Exception as e:
+        raise HTTPException(status_code=403, detail=str(e))
+
+    alerts = list_email_alerts(db, user_id, limit=limit)
+    return {
+        "ok": True,
+        "alerts": [
+            {
+                "id": a.id,
+                "provider": a.provider,
+                "message_id": a.message_id,
+                "subject": a.subject,
+                "sender": a.sender,
+                "priority": a.priority,
+                "reason": a.reason,
+                "alert_channel": a.alert_channel,
+                "created_at": a.created_at.isoformat() if a.created_at else None,
+            }
+            for a in alerts
+        ],
+    }

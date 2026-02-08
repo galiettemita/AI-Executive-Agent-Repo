@@ -12,6 +12,7 @@ from app.core.config import settings
 from app.db.models import OutboundMessage, OutboundMessageEvent, Contact
 from app.channels.whatsapp import send_whatsapp_text
 from app.services.contacts_service import normalize_phone, normalize_email
+from app.services.analytics_service import record_usage_event
 
 logger = logging.getLogger(__name__)
 
@@ -225,6 +226,18 @@ def deliver_pending_messages(db: Session, limit: int = 50) -> Dict[str, int]:
                 event_type="sent",
                 payload={"channel": msg.channel},
             )
+            try:
+                record_usage_event(
+                    db,
+                    user_id=msg.user_id,
+                    event_type="outbound_message_sent",
+                    source="messaging",
+                    channel=msg.channel,
+                    provider=msg.provider,
+                    metadata={"message_id": msg.id, "to": msg.to_address},
+                )
+            except Exception:
+                pass
         except Exception as exc:
             msg.status = "failed"
             msg.provider_status = "failed"
@@ -238,6 +251,18 @@ def deliver_pending_messages(db: Session, limit: int = 50) -> Dict[str, int]:
                 event_type="failed",
                 payload={"error": str(exc)},
             )
+            try:
+                record_usage_event(
+                    db,
+                    user_id=msg.user_id,
+                    event_type="outbound_message_failed",
+                    source="messaging",
+                    channel=msg.channel,
+                    provider=msg.provider,
+                    metadata={"message_id": msg.id, "error": str(exc)},
+                )
+            except Exception:
+                pass
             failed += 1
             logger.warning("Outbound message %s failed: %s", msg.id, exc)
 

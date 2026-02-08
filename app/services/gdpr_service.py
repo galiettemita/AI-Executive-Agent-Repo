@@ -45,6 +45,12 @@ from app.db.models import (
     InboundEvent,
     NotificationQueue,
     MemoryNote,
+    EmailDraft,
+    EmailMonitorConfig,
+    EmailAlert,
+    FileAsset,
+    PhotoAsset,
+    UsageEvent,
 )
 
 logger = logging.getLogger(__name__)
@@ -58,11 +64,16 @@ USER_DATA_MODELS = [
     NotificationQueue,
     InboundEvent,
     DeviceToken,
+    EmailAlert,
     # Chat and tasks
     ChatMessage,
     Conversation,
     TaskItem,
     MemoryNote,
+    EmailDraft,
+    EmailMonitorConfig,
+    FileAsset,
+    PhotoAsset,
     # Shopping/watching
     WatchOffer,
     WatchItem,
@@ -77,6 +88,7 @@ USER_DATA_MODELS = [
     PaymentMethod,
     SpendingLimit,
     Usage,
+    UsageEvent,
     Subscription,
     # User preferences and auth
     UserPreference,

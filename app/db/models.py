@@ -407,6 +407,59 @@ class EmailDraft(Base):
     sent_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
 
 
+class EmailMonitorConfig(Base):
+    __tablename__ = "email_monitor_configs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(String, ForeignKey("users.id"), index=True)
+
+    provider: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+
+    keywords_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    sender_allowlist_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    subject_keywords_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    priority_threshold: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    use_ai_priority: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    alert_channel: Mapped[str] = mapped_column(String, default="whatsapp", index=True)
+    alert_title: Mapped[str | None] = mapped_column(String, nullable=True)
+
+    window_minutes: Mapped[int] = mapped_column(Integer, default=60)
+    max_results: Mapped[int] = mapped_column(Integer, default=20)
+
+    last_checked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, index=True)
+
+
+class EmailAlert(Base):
+    __tablename__ = "email_alerts"
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id",
+            "provider",
+            "message_id",
+            "alert_channel",
+            name="uq_email_alert_user_message",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(String, ForeignKey("users.id"), index=True)
+
+    provider: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    message_id: Mapped[str] = mapped_column(String, index=True)
+    subject: Mapped[str | None] = mapped_column(String, nullable=True)
+    sender: Mapped[str | None] = mapped_column(String, nullable=True)
+    priority: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    alert_channel: Mapped[str] = mapped_column(String, default="whatsapp", index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+
 class TaskItem(Base):
     __tablename__ = "tasks"
 
@@ -601,6 +654,24 @@ class Usage(Base):
     proposals_count: Mapped[int] = mapped_column(Integer, default=0)
 
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class UsageEvent(Base):
+    __tablename__ = "usage_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(String, ForeignKey("users.id"), index=True)
+
+    event_type: Mapped[str] = mapped_column(String, index=True)
+    source: Mapped[str | None] = mapped_column(String, nullable=True)
+    channel: Mapped[str | None] = mapped_column(String, nullable=True)
+    provider: Mapped[str | None] = mapped_column(String, nullable=True)
+
+    tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    cost_usd: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    metadata_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
 
 
 # -------------------

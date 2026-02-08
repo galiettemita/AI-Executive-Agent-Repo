@@ -213,6 +213,43 @@ def get_outlook_events_for_daily_brief(
     if not access_token:
         return []
 
+
+def get_outlook_event(
+    db: Session,
+    user_id: str,
+    event_id: str,
+) -> Optional[Dict[str, Any]]:
+    access_token = get_valid_microsoft_access_token(db=db, user_id=user_id)
+    if not access_token:
+        raise RuntimeError("Microsoft not connected. Ask the user to connect first.")
+
+    resp = httpx.get(
+        f"{GRAPH_BASE_URL}/me/events/{event_id}",
+        headers=_auth_headers(access_token),
+        timeout=15.0,
+    )
+    if resp.status_code >= 400:
+        logger.error("Microsoft event fetch failed: %s", resp.text)
+        return None
+
+    event = resp.json() or {}
+    return {
+        "id": event.get("id"),
+        "summary": event.get("subject"),
+        "start": event.get("start"),
+        "end": event.get("end"),
+        "webLink": event.get("webLink"),
+        "location": (event.get("location") or {}).get("displayName"),
+        "description": (event.get("body") or {}).get("content"),
+        "attendees": [
+            (a.get("emailAddress") or {}).get("address")
+            for a in (event.get("attendees") or [])
+            if isinstance(a, dict)
+        ],
+        "organizer": (event.get("organizer") or {}).get("emailAddress"),
+        "provider": "microsoft",
+    }
+
     try:
         now = datetime.now(timezone.utc)
         window_end = now + timedelta(days=days_ahead)

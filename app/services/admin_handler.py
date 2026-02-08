@@ -13,6 +13,7 @@ from app.services.google_oauth import get_google_connection_status, build_google
 from app.services.microsoft_oauth import get_microsoft_connection_status, build_microsoft_auth_url
 from app.services.integration_credentials import get_connection_status as get_integration_status
 from app.services.calendar_router import create_event as create_calendar_event, update_event as update_calendar_event, list_events_in_range
+from app.services.calendar_intelligence import meeting_prep_brief, generate_followup
 from app.services.email_router import send_email, search_emails
 from app.services.email_semantic_search import semantic_search_emails, index_recent_emails
 from app.services.email_intelligence import summarize_inbox, draft_reply
@@ -200,10 +201,12 @@ def handle_admin(
     system = (
         "You are an admin assistant. Output ONLY valid JSON.\n"
         "Pick one action:\n"
-        "create_calendar_event | update_calendar_event | list_upcoming_events | summarize_inbox | create_email_draft | draft_email_reply | send_email | search_email | semantic_search_email | create_task | list_tasks | need_clarification\n"
+        "create_calendar_event | update_calendar_event | list_upcoming_events | meeting_prep_brief | meeting_followup | summarize_inbox | create_email_draft | draft_email_reply | send_email | search_email | semantic_search_email | create_task | list_tasks | need_clarification\n"
         "Rules:\n"
         "- Calendar: require title, start_time_iso, end_time_iso (UTC ISO like 2026-02-01T15:00:00Z).\n"
         "- Calendar: optional calendar_provider = google | microsoft | caldav.\n"
+        "- Meeting prep: require event_id, optional calendar_provider.\n"
+        "- Meeting follow-up: require event_id, optional notes, optional calendar_provider.\n"
         "- Update: require event_id and at least one field to change.\n"
         "- Email: require to_email, subject, body.\n"
         "- Summarize inbox: optional max_results, hours_back, email_provider.\n"
@@ -300,6 +303,78 @@ def handle_admin(
             )
             # link = ev.get("htmlLink") --- editted this out so that i don't get a confimation link
             return f"✅ Your calendar event '{ev.get('summary')}' has been scheduled."
+
+        if action == "meeting_prep_brief":
+            try:
+                require_consent(db, user_id, "calendar")
+            except Exception as e:
+                return str(e)
+            event_id = data.get("event_id")
+            if not event_id:
+                return "Please provide the event_id for the meeting."
+            result = meeting_prep_brief(
+                db=db,
+                user_id=user_id,
+                event_id=str(event_id),
+                provider=data.get("calendar_provider") or preferred_provider,
+            )
+            lines = [result.get("brief") or "Meeting brief ready."]
+            checklist = result.get("checklist") or []
+            if checklist:
+                lines.append("Prep checklist:")
+                for item in checklist[:6]:
+                    lines.append(f"- {item}")
+            questions = result.get("questions") or []
+            if questions:
+                lines.append("Questions to clarify:")
+                for q in questions[:5]:
+                    lines.append(f"- {q}")
+            return "\n".join(lines)
+
+        if action == "meeting_followup":
+            try:
+                require_consent(db, user_id, "calendar")
+            except Exception as e:
+                return str(e)
+            event_id = data.get("event_id")
+            if not event_id:
+                return "Please provide the event_id for the meeting."
+            result = generate_followup(
+                db=db,
+                user_id=user_id,
+                event_id=str(event_id),
+                notes=data.get("notes"),
+                provider=data.get("calendar_provider") or preferred_provider,
+            )
+            tasks = result.get("tasks") or []
+            task_lines = []
+            for t in tasks:
+                row = TaskItem(user_id=user_id, title=str(t))
+                db.add(row)
+                db.commit()
+                db.refresh(row)
+                task_lines.append(f"- {row.title}")
+
+            draft_id = None
+            if result.get("to_email") and result.get("email_body"):
+                draft = create_email_draft(
+                    db=db,
+                    user_id=user_id,
+                    to_email=result.get("to_email") or "",
+                    subject=result.get("email_subject") or "Follow-up",
+                    body_text=result.get("email_body") or "",
+                    provider=result.get("event", {}).get("provider"),
+                    metadata={"origin": "calendar_followup"},
+                )
+                draft_id = draft.id
+
+            lines = ["Follow-up prepared."]
+            if task_lines:
+                lines.append("Tasks:")
+                lines.extend(task_lines)
+            if draft_id:
+                lines.append("Draft email ready. Reply 'send' to send.")
+            return "\n".join(lines)
 
         if action == "create_email_draft":
             try:

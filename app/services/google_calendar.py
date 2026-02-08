@@ -184,6 +184,36 @@ def list_events_in_range(
     return out
 
 
+def get_event_by_id(
+    db: Session,
+    user_id: str,
+    event_id: str,
+) -> Optional[Dict[str, Any]]:
+    creds = get_valid_google_credentials(db=db, user_id=user_id)
+    if creds is None:
+        raise RuntimeError("Google not connected. Ask the user to connect first.")
+
+    service = build("calendar", "v3", credentials=creds)
+    try:
+        event = service.events().get(calendarId="primary", eventId=event_id).execute()
+    except Exception as e:
+        logger.error("Google get event failed: %s", e)
+        return None
+
+    return {
+        "id": event.get("id"),
+        "summary": event.get("summary"),
+        "start": event.get("start"),
+        "end": event.get("end"),
+        "htmlLink": event.get("htmlLink"),
+        "location": event.get("location"),
+        "description": event.get("description"),
+        "attendees": event.get("attendees") or [],
+        "organizer": event.get("organizer"),
+        "provider": "google",
+    }
+
+
 def get_events_for_daily_brief(
     db: Session,
     user_id: str,

@@ -19,6 +19,7 @@ from app.services.messaging_service import deliver_pending_messages
 from app.services.smart_home_service import evaluate_energy_alerts
 from app.services.proactive_rules import run_due_rules
 from app.services.voice_retention import purge_expired_calls
+from app.services.email_monitoring import run_email_monitoring as run_email_monitoring_service
 
 logger = logging.getLogger(__name__)
 
@@ -254,6 +255,20 @@ def run_energy_monitoring():
         db.close()
 
 
+def run_email_monitoring():
+    """
+    Run email monitoring for all configured users.
+    """
+    db = SessionLocal()
+    try:
+        result = run_email_monitoring_service(db)
+        logger.info("Email monitoring completed: %s", result)
+    except Exception as e:
+        logger.error("Fatal error in email monitoring job: %s", e)
+    finally:
+        db.close()
+
+
 def run_voice_retention():
     """
     Purge expired voice call recordings/transcripts based on retention policy.
@@ -360,6 +375,17 @@ def setup_scheduler() -> BackgroundScheduler:
         )
     else:
         logger.info("Smart home disabled; skipping energy monitoring scheduler")
+
+    # Email monitoring job
+    scheduler.add_job(
+        run_email_monitoring,
+        trigger="interval",
+        minutes=settings.EMAIL_MONITOR_INTERVAL_MINUTES,
+        id="email_monitoring_job",
+        name="Email Monitoring",
+        replace_existing=True,
+    )
+    logger.info("Email monitoring job scheduled every %d minutes", settings.EMAIL_MONITOR_INTERVAL_MINUTES)
 
     # Voice data retention job (daily)
     scheduler.add_job(

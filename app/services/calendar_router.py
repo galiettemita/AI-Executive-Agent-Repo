@@ -12,8 +12,18 @@ from app.services.google_oauth import get_google_connection_status
 from app.services.microsoft_oauth import get_microsoft_connection_status
 from app.services.integration_credentials import get_connection_status as get_integration_status
 from app.services.preferences import get_preferences
-from app.services.google_calendar import create_calendar_event, update_calendar_event, list_events_in_range as google_list_range
-from app.services.outlook_calendar import create_outlook_event, update_outlook_event, list_events_in_range as outlook_list_range
+from app.services.google_calendar import (
+    create_calendar_event,
+    update_calendar_event,
+    list_events_in_range as google_list_range,
+    get_event_by_id as google_get_event,
+)
+from app.services.outlook_calendar import (
+    create_outlook_event,
+    update_outlook_event,
+    list_events_in_range as outlook_list_range,
+    get_outlook_event,
+)
 from app.services.caldav_calendar import create_caldav_event, list_events_in_range as caldav_list_range
 from app.services.google_calendar import get_events_for_daily_brief as google_brief
 from app.services.outlook_calendar import get_outlook_events_for_daily_brief as outlook_brief
@@ -210,3 +220,22 @@ def get_events_for_daily_brief(
     except Exception as e:
         logger.warning("CalDAV daily brief events failed: %s", e)
     return events
+
+
+def get_event_by_id(
+    db: Session,
+    user_id: str,
+    event_id: str,
+    provider: Optional[str] = None,
+) -> Optional[Dict[str, Any]]:
+    provider = pick_calendar_provider(db, user_id, preferred=provider)
+    if not provider:
+        return None
+
+    if provider == "google":
+        return google_get_event(db=db, user_id=user_id, event_id=event_id)
+    if provider == "microsoft":
+        return get_outlook_event(db=db, user_id=user_id, event_id=event_id)
+    if provider == "caldav":
+        raise RuntimeError("CalDAV event lookup is not supported yet.")
+    return None

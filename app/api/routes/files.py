@@ -15,6 +15,7 @@ from app.services.assets_service import (
     get_file_asset,
     get_asset_url,
 )
+from app.services.file_semantic_search import semantic_search_files
 
 router = APIRouter(prefix="/files", tags=["files"])
 
@@ -79,9 +80,31 @@ def search_files(
     user_id: str,
     q: str,
     limit: int = 20,
+    semantic: bool = False,
     db: Session = Depends(get_db),
 ):
     get_or_create_user(db, user_id)
+    if semantic:
+        try:
+            results = semantic_search_files(db, user_id, q, top_k=limit)
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        return {
+            "ok": True,
+            "results": [
+                {
+                    "id": item["asset"].id,
+                    "filename": item["asset"].filename,
+                    "content_type": item["asset"].content_type,
+                    "size_bytes": item["asset"].size_bytes,
+                    "tags": item["asset"].tags_json,
+                    "score": item.get("score"),
+                    "created_at": item["asset"].created_at.isoformat() if item["asset"].created_at else None,
+                }
+                for item in results
+            ],
+        }
+
     assets = search_file_assets(db, user_id, q, limit=limit)
     return {
         "ok": True,

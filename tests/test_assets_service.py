@@ -11,6 +11,8 @@ from app.services.assets_service import (
     search_file_assets,
     search_photo_assets,
 )
+from app.core.config import settings
+import app.services.photo_semantic_search as photo_semantic_search
 
 
 def test_file_asset_crud():
@@ -55,5 +57,31 @@ def test_photo_asset_crud():
 
     results = search_photo_assets(db, user_id, "vacation", limit=10)
     assert any(a.id == asset.id for a in results)
+
+    db.close()
+
+
+def test_photo_auto_tags(monkeypatch):
+    db = SessionLocal()
+    user_id = f"user_{uuid.uuid4().hex[:8]}"
+
+    monkeypatch.setattr(settings, "PHOTO_TAGGING_ENABLED", "1", raising=False)
+    monkeypatch.setattr(
+        photo_semantic_search,
+        "generate_photo_tags",
+        lambda data, content_type, filename=None: (["beach", "sunset"], "sunset at the beach"),
+    )
+
+    asset = save_photo_asset(
+        db=db,
+        user_id=user_id,
+        filename="vacation_photo.jpg",
+        content_type="image/jpeg",
+        data=b"jpeg-bytes",
+        tags=["vacation"],
+    )
+    assert asset.id is not None
+    assert "beach" in (asset.tags_json or "")
+    assert "vacation" in (asset.tags_json or "")
 
     db.close()

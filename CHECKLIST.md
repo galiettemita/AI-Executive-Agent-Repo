@@ -23,6 +23,22 @@ This checklist covers every task required to build the full product described in
 - [x] Define privacy program (PII mapping, DSR workflows)
 - [x] Define compliance requirements (SOC2, GDPR, HIPAA boundaries)
 - [x] Define legal and policy docs (ToS, Privacy Policy)
+- [ ] Technical specs: API documentation standards
+- [ ] Technical specs: security protocols (auth, signing, secrets, rotation)
+- [ ] Technical specs: data retention policies (by data class)
+- [ ] Technical specs: scalability benchmarks (RPS, latency, cost)
+- [ ] Legal & compliance: privacy policy framework
+- [ ] Legal & compliance: terms of service framework
+- [ ] Legal & compliance: GDPR compliance checklist
+- [ ] Legal & compliance: HIPAA requirements assessment (if applicable)
+- [ ] User research: persona definitions
+- [ ] User research: use case scenarios
+- [ ] User research: pain point analysis
+- [ ] User research: competitive analysis
+- [ ] Financial models: detailed cost breakdowns
+- [ ] Financial models: revenue projections
+- [ ] Financial models: sensitivity analysis
+- [ ] Financial models: break-even analysis
 - [x] Build CI/CD pipeline with staged environments
 - [x] Implement deployment strategy (blue/green or rolling)
 - [x] Implement environment isolation (dev/staging/prod)
@@ -77,17 +93,18 @@ This checklist covers every task required to build the full product described in
 - [x] Voice: call recording storage and retention policy
 - [x] Messaging: multi-channel routing abstraction
 - [x] Messaging: delivery tracking and receipts
-- [ ] Email intelligence: monitoring config and alert pipeline
+- [x] Email intelligence: monitoring config and alert pipeline
 - [x] Email intelligence: AI summarization and priority scoring
 - [x] Email intelligence: draft responses with approval
-- [ ] Calendar intelligence: meeting prep briefs
-- [ ] Calendar intelligence: travel time and buffer logic
-- [ ] Calendar intelligence: follow-up automation
-- [ ] File search: vector embeddings and semantic queries
-- [ ] Photo search: computer vision tagging and search
+- [x] Calendar intelligence: meeting prep briefs
+- [x] Calendar intelligence: travel time and buffer logic
+- [x] Calendar intelligence: follow-up automation
+- [ ] Email: iCloud/IMAP + Yahoo connector (inbox + send) with app-specific password 
+- [x] File search: vector embeddings and semantic queries
+- [x] Photo search: computer vision tagging and search
 - [ ] Companion app foundation (React Native or Flutter) — APNs/FCM not required if WhatsApp-only notifications
-- [ ] Analytics: usage events, cost tracking, and telemetry
-- [ ] Documentation: API docs, runbooks, and support docs
+- [x] Analytics: usage events, cost tracking, and telemetry
+- [x] Documentation: API docs, runbooks, and support docs
 - [ ] Beta: 100–500 invited users
 
 ## Phase 3 — Lifestyle & Personal Optimization (Months 13–18)
@@ -114,6 +131,33 @@ This checklist covers every task required to build the full product described in
 - [ ] Website: add WhatsApp click-to-chat link (wa.me)
 - [ ] Website: generate WhatsApp QR code and embed on site
 - [ ] Website: add privacy/terms links and contact/support info
+
+## Phase X — Security & Compliance Hardening (After Phase 2, Pre-Launch)
+- [ ] Security architecture review and updated threat model (STRIDE + abuse cases)
+- [ ] Secure SDLC controls (code review, branch protection, signed commits)
+- [ ] Secrets management and rotation policy (KMS/HSM or equivalent)
+- [ ] Encryption at rest and in transit verified for all data stores
+- [ ] Key rotation runbooks and emergency revoke procedures
+- [ ] Least-privilege IAM and access reviews (quarterly)
+- [ ] MFA enforced for all admin and infra accounts
+- [ ] Token/session security (short TTLs, refresh rotation, revocation)
+- [ ] Input validation and output encoding for all external inputs
+- [ ] Rate limiting, anti‑automation, and abuse detection in prod
+- [ ] WAF + bot protection (if applicable)
+- [ ] Vulnerability scanning (SAST/DAST/dependency + container scans)
+- [ ] Penetration test and remediation
+- [ ] Bug bounty or responsible disclosure policy
+- [ ] Logging + audit trails for all sensitive actions
+- [ ] Data classification and retention enforcement (automated)
+- [ ] Backup + disaster recovery drills (RPO/RTO validated)
+- [ ] Incident response playbooks + on‑call escalation tests
+- [ ] Privacy-by-design review (PII minimization, masking, redaction)
+- [ ] GDPR/CCPA/CPRA readiness checklist completed
+- [ ] HIPAA applicability assessment and safeguards (if applicable)
+- [ ] SOC 2 readiness assessment (Type I/II plan)
+- [ ] Vendor and subprocessor inventory with DPAs
+- [ ] Compliance with all provider policies (Meta/WhatsApp, Google, Microsoft, Stripe, Twilio, OpenAI)
+- [ ] Security training for operators and key staff
 
 ## Phase 4 — Advanced Intelligence (Months 19–24)
 - [ ] Proactive intelligence: pattern recognition models

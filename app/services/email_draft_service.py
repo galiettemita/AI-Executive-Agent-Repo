@@ -7,6 +7,7 @@ from typing import Any, Dict, Optional
 from sqlalchemy.orm import Session
 
 from app.db.models import EmailDraft
+from app.services.analytics_service import record_usage_event
 from app.services.email_router import send_email
 
 
@@ -42,6 +43,16 @@ def create_email_draft(
     db.add(draft)
     db.commit()
     db.refresh(draft)
+    try:
+        record_usage_event(
+            db,
+            user_id=user_id,
+            event_type="email_draft_created",
+            source="email_intelligence",
+            metadata={"to_email": to_email, "subject": subject},
+        )
+    except Exception:
+        pass
     return draft
 
 
@@ -80,4 +91,15 @@ def send_email_draft(db: Session, draft: EmailDraft) -> EmailDraft:
         draft.provider_draft_id = result.get("id")
     db.commit()
     db.refresh(draft)
+    try:
+        record_usage_event(
+            db,
+            user_id=draft.user_id,
+            event_type="email_sent",
+            source="email_intelligence",
+            channel="email",
+            metadata={"to_email": draft.to_email, "subject": draft.subject},
+        )
+    except Exception:
+        pass
     return draft

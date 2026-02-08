@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.db.database import get_db
-from app.services.scheduler import run_price_monitoring, run_notification_delivery
+from app.services.scheduler import run_price_monitoring, run_notification_delivery, run_email_monitoring
 from app.services.circuit_breaker import (
     get_all_circuit_breakers,
     reset_circuit_breaker,
@@ -32,6 +32,16 @@ def trigger_send_notifications():
     """
     run_notification_delivery()
     return {"ok": True, "message": "Notification delivery triggered"}
+
+
+@router.post("/trigger/email-monitoring")
+def trigger_email_monitoring():
+    """
+    Manually trigger email monitoring for all configured users.
+    Useful for testing and debugging.
+    """
+    run_email_monitoring()
+    return {"ok": True, "message": "Email monitoring triggered"}
 
 
 # -------------------

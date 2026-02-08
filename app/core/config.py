@@ -111,6 +111,7 @@ class Settings(BaseSettings):
     NOTIFICATION_DELIVERY_INTERVAL_MINUTES: int = 5
     ENERGY_MONITOR_INTERVAL_MINUTES: int = 15
     PROACTIVE_RULE_POLL_MINUTES: int = 5
+    EMAIL_MONITOR_INTERVAL_MINUTES: int = 10
 
     # ── Onboarding / Phone verification ─────────────────────────
     REQUIRE_PHONE_VERIFICATION: str = "0"
@@ -174,6 +175,14 @@ class Settings(BaseSettings):
     WEAVIATE_URL: str | None = None
     WEAVIATE_API_KEY: str | None = None
     PGVECTOR_DSN: str | None = None
+
+    # ── Semantic Search / Vision ───────────────────────────────
+    FILE_EMBEDDINGS_ENABLED: str = "0"
+    FILE_EMBEDDINGS_MAX_CHARS: int = 6000
+    PHOTO_EMBEDDINGS_ENABLED: str = "0"
+    PHOTO_TAGGING_ENABLED: str = "0"
+    PHOTO_TAGGING_MAX_BYTES: int = 4_000_000
+    OPENAI_VISION_MODEL: str = "gpt-4o-mini"
 
     # ── Alerting ───────────────────────────────────────────────
     ALERTING_PROVIDER: str | None = None  # sentry | slack | pagerduty
