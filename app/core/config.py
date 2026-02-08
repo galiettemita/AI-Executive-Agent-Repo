@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     JWT_SECRET: str = "dev_only_change_me"
     APP_BASE_URL: str = "https://ai-shopping-assistant-backend-6bgf.onrender.com"
     APP_VERSION: str = ""
+    JWT_ACCESS_TTL_HOURS: int = 168
 
     # ── OpenAI ──────────────────────────────────────────────────
     OPENAI_API_KEY: str | None = None
@@ -113,6 +114,7 @@ class Settings(BaseSettings):
     PROACTIVE_RULE_POLL_MINUTES: int = 5
     EMAIL_MONITOR_INTERVAL_MINUTES: int = 10
     EMAIL_MONITOR_TEST_MODE: str = "0"
+    PAIRING_CODE_TTL_MINUTES: int = 30
 
     # ── Onboarding / Phone verification ─────────────────────────
     REQUIRE_PHONE_VERIFICATION: str = "0"

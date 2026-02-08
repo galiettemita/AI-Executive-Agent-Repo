@@ -45,6 +45,7 @@ from app.db.models import (
     InboundEvent,
     NotificationQueue,
     MemoryNote,
+    DevicePairingCode,
     EmailDraft,
     EmailMonitorConfig,
     EmailAlert,
@@ -64,6 +65,7 @@ USER_DATA_MODELS = [
     NotificationQueue,
     InboundEvent,
     DeviceToken,
+    DevicePairingCode,
     EmailAlert,
     # Chat and tasks
     ChatMessage,

@@ -40,6 +40,10 @@ This is a high-level API reference. The canonical schema is the generated OpenAP
 - `GET /analytics/events`
 - `GET /analytics/summary`
 
+## Auth
+- `POST /auth/pair` exchange pairing code for JWT
+- `POST /admin/pairing/code` create pairing code (admin)
+
 ## Billing
 - `POST /billing/checkout`
 - `POST /webhooks/stripe`

@@ -9,6 +9,7 @@ This document lists all environment variables that must be configured in your Re
 ENV=production
 DATABASE_URL=<your-render-postgres-url>
 JWT_SECRET=<generate-a-secure-random-string>
+JWT_ACCESS_TTL_HOURS=168
 PII_ENCRYPTION_KEY=<generate-with-fernet-key-generator>
 APP_BASE_URL=https://your-render-domain.onrender.com
 ```
@@ -193,6 +194,7 @@ ENERGY_MONITOR_INTERVAL_MINUTES=15
 PROACTIVE_RULE_POLL_MINUTES=5
 EMAIL_MONITOR_INTERVAL_MINUTES=10
 EMAIL_MONITOR_TEST_MODE=0
+PAIRING_CODE_TTL_MINUTES=30
 ```
 Format: "hour minute" in UTC (e.g., "7 0" = 7:00 AM UTC)
 
