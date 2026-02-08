@@ -9,7 +9,12 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_db, get_or_create_user
 from app.middleware.rate_limiter import rate_limit_user
-from app.schemas.wardrobe import WardrobeItemCreate, WardrobeItemUpdate, WardrobePhotoAttach
+from app.schemas.wardrobe import (
+    WardrobeItemCreate,
+    WardrobeItemUpdate,
+    WardrobePhotoAttach,
+    WardrobeWearLogCreate,
+)
 from app.services.assets_service import save_photo_asset
 from app.services.wardrobe_service import (
     create_wardrobe_item,
@@ -21,6 +26,14 @@ from app.services.wardrobe_service import (
     detach_photo_from_item,
     list_item_photos,
     serialize_item,
+)
+from app.services.wardrobe_wear_service import log_wear_event, list_wear_events, get_wear_stats
+from app.services.wardrobe_rotation import run_rotation_for_user
+from app.services.wardrobe_intelligence import (
+    build_context,
+    suggest_outfits,
+    shopping_recommendations,
+    DiscoverNotConfiguredError,
 )
 
 router = APIRouter(prefix="/wardrobe", tags=["wardrobe"])
@@ -246,4 +259,153 @@ async def upload_item_photo(
         "ok": True,
         "photo_id": asset.id,
         "item_id": item_id,
+    }
+
+
+@rate_limit_user()
+@router.post("/items/{item_id}/wear")
+def log_item_wear(
+    request: Request,
+    item_id: int,
+    payload: WardrobeWearLogCreate,
+    db: Session = Depends(get_db),
+):
+    get_or_create_user(db, payload.user_id)
+    try:
+        result = log_wear_event(
+            db=db,
+            user_id=payload.user_id,
+            item_id=item_id,
+            worn_at=payload.worn_at,
+            source=payload.source or "manual",
+            notes=payload.notes,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    return {"ok": True, **result}
+
+
+@rate_limit_user()
+@router.get("/items/{item_id}/wear")
+def list_item_wear(
+    request: Request,
+    item_id: int,
+    user_id: str,
+    limit: int = 50,
+    db: Session = Depends(get_db),
+):
+    get_or_create_user(db, user_id)
+    events = list_wear_events(db=db, user_id=user_id, item_id=item_id, limit=limit)
+    return {"ok": True, "events": events}
+
+
+@rate_limit_user()
+@router.get("/stats")
+def wardrobe_stats(
+    request: Request,
+    user_id: str,
+    lookback_days: int = 90,
+    limit: int = 10,
+    db: Session = Depends(get_db),
+):
+    get_or_create_user(db, user_id)
+    stats = get_wear_stats(db=db, user_id=user_id, lookback_days=lookback_days, limit=limit)
+    return {"ok": True, "stats": stats}
+
+
+@rate_limit_user()
+@router.get("/rotation")
+def wardrobe_rotation(
+    request: Request,
+    user_id: str,
+    min_days_since_worn: int | None = None,
+    limit: int | None = None,
+    cooldown_days: int | None = None,
+    notify: bool = False,
+    db: Session = Depends(get_db),
+):
+    get_or_create_user(db, user_id)
+    result = run_rotation_for_user(
+        db=db,
+        user_id=user_id,
+        min_days_since_worn=min_days_since_worn,
+        limit=limit,
+        cooldown_days=cooldown_days,
+        notify=notify,
+    )
+    return {"ok": True, "rotation": result}
+
+
+@rate_limit_user()
+@router.get("/suggestions")
+def wardrobe_suggestions(
+    request: Request,
+    user_id: str,
+    date: Optional[str] = None,
+    location: Optional[str] = None,
+    calendar_provider: Optional[str] = None,
+    max_suggestions: int = 3,
+    db: Session = Depends(get_db),
+):
+    get_or_create_user(db, user_id)
+    context = build_context(
+        db=db,
+        user_id=user_id,
+        date_str=date,
+        location=location,
+        calendar_provider=calendar_provider,
+    )
+    suggestions = suggest_outfits(db=db, user_id=user_id, context=context, max_suggestions=max_suggestions)
+    return {
+        "ok": True,
+        "context": {
+            "date": context.date,
+            "timezone": context.timezone,
+            "weather": context.weather,
+            "events": context.events,
+            "event_tags": context.event_tags,
+        },
+        "suggestions": suggestions,
+    }
+
+
+@rate_limit_user()
+@router.get("/recommendations")
+async def wardrobe_recommendations(
+    request: Request,
+    user_id: str,
+    date: Optional[str] = None,
+    location: Optional[str] = None,
+    calendar_provider: Optional[str] = None,
+    max_results: int | None = None,
+    db: Session = Depends(get_db),
+):
+    get_or_create_user(db, user_id)
+    context = build_context(
+        db=db,
+        user_id=user_id,
+        date_str=date,
+        location=location,
+        calendar_provider=calendar_provider,
+    )
+    try:
+        results = await shopping_recommendations(
+            db=db,
+            user_id=user_id,
+            context=context,
+            max_results=max_results,
+        )
+    except DiscoverNotConfiguredError as exc:
+        raise HTTPException(status_code=501, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
+    return {
+        "ok": True,
+        "context": {
+            "date": context.date,
+            "timezone": context.timezone,
+            "weather": context.weather,
+            "event_tags": context.event_tags,
+        },
+        "recommendations": results,
     }

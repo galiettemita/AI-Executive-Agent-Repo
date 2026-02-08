@@ -52,3 +52,10 @@ class WardrobePhotoAttach(BaseModel):
     user_id: str
     photo_asset_ids: List[int] = Field(default_factory=list)
     primary_photo_id: Optional[int] = None
+
+
+class WardrobeWearLogCreate(BaseModel):
+    user_id: str
+    worn_at: Optional[datetime] = None
+    source: Optional[str] = "manual"
+    notes: Optional[str] = None

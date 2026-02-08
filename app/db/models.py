@@ -539,6 +539,10 @@ class WardrobeItem(Base):
     tags_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     metadata_json: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    wear_count: Mapped[int] = mapped_column(Integer, default=0, index=True)
+    last_worn_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    last_rotation_notified_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, index=True)
 
@@ -554,6 +558,20 @@ class WardrobeItemPhoto(Base):
     photo_asset_id: Mapped[int] = mapped_column(Integer, ForeignKey("photo_assets.id"), index=True)
 
     is_primary: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+
+class WardrobeWearEvent(Base):
+    __tablename__ = "wardrobe_wear_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(String, ForeignKey("users.id"), index=True)
+    wardrobe_item_id: Mapped[int] = mapped_column(Integer, ForeignKey("wardrobe_items.id"), index=True)
+
+    worn_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    source: Mapped[str] = mapped_column(String, default="manual", index=True)  # manual, auto
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
 
 

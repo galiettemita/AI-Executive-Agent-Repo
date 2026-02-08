@@ -20,6 +20,7 @@ from app.services.smart_home_service import evaluate_energy_alerts
 from app.services.proactive_rules import run_due_rules
 from app.services.voice_retention import purge_expired_calls
 from app.services.email_monitoring import run_email_monitoring as run_email_monitoring_service
+from app.services.wardrobe_rotation import run_rotation_for_all_users
 
 logger = logging.getLogger(__name__)
 
@@ -284,6 +285,20 @@ def run_voice_retention():
         db.close()
 
 
+def run_wardrobe_rotation():
+    """
+    Queue wardrobe rotation reminders for users with stale items.
+    """
+    db = SessionLocal()
+    try:
+        result = run_rotation_for_all_users(db)
+        logger.info("Wardrobe rotation reminders queued: %s", result)
+    except Exception as e:
+        logger.error("Fatal error in wardrobe rotation job: %s", e)
+    finally:
+        db.close()
+
+
 def setup_scheduler() -> BackgroundScheduler:
     """
     Set up the APScheduler for background jobs.
@@ -396,6 +411,19 @@ def setup_scheduler() -> BackgroundScheduler:
         replace_existing=True,
     )
     logger.info("Voice retention job scheduled daily at 02:15 UTC")
+
+    # Wardrobe rotation reminders (daily)
+    rotation_time = settings.WARDROBE_ROTATION_SCHEDULE.split()
+    rotation_hour = int(rotation_time[0])
+    rotation_minute = int(rotation_time[1]) if len(rotation_time) > 1 else 0
+    scheduler.add_job(
+        run_wardrobe_rotation,
+        trigger=CronTrigger(hour=rotation_hour, minute=rotation_minute),
+        id="wardrobe_rotation_job",
+        name="Wardrobe Rotation Reminders",
+        replace_existing=True,
+    )
+    logger.info("Wardrobe rotation reminders scheduled for %02d:%02d UTC daily", rotation_hour, rotation_minute)
 
     return scheduler
 

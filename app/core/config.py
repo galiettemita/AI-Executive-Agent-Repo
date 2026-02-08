@@ -103,6 +103,11 @@ class Settings(BaseSettings):
     # ── CORS ────────────────────────────────────────────────────
     CORS_ORIGINS: str = ""
 
+    # ── Weather (Wardrobe) ─────────────────────────────────────
+    WEATHER_PROVIDER: str = "open_meteo"  # open_meteo | openweather | weatherapi
+    WEATHER_API_KEY: str | None = None
+    WEATHER_DEFAULT_LOCATION: str = ""
+
     # ── Scheduler ───────────────────────────────────────────────
     ENABLE_SCHEDULER: str = "1"
     ENABLE_CREATE_ALL: str = "0"
@@ -124,6 +129,15 @@ class Settings(BaseSettings):
 
     # ── History ─────────────────────────────────────────────────
     HISTORY_TURNS: int = 6
+
+    # ── Wardrobe ────────────────────────────────────────────────
+    WARDROBE_LLM_ENABLED: str = "1"
+    WARDROBE_ROTATION_DAYS: int = 30
+    WARDROBE_ROTATION_COOLDOWN_DAYS: int = 7
+    WARDROBE_ROTATION_SCHEDULE: str = "8 0"
+    WARDROBE_ROTATION_MAX_ITEMS: int = 5
+    WARDROBE_WEAR_LOOKBACK_DAYS: int = 90
+    WARDROBE_SHOPPING_MAX_RESULTS: int = 6
 
     # ── Circuit breaker ─────────────────────────────────────────
     CIRCUIT_BREAKER_FAILURE_THRESHOLD: int = 5

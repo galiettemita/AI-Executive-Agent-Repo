@@ -10,7 +10,7 @@ from typing import Any, Dict, List, Optional
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
-from app.db.models import WardrobeItem, WardrobeItemPhoto, PhotoAsset
+from app.db.models import WardrobeItem, WardrobeItemPhoto, WardrobeWearEvent, PhotoAsset
 from app.services.analytics_service import record_usage_event
 
 logger = logging.getLogger(__name__)
@@ -72,6 +72,9 @@ def serialize_item(item: WardrobeItem) -> Dict[str, Any]:
         "notes": item.notes,
         "tags": _parse_tags(item.tags_json),
         "metadata": _parse_metadata(item.metadata_json),
+        "wear_count": item.wear_count,
+        "last_worn_at": item.last_worn_at.isoformat() if item.last_worn_at else None,
+        "last_rotation_notified_at": item.last_rotation_notified_at.isoformat() if item.last_rotation_notified_at else None,
         "created_at": item.created_at.isoformat() if item.created_at else None,
         "updated_at": item.updated_at.isoformat() if item.updated_at else None,
     }
@@ -213,6 +216,7 @@ def delete_wardrobe_item(db: Session, user_id: str, item_id: int) -> bool:
     item = get_wardrobe_item(db, user_id, item_id)
     if not item:
         return False
+    db.query(WardrobeWearEvent).filter(WardrobeWearEvent.wardrobe_item_id == item_id).delete()
     db.query(WardrobeItemPhoto).filter(WardrobeItemPhoto.wardrobe_item_id == item_id).delete()
     db.delete(item)
     db.commit()

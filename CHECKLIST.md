@@ -109,9 +109,9 @@ This checklist covers every task required to build the full product described in
 
 ## Phase 3 — Lifestyle & Personal Optimization (Months 13–18)
 - [x] Wardrobe: item cataloging and image ingestion
-- [ ] Wardrobe: outfit suggestions based on weather + calendar
-- [ ] Wardrobe: wear frequency tracking and rotation reminders
-- [ ] Wardrobe: shopping recommendations
+- [x] Wardrobe: outfit suggestions based on weather + calendar
+- [x] Wardrobe: wear frequency tracking and rotation reminders
+- [x] Wardrobe: shopping recommendations
 - [ ] Gift management: occasions and reminders
 - [ ] Gift management: recommendations + purchase flow
 - [ ] Gift management: thank-you note automation

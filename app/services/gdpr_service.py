@@ -51,6 +51,9 @@ from app.db.models import (
     FileAsset,
     PhotoAsset,
     UsageEvent,
+    WardrobeItem,
+    WardrobeItemPhoto,
+    WardrobeWearEvent,
 )
 
 logger = logging.getLogger(__name__)
@@ -74,6 +77,9 @@ USER_DATA_MODELS = [
     EmailMonitorConfig,
     FileAsset,
     PhotoAsset,
+    WardrobeWearEvent,
+    WardrobeItemPhoto,
+    WardrobeItem,
     # Shopping/watching
     WatchOffer,
     WatchItem,

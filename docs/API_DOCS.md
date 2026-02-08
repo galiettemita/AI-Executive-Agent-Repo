@@ -49,6 +49,12 @@ This is a high-level API reference. The canonical schema is the generated OpenAP
 - `POST /wardrobe/items/{item_id}/photos` attach existing photos
 - `POST /wardrobe/items/{item_id}/photos/upload` upload and attach a photo
 - `DELETE /wardrobe/items/{item_id}/photos/{photo_id}` detach a photo
+- `POST /wardrobe/items/{item_id}/wear` log wear event
+- `GET /wardrobe/items/{item_id}/wear` list wear events
+- `GET /wardrobe/stats` wear frequency stats
+- `GET /wardrobe/rotation` rotation recommendations (optional notify)
+- `GET /wardrobe/suggestions` outfit suggestions (weather + calendar)
+- `GET /wardrobe/recommendations` shopping recommendations
 
 ## Analytics
 - `GET /analytics/events`
