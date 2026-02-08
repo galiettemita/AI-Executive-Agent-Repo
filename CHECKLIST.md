@@ -23,22 +23,22 @@ This checklist covers every task required to build the full product described in
 - [x] Define privacy program (PII mapping, DSR workflows)
 - [x] Define compliance requirements (SOC2, GDPR, HIPAA boundaries)
 - [x] Define legal and policy docs (ToS, Privacy Policy)
-- [ ] Technical specs: API documentation standards
-- [ ] Technical specs: security protocols (auth, signing, secrets, rotation)
-- [ ] Technical specs: data retention policies (by data class)
-- [ ] Technical specs: scalability benchmarks (RPS, latency, cost)
-- [ ] Legal & compliance: privacy policy framework
-- [ ] Legal & compliance: terms of service framework
-- [ ] Legal & compliance: GDPR compliance checklist
-- [ ] Legal & compliance: HIPAA requirements assessment (if applicable)
-- [ ] User research: persona definitions
-- [ ] User research: use case scenarios
-- [ ] User research: pain point analysis
-- [ ] User research: competitive analysis
-- [ ] Financial models: detailed cost breakdowns
-- [ ] Financial models: revenue projections
-- [ ] Financial models: sensitivity analysis
-- [ ] Financial models: break-even analysis
+- [x] Technical specs: API documentation standards
+- [x] Technical specs: security protocols (auth, signing, secrets, rotation)
+- [x] Technical specs: data retention policies (by data class)
+- [x] Technical specs: scalability benchmarks (RPS, latency, cost)
+- [x] Legal & compliance: privacy policy framework
+- [x] Legal & compliance: terms of service framework
+- [x] Legal & compliance: GDPR compliance checklist
+- [x] Legal & compliance: HIPAA requirements assessment (if applicable)
+- [x] User research: persona definitions
+- [x] User research: use case scenarios
+- [x] User research: pain point analysis
+- [x] User research: competitive analysis
+- [x] Financial models: detailed cost breakdowns
+- [x] Financial models: revenue projections
+- [x] Financial models: sensitivity analysis
+- [x] Financial models: break-even analysis
 - [x] Build CI/CD pipeline with staged environments
 - [x] Implement deployment strategy (blue/green or rolling)
 - [x] Implement environment isolation (dev/staging/prod)
@@ -131,6 +131,8 @@ This checklist covers every task required to build the full product described in
 - [ ] Website: add WhatsApp click-to-chat link (wa.me)
 - [ ] Website: generate WhatsApp QR code and embed on site
 - [ ] Website: add privacy/terms links and contact/support info
+- [ ] Website: capture user location with consent (browser geolocation + IP-based fallback) and store in profile
+- [ ] Messaging: accept WhatsApp location shares and store in profile (opt-in)
 
 ## Phase X — Security & Compliance Hardening (After Phase 2, Pre-Launch)
 - [ ] Security architecture review and updated threat model (STRIDE + abuse cases)
