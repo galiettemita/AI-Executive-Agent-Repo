@@ -76,8 +76,6 @@ from app.api.routes.audit import router as audit_router  # noqa: E402
 from app.api.routes.email_intelligence import router as email_intelligence_router  # noqa: E402
 from app.api.routes.calendar_intelligence import router as calendar_intelligence_router  # noqa: E402
 from app.api.routes.analytics import router as analytics_router  # noqa: E402
-from app.api.routes.auth import router as auth_router  # noqa: E402
-from app.api.routes.admin_pairing import router as admin_pairing_router  # noqa: E402
 from app.api.routes.smart_home import router as smart_home_router  # noqa: E402
 from app.api.routes.admin_smart_home import router as admin_smart_home_router  # noqa: E402
 
@@ -191,8 +189,6 @@ app.include_router(audit_router)
 app.include_router(email_intelligence_router)
 app.include_router(calendar_intelligence_router)
 app.include_router(analytics_router)
-app.include_router(auth_router)
-app.include_router(admin_pairing_router)
 if settings.ENABLE_SMART_HOME == "1":
     app.include_router(smart_home_router)
     app.include_router(admin_smart_home_router)

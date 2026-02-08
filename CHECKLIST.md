@@ -102,7 +102,7 @@ This checklist covers every task required to build the full product described in
 - [ ] Email: iCloud/IMAP + Yahoo connector (inbox + send) with app-specific password 
 - [x] File search: vector embeddings and semantic queries
 - [x] Photo search: computer vision tagging and search
-- [x] Companion app foundation (React Native or Flutter) — APNs/FCM not required if WhatsApp-only notifications
+- [ ] Companion app foundation (React Native or Flutter) — APNs/FCM not required if WhatsApp-only notifications
 - [x] Analytics: usage events, cost tracking, and telemetry
 - [x] Documentation: API docs, runbooks, and support docs
 - [ ] Beta: 100–500 invited users

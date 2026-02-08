@@ -29,7 +29,6 @@ ALLOWLIST_PATHS = {
     "/redoc",
     "/admin/google/callback",
     "/metrics",
-    "/auth/pair",
 }
 
 ALLOWLIST_PREFIXES = (

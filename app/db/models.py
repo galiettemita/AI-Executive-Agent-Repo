@@ -43,19 +43,6 @@ class DeviceToken(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
-class DevicePairingCode(Base):
-    __tablename__ = "device_pairing_codes"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    user_id: Mapped[str] = mapped_column(String, ForeignKey("users.id"), index=True)
-    code: Mapped[str] = mapped_column(String, unique=True, index=True)
-
-    expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
-    used_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
-
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
-
-
 class MemoryNote(Base):
     __tablename__ = "memory_notes"
 
