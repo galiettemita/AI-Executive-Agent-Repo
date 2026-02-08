@@ -43,6 +43,13 @@ This is a high-level API reference. The canonical schema is the generated OpenAP
 - `GET /analytics/events`
 - `GET /analytics/summary`
 
+## Beta Access
+- `POST /admin/beta/testers` add or update a beta tester
+- `GET /admin/beta/testers` list beta testers
+- `DELETE /admin/beta/testers/{tester_id}` remove beta tester
+- `POST /admin/beta/testers/bulk` bulk add/update testers
+- `GET /admin/beta/summary` beta allowlist summary
+
 ## Billing
 - `POST /billing/checkout`
 - `POST /webhooks/stripe`

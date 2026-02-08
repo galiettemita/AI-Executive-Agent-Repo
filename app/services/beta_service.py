@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Optional
+from typing import Optional, Iterable, Dict
 
 from sqlalchemy.orm import Session
 
@@ -40,6 +40,39 @@ def upsert_beta_tester(
     db.commit()
     db.refresh(tester)
     return tester
+
+
+def upsert_beta_testers_bulk(
+    db: Session,
+    testers: Iterable[Dict[str, Optional[str]]],
+) -> int:
+    count = 0
+    for item in testers:
+        user_id = (item.get("user_id") or "").strip() if item else ""
+        if not user_id:
+            continue
+        upsert_beta_tester(
+            db=db,
+            user_id=user_id,
+            email=item.get("email"),
+            status=item.get("status") or "active",
+            notes=item.get("notes"),
+        )
+        count += 1
+    return count
+
+
+def summarize_beta_testers(db: Session) -> Dict[str, int]:
+    total = db.query(BetaTester.id).count()
+    active = db.query(BetaTester.id).filter(BetaTester.status == "active").count()
+    paused = db.query(BetaTester.id).filter(BetaTester.status == "paused").count()
+    removed = db.query(BetaTester.id).filter(BetaTester.status == "removed").count()
+    return {
+        "total": total,
+        "active": active,
+        "paused": paused,
+        "removed": removed,
+    }
 
 
 def delete_beta_tester(db: Session, tester_id: int) -> bool:

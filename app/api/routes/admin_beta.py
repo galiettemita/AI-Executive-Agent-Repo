@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import Optional, List
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
@@ -13,6 +13,8 @@ from app.middleware.rate_limiter import rate_limit_user
 from app.services.beta_service import (
     list_beta_testers,
     upsert_beta_tester,
+    upsert_beta_testers_bulk,
+    summarize_beta_testers,
     delete_beta_tester,
 )
 
@@ -24,6 +26,17 @@ class BetaTesterCreate(BaseModel):
     email: Optional[str] = None
     status: Optional[str] = "active"
     notes: Optional[str] = None
+
+
+class BetaTesterBulkItem(BaseModel):
+    user_id: str
+    email: Optional[str] = None
+    status: Optional[str] = "active"
+    notes: Optional[str] = None
+
+
+class BetaTesterBulkRequest(BaseModel):
+    testers: List[BetaTesterBulkItem]
 
 
 @rate_limit_user()
@@ -73,6 +86,24 @@ def list_beta_testers_endpoint(
             for r in rows
         ]
     }
+
+
+@rate_limit_user()
+@router.post("/testers/bulk")
+def bulk_add_beta_testers(
+    request: Request,
+    payload: BetaTesterBulkRequest,
+    db: Session = Depends(get_db),
+):
+    items = [item.model_dump() for item in payload.testers]
+    count = upsert_beta_testers_bulk(db, items)
+    return {"ok": True, "count": count}
+
+
+@rate_limit_user()
+@router.get("/summary")
+def beta_tester_summary(request: Request, db: Session = Depends(get_db)):
+    return {"ok": True, "summary": summarize_beta_testers(db)}
 
 
 @rate_limit_user()

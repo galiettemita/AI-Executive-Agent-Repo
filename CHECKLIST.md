@@ -102,9 +102,9 @@ This checklist covers every task required to build the full product described in
 - [x] Email: iCloud/IMAP + Yahoo connector (inbox + send) with app-specific password 
 - [x] File search: vector embeddings and semantic queries
 - [x] Photo search: computer vision tagging and search
-- [ ] Companion app foundation (React Native or Flutter) — APNs/FCM not required if WhatsApp-only notifications
 - [x] Analytics: usage events, cost tracking, and telemetry
 - [x] Documentation: API docs, runbooks, and support docs
+- [x] Beta: admin tooling (bulk invites + allowlist summary)
 - [ ] Beta: 100–500 invited users
 
 ## Phase 3 — Lifestyle & Personal Optimization (Months 13–18)
