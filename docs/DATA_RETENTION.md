@@ -11,6 +11,7 @@ This policy is aligned to US-only launch with HIPAA in scope and enterprise cust
 ## Data Classes and Retention
 - Identity/auth (users, tokens, credentials): retain while account active; delete within 30 days of closure (unless legal hold).
 - Profiles/consent/prefs/memory summaries: retain while account active; delete within 30 days of closure.
+- Relationship profiles and interactions (metadata only): profiles retained while account active; interactions retained 24 months.
 - Chat/WhatsApp messages: retain 180 days; memory summaries retained until user deletes account.
 - Email metadata (subjects/senders/snippets, alerts, drafts): alerts 180 days, drafts 90 days after send.
 - Calendar metadata (events, times): metadata only; retained 180 days.
@@ -23,6 +24,7 @@ This policy is aligned to US-only launch with HIPAA in scope and enterprise cust
 - Watch offers: retained 90 days.
 - Billing/transactions: retained 7 years (anonymize on user deletion when legally required).
 - Smart home energy readings: retained 90 days unless user opts in for longer history.
+- Fitness and nutrition logs (including steps): retained while account active; delete within 30 days of closure.
 - Vector embeddings: derived data only; delete on request or account deletion.
 
 ## Deletion and Requests

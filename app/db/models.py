@@ -255,6 +255,126 @@ class OutboundMessageEvent(Base):
 
 
 # -------------------
+# RELATIONSHIP MANAGER
+# -------------------
+
+class RelationshipProfile(Base):
+    __tablename__ = "relationship_profiles"
+    __table_args__ = (
+        UniqueConstraint("user_id", "contact_id", name="uq_relationship_profile_contact"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(String, ForeignKey("users.id"), index=True)
+    contact_id: Mapped[int] = mapped_column(Integer, ForeignKey("contacts.id"), index=True)
+
+    relationship: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    priority: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    cadence_days: Mapped[int] = mapped_column(Integer, default=30)
+    preferred_channel: Mapped[str | None] = mapped_column(String, nullable=True)
+
+    tags_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    metadata_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    last_interaction_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    last_inbound_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    last_outbound_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    next_checkin_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, index=True)
+
+
+class RelationshipInteraction(Base):
+    __tablename__ = "relationship_interactions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(String, ForeignKey("users.id"), index=True)
+    contact_id: Mapped[int] = mapped_column(Integer, ForeignKey("contacts.id"), index=True)
+
+    direction: Mapped[str] = mapped_column(String, default="outbound", index=True)  # inbound|outbound
+    channel: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    metadata_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    occurred_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+
+# -------------------
+# FITNESS & NUTRITION
+# -------------------
+
+class FitnessWorkout(Base):
+    __tablename__ = "fitness_workouts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(String, ForeignKey("users.id"), index=True)
+
+    workout_type: Mapped[str] = mapped_column(String, index=True)
+    duration_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    calories_burned: Mapped[float | None] = mapped_column(Float, nullable=True)
+    intensity: Mapped[str | None] = mapped_column(String, nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    occurred_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, index=True)
+
+
+class FitnessMealPlan(Base):
+    __tablename__ = "fitness_meal_plans"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(String, ForeignKey("users.id"), index=True)
+
+    plan_date: Mapped[datetime] = mapped_column(DateTime, index=True)
+    meals_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    calorie_target: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    macros_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, index=True)
+
+
+class NutritionLog(Base):
+    __tablename__ = "nutrition_logs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(String, ForeignKey("users.id"), index=True)
+
+    meal_type: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    calories: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    protein_g: Mapped[float | None] = mapped_column(Float, nullable=True)
+    carbs_g: Mapped[float | None] = mapped_column(Float, nullable=True)
+    fat_g: Mapped[float | None] = mapped_column(Float, nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    occurred_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, index=True)
+
+
+class FitnessStepLog(Base):
+    __tablename__ = "fitness_step_logs"
+    __table_args__ = (
+        UniqueConstraint("user_id", "step_date", name="uq_fitness_steps_user_date"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(String, ForeignKey("users.id"), index=True)
+
+    step_date: Mapped[datetime] = mapped_column(Date, index=True)
+    steps: Mapped[int] = mapped_column(Integer, default=0)
+    source: Mapped[str] = mapped_column(String, default="fitbit", index=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, index=True)
+
+
+# -------------------
 # PHONE VERIFICATION
 # -------------------
 

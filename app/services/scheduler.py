@@ -22,6 +22,7 @@ from app.services.voice_retention import purge_expired_calls
 from app.services.email_monitoring import run_email_monitoring as run_email_monitoring_service
 from app.services.wardrobe_rotation import run_rotation_for_all_users
 from app.services.gift_reminders import enqueue_gift_reminders
+from app.services.relationship_service import enqueue_relationship_reminders
 
 logger = logging.getLogger(__name__)
 
@@ -314,6 +315,20 @@ def run_gift_reminders():
         db.close()
 
 
+def run_relationship_reminders():
+    """
+    Queue relationship reach-out reminders based on cadence.
+    """
+    db = SessionLocal()
+    try:
+        result = enqueue_relationship_reminders(db, limit_per_user=settings.RELATIONSHIP_REMINDER_MAX_PER_USER)
+        logger.info("Relationship reminders queued: %s", result)
+    except Exception as e:
+        logger.error("Fatal error in relationship reminders job: %s", e)
+    finally:
+        db.close()
+
+
 def setup_scheduler() -> BackgroundScheduler:
     """
     Set up the APScheduler for background jobs.
@@ -452,6 +467,19 @@ def setup_scheduler() -> BackgroundScheduler:
         replace_existing=True,
     )
     logger.info("Gift reminders scheduled for %02d:%02d UTC daily", gift_hour, gift_minute)
+
+    # Relationship reminders (daily)
+    rel_time = settings.RELATIONSHIP_REMINDER_SCHEDULE.split()
+    rel_hour = int(rel_time[0])
+    rel_minute = int(rel_time[1]) if len(rel_time) > 1 else 0
+    scheduler.add_job(
+        run_relationship_reminders,
+        trigger=CronTrigger(hour=rel_hour, minute=rel_minute),
+        id="relationship_reminders_job",
+        name="Relationship Reminders",
+        replace_existing=True,
+    )
+    logger.info("Relationship reminders scheduled for %02d:%02d UTC daily", rel_hour, rel_minute)
 
     return scheduler
 

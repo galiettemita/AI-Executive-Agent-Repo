@@ -60,6 +60,11 @@ class Settings(BaseSettings):
     WHATSAPP_PHONE_NUMBER_ID: str = ""
     WHATSAPP_APP_SECRET: str = ""
 
+    # ── Fitbit OAuth ────────────────────────────────────────────
+    FITBIT_CLIENT_ID: str | None = None
+    FITBIT_CLIENT_SECRET: str | None = None
+    FITBIT_REDIRECT_URI: str = ""
+
     # ── Twilio (Voice & SMS) ────────────────────────────────────
     TWILIO_ACCOUNT_SID: str | None = None
     TWILIO_AUTH_TOKEN: str | None = None
@@ -144,6 +149,17 @@ class Settings(BaseSettings):
     GIFT_REMINDER_SCHEDULE: str = "9 0"
     GIFT_REMINDER_DEFAULT_DAYS: int = 14
     GIFT_SHOPPING_MAX_RESULTS: int = 6
+
+    # ── Relationships ───────────────────────────────────────────
+    RELATIONSHIP_DEFAULT_CADENCE_DAYS: int = 30
+    RELATIONSHIP_REMINDER_SCHEDULE: str = "10 0"
+    RELATIONSHIP_REMINDER_MAX_PER_USER: int = 10
+
+    # ── Fitness & Nutrition ────────────────────────────────────
+    FITNESS_DEFAULT_CALORIES: int = 2000
+    FITNESS_PROTEIN_RATIO: float = 0.3
+    FITNESS_CARBS_RATIO: float = 0.4
+    FITNESS_FAT_RATIO: float = 0.3
 
     # ── Circuit breaker ─────────────────────────────────────────
     CIRCUIT_BREAKER_FAILURE_THRESHOLD: int = 5

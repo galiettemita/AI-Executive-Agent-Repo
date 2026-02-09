@@ -115,11 +115,17 @@ This checklist covers every task required to build the full product described in
 - [x] Gift management: occasions and reminders
 - [x] Gift management: recommendations + purchase flow
 - [x] Gift management: thank-you note automation
-- [ ] Relationship manager: contact relationship tracking
-- [ ] Relationship manager: communication frequency tracking
-- [ ] Relationship manager: reach-out suggestions
-- [ ] Fitness & nutrition: workout tracking and suggestions
-- [ ] Fitness & nutrition: meal planning and nutrition tracking
+- [ ] Gift management: Stripe Issuing intake submitted — wait for approval and complete KYB onboarding
+- [ ] Gift management: third-party purchase flow with explicit user approval
+- [ ] Gift management: payment method vault + authorized payment rails
+- [ ] Gift management: retailer allowlist + terms compliance review
+- [ ] Gift management: order tracking + refunds/returns workflow
+- [x] Relationship manager: contact relationship tracking
+- [x] Relationship manager: communication frequency tracking
+- [x] Relationship manager: reach-out suggestions
+- [x] Fitness & nutrition: workout tracking and suggestions
+- [x] Fitness & nutrition: meal planning and nutrition tracking
+- [x] Fitness & nutrition: step count ingestion via health platform (Apple Health / Google Fit / Fitbit)
 - [ ] Entertainment: content recommendations + tracking
 - [ ] Entertainment: event discovery and ticket booking
 - [ ] Language learning: daily practice and progress tracking

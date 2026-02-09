@@ -60,6 +60,21 @@ def queue_outbound_message(
     db.add(message)
     db.commit()
     db.refresh(message)
+    if contact_id:
+        try:
+            from app.services.relationship_service import log_interaction
+            log_interaction(
+                db,
+                user_id=user_id,
+                contact_id=contact_id,
+                direction="outbound",
+                channel=channel,
+                summary=None,
+                occurred_at=message.created_at or datetime.utcnow(),
+                metadata={"source": "outbound_message", "message_id": message.id},
+            )
+        except Exception:
+            pass
     return message
 
 

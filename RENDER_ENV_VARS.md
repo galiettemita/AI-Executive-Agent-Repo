@@ -81,6 +81,13 @@ MS_TENANT_ID=common   # or your tenant ID for single-tenant apps
 3. Add the redirect URI above under “Web”
 4. Save changes
 
+### Fitbit OAuth (Steps)
+```
+FITBIT_CLIENT_ID=<your-fitbit-client-id>
+FITBIT_CLIENT_SECRET=<your-fitbit-client-secret>
+FITBIT_REDIRECT_URI=https://ai-shopping-assistant-backend-6bgf.onrender.com/admin/fitbit/callback
+```
+
 ### Apple/iCloud CalDAV
 CalDAV credentials are stored per-user (not global env vars). Use the CalDAV connect endpoint:
 - POST `/admin/caldav/connect`
@@ -195,8 +202,19 @@ EMAIL_MONITOR_INTERVAL_MINUTES=10
 EMAIL_MONITOR_TEST_MODE=0
 WARDROBE_ROTATION_SCHEDULE=8 0
 GIFT_REMINDER_SCHEDULE=9 0
+RELATIONSHIP_REMINDER_SCHEDULE=10 0
+RELATIONSHIP_DEFAULT_CADENCE_DAYS=30
+RELATIONSHIP_REMINDER_MAX_PER_USER=10
 ```
 Format: "hour minute" in UTC (e.g., "7 0" = 7:00 AM UTC)
+
+### Fitness & Nutrition (optional defaults)
+```
+FITNESS_DEFAULT_CALORIES=2000
+FITNESS_PROTEIN_RATIO=0.3
+FITNESS_CARBS_RATIO=0.4
+FITNESS_FAT_RATIO=0.3
+```
 
 ### Weather + Wardrobe (Optional)
 ```

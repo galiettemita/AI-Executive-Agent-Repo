@@ -51,6 +51,7 @@ from app.api.routes.admin_caldav import router as admin_caldav_router  # noqa: E
 from app.api.routes.admin_email import router as admin_email_router  # noqa: E402
 from app.api.routes.admin_tasks import router as admin_tasks_router  # noqa: E402
 from app.api.routes.admin_beta import router as admin_beta_router  # noqa: E402
+from app.api.routes.admin_fitbit import router as admin_fitbit_router  # noqa: E402
 from app.api.routes.billing import router as billing_router  # noqa: E402
 from app.api.routes.billing_stripe import router as billing_stripe_router  # noqa: E402
 from app.api.routes.proposals import router as proposals_router  # noqa: E402
@@ -81,6 +82,8 @@ from app.api.routes.analytics import router as analytics_router  # noqa: E402
 from app.api.routes.smart_home import router as smart_home_router  # noqa: E402
 from app.api.routes.admin_smart_home import router as admin_smart_home_router  # noqa: E402
 from app.api.routes.gifts import router as gifts_router  # noqa: E402
+from app.api.routes.relationships import router as relationships_router  # noqa: E402
+from app.api.routes.fitness import router as fitness_router  # noqa: E402
 
 
 _scheduler = None
@@ -167,6 +170,7 @@ app.include_router(admin_caldav_router)
 app.include_router(admin_email_router)
 app.include_router(admin_tasks_router)
 app.include_router(admin_beta_router)
+app.include_router(admin_fitbit_router)
 app.include_router(billing_router)
 app.include_router(billing_stripe_router)
 app.include_router(proposals_router)
@@ -195,6 +199,8 @@ app.include_router(email_intelligence_router)
 app.include_router(calendar_intelligence_router)
 app.include_router(analytics_router)
 app.include_router(gifts_router)
+app.include_router(relationships_router)
+app.include_router(fitness_router)
 if settings.ENABLE_SMART_HOME == "1":
     app.include_router(smart_home_router)
     app.include_router(admin_smart_home_router)

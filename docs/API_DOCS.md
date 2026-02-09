@@ -28,6 +28,10 @@ This is a high-level API reference. The canonical schema is the generated OpenAP
 - `POST /admin/email/connect` connect iCloud or Yahoo (app-specific password)
 - `GET /admin/email/status` check iCloud/Yahoo status
 - `POST /admin/email/disconnect` disconnect iCloud/Yahoo
+- `GET /admin/fitbit/connect` get Fitbit OAuth URL
+- `GET /admin/fitbit/callback` Fitbit OAuth callback
+- `GET /admin/fitbit/status` Fitbit connection status
+- `POST /admin/fitbit/disconnect` disconnect Fitbit
 
 ## Calendar
 - `GET /calendar/intelligence/meeting-prep` briefing
@@ -69,6 +73,31 @@ This is a high-level API reference. The canonical schema is the generated OpenAP
 - `POST /gifts/thank-you` generate thank-you note draft
 - `POST /gifts/ideas/{idea_id}/proposal` create gift purchase proposal
 - `POST /gifts/reminders/run` queue gift reminders for user
+
+## Relationships
+- `POST /relationships/profiles` create or update a relationship profile (contact required)
+- `GET /relationships/profiles` list relationship profiles
+- `PATCH /relationships/profiles/{profile_id}` update relationship profile
+- `POST /relationships/interactions` log a relationship interaction
+- `GET /relationships/suggestions` list reach‑out suggestions (due or all)
+- `POST /relationships/reminders/run` queue reach‑out reminders for user
+
+## Fitness & Nutrition
+- `POST /fitness/workouts` create workout log
+- `GET /fitness/workouts` list workout logs
+- `PATCH /fitness/workouts/{workout_id}` update workout log
+- `DELETE /fitness/workouts/{workout_id}` delete workout log
+- `POST /fitness/nutrition/logs` create nutrition log
+- `GET /fitness/nutrition/logs` list nutrition logs
+- `PATCH /fitness/nutrition/logs/{log_id}` update nutrition log
+- `DELETE /fitness/nutrition/logs/{log_id}` delete nutrition log
+- `POST /fitness/meal-plans` create meal plan
+- `GET /fitness/meal-plans` list meal plans
+- `PATCH /fitness/meal-plans/{plan_id}` update meal plan
+- `DELETE /fitness/meal-plans/{plan_id}` delete meal plan
+- `GET /fitness/suggestions/workouts` workout suggestions
+- `GET /fitness/suggestions/meals` meal plan suggestions
+- `GET /fitness/steps` daily steps (requires Fitbit connection)
 
 ## Analytics
 - `GET /analytics/events`
