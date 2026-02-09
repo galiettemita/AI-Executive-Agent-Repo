@@ -28,6 +28,8 @@ ALLOWLIST_PATHS = {
     "/openapi.json",
     "/redoc",
     "/admin/google/callback",
+    "/admin/microsoft/callback",
+    "/admin/fitbit/callback",
     "/metrics",
 }
 
