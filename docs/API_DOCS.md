@@ -99,6 +99,15 @@ This is a high-level API reference. The canonical schema is the generated OpenAP
 - `GET /fitness/suggestions/meals` meal plan suggestions
 - `GET /fitness/steps` daily steps (requires Fitbit connection)
 
+## Entertainment
+- `POST /entertainment/items` create content item
+- `GET /entertainment/items` list content items
+- `PATCH /entertainment/items/{item_id}` update content item
+- `DELETE /entertainment/items/{item_id}` delete content item
+- `POST /entertainment/consumption` log a consumption event
+- `GET /entertainment/consumption` list consumption events
+- `POST /entertainment/recommendations` get content recommendations (SerpAPI)
+
 ## Analytics
 - `GET /analytics/events`
 - `GET /analytics/summary`

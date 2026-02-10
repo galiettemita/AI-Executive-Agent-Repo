@@ -126,7 +126,7 @@ This checklist covers every task required to build the full product described in
 - [x] Fitness & nutrition: workout tracking and suggestions
 - [x] Fitness & nutrition: meal planning and nutrition tracking
 - [x] Fitness & nutrition: step count ingestion via health platform (Apple Health / Google Fit / Fitbit)
-- [ ] Entertainment: content recommendations + tracking
+- [x] Entertainment: content recommendations + tracking
 - [ ] Entertainment: event discovery and ticket booking
 - [ ] Language learning: daily practice and progress tracking
 - [ ] Learning & skills: resource curation and scheduling

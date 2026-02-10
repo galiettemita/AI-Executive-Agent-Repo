@@ -84,6 +84,7 @@ from app.api.routes.admin_smart_home import router as admin_smart_home_router  #
 from app.api.routes.gifts import router as gifts_router  # noqa: E402
 from app.api.routes.relationships import router as relationships_router  # noqa: E402
 from app.api.routes.fitness import router as fitness_router  # noqa: E402
+from app.api.routes.entertainment import router as entertainment_router  # noqa: E402
 
 
 _scheduler = None
@@ -201,6 +202,7 @@ app.include_router(analytics_router)
 app.include_router(gifts_router)
 app.include_router(relationships_router)
 app.include_router(fitness_router)
+app.include_router(entertainment_router)
 if settings.ENABLE_SMART_HOME == "1":
     app.include_router(smart_home_router)
     app.include_router(admin_smart_home_router)

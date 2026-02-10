@@ -375,6 +375,53 @@ class FitnessStepLog(Base):
 
 
 # -------------------
+# ENTERTAINMENT
+# -------------------
+
+class EntertainmentItem(Base):
+    __tablename__ = "entertainment_items"
+    __table_args__ = (
+        UniqueConstraint("user_id", "external_url", name="uq_entertainment_user_url"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(String, ForeignKey("users.id"), index=True)
+
+    title: Mapped[str] = mapped_column(String, index=True)
+    content_type: Mapped[str] = mapped_column(String, index=True)
+    status: Mapped[str] = mapped_column(String, default="planned", index=True)
+    rating: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    external_url: Mapped[str | None] = mapped_column(String, nullable=True)
+    source: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+
+    tags_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    metadata_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    last_consumed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, index=True)
+
+
+class EntertainmentConsumption(Base):
+    __tablename__ = "entertainment_consumption"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(String, ForeignKey("users.id"), index=True)
+    item_id: Mapped[int] = mapped_column(Integer, ForeignKey("entertainment_items.id"), index=True)
+
+    event_type: Mapped[str] = mapped_column(String, default="watched", index=True)
+    duration_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    metadata_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    occurred_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+
+# -------------------
 # PHONE VERIFICATION
 # -------------------
 

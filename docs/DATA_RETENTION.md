@@ -25,6 +25,7 @@ This policy is aligned to US-only launch with HIPAA in scope and enterprise cust
 - Billing/transactions: retained 7 years (anonymize on user deletion when legally required).
 - Smart home energy readings: retained 90 days unless user opts in for longer history.
 - Fitness and nutrition logs (including steps): retained while account active; delete within 30 days of closure.
+- Entertainment content and consumption events: retained while account active; delete within 30 days of closure.
 - Vector embeddings: derived data only; delete on request or account deletion.
 
 ## Deletion and Requests
