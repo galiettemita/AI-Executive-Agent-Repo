@@ -73,6 +73,18 @@ This is a high-level API reference. The canonical schema is the generated OpenAP
 - `POST /gifts/thank-you` generate thank-you note draft
 - `POST /gifts/ideas/{idea_id}/proposal` create gift purchase proposal
 - `POST /gifts/reminders/run` queue gift reminders for user
+- `POST /gifts/retailers` add retailer allowlist entry
+- `GET /gifts/retailers` list retailer allowlist entries
+- `PATCH /gifts/retailers/{retailer_id}` update retailer allowlist entry
+- `DELETE /gifts/retailers/{retailer_id}` delete retailer allowlist entry
+- `POST /gifts/orders` create gift order with approval flow
+- `GET /gifts/orders` list gift orders
+- `GET /gifts/orders/{order_id}` get gift order
+- `PATCH /gifts/orders/{order_id}` update gift order status/tracking
+- `POST /gifts/orders/{order_id}/authorize` authorize payment method for order
+- `POST /gifts/orders/{order_id}/events` add order status event
+- `GET /gifts/orders/{order_id}/events` list order status events
+- `POST /gifts/orders/{order_id}/refund` mark gift order refund
 
 ## Relationships
 - `POST /relationships/profiles` create or update a relationship profile (contact required)
@@ -107,6 +119,32 @@ This is a high-level API reference. The canonical schema is the generated OpenAP
 - `POST /entertainment/consumption` log a consumption event
 - `GET /entertainment/consumption` list consumption events
 - `POST /entertainment/recommendations` get content recommendations (SerpAPI)
+- `POST /entertainment/events/discover` discover events (SerpAPI)
+- `POST /entertainment/events` create event
+- `GET /entertainment/events` list events
+- `PATCH /entertainment/events/{event_id}` update event
+- `DELETE /entertainment/events/{event_id}` delete event
+- `POST /entertainment/events/{event_id}/proposal` create ticket booking proposal
+- `GET /entertainment/events/bookings` list event bookings
+- `PATCH /entertainment/events/bookings/{booking_id}` update event booking
+
+## Learning
+- `POST /learning/language/goals` create/update language goal
+- `GET /learning/language/goals` list language goals
+- `PATCH /learning/language/goals/{goal_id}` update language goal
+- `DELETE /learning/language/goals/{goal_id}` delete language goal
+- `POST /learning/language/sessions` log language practice session
+- `GET /learning/language/sessions` list language practice sessions
+- `GET /learning/language/progress` language progress summary + streaks
+- `POST /learning/resources` create learning resource
+- `GET /learning/resources` list learning resources
+- `PATCH /learning/resources/{resource_id}` update learning resource
+- `DELETE /learning/resources/{resource_id}` delete learning resource
+- `POST /learning/resources/recommendations` recommend learning resources (SerpAPI)
+- `POST /learning/schedule` create learning schedule entry
+- `GET /learning/schedule` list learning schedule entries
+- `PATCH /learning/schedule/{schedule_id}` update learning schedule entry
+- `DELETE /learning/schedule/{schedule_id}` delete learning schedule entry
 
 ## Analytics
 - `GET /analytics/events`

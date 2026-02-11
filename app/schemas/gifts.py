@@ -81,3 +81,64 @@ class GiftPurchaseProposalRequest(BaseModel):
     gift_idea_id: int
     quantity: Optional[int] = 1
     notes: Optional[str] = None
+
+
+class GiftRetailerCreate(BaseModel):
+    user_id: str
+    domain: str
+    status: Optional[str] = "allowed"
+    notes: Optional[str] = None
+
+
+class GiftRetailerUpdate(BaseModel):
+    user_id: str
+    status: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class GiftOrderCreate(BaseModel):
+    user_id: str
+    gift_idea_id: Optional[int] = None
+    occasion_id: Optional[int] = None
+    title: Optional[str] = None
+    product_url: Optional[str] = None
+    retailer_domain: Optional[str] = None
+    quantity: Optional[int] = 1
+    unit_price: Optional[float] = None
+    total_price: Optional[float] = None
+    currency: Optional[str] = None
+    shipping_address: Optional[Dict[str, Any]] = None
+    notes: Optional[str] = None
+    require_approval: Optional[bool] = True
+    enforce_allowlist: Optional[bool] = True
+    payment_method_id: Optional[int] = None
+
+
+class GiftOrderUpdate(BaseModel):
+    user_id: str
+    status: Optional[str] = None
+    tracking_number: Optional[str] = None
+    tracking_url: Optional[str] = None
+    notes: Optional[str] = None
+    metadata: Optional[Dict[str, Any]] = None
+
+
+class GiftOrderAuthorize(BaseModel):
+    user_id: str
+    payment_method_id: Optional[int] = None
+    authorized_total: Optional[float] = None
+    currency: Optional[str] = None
+
+
+class GiftOrderEventCreate(BaseModel):
+    user_id: str
+    status: str
+    message: Optional[str] = None
+    metadata: Optional[Dict[str, Any]] = None
+    occurred_at: Optional[datetime] = None
+
+
+class GiftOrderRefundRequest(BaseModel):
+    user_id: str
+    reason: Optional[str] = None
+    amount: Optional[float] = None

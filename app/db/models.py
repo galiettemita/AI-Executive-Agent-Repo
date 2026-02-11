@@ -421,6 +421,58 @@ class EntertainmentConsumption(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
 
 
+class EntertainmentEvent(Base):
+    __tablename__ = "entertainment_events"
+    __table_args__ = (
+        UniqueConstraint("user_id", "external_url", name="uq_entertainment_event_user_url"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(String, ForeignKey("users.id"), index=True)
+
+    title: Mapped[str] = mapped_column(String, index=True)
+    event_type: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    venue: Mapped[str | None] = mapped_column(String, nullable=True)
+    location: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    starts_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    ends_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    external_url: Mapped[str | None] = mapped_column(String, nullable=True)
+    provider: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    provider_event_id: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+
+    price_min: Mapped[float | None] = mapped_column(Float, nullable=True)
+    price_max: Mapped[float | None] = mapped_column(Float, nullable=True)
+    currency: Mapped[str | None] = mapped_column(String, nullable=True)
+    status: Mapped[str] = mapped_column(String, default="interested", index=True)
+
+    metadata_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, index=True)
+
+
+class EntertainmentEventBooking(Base):
+    __tablename__ = "entertainment_event_bookings"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(String, ForeignKey("users.id"), index=True)
+    event_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("entertainment_events.id"), nullable=True, index=True)
+
+    proposal_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("proposals.id"), nullable=True, index=True)
+    transaction_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("transactions.id"), nullable=True, index=True)
+
+    quantity: Mapped[int] = mapped_column(Integer, default=1)
+    total_price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    currency: Mapped[str | None] = mapped_column(String, nullable=True)
+    status: Mapped[str] = mapped_column(String, default="pending_approval", index=True)
+    ticket_delivery: Mapped[str | None] = mapped_column(String, nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    metadata_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, index=True)
+
+
 # -------------------
 # PHONE VERIFICATION
 # -------------------
@@ -441,6 +493,90 @@ class PhoneVerification(Base):
     expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
     verified_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     last_sent_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, index=True)
+
+
+# -------------------
+# LEARNING & LANGUAGE
+# -------------------
+
+class LanguageGoal(Base):
+    __tablename__ = "language_goals"
+    __table_args__ = (
+        UniqueConstraint("user_id", "language", name="uq_language_goal_user_language"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(String, ForeignKey("users.id"), index=True)
+
+    language: Mapped[str] = mapped_column(String, index=True)
+    daily_minutes: Mapped[int] = mapped_column(Integer, default=15)
+    weekly_sessions: Mapped[int] = mapped_column(Integer, default=3)
+    target_level: Mapped[str | None] = mapped_column(String, nullable=True)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    start_date: Mapped[datetime | None] = mapped_column(Date, nullable=True)
+    end_date: Mapped[datetime | None] = mapped_column(Date, nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, index=True)
+
+
+class LanguagePracticeSession(Base):
+    __tablename__ = "language_practice_sessions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(String, ForeignKey("users.id"), index=True)
+
+    language: Mapped[str] = mapped_column(String, index=True)
+    session_type: Mapped[str | None] = mapped_column(String, nullable=True, index=True)  # speaking, listening, etc.
+    duration_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    accuracy_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    metadata_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    occurred_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+
+class LearningResource(Base):
+    __tablename__ = "learning_resources"
+    __table_args__ = (
+        UniqueConstraint("user_id", "url", name="uq_learning_resource_user_url"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(String, ForeignKey("users.id"), index=True)
+
+    topic: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    title: Mapped[str] = mapped_column(String, index=True)
+    url: Mapped[str | None] = mapped_column(String, nullable=True)
+    source: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    resource_type: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    difficulty: Mapped[str | None] = mapped_column(String, nullable=True)
+    status: Mapped[str] = mapped_column(String, default="planned", index=True)
+
+    tags_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    metadata_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, index=True)
+
+
+class LearningSchedule(Base):
+    __tablename__ = "learning_schedules"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(String, ForeignKey("users.id"), index=True)
+    resource_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("learning_resources.id"), nullable=True, index=True)
+
+    scheduled_for: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    duration_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    status: Mapped[str] = mapped_column(String, default="scheduled", index=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, index=True)
@@ -801,6 +937,70 @@ class GiftThankYouDraft(Base):
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, index=True)
+
+
+class GiftRetailerAllowlist(Base):
+    __tablename__ = "gift_retailer_allowlist"
+    __table_args__ = (
+        UniqueConstraint("user_id", "domain", name="uq_gift_retailer_user_domain"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str | None] = mapped_column(String, ForeignKey("users.id"), nullable=True, index=True)
+
+    domain: Mapped[str] = mapped_column(String, index=True)
+    status: Mapped[str] = mapped_column(String, default="allowed", index=True)  # allowed, blocked
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, index=True)
+
+
+class GiftOrder(Base):
+    __tablename__ = "gift_orders"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(String, ForeignKey("users.id"), index=True)
+    gift_idea_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("gift_ideas.id"), nullable=True, index=True)
+    occasion_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("gift_occasions.id"), nullable=True, index=True)
+
+    proposal_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("proposals.id"), nullable=True, index=True)
+    transaction_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("transactions.id"), nullable=True, index=True)
+    payment_method_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("payment_methods.id"), nullable=True)
+
+    retailer_domain: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    product_url: Mapped[str | None] = mapped_column(String, nullable=True)
+    product_title: Mapped[str | None] = mapped_column(String, nullable=True)
+
+    quantity: Mapped[int] = mapped_column(Integer, default=1)
+    unit_price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    total_price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    currency: Mapped[str | None] = mapped_column(String, nullable=True)
+
+    status: Mapped[str] = mapped_column(String, default="pending_approval", index=True)
+    shipping_address_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    tracking_number: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    tracking_url: Mapped[str | None] = mapped_column(String, nullable=True)
+    return_window_end: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    metadata_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, index=True)
+
+
+class GiftOrderEvent(Base):
+    __tablename__ = "gift_order_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    gift_order_id: Mapped[int] = mapped_column(Integer, ForeignKey("gift_orders.id"), index=True)
+
+    status: Mapped[str] = mapped_column(String, index=True)
+    message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    metadata_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    occurred_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
 
 
 class UserProfile(Base):

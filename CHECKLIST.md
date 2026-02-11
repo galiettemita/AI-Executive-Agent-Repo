@@ -116,10 +116,10 @@ This checklist covers every task required to build the full product described in
 - [x] Gift management: recommendations + purchase flow
 - [x] Gift management: thank-you note automation
 - [ ] Gift management: Stripe Issuing intake submitted — wait for approval and complete KYB onboarding
-- [ ] Gift management: third-party purchase flow with explicit user approval
-- [ ] Gift management: payment method vault + authorized payment rails
-- [ ] Gift management: retailer allowlist + terms compliance review
-- [ ] Gift management: order tracking + refunds/returns workflow
+- [x] Gift management: third-party purchase flow with explicit user approval
+- [x] Gift management: payment method vault + authorized payment rails
+- [x] Gift management: retailer allowlist + review workflow
+- [x] Gift management: order tracking + refunds/returns workflow
 - [x] Relationship manager: contact relationship tracking
 - [x] Relationship manager: communication frequency tracking
 - [x] Relationship manager: reach-out suggestions
@@ -127,9 +127,9 @@ This checklist covers every task required to build the full product described in
 - [x] Fitness & nutrition: meal planning and nutrition tracking
 - [x] Fitness & nutrition: step count ingestion via health platform (Apple Health / Google Fit / Fitbit)
 - [x] Entertainment: content recommendations + tracking
-- [ ] Entertainment: event discovery and ticket booking
-- [ ] Language learning: daily practice and progress tracking
-- [ ] Learning & skills: resource curation and scheduling
+- [x] Entertainment: event discovery and ticket booking
+- [x] Language learning: daily practice and progress tracking
+- [x] Learning & skills: resource curation and scheduling
 
 ## Phase 1.5 — Public Web Presence (Pre-Launch)
 - [ ] Website: choose frontend host (Vercel vs Render) and deploy landing site
@@ -206,6 +206,8 @@ This checklist covers every task required to build the full product described in
 - [ ] Health insurance: plan comparison and claims support
 - [ ] Mental wellness: mood tracking and support nudges
 - [ ] Family coordination: shared calendars and permissions
+
+## BREAK: Look at the PDF titled Developer_Grade_Memory_Architecture_SQL_FastAPI_ContextPack and implement the unique memory features detailed there. DO THIS NOW BEFORE LAUNCH
 
 ## Phase 7 — Polish, Scale, and Specialized Features (Months 37–48)
 - [ ] Home maintenance tracking and service booking

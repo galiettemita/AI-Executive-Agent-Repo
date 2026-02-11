@@ -26,6 +26,10 @@ This policy is aligned to US-only launch with HIPAA in scope and enterprise cust
 - Smart home energy readings: retained 90 days unless user opts in for longer history.
 - Fitness and nutrition logs (including steps): retained while account active; delete within 30 days of closure.
 - Entertainment content and consumption events: retained while account active; delete within 30 days of closure.
+- Events and ticket booking metadata: retained while account active; delete within 30 days of closure.
+- Gift orders, retailer allowlist, and order events: retained 24 months or until user deletes; refunds retained 7 years when tied to transactions.
+- Language learning goals and practice sessions: retained while account active; delete within 30 days of closure.
+- Learning resources and schedules: retained while account active; delete within 30 days of closure.
 - Vector embeddings: derived data only; delete on request or account deletion.
 
 ## Deletion and Requests

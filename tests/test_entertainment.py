@@ -69,3 +69,74 @@ def test_entertainment_flow(monkeypatch):
     )
     assert resp.status_code == 200
     assert resp.json()["recommendations"]["results"]
+
+    resp = client.post(
+        "/entertainment/events",
+        json={
+            "user_id": user_id,
+            "title": "Jazz Night",
+            "event_type": "concert",
+            "location": "New York",
+        },
+    )
+    assert resp.status_code == 200
+    event_id = resp.json()["event"]["id"]
+
+    resp = client.get("/entertainment/events", params={"user_id": user_id})
+    assert resp.status_code == 200
+    assert any(e["id"] == event_id for e in resp.json()["events"])
+
+    resp = client.patch(
+        f"/entertainment/events/{event_id}",
+        json={"user_id": user_id, "status": "bookmarked"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["event"]["status"] == "bookmarked"
+
+    class EventStub:
+        def model_dump(self):
+            return {
+                "title": "Live Show",
+                "url": "https://tickets.example.com/show",
+                "snippet": "Great event",
+                "source": "stub",
+                "retailer_domain": "tickets.example.com",
+            }
+
+    async def fake_event_search(query: str, max_results: int = 6):
+        return [EventStub()]
+
+    monkeypatch.setattr("app.services.entertainment_events_service.discover_search", fake_event_search)
+
+    resp = client.post(
+        "/entertainment/events/discover",
+        json={"user_id": user_id, "query": "music", "location": "NYC", "save": True},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["events"]["results"]
+
+    resp = client.post(
+        f"/entertainment/events/{event_id}/proposal",
+        json={
+            "user_id": user_id,
+            "event_id": event_id,
+            "quantity": 2,
+            "total_price": 120.0,
+            "currency": "USD",
+            "require_approval": True,
+        },
+    )
+    assert resp.status_code == 200
+    booking_id = resp.json()["booking"]["id"]
+    assert resp.json()["proposal"]["approval_url"]
+
+    resp = client.get("/entertainment/events/bookings", params={"user_id": user_id})
+    assert resp.status_code == 200
+    assert any(b["id"] == booking_id for b in resp.json()["bookings"])
+
+    resp = client.patch(
+        f"/entertainment/events/bookings/{booking_id}",
+        json={"user_id": user_id, "status": "approved"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["booking"]["status"] == "approved"

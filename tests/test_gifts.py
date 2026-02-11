@@ -99,3 +99,51 @@ def test_gift_flow(monkeypatch):
         assert queued
     finally:
         db.close()
+
+    # Retailer allowlist
+    resp = client.post(
+        "/gifts/retailers",
+        json={"user_id": user_id, "domain": "example.com", "status": "allowed"},
+    )
+    assert resp.status_code == 200
+    retailer_id = resp.json()["retailer"]["id"]
+
+    resp = client.get("/gifts/retailers", params={"user_id": user_id})
+    assert resp.status_code == 200
+    assert any(r["id"] == retailer_id for r in resp.json()["retailers"])
+
+    # Gift order flow
+    resp = client.post(
+        "/gifts/orders",
+        json={
+            "user_id": user_id,
+            "gift_idea_id": idea_id,
+            "product_url": "https://example.com/gift",
+            "retailer_domain": "example.com",
+            "quantity": 1,
+            "unit_price": 25.0,
+            "currency": "USD",
+            "require_approval": True,
+        },
+    )
+    assert resp.status_code == 200
+    order_id = resp.json()["order"]["id"]
+    assert resp.json()["proposal"]["approval_url"]
+
+    resp = client.post(
+        f"/gifts/orders/{order_id}/authorize",
+        json={"user_id": user_id},
+    )
+    assert resp.status_code == 200
+
+    resp = client.post(
+        f"/gifts/orders/{order_id}/events",
+        json={"user_id": user_id, "status": "shipped", "message": "Shipped"},
+    )
+    assert resp.status_code == 200
+
+    resp = client.post(
+        f"/gifts/orders/{order_id}/refund",
+        json={"user_id": user_id, "reason": "Changed mind"},
+    )
+    assert resp.status_code == 200
