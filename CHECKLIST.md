@@ -141,7 +141,8 @@ This checklist covers every task required to build the full product described in
 - [x] Messaging: accept WhatsApp location shares and store in profile (opt-in)
 
 ## Phase X — Security & Compliance Hardening (After Phase 2, Pre-Launch)
-- [ ] Security architecture review and updated threat model (STRIDE + abuse cases)
+- [x] Security architecture review and updated threat model (STRIDE + abuse cases)
+- [x] Security headers + CSP baseline for HTML responses
 - [ ] Secure SDLC controls (code review, branch protection, signed commits)
 - [ ] Secrets management and rotation policy (KMS/HSM or equivalent)
 - [ ] Encryption at rest and in transit verified for all data stores

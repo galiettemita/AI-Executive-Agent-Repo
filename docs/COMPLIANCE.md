@@ -17,3 +17,9 @@
 - Google/Microsoft OAuth policies (limited use and minimum necessary scopes)
 - OpenAI usage policies (safety + privacy requirements)
 - Stripe policy compliance (payment flows, refunds, chargebacks)
+
+## Operational Requirements
+- Maintain vendor/subprocessor inventory (DPAs on file).
+- Data retention enforcement aligned with DATA_RETENTION.md.
+- User consent logging for all integrations.
+- Right-to-access and right-to-delete workflows documented and tested.

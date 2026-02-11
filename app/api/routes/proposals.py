@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import html
 import json
+from urllib.parse import quote
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
@@ -49,7 +51,12 @@ def proposal_view(proposal_id: int, request: Request, db: Session = Depends(get_
         raise HTTPException(status_code=404, detail="Proposal not found")
     data = _proposal_payload(row)
 
-    html = f"""
+    safe_type = html.escape(str(data["type"]))
+    safe_status = html.escape(str(data["status"]))
+    safe_payload = html.escape(json.dumps(data["payload"], indent=2))
+    safe_token = quote(request.query_params.get("token", ""), safe="")
+
+    html_content = f"""
 <!doctype html>
 <html>
   <head>
@@ -67,20 +74,20 @@ def proposal_view(proposal_id: int, request: Request, db: Session = Depends(get_
   <body>
     <h2>Action Proposal</h2>
     <div class="card">
-      <div class="row"><strong>Type:</strong> {data["type"]}</div>
-      <div class="row"><strong>Status:</strong> {data["status"]}</div>
-      <div class="row"><strong>Payload:</strong> <pre>{json.dumps(data["payload"], indent=2)}</pre></div>
-      <form method="post" action="/proposals/{proposal_id}/approve?token={request.query_params.get("token", "")}">
+      <div class="row"><strong>Type:</strong> {safe_type}</div>
+      <div class="row"><strong>Status:</strong> {safe_status}</div>
+      <div class="row"><strong>Payload:</strong> <pre>{safe_payload}</pre></div>
+      <form method="post" action="/proposals/{proposal_id}/approve?token={safe_token}">
         <button class="approve" type="submit">Approve</button>
       </form>
-      <form method="post" action="/proposals/{proposal_id}/cancel?token={request.query_params.get("token", "")}" style="margin-top:8px;">
+      <form method="post" action="/proposals/{proposal_id}/cancel?token={safe_token}" style="margin-top:8px;">
         <button class="cancel" type="submit">Cancel</button>
       </form>
     </div>
   </body>
 </html>
 """
-    return HTMLResponse(content=html)
+    return HTMLResponse(content=html_content)
 
 
 @rate_limit_user()

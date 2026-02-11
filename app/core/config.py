@@ -97,6 +97,21 @@ class Settings(BaseSettings):
     PII_ENCRYPTION_KEYS: str | None = None
     ENFORCE_WEBHOOK_SIGNATURES: str = "1"
     AUDIT_LOG_ENABLED: str = "1"
+    SECURITY_HEADERS_ENABLED: str = "1"
+    SECURITY_HSTS_ENABLED: str = "1"
+    SECURITY_HSTS_MAX_AGE: int = 31536000
+    SECURITY_CSP_REPORT_ONLY: str = "0"
+    SECURITY_CSP: str = (
+        "default-src 'self'; "
+        "img-src 'self' data: https:; "
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+        "font-src 'self' https://fonts.gstatic.com; "
+        "script-src 'self' 'unsafe-inline'; "
+        "connect-src 'self' https:; "
+        "frame-ancestors 'none'; "
+        "base-uri 'self'; "
+        "form-action 'self'"
+    )
 
     # ── Email (SMTP) ────────────────────────────────────────────
     SMTP_HOST: str = "smtp.gmail.com"

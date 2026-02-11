@@ -4,10 +4,16 @@
 - JWT (HS256) for API calls, signed by `JWT_SECRET`.
 - Signed header auth for internal calls: `X-User-ID`, `X-User-Timestamp`, `X-User-Signature`.
 - Reject stale signatures beyond 5 minutes.
+- Approval links use signed tokens with explicit expiration.
 
 ## Webhook Security
 - Enforce signature verification for WhatsApp, Stripe, and other webhooks.
 - Replay protection on inbound webhooks (idempotency check).
+
+## Security Headers
+- HSTS enabled in staging/production.
+- CSP on HTML responses.
+- X-Content-Type-Options, X-Frame-Options, Referrer-Policy, Permissions-Policy.
 
 ## Secrets Management
 - Never commit secrets to source control.

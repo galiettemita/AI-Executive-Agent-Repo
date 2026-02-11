@@ -19,6 +19,7 @@ from app.core.metrics import MetricsMiddleware  # noqa: E402
 from app.core.otel import setup_otel  # noqa: E402
 from app.middleware.request_context import RequestContextMiddleware  # noqa: E402
 from app.middleware.audit_log import AuditLogMiddleware  # noqa: E402
+from app.middleware.security_headers import SecurityHeadersMiddleware  # noqa: E402
 
 # Configure structured logging before anything else
 setup_logging()
@@ -120,6 +121,7 @@ app = FastAPI(
 app.add_middleware(AuthMiddleware)
 app.add_middleware(RequestContextMiddleware)
 app.add_middleware(AuditLogMiddleware)
+app.add_middleware(SecurityHeadersMiddleware)
 if settings.PROMETHEUS_ENABLED:
     app.add_middleware(MetricsMiddleware)
 

@@ -57,9 +57,9 @@ def update_proposal_status(db: Session, proposal_id: int, status: str) -> None:
     db.commit()
 
 
-def build_proposal_link(proposal_id: int) -> str:
+def build_proposal_link(proposal_id: int, *, ttl_seconds: int = 900) -> str:
     base = settings.APP_BASE_URL
-    token = sign_token({"proposal_id": proposal_id})
+    token = sign_token({"proposal_id": proposal_id}, ttl_seconds=ttl_seconds)
     return f"{base}/proposals/{proposal_id}?token={token}"
 
 
@@ -78,7 +78,10 @@ def create_proposal_with_link(
         payload=payload,
         ttl_hours=ttl_hours,
     )
-    return {"proposal_id": str(row.id), "approval_url": build_proposal_link(row.id)}
+    return {
+        "proposal_id": str(row.id),
+        "approval_url": build_proposal_link(row.id, ttl_seconds=ttl_hours * 3600),
+    }
 
 
 def log_proposal_action(
