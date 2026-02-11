@@ -132,13 +132,13 @@ This checklist covers every task required to build the full product described in
 - [x] Learning & skills: resource curation and scheduling
 
 ## Phase 1.5 — Public Web Presence (Pre-Launch)
-- [ ] Website: choose frontend host (Vercel vs Render) and deploy landing site
+- [x] Website: choose frontend host (Render) and deploy landing site
 - [ ] Website: connect custom domain and SSL
-- [ ] Website: add WhatsApp click-to-chat link (wa.me)
-- [ ] Website: generate WhatsApp QR code and embed on site
-- [ ] Website: add privacy/terms links and contact/support info
-- [ ] Website: capture user location with consent (browser geolocation + IP-based fallback) and store in profile
-- [ ] Messaging: accept WhatsApp location shares and store in profile (opt-in)
+- [x] Website: add WhatsApp click-to-chat link (wa.me)
+- [x] Website: generate WhatsApp QR code and embed on site
+- [x] Website: add privacy/terms links and contact/support info
+- [x] Website: capture user location with consent (browser geolocation + IP-based fallback) and store in profile
+- [x] Messaging: accept WhatsApp location shares and store in profile (opt-in)
 
 ## Phase X — Security & Compliance Hardening (After Phase 2, Pre-Launch)
 - [ ] Security architecture review and updated threat model (STRIDE + abuse cases)

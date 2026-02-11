@@ -16,11 +16,10 @@ GRAPH_URL = "https://graph.facebook.com/v20.0"
 def normalize_whatsapp_webhook(payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     """
     Returns a normalized event dict:
-    {
-      "external_id": "...",
-      "from": "+15551234567",
-      "text": "hello"
-    }
+    Text:
+      {"type": "text", "external_id": "...", "from": "+15551234567", "text": "hello"}
+    Location:
+      {"type": "location", "external_id": "...", "from": "+15551234567", "location": {...}}
     Returns None if payload doesn't contain a user message.
     """
     try:
@@ -63,22 +62,38 @@ def normalize_whatsapp_webhook(payload: Dict[str, Any]) -> Optional[Dict[str, An
         
         logger.info("WhatsApp message type: %s", msg_type)
         
-        if msg_type != "text":
-            logger.info("Ignoring non-text message of type: %s", msg_type)
-            return None
-        
         external_id = msg["id"]
         from_phone = msg["from"]  # WhatsApp provides phone without '+'
-        text = msg["text"]["body"]
-        
-        result = {
-            "external_id": external_id,
-            "from": f"+{from_phone}",
-            "text": text,
-        }
-        
-        logger.info("Successfully normalized WhatsApp message: id=%s", result.get("external_id"))
-        return result
+
+        if msg_type == "text":
+            text = msg["text"]["body"]
+            result = {
+                "type": "text",
+                "external_id": external_id,
+                "from": f"+{from_phone}",
+                "text": text,
+            }
+            logger.info("Successfully normalized WhatsApp text message: id=%s", result.get("external_id"))
+            return result
+
+        if msg_type == "location":
+            location = msg.get("location") or {}
+            result = {
+                "type": "location",
+                "external_id": external_id,
+                "from": f"+{from_phone}",
+                "location": {
+                    "latitude": location.get("latitude"),
+                    "longitude": location.get("longitude"),
+                    "name": location.get("name"),
+                    "address": location.get("address"),
+                },
+            }
+            logger.info("Successfully normalized WhatsApp location message: id=%s", result.get("external_id"))
+            return result
+
+        logger.info("Ignoring non-text message of type: %s", msg_type)
+        return None
         
     except KeyError as e:
         logger.error("KeyError while normalizing webhook: %s", e)

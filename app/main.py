@@ -86,6 +86,7 @@ from app.api.routes.relationships import router as relationships_router  # noqa:
 from app.api.routes.fitness import router as fitness_router  # noqa: E402
 from app.api.routes.entertainment import router as entertainment_router  # noqa: E402
 from app.api.routes.learning import router as learning_router  # noqa: E402
+from app.api.routes.public_site import router as public_site_router  # noqa: E402
 
 
 _scheduler = None
@@ -205,6 +206,7 @@ app.include_router(relationships_router)
 app.include_router(fitness_router)
 app.include_router(entertainment_router)
 app.include_router(learning_router)
+app.include_router(public_site_router)
 if settings.ENABLE_SMART_HOME == "1":
     app.include_router(smart_home_router)
     app.include_router(admin_smart_home_router)
@@ -212,7 +214,4 @@ if settings.ENABLE_SMART_HOME == "1":
 # OpenTelemetry (optional)
 setup_otel(app)
 
-# Friendly root so Render URL doesn't show 404
-@app.get("/")
-def root():
-    return {"ok": True, "service": "Executive AI Agent"}
+# Root landing page is provided by public_site_router

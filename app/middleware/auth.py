@@ -39,6 +39,8 @@ ALLOWLIST_PREFIXES = (
     "/webhooks/sms",
     "/billing/stripe/webhook",
     "/payment/webhooks/stripe",
+    "/public",
+    "/legal",
 )
 
 # Signature replay window

@@ -59,6 +59,7 @@ class Settings(BaseSettings):
     WHATSAPP_VERIFY_TOKEN: str = ""
     WHATSAPP_PHONE_NUMBER_ID: str = ""
     WHATSAPP_APP_SECRET: str = ""
+    WHATSAPP_PUBLIC_NUMBER: str = ""  # E.164 without "+" for wa.me links
 
     # ── Fitbit OAuth ────────────────────────────────────────────
     FITBIT_CLIENT_ID: str | None = None
@@ -107,6 +108,11 @@ class Settings(BaseSettings):
 
     # ── CORS ────────────────────────────────────────────────────
     CORS_ORIGINS: str = ""
+
+    # ── Public Site ─────────────────────────────────────────────
+    PUBLIC_SITE_NAME: str = "Executive AI Agent"
+    PUBLIC_SITE_TAGLINE: str = "Your WhatsApp-first executive assistant"
+    PUBLIC_SITE_SUPPORT_EMAIL: str = "support@yourassistant.com"
 
     # ── Weather (Wardrobe) ─────────────────────────────────────
     WEATHER_PROVIDER: str = "open_meteo"  # open_meteo | openweather | weatherapi

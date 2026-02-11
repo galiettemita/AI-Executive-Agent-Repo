@@ -21,6 +21,8 @@ from app.services.usage import record_message
 from app.services.orchestrator import run_orchestrator
 from app.services.contacts_service import upsert_contact
 from app.services.messaging_service import record_delivery_status
+from app.services.profile_service import update_profile
+from app.services.location_service import build_location_patch
 from app.core.config import settings
 from app.middleware.rate_limiter import rate_limit_webhook
 
@@ -129,10 +131,10 @@ async def receive(request: Request, db: Session = Depends(get_db)):
         
         external_id = event["external_id"]
         from_phone = event["from"]
-        text = event["text"]
+        event_type = event.get("type", "text")
 
         masked_phone = f"{from_phone[:3]}***{from_phone[-2:]}" if from_phone else "unknown"
-        logger.info("WhatsApp message received: id=%s from=%s len=%s", external_id, masked_phone, len(text))
+        logger.info("WhatsApp message received: id=%s from=%s type=%s", external_id, masked_phone, event_type)
         
         # Use phone as user_id for now (simple MVP). Later map to a real users table row.
         user_id = from_phone
@@ -148,6 +150,33 @@ async def receive(request: Request, db: Session = Depends(get_db)):
             logger.info(f"⏭️  Message {external_id} already processed (deduped)")
             return {"ok": True, "deduped": True}
         
+        if event_type == "location":
+            location = event.get("location") or {}
+            label = location.get("name") or location.get("address")
+            patch = build_location_patch(
+                source="whatsapp",
+                latitude=location.get("latitude"),
+                longitude=location.get("longitude"),
+                location_label=label,
+            )
+            profile = update_profile(db, user_id, patch)
+
+            reply = "Location saved. Thanks! You can revoke anytime in your preferences."
+            send_whatsapp_text(to_phone_e164=from_phone, text=reply)
+
+            convo = get_or_create_conversation(db, user_id)
+            store_message(db, user_id, convo.id, "user", "[Location shared]")
+            store_message(db, user_id, convo.id, "assistant", reply)
+            trim_history(db, user_id)
+            record_message(db, user_id, count=1)
+
+            record_inbound(db, channel="whatsapp", external_id=external_id, user_id=user_id)
+            logger.info("Recorded inbound location %s", external_id)
+            return {"ok": True, "location_saved": True, "profile": profile}
+
+        text = event["text"]
+        logger.info("WhatsApp text message length=%s", len(text))
+
         # Load last messages for this user (minimal history)
         history = get_recent_history(db, user_id)
         

@@ -18,6 +18,14 @@ APP_BASE_URL=https://your-render-domain.onrender.com
 WHATSAPP_VERIFY_TOKEN=<your-whatsapp-verify-token>
 WHATSAPP_TOKEN=<your-whatsapp-access-token>
 WHATSAPP_PHONE_NUMBER_ID=<your-whatsapp-phone-number-id>
+WHATSAPP_PUBLIC_NUMBER=<your-public-whatsapp-number-e164-without-plus>
+```
+
+### Public Site
+```
+PUBLIC_SITE_NAME=Executive AI Agent
+PUBLIC_SITE_TAGLINE=Your WhatsApp-first executive assistant
+PUBLIC_SITE_SUPPORT_EMAIL=support@yourassistant.com
 ```
 
 ### OpenAI

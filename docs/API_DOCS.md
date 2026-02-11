@@ -165,3 +165,11 @@ This is a high-level API reference. The canonical schema is the generated OpenAP
 - `POST /monitoring/trigger/price-check`
 - `POST /monitoring/trigger/send-notifications`
 - `POST /monitoring/trigger/email-monitoring`
+
+## Public Site
+- `GET /` public landing page
+- `GET /legal/privacy` privacy policy page
+- `GET /legal/terms` terms of service page
+- `GET /public/qr` WhatsApp QR code image (PNG)
+- `POST /public/location` store user location (consent required)
+- `POST /public/location/ip` IP-based location fallback (consent required)
