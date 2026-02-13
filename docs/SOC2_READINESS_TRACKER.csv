@@ -1,0 +1,22 @@
+Control ID,Category,Description,Status,Owner,Evidence,Notes
+SEC-01,Security,Enforce MFA on all admin accounts,Done,Owner,MFA screenshots or account logs,GitHub/Render/Meta/Stripe enabled
+SEC-02,Security,Branch protection + required review,Done,Owner,GitHub branch protection settings,Require 1 approval + status checks
+SEC-03,Security,CI security scans (SAST + dependency audit),Done,Engineering,GitHub Actions logs,CodeQL + pip-audit enabled
+SEC-04,Security,Secrets management documented,In Progress,Owner,docs/SECRETS_MANAGEMENT.md,Rotate every 90 days
+SEC-05,Security,Access reviews quarterly,Planned,Owner,Access review checklist,Schedule recurring review
+SEC-06,Security,Logging & monitoring in place,Done,Engineering,Render logs + metrics dashboard,Audit logs enabled
+SEC-07,Security,Incident response plan documented,Done,Owner,docs/INCIDENT_RESPONSE.md,Postmortem within 5 days
+SEC-08,Security,Vulnerability management process,In Progress,Engineering,Scan reports,CodeQL + pip-audit enabled; add Dependabot
+SEC-09,Security,Security policy documented,Done,Owner,docs/SOC2_SECURITY_POLICY.md,Annual review
+GOV-01,Governance,SOC 2 readiness plan documented,Done,Owner,docs/SOC2_READINESS.md,Tracker maintained monthly
+AV-01,Availability,Backups enabled + tested,In Progress,Engineering,Backup job logs,Define RPO/RTO drill
+AV-02,Availability,Disaster recovery plan documented,Done,Owner,docs/DR_PLAN.md,Run annual test
+AV-03,Availability,Monitoring + alerting configured,Done,Owner,Alerting dashboard,Slack alerts enabled
+CC-01,Confidentiality,PII encryption at rest,Done,Engineering,code + config,PII_ENCRYPTION_KEY configured
+CC-02,Confidentiality,Data retention policy,Done,Owner,docs/DATA_RETENTION.md,Retention schedules defined
+CC-03,Confidentiality,Vendor/subprocessor list,In Progress,Owner,Vendor inventory spreadsheet,Collect DPAs
+PR-01,Privacy,Consent logging for integrations,Done,Engineering,User consents table,Stored in user_consents
+PR-02,Privacy,User deletion process (GDPR/CCPA),Done,Engineering,GDPR delete endpoint,Tested in staging
+CM-01,Change Mgmt,Change management policy,Done,Owner,docs/SOC2_CHANGE_MANAGEMENT_POLICY.md,PR required for main
+AC-01,Access Control,Access control policy,Done,Owner,docs/SOC2_ACCESS_CONTROL_POLICY.md,Least privilege
+VM-01,Vendor Mgmt,Vendor management policy,Done,Owner,docs/SOC2_VENDOR_MANAGEMENT_POLICY.md,Annual review

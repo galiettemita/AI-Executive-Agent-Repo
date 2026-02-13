@@ -163,7 +163,7 @@ This checklist covers every task required to build the full product described in
 - [ ] Privacy-by-design review (PII minimization, masking, redaction)
 - [ ] GDPR/CCPA/CPRA readiness checklist completed
 - [ ] HIPAA applicability assessment and safeguards (if applicable)
-- [ ] SOC 2 readiness assessment (Type I/II plan)
+- [x] SOC 2 readiness assessment (Type I/II plan)
 - [ ] Vendor and subprocessor inventory with DPAs
 - [ ] Compliance with all provider policies (Meta/WhatsApp, Google, Microsoft, Stripe, Twilio, OpenAI)
 - [ ] Security training for operators and key staff
