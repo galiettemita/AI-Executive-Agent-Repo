@@ -7,6 +7,7 @@ from __future__ import annotations
 import logging
 import sys
 
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 logger = logging.getLogger(__name__)
@@ -49,16 +50,35 @@ class Settings(BaseSettings):
     TOKEN_ENCRYPTION_KEY: str | None = None
 
     # ── Microsoft OAuth ────────────────────────────────────────
-    MS_CLIENT_ID: str | None = None
-    MS_CLIENT_SECRET: str | None = None
+    MS_CLIENT_ID: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("MS_CLIENT_ID", "MICROSOFT_CLIENT_ID"),
+    )
+    MS_CLIENT_SECRET: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("MS_CLIENT_SECRET", "MICROSOFT_CLIENT_SECRET"),
+    )
     MS_REDIRECT_URI: str = ""
     MS_TENANT_ID: str = "common"
 
     # ── WhatsApp ────────────────────────────────────────────────
-    WHATSAPP_TOKEN: str = ""
-    WHATSAPP_VERIFY_TOKEN: str = ""
-    WHATSAPP_PHONE_NUMBER_ID: str = ""
-    WHATSAPP_APP_SECRET: str = ""
+    # Accept legacy `WA_*` env var names used by current infra/secrets.
+    WHATSAPP_TOKEN: str = Field(
+        default="",
+        validation_alias=AliasChoices("WHATSAPP_TOKEN", "WA_ACCESS_TOKEN"),
+    )
+    WHATSAPP_VERIFY_TOKEN: str = Field(
+        default="",
+        validation_alias=AliasChoices("WHATSAPP_VERIFY_TOKEN", "WA_VERIFY_TOKEN"),
+    )
+    WHATSAPP_PHONE_NUMBER_ID: str = Field(
+        default="",
+        validation_alias=AliasChoices("WHATSAPP_PHONE_NUMBER_ID", "WA_PHONE_NUMBER_ID"),
+    )
+    WHATSAPP_APP_SECRET: str = Field(
+        default="",
+        validation_alias=AliasChoices("WHATSAPP_APP_SECRET", "WA_APP_SECRET"),
+    )
     WHATSAPP_PUBLIC_NUMBER: str = ""  # E.164 without "+" for wa.me links
 
     # ── Fitbit OAuth ────────────────────────────────────────────

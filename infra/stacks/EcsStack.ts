@@ -76,7 +76,8 @@ export function EcsStack({ stack }: StackContext) {
 
   const baseEnv = {
     ENV: stageEnv,
-    REDIS_URL: `redis://${redis.attrPrimaryEndPointAddress}:6379/0`,
+    // ElastiCache has transit encryption enabled; use TLS.
+    REDIS_URL: `rediss://${redis.attrPrimaryEndPointAddress}:6379/0`,
     OTEL_SERVICE_NAME: "executive-os",
     OTEL_ENABLED: "1",
   };
@@ -159,6 +160,19 @@ export function EcsStack({ stack }: StackContext) {
     logging: ecs.LogDriver.awsLogs({ logGroup, streamPrefix: "workers" }),
     environment: baseEnv,
     secrets: secretEnv,
+    // Run Celery workers (async processing, webhooks, background jobs)
+    command: [
+      "celery",
+      "-A",
+      "app.core.celery_app.celery_app",
+      "worker",
+      "-l",
+      "info",
+      "-Q",
+      "default",
+      "--concurrency",
+      "2",
+    ],
   });
 
   const gatewayService = new ecs.FargateService(stack, "GatewayService", {

@@ -157,6 +157,38 @@ def send_whatsapp_text(to_phone_e164: str, text: str) -> Optional[str]:
         return None
 
 
+def mark_whatsapp_read(message_id: str) -> bool:
+    """
+    Marks an inbound WhatsApp message as "read".
+
+    This is the closest thing we can reliably do for a fast "typing/received"
+    signal without sending an extra user-visible message.
+    """
+    if not message_id:
+        return False
+    if not WHATSAPP_TOKEN or not WHATSAPP_PHONE_NUMBER_ID:
+        return False
+    try:
+        url = f"{GRAPH_URL}/{WHATSAPP_PHONE_NUMBER_ID}/messages"
+        headers = {
+            "Authorization": f"Bearer {WHATSAPP_TOKEN}",
+            "Content-Type": "application/json",
+        }
+        data = {
+            "messaging_product": "whatsapp",
+            "status": "read",
+            "message_id": message_id,
+        }
+        resp = requests.post(url, headers=headers, json=data, timeout=10)
+        if resp.status_code != 200:
+            logger.warning("Failed to mark WhatsApp message as read (status=%s)", resp.status_code)
+            return False
+        return True
+    except Exception:
+        logger.exception("Failed to mark WhatsApp message as read")
+        return False
+
+
 def extract_whatsapp_statuses(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
     """
     Extract delivery status updates from WhatsApp webhook payload.

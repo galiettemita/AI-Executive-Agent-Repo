@@ -8,7 +8,12 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Query
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db, get_or_create_user
-from app.channels.whatsapp import normalize_whatsapp_webhook, send_whatsapp_text, extract_whatsapp_statuses
+from app.channels.whatsapp import (
+    normalize_whatsapp_webhook,
+    send_whatsapp_text,
+    extract_whatsapp_statuses,
+    mark_whatsapp_read,
+)
 from app.services.inbound_events import already_processed, record_inbound
 from app.services.history import (
     get_or_create_conversation,
@@ -25,6 +30,11 @@ from app.services.profile_service import update_profile
 from app.services.location_service import build_location_patch
 from app.core.config import settings
 from app.middleware.rate_limiter import rate_limit_webhook
+
+# Blueprint gateway async processing (staging/prod only)
+from app.core.redis import get_redis
+from app.blueprint.contracts import Channel
+from app.blueprint.session import dedup_inbound
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -136,7 +146,32 @@ async def receive(request: Request, db: Session = Depends(get_db)):
         masked_phone = f"{from_phone[:3]}***{from_phone[-2:]}" if from_phone else "unknown"
         logger.info("WhatsApp message received: id=%s from=%s type=%s", external_id, masked_phone, event_type)
         
-        # Use phone as user_id for now (simple MVP). Later map to a real users table row.
+        # Blueprint behavior: in staging/prod we ACK fast and process async.
+        if settings.ENV in ("staging", "production") and not settings.DATABASE_URL.startswith("sqlite"):
+            # Best-effort fast signal: mark the inbound message as read.
+            try:
+                mark_whatsapp_read(external_id)
+            except Exception:
+                pass
+
+            r = get_redis()
+            if r:
+                is_new = dedup_inbound(r, channel=Channel.WHATSAPP, channel_msg_id=external_id)
+                if not is_new:
+                    return {"ok": True, "deduped": True}
+
+            try:
+                from app.tasks.inbound_whatsapp import process_whatsapp_inbound
+
+                process_whatsapp_inbound.delay({**event, "raw": payload})
+            except Exception as e:
+                logger.exception("Failed to enqueue WhatsApp inbound event")
+                return {"ok": False, "error": str(e)}
+
+            return {"ok": True, "queued": True}
+
+        # DEV/TEST behavior: keep synchronous processing for local + unit tests.
+        # Use phone as user_id for now (simple MVP).
         user_id = from_phone
         get_or_create_user(db, user_id)
 
