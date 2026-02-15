@@ -237,6 +237,10 @@ class Settings(BaseSettings):
     CELERY_TASK_ALWAYS_EAGER: bool = False
     SENTRY_DSN: str | None = None
 
+    # ── Internal Plane URLs (Gateway/Workers → Brain/Hands) ─────
+    BRAIN_INTERNAL_BASE_URL: str | None = None
+    HANDS_INTERNAL_BASE_URL: str | None = None
+
     # ── Observability ───────────────────────────────────────────
     PROMETHEUS_ENABLED: bool = False
     METRICS_TOKEN: str | None = None

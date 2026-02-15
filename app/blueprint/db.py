@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import uuid
@@ -156,6 +157,7 @@ def insert_message(
     channel_msg_id: str | None = None,
     intent: str | None = None,
     tier: int | None = None,
+    run_id: str | None = None,
     latency_ms: int | None = None,
     cost_cents: int = 0,
 ) -> str | None:
@@ -169,9 +171,9 @@ def insert_message(
         row = db.execute(
             text(
                 "insert into messages "
-                "(id, conversation_id, user_id, direction, content, intent, tier, cost_cents, latency_ms, channel_msg_id, created_at) "
+                "(id, conversation_id, user_id, direction, content, intent, tier, run_id, cost_cents, latency_ms, channel_msg_id, created_at) "
                 "values "
-                "(:id::uuid, :conversation_id::uuid, :user_id::uuid, :direction::message_direction, :content::jsonb, :intent, :tier, :cost_cents, :latency_ms, :channel_msg_id, now()) "
+                "(:id::uuid, :conversation_id::uuid, :user_id::uuid, :direction::message_direction, :content::jsonb, :intent, :tier, :run_id::uuid, :cost_cents, :latency_ms, :channel_msg_id, now()) "
                 "returning id"
             ),
             {
@@ -182,6 +184,7 @@ def insert_message(
                 "content": payload,
                 "intent": intent,
                 "tier": tier,
+                "run_id": run_id,
                 "cost_cents": cost_cents,
                 "latency_ms": latency_ms,
                 "channel_msg_id": channel_msg_id,
@@ -198,3 +201,232 @@ def insert_message(
         db.rollback()
         return None
 
+
+def attach_run_to_message(
+    db: Session,
+    *,
+    user_id: str,
+    message_id: str,
+    run_id: str,
+) -> None:
+    """
+    Attach a run_id to an existing message row.
+    """
+    set_app_user_id(db, user_id)
+    db.execute(
+        text("update messages set run_id = :run_id::uuid where id = :id::uuid"),
+        {"id": message_id, "run_id": run_id},
+    )
+    db.commit()
+
+
+def _json_hash(payload: dict[str, Any]) -> str:
+    encoded = json.dumps(payload or {}, sort_keys=True, ensure_ascii=False).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def create_run(
+    db: Session,
+    *,
+    user_id: str,
+    conversation_id: str,
+    envelope: dict[str, Any],
+    intent: str,
+    tier: int,
+    parent_run_id: str | None = None,
+) -> str:
+    """
+    Create a Blueprint `runs` row and return its UUID.
+    """
+    run_id = str(uuid.uuid4())
+    set_app_user_id(db, user_id)
+    db.execute(
+        text(
+            "insert into runs "
+            "(id, user_id, conversation_id, parent_run_id, intent, tier, plan, state, envelope, created_at) "
+            "values "
+            "(:id::uuid, :user_id::uuid, :conversation_id::uuid, :parent_run_id::uuid, :intent, :tier, '[]'::jsonb, 'pending'::run_state, :envelope::jsonb, now())"
+        ),
+        {
+            "id": run_id,
+            "user_id": user_id,
+            "conversation_id": conversation_id,
+            "parent_run_id": parent_run_id,
+            "intent": intent,
+            "tier": tier,
+            "envelope": json.dumps(envelope or {}, ensure_ascii=False),
+        },
+    )
+    db.commit()
+    return run_id
+
+
+def complete_run(
+    db: Session,
+    *,
+    run_id: str,
+    user_id: str,
+    state: str = "completed",
+    total_cost_cents: int = 0,
+    total_latency_ms: int = 0,
+    error: dict[str, Any] | None = None,
+) -> None:
+    """
+    Mark a run terminal (completed/failed/cancelled).
+    """
+    set_app_user_id(db, user_id)
+    db.execute(
+        text(
+            "update runs "
+            "set state = :state::run_state, "
+            "    error = :error::jsonb, "
+            "    total_cost_cents = :total_cost_cents, "
+            "    total_latency_ms = :total_latency_ms, "
+            "    completed_at = now() "
+            "where id = :id::uuid"
+        ),
+        {
+            "id": run_id,
+            "state": state,
+            "error": json.dumps(error, ensure_ascii=False) if error else None,
+            "total_cost_cents": total_cost_cents,
+            "total_latency_ms": total_latency_ms,
+        },
+    )
+    db.commit()
+
+
+def list_conversation_messages(
+    db: Session,
+    *,
+    user_id: str,
+    conversation_id: str,
+    limit: int = 12,
+) -> list[dict[str, str]]:
+    """
+    Fetch recent Blueprint messages for context compilation.
+
+    Returns OpenAI-style message dicts: {"role": "user"|"assistant", "content": "..."}.
+    """
+    set_app_user_id(db, user_id)
+    rows = (
+        db.execute(
+            text(
+                "select direction, content "
+                "from messages "
+                "where conversation_id = :conversation_id::uuid "
+                "order by created_at desc "
+                "limit :limit"
+            ),
+            {"conversation_id": conversation_id, "limit": int(limit)},
+        )
+        .mappings()
+        .all()
+    )
+
+    items: list[dict[str, str]] = []
+    for row in reversed(rows or []):
+        direction = str(row.get("direction") or "")
+        raw_content = row.get("content")
+        content: dict[str, Any]
+        if isinstance(raw_content, dict):
+            content = raw_content
+        else:
+            try:
+                content = json.loads(raw_content or "{}")
+            except Exception:
+                content = {}
+
+        text_val = content.get("text")
+        if isinstance(text_val, str) and text_val.strip():
+            msg_text = text_val.strip()
+        elif "location" in content:
+            msg_text = "[Location shared]"
+        else:
+            continue
+
+        role = "user" if direction == MessageDirection.INBOUND.value else "assistant"
+        items.append({"role": role, "content": msg_text})
+    return items
+
+
+def get_tool_execution_by_idempotency(
+    db: Session,
+    *,
+    user_id: str,
+    idempotency_key: str,
+) -> dict[str, Any] | None:
+    set_app_user_id(db, user_id)
+    row = (
+        db.execute(
+            text(
+                "select tool_name, status, output, error "
+                "from tool_executions "
+                "where idempotency_key = :k "
+                "limit 1"
+            ),
+            {"k": idempotency_key},
+        )
+        .mappings()
+        .first()
+    )
+    if not row:
+        return None
+    return {
+        "tool_name": row.get("tool_name"),
+        "status": row.get("status"),
+        "output": row.get("output"),
+        "error": row.get("error"),
+    }
+
+
+def insert_tool_execution(
+    db: Session,
+    *,
+    run_id: str,
+    user_id: str,
+    tool_name: str,
+    input_payload: dict[str, Any],
+    output_payload: dict[str, Any] | None,
+    status: str,
+    error_payload: dict[str, Any] | None,
+    idempotency_key: str,
+    risk_level: str = "none",
+    cost_cents: int = 0,
+    latency_ms: int,
+) -> str | None:
+    """
+    Insert tool execution row. Returns id, or None if deduped by idempotency_key.
+    """
+    set_app_user_id(db, user_id)
+    tool_id = str(uuid.uuid4())
+    try:
+        row = db.execute(
+            text(
+                "insert into tool_executions "
+                "(id, run_id, user_id, tool_name, input_hash, input, output, status, error, idempotency_key, risk_level, cost_cents, latency_ms, created_at) "
+                "values "
+                "(:id::uuid, :run_id::uuid, :user_id::uuid, :tool_name, :input_hash, :input::jsonb, :output::jsonb, :status::tool_exec_status, :error::jsonb, :idempotency_key, :risk_level::risk_level, :cost_cents, :latency_ms, now()) "
+                "returning id"
+            ),
+            {
+                "id": tool_id,
+                "run_id": run_id,
+                "user_id": user_id,
+                "tool_name": tool_name,
+                "input_hash": _json_hash(input_payload),
+                "input": json.dumps(input_payload, ensure_ascii=False),
+                "output": json.dumps(output_payload, ensure_ascii=False) if output_payload else None,
+                "status": status,
+                "error": json.dumps(error_payload, ensure_ascii=False) if error_payload else None,
+                "idempotency_key": idempotency_key,
+                "risk_level": risk_level,
+                "cost_cents": int(cost_cents),
+                "latency_ms": int(latency_ms),
+            },
+        ).mappings().first()
+        db.commit()
+        return str((row or {}).get("id") or tool_id)
+    except IntegrityError:
+        db.rollback()
+        return None

@@ -4,15 +4,24 @@ import logging
 import time
 from typing import Any
 
+import httpx
 from sqlalchemy.orm import Session
 
+from app.blueprint.contracts import Channel, MessageDirection
+from app.blueprint.contracts import InboundMessage, OutboundMessage
 from app.blueprint.brain.responder import generate_reply
 from app.blueprint.brain.tier_router import route_tier
-from app.blueprint.contracts import Channel, MessageDirection
-from app.blueprint.db import get_or_create_user_by_phone, insert_message
+from app.blueprint.db import (
+    attach_run_to_message,
+    complete_run,
+    create_run,
+    get_or_create_user_by_phone,
+    insert_message,
+)
 from app.blueprint.session import get_or_create_conversation_session
 from app.channels.whatsapp import send_whatsapp_text
 from app.core.celery_app import celery_app
+from app.core.config import settings
 from app.core.redis import get_redis
 from app.db.database import SessionLocal
 
@@ -21,6 +30,30 @@ logger = logging.getLogger(__name__)
 
 def _db() -> Session:
     return SessionLocal()
+
+def _default_brain_base_url() -> str | None:
+    if settings.BRAIN_INTERNAL_BASE_URL:
+        return settings.BRAIN_INTERNAL_BASE_URL.rstrip("/")
+    if settings.ENV in ("staging", "production"):
+        # Requires ECS Cloud Map namespace `executive-os.local`.
+        return "http://brain.executive-os.local:8000"
+    return None
+
+
+def _brain_respond(msg: InboundMessage) -> OutboundMessage:
+    base = _default_brain_base_url()
+    if not base:
+        tier = route_tier(msg.text)
+        reply, meta = generate_reply(user_text=msg.text, tier=tier)
+        metadata = dict(meta or {})
+        metadata.setdefault("tier", tier)
+        metadata.setdefault("channel_msg_id", msg.channel_msg_id)
+        return OutboundMessage(channel=msg.channel, to_phone=msg.from_phone, text=reply, metadata=metadata)
+
+    with httpx.Client(timeout=30.0) as client:
+        resp = client.post(f"{base}/internal/brain/respond", json=msg.model_dump())
+        resp.raise_for_status()
+        return OutboundMessage.model_validate(resp.json())
 
 
 @celery_app.task(name="gateway.process_whatsapp_inbound")
@@ -65,7 +98,7 @@ def process_whatsapp_inbound(event: dict[str, Any]) -> dict[str, Any]:
         else:
             inbound_content = {"text": text}
 
-        inserted = insert_message(
+        message_id = insert_message(
             db,
             conversation_id=conversation_id,
             user_id=user.id,
@@ -73,11 +106,76 @@ def process_whatsapp_inbound(event: dict[str, Any]) -> dict[str, Any]:
             content=inbound_content,
             channel_msg_id=external_id or None,
         )
-        if inserted is None:
+        if message_id is None:
             return {"ok": True, "deduped": True}
 
-        tier = route_tier(text)
-        reply, meta = generate_reply(user_text=text, tier=tier)
+        tier_guess = route_tier(text) if event_type != "location" else 0
+        run_id = create_run(
+            db,
+            user_id=user.id,
+            conversation_id=conversation_id,
+            envelope={
+                "channel": Channel.WHATSAPP.value,
+                "channel_msg_id": external_id,
+                "from_phone": from_phone,
+                "event_type": event_type,
+                "text": text,
+            },
+            intent="general",
+            tier=tier_guess,
+        )
+        attach_run_to_message(db, user_id=user.id, message_id=message_id, run_id=run_id)
+
+        if event_type == "location":
+            reply = "Location saved. What do you want me to do next?"
+            insert_message(
+                db,
+                conversation_id=conversation_id,
+                user_id=user.id,
+                direction=MessageDirection.OUTBOUND,
+                content={"text": reply},
+                intent="general",
+                tier=0,
+                run_id=run_id,
+                latency_ms=int((time.perf_counter() - started) * 1000),
+                cost_cents=0,
+            )
+            complete_run(
+                db,
+                run_id=run_id,
+                user_id=user.id,
+                state="completed",
+                total_cost_cents=0,
+                total_latency_ms=int((time.perf_counter() - started) * 1000),
+            )
+            send_whatsapp_text(to_phone_e164=from_phone, text=reply)
+            return {"ok": True, "user_id": user.id, "conversation_id": conversation_id, "tier": 0, "meta": {}}
+
+        inbound_msg = InboundMessage(
+            channel=Channel.WHATSAPP,
+            channel_msg_id=external_id or "unknown",
+            user_id=user.id,
+            conversation_id=conversation_id,
+            run_id=run_id,
+            from_phone=from_phone,
+            text=text,
+            raw=event.get("raw") if isinstance(event.get("raw"), dict) else {},
+        )
+
+        try:
+            outbound = _brain_respond(inbound_msg)
+            reply = outbound.text
+            tier = int((outbound.metadata or {}).get("tier") or tier_guess or 1)
+            meta = dict(outbound.metadata or {})
+            outcome_state = "completed"
+            error_payload = None
+        except Exception as exc:
+            logger.exception("Brain call failed; returning fallback reply")
+            reply = "I hit an internal error. Try again in a minute."
+            tier = tier_guess or 1
+            meta = {"error": True, "error_type": exc.__class__.__name__}
+            outcome_state = "failed"
+            error_payload = {"type": exc.__class__.__name__, "message": str(exc)}
 
         insert_message(
             db,
@@ -87,8 +185,19 @@ def process_whatsapp_inbound(event: dict[str, Any]) -> dict[str, Any]:
             content={"text": reply},
             intent="general",
             tier=tier,
+            run_id=run_id,
             latency_ms=int((time.perf_counter() - started) * 1000),
             cost_cents=0,
+        )
+
+        complete_run(
+            db,
+            run_id=run_id,
+            user_id=user.id,
+            state=outcome_state,
+            total_cost_cents=0,
+            total_latency_ms=int((time.perf_counter() - started) * 1000),
+            error=error_payload,
         )
 
         # Send outbound message (no-op if WA creds not configured)
@@ -109,4 +218,3 @@ def process_whatsapp_inbound(event: dict[str, Any]) -> dict[str, Any]:
             db.close()
         except Exception:
             pass
-

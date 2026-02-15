@@ -86,13 +86,14 @@ This checklist replaces the previous scope and aligns the current codebase to ev
 # Core Blueprint Implementation
 
 **Architecture — 3-Plane Model**
-- [ ] Split monolith into three FastAPI services: Gateway, Brain, Hands
-- [ ] Define internal REST APIs between planes
+- [x] Split monolith into three FastAPI services: Gateway, Brain, Hands
+- [x] Define internal REST APIs between planes
 - [ ] Add Redis pub/sub for Hands→Brain and Hands→Gateway events
-- [ ] Add SSE streaming from Gateway to Brain
-- [ ] Enforce per-plane timeouts (Gateway→Brain 30s, Brain→Hands 10s tool, 5m workflows)
-- [ ] Add separate scaling policies and health checks per plane
-- [ ] Enforce failure isolation: Gateway never crashes on Brain/Hands failures
+- [x] Add SSE streaming from Gateway to Brain
+- [x] Enforce per-plane timeouts (Gateway→Brain 30s, Brain→Hands 10s tool, 5m workflows)
+- [x] Add health checks per plane (ALB health check for Gateway + ECS container health checks)
+- [ ] Add separate scaling policies per plane
+- [x] Enforce failure isolation: Gateway never crashes on Brain/Hands failures
 
 **Data Layer — Postgres + pgvector + RLS**
 - [x] Implement blueprint schema: users, conversations, messages, runs, memories, contacts, tool_executions, approvals, connected_accounts, proactive_triggers, semantic_cache
@@ -104,18 +105,18 @@ This checklist replaces the previous scope and aligns the current codebase to ev
 - [x] Add all required indexes and dedup constraints (messages.channel_msg_id, tool idempotency)
 
 **Contracts — Pydantic v2 Strict**
-- [ ] Create core contracts: CapabilityEnvelope, InboundMessage, OutboundMessage
-- [ ] Create intent/tier contracts: IntentClassification, TierRoutingConfig
-- [ ] Create tool contracts: ToolSpec, ToolCall, ToolResult
-- [ ] Create memory contracts: MemoryEntry, MemoryQuery, MemoryRetrievalResult
+- [x] Create core contracts: CapabilityEnvelope, InboundMessage, OutboundMessage
+- [x] Create intent/tier contracts: IntentClassification, TierRoutingConfig
+- [x] Create tool contracts: ToolSpec, ToolCall, ToolResult
+- [x] Create memory contracts: MemoryEntry, MemoryQuery, MemoryRetrievalResult
 - [ ] Generate OpenAPI and tool schemas from these contracts
 
 **Gateway Plane**
-- [ ] Webhook receiver for WhatsApp with HMAC verification
+- [x] Webhook receiver for WhatsApp with HMAC verification
 - [ ] Webhook receiver for Apple Messages for Business with cert validation
-- [ ] Deduplicate inbound messages by channel_msg_id
-- [ ] Send typing indicator within 500ms
-- [ ] Queue inbound messages for async processing (ack within 5s)
+- [x] Deduplicate inbound messages by channel_msg_id
+- [x] Send typing indicator within 500ms (best-effort: mark as read; WhatsApp Cloud API has no true typing indicator)
+- [x] Queue inbound messages for async processing (ack within 5s)
 - [ ] ChannelAdapter for WhatsApp and iMessage (message splitting, button limits, templates)
 - [ ] AuthService using Clerk
 - [ ] SessionManager in Redis (conversation state + entity resolution)
@@ -217,13 +218,13 @@ This checklist replaces the previous scope and aligns the current codebase to ev
 - [ ] Chaos tests for Redis/DB/LLM failures
 
 **Deployment Architecture (AWS)**
-- [ ] VPC with public/private subnets and NAT
-- [ ] ECS cluster with services: gateway, brain, hands, workers
-- [ ] RDS Postgres 16 with Multi-AZ
-- [ ] ElastiCache Redis 7
+- [x] VPC with public/private subnets and NAT
+- [x] ECS cluster with services: gateway, brain, hands, workers
+- [x] RDS Postgres 16 with Multi-AZ
+- [x] ElastiCache Redis 7
 - [x] ALB with TLS termination
-- [ ] S3 for attachments/backups
-- [ ] Secrets Manager for keys
+- [x] S3 for attachments/backups
+- [x] Secrets Manager for keys
 - [x] CI: GitHub Actions runs `pytest` on PRs + main (Python 3.12)
 - [ ] CD (staging): GitHub Actions builds + pushes ECR images and forces ECS redeploy (OIDC role)
 - [ ] CD (production): GitHub Actions manual deploy with environment protection (OIDC role)

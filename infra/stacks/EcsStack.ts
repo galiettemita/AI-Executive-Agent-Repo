@@ -17,6 +17,8 @@ export function EcsStack({ stack }: StackContext) {
     vpc,
     containerInsights: true,
   });
+  // Internal service discovery for plane-to-plane calls (VPC-only).
+  cluster.addDefaultCloudMapNamespace({ name: "executive-os.local" });
 
   const gatewayRepo = new ecr.Repository(stack, "GatewayRepo");
   const brainRepo = new ecr.Repository(stack, "BrainRepo");
@@ -77,12 +79,14 @@ export function EcsStack({ stack }: StackContext) {
   const baseEnv = {
     ENV: stageEnv,
     // ElastiCache has transit encryption enabled; use TLS.
-    REDIS_URL: `rediss://${redis.attrPrimaryEndPointAddress}:6379/0`,
-    OTEL_SERVICE_NAME: "executive-os",
+    REDIS_URL: `rediss://${redis.attrPrimaryEndPointAddress}:6379/0?ssl_cert_reqs=required`,
     OTEL_ENABLED: "1",
+    // Cloud Map names (brain.executive-os.local, hands.executive-os.local)
+    BRAIN_INTERNAL_BASE_URL: "http://brain.executive-os.local:8000",
+    HANDS_INTERNAL_BASE_URL: "http://hands.executive-os.local:8000",
   };
 
-    const secretEnv = {
+  const secretEnv = {
     OPENAI_API_KEY: ecs.Secret.fromSecretsManager(appSecrets, "OPENAI_API_KEY"),
     WA_ACCESS_TOKEN: ecs.Secret.fromSecretsManager(appSecrets, "WA_ACCESS_TOKEN"),
     WA_VERIFY_TOKEN: ecs.Secret.fromSecretsManager(appSecrets, "WA_VERIFY_TOKEN"),
@@ -124,8 +128,16 @@ export function EcsStack({ stack }: StackContext) {
   const gatewayContainer = gatewayTask.addContainer("GatewayContainer", {
     image: ecs.ContainerImage.fromEcrRepository(gatewayRepo, "latest"),
     logging: ecs.LogDriver.awsLogs({ logGroup, streamPrefix: "gateway" }),
-    environment: baseEnv,
+    environment: { ...baseEnv, OTEL_SERVICE_NAME: "executive-os-gateway" },
     secrets: secretEnv,
+    command: ["uvicorn", "app.planes.gateway_app:app", "--host", "0.0.0.0", "--port", "8000"],
+    healthCheck: {
+      command: ["CMD-SHELL", "curl -fsS http://localhost:8000/health || exit 1"],
+      interval: Duration.seconds(30),
+      timeout: Duration.seconds(5),
+      retries: 3,
+      startPeriod: Duration.seconds(30),
+    },
   });
   gatewayContainer.addPortMappings({ containerPort: 8000 });
 
@@ -133,23 +145,41 @@ export function EcsStack({ stack }: StackContext) {
     cpu: 1024,
     memoryLimitMiB: 2048,
   });
-  brainTask.addContainer("BrainContainer", {
+  const brainContainer = brainTask.addContainer("BrainContainer", {
     image: ecs.ContainerImage.fromEcrRepository(brainRepo, "latest"),
     logging: ecs.LogDriver.awsLogs({ logGroup, streamPrefix: "brain" }),
-    environment: baseEnv,
+    environment: { ...baseEnv, OTEL_SERVICE_NAME: "executive-os-brain" },
     secrets: secretEnv,
+    command: ["uvicorn", "app.planes.brain_app:app", "--host", "0.0.0.0", "--port", "8000"],
+    healthCheck: {
+      command: ["CMD-SHELL", "curl -fsS http://localhost:8000/health || exit 1"],
+      interval: Duration.seconds(30),
+      timeout: Duration.seconds(5),
+      retries: 3,
+      startPeriod: Duration.seconds(30),
+    },
   });
+  brainContainer.addPortMappings({ containerPort: 8000 });
 
   const handsTask = new ecs.FargateTaskDefinition(stack, "HandsTask", {
     cpu: 512,
     memoryLimitMiB: 1024,
   });
-  handsTask.addContainer("HandsContainer", {
+  const handsContainer = handsTask.addContainer("HandsContainer", {
     image: ecs.ContainerImage.fromEcrRepository(handsRepo, "latest"),
     logging: ecs.LogDriver.awsLogs({ logGroup, streamPrefix: "hands" }),
-    environment: baseEnv,
+    environment: { ...baseEnv, OTEL_SERVICE_NAME: "executive-os-hands" },
     secrets: secretEnv,
+    command: ["uvicorn", "app.planes.hands_app:app", "--host", "0.0.0.0", "--port", "8000"],
+    healthCheck: {
+      command: ["CMD-SHELL", "curl -fsS http://localhost:8000/health || exit 1"],
+      interval: Duration.seconds(30),
+      timeout: Duration.seconds(5),
+      retries: 3,
+      startPeriod: Duration.seconds(30),
+    },
   });
+  handsContainer.addPortMappings({ containerPort: 8000 });
 
   const workersTask = new ecs.FargateTaskDefinition(stack, "WorkersTask", {
     cpu: 512,
@@ -158,7 +188,7 @@ export function EcsStack({ stack }: StackContext) {
   workersTask.addContainer("WorkersContainer", {
     image: ecs.ContainerImage.fromEcrRepository(workersRepo, "latest"),
     logging: ecs.LogDriver.awsLogs({ logGroup, streamPrefix: "workers" }),
-    environment: baseEnv,
+    environment: { ...baseEnv, OTEL_SERVICE_NAME: "executive-os-workers" },
     secrets: secretEnv,
     // Run Celery workers (async processing, webhooks, background jobs)
     command: [
@@ -190,6 +220,7 @@ export function EcsStack({ stack }: StackContext) {
     desiredCount: 1,
     securityGroups: [appSecurityGroup],
     vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS },
+    cloudMapOptions: { name: "brain" },
   });
 
   const handsService = new ecs.FargateService(stack, "HandsService", {
@@ -198,6 +229,7 @@ export function EcsStack({ stack }: StackContext) {
     desiredCount: 1,
     securityGroups: [appSecurityGroup],
     vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS },
+    cloudMapOptions: { name: "hands" },
   });
 
   const workersService = new ecs.FargateService(stack, "WorkersService", {

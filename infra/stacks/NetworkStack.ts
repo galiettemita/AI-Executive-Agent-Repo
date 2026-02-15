@@ -38,6 +38,11 @@ export function NetworkStack({ stack }: StackContext) {
     ec2.Port.tcp(8000),
     "Allow ALB to reach services",
   );
+  appSecurityGroup.addIngressRule(
+    appSecurityGroup,
+    ec2.Port.tcp(8000),
+    "Allow ECS services to reach each other (internal plane APIs)",
+  );
 
   const alb = new elbv2.ApplicationLoadBalancer(stack, "Alb", {
     vpc,
