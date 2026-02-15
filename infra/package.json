@@ -1,0 +1,17 @@
+{
+  "name": "executive-os-infra",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "sst dev",
+    "deploy": "sst deploy",
+    "remove": "sst remove"
+  },
+  "devDependencies": {
+    "sst": "^2.43.0",
+    "aws-cdk-lib": "^2.150.0",
+    "constructs": "^10.3.0",
+    "typescript": "^5.5.0",
+    "tsx": "^4.15.0"
+  }
+}

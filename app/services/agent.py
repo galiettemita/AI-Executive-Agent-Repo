@@ -1,5 +1,6 @@
 import json
 import asyncio
+import hashlib
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse
 from openai import OpenAI
@@ -8,6 +9,7 @@ from datetime import datetime, timedelta
 from sqlalchemy import func
 from app.db.models import WatchItem, WatchOffer, NotificationQueue
 from app.services.discover_provider import discover_search
+from app.services.semantic_cache import get_cached_response, put_cached_response
 from app.core.config import settings
 
 client = OpenAI(api_key=settings.OPENAI_API_KEY)
@@ -459,6 +461,20 @@ def run_agent(
             f"- offer_url={cheapest_today.get('offer_url')}\n"
         )
 
+    context_hash = hashlib.sha256(
+        json.dumps(context, sort_keys=True, ensure_ascii=False).encode("utf-8")
+    ).hexdigest()
+
+    cached_reply = get_cached_response(
+        user_id=user_id,
+        query_text=user_message,
+        model=settings.OPENAI_MODEL,
+        tier=1,
+        context={"context_hash": context_hash},
+    )
+    if cached_reply:
+        return {"assistant_message": cached_reply}
+
     input_messages = [{"role": "system", "content": system}]
     input_messages.extend(history[-20:])
     input_messages.append(
@@ -521,5 +537,14 @@ def run_agent(
             title_hint = "Tracked item"
 
         reply = _append_track_directive(reply, title_hint=title_hint, url=track_url)
+
+    put_cached_response(
+        user_id=user_id,
+        query_text=user_message,
+        assistant_message=reply,
+        model=settings.OPENAI_MODEL,
+        tier=1,
+        context={"context_hash": context_hash},
+    )
 
     return {"assistant_message": reply}

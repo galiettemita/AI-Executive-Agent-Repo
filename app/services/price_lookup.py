@@ -1,11 +1,7 @@
 import re
-import httpx
 from typing import Optional
 from app.core.config import settings
-
-SERPAPI_GL = settings.SERPAPI_GL
-SERPAPI_HL = settings.SERPAPI_HL
-SERPAPI_API_KEY = settings.SERPAPI_API_KEY
+from app.services.tavily_client import tavily_search, TavilyNotConfiguredError
 
 
 class PriceLookupError(Exception):
@@ -165,50 +161,40 @@ async def lookup_price_google_shopping(query: str):
       offer_url: Optional[str]
       best_meta: dict (product details)
       offers: list[dict] (top offers for history/AI)
+    Uses Tavily search results with best-effort price extraction.
     """
-    if not SERPAPI_API_KEY:
-        raise PriceLookupError("Missing SERPAPI_API_KEY")
+    if not settings.TAVILY_API_KEY:
+        raise PriceLookupError("Missing TAVILY_API_KEY")
 
     q_raw = query.strip()
     is_upc = _looks_like_upc(q_raw)
     product_key = f"upc:{q_raw}" if is_upc else f"q:{_normalize_key(q_raw)}"
 
-    params = {
-        "engine": "google_shopping",
-        "q": q_raw,
-        "hl": SERPAPI_HL,
-        "gl": SERPAPI_GL,
-        "api_key": SERPAPI_API_KEY,
-    }
+    search_query = f"{q_raw} price"
+    try:
+        data = await tavily_search(search_query, max_results=10)
+    except TavilyNotConfiguredError as exc:
+        raise PriceLookupError(str(exc)) from exc
 
-    async with httpx.AsyncClient(timeout=20) as client:
-        r = await client.get("https://serpapi.com/search.json", params=params)
-        if r.status_code != 200:
-            raise PriceLookupError(f"SerpAPI HTTP {r.status_code}: {r.text}")
-        data = r.json()
-
-    shopping_results = data.get("shopping_results") or []
+    shopping_results = data.get("results") or []
 
     offers: list[dict] = []
     for item in shopping_results:
-        # price
-        price = item.get("extracted_price")
-        if isinstance(price, (int, float)):
-            price_val = float(price)
-        else:
-            price_str = item.get("price")
-            price_val = _parse_price(price_str) if isinstance(price_str, str) else None
-
-        if price_val is None:
-            continue
+        # price (best-effort parsing from snippet or title)
+        snippet = item.get("content") or item.get("snippet") or ""
+        title = _extract_title(item) or ""
+        price_val = _parse_price(snippet) or _parse_price(title)
 
         # filter: obvious junk pricing
-        if price_val < 20:
+        if price_val is None or price_val < 20:
             continue
 
         retailer_val = _extract_retailer(item)
         retailer_lower = str(retailer_val).strip().lower()
 
+        if not retailer_lower and offer_url_val:
+            retailer_val = offer_url_val.split("/")[2] if "://" in offer_url_val else offer_url_val
+            retailer_lower = str(retailer_val).strip().lower()
         if not retailer_lower:
             retailer_val = None
             retailer_lower = ""
@@ -219,14 +205,11 @@ async def lookup_price_google_shopping(query: str):
             continue
 
 
-        # Prefer a DIRECT (non-google) link, but allow missing link for price tracking
-        offer_url_val = _pick_offer_url(item)
-        # If no direct link is available, keep the offer but set offer_url to None
+        offer_url_val = item.get("url") or item.get("link") or _pick_offer_url(item)
+        if offer_url_val and _is_google_url(str(offer_url_val)):
+            offer_url_val = None
 
-
-        title = _extract_title(item)
-        description = _extract_description(item)
-
+        description = _extract_description(item) or snippet
         rating = _to_float(item.get("rating"))
         reviews_count = _to_int(item.get("reviews")) or _to_int(item.get("reviews_count"))
 

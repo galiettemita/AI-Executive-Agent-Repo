@@ -19,6 +19,7 @@ from app.services.messaging_service import deliver_pending_messages
 from app.services.smart_home_service import evaluate_energy_alerts
 from app.services.proactive_rules import run_due_rules
 from app.services.voice_retention import purge_expired_calls
+from app.services.data_retention import purge_expired_records
 from app.services.email_monitoring import run_email_monitoring as run_email_monitoring_service
 from app.services.wardrobe_rotation import run_rotation_for_all_users
 from app.services.gift_reminders import enqueue_gift_reminders
@@ -286,6 +287,19 @@ def run_voice_retention():
     finally:
         db.close()
 
+def run_data_retention():
+    """
+    Purge expired data based on retention policy.
+    """
+    db = SessionLocal()
+    try:
+        result = purge_expired_records(db)
+        logger.info("Data retention purge completed: %s", result)
+    except Exception as e:
+        logger.error("Fatal error in data retention job: %s", e)
+    finally:
+        db.close()
+
 
 def run_wardrobe_rotation():
     """
@@ -441,6 +455,19 @@ def setup_scheduler() -> BackgroundScheduler:
         replace_existing=True,
     )
     logger.info("Voice retention job scheduled daily at 02:15 UTC")
+
+    # Data retention job (daily)
+    retention_time = settings.DATA_RETENTION_SCHEDULE.split()
+    retention_hour = int(retention_time[0])
+    retention_minute = int(retention_time[1]) if len(retention_time) > 1 else 0
+    scheduler.add_job(
+        run_data_retention,
+        trigger=CronTrigger(hour=retention_hour, minute=retention_minute),
+        id="data_retention_job",
+        name="Data Retention",
+        replace_existing=True,
+    )
+    logger.info("Data retention job scheduled for %02d:%02d UTC daily", retention_hour, retention_minute)
 
     # Wardrobe rotation reminders (daily)
     rotation_time = settings.WARDROBE_ROTATION_SCHEDULE.split()

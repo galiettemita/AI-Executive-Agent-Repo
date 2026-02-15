@@ -29,13 +29,12 @@ websockets==12.0
 python-multipart==0.0.9
 qrcode==7.4.2
 celery[redis]==5.4.0
-motor==3.6.0
 sentry-sdk[fastapi]==2.14.0
 prometheus-client==0.20.0
 opentelemetry-sdk==1.26.0
 opentelemetry-instrumentation-fastapi==0.47b0
 opentelemetry-instrumentation-requests==0.47b0
 opentelemetry-exporter-otlp==1.26.0
+setuptools==70.0.0
 boto3>=1.33.0,<2.0
-pinecone-client==3.0.0
 PyPDF2==3.0.1

@@ -1,14 +1,11 @@
 # implement the real provider call
-""" Uses SerpAPI’s /search.json endpoint and passes an engine and query params.
-
-Only returns metadata from search results (no HTML scraping). """
+"""Uses Tavily search API for LLM-optimized search results."""
 from __future__ import annotations
 
 from typing import Any
-import httpx
 
-from app.core.config import settings
 from app.schemas.discover import DiscoverResult
+from app.services.tavily_client import tavily_search, TavilyNotConfiguredError
 from urllib.parse import urlparse
 
 BLOCKED_DOMAINS = {
@@ -42,45 +39,27 @@ def is_blocked_domain(domain: str) -> bool:
             return True
     return False
 
-
-
-
-SERPAPI_ENDPOINT = "https://serpapi.com/search.json"
-
 class DiscoverNotConfiguredError(RuntimeError):
     pass
 
 async def discover_search(query: str, *, max_results: int = 8) -> list[DiscoverResult]:
     """
-    Calls SerpAPI to get search results. We only return title/url/snippet.
-    No page scraping, no checkout scraping.
+    Calls Tavily to get search results. We only return title/url/snippet.
     """
-    if not settings.SERPAPI_API_KEY:
-        raise DiscoverNotConfiguredError("SERPAPI_API_KEY is not set.")
+    try:
+        data: dict[str, Any] = await tavily_search(query, max_results=min(max_results, 10))
+    except TavilyNotConfiguredError as exc:
+        raise DiscoverNotConfiguredError(str(exc)) from exc
 
-    params = {
-        "engine": settings.SERPAPI_ENGINE,  # e.g., "google"
-        "q": query,
-        "api_key": settings.SERPAPI_API_KEY,
-        "gl": settings.SERPAPI_GL,
-        "hl": settings.SERPAPI_HL,
-        "num": min(max_results, 10),  # keep small; Serp responses vary
-    }
-
-    timeout = httpx.Timeout(15.0, connect=10.0)
-    async with httpx.AsyncClient(timeout=timeout) as client:
-        resp = await client.get(SERPAPI_ENDPOINT, params=params)
-        resp.raise_for_status()
-        data: dict[str, Any] = resp.json()
-
-    # SerpAPI typically returns organic results under "organic_results"
-    organic = data.get("organic_results", []) or []
+    organic = data.get("results", []) or []
     results: list[DiscoverResult] = []
 
     for r in organic[:max_results]:
         title = r.get("title") or ""
         url = r.get("link") or ""
-        snippet = r.get("snippet")
+        if not url:
+            url = r.get("url") or ""
+        snippet = r.get("content") or r.get("snippet")
 
         domain = get_domain(url)
         if not title or not url:
@@ -94,7 +73,7 @@ async def discover_search(query: str, *, max_results: int = 8) -> list[DiscoverR
                 title=title,
                 url=url,
                 snippet=snippet,
-                source="serpapi",
+                source="tavily",
                 retailer_domain=domain,
             )
         )

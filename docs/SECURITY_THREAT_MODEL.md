@@ -11,7 +11,7 @@
 ## Trust Boundaries
 - Public internet → API gateway (external clients/webhooks)
 - Third‑party providers → webhook endpoints (WhatsApp, Stripe, Twilio)
-- App → data stores (Postgres, Redis, Mongo, object storage, vector DB)
+- App → data stores (Postgres, Redis, object storage, vector DB)
 - Operator access (admin tools, dashboards, logs)
 
 ## STRIDE Analysis

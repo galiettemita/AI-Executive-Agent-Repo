@@ -15,7 +15,8 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: "3.12"
+          cache: "pip"
 
       - name: Install dependencies
         run: |
@@ -23,17 +24,6 @@ jobs:
           python -m pip install -r requirements.txt
 
       - name: Run tests
-        env:
-          ENV: dev
-          DATABASE_URL: sqlite:///./app.db
-          JWT_SECRET: test_jwt_secret
-          PII_ENCRYPTION_KEY: dEkqDdDoZOe8lnV0fi9-SWicfi8UNtMvYnrqYH50mPU=
-          STATE_SIGNING_SECRET: test_state_signing_secret
-          OPENAI_API_KEY: test_key
-          STRIPE_SECRET_KEY: sk_test_dummy
-          STRIPE_PRICE_ID_STARTER: price_dummy
-          CHECKOUT_SUCCESS_URL: https://example.com/success
-          CHECKOUT_CANCEL_URL: https://example.com/cancel
         run: |
           PYTHONPATH=. pytest -q
 

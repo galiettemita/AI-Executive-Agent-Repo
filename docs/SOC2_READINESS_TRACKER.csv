@@ -6,7 +6,7 @@ SEC-04,Security,Secrets management documented,In Progress,Owner,docs/SECRETS_MAN
 SEC-05,Security,Access reviews quarterly,Planned,Owner,Access review checklist,Schedule recurring review
 SEC-06,Security,Logging & monitoring in place,Done,Engineering,Render logs + metrics dashboard,Audit logs enabled
 SEC-07,Security,Incident response plan documented,Done,Owner,docs/INCIDENT_RESPONSE.md,Postmortem within 5 days
-SEC-08,Security,Vulnerability management process,In Progress,Engineering,Scan reports,CodeQL + pip-audit enabled; add Dependabot
+SEC-08,Security,Vulnerability management process,Done,Engineering,Scan reports,CodeQL + pip-audit + Trivy + ZAP enabled
 SEC-09,Security,Security policy documented,Done,Owner,docs/SOC2_SECURITY_POLICY.md,Annual review
 GOV-01,Governance,SOC 2 readiness plan documented,Done,Owner,docs/SOC2_READINESS.md,Tracker maintained monthly
 AV-01,Availability,Backups enabled + tested,In Progress,Engineering,Backup job logs,Define RPO/RTO drill
@@ -20,3 +20,19 @@ PR-02,Privacy,User deletion process (GDPR/CCPA),Done,Engineering,GDPR delete end
 CM-01,Change Mgmt,Change management policy,Done,Owner,docs/SOC2_CHANGE_MANAGEMENT_POLICY.md,PR required for main
 AC-01,Access Control,Access control policy,Done,Owner,docs/SOC2_ACCESS_CONTROL_POLICY.md,Least privilege
 VM-01,Vendor Mgmt,Vendor management policy,Done,Owner,docs/SOC2_VENDOR_MANAGEMENT_POLICY.md,Annual review
+SEC-10,Security,Data classification policy,Done,Owner,docs/DATA_CLASSIFICATION.md,Review annually
+SEC-11,Security,Automated retention enforcement,Done,Engineering,app/services/data_retention.py,Daily job scheduled
+SEC-12,Security,Responsible disclosure policy,Done,Owner,docs/RESPONSIBLE_DISCLOSURE.md,Publish on website later
+SEC-13,Security,Audit logging policy,Done,Owner,docs/AUDIT_LOGGING.md,Log retention set to 12 months
+SDLC-01,Security,Secure SDLC policy,Done,Owner,docs/SECURE_SDLC.md,Enforce in GitHub settings
+SEC-14,Security,Encryption verification checklist,In Progress,Owner,docs/ENCRYPTION_VERIFICATION.md,Collect provider evidence
+SEC-15,Security,Access review runbook,Done,Owner,docs/ACCESS_REVIEW_RUNBOOK.md,Run quarterly
+SEC-16,Security,WAF and bot protection plan,Done,Owner,docs/WAF_BOT_PROTECTION.md,Cloudflare enabled (evidence link pending)
+PR-03,Privacy,Privacy-by-design review checklist,Done,Owner,docs/PRIVACY_BY_DESIGN.md,Run before launch
+PR-04,Privacy,CCPA/CPRA readiness checklist,Done,Owner,docs/CCPA_CHECKLIST.md,Run before launch
+HIPAA-01,Compliance,HIPAA safeguards assessment,Done,Owner,docs/HIPAA_REQUIREMENTS.md,BAA required before PHI
+VM-02,Vendor Mgmt,Vendor inventory template,In Progress,Owner,docs/VENDOR_INVENTORY.md,Fill and track DPAs
+COMP-01,Compliance,Provider policy compliance checklist,Done,Owner,docs/PROVIDER_POLICY_COMPLIANCE.md,Review quarterly
+OPS-01,Availability,Backup + DR drill runbook,Done,Owner,docs/DR_DRILL_RUNBOOK.md,Run before launch
+OPS-02,Security,Incident response drill runbook,Done,Owner,docs/ONCALL_DRILL_RUNBOOK.md,Run before launch
+SEC-17,Security,Security training plan,Done,Owner,docs/SECURITY_TRAINING.md,Run annually

@@ -5,3 +5,5 @@ __pycache__/
 .DS_Store
 storage/
 classmate-ai/
+infra/node_modules/
+infra/.sst/

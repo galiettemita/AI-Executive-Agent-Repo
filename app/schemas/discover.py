@@ -5,7 +5,7 @@ class DiscoverResult(BaseModel):
     title: str
     url: str
     snippet: Optional[str] = None
-    source: str = "serpapi"
+    source: str = "tavily"
     retailer_domain: Optional[str] = None  # NEW
 
 class DiscoverSearchResponse(BaseModel):

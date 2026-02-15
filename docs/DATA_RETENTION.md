@@ -32,6 +32,11 @@ This policy is aligned to US-only launch with HIPAA in scope and enterprise cust
 - Learning resources and schedules: retained while account active; delete within 30 days of closure.
 - Vector embeddings: derived data only; delete on request or account deletion.
 
+## Automated Enforcement
+- A daily retention job runs at `DATA_RETENTION_SCHEDULE` and purges records beyond their retention window.
+- Voice recordings/transcripts are purged by a separate daily job using `VOICE_RECORDING_RETENTION_DAYS`.
+- File/photo bytes remain in object storage until user deletion; metadata remains in Postgres.
+
 ## Deletion and Requests
 - User-initiated deletion triggers removal or anonymization across all tables and object storage.
 - HIPAA: follow minimum necessary standard; PHI deleted or anonymized per request unless legally required to retain.

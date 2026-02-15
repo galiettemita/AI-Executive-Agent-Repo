@@ -86,11 +86,9 @@ class Settings(BaseSettings):
     ENABLE_VOICE_CALLS: str = "0"
     VOICE_RECORDING_RETENTION_DAYS: int = 30
 
-    # ── SerpAPI (Discovery) ─────────────────────────────────────
-    SERPAPI_API_KEY: str | None = None
-    SERPAPI_ENGINE: str = "google"
-    SERPAPI_GL: str = "us"
-    SERPAPI_HL: str = "en"
+    # ── Tavily (Discovery) ──────────────────────────────────────
+    TAVILY_API_KEY: str | None = None
+    TAVILY_SEARCH_DEPTH: str = "basic"  # basic | advanced
 
     # ── Security & Encryption ───────────────────────────────────
     PII_ENCRYPTION_KEY: str | None = None
@@ -113,11 +111,14 @@ class Settings(BaseSettings):
         "form-action 'self'"
     )
 
-    # ── Email (SMTP) ────────────────────────────────────────────
+    # ── Email ───────────────────────────────────────────────────
+    EMAIL_PROVIDER: str = "ses"  # smtp | ses
     SMTP_HOST: str = "smtp.gmail.com"
     SMTP_PORT: int = 587
     SMTP_USER: str = ""
     SMTP_PASSWORD: str = ""
+    SES_REGION: str | None = None
+    SES_CONFIGURATION_SET: str | None = None
     FROM_EMAIL: str = "noreply@yourassistant.com"
     FROM_NAME: str = "Executive AI Agent"
 
@@ -144,6 +145,19 @@ class Settings(BaseSettings):
     PROACTIVE_RULE_POLL_MINUTES: int = 5
     EMAIL_MONITOR_INTERVAL_MINUTES: int = 10
     EMAIL_MONITOR_TEST_MODE: str = "0"
+    DATA_RETENTION_SCHEDULE: str = "3 30"
+
+    # ── Data Retention ──────────────────────────────────────────
+    RETENTION_NOTIFICATION_QUEUE_DAYS: int = 30
+    RETENTION_OUTBOUND_MESSAGES_DAYS: int = 30
+    RETENTION_CHAT_MESSAGES_DAYS: int = 180
+    RETENTION_EMAIL_ALERTS_DAYS: int = 180
+    RETENTION_EMAIL_DRAFTS_DAYS: int = 90
+    RETENTION_WEBHOOK_DELIVERIES_DAYS: int = 30
+    RETENTION_USAGE_EVENTS_DAYS: int = 730
+    RETENTION_AUDIT_LOGS_DAYS: int = 365
+    RETENTION_WATCH_OFFERS_DAYS: int = 90
+    RETENTION_SMART_HOME_READINGS_DAYS: int = 90
 
     # ── Onboarding / Phone verification ─────────────────────────
     REQUIRE_PHONE_VERIFICATION: str = "0"
@@ -198,8 +212,6 @@ class Settings(BaseSettings):
     BETA_ALLOWED_USER_IDS: str = ""
 
     # ── Foundation (future) ─────────────────────────────────────
-    MONGODB_URI: str | None = None
-    MONGODB_DB: str = "executive_ai_agent"
     CELERY_BROKER_URL: str | None = None
     CELERY_RESULT_BACKEND: str | None = None
     CELERY_TASK_ALWAYS_EAGER: bool = False
@@ -215,23 +227,34 @@ class Settings(BaseSettings):
     OTEL_SERVICE_NAME: str = "executive-ai-agent"
     OTEL_EXPORTER_OTLP_ENDPOINT: str | None = None
     OTEL_EXPORTER_OTLP_HEADERS: str | None = None
+    OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: str | None = None
+    OTEL_EXPORTER_OTLP_TRACES_HEADERS: str | None = None
+    OTEL_EXPORTER_OTLP_METRICS_ENDPOINT: str | None = None
+    OTEL_EXPORTER_OTLP_METRICS_HEADERS: str | None = None
+    OTEL_METRICS_ENABLED: bool = True
+
+    # ── Semantic Cache ──────────────────────────────────────────
+    SEMANTIC_CACHE_ENABLED: bool = True
+    SEMANTIC_CACHE_TTL_SECONDS: int = 60 * 60 * 6
+    SEMANTIC_CACHE_MIN_SIMILARITY: float = 0.92
+    SEMANTIC_CACHE_MIN_QUERY_CHARS: int = 16
+
+    # ── Product Analytics ───────────────────────────────────────
+    POSTHOG_API_KEY: str | None = None
+    POSTHOG_HOST: str = "https://app.posthog.com"
 
     # ── Storage ────────────────────────────────────────────────
     STORAGE_BACKEND: str = "local"  # local | s3
     LOCAL_STORAGE_PATH: str = "./storage"
     S3_BUCKET: str | None = None
     S3_REGION: str | None = None
+    AWS_REGION: str | None = None
     S3_ACCESS_KEY_ID: str | None = None
     S3_SECRET_ACCESS_KEY: str | None = None
     S3_ENDPOINT_URL: str | None = None
 
     # ── Vector DB ──────────────────────────────────────────────
-    VECTOR_DB_BACKEND: str | None = None  # pinecone | weaviate | pgvector
-    PINECONE_API_KEY: str | None = None
-    PINECONE_ENVIRONMENT: str | None = None
-    PINECONE_INDEX: str | None = None
-    WEAVIATE_URL: str | None = None
-    WEAVIATE_API_KEY: str | None = None
+    VECTOR_DB_BACKEND: str | None = None  # pgvector
     PGVECTOR_DSN: str | None = None
 
     # ── Semantic Search / Vision ───────────────────────────────

@@ -1,17 +1,58 @@
 from __future__ import annotations
 
 import json
+import logging
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
+import requests
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.db.models import UsageEvent
+
+logger = logging.getLogger(__name__)
 
 
 def _to_json(value: Any) -> str:
     return json.dumps(value or {}, ensure_ascii=False)
+
+
+def _posthog_capture(
+    *,
+    user_id: str,
+    event_type: str,
+    source: Optional[str],
+    channel: Optional[str],
+    provider: Optional[str],
+    tokens: Optional[int],
+    cost_usd: Optional[float],
+    metadata: Optional[Dict[str, Any]],
+) -> None:
+    api_key = settings.POSTHOG_API_KEY
+    if not api_key:
+        return
+    host = (settings.POSTHOG_HOST or "https://app.posthog.com").rstrip("/")
+    payload = {
+        "api_key": api_key,
+        "event": event_type,
+        "distinct_id": user_id,
+        "properties": {
+            "$lib": "backend",
+            "source": source,
+            "channel": channel,
+            "provider": provider,
+            "tokens": tokens,
+            "cost_usd": cost_usd,
+            **(metadata or {}),
+        },
+        "timestamp": datetime.utcnow().isoformat() + "Z",
+    }
+    try:
+        requests.post(f"{host}/capture/", json=payload, timeout=2)
+    except Exception as exc:
+        logger.warning("PostHog capture failed: %s", exc)
 
 
 def record_usage_event(
@@ -39,6 +80,16 @@ def record_usage_event(
     db.add(event)
     db.commit()
     db.refresh(event)
+    _posthog_capture(
+        user_id=user_id,
+        event_type=event_type,
+        source=source,
+        channel=channel,
+        provider=provider,
+        tokens=tokens,
+        cost_usd=cost_usd,
+        metadata=metadata,
+    )
     return event
 
 

@@ -7,13 +7,15 @@ Sends transactional emails for:
 - Cancellation confirmations
 - Refund notifications
 
-Supports SMTP (default) and can be extended for SendGrid/Mailgun.
+Supports SES (default) and SMTP fallback.
 """
 
 from __future__ import annotations
 
 import logging
 import smtplib
+import boto3
+from botocore.exceptions import BotoCoreError, ClientError
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.application import MIMEApplication
@@ -28,13 +30,16 @@ class EmailService:
     """Service for sending transactional emails."""
 
     def __init__(self):
-        """Initialize email service with SMTP settings from environment."""
+        """Initialize email service with provider settings from environment."""
+        self.email_provider = (settings.EMAIL_PROVIDER or "smtp").lower()
         self.smtp_host = settings.SMTP_HOST
         self.smtp_port = settings.SMTP_PORT
         self.smtp_user = settings.SMTP_USER
         self.smtp_password = settings.SMTP_PASSWORD
         self.from_email = settings.FROM_EMAIL
         self.from_name = settings.FROM_NAME
+        self.ses_region = settings.SES_REGION or settings.AWS_REGION or settings.S3_REGION or "us-east-1"
+        self.ses_configuration_set = settings.SES_CONFIGURATION_SET
 
     def _get_smtp_connection(self):
         """Create SMTP connection."""
@@ -65,10 +70,6 @@ class EmailService:
         Returns:
             True if sent successfully, False otherwise
         """
-        if not self.smtp_user:
-            logger.warning("SMTP not configured - skipping email send")
-            return False
-
         try:
             msg = MIMEMultipart("mixed")
             msg["From"] = f"{self.from_name} <{self.from_email}>"
@@ -96,7 +97,14 @@ class EmailService:
                     part["Content-Disposition"] = f'attachment; filename="{attachment["filename"]}"'
                     msg.attach(part)
 
-            # Send email
+            if self.email_provider == "ses":
+                return self._send_via_ses(msg, to_email)
+
+            if not self.smtp_user:
+                logger.warning("SMTP not configured - skipping email send")
+                return False
+
+            # Send email via SMTP
             with self._get_smtp_connection() as server:
                 server.sendmail(self.from_email, to_email, msg.as_string())
 
@@ -105,6 +113,23 @@ class EmailService:
 
         except Exception as e:
             logger.error(f"Failed to send email to {to_email}: {e}")
+            return False
+
+    def _send_via_ses(self, msg: MIMEMultipart, to_email: str) -> bool:
+        try:
+            client = boto3.client("ses", region_name=self.ses_region)
+            params: Dict[str, Any] = {
+                "Source": self.from_email,
+                "Destinations": [to_email],
+                "RawMessage": {"Data": msg.as_string()},
+            }
+            if self.ses_configuration_set:
+                params["ConfigurationSetName"] = self.ses_configuration_set
+            client.send_raw_email(**params)
+            logger.info(f"Email sent via SES to {to_email}")
+            return True
+        except (BotoCoreError, ClientError) as exc:
+            logger.error("SES send failed: %s", exc)
             return False
 
     def send_booking_confirmation(

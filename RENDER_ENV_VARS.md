@@ -114,6 +114,21 @@ SECURITY_HSTS_MAX_AGE=31536000
 SECURITY_CSP_REPORT_ONLY=0
 ```
 
+### Data Retention
+```
+DATA_RETENTION_SCHEDULE=3 30
+RETENTION_NOTIFICATION_QUEUE_DAYS=30
+RETENTION_OUTBOUND_MESSAGES_DAYS=30
+RETENTION_CHAT_MESSAGES_DAYS=180
+RETENTION_EMAIL_ALERTS_DAYS=180
+RETENTION_EMAIL_DRAFTS_DAYS=90
+RETENTION_WEBHOOK_DELIVERIES_DAYS=30
+RETENTION_USAGE_EVENTS_DAYS=730
+RETENTION_AUDIT_LOGS_DAYS=365
+RETENTION_WATCH_OFFERS_DAYS=90
+RETENTION_SMART_HOME_READINGS_DAYS=90
+```
+
 To generate TOKEN_ENCRYPTION_KEY:
 ```python
 from cryptography.fernet import Fernet
@@ -130,12 +145,23 @@ CHECKOUT_SUCCESS_URL=https://ai-shopping-assistant-backend-6bgf.onrender.com/bil
 CHECKOUT_CANCEL_URL=https://ai-shopping-assistant-backend-6bgf.onrender.com/billing/cancel
 ```
 
-### SerpAPI (Product Discovery)
+### Email (SMTP or SES)
 ```
-SERPAPI_API_KEY=<your-serpapi-key>
-SERPAPI_ENGINE=google
-SERPAPI_GL=us
-SERPAPI_HL=en
+EMAIL_PROVIDER=smtp   # smtp | ses
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USER=<smtp-username>
+SMTP_PASSWORD=<smtp-password>
+FROM_EMAIL=<from-address>
+FROM_NAME=Executive OS
+SES_REGION=us-east-1
+SES_CONFIGURATION_SET=
+```
+
+### Tavily (Product Discovery)
+```
+TAVILY_API_KEY=<your-tavily-key>
+TAVILY_SEARCH_DEPTH=basic
 ```
 
 ### CORS (Stage 4)
@@ -153,12 +179,6 @@ Required in `staging` and `production` for distributed rate limiting and caching
 ```
 CELERY_BROKER_URL=<broker-url>        # optional if using REDIS_URL
 CELERY_RESULT_BACKEND=<backend-url>   # optional
-```
-
-### MongoDB
-```
-MONGODB_URI=<mongodb-uri>
-MONGODB_DB=executive_ai_agent
 ```
 
 ### Observability
@@ -188,12 +208,7 @@ S3_ENDPOINT_URL=<optional-custom-endpoint>
 
 ### Vector DB
 ```
-VECTOR_DB_BACKEND=pinecone|weaviate|pgvector
-PINECONE_API_KEY=<key>
-PINECONE_ENVIRONMENT=<region>
-PINECONE_INDEX=<index>
-WEAVIATE_URL=<url>
-WEAVIATE_API_KEY=<key>
+VECTOR_DB_BACKEND=pgvector
 PGVECTOR_DSN=<postgres-connection-string>
 ```
 

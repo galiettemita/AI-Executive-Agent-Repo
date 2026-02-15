@@ -4,6 +4,7 @@ import json
 import logging
 from datetime import datetime
 from typing import Any, Dict, Optional
+from uuid import uuid4
 
 from sqlalchemy.orm import Session
 from twilio.rest import Client
@@ -13,6 +14,7 @@ from app.db.models import OutboundMessage, OutboundMessageEvent, Contact
 from app.channels.whatsapp import send_whatsapp_text
 from app.services.contacts_service import normalize_phone, normalize_email
 from app.services.analytics_service import record_usage_event
+from app.services.email_service import get_email_service
 
 logger = logging.getLogger(__name__)
 
@@ -96,8 +98,17 @@ def _send_sms(to_number: str, body: str) -> str:
 
 
 def _send_email(to_email: str, body: str) -> str:
-    # Email sending is handled elsewhere; this is a placeholder
-    raise RuntimeError("Email outbound not wired yet")
+    service = get_email_service()
+    ok = service.send_email(
+        to_email=to_email,
+        subject="Executive OS notification",
+        html_body=f"<p>{body}</p>",
+        text_body=body,
+    )
+    if not ok:
+        raise RuntimeError("Email delivery failed")
+    provider = (settings.EMAIL_PROVIDER or "ses").lower()
+    return f"{provider}-{uuid4().hex[:16]}"
 
 
 def _send_whatsapp(to_number: str, body: str) -> Optional[str]:
@@ -109,7 +120,7 @@ def _send_whatsapp(to_number: str, body: str) -> Optional[str]:
 CHANNEL_PROVIDERS = {
     "whatsapp": ("whatsapp", _send_whatsapp),
     "sms": ("twilio", _send_sms),
-    "email": ("email", _send_email),
+    "email": ("ses", _send_email),
 }
 
 
@@ -220,6 +231,8 @@ def deliver_pending_messages(db: Session, limit: int = 50) -> Dict[str, int]:
             provider_name, sender = CHANNEL_PROVIDERS.get(msg.channel, (None, None))
             if not provider_name or not sender:
                 raise RuntimeError("Unsupported channel")
+            if msg.channel == "email":
+                provider_name = (settings.EMAIL_PROVIDER or "ses").lower()
 
             if msg.channel in {"whatsapp", "sms"}:
                 to_address = normalize_phone(msg.to_address) or msg.to_address
