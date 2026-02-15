@@ -1,0 +1,63 @@
+name: AI PR (Cloud Coding)
+
+on:
+  workflow_dispatch:
+    inputs:
+      prompt:
+        description: "What should be built/changed?"
+        required: true
+        type: string
+      model:
+        description: "OpenAI model (default: gpt-4o-mini)"
+        required: false
+        default: "gpt-4o-mini"
+        type: string
+      run_tests:
+        description: "Run pytest before opening the PR"
+        required: false
+        default: true
+        type: boolean
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: ai-pr
+  cancel-in-progress: false
+
+jobs:
+  codegen:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
+      - name: Configure git identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Generate PR
+        env:
+          CODEGEN_OPENAI_API_KEY: ${{ secrets.CODEGEN_OPENAI_API_KEY }}
+          CODEGEN_PROMPT: ${{ inputs.prompt }}
+          CODEGEN_MODEL: ${{ inputs.model }}
+          CODEGEN_RUN_TESTS: ${{ inputs.run_tests }}
+          CODEGEN_BASE_BRANCH: main
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python scripts/ai_pr.py
