@@ -318,3 +318,7 @@ Set to `1` only if you want to create tables on startup (not recommended for pro
    - GET `/admin/google/connect?user_id=test_user`
    - Follow the authorization flow
    - Should redirect to `/admin/google/callback`
+
+
+NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_test_dGFsZW50ZWQtbGlnZXItNDEuY2xlcmsuYWNjb3VudHMuZGV2JA
+CLERK_SECRET_KEY=sk_test_MsO2AN2Dre9FoxaUswpe03UqTvhEPgEvCqEBdELUce

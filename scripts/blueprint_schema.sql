@@ -1,4 +1,4 @@
--- Executive OS Blueprint 2026 schema (from BLUEPRINT.pdf)
+-- Legacy schema snapshot (superseded by EXECUTIVE_BLUEPRINT.pdf Section 3)
 
 -- Extensions
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";

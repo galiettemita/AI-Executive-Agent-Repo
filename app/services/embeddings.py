@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import List
 
-from openai import OpenAI
+from app.services.llm_client import OpenAIProxy as OpenAI
 
 from app.core.config import settings
 

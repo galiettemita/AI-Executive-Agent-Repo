@@ -2,13 +2,10 @@
 
 from __future__ import annotations
 
-import base64
-import hashlib
 import os
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
-from cryptography.fernet import Fernet, InvalidToken
 from google_auth_oauthlib.flow import Flow
 from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request as GoogleRequest
@@ -17,6 +14,7 @@ from app.db.models import User
 from app.db.models import OAuthToken
 from app.core.config import settings
 from app.services.oauth_state import make_state, parse_state
+from app.services.token_crypto import decrypt_token, encrypt_token
 
 def _to_naive_utc(dt):
     """
@@ -47,20 +45,6 @@ def _require_env(name: str) -> str:
     if not val:
         raise RuntimeError(f"Missing required env var: {name}")
     return val
-
-
-def _fernet() -> Fernet:
-    """
-    Uses TOKEN_ENCRYPTION_KEY (preferred) or derives a stable key from STATE_SIGNING_SECRET.
-    TOKEN_ENCRYPTION_KEY must be a urlsafe base64-encoded 32-byte key (Fernet key).
-    """
-    key = settings.TOKEN_ENCRYPTION_KEY
-    if key:
-        return Fernet(key.encode("utf-8"))
-
-    secret = _require_env("STATE_SIGNING_SECRET").encode("utf-8")
-    digest = hashlib.sha256(secret).digest()
-    return Fernet(base64.urlsafe_b64encode(digest))
 
 
 def _build_flow(state: str) -> Flow:
@@ -113,8 +97,7 @@ def exchange_code_and_store_tokens(db: Session, code: str, state: str) -> str:
     access_token = creds.token
     expiry = creds.expiry
 
-    f = _fernet()
-    enc_refresh = f.encrypt((refresh_token or "").encode("utf-8")).decode("utf-8")
+    enc_refresh = encrypt_token(refresh_token or "")
 
     scopes = " ".join(creds.scopes or DEFAULT_SCOPES)
 
@@ -138,13 +121,7 @@ def exchange_code_and_store_tokens(db: Session, code: str, state: str) -> str:
 
 
 def _decrypt_refresh_token(refresh_token_enc: str) -> str:
-    if not refresh_token_enc:
-        return ""
-    f = _fernet()
-    try:
-        return f.decrypt(refresh_token_enc.encode("utf-8")).decode("utf-8")
-    except InvalidToken:
-        raise RuntimeError("Could not decrypt refresh token. TOKEN_ENCRYPTION_KEY changed?")
+    return decrypt_token(refresh_token_enc)
 
 
 def get_valid_google_credentials(db: Session, user_id: str) -> Optional[Credentials]:

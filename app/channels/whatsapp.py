@@ -92,6 +92,20 @@ def normalize_whatsapp_webhook(payload: Dict[str, Any]) -> Optional[Dict[str, An
             logger.info("Successfully normalized WhatsApp location message: id=%s", result.get("external_id"))
             return result
 
+        if msg_type in ("audio", "image", "document"):
+            media_obj = msg.get(msg_type) or {}
+            caption = media_obj.get("caption") or ""
+            result = {
+                "type": msg_type,
+                "external_id": external_id,
+                "from": f"+{from_phone}",
+                "text": caption,
+                "media_id": media_obj.get("id"),
+                "mime_type": media_obj.get("mime_type"),
+            }
+            logger.info("Successfully normalized WhatsApp media message: id=%s type=%s", external_id, msg_type)
+            return result
+
         logger.info("Ignoring non-text message of type: %s", msg_type)
         return None
         
@@ -157,6 +171,59 @@ def send_whatsapp_text(to_phone_e164: str, text: str) -> Optional[str]:
         return None
 
 
+def send_whatsapp_template(
+    to_phone_e164: str,
+    template_name: str,
+    language_code: str = "en_US",
+    components: Optional[List[Dict[str, Any]]] = None,
+) -> Optional[str]:
+    """
+    Send a WhatsApp template message.
+    Useful for approval prompts, reminders, and recovery messages.
+    """
+    if not WHATSAPP_TOKEN or not WHATSAPP_PHONE_NUMBER_ID:
+        logger.warning("WhatsApp credentials not configured. Cannot send template.")
+        return None
+
+    try:
+        url = f"{GRAPH_URL}/{WHATSAPP_PHONE_NUMBER_ID}/messages"
+        headers = {
+            "Authorization": f"Bearer {WHATSAPP_TOKEN}",
+            "Content-Type": "application/json",
+        }
+        payload: Dict[str, Any] = {
+            "messaging_product": "whatsapp",
+            "to": to_phone_e164.replace("+", ""),
+            "type": "template",
+            "template": {
+                "name": template_name,
+                "language": {"code": language_code},
+            },
+        }
+        if components:
+            payload["template"]["components"] = components
+
+        response = requests.post(url, headers=headers, json=payload, timeout=20)
+        if response.status_code != 200:
+            logger.error(
+                "Failed to send WhatsApp template (status=%s template=%s)",
+                response.status_code,
+                template_name,
+            )
+            return None
+
+        try:
+            data = response.json()
+            messages = data.get("messages") if isinstance(data, dict) else None
+            if messages and isinstance(messages, list):
+                return messages[0].get("id")
+        except Exception:
+            return None
+    except Exception:
+        logger.exception("Failed to send WhatsApp template")
+        return None
+
+
 def mark_whatsapp_read(message_id: str) -> bool:
     """
     Marks an inbound WhatsApp message as "read".
@@ -219,3 +286,26 @@ def extract_whatsapp_statuses(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
     except Exception:
         logger.exception("Failed to extract WhatsApp statuses")
     return statuses
+
+
+def fetch_whatsapp_media_url(media_id: str) -> Optional[str]:
+    """
+    Resolve a WhatsApp media ID to a short-lived download URL.
+    """
+    if not media_id:
+        return None
+    if not WHATSAPP_TOKEN:
+        logger.warning("WhatsApp token not configured, cannot resolve media URL")
+        return None
+    try:
+        url = f"{GRAPH_URL}/{media_id}"
+        headers = {"Authorization": f"Bearer {WHATSAPP_TOKEN}"}
+        response = requests.get(url, headers=headers, timeout=15)
+        if response.status_code != 200:
+            logger.warning("Failed to resolve WhatsApp media URL (status=%s)", response.status_code)
+            return None
+        payload = response.json() if response.content else {}
+        return payload.get("url") if isinstance(payload, dict) else None
+    except Exception:
+        logger.exception("Failed to resolve WhatsApp media URL")
+        return None

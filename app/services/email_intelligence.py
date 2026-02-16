@@ -4,7 +4,7 @@ import json
 import logging
 from typing import Any, Dict, List, Optional
 
-from openai import OpenAI
+from app.services.llm_client import OpenAIProxy as OpenAI
 from sqlalchemy.orm import Session
 
 from app.core.config import settings

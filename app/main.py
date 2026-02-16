@@ -88,6 +88,12 @@ from app.api.routes.fitness import router as fitness_router  # noqa: E402
 from app.api.routes.entertainment import router as entertainment_router  # noqa: E402
 from app.api.routes.learning import router as learning_router  # noqa: E402
 from app.api.routes.public_site import router as public_site_router  # noqa: E402
+from app.api.routes.v1_gateway import router as v1_gateway_router  # noqa: E402
+from app.api.routes.v1_behavioral import router as v1_behavioral_router  # noqa: E402
+from app.api.routes.v1_core import router as v1_core_router  # noqa: E402
+from app.api.routes.webhook_aliases import router as webhook_aliases_router  # noqa: E402
+from app.api.internal.llm import router as llm_router  # noqa: E402
+from app.api.internal.platform import router as internal_platform_router  # noqa: E402
 
 
 _scheduler = None
@@ -168,6 +174,7 @@ app.include_router(watch_refresh_router)
 app.include_router(notifications_router)
 app.include_router(agent_chat_router)
 app.include_router(webhooks_whatsapp.router)
+app.include_router(webhook_aliases_router)
 app.include_router(webhooks_sms_router)
 app.include_router(admin_google_router)
 app.include_router(admin_microsoft_router)
@@ -209,6 +216,11 @@ app.include_router(fitness_router)
 app.include_router(entertainment_router)
 app.include_router(learning_router)
 app.include_router(public_site_router)
+app.include_router(v1_gateway_router)
+app.include_router(v1_behavioral_router)
+app.include_router(v1_core_router)
+app.include_router(llm_router)
+app.include_router(internal_platform_router)
 if settings.ENABLE_SMART_HOME == "1":
     app.include_router(smart_home_router)
     app.include_router(admin_smart_home_router)

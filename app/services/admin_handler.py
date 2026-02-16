@@ -6,7 +6,7 @@ import json
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List
 
-from openai import OpenAI
+from app.services.llm_client import OpenAIProxy as OpenAI
 from sqlalchemy.orm import Session
 
 from app.services.google_oauth import get_google_connection_status, build_google_auth_url

@@ -6,7 +6,7 @@ import logging
 from typing import Any, Dict, List, Optional, Tuple
 
 from sqlalchemy.orm import Session
-from openai import OpenAI
+from app.services.llm_client import OpenAIProxy as OpenAI
 
 from app.core.config import settings
 from app.core.vector_store import get_vector_store

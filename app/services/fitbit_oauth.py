@@ -1,19 +1,17 @@
 from __future__ import annotations
 
 import base64
-import hashlib
 import os
 from datetime import datetime, timedelta
 from typing import Any, Dict, Optional
 from urllib.parse import urlencode
 
 import httpx
-from cryptography.fernet import Fernet, InvalidToken
 from sqlalchemy.orm import Session
 
-from app.core.config import settings
 from app.db.models import OAuthToken, User
 from app.services.oauth_state import make_state, parse_state
+from app.services.token_crypto import decrypt_token, encrypt_token
 
 
 DEFAULT_SCOPES = [
@@ -28,24 +26,8 @@ def _require_env(name: str) -> str:
     return val
 
 
-def _fernet() -> Fernet:
-    key = settings.TOKEN_ENCRYPTION_KEY
-    if key:
-        return Fernet(key.encode("utf-8"))
-
-    secret = _require_env("STATE_SIGNING_SECRET").encode("utf-8")
-    digest = hashlib.sha256(secret).digest()
-    return Fernet(base64.urlsafe_b64encode(digest))
-
-
 def _decrypt_refresh_token(refresh_token_enc: str) -> str:
-    if not refresh_token_enc:
-        return ""
-    f = _fernet()
-    try:
-        return f.decrypt(refresh_token_enc.encode("utf-8")).decode("utf-8")
-    except InvalidToken:
-        raise RuntimeError("Could not decrypt refresh token. TOKEN_ENCRYPTION_KEY changed?")
+    return decrypt_token(refresh_token_enc)
 
 
 def _authorize_url() -> str:
@@ -93,9 +75,8 @@ def _store_tokens(
         row = OAuthToken(user_id=user_id, provider="fitbit")
         db.add(row)
 
-    f = _fernet()
     row.access_token = access_token or ""
-    row.refresh_token_enc = f.encrypt((refresh_token or "").encode("utf-8")).decode("utf-8")
+    row.refresh_token_enc = encrypt_token(refresh_token or "")
     row.scopes = scopes
     if expires_in:
         row.expiry_utc = datetime.utcnow() + timedelta(seconds=int(expires_in))

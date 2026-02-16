@@ -4,15 +4,16 @@ import json
 
 from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
-from openai import OpenAI
 
 from app.blueprint.db import list_conversation_messages
 from app.db.database import SessionLocal
 
+from app.blueprint.contracts import LLMRequest
 from app.blueprint.brain.responder import generate_reply
 from app.blueprint.brain.responder import SYSTEM_PROMPT
 from app.blueprint.brain.tier_router import route_tier
 from app.blueprint.contracts import InboundMessage, OutboundMessage
+from app.blueprint.llm.router import get_llm_router
 from app.core.config import settings
 from app.services.semantic_cache import get_cached_response
 
@@ -52,6 +53,7 @@ def respond(msg: InboundMessage) -> OutboundMessage:
             if (history[-1].get("content") or "").strip() == (msg.text or "").strip():
                 history = history[:-1]
 
+    raw_meta = msg.raw or {}
     reply, meta = generate_reply(
         user_text=msg.text,
         tier=tier,
@@ -59,6 +61,10 @@ def respond(msg: InboundMessage) -> OutboundMessage:
         conversation_id=msg.conversation_id,
         run_id=msg.run_id,
         history_messages=history,
+        input_provenance=str(raw_meta.get("content_provenance") or "user_direct"),
+        capability_token=(str(raw_meta.get("capability_token") or "").strip() or None),
+        emotion_detected=(str(raw_meta.get("emotion_detected") or "").strip() or None),
+        emotion_sensitivity=float(raw_meta.get("emotion_sensitivity") or 0.5),
     )
 
     metadata = dict(meta or {})
@@ -127,31 +133,40 @@ def respond_stream(msg: InboundMessage):
             return StreamingResponse(cached_gen(), media_type="text/event-stream")
 
     def gen():
-        if not settings.OPENAI_API_KEY:
-            yield _sse({"type": "error", "error": "OPENAI_API_KEY not configured"})
+        router = get_llm_router()
+        req = LLMRequest(
+            messages=[{"role": "system", "content": SYSTEM_PROMPT}] + history + [{"role": "user", "content": msg.text}],
+            temperature=0.4,
+            max_tokens=1200 if tier >= 2 else 800,
+            task_type="complex_reasoning" if tier >= 2 else "general",
+            stream=True,
+        )
+
+        # Validate route selection first to fail fast with clear provider errors.
+        try:
+            route = router.select_route(req)
+        except Exception as exc:
+            yield _sse({"type": "error", "error": f"LLM route selection failed: {exc}"})
             yield _sse({"type": "done", "tier": tier, "model": model})
             return
 
-        client = OpenAI(api_key=settings.OPENAI_API_KEY, timeout=60, max_retries=1)
-        messages = [{"role": "system", "content": SYSTEM_PROMPT}]
-        if history:
-            messages.extend(history)
-        messages.append({"role": "user", "content": msg.text})
-
-        stream = client.chat.completions.create(
-            model=model,
-            messages=messages,
-            temperature=0.4,
-            stream=True,
-        )
-        for chunk in stream:
-            try:
-                delta = chunk.choices[0].delta
-                text = getattr(delta, "content", None)
-            except Exception:
-                text = None
-            if text:
-                yield _sse({"type": "delta", "text": text})
-        yield _sse({"type": "done", "tier": tier, "model": model})
+        selected_provider = route.get("selected_provider")
+        selected_model = route.get("selected_model") or model
+        try:
+            for text in router.stream_text(req):
+                if text:
+                    yield _sse({"type": "delta", "text": text})
+            yield _sse(
+                {
+                    "type": "done",
+                    "tier": tier,
+                    "model": selected_model,
+                    "provider": selected_provider,
+                    "cache_hit": False,
+                }
+            )
+        except Exception as exc:
+            yield _sse({"type": "error", "error": str(exc)})
+            yield _sse({"type": "done", "tier": tier, "model": selected_model, "provider": selected_provider})
 
     return StreamingResponse(gen(), media_type="text/event-stream")

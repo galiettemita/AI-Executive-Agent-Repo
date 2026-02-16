@@ -14,6 +14,7 @@ from app.middleware.request_context import RequestContextMiddleware  # noqa: E40
 
 from app.api.routes.health import router as health_router  # noqa: E402
 from app.api.internal.brain import router as brain_router  # noqa: E402
+from app.api.internal.llm import router as llm_router  # noqa: E402
 
 setup_logging()
 setup_sentry()
@@ -25,4 +26,4 @@ setup_otel(app)
 
 app.include_router(health_router)
 app.include_router(brain_router)
-
+app.include_router(llm_router)

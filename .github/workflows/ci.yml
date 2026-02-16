@@ -27,6 +27,22 @@ jobs:
         run: |
           PYTHONPATH=. pytest -q
 
+      - name: Prompt-injection fuzzing
+        run: |
+          PYTHONPATH=. pytest -q tests/test_prompt_injection_fuzz.py
+
+      - name: Type checks (mypy)
+        run: |
+          python -m pip install mypy
+          python -m mypy \
+            app/services/llm_client.py \
+            app/api/internal/llm.py \
+            app/api/routes/v1_gateway.py \
+            app/api/routes/v1_core.py \
+            app/api/internal/platform.py \
+            --ignore-missing-imports \
+            --follow-imports=skip
+
       - name: Dependency vulnerability scan (pip-audit)
         run: |
           python -m pip install --upgrade pip

@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from typing import Dict, List, Optional
 
-from openai import OpenAI
+from app.services.llm_client import OpenAIProxy as OpenAI
 
 from app.services.voice_scenarios import get_scenario
 from app.core.config import settings

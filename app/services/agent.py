@@ -3,7 +3,7 @@ import asyncio
 import hashlib
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse
-from openai import OpenAI
+from app.services.llm_client import OpenAIProxy as OpenAI
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta
 from sqlalchemy import func

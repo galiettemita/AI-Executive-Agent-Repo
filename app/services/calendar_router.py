@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 from sqlalchemy.orm import Session
+from googleapiclient.discovery import build
 
 from app.services.google_oauth import get_google_connection_status
+from app.services.google_oauth import get_valid_google_credentials
 from app.services.microsoft_oauth import get_microsoft_connection_status
 from app.services.integration_credentials import get_connection_status as get_integration_status
 from app.services.preferences import get_preferences
@@ -23,6 +25,7 @@ from app.services.outlook_calendar import (
     update_outlook_event,
     list_events_in_range as outlook_list_range,
     get_outlook_event,
+    delete_outlook_event,
 )
 from app.services.caldav_calendar import create_caldav_event, list_events_in_range as caldav_list_range
 from app.services.google_calendar import get_events_for_daily_brief as google_brief
@@ -239,3 +242,86 @@ def get_event_by_id(
     if provider == "caldav":
         raise RuntimeError("CalDAV event lookup is not supported yet.")
     return None
+
+
+def delete_event(
+    db: Session,
+    user_id: str,
+    event_id: str,
+    provider: Optional[str] = None,
+) -> Dict[str, Any]:
+    provider = pick_calendar_provider(db, user_id, preferred=provider)
+    if not provider:
+        raise RuntimeError("No calendar connected. Ask the user to connect Google, Outlook, or CalDAV.")
+
+    if provider == "google":
+        creds = get_valid_google_credentials(db=db, user_id=user_id)
+        if creds is None:
+            raise RuntimeError("Google not connected.")
+        service = build("calendar", "v3", credentials=creds)
+        service.events().delete(calendarId="primary", eventId=event_id).execute()
+        return {"provider": "google", "event_id": event_id, "deleted": True}
+
+    if provider == "microsoft":
+        return delete_outlook_event(db=db, user_id=user_id, event_id=event_id)
+    if provider == "caldav":
+        raise RuntimeError("CalDAV delete is not implemented yet.")
+    raise RuntimeError(f"Unsupported calendar provider: {provider}")
+
+
+def _to_utc(value: str | None) -> Optional[datetime]:
+    if not value:
+        return None
+    try:
+        if value.endswith("Z"):
+            value = value[:-1] + "+00:00"
+        dt = datetime.fromisoformat(value)
+        if dt.tzinfo is None:
+            return dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(timezone.utc)
+    except Exception:
+        return None
+
+
+def find_free_slots(
+    db: Session,
+    user_id: str,
+    start_utc: datetime,
+    end_utc: datetime,
+    duration_minutes: int = 30,
+    provider: Optional[str] = None,
+    max_slots: int = 5,
+) -> List[Dict[str, Any]]:
+    busy = list_events_in_range(
+        db=db,
+        user_id=user_id,
+        start_utc=start_utc,
+        end_utc=end_utc,
+        provider=provider,
+        max_results=100,
+    )
+    busy_windows: List[tuple[datetime, datetime]] = []
+    for event in busy:
+        start_raw = (event.get("start") or {}).get("dateTime") if isinstance(event.get("start"), dict) else None
+        end_raw = (event.get("end") or {}).get("dateTime") if isinstance(event.get("end"), dict) else None
+        s = _to_utc(start_raw)
+        e = _to_utc(end_raw)
+        if s and e and e > s:
+            busy_windows.append((s, e))
+    busy_windows.sort(key=lambda x: x[0])
+
+    slots: List[Dict[str, Any]] = []
+    cursor = start_utc.astimezone(timezone.utc)
+    needed = timedelta(minutes=max(5, duration_minutes))
+
+    for s, e in busy_windows:
+        if s - cursor >= needed:
+            slots.append({"start": cursor.isoformat(), "end": s.isoformat()})
+            if len(slots) >= max_slots:
+                return slots
+        if e > cursor:
+            cursor = e
+
+    if end_utc.astimezone(timezone.utc) - cursor >= needed and len(slots) < max_slots:
+        slots.append({"start": cursor.isoformat(), "end": end_utc.astimezone(timezone.utc).isoformat()})
+    return slots

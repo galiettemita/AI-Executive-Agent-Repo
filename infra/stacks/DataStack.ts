@@ -75,17 +75,44 @@ export function DataStack({ stack }: StackContext) {
     removalPolicy: RemovalPolicy.RETAIN,
   });
 
+  const knowledgeSnapshots = new s3.Bucket(stack, "KnowledgeSnapshotsBucket", {
+    encryption: s3.BucketEncryption.S3_MANAGED,
+    versioned: true,
+    blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
+    removalPolicy: RemovalPolicy.RETAIN,
+  });
+
+  const voice = new s3.Bucket(stack, "VoiceBucket", {
+    encryption: s3.BucketEncryption.S3_MANAGED,
+    versioned: true,
+    blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
+    removalPolicy: RemovalPolicy.RETAIN,
+  });
+
+  const documents = new s3.Bucket(stack, "DocumentsBucket", {
+    encryption: s3.BucketEncryption.S3_MANAGED,
+    versioned: true,
+    blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
+    removalPolicy: RemovalPolicy.RETAIN,
+  });
+
   stack.addOutputs({
     RdsEndpoint: database.instanceEndpoint.hostname,
     RdsSecretArn: database.secret?.secretArn || "",
     RedisEndpoint: redis.attrPrimaryEndPointAddress,
     AttachmentsBucket: attachments.bucketName,
+    KnowledgeSnapshotsBucket: knowledgeSnapshots.bucketName,
+    VoiceBucket: voice.bucketName,
+    DocumentsBucket: documents.bucketName,
   });
 
   return {
     database,
     redis,
     attachments,
+    knowledgeSnapshots,
+    voice,
+    documents,
     dbSecurityGroup,
     redisSecurityGroup,
   };

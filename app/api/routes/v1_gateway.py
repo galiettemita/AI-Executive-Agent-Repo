@@ -1,0 +1,569 @@
+from __future__ import annotations
+
+import json
+import logging
+import time
+import uuid
+from typing import Any, Literal
+
+import httpx
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
+from fastapi.responses import StreamingResponse
+from pydantic import BaseModel, Field
+from sqlalchemy import text
+
+from app.blueprint.ace import build_dual_memory_signals, classify_action
+from app.blueprint.capability_tokens import issue_capability_token
+from app.blueprint.brain.responder import generate_reply
+from app.blueprint.brain.tier_router import route_tier
+from app.blueprint.db import is_uuid, insert_message, record_side_effect
+from app.blueprint.contracts import Channel, ContentProvenance, InboundMessage, InputModality, MessageDirection, OutboundMessage
+from app.blueprint.knowledge_files import get_latest_knowledge_file
+from app.blueprint.memory_engine import record_memory_dual_path
+from app.blueprint.multimodal import preprocess_inbound_message, transcribe_audio_url
+from app.blueprint.preferences_learning import record_feedback_signal
+from app.blueprint.progress import append_progress, get_progress_events, set_run_result, get_run_result
+from app.channels.whatsapp import mark_whatsapp_read
+from app.channels.whatsapp_adapter import send_whatsapp_adapted
+from app.channels.whatsapp_templates import WHATSAPP_TEMPLATE_REGISTRY
+from app.core.config import settings
+from app.core.redis import get_redis
+from app.db.database import SessionLocal
+from app.middleware.rate_limiter import rate_limit_user
+from app.services.clerk_auth import verify_clerk_user_id
+
+logger = logging.getLogger(__name__)
+
+router = APIRouter(prefix="/api/v1", tags=["gateway-v1"])
+
+
+class MessageRequest(BaseModel):
+    channel: Channel = Channel.WEB
+    channel_identifier: str = ""
+    user_id: str | None = None
+    content: str = ""
+    modality: InputModality = InputModality.TEXT
+    media_url: str | None = None
+    media_type: str | None = None
+    wa_message_id: str | None = None
+    reply_to_id: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class MessageAccepted(BaseModel):
+    run_id: str
+    status: Literal["queued", "processing", "completed", "failed"]
+
+
+def _resolve_user_id(payload: MessageRequest, request: Request) -> str | None:
+    if payload.user_id:
+        return payload.user_id
+
+    clerk_user = (request.headers.get("x-clerk-user-id") or "").strip()
+    if clerk_user and settings.CLERK_SECRET_KEY:
+        if verify_clerk_user_id(clerk_user):
+            return clerk_user
+        raise HTTPException(status_code=401, detail="Invalid Clerk user")
+    return None
+
+
+def _default_brain_base_url() -> str | None:
+    if settings.BRAIN_INTERNAL_BASE_URL:
+        return settings.BRAIN_INTERNAL_BASE_URL.rstrip("/")
+    if settings.ENV in ("staging", "production"):
+        return "http://brain.executive-os.local:8000"
+    return None
+
+
+def _session_key(channel: Channel, channel_identifier: str) -> str:
+    return f"bp:v1:session:{channel.value}:{channel_identifier}"
+
+
+def _get_account_emotion_sensitivity(user_id: str | None) -> float:
+    if not user_id:
+        return 0.5
+    db = SessionLocal()
+    try:
+        row = db.execute(
+            text("select emotion_sensitivity from accounts where id = :user_id"),
+            {"user_id": user_id},
+        ).mappings().first()
+        value = (row or {}).get("emotion_sensitivity")
+        return float(value) if value is not None else 0.5
+    except Exception:
+        return 0.5
+    finally:
+        try:
+            db.close()
+        except Exception:
+            pass
+
+
+def _get_agents_overrides(user_id: str | None) -> str:
+    if not user_id:
+        return ""
+    db = SessionLocal()
+    try:
+        item = get_latest_knowledge_file(db, user_id=user_id, file_path="AGENTS.md")
+        return str((item or {}).get("content") or "")
+    except Exception:
+        return ""
+    finally:
+        try:
+            db.close()
+        except Exception:
+            pass
+
+
+def _get_ace_dual_memory_signals(user_id: str | None) -> dict[str, Any]:
+    if not user_id or not is_uuid(user_id):
+        return {}
+    db = SessionLocal()
+    try:
+        return build_dual_memory_signals(db, user_id=user_id)
+    except Exception:
+        return {}
+    finally:
+        try:
+            db.close()
+        except Exception:
+            pass
+
+
+def _persist_v1_message(
+    *,
+    user_id: str | None,
+    conversation_id: str | None,
+    run_id: str,
+    direction: MessageDirection,
+    channel: Channel,
+    text: str,
+    input_modality: InputModality = InputModality.TEXT,
+    media_url: str | None = None,
+    transcription_confidence: float | None = None,
+    extracted_entities: dict[str, Any] | None = None,
+    content_provenance: ContentProvenance = ContentProvenance.USER_DIRECT,
+    emotion_detected: str = "neutral",
+    channel_msg_id: str | None = None,
+    intent: str | None = None,
+    tier: int | None = None,
+    latency_ms: int | None = None,
+) -> None:
+    if not user_id or not is_uuid(user_id):
+        return
+    db = SessionLocal()
+    try:
+        insert_message(
+            db,
+            conversation_id=conversation_id or "",
+            user_id=user_id,
+            direction=direction,
+            content={
+                "text": text,
+                "channel": channel.value,
+                "input_modality": input_modality.value,
+                "media_url": media_url,
+                "transcription_confidence": transcription_confidence,
+                "extracted_entities": extracted_entities or {},
+                "content_provenance": content_provenance.value,
+                "emotion_detected": emotion_detected,
+            },
+            channel_msg_id=channel_msg_id,
+            intent=intent,
+            tier=tier,
+            run_id=run_id,
+            latency_ms=latency_ms,
+        )
+    except Exception:
+        logger.warning("v1 message persistence failed run_id=%s", run_id, exc_info=True)
+    finally:
+        try:
+            db.close()
+        except Exception:
+            pass
+
+
+def _resolve_session_id(channel: Channel, channel_identifier: str) -> str:
+    key = _session_key(channel, channel_identifier)
+    client = get_redis()
+    if client is not None:
+        existing = client.get(key)
+        if existing:
+            return existing
+        session_id = str(uuid.uuid4())
+        client.set(key, session_id, ex=settings.REDIS_SESSION_TTL_SECONDS)
+        return session_id
+
+    # Fallback if Redis is unavailable.
+    return str(uuid.uuid4())
+
+
+def _sse(data: dict[str, Any]) -> str:
+    return f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
+
+
+def _brain_respond(msg: InboundMessage) -> OutboundMessage:
+    base = _default_brain_base_url()
+    if not base:
+        tier = route_tier(msg.text)
+        raw_meta = msg.raw or {}
+        reply, meta = generate_reply(
+            user_text=msg.text,
+            tier=tier,
+            user_id=msg.user_id,
+            conversation_id=msg.conversation_id,
+            run_id=msg.run_id,
+            input_provenance=str(raw_meta.get("content_provenance") or "user_direct"),
+            capability_token=(str(raw_meta.get("capability_token") or "").strip() or None),
+            emotion_detected=(str(raw_meta.get("emotion_detected") or "").strip() or None),
+            emotion_sensitivity=float(raw_meta.get("emotion_sensitivity") or 0.5),
+        )
+        metadata = dict(meta or {})
+        metadata.setdefault("tier", tier)
+        metadata.setdefault("channel_msg_id", msg.channel_msg_id)
+        return OutboundMessage(channel=msg.channel, recipient_id=msg.channel_identifier, content=reply, metadata=metadata)
+
+    with httpx.Client(timeout=45.0) as client:
+        resp = client.post(f"{base}/internal/brain/respond", json=msg.model_dump(mode="json"))
+        resp.raise_for_status()
+        return OutboundMessage.model_validate(resp.json())
+
+
+def _process_message_run(run_id: str, inbound: InboundMessage) -> None:
+    started = time.perf_counter()
+    append_progress(run_id, step="preprocess", status="running")
+    processed = preprocess_inbound_message(inbound)
+
+    append_progress(
+        run_id,
+        step="route",
+        status="running",
+        partial_result={"tier_hint": route_tier(processed.normalized_text)},
+    )
+    ace_decision = classify_action(
+        processed.normalized_text,
+        agents_content=_get_agents_overrides(inbound.user_id),
+        dual_memory_signals=_get_ace_dual_memory_signals(inbound.user_id),
+    )
+    append_progress(run_id, step="ace", status="running", partial_result=ace_decision)
+    emotion_sensitivity = _get_account_emotion_sensitivity(inbound.user_id)
+    capability_token: str | None = None
+    if inbound.user_id:
+        try:
+            capability_token = issue_capability_token(
+                run_id=run_id,
+                user_id=inbound.user_id,
+                provenance=processed.content_provenance,
+                capabilities=[
+                    "web:search",
+                    "calendar:read",
+                    "calendar:write",
+                    "email:read",
+                    "email:send",
+                    "contacts:read",
+                ],
+            )
+        except Exception:
+            capability_token = None
+
+    normalized_inbound = InboundMessage(
+        channel=inbound.channel,
+        channel_identifier=inbound.channel_identifier,
+        content=processed.normalized_text,
+        input_modality=inbound.input_modality,
+        media_url=inbound.media_url,
+        media_type=inbound.media_type,
+        wa_message_id=inbound.wa_message_id,
+        reply_to_id=inbound.reply_to_id,
+        channel_msg_id=inbound.channel_msg_id,
+        user_id=inbound.user_id,
+        conversation_id=inbound.conversation_id,
+        run_id=run_id,
+        from_phone=inbound.from_phone,
+        raw={
+            **(inbound.raw or {}),
+            "extracted_entities": processed.extracted_entities,
+            "transcription_confidence": processed.transcription_confidence,
+            "emotion_detected": processed.emotion_detected.value,
+            "emotion_sensitivity": emotion_sensitivity,
+            "content_provenance": (processed.content_provenance if isinstance(processed.content_provenance, ContentProvenance) else ContentProvenance.USER_DIRECT).value,
+            "capability_token": capability_token,
+        },
+    )
+
+    _persist_v1_message(
+        user_id=inbound.user_id,
+        conversation_id=inbound.conversation_id,
+        run_id=run_id,
+        direction=MessageDirection.INBOUND,
+        channel=inbound.channel,
+        text=processed.normalized_text,
+        input_modality=inbound.input_modality,
+        media_url=inbound.media_url,
+        transcription_confidence=processed.transcription_confidence,
+        extracted_entities=processed.extracted_entities,
+        content_provenance=processed.content_provenance if isinstance(processed.content_provenance, ContentProvenance) else ContentProvenance.USER_DIRECT,
+        emotion_detected=processed.emotion_detected.value,
+        channel_msg_id=inbound.channel_msg_id,
+        intent=ace_decision.get("action_type"),
+        tier=route_tier(processed.normalized_text),
+    )
+
+    append_progress(run_id, step="brain", status="running")
+
+    try:
+        outbound = _brain_respond(normalized_inbound)
+        elapsed_ms = int((time.perf_counter() - started) * 1000)
+
+        if inbound.channel == Channel.WHATSAPP and outbound.recipient_id:
+            # WhatsApp has no direct typing indicator API; marking as read gives immediate UX feedback.
+            if inbound.wa_message_id:
+                try:
+                    mark_whatsapp_read(inbound.wa_message_id)
+                except Exception:
+                    pass
+            send_whatsapp_adapted(
+                to_phone_e164=outbound.recipient_id,
+                text=outbound.content,
+                buttons=outbound.buttons,
+                metadata=outbound.metadata,
+            )
+            if inbound.user_id:
+                db = SessionLocal()
+                try:
+                    record_side_effect(
+                        db,
+                        run_id=run_id,
+                        user_id=inbound.user_id,
+                        effect_type="whatsapp_send",
+                        description="Sent WhatsApp outbound message",
+                        metadata={
+                            "to": outbound.recipient_id,
+                            "reply_preview": (outbound.content or "")[:280],
+                        },
+                        reversible=False,
+                    )
+                finally:
+                    try:
+                        db.close()
+                    except Exception:
+                        pass
+
+        if inbound.user_id:
+            db = SessionLocal()
+            try:
+                record_memory_dual_path(
+                    db,
+                    user_id=inbound.user_id,
+                    run_id=run_id,
+                    user_text=processed.normalized_text,
+                    assistant_text=outbound.content,
+                )
+            except Exception:
+                logger.warning("memory dual-path update failed run_id=%s", run_id, exc_info=True)
+            finally:
+                try:
+                    db.close()
+                except Exception:
+                    pass
+
+        _persist_v1_message(
+            user_id=inbound.user_id,
+            conversation_id=inbound.conversation_id,
+            run_id=run_id,
+            direction=MessageDirection.OUTBOUND,
+            channel=outbound.channel,
+            text=outbound.content,
+            input_modality=InputModality.TEXT,
+            content_provenance=ContentProvenance.USER_DIRECT,
+            emotion_detected=str(processed.emotion_detected.value or "neutral"),
+            channel_msg_id=inbound.channel_msg_id,
+            intent=ace_decision.get("action_type"),
+            tier=int((outbound.metadata or {}).get("tier") or route_tier(processed.normalized_text)),
+            latency_ms=elapsed_ms,
+        )
+
+        payload = {
+            "ok": True,
+            "run_id": run_id,
+            "reply": outbound.content,
+            "metadata": outbound.metadata,
+            "latency_ms": elapsed_ms,
+            "entities": processed.extracted_entities,
+            "modality": processed.modality.value,
+            "ace": ace_decision,
+        }
+        set_run_result(run_id, payload)
+        if inbound.user_id and is_uuid(inbound.user_id):
+            db = SessionLocal()
+            try:
+                record_feedback_signal(
+                    db,
+                    user_id=inbound.user_id,
+                    signal_type="outcome_success",
+                    original_output=outbound.content[:400],
+                    corrected_output=None,
+                    context={
+                        "run_id": run_id,
+                        "source": "gateway_run_complete",
+                        "action_type": ace_decision.get("action_type"),
+                    },
+                )
+            except Exception:
+                db.rollback()
+            finally:
+                try:
+                    db.close()
+                except Exception:
+                    pass
+        append_progress(
+            run_id,
+            step="done",
+            status="completed",
+            partial_result={
+                "reply": outbound.content,
+                "latency_ms": elapsed_ms,
+            },
+            metadata=outbound.metadata,
+        )
+    except Exception as exc:
+        logger.exception("/api/v1/message run failed")
+        payload = {
+            "ok": False,
+            "run_id": run_id,
+            "error": str(exc),
+        }
+        set_run_result(run_id, payload)
+        if inbound.user_id and is_uuid(inbound.user_id):
+            db = SessionLocal()
+            try:
+                record_feedback_signal(
+                    db,
+                    user_id=inbound.user_id,
+                    signal_type="outcome_failed",
+                    original_output=str(exc)[:400],
+                    corrected_output=None,
+                    context={
+                        "run_id": run_id,
+                        "source": "gateway_run_failed",
+                        "action_type": "failure",
+                    },
+                )
+            except Exception:
+                db.rollback()
+            finally:
+                try:
+                    db.close()
+                except Exception:
+                    pass
+        append_progress(run_id, step="done", status="failed", partial_result={"error": str(exc)})
+
+
+@rate_limit_user()
+@router.post("/message", response_model=MessageAccepted)
+def post_message(request: Request, payload: MessageRequest, background_tasks: BackgroundTasks):
+    if not payload.content and not payload.media_url:
+        raise HTTPException(status_code=400, detail="Either content or media_url is required")
+
+    run_id = str(uuid.uuid4())
+    resolved_user_id = _resolve_user_id(payload, request)
+    channel_identifier = payload.channel_identifier or resolved_user_id or "anonymous"
+    conversation_id = _resolve_session_id(payload.channel, channel_identifier)
+
+    inbound = InboundMessage(
+        channel=payload.channel,
+        channel_identifier=channel_identifier,
+        content=payload.content,
+        input_modality=payload.modality,
+        media_url=payload.media_url,
+        media_type=payload.media_type,
+        wa_message_id=payload.wa_message_id,
+        reply_to_id=payload.reply_to_id,
+        channel_msg_id=payload.wa_message_id,
+        user_id=resolved_user_id,
+        conversation_id=conversation_id,
+        run_id=run_id,
+        from_phone=channel_identifier if payload.channel == Channel.WHATSAPP else None,
+        raw=payload.metadata,
+    )
+
+    append_progress(run_id, step="accepted", status="queued", partial_result={"channel": payload.channel.value})
+    background_tasks.add_task(_process_message_run, run_id, inbound)
+    return MessageAccepted(run_id=run_id, status="queued")
+
+
+@router.get("/stream/{run_id}")
+def stream_run(run_id: str):
+    def _events():
+        idx = 0
+        started = time.time()
+        timeout_s = 60 * 2
+
+        while True:
+            events, idx = get_progress_events(run_id, after_index=idx)
+            for evt in events:
+                yield _sse(evt)
+                if evt.get("status") in {"completed", "failed", "cancelled"}:
+                    return
+
+            if get_run_result(run_id) is not None:
+                result = get_run_result(run_id) or {}
+                if not events:
+                    terminal_status = "completed" if result.get("ok") else "failed"
+                    yield _sse(
+                        {
+                            "ts": int(time.time() * 1000),
+                            "step": "done",
+                            "status": terminal_status,
+                            "partial_result": result,
+                        }
+                    )
+                return
+
+            if (time.time() - started) > timeout_s:
+                yield _sse(
+                    {
+                        "ts": int(time.time() * 1000),
+                        "step": "timeout",
+                        "status": "failed",
+                        "partial_result": {"error": "Stream timeout"},
+                    }
+                )
+                return
+
+            time.sleep(0.35)
+
+    return StreamingResponse(_events(), media_type="text/event-stream")
+
+
+@router.post("/voice/transcribe")
+def voice_transcribe(payload: dict[str, Any]):
+    audio_url = str(payload.get("audio_url") or "").strip()
+    if not audio_url:
+        raise HTTPException(status_code=400, detail="audio_url is required")
+
+    try:
+        result = transcribe_audio_url(audio_url)
+        return {
+            "ok": True,
+            "text": result.get("text") or "",
+            "confidence": result.get("confidence"),
+            "language": result.get("language"),
+        }
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Transcription failed: {exc}")
+
+
+@router.get("/channels/whatsapp/templates")
+def whatsapp_templates():
+    return {
+        "ok": True,
+        "templates": [
+            {
+                "name": item.name,
+                "language_code": item.language_code,
+                "description": item.description,
+            }
+            for item in WHATSAPP_TEMPLATE_REGISTRY.values()
+        ],
+    }

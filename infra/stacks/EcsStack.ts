@@ -11,7 +11,7 @@ import { DataStack } from "./DataStack";
 
 export function EcsStack({ stack }: StackContext) {
   const { vpc, alb, appSecurityGroup } = use(NetworkStack);
-  const { database, redis } = use(DataStack);
+  const { database, redis, attachments, knowledgeSnapshots, voice, documents } = use(DataStack);
 
   const cluster = new ecs.Cluster(stack, "ExecutiveCluster", {
     vpc,
@@ -36,12 +36,24 @@ export function EcsStack({ stack }: StackContext) {
             WA_ACCESS_TOKEN: SecretValue.unsafePlainText("CHANGEME"),
             WA_VERIFY_TOKEN: SecretValue.unsafePlainText("CHANGEME"),
             WA_APP_SECRET: SecretValue.unsafePlainText("CHANGEME"),
+            WA_PHONE_NUMBER_ID: SecretValue.unsafePlainText("CHANGEME"),
+            WA_BUSINESS_ACCOUNT_ID: SecretValue.unsafePlainText("CHANGEME"),
             CLERK_SECRET_KEY: SecretValue.unsafePlainText("CHANGEME"),
             GOOGLE_CLIENT_ID: SecretValue.unsafePlainText("CHANGEME"),
             GOOGLE_CLIENT_SECRET: SecretValue.unsafePlainText("CHANGEME"),
+            GOOGLE_REDIRECT_URI: SecretValue.unsafePlainText(""),
+            MS_CLIENT_ID: SecretValue.unsafePlainText("CHANGEME"),
+            MS_CLIENT_SECRET: SecretValue.unsafePlainText("CHANGEME"),
+            MS_REDIRECT_URI: SecretValue.unsafePlainText(""),
+            MS_TENANT_ID: SecretValue.unsafePlainText("common"),
             MICROSOFT_CLIENT_ID: SecretValue.unsafePlainText("CHANGEME"),
             MICROSOFT_CLIENT_SECRET: SecretValue.unsafePlainText("CHANGEME"),
             TAVILY_API_KEY: SecretValue.unsafePlainText("CHANGEME"),
+            ANTHROPIC_API_KEY: SecretValue.unsafePlainText("CHANGEME"),
+            GOOGLE_AI_API_KEY: SecretValue.unsafePlainText("CHANGEME"),
+            LOCAL_LLM_ENDPOINT: SecretValue.unsafePlainText(""),
+            LLM_ROUTER_FAILOVER_TIMEOUT_S: SecretValue.unsafePlainText("30"),
+            LLM_ROUTER_HEALTH_CHECK_INTERVAL: SecretValue.unsafePlainText("30"),
             STRIPE_SECRET_KEY: SecretValue.unsafePlainText("CHANGEME"),
             SENTRY_DSN: SecretValue.unsafePlainText("CHANGEME"),
             AXIOM_API_TOKEN: SecretValue.unsafePlainText("CHANGEME"),
@@ -64,6 +76,14 @@ export function EcsStack({ stack }: StackContext) {
             FROM_NAME: SecretValue.unsafePlainText("Executive OS"),
             POSTHOG_API_KEY: SecretValue.unsafePlainText(""),
             POSTHOG_HOST: SecretValue.unsafePlainText("https://app.posthog.com"),
+            FEATURE_MULTI_PROVIDER_LLM: SecretValue.unsafePlainText("true"),
+            FEATURE_VOICE_INPUT: SecretValue.unsafePlainText("true"),
+            FEATURE_IMAGE_PROCESSING: SecretValue.unsafePlainText("true"),
+            FEATURE_DOCUMENT_PROCESSING: SecretValue.unsafePlainText("false"),
+            FEATURE_PRIVILEGE_ISOLATION: SecretValue.unsafePlainText("false"),
+            FEATURE_PROFILING_ENABLED: SecretValue.unsafePlainText("true"),
+            FEATURE_CONSOLIDATION_ENABLED: SecretValue.unsafePlainText("false"),
+            FEATURE_SELF_REVIEW_ENABLED: SecretValue.unsafePlainText("false"),
           },
         })
       : secretsmanager.Secret.fromSecretNameV2(
@@ -81,6 +101,11 @@ export function EcsStack({ stack }: StackContext) {
     // ElastiCache has transit encryption enabled; use TLS.
     REDIS_URL: `rediss://${redis.attrPrimaryEndPointAddress}:6379/0?ssl_cert_reqs=required`,
     OTEL_ENABLED: "1",
+    AWS_REGION: stack.region,
+    S3_BUCKET: attachments.bucketName,
+    S3_KNOWLEDGE_BUCKET: knowledgeSnapshots.bucketName,
+    S3_VOICE_BUCKET: voice.bucketName,
+    S3_DOCUMENTS_BUCKET: documents.bucketName,
     // Cloud Map names (brain.executive-os.local, hands.executive-os.local)
     BRAIN_INTERNAL_BASE_URL: "http://brain.executive-os.local:8000",
     HANDS_INTERNAL_BASE_URL: "http://hands.executive-os.local:8000",
@@ -91,12 +116,24 @@ export function EcsStack({ stack }: StackContext) {
     WA_ACCESS_TOKEN: ecs.Secret.fromSecretsManager(appSecrets, "WA_ACCESS_TOKEN"),
     WA_VERIFY_TOKEN: ecs.Secret.fromSecretsManager(appSecrets, "WA_VERIFY_TOKEN"),
     WA_APP_SECRET: ecs.Secret.fromSecretsManager(appSecrets, "WA_APP_SECRET"),
+    WA_PHONE_NUMBER_ID: ecs.Secret.fromSecretsManager(appSecrets, "WA_PHONE_NUMBER_ID"),
+    WA_BUSINESS_ACCOUNT_ID: ecs.Secret.fromSecretsManager(appSecrets, "WA_BUSINESS_ACCOUNT_ID"),
     CLERK_SECRET_KEY: ecs.Secret.fromSecretsManager(appSecrets, "CLERK_SECRET_KEY"),
     GOOGLE_CLIENT_ID: ecs.Secret.fromSecretsManager(appSecrets, "GOOGLE_CLIENT_ID"),
     GOOGLE_CLIENT_SECRET: ecs.Secret.fromSecretsManager(appSecrets, "GOOGLE_CLIENT_SECRET"),
+    GOOGLE_REDIRECT_URI: ecs.Secret.fromSecretsManager(appSecrets, "GOOGLE_REDIRECT_URI"),
+    MS_CLIENT_ID: ecs.Secret.fromSecretsManager(appSecrets, "MS_CLIENT_ID"),
+    MS_CLIENT_SECRET: ecs.Secret.fromSecretsManager(appSecrets, "MS_CLIENT_SECRET"),
+    MS_REDIRECT_URI: ecs.Secret.fromSecretsManager(appSecrets, "MS_REDIRECT_URI"),
+    MS_TENANT_ID: ecs.Secret.fromSecretsManager(appSecrets, "MS_TENANT_ID"),
     MICROSOFT_CLIENT_ID: ecs.Secret.fromSecretsManager(appSecrets, "MICROSOFT_CLIENT_ID"),
     MICROSOFT_CLIENT_SECRET: ecs.Secret.fromSecretsManager(appSecrets, "MICROSOFT_CLIENT_SECRET"),
     TAVILY_API_KEY: ecs.Secret.fromSecretsManager(appSecrets, "TAVILY_API_KEY"),
+    ANTHROPIC_API_KEY: ecs.Secret.fromSecretsManager(appSecrets, "ANTHROPIC_API_KEY"),
+    GOOGLE_AI_API_KEY: ecs.Secret.fromSecretsManager(appSecrets, "GOOGLE_AI_API_KEY"),
+    LOCAL_LLM_ENDPOINT: ecs.Secret.fromSecretsManager(appSecrets, "LOCAL_LLM_ENDPOINT"),
+    LLM_ROUTER_FAILOVER_TIMEOUT_S: ecs.Secret.fromSecretsManager(appSecrets, "LLM_ROUTER_FAILOVER_TIMEOUT_S"),
+    LLM_ROUTER_HEALTH_CHECK_INTERVAL: ecs.Secret.fromSecretsManager(appSecrets, "LLM_ROUTER_HEALTH_CHECK_INTERVAL"),
     STRIPE_SECRET_KEY: ecs.Secret.fromSecretsManager(appSecrets, "STRIPE_SECRET_KEY"),
     SENTRY_DSN: ecs.Secret.fromSecretsManager(appSecrets, "SENTRY_DSN"),
     AXIOM_API_TOKEN: ecs.Secret.fromSecretsManager(appSecrets, "AXIOM_API_TOKEN"),
@@ -119,6 +156,14 @@ export function EcsStack({ stack }: StackContext) {
     FROM_NAME: ecs.Secret.fromSecretsManager(appSecrets, "FROM_NAME"),
     POSTHOG_API_KEY: ecs.Secret.fromSecretsManager(appSecrets, "POSTHOG_API_KEY"),
     POSTHOG_HOST: ecs.Secret.fromSecretsManager(appSecrets, "POSTHOG_HOST"),
+    FEATURE_MULTI_PROVIDER_LLM: ecs.Secret.fromSecretsManager(appSecrets, "FEATURE_MULTI_PROVIDER_LLM"),
+    FEATURE_VOICE_INPUT: ecs.Secret.fromSecretsManager(appSecrets, "FEATURE_VOICE_INPUT"),
+    FEATURE_IMAGE_PROCESSING: ecs.Secret.fromSecretsManager(appSecrets, "FEATURE_IMAGE_PROCESSING"),
+    FEATURE_DOCUMENT_PROCESSING: ecs.Secret.fromSecretsManager(appSecrets, "FEATURE_DOCUMENT_PROCESSING"),
+    FEATURE_PRIVILEGE_ISOLATION: ecs.Secret.fromSecretsManager(appSecrets, "FEATURE_PRIVILEGE_ISOLATION"),
+    FEATURE_PROFILING_ENABLED: ecs.Secret.fromSecretsManager(appSecrets, "FEATURE_PROFILING_ENABLED"),
+    FEATURE_CONSOLIDATION_ENABLED: ecs.Secret.fromSecretsManager(appSecrets, "FEATURE_CONSOLIDATION_ENABLED"),
+    FEATURE_SELF_REVIEW_ENABLED: ecs.Secret.fromSecretsManager(appSecrets, "FEATURE_SELF_REVIEW_ENABLED"),
   };
 
   const gatewayTask = new ecs.FargateTaskDefinition(stack, "GatewayTask", {
@@ -205,6 +250,14 @@ export function EcsStack({ stack }: StackContext) {
     ],
   });
 
+  // Plane task roles need S3 access for attachments, knowledge snapshots, voice, and docs.
+  for (const task of [gatewayTask, brainTask, handsTask, workersTask]) {
+    attachments.grantReadWrite(task.taskRole);
+    knowledgeSnapshots.grantReadWrite(task.taskRole);
+    voice.grantReadWrite(task.taskRole);
+    documents.grantReadWrite(task.taskRole);
+  }
+
   const gatewayService = new ecs.FargateService(stack, "GatewayService", {
     cluster,
     taskDefinition: gatewayTask,
@@ -256,7 +309,12 @@ export function EcsStack({ stack }: StackContext) {
   });
 
   const certArn = (process.env.ALB_CERTIFICATE_ARN || "").trim();
-  if (certArn) {
+  const importedHttpsListenerArn = (process.env.ALB_HTTPS_LISTENER_ARN || "").trim();
+  const createHttpsListener = (process.env.ALB_CREATE_HTTPS_LISTENER || "").trim() === "1";
+
+  // If a listener already exists (manually created or from a previous stack), import it
+  // and skip listener creation to avoid CloudFormation AlreadyExists conflicts.
+  if (createHttpsListener && certArn && !importedHttpsListenerArn) {
     alb.addListener("HttpsListener", {
       port: 443,
       protocol: elbv2.ApplicationProtocol.HTTPS,

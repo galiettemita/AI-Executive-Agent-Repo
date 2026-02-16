@@ -24,11 +24,20 @@ class Settings(BaseSettings):
     JWT_SECRET: str = "dev_only_change_me"
     APP_BASE_URL: str = "https://ai-shopping-assistant-backend-6bgf.onrender.com"
     APP_VERSION: str = ""
+    CLERK_SECRET_KEY: str | None = None
 
     # ── OpenAI ──────────────────────────────────────────────────
     OPENAI_API_KEY: str | None = None
     OPENAI_MODEL: str = "gpt-4o-mini"
     OPENAI_EMBEDDING_MODEL: str = "text-embedding-3-small"
+    OPENAI_ORG_ID: str | None = None
+
+    # ── Multi-Provider LLM Router (Blueprint v5 Section 9) ─────
+    ANTHROPIC_API_KEY: str | None = None
+    GOOGLE_AI_API_KEY: str | None = None
+    LOCAL_LLM_ENDPOINT: str | None = None
+    LLM_ROUTER_FAILOVER_TIMEOUT_S: int = 30
+    LLM_ROUTER_HEALTH_CHECK_INTERVAL: int = 30
 
     # ── Stripe ──────────────────────────────────────────────────
     STRIPE_SECRET_KEY: str | None = None
@@ -78,6 +87,10 @@ class Settings(BaseSettings):
     WHATSAPP_APP_SECRET: str = Field(
         default="",
         validation_alias=AliasChoices("WHATSAPP_APP_SECRET", "WA_APP_SECRET"),
+    )
+    WHATSAPP_BUSINESS_ACCOUNT_ID: str = Field(
+        default="",
+        validation_alias=AliasChoices("WHATSAPP_BUSINESS_ACCOUNT_ID", "WA_BUSINESS_ACCOUNT_ID"),
     )
     WHATSAPP_PUBLIC_NUMBER: str = ""  # E.164 without "+" for wa.me links
 
@@ -267,10 +280,44 @@ class Settings(BaseSettings):
     POSTHOG_API_KEY: str | None = None
     POSTHOG_HOST: str = "https://app.posthog.com"
 
+    # ── Feature Flags (Blueprint Appendix A) ────────────────────
+    FEATURE_TIER_3_ENABLED: bool = True
+    FEATURE_PROACTIVE_ENABLED: bool = True
+    FEATURE_IMESSAGE_ENABLED: bool = False
+    FEATURE_BEHAVIORAL_INTELLIGENCE: bool = True
+    FEATURE_PROFILING_ENABLED: bool = True
+    FEATURE_CONSOLIDATION_ENABLED: bool = False
+    FEATURE_SELF_REVIEW_ENABLED: bool = False
+    FEATURE_MULTI_PROVIDER_LLM: bool = True
+    FEATURE_VOICE_INPUT: bool = True
+    FEATURE_VOICE_OUTPUT: bool = False
+    FEATURE_IMAGE_PROCESSING: bool = True
+    FEATURE_DOCUMENT_PROCESSING: bool = False
+    FEATURE_TEAM_DELEGATION: bool = False
+    FEATURE_RESEARCH_ENGINE: bool = False
+    FEATURE_WORKFLOWS: bool = False
+    FEATURE_MCP_CLIENT: bool = False
+    FEATURE_EMOTION_DETECTION: bool = True
+    FEATURE_PRIVILEGE_ISOLATION: bool = False
+    FEATURE_DOCUMENT_GENERATION: bool = False
+    FEATURE_CROSS_CHANNEL_CONTINUITY: bool = False
+    FEATURE_AB_TESTING: bool = False
+
+    # ── Temporal Orchestration (Tier 3) ────────────────────────
+    TEMPORAL_ENABLED: bool = False
+    TEMPORAL_HOST: str | None = None
+    TEMPORAL_NAMESPACE: str = "default"
+    TEMPORAL_TASK_QUEUE_TIER3: str = "executive-os-tier3"
+    TEMPORAL_TIER3_WORKFLOW_NAME: str = "Tier3PlannerWorkflow"
+    TEMPORAL_WORKFLOW_TIMEOUT_S: int = 120
+
     # ── Storage ────────────────────────────────────────────────
     STORAGE_BACKEND: str = "local"  # local | s3
     LOCAL_STORAGE_PATH: str = "./storage"
     S3_BUCKET: str | None = None
+    S3_KNOWLEDGE_BUCKET: str | None = None
+    S3_VOICE_BUCKET: str | None = None
+    S3_DOCUMENTS_BUCKET: str | None = None
     S3_REGION: str | None = None
     AWS_REGION: str | None = None
     S3_ACCESS_KEY_ID: str | None = None

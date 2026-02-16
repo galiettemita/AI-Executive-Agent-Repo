@@ -213,6 +213,57 @@ def get_outlook_events_for_daily_brief(
     if not access_token:
         return []
 
+    try:
+        now = datetime.now(timezone.utc)
+        window_end = now + timedelta(days=days_ahead)
+        events = list_events_in_range(
+            db=db,
+            user_id=user_id,
+            start_utc=now,
+            end_utc=window_end,
+            max_results=20,
+        )
+        simplified = []
+        for event in events:
+            start = event.get("start") or {}
+            end = event.get("end") or {}
+            simplified.append(
+                {
+                    "id": event.get("id"),
+                    "summary": event.get("summary") or "No title",
+                    "description": None,
+                    "start": start.get("dateTime"),
+                    "end": end.get("dateTime"),
+                    "location": event.get("location"),
+                    "attendees": event.get("attendees") or [],
+                    "link": event.get("webLink"),
+                    "is_all_day": False,
+                }
+            )
+        return simplified
+    except Exception as e:
+        logger.error("Error fetching Outlook events for daily brief (user %s): %s", user_id, e)
+        return []
+
+
+def delete_outlook_event(
+    db: Session,
+    user_id: str,
+    event_id: str,
+) -> Dict[str, Any]:
+    access_token = get_valid_microsoft_access_token(db=db, user_id=user_id)
+    if not access_token:
+        raise RuntimeError("Microsoft not connected. Ask the user to connect first.")
+
+    resp = httpx.delete(
+        f"{GRAPH_BASE_URL}/me/events/{event_id}",
+        headers=_auth_headers(access_token),
+        timeout=15.0,
+    )
+    if resp.status_code >= 400:
+        raise RuntimeError(f"Microsoft calendar delete failed: {resp.text}")
+    return {"provider": "microsoft", "event_id": event_id, "deleted": True}
+
 
 def get_outlook_event(
     db: Session,
@@ -249,35 +300,3 @@ def get_outlook_event(
         "organizer": (event.get("organizer") or {}).get("emailAddress"),
         "provider": "microsoft",
     }
-
-    try:
-        now = datetime.now(timezone.utc)
-        window_end = now + timedelta(days=days_ahead)
-        events = list_events_in_range(
-            db=db,
-            user_id=user_id,
-            start_utc=now,
-            end_utc=window_end,
-            max_results=20,
-        )
-        simplified = []
-        for event in events:
-            start = event.get("start") or {}
-            end = event.get("end") or {}
-            simplified.append(
-                {
-                    "id": event.get("id"),
-                    "summary": event.get("summary") or "No title",
-                    "description": None,
-                    "start": start.get("dateTime"),
-                    "end": end.get("dateTime"),
-                    "location": event.get("location"),
-                    "attendees": event.get("attendees") or [],
-                    "link": event.get("webLink"),
-                    "is_all_day": False,
-                }
-            )
-        return simplified
-    except Exception as e:
-        logger.error("Error fetching Outlook events for daily brief (user %s): %s", user_id, e)
-        return []

@@ -13,6 +13,7 @@ from app.channels.whatsapp import (
     send_whatsapp_text,
     extract_whatsapp_statuses,
     mark_whatsapp_read,
+    fetch_whatsapp_media_url,
 )
 from app.services.inbound_events import already_processed, record_inbound
 from app.services.history import (
@@ -143,6 +144,12 @@ async def receive(request: Request, db: Session = Depends(get_db)):
         from_phone = event["from"]
         event_type = event.get("type", "text")
 
+        media_id = event.get("media_id")
+        if media_id:
+            media_url = fetch_whatsapp_media_url(str(media_id))
+            if media_url:
+                event["media_url"] = media_url
+
         masked_phone = f"{from_phone[:3]}***{from_phone[-2:]}" if from_phone else "unknown"
         logger.info("WhatsApp message received: id=%s from=%s type=%s", external_id, masked_phone, event_type)
         
@@ -208,6 +215,14 @@ async def receive(request: Request, db: Session = Depends(get_db)):
             record_inbound(db, channel="whatsapp", external_id=external_id, user_id=user_id)
             logger.info("Recorded inbound location %s", external_id)
             return {"ok": True, "location_saved": True, "profile": profile}
+
+        if event_type in ("audio", "image", "document"):
+            # Full multimodal processing runs in async Blueprint pipeline in staging/prod.
+            reply = "Received your media. I will process it and follow up shortly."
+            send_whatsapp_text(to_phone_e164=from_phone, text=reply)
+            record_inbound(db, channel="whatsapp", external_id=external_id, user_id=user_id)
+            logger.info("Recorded inbound media %s (sync path)", external_id)
+            return {"ok": True, "media_received": True}
 
         text = event["text"]
         logger.info("WhatsApp text message length=%s", len(text))

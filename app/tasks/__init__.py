@@ -5,3 +5,6 @@
 
 from app.tasks import system  # noqa: F401
 from app.tasks import inbound_whatsapp  # noqa: F401
+from app.tasks import google_calendar_sync  # noqa: F401
+from app.tasks import google_gmail_sync  # noqa: F401
+from app.tasks import microsoft_sync  # noqa: F401

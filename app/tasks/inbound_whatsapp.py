@@ -8,18 +8,20 @@ import httpx
 from sqlalchemy.orm import Session
 
 from app.blueprint.contracts import Channel, MessageDirection
-from app.blueprint.contracts import InboundMessage, OutboundMessage
+from app.blueprint.contracts import InboundMessage, InputModality, OutboundMessage
 from app.blueprint.brain.responder import generate_reply
 from app.blueprint.brain.tier_router import route_tier
+from app.blueprint.multimodal import preprocess_inbound_message
 from app.blueprint.db import (
     attach_run_to_message,
     complete_run,
     create_run,
     get_or_create_user_by_phone,
     insert_message,
+    record_side_effect,
 )
 from app.blueprint.session import get_or_create_conversation_session
-from app.channels.whatsapp import send_whatsapp_text
+from app.channels.whatsapp_adapter import send_whatsapp_adapted
 from app.core.celery_app import celery_app
 from app.core.config import settings
 from app.core.redis import get_redis
@@ -81,6 +83,7 @@ def process_whatsapp_inbound(event: dict[str, Any]) -> dict[str, Any]:
     from_phone = str(event.get("from") or "").strip()
     event_type = str(event.get("type") or "text").strip()
     text = str(event.get("text") or "").strip()
+    media_url = str(event.get("media_url") or "").strip() or None
 
     db = _db()
     try:
@@ -97,6 +100,10 @@ def process_whatsapp_inbound(event: dict[str, Any]) -> dict[str, Any]:
             inbound_content = {"location": event.get("location") or {}}
         else:
             inbound_content = {"text": text}
+            if media_url:
+                inbound_content["media_url"] = media_url
+            if event_type in ("audio", "image", "document"):
+                inbound_content["input_modality"] = event_type
 
         message_id = insert_message(
             db,
@@ -147,9 +154,30 @@ def process_whatsapp_inbound(event: dict[str, Any]) -> dict[str, Any]:
                 state="completed",
                 total_cost_cents=0,
                 total_latency_ms=int((time.perf_counter() - started) * 1000),
+                llm_provider="openai",
+                knowledge_files_injected=[],
             )
-            send_whatsapp_text(to_phone_e164=from_phone, text=reply)
+            send_whatsapp_adapted(to_phone_e164=from_phone, text=reply)
+            record_side_effect(
+                db,
+                run_id=run_id,
+                user_id=user.id,
+                effect_type="whatsapp_send",
+                description="Sent WhatsApp outbound message",
+                metadata={"to": from_phone, "reply_preview": reply[:280]},
+                reversible=False,
+            )
             return {"ok": True, "user_id": user.id, "conversation_id": conversation_id, "tier": 0, "meta": {}}
+
+        modality = InputModality.TEXT
+        if event_type == "audio":
+            modality = InputModality.VOICE
+        elif event_type == "image":
+            modality = InputModality.IMAGE
+        elif event_type == "document":
+            modality = InputModality.DOCUMENT
+        elif event_type == "location":
+            modality = InputModality.LOCATION
 
         inbound_msg = InboundMessage(
             channel=Channel.WHATSAPP,
@@ -159,8 +187,21 @@ def process_whatsapp_inbound(event: dict[str, Any]) -> dict[str, Any]:
             run_id=run_id,
             from_phone=from_phone,
             text=text,
+            input_modality=modality,
+            media_url=media_url,
             raw=event.get("raw") if isinstance(event.get("raw"), dict) else {},
         )
+
+        processed = preprocess_inbound_message(inbound_msg)
+        inbound_msg.content = processed.normalized_text
+        inbound_msg.text = processed.normalized_text
+        inbound_msg.raw = {
+            **(inbound_msg.raw or {}),
+            "extracted_entities": processed.extracted_entities,
+            "transcription_confidence": processed.transcription_confidence,
+            "emotion_detected": processed.emotion_detected.value,
+            "content_provenance": processed.content_provenance.value,
+        }
 
         try:
             outbound = _brain_respond(inbound_msg)
@@ -198,10 +239,25 @@ def process_whatsapp_inbound(event: dict[str, Any]) -> dict[str, Any]:
             total_cost_cents=0,
             total_latency_ms=int((time.perf_counter() - started) * 1000),
             error=error_payload,
+            llm_provider=str(meta.get("provider") or "openai") if isinstance(meta, dict) else "openai",
+            knowledge_files_injected=list(meta.get("knowledge_files_injected") or []) if isinstance(meta, dict) else [],
         )
 
         # Send outbound message (no-op if WA creds not configured)
-        send_whatsapp_text(to_phone_e164=from_phone, text=reply)
+        send_whatsapp_adapted(
+            to_phone_e164=from_phone,
+            text=reply,
+            metadata=meta if isinstance(meta, dict) else None,
+        )
+        record_side_effect(
+            db,
+            run_id=run_id,
+            user_id=user.id,
+            effect_type="whatsapp_send",
+            description="Sent WhatsApp outbound message",
+            metadata={"to": from_phone, "reply_preview": reply[:280]},
+            reversible=False,
+        )
 
         return {
             "ok": True,
