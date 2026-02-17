@@ -1,16 +1,22 @@
-# Executive OS v5 — Master Implementation Checklist
+# Executive OS v4.0 — Master Implementation Checklist (Blueprint + MCP + Ops + Auto-Provisioning)
 
-Single source of truth: `EXECUTIVE_BLUEPRINT.pdf`
+Single source of truth docs (all must be satisfied):
+- `EXECUTIVE_BLUEPRINT.pdf` (core agent architecture + 12-month build plan)
+- `MCP_Integration_Specification.docx` (MCP client hub: transports, normalization, sandbox, cost tracking)
+- `MCP_Server_Deployment_Plan.docx` (Waves 1–4: 30 launch MCP servers + hosting + onboarding UX)
+- `MCP_Wave5_6_Expansion.docx` (Waves 5–6: 10 post-launch MCP servers + custom build specs)
+- `Operational_Systems_Blueprint.pdf` (12 operational components: billing, auth, admin, eval, legal, DR, etc.)
+- `Auto_Provisioning_Engine.pdf` (self-extending agent: capability gap detection + conversational provisioning + remote catalog)
 
-This checklist is the full end-to-end plan to take the current codebase from “where it is now” to the final hyper-aware agent described in the v5 blueprint, in the exact build order specified in **Section 38**.
+This checklist is the full end-to-end plan to take the current codebase from “where it is now” to the production-grade Executive OS described across these specs, in the exact build order specified in **EXECUTIVE_BLUEPRINT Section 38**, with Ops/Auto-Provisioning layered into the same months (Ops Blueprint Section 17; Auto-Provisioning Section 16).
 
 Legend
 - `[x]` Done (verified in code and/or deployed)
 - `[ ]` Not done / blocked
 
 Migration rules (must follow)
-- Preserve already-working preserved components unchanged unless v5 explicitly requires changes (per user instructions).
-- Do not jump ahead: build order is Phase 1 → Phase 4 (Section 38).
+- Preserve already-working preserved components unchanged unless v4.0 explicitly requires changes (per user instructions).
+- Do not jump ahead: build order is Phase 1 → Phase 5 (EXECUTIVE_BLUEPRINT Section 38 + MCP Waves 5–6 plan).
 
 Feature Flag Rollout Reminders (Appendix A)
 - [x] Phase 1 exit gate: set `FEATURE_MULTI_PROVIDER_LLM=true` (router v1+v2 done and all LLM calls migrated)
@@ -20,6 +26,7 @@ Feature Flag Rollout Reminders (Appendix A)
 - [x] Phase 2 exit gate: set `FEATURE_PRIVILEGE_ISOLATION=true` (provenance + capability-token enforcement validated)
 - [ ] Phase 3 exit gate: set `FEATURE_CONSOLIDATION_ENABLED=true` (nightly consolidation job validated)
 - [ ] Phase 3 exit gate: set `FEATURE_SELF_REVIEW_ENABLED=true` (weekly self-review job validated)
+- [ ] Phase 3 exit gate: set `FEATURE_MCP_CLIENT=true` (MCP hub + sandbox + Wave 1 E2E validated)
 - [ ] Phase 4 exit gate: set `FEATURE_DOCUMENT_PROCESSING=true` (document ingestion + document generation validated)
 
 ---
@@ -31,7 +38,7 @@ Feature Flag Rollout Reminders (Appendix A)
 - [x] Production ECS deploy listener conflict mitigated in IaC (`ALB_CREATE_HTTPS_LISTENER` gate + existing-listener-safe path)
 - [x] OpenTelemetry (OTEL) wiring exists in app and Axiom ingest is configured (Section 33)
 - [x] Multi-Provider LLM Router implemented; direct OpenAI imports migrated behind router proxy (Section 9)
-- [x] v5 database schema migration authored (19 tables + enums + enhancement columns + RLS policy baseline) (Section 3)
+- [x] v4.0 database schema migration authored (19 tables + enums + enhancement columns + RLS policy baseline) (Section 3)
 
 ---
 
@@ -42,7 +49,11 @@ Feature Flag Rollout Reminders (Appendix A)
 - [x] Production: resolve HTTPS listener conflict path in IaC (`ALB_CREATE_HTTPS_LISTENER` + existing listener compatibility)
 - [x] OpenTelemetry (OTEL) tracing enabled per plane (`OTEL_SERVICE_NAME`) and exported to Axiom
 - [x] Create/confirm S3 buckets per Appendix A: attachments, knowledge snapshots, voice, documents
-- [x] Add v5 feature flags from Appendix A to both staging + prod config (user-confirmed in AWS Secrets Manager)
+- [ ] Disaster Recovery baseline: enable RDS Multi-AZ on day one (staging + prod) (Operational Blueprint Component 7)
+- [ ] Disaster Recovery baseline: enable automated RDS snapshots (daily, 7-day retention) (Operational Blueprint Component 7)
+- [ ] Disaster Recovery baseline: enable point-in-time recovery via WAL archiving/streaming to S3 (Operational Blueprint Component 7)
+- [ ] Disaster Recovery baseline: enable S3 versioning for knowledge/attachments buckets (Operational Blueprint Component 7)
+- [x] Add v4.0 feature flags from Appendix A to both staging + prod config (user-confirmed in AWS Secrets Manager)
 - [x] CI: GitHub Actions runs unit tests + type checks on PRs and on `main` (Section 38 M1 S1-2, Section 34)
 - [x] CD (staging): GitHub Actions builds + pushes plane images to ECR and deploys to ECS (OIDC) (Section 38 M1 S1-2, Section 35)
 - [x] CD (prod): GitHub Actions manual deploy with environment protection (OIDC) (Section 38 M1 S1-2, Section 35)
@@ -62,6 +73,8 @@ Feature Flag Rollout Reminders (Appendix A)
 - [x] Implement WhatsApp Template Library (Appendix C) and store template IDs in runtime config registry
 - [x] Validate template send flow with approved `hello_world` template path (Appendix C, Section 22)
 - [x] Implement Clerk auth integration in Gateway (Section 2, Appendix A)
+- [ ] Auth: enforce phone-based inbound identity resolution: `channel_identifier` -> `channel_connections` (or `user_channels`) -> `accounts.id` (Operational Blueprint Component 2)
+- [ ] Auth: if inbound phone/channel is new, auto-create account + channel connection (Operational Blueprint Component 2)
 - [x] Implement rate limiting targets (per-user and per-IP) + graceful fallback strategy (Section 32)
 
 ## M1–2 S5–8: Google Calendar Connector (Section 38, Section 23, Section 31)
@@ -84,6 +97,21 @@ Feature Flag Rollout Reminders (Appendix A)
 - [x] Implement `/api/v1/voice/transcribe` endpoint (Section 5.1)
 - [x] Implement content provenance tagging for voice transcriptions (Section 32, Section 3.2)
 
+## M2 (Operational Overlay): Billing + Legal Foundation + Channel Linking (Operational Blueprint Components 1, 2, 6)
+- [ ] Billing: create Stripe account + set up Products/Prices for Free Trial, Personal ($19.99/mo), Professional ($49.99/mo), Enterprise (custom) (Operational Blueprint Component 1)
+- [ ] Billing: store Stripe env vars (`STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_ID_PERSONAL`, `STRIPE_PRICE_ID_PROFESSIONAL`) (Ops Blueprint Appendix A)
+- [ ] Billing middleware: enforce as FIRST gate for every inbound message (no Brain/MCP cost if blocked) (Ops Blueprint Invariant 11)
+- [ ] Billing middleware: subscription state check + daily message caps + MCP budget caps + burst rate limiting (Ops Blueprint Component 1; Ops Blueprint Section 3.5)
+- [ ] Billing: implement free trial (14 days, 20 msgs/day, 3 MCP servers) and plan gating for MCP servers/features (Ops Blueprint Component 1; Deployment Plan Section 10)
+- [ ] Billing: implement daily message counter in Redis (INCR) + UTC midnight reset job/cron (Ops Blueprint Component 1)
+- [ ] Stripe webhooks: `/api/v1/billing/webhooks/stripe` handle subscription + invoice events and sync `subscriptions`/`invoices` tables (Ops Blueprint Component 1)
+- [ ] Billing API: `/api/v1/billing/checkout` (Checkout Session) and `/api/v1/billing/portal` (Customer Portal) (Ops Blueprint Component 1)
+- [ ] Auth: implement channel linking flow (WhatsApp primary links iMessage identity via OTP) (Ops Blueprint Component 2)
+- [ ] Auth API: implement `/api/v1/auth/link-channel` endpoint + conflict detection if channel already linked to different user_id (Ops Blueprint Component 2)
+- [ ] Legal: draft v1 privacy policy (data types, retention, third-party sharing incl. LLM providers, data rights) (Ops Blueprint Component 6)
+- [ ] Legal: implement retention config `DATA_RETENTION_DAYS_CANCELED=90` and persist `deletion_requested_at` (deletion pipeline built in Month 3) (Ops Blueprint Component 6)
+- [ ] OAuth vault: ensure ONE token storage mechanism reused for native connectors + MCP OAuth + Stripe customer/billing tokens (Ops Blueprint Month 2 integration note)
+
 ## M3 S13–14: Image Processing Pipeline (Section 38, Section 21.2)
 - [x] Implement image download + GPT-4o vision extraction path in multimodal pipeline (Section 21.2)
 - [x] Persist extracted entities + modality metadata in `messages.extracted_entities` (Section 3.2)
@@ -94,9 +122,23 @@ Feature Flag Rollout Reminders (Appendix A)
 - [x] Implement approval flow path in WhatsApp button/template channel adapter (Section 12, Section 22, Appendix C)
 - [x] Implement `side_effects` ledger write path in schema + executor plumbing (Section 3.2 table 10)
 
+## M3 (Operational Overlay): Multi-Channel Sync + Legal Deletion/Export + DR Drills (Operational Blueprint Components 6, 7, 10)
+- [ ] Multi-channel schema: extend conversation/session model with `active_channel` + `channels_used` (Ops Blueprint Component 10)
+- [ ] Multi-channel schema: extend `messages` with `channel` + `channel_message_id` (Ops Blueprint Component 10)
+- [ ] Gateway: implement response routing to `active_channel` (Brain plane must stay channel-agnostic) (Ops Blueprint Invariant: formatting is Gateway concern)
+- [ ] Gateway: implement per-user distributed lock (Redis SETNX, 30s TTL) to prevent simultaneous channel handling races (Ops Blueprint Component 10)
+- [ ] Gateway: implement channel-specific formatting (WhatsApp splitting/markup limits; iMessage plain text; web markdown) (Ops Blueprint Component 10)
+- [ ] Legal API: implement `DELETE /api/v1/auth/me` to start irreversible deletion pipeline (async worker, not request path) (Ops Blueprint Components 6; Invariant 14)
+- [ ] Legal pipeline: immediate step (status=deleted, revoke tokens), +24h (delete knowledge files + conversations + tool_executions + Redis keys), +7d (Stripe + identity provider deletion), +30d (verification + confirmation) (Ops Blueprint Component 6)
+- [ ] Legal API: implement `GET /api/v1/auth/me/export` to export all user data as ZIP (JSON) (Ops Blueprint Component 6)
+- [ ] DR runbooks: database failure, bad deployment, regional outage, knowledge file corruption, accidental deletion (Ops Blueprint Component 7)
+- [ ] DR drill: automate restore test (restore snapshot to staging, verify integrity) + schedule monthly restore drill (Ops Blueprint Component 7)
+
 ## Behavioral Intelligence (Parallel) — Phase 1 (Section 38, Section 8, Section 13–17, Appendix D/E/F)
-- [x] Implement full v5 DB schema: all 19 tables + enums + indexes + RLS baseline migration (Section 3.1–3.4)
-- [x] Implement v5 schema enhancements to existing tables (messages/runs/tool_executions/proactive_triggers/accounts) (Section 3.2)
+- [x] Implement full v4.0 DB schema: all 19 tables + enums + indexes + RLS baseline migration (Section 3.1–3.4)
+- [x] Implement v4.0 schema enhancements to existing tables (messages/runs/tool_executions/proactive_triggers/accounts) (Section 3.2)
+- [ ] Operational schema (early): ensure `accounts`/`users` canonical identity + channel linking tables exist in the FIRST migration (Operational Blueprint Components 2 + 10)
+- [ ] Operational schema (early): add `subscriptions` + `invoices` tables (schema only, Stripe wiring later) in the FIRST migration (Operational Blueprint Component 1; Ops Blueprint Section 16)
 - [x] Implement Knowledge File templates + DB versioning in `knowledge_files` (`USER.md`, `SOUL.md`, `IDENTITY.md`, `AGENTS.md`, `MEMORY.md`, `HEARTBEAT.md`, `TOOLS.md`, `TEAM.md`, `WORKFLOWS.md`) (Section 8, Section 14)
 - [x] Implement knowledge file hot cache in Redis for IDENTITY/SOUL/AGENTS (Section 8)
 - [x] Implement Knowledge completeness scoring + tracking (Appendix D, Section 33)
@@ -116,6 +158,7 @@ Feature Flag Rollout Reminders (Appendix A)
 - [x] Privilege isolation policy includes MCP provenance restrictions (`mcp_result`) (Blueprint Section 32, Section B)
 - [x] MCP readiness test added (`tests/test_mcp_readiness.py`) validating registry injection, MCP branch routing, and privilege handling (Section C.2)
 - [x] Read all MCP specs in full: `MCP_Integration_Specification.docx`, `MCP_Server_Deployment_Plan.docx`, `MCP_Wave5_6_Expansion.docx` (Section C.3)
+- [x] Read Ops specs in full: `Operational_Systems_Blueprint.pdf`, `Auto_Provisioning_Engine.pdf` (Ops Blueprint Section 17; Auto-Provisioning Section 16)
 - [ ] Deploy DB enum migration `q1w2e3r4t5y6_add_mcp_result_provenance_enum.py` to staging + prod and verify values live (Section B/C)
 
 ---
@@ -126,6 +169,13 @@ Feature Flag Rollout Reminders (Appendix A)
 - [x] Replace fixed T2 max-5 loop with adaptive iteration limit + hard cap 10 (Section 7.1)
 - [x] Add semantic validation step before tool execution in T2 (Section 7.1)
 - [x] Add self-reflection loop after T2+ completion (Section 7.1, Section 38)
+
+## M4 (Operational Overlay): LLM Failover + Degraded Mode (Operational Blueprint Component 8)
+- [ ] Implement `LLMProviderHealth` model and background probe loop (default: every 30s per provider) (Ops Blueprint Appendix A)
+- [ ] Implement LLM Router failover matrix: provider down -> next provider; all external down -> degraded mode (local only); all down -> maintenance mode (Ops Blueprint Component 8)
+- [ ] Degraded mode behavior: Tier 1/2 handled on local model; Tier 3 queued for retry; Research Engine disabled; notify user on first degraded-mode message (Ops Blueprint Component 8)
+- [ ] Recovery behavior: gradual traffic ramp on recovery (10% -> 25% -> 50% -> 100% over ~5 min) (Ops Blueprint Component 8)
+- [ ] Staging tests: simulate provider outage and validate automatic failover + recovery ramp (Ops Blueprint Component 8)
 
 ## M4 S3–4: Email Sending (Section 38, Section 12, Section 32)
 - [x] Implement email send tool with approval flow + recipient verification + draft-review-send cycle (Section 38)
@@ -143,6 +193,17 @@ Feature Flag Rollout Reminders (Appendix A)
 - [x] Implement capability tokens at run creation and enforce on every tool call (Section 32)
 - [x] Implement Pydantic structured output validation + retries for every LLM call (Section 32)
 - [x] Add prompt injection fuzzing to CI (Section 32 table, Section 34)
+
+## M5 (Operational Overlay): Abuse Prevention + Admin Dashboard v1 (Operational Blueprint Components 3, 9)
+- [ ] Abuse prevention schema: create `moderation_queue` table (FK -> users/accounts, messages) (Ops Blueprint Component 9; Ops Blueprint Section 16)
+- [ ] Safety classifier (input): score every inbound message for injection/harassment/self-harm/illegal activity (parallel, no added latency) (Ops Blueprint Component 9)
+- [ ] Safety classifier (output): score every outbound response before delivery (Ops Blueprint Component 9)
+- [ ] Safety circuit breaker: 3+ safety flags in 1 hour -> rate-limit user to 5 msgs/hr + force synchronous output classifier (Ops Blueprint Component 9)
+- [ ] Gateway burst rate limiting: 10 messages/min per user (Redis sliding window) (Ops Blueprint Component 9)
+- [ ] Admin auth: separate admin role in identity provider; enforce via JWT claim (role: admin) (Ops Blueprint Invariant 12)
+- [ ] Admin audit trail: log admin actions (suspend user, resolve moderation, rollback prompt) with admin identity (Ops Blueprint Invariant 12)
+- [ ] Admin API v1: `/api/v1/admin/users` (list/search), `/api/v1/admin/users/:id` (detail), `/api/v1/admin/mcp/health`, `/api/v1/admin/moderation/queue` (Ops Blueprint Component 3)
+- [ ] Admin UI v1 (minimal dashboard): System Health + User Management + Moderation Queue (Ops Blueprint Component 3)
 
 ## M5–6 S11–14: Tavily + Tier 3 Planner + Saga Compensation (Section 25, Section 26, Section 31, Section 38)
 - [x] Implement Tavily web search tool (Section 2, Section 38)
@@ -162,6 +223,19 @@ Feature Flag Rollout Reminders (Appendix A)
 - [x] Implement delegations table CRUD endpoints `/api/v1/delegations` (Section 5.4)
 - [x] Implement basic delegation flow + reminders + HEARTBEAT delegation tracker updates (Section 24, Section 19)
 
+## M6 (Operational Overlay): Eval/Quality + Admin v2 + Notification Foundation (Operational Blueprint Components 3, 4, 11)
+- [ ] Eval schema: create `eval_results` table (FK -> conversations/runs, messages) (Ops Blueprint Component 4; Ops Blueprint Section 16)
+- [ ] Feedback schema: create `user_feedback` table (FK -> users/accounts, messages) (Ops Blueprint Component 4; Ops Blueprint Section 16)
+- [ ] Notifications schema: create `scheduled_notifications` table (FK -> users/accounts) (Ops Blueprint Component 11; Ops Blueprint Section 16)
+- [ ] Golden eval suite: expand to 100+ test cases covering major capabilities (calendar/email/tasks/web/MCP/multi-tool flows) (Ops Blueprint Component 4)
+- [ ] Live quality scoring: evaluator LLM scores ~10% of production responses on coherence/helpfulness/safety/tool_usage; runs async (never adds latency) (Ops Blueprint Component 4; Invariant 13)
+- [ ] Quality alerts: score drop below threshold -> PagerDuty; safety_score drop -> immediate flag; negative feedback spike -> product alert (Ops Blueprint Component 4)
+- [ ] User feedback UX: thumbs up/down on responses; persist to `user_feedback`; negative feedback creates moderation_queue entry (Ops Blueprint Component 4)
+- [ ] Admin UI v2: add Financial panel (Stripe MRR/churn/cost per user), Moderation workflow, Eval/Quality panel (Ops Blueprint Component 3)
+- [ ] Notification scheduler: enforce quiet hours (default 10pm–7am user TZ) + rate limits (5/day, 2/hour) + timezone-aware scheduling (Ops Blueprint Component 11; Invariant 15)
+- [ ] Notification delivery: route to `active_channel` and format per channel constraints (Ops Blueprint Component 11)
+- [ ] Notifications: build infra only in Month 6 (no content generation yet; content comes after knowledge files exist) (Ops Blueprint Component 11)
+
 ## Behavioral Intelligence (Parallel) — Phase 2 (Section 11, Section 12, Section 18)
 - [x] Implement Memory dual-path: episodic memory + knowledge file updates + knowledge graph edge writes (Section 11)
 - [x] Implement implicit preference learning from approvals/edits/outcomes (Section 18)
@@ -173,66 +247,145 @@ Feature Flag Rollout Reminders (Appendix A)
 # PHASE 3 — EXPANSION (Month 7–9) (Section 38)
 
 ## M7 S1–4: Apple Messages for Business (Section 22, Section 38)
-- [ ] Implement iMessage webhook receiver + cert chain validation (Section 5.1, Section 32)
-- [ ] Implement iMessage-native UX constraints in Channel Adapter (Section 22)
+- [x] Implement iMessage webhook receiver + cert chain validation (Section 5.1, Section 32)
+- [x] Implement iMessage-native UX constraints in Channel Adapter (Section 22)
 
 ## M7 S5–6: Slack Connector + Workflows v1 (Section 26, Section 38)
-- [ ] Implement Slack connector read/send + channel summaries (Section 23)
-- [ ] Implement user-defined workflow engine: NL → workflow definition stored in WORKFLOWS.md + workflows table (Section 26, Section 8.9)
-- [ ] Implement workflows CRUD endpoints `/api/v1/workflows` + dry-run `/api/v1/workflows/{id}/test` (Section 5.4)
+- [x] Implement Slack connector read/send + channel summaries (Section 23)
+- [x] Implement user-defined workflow engine: NL → workflow definition stored in WORKFLOWS.md + workflows table (Section 26, Section 8.9)
+- [x] Implement workflows CRUD endpoints `/api/v1/workflows` + dry-run `/api/v1/workflows/{id}/test` (Section 5.4)
 
 ## M7–8 S7–10: Advanced Scheduling (Section 24.2, Section 38)
-- [ ] Implement multi-person availability and timezone intelligence using TEAM.md preferences (Section 24.2)
-- [ ] Implement conflict resolution, buffers, ranking by preference alignment (Section 24.2)
+- [x] Implement multi-person availability and timezone intelligence using TEAM.md preferences (Section 24.2)
+- [x] Implement conflict resolution, buffers, ranking by preference alignment (Section 24.2)
+
+## M7 (Operational Overlay): Prompt Versioning + Analytics + Notifications Content (Operational Blueprint Components 5, 11, 12)
+- [ ] Prompt versioning schema: create `prompt_versions` table (Ops Blueprint Component 5; Ops Blueprint Section 16)
+- [ ] Prompt versioning: version-control ALL prompts (system prompt, knowledge templates, context compiler templates, tool descriptions, evaluator prompts) (Ops Blueprint Component 5)
+- [ ] Prompt rollout pipeline: draft -> canary (5%) -> rolling (25% -> 50% -> 100%) -> active (Ops Blueprint Component 5)
+- [ ] Prompt selection: implement deterministic user hashing + `select_prompt_version()` in LLM Router (Ops Blueprint Component 5)
+- [ ] Prompt rollback: one admin API call reverts to previous active version within 60 seconds (Ops Blueprint Component 5)
+- [ ] Eval linkage: every `eval_results` row stores `prompt_version_id` for the response (Ops Blueprint Component 5)
+- [ ] Analytics schema: create `analytics_events` + `analytics_daily` tables (Ops Blueprint Component 12; Ops Blueprint Section 16)
+- [ ] Analytics emission: emit events for key actions (message_received/sent, tool_invoked, mcp_server_connected, onboarding_step_completed, feedback_given, subscription status changes) to SQS/EventBridge (Ops Blueprint Component 12)
+- [ ] Analytics aggregation: daily job computes DAU/MAU, retention, message volume, tool usage, quality scores, revenue; writes to `analytics_daily` (Ops Blueprint Component 12)
+- [ ] Admin analytics panel: DAU/MAU, retention curves, feature adoption, revenue metrics (Ops Blueprint Component 12)
+- [ ] Notification content generation: morning briefing, deadline alerts, task reminders, weekly summary (uses HEARTBEAT/ROUTINES/knowledge files; Brain generates content, Gateway delivers) (Ops Blueprint Component 11)
+- [ ] Notifications respect agency: user can disable proactive messages immediately (persist preferences and check before delivery) (Ops Blueprint Invariant 15)
+- [ ] Absence detection: 3+ days inactive -> reduce to critical-only; 7+ days -> pause proactive (Ops Blueprint Component 11)
+- [ ] Travel detection: timezone shifts from calendar -> adjust briefing schedule (Ops Blueprint Component 11)
+
+## M7 (Auto-Provisioning Layer 1): Capability Gap Detection (Auto-Provisioning Sections 3, 9, 12, 16)
+- [ ] TOOLS.md: extend generation to include `## Available Servers (Not Connected)` from `server_catalog` (plan-gated) (Auto-Provisioning Section 12; Deployment Plan Section 11)
+- [ ] ToolRegistry: register native tool `provision_server` (handler stub OK for Month 7) (Auto-Provisioning Section 9)
+- [ ] ReAct planning: when required tool(s) missing from ToolRegistry, search TOOLS.md Available Servers for match and call `provision_server(server_id, reason)` (Auto-Provisioning Section 3)
+- [ ] Golden test: “Book me a flight” with Duffel not connected -> agent finds `duffel-mcp` in catalog -> calls `provision_server` (Auto-Provisioning Section 17; Ops Blueprint Component 4)
 
 ## M8 S11–12: MCP Foundation Build (Integration Spec Section 3–5, 14, 15)
-- [ ] Create DB tables `mcp_servers` + `mcp_user_servers` with RLS + indexes (Integration Spec Section 14)
-- [ ] Implement MCP Pydantic contracts (`MCPServerConfig`, `MCPToolSchema`, `MCPToolResult`, `MCPContentBlock`, `MCPServerHealth`) (Integration Spec Section 15)
-- [ ] Build transport interfaces + implementations: streamable HTTP + stdio (Integration Spec Section 5.1–5.3)
-- [ ] Implement `MCPClientHub` singleton with connection pool + initialize handshake + `tools/list` discovery (Integration Spec Section 3)
-- [ ] Implement `MCPServerRegistry` CRUD + capability probe + manifest validation (Integration Spec Section 4)
-- [ ] Add mock MCP servers (echo/error/slow) for deterministic integration tests (Integration Spec Section 13.2)
+- [x] Create DB tables `mcp_servers` + `mcp_user_servers` with RLS + indexes (Integration Spec Section 14)
+- [x] Implement MCP Pydantic contracts (`MCPServerConfig`, `MCPToolSchema`, `MCPToolResult`, `MCPContentBlock`, `MCPServerHealth`) (Integration Spec Section 15)
+- [x] Build transport interfaces + implementations: streamable HTTP + stdio (Integration Spec Section 5.1–5.3)
+- [x] Implement `MCPClientHub` singleton with connection pool + initialize handshake + `tools/list` discovery (Integration Spec Section 3)
+- [x] Implement `MCPServerRegistry` CRUD + capability probe + manifest validation (Integration Spec Section 4)
+- [x] Add mock MCP servers (echo/error/slow) for deterministic integration tests (Integration Spec Section 13.2)
+
+## M8 (Auto-Provisioning Layer 2): DB + Pipeline Foundation (Auto-Provisioning Sections 6, 7, 10, 16)
+- [ ] DB: add `provisioning_requests`, `server_catalog`, `provisioning_declined` tables (in same migration block as `mcp_servers`/`mcp_user_servers`) (Auto-Provisioning Section 6)
+- [ ] ProvisioningPipeline: implement async state machine with valid transitions, atomic state changes, timeouts, retry logic, and dedup (Auto-Provisioning Section 10; Appendix A)
+- [ ] Contracts: implement Pydantic models (`ProvisioningRequest`, `ProvisioningState`, `ProvisionTrigger`, `AuthType`, `ServerCatalogEntry`, `ServerProvisionedEvent`, `ProvisioningFailedEvent`) (Auto-Provisioning Section 7)
+- [ ] Catalog query: implement local catalog search by capability/category/text; enforce plan-gated filtering + declined cooldown checks (Auto-Provisioning Sections 12, 13, 15)
+- [ ] Unit tests: pipeline transitions (valid/invalid), timeout handling, concurrent request dedup (Auto-Provisioning Section 17)
+- [ ] Integration tests: happy path, decline path, expiration path, failure+retry path, concurrent requests, plan gating (Auto-Provisioning Section 17)
 
 ## M8 S13–14: MCP Normalization + Security + Runtime Wiring (Integration Spec Section 6, 7, 10, 11, 16)
-- [ ] Implement `normalize_mcp_tool()` (MCP schema → `ToolSpec`) and `normalize_mcp_result()` (MCP result → `ToolResult`) (Integration Spec Section 6.1–6.2)
-- [ ] Replace MCP stub in tool executor with live invocation bridge (Integration Spec Section 6.3)
-- [ ] Implement MCP sandbox controls (container isolation for stdio, network allowlist, scoped tool lists) (Integration Spec Section 7)
-- [ ] Enforce MCP provenance tagging (`ContentProvenance.MCP_RESULT`) and privilege isolation on all MCP-origin tool calls (Integration Spec Section 7.4)
-- [ ] Implement MCP capability tokens + sampling validation path (Integration Spec Section 7.5)
-- [ ] Implement MCP cost tracking + per-server daily budgets + per-server rate limits (Redis) (Integration Spec Section 10)
-- [ ] Add MCP API surface `/api/v1/mcp/*` (server CRUD, connect/disconnect, tool discovery/execute) (Integration Spec Section 16)
-- [ ] Implement MCP health monitor loop + reconnect/backoff logic (Integration Spec Section 5.4, Section 9)
-- [ ] Add MCP OTEL spans/attributes + logs for server_id/tool_name/latency/cost/error (Integration Spec Section 11.2)
-- [ ] Implement semantic caching + prompt caching + model cascade optimization (Section 38)
+- [x] Implement `normalize_mcp_tool()` (MCP schema → `ToolSpec`) and `normalize_mcp_result()` (MCP result → `ToolResult`) (Integration Spec Section 6.1–6.2)
+- [x] Replace MCP stub in tool executor with live invocation bridge (Integration Spec Section 6.3)
+- [x] Implement MCP sandbox controls (container isolation for stdio, network allowlist, scoped tool lists) (Integration Spec Section 7)
+- [x] Enforce MCP provenance tagging (`ContentProvenance.MCP_RESULT`) and privilege isolation on all MCP-origin tool calls (Integration Spec Section 7.4)
+- [x] Implement MCP capability tokens + sampling validation path (Integration Spec Section 7.5)
+- [x] Implement MCP cost tracking + per-server daily budgets + per-server rate limits (Redis) (Integration Spec Section 10)
+- [x] Add MCP API surface `/api/v1/mcp/*` (server CRUD, connect/disconnect, tool discovery/execute) (Integration Spec Section 16)
+- [x] Implement MCP health monitor loop + reconnect/backoff logic (Integration Spec Section 5.4, Section 9)
+- [x] Add MCP OTEL spans/attributes + logs for server_id/tool_name/latency/cost/error (Integration Spec Section 11.2)
+- [x] Implement semantic caching + prompt caching + model cascade optimization (Section 38)
+
+## M8 (Auto-Provisioning Layer 2): Auth Handlers + Gateway Callback + Activation (Auto-Provisioning Sections 4, 8, 10, 11, 13, 14)
+- [ ] Auth handlers: implement `OAuthProvisionHandler`, `ApiKeyProvisionHandler`, `PreProvisionedHandler` (Auto-Provisioning Section 10)
+- [ ] Gateway route: `GET /api/v1/provision/callback` verifies signed state, exchanges code for tokens, triggers `AUTH_RECEIVED` transition (Auto-Provisioning Section 11)
+- [ ] Gateway pages: `GET /api/v1/provision/success` and `GET /api/v1/provision/expired` (static landing pages) (Auto-Provisioning Section 11)
+- [ ] URL shortener: Redis-backed short links for OAuth in WhatsApp (15-min TTL) (Auto-Provisioning Section 10)
+- [ ] Activator: start/enable server (sidecar or microservice), run MCP capability probe, normalize tools, register tools in ToolRegistry, create `mcp_user_servers` binding, flag TOOLS.md regen (Auto-Provisioning Section 10)
+- [ ] Replace `provision_server` stub with real handler that invokes ProvisioningPipeline + sends chat UX templates (Auto-Provisioning Sections 9, 14; Appendix B)
+- [ ] Security: sign/verify catalog entries; ProvisioningPipeline verifies signature before deploying any image; pull images only from platform ECR (Auto-Provisioning Section 13)
+- [ ] Rate limits: max 5 provisioning requests/hour/user; max 3 concurrent; auth session TTL 15m; cooldown 7d on declines (Auto-Provisioning Section 13)
+- [ ] Provisioning sessions are ephemeral: store session in Redis (15-min TTL), delete after callback; persist only state history in `provisioning_requests` (Auto-Provisioning Invariant 20)
 
 ## M9 S15–16: Plaid Financial Connector + Research Engine v1 (Section 25, Section 38)
-- [ ] Implement Plaid connector with high-risk approval flow (Section 38, Section 12)
-- [ ] Implement Research Engine (Temporal workflow) + research_jobs table usage + scheduled delivery (Section 25)
-- [ ] Implement research CRUD endpoints `/api/v1/research` (Section 5.4)
+- [x] Implement Plaid connector with high-risk approval flow in sandbox mode first (Section 38, Section 12)
+- [x] Keep Plaid Phase 3 scoped to sandbox/staging only (`PLAID_ENV_STAGING=sandbox`), no prod rollout yet
+- [x] Defer Plaid production account verification + `PLAID_SECRET_PROD` capture to Phase 5 pre-go-live gate
+- [x] Treat `PLAID_WEBHOOK_SECRET` as placeholder in Phase 3 (`unused` allowed) and enforce real webhook verification config in Phase 5 before prod enablement
+- [x] Implement Research Engine scheduled workflow baseline + research_jobs table usage + scheduled delivery (Section 25)
+- [x] Implement research CRUD endpoints `/api/v1/research` (Section 5.4)
 
 ## M9 S15–18: MCP Advanced Features + Wave 1 Server Rollout (Integration Spec Section 8 + Deployment Plan Section 4)
-- [ ] Complete MCP resources injection pipeline (`resources/list` + context injection) (Integration Spec Section 8.1)
-- [ ] Complete MCP resource subscription handling (`resources/subscribe`) (Integration Spec Section 8.2)
-- [ ] Complete MCP prompt merge pipeline (`prompts/list` + layered prompt assembly) (Integration Spec Section 8.3)
-- [ ] Complete SSE transport support for legacy MCP servers (Integration Spec Section 5)
+- [x] Complete MCP resources injection pipeline (`resources/list` + context injection) (Integration Spec Section 8.1)
+- [x] Complete MCP resource subscription handling (`resources/subscribe`) (Integration Spec Section 8.2)
+- [x] Complete MCP prompt merge pipeline (`prompts/list` + layered prompt assembly) (Integration Spec Section 8.3)
+- [x] Complete SSE transport support for legacy MCP servers (Integration Spec Section 5)
+- [x] Add Wave 1 bootstrap pipeline (manifest catalog + `/api/v1/mcp/bootstrap/wave1` + `scripts/bootstrap_wave1_mcp.py`) with mock-mode fallback for autonomous validation
 - [ ] Deploy Wave 1 servers 1–3: Google Calendar MCP, Google Drive MCP, Gmail MCP (Deployment Plan Section 4.1–4.3)
 - [ ] Deploy Wave 1 servers 4–8: Notion, Todoist, Brave Search, GitHub, Apple Reminders (Deployment Plan Section 4.4–4.8)
-- [ ] Start Apple Reminders custom server build in parallel with Wave 1 rollout (Deployment Plan Section 4.8)
+- [x] Start Apple Reminders custom server build in parallel with Wave 1 rollout (Deployment Plan Section 4.8)
 - [ ] Run 12-step server deployment checklist for every Wave 1 server (Deployment Plan Section 15)
 
+## M9 (Auto-Provisioning Layer 2): End-to-End Integration + Extra Handlers (Auto-Provisioning Sections 9, 10, 14, 15, 17)
+- [ ] E2E test: Brain calls `provision_server` -> Hands generates auth link -> user authorizes -> callback stores token -> server activates -> tools register -> Brain retries original task and delivers result with confirmation prefix (Auto-Provisioning Section 16)
+- [ ] Brain: implement `ServerProvisionedEvent` handler to re-enter ReAct loop for `original_task_id` with new tools available (Auto-Provisioning Section 9)
+- [ ] Concurrency: if user sends unrelated message while auth pending, process normally; if same server requested twice, return existing request (Auto-Provisioning Section 15)
+- [ ] Declines: user says “not now” -> write `provisioning_declined` cooldown (7 days) and fall back to best alternative (Auto-Provisioning Section 14)
+- [ ] Expiration: auth link TTL 15 minutes; on timeout set state=EXPIRED and offer fresh link on request (Auto-Provisioning Sections 10, 14)
+- [ ] Failure handling: token exchange errors, image pull failures, empty tool probe, wrong API key -> state=FAILED with retry/backoff + user-friendly messaging (Auto-Provisioning Section 15)
+- [ ] Plan gating: if plan does not cover server, do not start provisioning; offer upgrade path (Auto-Provisioning Section 15)
+- [ ] Missing original task: if `original_task_id` missing/expired, confirm connection and ask what to do next (Auto-Provisioning Section 15)
+- [ ] Extra handlers: implement `OAuthConsolidatedHandler` (Connect Google/Microsoft suites), `PlaidLinkProvisionHandler`, `TeslaSSOProvisionHandler` (Auto-Provisioning Section 10)
+- [ ] Catalog seeding: seed `server_catalog` with Wave 1 entries now (expand to Waves 1–4 by Month 12; Waves 1–6 by Month 12 launch) (Auto-Provisioning Section 12)
+- [ ] Add golden scenarios GT-101..GT-105 for provisioning flows (Ops Blueprint Component 4; Auto-Provisioning Section 17)
+
+## M8–9 (Operational Hardening): MCP + Operational Monitoring (Operational Blueprint Months 8–9)
+- [ ] Billing: verify MCP tool calls increment per-user monthly MCP cost and enforce MCP budgets/plan caps (Ops Blueprint Month 8–9)
+- [ ] Eval: verify eval scoring works for responses that include MCP tool usage (tool_usage dimension) (Ops Blueprint Month 8–9)
+- [ ] Abuse prevention: verify classifiers handle MCP-sourced content correctly (`content_provenance=mcp_result`) (Ops Blueprint Month 8–9)
+- [ ] Admin: verify dashboard surfaces MCP server health alongside system health (Ops Blueprint Month 8–9)
+- [ ] Notifications: verify scheduler/delivery can route across channels and use MCP data sources where connected (Ops Blueprint Month 8–9)
+- [ ] Golden tests: run suite with MCP tools connected; add 20+ MCP-specific scenarios (Ops Blueprint Month 8–9)
+
 ## M9 S17–18: Red-Team Eval Suite (Section 34, Section 38)
-- [ ] Implement prompt injection red-team scenarios for email/calendar/web/MCP
-- [ ] Implement wrong-recipient + data exfil + privilege escalation test harness
+- [x] Implement prompt injection red-team scenarios for email/calendar/web/MCP
+- [x] Implement wrong-recipient + data exfil + privilege escalation test harness
 
 ## Behavioral Intelligence (Parallel) — Phase 3 (Section 15, Section 16, Section 19)
-- [ ] Implement nightly consolidation job via BullMQ with contradiction detection across knowledge files (Section 15)
-- [ ] Implement weekly self-review + gap detection + question generation (Section 16)
-- [ ] Implement HEARTBEAT system with goal tracking, milestones, delegation tracking (Section 19)
-- [ ] Implement Bones layer: repository scanning + SKILL.md generation + TOOLS.md mapping + MCP catalog (Section 1.3, Section 38 M9 S11-14)
-- [ ] Implement Muscles layer: model inventory, cost routing, circuit breakers, provider health monitoring (Section 1.3, Section 9, Section 37)
-- [ ] Implement monthly embedding re-embed audit + backfill job (text-embedding-3-small) (Section 2)
+- [x] Implement nightly consolidation job via scheduler (BullMQ-equivalent in this Python stack) with contradiction detection across knowledge files (Section 15)
+- [x] Implement weekly self-review + gap detection + question generation (Section 16)
+- [x] Implement HEARTBEAT system with goal tracking, milestones, delegation tracking (Section 19)
+- [x] Implement Bones layer: repository scanning + SKILL.md generation + TOOLS.md mapping + MCP catalog (Section 1.3, Section 38 M9 S11-14)
+- [x] Implement Muscles layer: model inventory, cost routing, circuit breakers, provider health monitoring (Section 1.3, Section 9, Section 37)
+- [x] Implement monthly embedding re-embed audit + backfill job (text-embedding-3-small) (Section 2)
 
 ---
+
+# Load Testing Before Wave 2
+
+Do not deploy Wave 2 without:
+
+100 concurrent MCP calls validated
+
+Failover simulation
+
+Kill 5 random servers test
+
+Your architecture assumes resilience.
+You must prove it.
 
 # PHASE 4 — POLISH & SCALE (Month 10–12) (Section 38)
 
@@ -244,7 +397,8 @@ Feature Flag Rollout Reminders (Appendix A)
 
 ## M10: MCP Wave 2 — Communication & Collaboration (Deployment Plan Section 5, Section 14.1)
 - [ ] Deploy Wave 2 servers: Slack, Outlook, Teams, Linear, Asana, Discord, WhatsApp Business MCP
-- [ ] Complete onboarding UX block for app ecosystem detection + OAuth consolidation + confirmation flow (Deployment Plan Section 10)
+- [ ] Complete onboarding UX block for ecosystem detection + connection cards + OAuth consolidation + confirmation flow using ProvisioningPipeline (one code path) (Deployment Plan Section 10; Auto-Provisioning Invariant 17)
+- [ ] Onboarding: connection buttons trigger `provision_server(server_id, trigger=ONBOARDING)` (Auto-Provisioning Month 10–12 integration)
 - [ ] Run 12-step deployment checklist for every Wave 2 server (Deployment Plan Section 15)
 
 ## M11: MCP Wave 3 — Business Intelligence & Finance (Deployment Plan Section 6, Section 14.1)
@@ -259,6 +413,21 @@ Feature Flag Rollout Reminders (Appendix A)
 - [ ] Run 12-step deployment checklist for every Wave 4 server (Deployment Plan Section 15)
 - [ ] Submit partner applications during Month 12: Zoom Marketplace, Instacart Connect, Canva Connect, Booking.com Demand API (Deployment Plan + Wave 5–6 Section 8/12)
 - [ ] Prepare fallback server choices if partner approvals are denied (Zoom PAT, Amazon Fresh/DoorDash, Figma/design fallback, Booking affiliate fallback)
+
+## M10–12 (Auto-Provisioning): Catalog Expansion + Conversational Discovery (Deployment Plan Sections 10–12; Auto-Provisioning Section 12)
+- [ ] Expand `server_catalog` entries as Wave 2–4 servers deploy (auth_type, oauth_config, hosting_model, container_image, min_plan, setup_time) (Auto-Provisioning Section 12)
+- [ ] Ensure TOOLS.md regeneration shows: connected servers + available-but-not-connected servers (plan-gated) + “how to connect” instructions (Deployment Plan Section 11; Auto-Provisioning Layer 1)
+- [ ] Conversational discovery triggers call ProvisioningPipeline (user mentions Slack -> `provision_server`) instead of separate/manual connection flows (Deployment Plan Section 12; Auto-Provisioning Invariant 17)
+- [ ] Seed migration: generate `server_catalog` entries from `mcp_servers` + Waves 1–6 specs (no hardcoded server lists outside catalog) (Auto-Provisioning Invariant 18)
+- [ ] Seed `server_catalog` with Waves 1–4 by launch (Month 12) and Waves 1–6 by end of Month 12 (Auto-Provisioning Section 12.1)
+
+## M10–12 (Operational Hardening): Launch Readiness (Operational Blueprint Section 17)
+- [ ] Run comprehensive eval across all 30 launch MCP servers; establish quality baseline for launch (Ops Blueprint Component 4)
+- [ ] Run A/B test(s) on system prompt to optimize MCP tool selection; use prompt versioning pipeline + rollback (Ops Blueprint Component 5)
+- [ ] Analytics-driven server prioritization and onboarding tuning based on adoption + retention (Ops Blueprint Component 12)
+- [ ] External legal counsel review; finalize privacy policy + ToS; verify deletion/export cover MCP OAuth tokens + caches (Ops Blueprint Component 6)
+- [ ] Billing load test under peak signup; verify plan gating + trial logic under load (Ops Blueprint Component 1)
+- [ ] DR: run restore drill and validate runbooks before launch (Ops Blueprint Component 7)
 
 ## M10–11 S5–8: Advanced Proactive + Cross-Channel Continuity (Section 28, Section 38)
 - [ ] Implement HEARTBEAT-driven proactive triggers + research delivery (Section 19–20)
@@ -295,6 +464,8 @@ Feature Flag Rollout Reminders (Appendix A)
 - [ ] Build + deploy Zoom MCP (custom) with User-Level OAuth and meeting transcript retrieval support
 - [ ] Build + deploy Calendly MCP (custom) with duplicate-event prevention against Google Calendar events
 - [ ] Build + deploy Plaid MCP (custom) + Plaid Link widget page hosting (S3/CloudFront or equivalent)
+- [ ] Complete Plaid production verification and store real `PLAID_SECRET_PROD` before enabling Plaid in prod
+- [ ] Replace placeholder `PLAID_WEBHOOK_SECRET` with final webhook validation config used in production
 - [ ] Build + deploy Crunchbase MCP (custom) and wire to research engine ingestion
 - [ ] Validate Wave 5 extras: Duffel sandbox e2e booking, Plaid network audit (no external LLM PII egress), contextual discovery triggers
 
@@ -305,6 +476,20 @@ Feature Flag Rollout Reminders (Appendix A)
 - [ ] Build + deploy Instacart MCP (custom) OR approved fallback (Amazon Fresh/DoorDash) with checkout approval gate
 - [ ] Deploy + harden Tesla MCP (existing server fork) with physical-security approvals + strict rate limits + optional geo-fencing
 - [ ] Validate Wave 6 extras: Tesla physical operation tests in staging, Instacart checkout approval details, DocuSign recipient/document confirmation
+
+## M13–15 (Auto-Provisioning Layer 3): Remote Server Discovery Catalog (Auto-Provisioning Sections 5, 12.3, 16)
+- [ ] ToolRegistry: register native tool `search_remote_catalog` (use only if `provision_server` fails due to missing catalog entry) (Auto-Provisioning Section 9)
+- [ ] Hands handler: implement `search_remote_catalog` -> query remote catalog API -> return matched entries (Auto-Provisioning Section 5)
+- [ ] Catalog sync: daily job pulls new/updated remote entries into local `server_catalog` table; marks deprecated entries (Auto-Provisioning Section 12.3)
+- [ ] Extend `server_catalog` with Waves 5–6 entries (total 40) and begin adding post-launch entries based on analytics demand (Auto-Provisioning Section 12.2)
+- [ ] Enforce remote search rate limit (20/hour/user) and provisioning rate limits (5/hour/user, 3 concurrent) (Auto-Provisioning Section 13)
+
+## M13–15 (Operational Overlay): Post-Launch Expansion Hardening (Ops Blueprint + Wave 5–6)
+- [ ] Analytics-driven server prioritization within Waves 5–6 based on user demand (Ops Blueprint Component 12)
+- [ ] Eval expansion: add financial accuracy scoring (Plaid) and booking verification scoring (Duffel/Booking) (Ops Blueprint Component 4; Wave 5–6)
+- [ ] Notification expansion: travel alerts (Duffel delays) and financial alerts (Plaid unusual transactions) with plan gating (Ops Blueprint Component 11; Wave 5–6)
+- [ ] Billing: Wave 5–6 servers plan-gated to Professional (or higher); enforce in provisioning + tool execution (Ops Blueprint Component 1; Auto-Provisioning Section 13)
+- [ ] Abuse prevention: add transaction-specific abuse detection (booking spikes, cart manipulation) + strict rate limits on checkout operations (Ops Blueprint Component 9; Wave 5–6)
 
 ## M15: Full Fleet Validation (Waves 1–6, 40 Servers)
 - [ ] Verify all 40 servers pass health checks simultaneously
@@ -321,7 +506,7 @@ Feature Flag Rollout Reminders (Appendix A)
 - [ ] Pass security tests (evil-server suite, provenance guardrails, privilege isolation)
 - [ ] Verify cost tracking (per-call/per-run/per-server-daily) + rate limit counters
 - [ ] Ensure `tool_executions` records include `is_mcp=true` and `mcp_server_id`
-- [ ] Flag TOOLS.md refresh and verify nightly regeneration
+- [ ] Flag TOOLS.md refresh and verify nightly regeneration includes: connected apps, available-but-not-connected servers (plan-gated), tools list, auth status, and budgets/usage (Deployment Plan Section 11; Auto-Provisioning Layer 1)
 - [ ] Add onboarding card (Waves 1–4) or contextual discovery trigger (Waves 5–6)
 - [ ] Pass 3 golden scenario tests per server
 - [ ] Update operational docs/runbooks for server-specific failure handling
@@ -335,6 +520,15 @@ Feature Flag Rollout Reminders (Appendix A)
 - [ ] Financial/booking tools always require explicit approval before write operations
 - [ ] Sensitive financial data routes only through local-model path (`pii_content=true`)
 
+## MCP Deployment Plan Platform Requirements (MCP_Server_Deployment_Plan.docx)
+- [ ] Hosting strategy implemented per-server (sidecar vs internal microservice vs external) and encoded in `server_catalog.hosting_model` (Deployment Plan Section 8; Auto-Provisioning Section 12)
+- [ ] OAuth/auth matrix supported across servers (OAuth2, API key, PAT, integration tokens); tokens stored encrypted in `oauth_tokens` and refreshed safely (Deployment Plan Section 9)
+- [ ] Onboarding UX templates + buttons exist for ecosystem detection and connection flows (Deployment Plan Section 10; Auto-Provisioning Appendix B)
+- [ ] TOOLS.md auto-generation includes connected apps details (tools list, auth status, budgets/usage) and not-connected guidance (Deployment Plan Section 11)
+- [ ] Conversational discovery triggers (mentions + repeated failures + profile evolution) are implemented and wired to ProvisioningPipeline (Deployment Plan Section 12)
+- [ ] Cost model enforced: per-server budgets + rate limits + per-call metering + billing integration; surfaced in admin + TOOLS.md (Deployment Plan Section 13; Ops Blueprint Component 1)
+- [ ] MCP server health dashboard implemented (admin) per wireframe (Deployment Plan Appendix B; Ops Blueprint Component 3)
+
 ---
 
 # Cross-Cutting Requirements (Must Be Covered) (Section 3–34)
@@ -342,6 +536,9 @@ Feature Flag Rollout Reminders (Appendix A)
 ## Database + RLS (Section 3)
 - [x] Create all enums exactly as Section 3.1 (channel_type, input_modality, run_state, llm_provider, etc.)
 - [x] Create/alter all 19 tables exactly as Section 3.2–3.4 including enhanced columns and indexes
+- [ ] Add Operational Systems tables + columns per Ops Blueprint Section 16 (subscriptions, invoices, eval_results, user_feedback, prompt_versions, moderation_queue, scheduled_notifications, analytics_events, analytics_daily; extend conversations/messages as needed)
+- [ ] Add Auto-Provisioning tables per Auto-Provisioning Section 6 (provisioning_requests, server_catalog, provisioning_declined)
+- [ ] Ensure correct migration ordering for FK dependencies (Ops Blueprint “Database Migration Order” + Auto-Provisioning schema)
 - [x] Ensure `channel_connections` is implemented and used for multi-channel identity linking (Section 3.2, Section 22, Section 28)
 - [x] Ensure `profiling_sessions` table is implemented and used by the profiling engine (Section 3.3, Section 13)
 - [x] Ensure `knowledge_graph_edges` table exists and is populated by memory + team inference baseline path (Section 3.4, Section 11, Section 24)
@@ -369,8 +566,8 @@ Feature Flag Rollout Reminders (Appendix A)
 - [x] Implement `WorkflowCondition` (Section 4.6)
 - [ ] Implement unified API endpoints from Section 5 (Gateway/Core/Behavioral/New/Internal)
 - [x] Implement `POST /webhook/whatsapp` (Phase 1) (Section 5.1)
-- [ ] Implement `POST /webhook/imessage` (Phase 3) (Section 5.1)
-- [ ] Implement `POST /webhook/slack` (Phase 3) (Section 5.1)
+- [x] Implement `POST /webhook/imessage` (Phase 3) (Section 5.1)
+- [x] Implement `POST /webhook/slack` (Phase 3) (Section 5.1)
 - [x] Implement `POST /api/v1/message` (Phase 1) (Section 5.1)
 - [x] Implement `GET /api/v1/stream/{run_id}` (SSE) (Phase 1) (Section 5.1)
 - [x] Implement `POST /api/v1/voice/transcribe` (Phase 1) (Section 5.1)
@@ -382,7 +579,7 @@ Feature Flag Rollout Reminders (Appendix A)
 - [x] Implement `GET /api/v1/knowledge/{file_path}` (Phase 1) (Section 5.3)
 - [x] Implement `PUT /api/v1/knowledge/{file_path}` (Phase 1) (Section 5.3)
 - [x] Implement `GET /api/v1/knowledge` (Phase 1) (Section 5.3)
-- [ ] Implement `POST /api/v1/knowledge/review` (Phase 3) (Section 5.3)
+- [x] Implement `POST /api/v1/knowledge/review` (Phase 3) (Section 5.3)
 - [x] Implement `GET /api/v1/knowledge/graph` (Phase 2–4) (Section 5.3)
 - [x] Implement `GET /api/v1/profiling/next` (Phase 1) (Section 5.3)
 - [x] Implement `POST /api/v1/profiling/answer` (Phase 1) (Section 5.3)
@@ -399,27 +596,37 @@ Feature Flag Rollout Reminders (Appendix A)
 - [x] Implement `POST /api/v1/delegations` (Phase 2) (Section 5.4)
 - [x] Implement `GET /api/v1/delegations/{id}` (Phase 2) (Section 5.4)
 - [x] Implement `PUT /api/v1/delegations/{id}` (Phase 2) (Section 5.4)
-- [ ] Implement `GET /api/v1/research` (Phase 3) (Section 5.4)
-- [ ] Implement `POST /api/v1/research` (Phase 3) (Section 5.4)
-- [ ] Implement `GET /api/v1/research/{id}` (Phase 3) (Section 5.4)
-- [ ] Implement `PUT /api/v1/research/{id}` (Phase 3) (Section 5.4)
-- [ ] Implement `DELETE /api/v1/research/{id}` (Phase 3) (Section 5.4)
-- [ ] Implement `GET /api/v1/workflows` (Phase 3) (Section 5.4)
-- [ ] Implement `POST /api/v1/workflows` (Phase 3) (Section 5.4)
-- [ ] Implement `GET /api/v1/workflows/{id}` (Phase 3) (Section 5.4)
-- [ ] Implement `PUT /api/v1/workflows/{id}` (Phase 3) (Section 5.4)
-- [ ] Implement `DELETE /api/v1/workflows/{id}` (Phase 3) (Section 5.4)
-- [ ] Implement `POST /api/v1/workflows/{id}/test` (Phase 3) (Section 5.4)
+- [x] Implement `GET /api/v1/research` (Phase 3) (Section 5.4)
+- [x] Implement `POST /api/v1/research` (Phase 3) (Section 5.4)
+- [x] Implement `GET /api/v1/research/{id}` (Phase 3) (Section 5.4)
+- [x] Implement `PUT /api/v1/research/{id}` (Phase 3) (Section 5.4)
+- [x] Implement `DELETE /api/v1/research/{id}` (Phase 3) (Section 5.4)
+- [x] Implement `GET /api/v1/workflows` (Phase 3) (Section 5.4)
+- [x] Implement `POST /api/v1/workflows` (Phase 3) (Section 5.4)
+- [x] Implement `GET /api/v1/workflows/{id}` (Phase 3) (Section 5.4)
+- [x] Implement `PUT /api/v1/workflows/{id}` (Phase 3) (Section 5.4)
+- [x] Implement `DELETE /api/v1/workflows/{id}` (Phase 3) (Section 5.4)
+- [x] Implement `POST /api/v1/workflows/{id}/test` (Phase 3) (Section 5.4)
 - [x] Implement `GET /api/v1/team` (Phase 2–3) (Section 5.4)
 - [ ] Implement `GET /api/v1/export` (Phase 4) (Section 5.4)
+- [ ] Implement `POST /api/v1/auth/link-channel` (Ops: channel linking) (Operational Blueprint Component 2)
+- [ ] Implement `DELETE /api/v1/auth/me` (trigger deletion pipeline) (Operational Blueprint Component 6)
+- [ ] Implement `GET /api/v1/auth/me/export` (data export ZIP) (Operational Blueprint Component 6)
+- [ ] Implement `POST /api/v1/billing/checkout` (Stripe Checkout) (Operational Blueprint Component 1)
+- [ ] Implement `POST /api/v1/billing/portal` (Stripe Customer Portal) (Operational Blueprint Component 1)
+- [ ] Implement `POST /api/v1/billing/webhooks/stripe` (Stripe webhooks) (Operational Blueprint Component 1)
+- [ ] Implement `GET /api/v1/provision/callback` (OAuth callback) (Auto-Provisioning Section 11)
+- [ ] Implement `GET /api/v1/provision/success` (success landing page) (Auto-Provisioning Section 11)
+- [ ] Implement `GET /api/v1/provision/expired` (expired landing page) (Auto-Provisioning Section 11)
+- [ ] Implement Admin API surface `/api/v1/admin/*` (users, moderation queue, prompt rollback, MCP health, analytics) (Operational Blueprint Component 3)
 - [x] Implement `GET /internal/health` (Phase 1) (Section 5.5)
 - [x] Implement `GET /internal/health/deep` (Phase 1) (Section 5.5)
 - [x] Implement `GET /internal/metrics` (Phase 1) (Section 5.5)
-- [ ] Implement `POST /internal/runs/{id}/replay` (Phase 3–4) (Section 5.5)
-- [ ] Implement `POST /internal/cache/flush` (Phase 3–4) (Section 5.5)
-- [ ] Implement `POST /internal/triggers/fire` (Phase 3–4) (Section 5.5)
-- [ ] Implement `POST /internal/knowledge/consolidate` (Phase 3) (Section 5.5)
-- [ ] Implement `POST /internal/knowledge/review` (Phase 3) (Section 5.5)
+- [x] Implement `POST /internal/runs/{id}/replay` (Phase 3–4) (Section 5.5)
+- [x] Implement `POST /internal/cache/flush` (Phase 3–4) (Section 5.5)
+- [x] Implement `POST /internal/triggers/fire` (Phase 3–4) (Section 5.5)
+- [x] Implement `POST /internal/knowledge/consolidate` (Phase 3) (Section 5.5)
+- [x] Implement `POST /internal/knowledge/review` (Phase 3) (Section 5.5)
 - [x] Implement `GET /internal/llm/health` (Phase 1) (Section 5.5)
 - [x] Implement `POST /internal/llm/route-test` (Phase 1) (Section 5.5)
 - [ ] Implement `GET /internal/experiments` (Phase 4) (Section 5.5)
@@ -434,7 +641,28 @@ Feature Flag Rollout Reminders (Appendix A)
 - [x] Implement content provenance tagging end-to-end (DB + runtime context)
 - [x] Implement privilege isolation and capability tokens for tools
 - [x] Implement output validation model pass for side-effecting actions
-- [ ] Implement MCP sandboxing and network scoping
+- [x] Implement MCP sandboxing and network scoping
+
+## Operational Systems (Operational_Systems_Blueprint.pdf)
+- [ ] Billing middleware is first gate on inbound messages (no Brain/MCP cost if blocked) (Ops Invariant 11)
+- [ ] Admin dashboard is not user-facing: admin role separation + audit trail for admin actions (Ops Invariant 12)
+- [ ] Eval system runs asynchronously (never adds user latency) (Ops Invariant 13)
+- [ ] Legal deletion is irreversible and completes end-to-end across DB, caches, connectors, MCP OAuth tokens, and backups rotated within 30 days (Ops Invariant 14)
+- [ ] Notifications respect user agency/preferences immediately (Ops Invariant 15)
+- [ ] DR posture validated: Multi-AZ + snapshots + PITR + monthly restore drills + runbooks (Ops Component 7)
+
+## Auto-Provisioning Engine (Auto_Provisioning_Engine.pdf) — Integration Points To Verify
+- [ ] Billing middleware allows `provision_server` tool calls (native tool) without misclassifying as user message usage (Auto-Provisioning integration checks)
+- [ ] All server connections flow through ProvisioningPipeline (onboarding, contextual suggestions, user-initiated, capability-gap-triggered) (Auto-Provisioning Invariant 17)
+- [ ] Server catalog is source of truth: Brain discovers via TOOLS.md generated from `server_catalog`; pipeline reads provisioning details from same table (Auto-Provisioning Invariant 18)
+- [ ] Plan gating works: free users can only provision Wave 1 servers; paid users can provision per plan (Auto-Provisioning Section 13; Ops Component 1)
+- [ ] Eval system scores provisioning flows and includes GT-101..GT-105 scenarios (Auto-Provisioning Section 17; Ops Component 4)
+- [ ] Analytics tracks provisioning events: `provisioning_requested`, `awaiting_auth`, `server_provisioned`, `provisioning_failed`, `provisioning_declined`, `provisioning_expired` (Ops Component 12)
+- [ ] Admin dashboard shows provisioning request history + success/failure rates (Ops Component 3)
+- [ ] GDPR deletion pipeline deletes `provisioning_requests` + `provisioning_declined` and revokes any stored tokens/keys (Ops Component 6)
+- [ ] Safety classifier allowlists OAuth links/short links (don’t flag as suspicious) (Ops Component 9)
+- [ ] Multi-channel continuity: provisioning started on WhatsApp, user switches channels; callback remains valid (server-side session) (Ops Component 10)
+- [ ] LLM failover: in degraded mode, `provision_server` remains available and system fails gracefully if gap detection quality drops (Ops Component 8)
 
 ## Observability (Section 33)
 - [ ] Implement all metrics in Section 33 (latency, error rate, tier distribution, cache hit rate, provider failover, etc.)
@@ -450,10 +678,14 @@ Feature Flag Rollout Reminders (Appendix A)
 
 # External Accounts / Services Needed (Section 2, Appendix A)
 - [x] Clerk (auth) account + keys (`CLERK_SECRET_KEY`)
+- [ ] Stripe (billing) account + keys (`STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, Price IDs) (Operational Blueprint Component 1)
 - [x] Anthropic account + `ANTHROPIC_API_KEY`
 - [x] Google AI Studio key + `GOOGLE_AI_API_KEY`
 - [x] Tavily account + `TAVILY_API_KEY`
 - [ ] Unstructured.io account + API key (document parsing)
+- [ ] PagerDuty (or equivalent) account for quality/safety alerts (Operational Blueprint Component 4)
+- [ ] Event bus for analytics + background pipelines (EventBridge or SQS) + config (`ANALYTICS_EVENT_BUS`) (Operational Blueprint Component 12)
+- [ ] Remote catalog API (post-launch) + signing keys for catalog entries (Auto-Provisioning Layer 3)
 - [ ] Optional: local vLLM endpoint + `LOCAL_LLM_ENDPOINT`
 - [ ] Optional: ElevenLabs key + `ELEVENLABS_API_KEY`
 
