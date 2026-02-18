@@ -30,7 +30,9 @@ jobs:
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ secrets.AWS_ROLE_ARN_STAGING }}
+          # Role ARN is not a secret; hardcoding prevents misconfigured GitHub secrets
+          # from breaking deploy with AssumeRoleWithWebIdentity errors.
+          role-to-assume: arn:aws:iam::105914556507:role/github-actions-deploy-staging
           aws-region: us-east-1
 
       - name: Login to Amazon ECR
