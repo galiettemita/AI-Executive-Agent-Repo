@@ -122,7 +122,14 @@ def request_phone_verification(
     return payload
 
 
-def verify_phone_code(db: Session, user_id: str, phone_number: str, code: str) -> dict:
+def verify_phone_code(
+    db: Session,
+    user_id: str,
+    phone_number: str,
+    code: str,
+    *,
+    apply_profile_updates: bool = True,
+) -> dict:
     now = datetime.utcnow()
     phone_number = (phone_number or "").strip()
     if not phone_number or not code:
@@ -163,15 +170,16 @@ def verify_phone_code(db: Session, user_id: str, phone_number: str, code: str) -
     record.verified_at = now
     db.commit()
 
-    # Update user profile + preferences
-    update_profile(
-        db,
-        user_id,
-        {
-            "phone": phone_number,
-            "phone_verified_at": now.isoformat(),
-        },
-    )
-    update_preferences(db, user_id, {"phone_verified": True})
+    if apply_profile_updates:
+        # Update user profile + preferences
+        update_profile(
+            db,
+            user_id,
+            {
+                "phone": phone_number,
+                "phone_verified_at": now.isoformat(),
+            },
+        )
+        update_preferences(db, user_id, {"phone_verified": True})
 
     return {"ok": True, "status": "verified", "verified_at": now.isoformat()}

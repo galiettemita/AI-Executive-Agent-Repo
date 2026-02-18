@@ -20,6 +20,7 @@ from app.blueprint.db import (
     insert_message,
     record_side_effect,
 )
+from app.services.billing_middleware import enforce_billing_for_inbound_message
 from app.blueprint.session import get_or_create_conversation_session
 from app.channels.whatsapp_adapter import send_whatsapp_adapted
 from app.core.celery_app import celery_app
@@ -94,6 +95,21 @@ def process_whatsapp_inbound(event: dict[str, Any]) -> dict[str, Any]:
             user_id=user.id,
             channel=Channel.WHATSAPP,
         )
+
+        # Billing is the first gate: if blocked, do not run any LLM work.
+        decision = enforce_billing_for_inbound_message(db, user.id)
+        if not decision.allowed:
+            block = decision.block
+            msg = (block.message if block else "Billing restricted. Please try again later.").strip()
+            send_whatsapp_adapted(to_phone_e164=from_phone, text=msg)
+            return {
+                "ok": False,
+                "blocked": True,
+                "user_id": user.id,
+                "reason": (block.reason if block else "billing_blocked"),
+                "plan": decision.plan,
+                "status": decision.status,
+            }
 
         inbound_content: dict[str, Any]
         if event_type == "location":

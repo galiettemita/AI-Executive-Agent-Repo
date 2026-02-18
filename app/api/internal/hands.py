@@ -10,6 +10,7 @@ from fastapi import APIRouter, HTTPException
 
 from app.blueprint.capability_tokens import enforce_capability_token
 from app.blueprint.contracts import ToolCall, ToolResult
+from app.blueprint.mcp.hub import invoke_mcp_tool
 from app.blueprint.security import CapabilityViolation, PrivilegeViolation, validate_tool_privilege
 from app.blueprint.tools import get_tool_registry
 from app.blueprint.db import get_tool_execution_by_idempotency, insert_tool_execution, record_side_effect
@@ -39,6 +40,17 @@ from app.services.outlook_mail import (
 )
 from app.services.email_service import EmailService
 from app.core.config import settings
+from app.services.slack_connector import (
+    SlackNotConfiguredError,
+    slack_channel_summary,
+    slack_list_messages,
+    slack_send_message,
+)
+from app.services.plaid_connector import (
+    PlaidNotConfiguredError,
+    list_accounts as plaid_list_accounts,
+    list_transactions as plaid_list_transactions,
+)
 
 
 router = APIRouter(prefix="/internal/hands", tags=["internal-hands"])
@@ -50,9 +62,8 @@ def _default_idempotency_key(*, tool: str, args: dict) -> str:
 
 
 def _assert_native_tool(*, is_mcp: bool) -> None:
-    if is_mcp:
-        # Month-8 invocation bridge will replace this stub with live MCP client routing.
-        raise NotImplementedError("MCP tools available in Phase 3")
+    if is_mcp and not settings.FEATURE_MCP_CLIENT:
+        raise NotImplementedError("MCP client is disabled")
 
 
 def _parse_dt(value: str | None) -> datetime | None:
@@ -235,8 +246,7 @@ async def execute(call: ToolCall) -> ToolResult:
             required_capabilities=call.required_capabilities if settings.FEATURE_PRIVILEGE_ISOLATION else [],
             granted_capabilities=granted_capabilities,
         )
-        _assert_native_tool(is_mcp=spec.is_mcp)
-    except (PrivilegeViolation, CapabilityViolation, NotImplementedError) as exc:
+    except (PrivilegeViolation, CapabilityViolation) as exc:
         return ToolResult(tool_name=tool, tool=tool, ok=False, error=str(exc))
 
     # Idempotency: if already executed, return the stored output.
@@ -261,6 +271,78 @@ async def execute(call: ToolCall) -> ToolResult:
                 result=existing.get("output") if ok else None,
                 error=None if ok else json.dumps(existing.get("error") or {}, ensure_ascii=False),
             )
+
+    if spec.is_mcp:
+        if not settings.FEATURE_MCP_CLIENT:
+            return ToolResult(tool_name=tool, tool=tool, ok=False, error="MCP client is disabled")
+        if not spec.mcp_server_id:
+            return ToolResult(tool_name=tool, tool=tool, ok=False, error="MCP tool missing server binding")
+
+        started = time.perf_counter()
+        output_payload: dict[str, object] | None = None
+        error_payload: dict[str, str] | None = None
+        status = "success"
+        db = SessionLocal()
+        try:
+            bridge_call = call.model_copy(
+                update={
+                    "tool_name": tool,
+                    "tool": tool,
+                    "arguments": args,
+                    "args": args,
+                }
+            )
+            result = await invoke_mcp_tool(
+                db,
+                spec_server_id=spec.mcp_server_id,
+                call=bridge_call,
+            )
+            output_payload = result.output if isinstance(result.output, dict) else result.result
+            status = "success" if result.ok else "failed"
+            if not result.ok:
+                error_payload = {"type": "mcp_error", "message": str(result.error or "MCP execution failed")}
+        except Exception as exc:
+            status = "failed"
+            result = ToolResult(tool_name=tool, tool=tool, ok=False, error=str(exc))
+            output_payload = None
+            error_payload = {"type": exc.__class__.__name__, "message": str(exc)}
+        finally:
+            try:
+                db.close()
+            except Exception:
+                pass
+
+        latency_ms = int((time.perf_counter() - started) * 1000)
+        if call.user_id and call.run_id:
+            db = SessionLocal()
+            try:
+                insert_tool_execution(
+                    db,
+                    run_id=call.run_id,
+                    user_id=call.user_id,
+                    tool_name=tool,
+                    input_payload={
+                        "args": args,
+                        "is_mcp": True,
+                        "mcp_server_id": spec.mcp_server_id,
+                        "input_provenance": call.input_provenance.value,
+                    },
+                    output_payload=output_payload,
+                    status=status,
+                    error_payload=error_payload,
+                    idempotency_key=idempotency_key,
+                    risk_level=str(spec.risk_level.value),
+                    cost_cents=int(result.cost_cents or 0),
+                    latency_ms=latency_ms,
+                )
+            except Exception:
+                pass
+            finally:
+                try:
+                    db.close()
+                except Exception:
+                    pass
+        return result
 
     if tool in ("web.search", "tavily.search"):
         query = str(args.get("query") or "").strip()
@@ -639,6 +721,200 @@ async def execute(call: ToolCall) -> ToolResult:
                     output_payload=output_payload_data,
                     status=status_data,
                     error_payload=error_payload_data,
+                    idempotency_key=idempotency_key,
+                    risk_level="low",
+                    cost_cents=0,
+                    latency_ms=latency_ms,
+                )
+            except Exception:
+                pass
+            finally:
+                try:
+                    db.close()
+                except Exception:
+                    pass
+        return result
+
+    if tool in ("slack.messages.list", "slack.messages.send", "slack.channel.summary"):
+        if not call.user_id:
+            raise HTTPException(status_code=400, detail=f"{tool} requires user_id")
+        started = time.perf_counter()
+        output_payload_slack: dict[str, object] | None = None
+        error_payload_slack: dict[str, str] | None = None
+        status_slack = "success"
+        db = SessionLocal()
+        try:
+            channel_id = str(args.get("channel_id") or "").strip()
+            if not channel_id:
+                raise HTTPException(status_code=400, detail=f"{tool} requires channel_id")
+            if tool == "slack.messages.list":
+                output_payload_slack = {
+                    "messages": slack_list_messages(
+                        db=db,
+                        user_id=call.user_id,
+                        channel_id=channel_id,
+                        limit=int(args.get("limit") or 20),
+                    )
+                }
+            elif tool == "slack.messages.send":
+                text_body = str(args.get("text") or "").strip()
+                if not text_body:
+                    raise HTTPException(status_code=400, detail="slack.messages.send requires text")
+                output_payload_slack = {
+                    "message": slack_send_message(
+                        db=db,
+                        user_id=call.user_id,
+                        channel_id=channel_id,
+                        text_body=text_body,
+                        thread_ts=(str(args.get("thread_ts") or "").strip() or None),
+                    )
+                }
+            else:
+                output_payload_slack = {
+                    "summary": slack_channel_summary(
+                        db=db,
+                        user_id=call.user_id,
+                        channel_id=channel_id,
+                        limit=int(args.get("limit") or 50),
+                    )
+                }
+            result = ToolResult(tool_name=tool, tool=tool, ok=True, result=output_payload_slack)
+        except SlackNotConfiguredError as exc:
+            result = ToolResult(tool_name=tool, tool=tool, ok=False, error=str(exc))
+            status_slack = "failed"
+            output_payload_slack = None
+            error_payload_slack = {"type": "slack_not_configured", "message": str(exc)}
+        except HTTPException:
+            raise
+        except Exception as exc:
+            result = ToolResult(tool_name=tool, tool=tool, ok=False, error=str(exc))
+            status_slack = "failed"
+            output_payload_slack = None
+            error_payload_slack = {"type": exc.__class__.__name__, "message": str(exc)}
+        finally:
+            try:
+                db.close()
+            except Exception:
+                pass
+
+        latency_ms = int((time.perf_counter() - started) * 1000)
+        if call.user_id and call.run_id:
+            db = SessionLocal()
+            try:
+                risk = "low" if tool != "slack.messages.send" else "high"
+                insert_tool_execution(
+                    db,
+                    run_id=call.run_id,
+                    user_id=call.user_id,
+                    tool_name=tool,
+                    input_payload={
+                        "args": args,
+                        "is_mcp": spec.is_mcp,
+                        "mcp_server_id": spec.mcp_server_id,
+                        "input_provenance": call.input_provenance.value,
+                    },
+                    output_payload=output_payload_slack,
+                    status=status_slack,
+                    error_payload=error_payload_slack,
+                    idempotency_key=idempotency_key,
+                    risk_level=risk,
+                    cost_cents=0,
+                    latency_ms=latency_ms,
+                )
+                if status_slack == "success" and tool == "slack.messages.send":
+                    record_side_effect(
+                        db,
+                        run_id=call.run_id,
+                        user_id=call.user_id,
+                        effect_type="slack_send",
+                        description="Sent Slack message",
+                        metadata={"channel_id": str(args.get("channel_id") or "")},
+                        reversible=False,
+                    )
+            except Exception:
+                pass
+            finally:
+                try:
+                    db.close()
+                except Exception:
+                    pass
+        return result
+
+    if tool in ("plaid.accounts.list", "plaid.transactions.list"):
+        if not call.user_id:
+            raise HTTPException(status_code=400, detail=f"{tool} requires user_id")
+        started = time.perf_counter()
+        output_payload_plaid: dict[str, object] | None = None
+        error_payload_plaid: dict[str, str] | None = None
+        status_plaid = "success"
+        db = SessionLocal()
+        try:
+            stage = str(args.get("stage") or "staging").strip().lower()
+            if stage == "prod":
+                # Phase 3 remains sandbox/staging-first.
+                raise PlaidNotConfiguredError("Plaid production mode is disabled in Phase 3")
+
+            if tool == "plaid.accounts.list":
+                output_payload_plaid = {
+                    "accounts": plaid_list_accounts(
+                        db=db,
+                        user_id=call.user_id,
+                        stage="staging",
+                    ).get("accounts", []),
+                }
+            else:
+                start_raw = str(args.get("start_date") or "").strip()
+                end_raw = str(args.get("end_date") or "").strip()
+                if not start_raw or not end_raw:
+                    raise HTTPException(status_code=400, detail="plaid.transactions.list requires start_date and end_date")
+                start_date = datetime.fromisoformat(start_raw).date()
+                end_date = datetime.fromisoformat(end_raw).date()
+                output_payload_plaid = {
+                    "transactions": plaid_list_transactions(
+                        db=db,
+                        user_id=call.user_id,
+                        start_date=start_date,
+                        end_date=end_date,
+                        stage="staging",
+                    ).get("transactions", []),
+                }
+            result = ToolResult(tool_name=tool, tool=tool, ok=True, result=output_payload_plaid)
+        except PlaidNotConfiguredError as exc:
+            result = ToolResult(tool_name=tool, tool=tool, ok=False, error=str(exc))
+            status_plaid = "failed"
+            output_payload_plaid = None
+            error_payload_plaid = {"type": "plaid_not_configured", "message": str(exc)}
+        except HTTPException:
+            raise
+        except Exception as exc:
+            result = ToolResult(tool_name=tool, tool=tool, ok=False, error=str(exc))
+            status_plaid = "failed"
+            output_payload_plaid = None
+            error_payload_plaid = {"type": exc.__class__.__name__, "message": str(exc)}
+        finally:
+            try:
+                db.close()
+            except Exception:
+                pass
+
+        latency_ms = int((time.perf_counter() - started) * 1000)
+        if call.user_id and call.run_id:
+            db = SessionLocal()
+            try:
+                insert_tool_execution(
+                    db,
+                    run_id=call.run_id,
+                    user_id=call.user_id,
+                    tool_name=tool,
+                    input_payload={
+                        "args": args,
+                        "is_mcp": spec.is_mcp,
+                        "mcp_server_id": spec.mcp_server_id,
+                        "input_provenance": call.input_provenance.value,
+                    },
+                    output_payload=output_payload_plaid,
+                    status=status_plaid,
+                    error_payload=error_payload_plaid,
                     idempotency_key=idempotency_key,
                     risk_level="low",
                     cost_cents=0,

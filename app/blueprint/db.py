@@ -96,7 +96,7 @@ def get_user_by_phone(db: Session, phone_number: str) -> BlueprintUser | None:
     phone = normalize_e164(phone_number)
     if not phone:
         return None
-    if _table_exists(db, "users"):
+    if _table_exists(db, "users") and _column_exists(db, "users", "phone_number"):
         row = db.execute(
             text("select id, phone_number from users where phone_number = :phone limit 1"),
             {"phone": phone},
@@ -123,7 +123,25 @@ def get_user_by_phone(db: Session, phone_number: str) -> BlueprintUser | None:
     return None
 
 
-def create_user(db: Session, phone_number: str) -> BlueprintUser:
+def _ensure_legacy_user_row(db: Session, user_id: str) -> None:
+    """
+    Ensure the legacy ORM `users` table has a row for this user_id.
+    This keeps FK relationships (subscriptions, oauth_tokens, etc.) usable even when
+    the Blueprint identity source of truth is `accounts`.
+    """
+    if not _table_exists(db, "users"):
+        return
+    try:
+        db.execute(
+            text("insert into users (id, created_at) values (:id, :created_at) on conflict (id) do nothing"),
+            {"id": user_id, "created_at": datetime.utcnow()},
+        )
+        db.commit()
+    except Exception:
+        db.rollback()
+
+
+def create_user(db: Session, phone_number: str, *, channel: Channel = Channel.WHATSAPP) -> BlueprintUser:
     phone = normalize_e164(phone_number)
     if not phone:
         raise ValueError("phone_number is required")
@@ -132,10 +150,10 @@ def create_user(db: Session, phone_number: str) -> BlueprintUser:
     # and set app.user_id before inserting.
     user_uuid = str(uuid.uuid4())
     set_app_user_id(db, user_uuid)
-    if _table_exists(db, "users"):
+    if _table_exists(db, "users") and _column_exists(db, "users", "phone_number"):
         row = db.execute(
             text(
-                "insert into users (id, phone_number) values (:id::uuid, :phone) "
+                "insert into users (id, phone_number) values (:id, :phone) "
                 "returning id, phone_number"
             ),
             {"id": user_uuid, "phone": phone},
@@ -146,36 +164,97 @@ def create_user(db: Session, phone_number: str) -> BlueprintUser:
         return BlueprintUser(id=str(row["id"]), phone_number=str(row["phone_number"]))
 
     if _table_exists(db, "accounts") and _table_exists(db, "channel_connections"):
+        clerk_prefix = "wa" if channel == Channel.WHATSAPP else channel.value
+        display_name = "WhatsApp User" if channel == Channel.WHATSAPP else f"{channel.value.title()} User"
         row = db.execute(
             text(
                 """
                 insert into accounts (id, clerk_user_id, display_name)
-                values (:id::uuid, :clerk_user_id, :display_name)
+                values ((:id)::uuid, :clerk_user_id, :display_name)
                 returning id
                 """
             ),
             {
                 "id": user_uuid,
-                "clerk_user_id": f"wa:{phone}",
-                "display_name": "WhatsApp User",
+                "clerk_user_id": f"{clerk_prefix}:{phone}",
+                "display_name": display_name,
             },
         ).mappings().first()
         db.execute(
             text(
                 """
                 insert into channel_connections (user_id, channel, channel_identifier, is_primary)
-                values (:user_id::uuid, 'whatsapp'::channel_type, :phone, true)
+                values ((:user_id)::uuid, (:channel)::channel_type, :phone, true)
                 on conflict (channel, channel_identifier) do nothing
                 """
             ),
-            {"user_id": user_uuid, "phone": phone},
+            {"user_id": user_uuid, "phone": phone, "channel": channel.value},
         )
         db.commit()
+        _ensure_legacy_user_row(db, user_uuid)
         if not row:
             raise RuntimeError("failed to create account")
         return BlueprintUser(id=str(row["id"]), phone_number=phone)
 
-    raise RuntimeError("No supported account table found")
+    # Legacy fallback: create a user row even if we can't store the phone number column.
+    _ensure_legacy_user_row(db, user_uuid)
+    return BlueprintUser(id=user_uuid, phone_number=phone)
+
+
+def get_user_by_channel_identifier(db: Session, *, channel: Channel, channel_identifier: str) -> BlueprintUser | None:
+    ident = channel_identifier.strip()
+    if channel in {Channel.WHATSAPP, Channel.IMESSAGE}:
+        ident = normalize_e164(ident) or ident
+    if not ident:
+        return None
+
+    if _table_exists(db, "accounts") and _table_exists(db, "channel_connections"):
+        dialect = db.bind.dialect.name if db.bind is not None else ""
+        if dialect == "sqlite":
+            row = db.execute(
+                text(
+                    """
+                    select cc.user_id as id, cc.channel_identifier as ident
+                    from channel_connections cc
+                    where cc.channel = :channel and cc.channel_identifier = :ident
+                    limit 1
+                    """
+                ),
+                {"channel": channel.value, "ident": ident},
+            ).mappings().first()
+        else:
+            row = db.execute(
+                text(
+                    """
+                    select a.id as id, cc.channel_identifier as ident
+                    from accounts a
+                    join channel_connections cc on cc.user_id = a.id
+                    where cc.channel = (:channel)::channel_type
+                      and cc.channel_identifier = :ident
+                    limit 1
+                    """
+                ),
+                {"channel": channel.value, "ident": ident},
+            ).mappings().first()
+        if row:
+            return BlueprintUser(id=str(row["id"]), phone_number=str(row["ident"]))
+    return None
+
+
+def get_or_create_user_by_channel_identifier(db: Session, *, channel: Channel, channel_identifier: str) -> BlueprintUser:
+    existing = get_user_by_channel_identifier(db, channel=channel, channel_identifier=channel_identifier)
+    if existing:
+        set_app_user_id(db, existing.id)
+        return existing
+    try:
+        return create_user(db, channel_identifier, channel=channel)
+    except IntegrityError:
+        db.rollback()
+        existing = get_user_by_channel_identifier(db, channel=channel, channel_identifier=channel_identifier)
+        if not existing:
+            raise
+        set_app_user_id(db, existing.id)
+        return existing
 
 
 def get_or_create_user_by_phone(db: Session, phone_number: str) -> BlueprintUser:
@@ -211,7 +290,7 @@ def get_or_create_conversation(
             text(
                 "select id, last_active_at "
                 "from conversations "
-                "where user_id = :user_id::uuid and is_active = true and last_active_at >= :cutoff "
+                "where user_id = (:user_id)::uuid and is_active = true and last_active_at >= :cutoff "
                 "order by last_active_at desc "
                 "limit 1"
             ),
@@ -224,7 +303,7 @@ def get_or_create_conversation(
         db.execute(
             text(
                 "insert into conversations (id, user_id, channel, state, summary, started_at, last_active_at, is_active) "
-                "values (:id::uuid, :user_id::uuid, :channel::channel_type, '{}'::jsonb, null, now(), now(), true)"
+                "values ((:id)::uuid, (:user_id)::uuid, (:channel)::channel_type, '{}'::jsonb, null, now(), now(), true)"
             ),
             {"id": convo_id, "user_id": user_id, "channel": channel.value},
         )
@@ -239,7 +318,7 @@ def touch_conversation(db: Session, *, conversation_id: str) -> None:
     if not _table_exists(db, "conversations"):
         return
     db.execute(
-        text("update conversations set last_active_at = now() where id = :id::uuid"),
+        text("update conversations set last_active_at = now() where id = (:id)::uuid"),
         {"id": conversation_id},
     )
     db.commit()
@@ -272,7 +351,7 @@ def insert_message(
                     "insert into messages "
                     "(id, conversation_id, user_id, direction, content, intent, tier, run_id, cost_cents, latency_ms, channel_msg_id, created_at) "
                     "values "
-                    "(:id::uuid, :conversation_id::uuid, :user_id::uuid, :direction::message_direction, :content::jsonb, :intent, :tier, :run_id::uuid, :cost_cents, :latency_ms, :channel_msg_id, now()) "
+                    "((:id)::uuid, (:conversation_id)::uuid, (:user_id)::uuid, (:direction)::message_direction, (:content)::jsonb, :intent, :tier, (:run_id)::uuid, :cost_cents, :latency_ms, :channel_msg_id, now()) "
                     "returning id"
                 ),
                 {
@@ -291,7 +370,7 @@ def insert_message(
             ).mappings().first()
             if _table_exists(db, "conversations"):
                 db.execute(
-                    text("update conversations set last_active_at = now() where id = :id::uuid"),
+                    text("update conversations set last_active_at = now() where id = (:id)::uuid"),
                     {"id": conversation_id},
                 )
             db.commit()
@@ -309,20 +388,20 @@ def insert_message(
                     extracted_entities, content_provenance, emotion_detected, wa_message_id,
                     metadata, created_at
                 ) values (
-                    :id::uuid,
-                    :user_id::uuid,
-                    :run_id::uuid,
-                    :channel::channel_type,
-                    :direction::message_direction,
+                    (:id)::uuid,
+                    (:user_id)::uuid,
+                    (:run_id)::uuid,
+                    (:channel)::channel_type,
+                    (:direction)::message_direction,
                     :content,
-                    :input_modality::input_modality,
+                    (:input_modality)::input_modality,
                     :original_media_url,
                     :transcription_confidence,
-                    :extracted_entities::jsonb,
-                    :content_provenance::content_provenance,
-                    :emotion_detected::emotion_state,
+                    (:extracted_entities)::jsonb,
+                    (:content_provenance)::content_provenance,
+                    (:emotion_detected)::emotion_state,
                     :wa_message_id,
-                    :metadata::jsonb,
+                    (:metadata)::jsonb,
                     now()
                 )
                 returning id

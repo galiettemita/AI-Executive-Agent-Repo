@@ -23,6 +23,8 @@ from app.blueprint.memory_engine import record_memory_dual_path
 from app.blueprint.multimodal import preprocess_inbound_message, transcribe_audio_url
 from app.blueprint.preferences_learning import record_feedback_signal
 from app.blueprint.progress import append_progress, get_progress_events, set_run_result, get_run_result
+from app.channels.imessage import apply_imessage_constraints
+from app.channels.slack import apply_slack_constraints
 from app.channels.whatsapp import mark_whatsapp_read
 from app.channels.whatsapp_adapter import send_whatsapp_adapted
 from app.channels.whatsapp_templates import WHATSAPP_TEMPLATE_REGISTRY
@@ -30,7 +32,9 @@ from app.core.config import settings
 from app.core.redis import get_redis
 from app.db.database import SessionLocal
 from app.middleware.rate_limiter import rate_limit_user
+from app.services.billing_middleware import enforce_billing_for_inbound_message
 from app.services.clerk_auth import verify_clerk_user_id
+from app.services.slack_connector import slack_send_message
 
 logger = logging.getLogger(__name__)
 
@@ -231,88 +235,175 @@ def _brain_respond(msg: InboundMessage) -> OutboundMessage:
 
 def _process_message_run(run_id: str, inbound: InboundMessage) -> None:
     started = time.perf_counter()
-    append_progress(run_id, step="preprocess", status="running")
-    processed = preprocess_inbound_message(inbound)
-
-    append_progress(
-        run_id,
-        step="route",
-        status="running",
-        partial_result={"tier_hint": route_tier(processed.normalized_text)},
-    )
-    ace_decision = classify_action(
-        processed.normalized_text,
-        agents_content=_get_agents_overrides(inbound.user_id),
-        dual_memory_signals=_get_ace_dual_memory_signals(inbound.user_id),
-    )
-    append_progress(run_id, step="ace", status="running", partial_result=ace_decision)
-    emotion_sensitivity = _get_account_emotion_sensitivity(inbound.user_id)
-    capability_token: str | None = None
-    if inbound.user_id:
-        try:
-            capability_token = issue_capability_token(
-                run_id=run_id,
-                user_id=inbound.user_id,
-                provenance=processed.content_provenance,
-                capabilities=[
-                    "web:search",
-                    "calendar:read",
-                    "calendar:write",
-                    "email:read",
-                    "email:send",
-                    "contacts:read",
-                ],
-            )
-        except Exception:
-            capability_token = None
-
-    normalized_inbound = InboundMessage(
-        channel=inbound.channel,
-        channel_identifier=inbound.channel_identifier,
-        content=processed.normalized_text,
-        input_modality=inbound.input_modality,
-        media_url=inbound.media_url,
-        media_type=inbound.media_type,
-        wa_message_id=inbound.wa_message_id,
-        reply_to_id=inbound.reply_to_id,
-        channel_msg_id=inbound.channel_msg_id,
-        user_id=inbound.user_id,
-        conversation_id=inbound.conversation_id,
-        run_id=run_id,
-        from_phone=inbound.from_phone,
-        raw={
-            **(inbound.raw or {}),
-            "extracted_entities": processed.extracted_entities,
-            "transcription_confidence": processed.transcription_confidence,
-            "emotion_detected": processed.emotion_detected.value,
-            "emotion_sensitivity": emotion_sensitivity,
-            "content_provenance": (processed.content_provenance if isinstance(processed.content_provenance, ContentProvenance) else ContentProvenance.USER_DIRECT).value,
-            "capability_token": capability_token,
-        },
-    )
-
-    _persist_v1_message(
-        user_id=inbound.user_id,
-        conversation_id=inbound.conversation_id,
-        run_id=run_id,
-        direction=MessageDirection.INBOUND,
-        channel=inbound.channel,
-        text=processed.normalized_text,
-        input_modality=inbound.input_modality,
-        media_url=inbound.media_url,
-        transcription_confidence=processed.transcription_confidence,
-        extracted_entities=processed.extracted_entities,
-        content_provenance=processed.content_provenance if isinstance(processed.content_provenance, ContentProvenance) else ContentProvenance.USER_DIRECT,
-        emotion_detected=processed.emotion_detected.value,
-        channel_msg_id=inbound.channel_msg_id,
-        intent=ace_decision.get("action_type"),
-        tier=route_tier(processed.normalized_text),
-    )
-
-    append_progress(run_id, step="brain", status="running")
-
     try:
+        # Billing is the first gate: if blocked, do not run any LLM work.
+        append_progress(run_id, step="billing", status="running")
+        if inbound.user_id:
+            db = SessionLocal()
+            try:
+                decision = enforce_billing_for_inbound_message(db, inbound.user_id)
+            finally:
+                try:
+                    db.close()
+                except Exception:
+                    pass
+            if not decision.allowed:
+                block = decision.block
+                msg = (block.message if block else "Billing restricted. Please try again later.").strip()
+                _persist_v1_message(
+                    user_id=inbound.user_id,
+                    conversation_id=inbound.conversation_id,
+                    run_id=run_id,
+                    direction=MessageDirection.INBOUND,
+                    channel=inbound.channel,
+                    text=inbound.content or "",
+                    input_modality=inbound.input_modality,
+                    media_url=inbound.media_url,
+                    content_provenance=ContentProvenance.USER_DIRECT,
+                    emotion_detected="neutral",
+                    channel_msg_id=inbound.channel_msg_id,
+                    intent="billing_block",
+                    tier=0,
+                )
+                if inbound.channel == Channel.WHATSAPP and inbound.channel_identifier:
+                    send_whatsapp_adapted(to_phone_e164=inbound.channel_identifier, text=msg)
+                if inbound.channel == Channel.SLACK and inbound.channel_identifier and inbound.user_id:
+                    try:
+                        db2 = SessionLocal()
+                        try:
+                            slack_send_message(
+                                db=db2,
+                                user_id=inbound.user_id,
+                                channel_id=inbound.channel_identifier,
+                                text_body=msg,
+                            )
+                        finally:
+                            db2.close()
+                    except Exception:
+                        logger.warning("Slack billing block send failed run_id=%s", run_id, exc_info=True)
+
+                _persist_v1_message(
+                    user_id=inbound.user_id,
+                    conversation_id=inbound.conversation_id,
+                    run_id=run_id,
+                    direction=MessageDirection.OUTBOUND,
+                    channel=inbound.channel,
+                    text=msg,
+                    input_modality=InputModality.TEXT,
+                    content_provenance=ContentProvenance.USER_DIRECT,
+                    emotion_detected="neutral",
+                    channel_msg_id=inbound.channel_msg_id,
+                    intent="billing_block",
+                    tier=0,
+                    latency_ms=int((time.perf_counter() - started) * 1000),
+                )
+
+                payload = {
+                    "ok": False,
+                    "blocked": True,
+                    "run_id": run_id,
+                    "reason": (block.reason if block else "billing_blocked"),
+                    "plan": decision.plan,
+                    "status": decision.status,
+                    "reply": msg,
+                    "retry_after_seconds": (block.retry_after_seconds if block else None),
+                }
+                set_run_result(run_id, payload)
+                append_progress(
+                    run_id,
+                    step="done",
+                    status="completed",
+                    partial_result=payload,
+                )
+                return
+
+        append_progress(run_id, step="preprocess", status="running")
+        processed = preprocess_inbound_message(inbound)
+
+        append_progress(
+            run_id,
+            step="route",
+            status="running",
+            partial_result={"tier_hint": route_tier(processed.normalized_text)},
+        )
+        ace_decision = classify_action(
+            processed.normalized_text,
+            agents_content=_get_agents_overrides(inbound.user_id),
+            dual_memory_signals=_get_ace_dual_memory_signals(inbound.user_id),
+        )
+        append_progress(run_id, step="ace", status="running", partial_result=ace_decision)
+        emotion_sensitivity = _get_account_emotion_sensitivity(inbound.user_id)
+        capability_token: str | None = None
+        if inbound.user_id:
+            try:
+                capability_token = issue_capability_token(
+                    run_id=run_id,
+                    user_id=inbound.user_id,
+                    provenance=processed.content_provenance,
+                    capabilities=[
+                        "web:search",
+                        "calendar:read",
+                        "calendar:write",
+                        "email:read",
+                        "email:send",
+                        "contacts:read",
+                    ],
+                )
+            except Exception:
+                capability_token = None
+
+        normalized_inbound = InboundMessage(
+            channel=inbound.channel,
+            channel_identifier=inbound.channel_identifier,
+            content=processed.normalized_text,
+            input_modality=inbound.input_modality,
+            media_url=inbound.media_url,
+            media_type=inbound.media_type,
+            wa_message_id=inbound.wa_message_id,
+            reply_to_id=inbound.reply_to_id,
+            channel_msg_id=inbound.channel_msg_id,
+            user_id=inbound.user_id,
+            conversation_id=inbound.conversation_id,
+            run_id=run_id,
+            from_phone=inbound.from_phone,
+            raw={
+                **(inbound.raw or {}),
+                "extracted_entities": processed.extracted_entities,
+                "transcription_confidence": processed.transcription_confidence,
+                "emotion_detected": processed.emotion_detected.value,
+                "emotion_sensitivity": emotion_sensitivity,
+                "content_provenance": (processed.content_provenance if isinstance(processed.content_provenance, ContentProvenance) else ContentProvenance.USER_DIRECT).value,
+                "capability_token": capability_token,
+            },
+        )
+
+        _persist_v1_message(
+            user_id=inbound.user_id,
+            conversation_id=inbound.conversation_id,
+            run_id=run_id,
+            direction=MessageDirection.INBOUND,
+            channel=inbound.channel,
+            text=processed.normalized_text,
+            input_modality=inbound.input_modality,
+            media_url=inbound.media_url,
+            transcription_confidence=processed.transcription_confidence,
+            extracted_entities=processed.extracted_entities,
+            content_provenance=processed.content_provenance if isinstance(processed.content_provenance, ContentProvenance) else ContentProvenance.USER_DIRECT,
+            emotion_detected=processed.emotion_detected.value,
+            channel_msg_id=inbound.channel_msg_id,
+            intent=ace_decision.get("action_type"),
+            tier=route_tier(processed.normalized_text),
+        )
+
+        append_progress(run_id, step="brain", status="running")
+
         outbound = _brain_respond(normalized_inbound)
+        if inbound.channel == Channel.IMESSAGE:
+            constrained = apply_imessage_constraints(outbound.content)
+            outbound = outbound.model_copy(update={"content": constrained, "text": constrained})
+        elif inbound.channel == Channel.SLACK:
+            constrained = apply_slack_constraints(outbound.content)
+            outbound = outbound.model_copy(update={"content": constrained, "text": constrained})
         elapsed_ms = int((time.perf_counter() - started) * 1000)
 
         if inbound.channel == Channel.WHATSAPP and outbound.recipient_id:
@@ -348,6 +439,33 @@ def _process_message_run(run_id: str, inbound: InboundMessage) -> None:
                         db.close()
                     except Exception:
                         pass
+        elif inbound.channel == Channel.SLACK and outbound.recipient_id and inbound.user_id:
+            try:
+                db = SessionLocal()
+                try:
+                    sent = slack_send_message(
+                        db=db,
+                        user_id=inbound.user_id,
+                        channel_id=outbound.recipient_id,
+                        text_body=outbound.content,
+                    )
+                    if inbound.user_id:
+                        record_side_effect(
+                            db,
+                            run_id=run_id,
+                            user_id=inbound.user_id,
+                            effect_type="slack_send",
+                            description="Sent Slack outbound message",
+                            metadata={"channel": outbound.recipient_id, "ts": sent.get("ts")},
+                            reversible=False,
+                        )
+                finally:
+                    try:
+                        db.close()
+                    except Exception:
+                        pass
+            except Exception:
+                logger.warning("Slack send failed run_id=%s", run_id, exc_info=True)
 
         if inbound.user_id:
             db = SessionLocal()
@@ -386,6 +504,8 @@ def _process_message_run(run_id: str, inbound: InboundMessage) -> None:
         payload = {
             "ok": True,
             "run_id": run_id,
+            "inbound": normalized_inbound.model_dump(mode="json"),
+            "outbound": outbound.model_dump(mode="json"),
             "reply": outbound.content,
             "metadata": outbound.metadata,
             "latency_ms": elapsed_ms,
@@ -431,6 +551,7 @@ def _process_message_run(run_id: str, inbound: InboundMessage) -> None:
         payload = {
             "ok": False,
             "run_id": run_id,
+            "inbound": normalized_inbound.model_dump(mode="json") if "normalized_inbound" in locals() else None,
             "error": str(exc),
         }
         set_run_result(run_id, payload)
@@ -487,9 +608,21 @@ def post_message(request: Request, payload: MessageRequest, background_tasks: Ba
         raw=payload.metadata,
     )
 
-    append_progress(run_id, step="accepted", status="queued", partial_result={"channel": payload.channel.value})
-    background_tasks.add_task(_process_message_run, run_id, inbound)
+    run_id = enqueue_inbound_message(background_tasks=background_tasks, inbound=inbound, run_id=run_id)
     return MessageAccepted(run_id=run_id, status="queued")
+
+
+def enqueue_inbound_message(*, background_tasks: BackgroundTasks, inbound: InboundMessage, run_id: str | None = None) -> str:
+    resolved_run_id = (run_id or inbound.run_id or "").strip() or str(uuid.uuid4())
+    normalized = inbound.model_copy(update={"run_id": resolved_run_id})
+    append_progress(
+        resolved_run_id,
+        step="accepted",
+        status="queued",
+        partial_result={"channel": normalized.channel.value},
+    )
+    background_tasks.add_task(_process_message_run, resolved_run_id, normalized)
+    return resolved_run_id
 
 
 @router.get("/stream/{run_id}")

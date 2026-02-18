@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from datetime import datetime
 from typing import List
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from sqlalchemy.orm import Session
+from sqlalchemy import text
 
 from app.core.config import settings
 from app.db.database import SessionLocal
@@ -24,6 +26,12 @@ from app.services.email_monitoring import run_email_monitoring as run_email_moni
 from app.services.wardrobe_rotation import run_rotation_for_all_users
 from app.services.gift_reminders import enqueue_gift_reminders
 from app.services.relationship_service import enqueue_relationship_reminders
+from app.blueprint.bones import refresh_bones_catalog
+from app.blueprint.embedding_audit import run_embedding_reembed_audit_all_users
+from app.blueprint.knowledge_review import run_nightly_consolidation, run_weekly_self_review
+from app.blueprint.muscles import capture_muscles_snapshot
+from app.blueprint.research import run_research_job
+from app.core.redis import get_redis
 
 logger = logging.getLogger(__name__)
 
@@ -226,6 +234,31 @@ def run_outbound_messages():
         db.close()
 
 
+def reset_billing_daily_counters() -> None:
+    """
+    Reset Redis-backed daily message counters at midnight UTC.
+
+    Primary enforcement uses per-key expiry-to-midnight; this job is a safety net.
+    """
+    r = get_redis()
+    if r is None:
+        return
+    deleted = 0
+    batch: list[str] = []
+    try:
+        for key in r.scan_iter(match="billing:daily:*", count=500):
+            batch.append(key)
+            if len(batch) >= 500:
+                deleted += int(r.delete(*batch) or 0)
+                batch = []
+        if batch:
+            deleted += int(r.delete(*batch) or 0)
+    except Exception:
+        logger.exception("Billing daily counter reset failed")
+        return
+    logger.info("Billing daily counters reset: deleted=%s", deleted)
+
+
 def run_proactive_rules():
     """
     Evaluate proactive rules and enqueue actions.
@@ -339,6 +372,148 @@ def run_relationship_reminders():
         logger.info("Relationship reminders queued: %s", result)
     except Exception as e:
         logger.error("Fatal error in relationship reminders job: %s", e)
+    finally:
+        db.close()
+
+
+def _distinct_blueprint_user_ids(db: Session) -> list[str]:
+    user_ids: list[str] = []
+    try:
+        rows = db.execute(
+            text("select distinct user_id from knowledge_files where user_id is not null")
+        ).mappings().all()
+        user_ids = [str(r.get("user_id") or "").strip() for r in rows if str(r.get("user_id") or "").strip()]
+    except Exception:
+        user_ids = []
+    return sorted(set(user_ids))
+
+
+def run_knowledge_consolidation():
+    db = SessionLocal()
+    try:
+        user_ids = _distinct_blueprint_user_ids(db)
+        results = []
+        for user_id in user_ids:
+            try:
+                results.append(run_nightly_consolidation(db, user_id=user_id))
+            except Exception as exc:
+                results.append({"ok": False, "user_id": user_id, "error": str(exc)})
+        logger.info("Knowledge consolidation run complete for %d users", len(user_ids))
+        return {"users": len(user_ids), "results": results}
+    except Exception as e:
+        logger.error("Fatal error in knowledge consolidation job: %s", e)
+        return {"users": 0, "results": [], "error": str(e)}
+    finally:
+        db.close()
+
+
+def run_self_review():
+    db = SessionLocal()
+    try:
+        user_ids = _distinct_blueprint_user_ids(db)
+        results = []
+        for user_id in user_ids:
+            try:
+                results.append(run_weekly_self_review(db, user_id=user_id))
+            except Exception as exc:
+                results.append({"ok": False, "user_id": user_id, "error": str(exc)})
+        logger.info("Self-review run complete for %d users", len(user_ids))
+        return {"users": len(user_ids), "results": results}
+    except Exception as e:
+        logger.error("Fatal error in self-review job: %s", e)
+        return {"users": 0, "results": [], "error": str(e)}
+    finally:
+        db.close()
+
+
+def run_due_research():
+    db = SessionLocal()
+    try:
+        dialect = db.bind.dialect.name if db.bind is not None else ""
+        due_predicate = "(next_run_at is null or next_run_at <= :now)" if dialect == "sqlite" else "(next_run_at is null or next_run_at <= now())"
+        rows = db.execute(
+            text(
+                """
+                select id, user_id
+                from research_jobs
+                where status = 'active'
+                  and """
+                + due_predicate
+                + """
+                limit 50
+                """
+            ),
+            {"now": datetime.utcnow()} if dialect == "sqlite" else {},
+        ).mappings().all()
+        if not rows:
+            return {"processed": 0}
+        processed = 0
+        for row in rows:
+            rid = str(row.get("id") or "")
+            uid = str(row.get("user_id") or "")
+            if not rid or not uid:
+                continue
+            try:
+                run_research_job(db, user_id=uid, research_id=rid)
+                processed += 1
+            except Exception as exc:
+                logger.warning("Research job failed id=%s: %s", rid, exc)
+        logger.info("Research scheduler processed %d jobs", processed)
+        return {"processed": processed}
+    except Exception as e:
+        logger.error("Fatal error in research scheduler: %s", e)
+        return {"processed": 0, "error": str(e)}
+    finally:
+        db.close()
+
+
+def run_bones_refresh():
+    db = SessionLocal()
+    try:
+        user_ids = _distinct_blueprint_user_ids(db)
+        results = []
+        for user_id in user_ids:
+            try:
+                results.append(refresh_bones_catalog(db, user_id=user_id))
+            except Exception as exc:
+                results.append({"ok": False, "user_id": user_id, "error": str(exc)})
+        logger.info("Bones refresh complete for %d users", len(user_ids))
+        return {"users": len(user_ids), "results": results}
+    except Exception as e:
+        logger.error("Fatal error in bones refresh job: %s", e)
+        return {"users": 0, "results": [], "error": str(e)}
+    finally:
+        db.close()
+
+
+def run_muscles_snapshot():
+    db = SessionLocal()
+    try:
+        user_ids = _distinct_blueprint_user_ids(db)
+        results = []
+        for user_id in user_ids:
+            try:
+                results.append(capture_muscles_snapshot(db, user_id=user_id))
+            except Exception as exc:
+                results.append({"ok": False, "user_id": user_id, "error": str(exc)})
+        logger.info("Muscles snapshot complete for %d users", len(user_ids))
+        return {"users": len(user_ids), "results": results}
+    except Exception as e:
+        logger.error("Fatal error in muscles snapshot job: %s", e)
+        return {"users": 0, "results": [], "error": str(e)}
+    finally:
+        db.close()
+
+
+def run_embedding_audit():
+    db = SessionLocal()
+    try:
+        result = run_embedding_reembed_audit_all_users(db)
+        logger.info("Embedding audit job complete: %s", result)
+        return result
+    except Exception as e:
+        logger.error("Fatal error in embedding audit job: %s", e)
+        return {"ok": False, "error": str(e)}
     finally:
         db.close()
 
@@ -469,6 +644,16 @@ def setup_scheduler() -> BackgroundScheduler:
     )
     logger.info("Data retention job scheduled for %02d:%02d UTC daily", retention_hour, retention_minute)
 
+    # Billing daily counter reset (UTC midnight)
+    scheduler.add_job(
+        reset_billing_daily_counters,
+        trigger=CronTrigger(hour=0, minute=0),
+        id="billing_daily_reset_job",
+        name="Billing Daily Counter Reset",
+        replace_existing=True,
+    )
+    logger.info("Billing daily counter reset job scheduled daily at 00:00 UTC")
+
     # Wardrobe rotation reminders (daily)
     rotation_time = settings.WARDROBE_ROTATION_SCHEDULE.split()
     rotation_hour = int(rotation_time[0])
@@ -507,6 +692,66 @@ def setup_scheduler() -> BackgroundScheduler:
         replace_existing=True,
     )
     logger.info("Relationship reminders scheduled for %02d:%02d UTC daily", rel_hour, rel_minute)
+
+    if settings.FEATURE_CONSOLIDATION_ENABLED:
+        scheduler.add_job(
+            run_knowledge_consolidation,
+            trigger=CronTrigger(hour=1, minute=30),
+            id="knowledge_consolidation_job",
+            name="Knowledge Consolidation",
+            replace_existing=True,
+        )
+        logger.info("Knowledge consolidation job scheduled daily at 01:30 UTC")
+
+    if settings.FEATURE_SELF_REVIEW_ENABLED:
+        scheduler.add_job(
+            run_self_review,
+            trigger=CronTrigger(day_of_week="mon", hour=2, minute=30),
+            id="knowledge_self_review_job",
+            name="Knowledge Self Review",
+            replace_existing=True,
+        )
+        logger.info("Knowledge self-review job scheduled weekly Monday 02:30 UTC")
+
+    if settings.FEATURE_RESEARCH_ENGINE:
+        scheduler.add_job(
+            run_due_research,
+            trigger="interval",
+            minutes=30,
+            id="research_scheduler_job",
+            name="Research Jobs Scheduler",
+            replace_existing=True,
+        )
+        logger.info("Research scheduler job scheduled every 30 minutes")
+
+    if settings.FEATURE_BEHAVIORAL_INTELLIGENCE:
+        scheduler.add_job(
+            run_bones_refresh,
+            trigger=CronTrigger(hour=3, minute=0),
+            id="bones_refresh_job",
+            name="Bones Layer Refresh",
+            replace_existing=True,
+        )
+        logger.info("Bones refresh job scheduled daily at 03:00 UTC")
+
+        scheduler.add_job(
+            run_muscles_snapshot,
+            trigger="interval",
+            hours=6,
+            id="muscles_snapshot_job",
+            name="Muscles Layer Snapshot",
+            replace_existing=True,
+        )
+        logger.info("Muscles snapshot job scheduled every 6 hours")
+
+    scheduler.add_job(
+        run_embedding_audit,
+        trigger=CronTrigger(day=1, hour=4, minute=20),
+        id="embedding_audit_job",
+        name="Monthly Embedding Audit",
+        replace_existing=True,
+    )
+    logger.info("Embedding audit job scheduled monthly on day 1 at 04:20 UTC")
 
     return scheduler
 

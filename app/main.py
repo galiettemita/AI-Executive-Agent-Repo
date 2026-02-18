@@ -91,7 +91,13 @@ from app.api.routes.public_site import router as public_site_router  # noqa: E40
 from app.api.routes.v1_gateway import router as v1_gateway_router  # noqa: E402
 from app.api.routes.v1_behavioral import router as v1_behavioral_router  # noqa: E402
 from app.api.routes.v1_core import router as v1_core_router  # noqa: E402
+from app.api.routes.v1_auth import router as v1_auth_router  # noqa: E402
+from app.api.routes.v1_billing import router as v1_billing_router  # noqa: E402
+from app.api.routes.v1_mcp import router as v1_mcp_router  # noqa: E402
+from app.api.routes.plaid import router as plaid_router  # noqa: E402
 from app.api.routes.webhook_aliases import router as webhook_aliases_router  # noqa: E402
+from app.api.routes.webhooks_phase3 import router as phase3_webhooks_router  # noqa: E402
+from app.api.routes.mcp_wave1_host import router as mcp_wave1_host_router  # noqa: E402
 from app.api.internal.llm import router as llm_router  # noqa: E402
 from app.api.internal.platform import router as internal_platform_router  # noqa: E402
 
@@ -174,6 +180,7 @@ app.include_router(watch_refresh_router)
 app.include_router(notifications_router)
 app.include_router(agent_chat_router)
 app.include_router(webhooks_whatsapp.router)
+app.include_router(phase3_webhooks_router)
 app.include_router(webhook_aliases_router)
 app.include_router(webhooks_sms_router)
 app.include_router(admin_google_router)
@@ -219,6 +226,11 @@ app.include_router(public_site_router)
 app.include_router(v1_gateway_router)
 app.include_router(v1_behavioral_router)
 app.include_router(v1_core_router)
+app.include_router(v1_auth_router)
+app.include_router(v1_billing_router)
+app.include_router(v1_mcp_router)
+app.include_router(mcp_wave1_host_router)
+app.include_router(plaid_router)
 app.include_router(llm_router)
 app.include_router(internal_platform_router)
 if settings.ENABLE_SMART_HOME == "1":

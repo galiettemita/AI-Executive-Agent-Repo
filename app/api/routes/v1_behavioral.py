@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
@@ -19,6 +19,24 @@ from app.blueprint.profiling import (
 )
 from app.blueprint.team import get_or_refresh_team_view, refresh_team_knowledge_file
 from app.blueprint.proactive import create_proactive_trigger, eligible_due_triggers, mark_trigger_fired, render_proactive_message
+from app.blueprint.contracts import WorkflowDefinition
+from app.blueprint.research import (
+    create_research_job,
+    delete_research_job,
+    get_research_job,
+    list_research_jobs,
+    run_research_job,
+    update_research_job,
+)
+from app.blueprint.workflows import (
+    create_workflow,
+    delete_workflow,
+    dry_run_workflow,
+    get_workflow,
+    list_workflows,
+    parse_nl_workflow_definition,
+    update_workflow,
+)
 
 
 router = APIRouter(prefix="/api/v1", tags=["behavioral-v1"])
@@ -93,6 +111,52 @@ class GoalUpdateRequest(BaseModel):
     status: str | None = None
     progress_pct: float | None = None
     target_date: datetime | None = None
+
+
+class WorkflowCreateRequest(BaseModel):
+    user_id: str
+    definition: WorkflowDefinition | None = None
+    natural_language: str | None = None
+    status: str = "active"
+
+
+class WorkflowUpdateRequest(BaseModel):
+    definition: WorkflowDefinition | None = None
+    natural_language: str | None = None
+    status: str | None = None
+
+
+class WorkflowTestRequest(BaseModel):
+    sample_inputs: dict[str, Any] = Field(default_factory=dict)
+
+
+class ResearchCreateRequest(BaseModel):
+    user_id: str
+    title: str
+    query: str
+    sources: list[str] = Field(default_factory=list)
+    schedule: str | None = None
+    status: str = "active"
+    delivery_channel: str | None = "whatsapp"
+    delivery_format: str = "summary"
+    max_cost_per_run: float = 0.5
+
+
+class ResearchUpdateRequest(BaseModel):
+    title: str | None = None
+    query: str | None = None
+    sources: list[str] | None = None
+    schedule: str | None = None
+    status: str | None = None
+    delivery_channel: str | None = None
+    delivery_format: str | None = None
+    max_cost_per_run: float | None = None
+    next_run_at: datetime | None = None
+
+
+class KnowledgeReviewRequest(BaseModel):
+    user_id: str
+    focus: str | None = None
 
 
 def _table_exists(db: Session, table_name: str) -> bool:
@@ -623,3 +687,213 @@ def get_heartbeat(user_id: str, db: Session = Depends(get_db)):
     if not item:
         raise HTTPException(status_code=404, detail="HEARTBEAT.md not found")
     return {"ok": True, "heartbeat": item}
+
+
+@router.post("/knowledge/review")
+def knowledge_review(payload: KnowledgeReviewRequest, db: Session = Depends(get_db)):
+    files = list_knowledge_files(db, user_id=payload.user_id)
+    file_map = {str(item.get("file_path")): item for item in files}
+    required = [
+        "USER.md",
+        "SOUL.md",
+        "IDENTITY.md",
+        "AGENTS.md",
+        "MEMORY.md",
+        "HEARTBEAT.md",
+        "TOOLS.md",
+        "TEAM.md",
+        "WORKFLOWS.md",
+    ]
+    missing = [name for name in required if name not in file_map]
+    stale: list[str] = []
+    now = datetime.utcnow()
+    for name, item in file_map.items():
+        updated = item.get("updated_at")
+        if isinstance(updated, datetime) and (now - updated).days >= 14:
+            stale.append(name)
+
+    questions: list[str] = []
+    if "WORKFLOWS.md" in missing:
+        questions.append("What repeating tasks should I automate for you this week?")
+    if "TEAM.md" in missing:
+        questions.append("Who are your top collaborators and preferred communication channels?")
+    if stale:
+        questions.append("Should I refresh outdated knowledge files based on recent behavior?")
+    if payload.focus:
+        questions.append(f"What specific updates should I make for {payload.focus}?")
+
+    return {
+        "ok": True,
+        "review": {
+            "missing_files": missing,
+            "stale_files": sorted(stale),
+            "questions": questions,
+            "completeness": {
+                "required": len(required),
+                "present": len(required) - len(missing),
+            },
+        },
+    }
+
+
+@router.get("/workflows")
+def workflows_list(user_id: str, db: Session = Depends(get_db)):
+    try:
+        items = list_workflows(db, user_id=user_id)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    return {"ok": True, "items": items}
+
+
+@router.post("/workflows")
+def workflows_create(payload: WorkflowCreateRequest, db: Session = Depends(get_db)):
+    try:
+        definition = payload.definition
+        if definition is None:
+            definition = parse_nl_workflow_definition(payload.natural_language or "")
+        item = create_workflow(
+            db,
+            user_id=payload.user_id,
+            definition=definition,
+            status=payload.status,
+        )
+    except RuntimeError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Workflow create failed: {exc}")
+    return {"ok": True, "workflow": item}
+
+
+@router.get("/workflows/{workflow_id}")
+def workflows_get(workflow_id: str, user_id: str, db: Session = Depends(get_db)):
+    try:
+        item = get_workflow(db, user_id=user_id, workflow_id=workflow_id)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    if not item:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+    return {"ok": True, "workflow": item}
+
+
+@router.put("/workflows/{workflow_id}")
+def workflows_update(workflow_id: str, user_id: str, payload: WorkflowUpdateRequest, db: Session = Depends(get_db)):
+    definition = payload.definition
+    if definition is None and payload.natural_language:
+        try:
+            definition = parse_nl_workflow_definition(payload.natural_language)
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=f"Invalid natural language workflow: {exc}")
+    try:
+        item = update_workflow(
+            db,
+            user_id=user_id,
+            workflow_id=workflow_id,
+            definition=definition,
+            status=payload.status,
+        )
+    except RuntimeError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    if not item:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+    return {"ok": True, "workflow": item}
+
+
+@router.delete("/workflows/{workflow_id}")
+def workflows_delete(workflow_id: str, user_id: str, db: Session = Depends(get_db)):
+    try:
+        deleted = delete_workflow(db, user_id=user_id, workflow_id=workflow_id)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+    return {"ok": True, "deleted": True}
+
+
+@router.post("/workflows/{workflow_id}/test")
+def workflows_test(workflow_id: str, user_id: str, payload: WorkflowTestRequest, db: Session = Depends(get_db)):
+    try:
+        result = dry_run_workflow(
+            db,
+            user_id=user_id,
+            workflow_id=workflow_id,
+            sample_inputs=payload.sample_inputs or {},
+        )
+    except RuntimeError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    return {"ok": True, "result": result}
+
+
+@router.get("/research")
+def research_list(user_id: str, db: Session = Depends(get_db)):
+    try:
+        items = list_research_jobs(db, user_id=user_id)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    return {"ok": True, "items": items}
+
+
+@router.post("/research")
+def research_create(payload: ResearchCreateRequest, db: Session = Depends(get_db)):
+    try:
+        item = create_research_job(
+            db,
+            user_id=payload.user_id,
+            title=payload.title,
+            query=payload.query,
+            sources=payload.sources,
+            schedule=payload.schedule,
+            status=payload.status,
+            delivery_channel=payload.delivery_channel,
+            delivery_format=payload.delivery_format,
+            max_cost_per_run=payload.max_cost_per_run,
+        )
+    except RuntimeError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Research create failed: {exc}")
+    return {"ok": True, "research": item}
+
+
+@router.get("/research/{research_id}")
+def research_get(research_id: str, user_id: str, db: Session = Depends(get_db)):
+    try:
+        item = get_research_job(db, user_id=user_id, research_id=research_id)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    if not item:
+        raise HTTPException(status_code=404, detail="Research job not found")
+    return {"ok": True, "research": item}
+
+
+@router.put("/research/{research_id}")
+def research_update(research_id: str, user_id: str, payload: ResearchUpdateRequest, db: Session = Depends(get_db)):
+    fields = payload.model_dump(exclude_none=True)
+    try:
+        item = update_research_job(db, user_id=user_id, research_id=research_id, fields=fields)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    if not item:
+        raise HTTPException(status_code=404, detail="Research job not found")
+    return {"ok": True, "research": item}
+
+
+@router.delete("/research/{research_id}")
+def research_delete(research_id: str, user_id: str, db: Session = Depends(get_db)):
+    try:
+        deleted = delete_research_job(db, user_id=user_id, research_id=research_id)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Research job not found")
+    return {"ok": True, "deleted": True}
+
+
+@router.post("/research/{research_id}/run")
+def research_run(research_id: str, user_id: str, db: Session = Depends(get_db)):
+    try:
+        result = run_research_job(db, user_id=user_id, research_id=research_id)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Research run failed: {exc}")
+    return {"ok": True, **result}

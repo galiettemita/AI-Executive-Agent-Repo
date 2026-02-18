@@ -15,6 +15,7 @@ class User(Base):
 
     id: Mapped[str] = mapped_column(String, primary_key=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    deletion_requested_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
 # -------------------
@@ -1132,6 +1133,29 @@ class Subscription(Base):
 
     current_period_end: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class Invoice(Base):
+    __tablename__ = "invoices"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(String, ForeignKey("users.id"), index=True)
+
+    provider: Mapped[str] = mapped_column(String, default="stripe", index=True)
+    provider_invoice_id: Mapped[str] = mapped_column(String, unique=True, index=True)
+    provider_customer_id: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    provider_subscription_id: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+
+    status: Mapped[str] = mapped_column(String, default="open", index=True)
+    amount_due: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    amount_paid: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    currency: Mapped[str | None] = mapped_column(String, nullable=True)
+    hosted_invoice_url: Mapped[str | None] = mapped_column(String, nullable=True)
+    invoice_pdf_url: Mapped[str | None] = mapped_column(String, nullable=True)
+    paid_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, index=True)
 
 
 class Usage(Base):

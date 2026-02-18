@@ -34,10 +34,14 @@ ALLOWLIST_PATHS = {
 }
 
 ALLOWLIST_PREFIXES = (
+    "/mcp/wave1",
     "/webhooks/whatsapp",
     "/webhooks/voice",
     "/webhooks/sms",
+    "/webhook/imessage",
+    "/webhook/slack",
     "/billing/stripe/webhook",
+    "/api/v1/billing/webhooks/stripe",
     "/payment/webhooks/stripe",
     "/public",
     "/legal",

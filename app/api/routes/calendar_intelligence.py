@@ -6,13 +6,14 @@ from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.db.database import get_db
 from app.middleware.rate_limiter import rate_limit_user
 from app.services.consent_service import require_consent
 from app.services.calendar_intelligence import meeting_prep_brief, suggest_buffer, generate_followup
+from app.services.calendar_intelligence import suggest_multi_person_slots
 from app.services.email_draft_service import create_email_draft
 from app.db.models import TaskItem
 
@@ -31,6 +32,15 @@ class BufferRequest(BaseModel):
     start_utc: str
     end_utc: str
     location: Optional[str] = None
+    provider: Optional[str] = None
+
+
+class MultiAvailabilityRequest(BaseModel):
+    user_id: str
+    start_utc: str
+    end_utc: str
+    duration_minutes: int = 30
+    participants: list[dict] = Field(default_factory=list)
     provider: Optional[str] = None
 
 
@@ -140,3 +150,28 @@ def calendar_followup(
         "to_email": result.get("to_email"),
         "message": "Follow-up ready. Reply 'send' to send the draft email." if draft_id else "Follow-up tasks created.",
     }
+
+
+@rate_limit_user()
+@router.post("/multi-availability")
+def calendar_multi_availability(request: Request, payload: MultiAvailabilityRequest, db: Session = Depends(get_db)):
+    try:
+        require_consent(db, payload.user_id, "calendar")
+    except Exception as e:
+        raise HTTPException(status_code=403, detail=str(e))
+    try:
+        start_utc = datetime.fromisoformat(payload.start_utc.replace("Z", "+00:00"))
+        end_utc = datetime.fromisoformat(payload.end_utc.replace("Z", "+00:00"))
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid start_utc/end_utc")
+
+    result = suggest_multi_person_slots(
+        db=db,
+        user_id=payload.user_id,
+        start_utc=start_utc,
+        end_utc=end_utc,
+        duration_minutes=max(5, int(payload.duration_minutes)),
+        provider=payload.provider,
+        participants=payload.participants or [],
+    )
+    return {"ok": True, **result}

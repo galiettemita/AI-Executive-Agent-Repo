@@ -202,7 +202,7 @@ def ensure_default_knowledge_files(
                     :token_count,
                     1,
                     :metadata,
-                    now()
+                    :created_at
                 )
                 """
             ),
@@ -214,6 +214,7 @@ def ensure_default_knowledge_files(
                 "content_hash": content_hash,
                 "token_count": max(1, len(content.split()) * 4 // 3),
                 "metadata": json.dumps(metadata_obj, ensure_ascii=False),
+                "created_at": datetime.utcnow(),
             },
         )
         inserted.append(file_path)
@@ -230,7 +231,7 @@ def list_knowledge_files(db: Session, *, user_id: str) -> list[dict[str, Any]]:
     rows = db.execute(
         text(
             """
-            select file_path, layer, version, token_count, created_at
+            select file_path, layer, content, content_hash, version, token_count, metadata, created_at, updated_at
             from knowledge_files
             where user_id = :user_id
             order by file_path asc, version desc
@@ -242,13 +243,26 @@ def list_knowledge_files(db: Session, *, user_id: str) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
     for row in rows:
         created = row.get("created_at")
+        updated = row.get("updated_at")
+        raw_meta = row.get("metadata")
+        if isinstance(raw_meta, str):
+            try:
+                raw_meta = json.loads(raw_meta)
+            except Exception:
+                raw_meta = {"raw": raw_meta}
+        if not isinstance(raw_meta, dict):
+            raw_meta = {}
         out.append(
             {
                 "file_path": row.get("file_path"),
                 "layer": row.get("layer"),
+                "content": row.get("content"),
+                "content_hash": row.get("content_hash"),
                 "version": row.get("version"),
                 "token_count": row.get("token_count"),
+                "metadata": raw_meta,
                 "created_at": created.isoformat() if isinstance(created, datetime) else str(created),
+                "updated_at": updated.isoformat() if isinstance(updated, datetime) else str(updated),
             }
         )
     return out
@@ -339,7 +353,7 @@ def put_knowledge_file_version(
             insert into knowledge_files (
                 user_id, file_path, layer, content, content_hash, token_count, version, metadata, created_at
             ) values (
-                :user_id, :file_path, :layer, :content, :content_hash, :token_count, :version, :metadata, now()
+                :user_id, :file_path, :layer, :content, :content_hash, :token_count, :version, :metadata, :created_at
             )
             """
         ),
@@ -352,6 +366,7 @@ def put_knowledge_file_version(
             "token_count": token_count,
             "version": next_version,
             "metadata": json.dumps(metadata_obj, ensure_ascii=False),
+            "created_at": datetime.utcnow(),
         },
     )
     db.commit()

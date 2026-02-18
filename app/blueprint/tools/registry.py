@@ -489,6 +489,110 @@ def _register_native_tools(registry: ToolRegistry) -> None:
         min_tier=2,
         tags=["contacts", "microsoft"],
     )
+    registry.register(
+        ToolSpec(
+            name="slack.messages.list",
+            description="List recent messages in a Slack channel.",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "channel_id": {"type": "string"},
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 200},
+                },
+                "required": ["channel_id"],
+            },
+            output_schema={"type": "object"},
+            risk_level=RiskLevel.LOW,
+            tags=["slack", "communication"],
+            capability_scope=["slack:read"],
+        ),
+        min_tier=2,
+        tags=["slack", "communication"],
+        llm_name="slack_messages_list",
+    )
+    registry.register(
+        ToolSpec(
+            name="slack.messages.send",
+            description="Send a Slack message to a channel.",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "channel_id": {"type": "string"},
+                    "text": {"type": "string"},
+                    "thread_ts": {"type": "string"},
+                },
+                "required": ["channel_id", "text"],
+            },
+            output_schema={"type": "object"},
+            risk_level=RiskLevel.HIGH,
+            requires_approval_above=RiskLevel.LOW,
+            tags=["slack", "communication", "side_effect"],
+            capability_scope=["slack:send"],
+        ),
+        min_tier=2,
+        tags=["slack", "communication", "side_effect"],
+        llm_name="slack_messages_send",
+    )
+    registry.register(
+        ToolSpec(
+            name="slack.channel.summary",
+            description="Summarize recent activity in a Slack channel.",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "channel_id": {"type": "string"},
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 200},
+                },
+                "required": ["channel_id"],
+            },
+            output_schema={"type": "object"},
+            risk_level=RiskLevel.LOW,
+            tags=["slack", "communication", "summary"],
+            capability_scope=["slack:read"],
+        ),
+        min_tier=2,
+        tags=["slack", "communication", "summary"],
+        llm_name="slack_channel_summary",
+    )
+    registry.register(
+        ToolSpec(
+            name="plaid.accounts.list",
+            description="List linked Plaid accounts (sandbox-first in Phase 3).",
+            input_schema={
+                "type": "object",
+                "properties": {"stage": {"type": "string", "enum": ["staging", "prod"]}},
+            },
+            output_schema={"type": "object"},
+            risk_level=RiskLevel.LOW,
+            tags=["plaid", "finance"],
+            capability_scope=["finance:read"],
+        ),
+        min_tier=2,
+        tags=["plaid", "finance"],
+        llm_name="plaid_accounts_list",
+    )
+    registry.register(
+        ToolSpec(
+            name="plaid.transactions.list",
+            description="List recent Plaid transactions.",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "start_date": {"type": "string"},
+                    "end_date": {"type": "string"},
+                    "stage": {"type": "string", "enum": ["staging", "prod"]},
+                },
+                "required": ["start_date", "end_date"],
+            },
+            output_schema={"type": "object"},
+            risk_level=RiskLevel.LOW,
+            tags=["plaid", "finance"],
+            capability_scope=["finance:read"],
+        ),
+        min_tier=2,
+        tags=["plaid", "finance"],
+        llm_name="plaid_transactions_list",
+    )
 
 
 def get_tool_registry() -> ToolRegistry:

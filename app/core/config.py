@@ -44,8 +44,19 @@ class Settings(BaseSettings):
     STRIPE_WEBHOOK_SECRET: str | None = None
     STRIPE_PUBLISHABLE_KEY: str | None = None
     STRIPE_PRICE_ID_STARTER: str | None = None
+    STRIPE_PRICE_ID_PERSONAL: str | None = None
+    STRIPE_PRICE_ID_PROFESSIONAL: str | None = None
     CHECKOUT_SUCCESS_URL: str = ""
     CHECKOUT_CANCEL_URL: str = ""
+    BILLING_PORTAL_RETURN_URL: str = ""
+
+    # ── Billing (Operational Blueprint Component 1) ─────────────
+    BILLING_TRIAL_DAYS: int = 14
+    BILLING_TRIAL_DAILY_MESSAGE_LIMIT: int = 20
+    BILLING_TRIAL_MAX_MCP_SERVERS: int = 3
+    BILLING_BURST_LIMIT_PER_MINUTE: int = 10
+    BILLING_BURST_WINDOW_SECONDS: int = 60
+    BILLING_PAST_DUE_GRACE_DAYS: int = 7
 
     # ── Amadeus (Travel) ────────────────────────────────────────
     AMADEUS_API_KEY: str | None = None
@@ -94,6 +105,28 @@ class Settings(BaseSettings):
     )
     WHATSAPP_PUBLIC_NUMBER: str = ""  # E.164 without "+" for wa.me links
 
+    # ── Slack (Phase 3) ────────────────────────────────────────
+    SLACK_CLIENT_ID: str | None = None
+    SLACK_CLIENT_SECRET: str | None = None
+    SLACK_REDIRECT_URI: str | None = None
+    SLACK_BOT_TOKEN: str | None = None
+    SLACK_SIGNING_SECRET: str | None = None
+
+    # ── Apple Messages for Business / iMessage (Phase 3) ───────
+    IMESSAGE_CERT_VALIDATION_REQUIRED: str = "0"
+    IMESSAGE_CERT_SHA256_ALLOWLIST: str | None = None
+    IMESSAGE_TRUSTED_ROOT_PEM: str | None = None
+
+    # ── Plaid (Phase 3+) ────────────────────────────────────────
+    PLAID_CLIENT_ID: str | None = None
+    PLAID_SECRET_STAGING: str | None = None
+    PLAID_SECRET_PROD: str | None = None
+    PLAID_ENV_STAGING: str = "sandbox"
+    PLAID_ENV_PROD: str = "production"
+    PLAID_REDIRECT_URI_STAGING: str | None = None
+    PLAID_REDIRECT_URI_PROD: str | None = None
+    PLAID_WEBHOOK_SECRET: str | None = None
+
     # ── Fitbit OAuth ────────────────────────────────────────────
     FITBIT_CLIENT_ID: str | None = None
     FITBIT_CLIENT_SECRET: str | None = None
@@ -122,6 +155,14 @@ class Settings(BaseSettings):
     # ── Tavily (Discovery) ──────────────────────────────────────
     TAVILY_API_KEY: str | None = None
     TAVILY_SEARCH_DEPTH: str = "basic"  # basic | advanced
+
+    # ── Wave 1 MCP Provider Keys ───────────────────────────────
+    BRAVE_API_KEY: str | None = None
+    NOTION_API_KEY: str | None = None
+    TODOIST_API_TOKEN: str | None = None
+    GITHUB_APP_ID: str | None = None
+    GITHUB_APP_PRIVATE_KEY: str | None = None
+    GITHUB_INSTALLATION_ID: str | None = None
 
     # ── Security & Encryption ───────────────────────────────────
     PII_ENCRYPTION_KEY: str | None = None
@@ -188,6 +229,7 @@ class Settings(BaseSettings):
     RETENTION_EMAIL_DRAFTS_DAYS: int = 90
     RETENTION_WEBHOOK_DELIVERIES_DAYS: int = 30
     RETENTION_USAGE_EVENTS_DAYS: int = 730
+    DATA_RETENTION_DAYS_CANCELED: int = 90
     RETENTION_AUDIT_LOGS_DAYS: int = 365
     RETENTION_WATCH_OFFERS_DAYS: int = 90
     RETENTION_SMART_HOME_READINGS_DAYS: int = 90
@@ -302,6 +344,20 @@ class Settings(BaseSettings):
     FEATURE_DOCUMENT_GENERATION: bool = False
     FEATURE_CROSS_CHANNEL_CONTINUITY: bool = False
     FEATURE_AB_TESTING: bool = False
+
+    # ── MCP Sandbox Controls ───────────────────────────────────
+    MCP_NETWORK_ALLOWLIST: str = ""
+    MCP_STDIO_ALLOWED_COMMANDS: str = ""
+    MCP_HOST_TOKEN: str | None = None
+    MCP_WAVE1_TRANSPORT_MODE: str = "mock"  # mock | streamable_http | stdio
+    MCP_GOOGLE_CALENDAR_URL: str | None = None
+    MCP_GOOGLE_DRIVE_URL: str | None = None
+    MCP_GMAIL_URL: str | None = None
+    MCP_NOTION_URL: str | None = None
+    MCP_TODOIST_URL: str | None = None
+    MCP_BRAVE_SEARCH_URL: str | None = None
+    MCP_GITHUB_URL: str | None = None
+    MCP_APPLE_REMINDERS_URL: str | None = None
 
     # ── Temporal Orchestration (Tier 3) ────────────────────────
     TEMPORAL_ENABLED: bool = False

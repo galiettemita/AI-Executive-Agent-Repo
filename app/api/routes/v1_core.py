@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from typing import Any
+from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -66,6 +67,22 @@ def _serialize_row(row: dict[str, Any]) -> dict[str, Any]:
         else:
             out[k] = v
     return out
+
+
+def _build_slack_auth_url(*, user_id: str) -> str:
+    client_id = str(settings.SLACK_CLIENT_ID or "").strip()
+    redirect_uri = str(settings.SLACK_REDIRECT_URI or "").strip()
+    if not client_id or not redirect_uri:
+        raise RuntimeError("Slack OAuth is not configured")
+    params = urlencode(
+        {
+            "client_id": client_id,
+            "scope": "channels:history,chat:write,groups:history,im:history,users:read",
+            "redirect_uri": redirect_uri,
+            "state": user_id,
+        }
+    )
+    return f"https://slack.com/oauth/v2/authorize?{params}"
 
 
 @router.get("/runs/{run_id}")
@@ -146,6 +163,15 @@ def list_connectors(user_id: str = Query(...), db: Session = Depends(get_db)):
     connectors: dict[str, Any] = {
         "google": {"connected": False},
         "microsoft": {"connected": False},
+        "slack": {
+            "connected": bool(settings.SLACK_BOT_TOKEN),
+            "configured": bool(settings.SLACK_CLIENT_ID and settings.SLACK_REDIRECT_URI),
+        },
+        "plaid": {
+            "connected": False,
+            "configured": bool(settings.PLAID_CLIENT_ID and settings.PLAID_SECRET_STAGING),
+            "env": settings.PLAID_ENV_STAGING,
+        },
         "tavily": {"connected": bool(settings.TAVILY_API_KEY)},
         "whatsapp": {"connected": bool(settings.WHATSAPP_TOKEN and settings.WHATSAPP_PHONE_NUMBER_ID)},
         "clerk": {"connected": bool(settings.CLERK_SECRET_KEY)},
@@ -177,6 +203,19 @@ def connector_auth(provider: str, user_id: str = Query(...), db: Session = Depen
             return {"ok": True, "provider": p, "auth_url": build_microsoft_auth_url(user_id=user_id)}
         except Exception as exc:
             raise HTTPException(status_code=400, detail=f"Microsoft auth URL failed: {exc}")
+    if p == "slack":
+        try:
+            return {"ok": True, "provider": p, "auth_url": _build_slack_auth_url(user_id=user_id)}
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=f"Slack auth URL failed: {exc}")
+    if p == "plaid":
+        # Plaid Link token minting is handled by /api/v1/research + workflow actions for now.
+        return {
+            "ok": True,
+            "provider": p,
+            "auth_url": f"{settings.APP_BASE_URL.rstrip('/')}/api/v1/plaid/link/start?user_id={user_id}",
+            "mode": settings.PLAID_ENV_STAGING,
+        }
     raise HTTPException(status_code=404, detail=f"Connector '{provider}' is not supported")
 
 

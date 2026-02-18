@@ -2,15 +2,17 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
 from app.services.llm_client import OpenAIProxy as OpenAI
 from sqlalchemy.orm import Session
 
+from app.blueprint.knowledge_files import get_latest_knowledge_file
 from app.core.config import settings
 from app.services.calendar_router import list_events_in_range, get_event_by_id
-from app.services.calendar_scheduling import find_conflicts
+from app.services.calendar_scheduling import find_conflicts, find_available_slots
 from app.services.email_router import search_emails
 from app.services.profile_service import get_profile
 
@@ -31,6 +33,11 @@ VIRTUAL_KEYWORDS = [
     "virtual",
     "online",
 ]
+
+_TEAM_PREF_LINE = re.compile(
+    r"^\s*-\s*(?P<name>[^|]+?)\s*\|\s*timezone:\s*(?P<tz>[^|]+?)\s*\|\s*work_hours:\s*(?P<hours>[0-9]{1,2}:[0-9]{2}-[0-9]{1,2}:[0-9]{2})",
+    re.IGNORECASE,
+)
 
 
 def _is_virtual_location(location: Optional[str]) -> bool:
@@ -266,3 +273,126 @@ def generate_followup(
         "email_subject": data.get("email_subject") or f"Re: {subject}",
         "email_body": data.get("email_body") or "",
     }
+
+
+def suggest_multi_person_slots(
+    db: Session,
+    *,
+    user_id: str,
+    start_utc: datetime,
+    end_utc: datetime,
+    duration_minutes: int = 30,
+    provider: Optional[str] = None,
+    participants: Optional[List[Dict[str, Any]]] = None,
+) -> Dict[str, Any]:
+    """
+    Advanced scheduling baseline:
+    - Uses primary user's real calendar conflicts
+    - Merges participant-declared busy windows
+    - Applies preference-aware ranking with configurable buffer
+    """
+    prefs = get_profile(db, user_id) or {}
+    buffer_minutes = int(prefs.get("calendar_buffer_minutes") or 10)
+    team_preferences = _load_team_preferences(db, user_id=user_id)
+
+    user_events = list_events_in_range(
+        db=db,
+        user_id=user_id,
+        start_utc=start_utc,
+        end_utc=end_utc,
+        provider=provider,
+        max_results=200,
+    )
+
+    merged_events: List[Dict[str, Any]] = list(user_events)
+    participant_data = participants or []
+    for participant in participant_data:
+        busy_windows = participant.get("busy") or []
+        for window in busy_windows:
+            if not isinstance(window, dict):
+                continue
+            start = window.get("start")
+            end = window.get("end")
+            if start and end:
+                merged_events.append({"start": start, "end": end, "summary": f"busy:{participant.get('name') or 'participant'}"})
+
+    slots = find_available_slots(
+        events=merged_events,
+        window_start_utc=start_utc,
+        window_end_utc=end_utc,
+        duration_minutes=max(5, int(duration_minutes)),
+        step_minutes=15,
+        buffer_minutes=max(0, int(buffer_minutes)),
+        max_results=12,
+    )
+
+    ranked: List[Dict[str, Any]] = []
+    for slot in slots:
+        try:
+            s = datetime.fromisoformat(str(slot.get("start")).replace("Z", "+00:00"))
+        except Exception:
+            s = start_utc
+        hour = int(s.hour)
+        score = 1.0
+        reasons = ["Conflict-free slot"]
+        if 9 <= hour <= 16:
+            score += 0.5
+            reasons.append("Within default working hours")
+        if hour in {12, 13}:
+            score -= 0.2
+            reasons.append("Midday penalty")
+
+        participant_pref_hits = 0
+        for participant in participant_data:
+            name = str(participant.get("name") or "").strip().lower()
+            email = str(participant.get("email") or "").strip().lower()
+            pref = team_preferences.get(name) or team_preferences.get(email)
+            if not pref:
+                continue
+            start_hour, end_hour = pref.get("work_hours", (9, 17))
+            if start_hour <= hour < end_hour:
+                score += 0.2
+                participant_pref_hits += 1
+        if participant_pref_hits:
+            reasons.append(f"Aligned with {participant_pref_hits} team preference window(s)")
+
+        ranked.append(
+            {
+                **slot,
+                "score": round(score, 3),
+                "reason": "; ".join(reasons),
+            }
+        )
+    ranked.sort(key=lambda item: float(item.get("score") or 0), reverse=True)
+
+    return {
+        "buffer_minutes": buffer_minutes,
+        "total_conflicts_considered": len(merged_events),
+        "slots_ranked": ranked[:8],
+        "participants_considered": len(participant_data),
+        "team_preferences_applied": len(team_preferences),
+    }
+
+
+def _load_team_preferences(db: Session, *, user_id: str) -> Dict[str, Dict[str, Any]]:
+    item = get_latest_knowledge_file(db, user_id=user_id, file_path="TEAM.md")
+    content = str((item or {}).get("content") or "")
+    if not content:
+        return {}
+
+    prefs: Dict[str, Dict[str, Any]] = {}
+    for line in content.splitlines():
+        m = _TEAM_PREF_LINE.match(line)
+        if not m:
+            continue
+        name = m.group("name").strip().lower()
+        tz = m.group("tz").strip()
+        hours_raw = m.group("hours").strip()
+        try:
+            start_raw, end_raw = hours_raw.split("-", 1)
+            start_hour = int(start_raw.split(":")[0])
+            end_hour = int(end_raw.split(":")[0])
+        except Exception:
+            start_hour, end_hour = 9, 17
+        prefs[name] = {"timezone": tz, "work_hours": (start_hour, end_hour)}
+    return prefs

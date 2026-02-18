@@ -63,4 +63,4 @@ def test_hands_routes_fake_mcp_tool_to_stub_branch() -> None:
     )
     result = asyncio.run(hands_execute(call))
     assert result.ok is False
-    assert "MCP tools available in Phase 3" in str(result.error)
+    assert "MCP client is disabled" in str(result.error)
