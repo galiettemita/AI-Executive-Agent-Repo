@@ -103,4 +103,4 @@ jobs:
         run: |
           set -euo pipefail
           ALB_DNS="${{ steps.sst.outputs.alb_dns }}"
-          curl -f -I --max-time 15 "http://${ALB_DNS}/health"
+          curl -fsS --max-time 15 "http://${ALB_DNS}/health"
