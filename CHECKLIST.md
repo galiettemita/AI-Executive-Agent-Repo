@@ -162,7 +162,7 @@ Feature Flag Rollout Reminders (Appendix A)
 - [x] MCP readiness test added (`tests/test_mcp_readiness.py`) validating registry injection, MCP branch routing, and privilege handling (Section C.2)
 - [x] Read all MCP specs in full: `MCP_Integration_Specification.docx`, `MCP_Server_Deployment_Plan.docx`, `MCP_Wave5_6_Expansion.docx` (Section C.3)
 - [x] Read Ops specs in full: `Operational_Systems_Blueprint.pdf`, `Auto_Provisioning_Engine.pdf` (Ops Blueprint Section 17; Auto-Provisioning Section 16)
-- [ ] Deploy DB enum migration `q1w2e3r4t5y6_add_mcp_result_provenance_enum.py` to staging + prod and verify values live (Section B/C)
+- [ ] Deploy DB enum migration `q1w2e3r4t5y6_add_mcp_result_provenance_enum.py` to staging + prod and verify values live (Section B/C) — blocked: `content_provenance` type is absent in both staging/prod; requires baseline v5 schema migration first
 
 ---
 
