@@ -32,6 +32,8 @@ class BillingDecision:
     plan: str
     status: str
     daily_count: int | None = None
+    monthly_mcp_cost_cents: int | None = None
+    monthly_mcp_limit_cents: int | None = None
     block: BillingBlock | None = None
 
 
@@ -178,6 +180,115 @@ def _incr_daily_count(user_id: str, *, now: datetime | None = None) -> int | Non
         return None
 
 
+def _month_bounds_utc(now: datetime | None = None) -> tuple[datetime, datetime]:
+    t = now or _now_utc()
+    start = datetime(t.year, t.month, 1, tzinfo=timezone.utc)
+    if t.month == 12:
+        end = datetime(t.year + 1, 1, 1, tzinfo=timezone.utc)
+    else:
+        end = datetime(t.year, t.month + 1, 1, tzinfo=timezone.utc)
+    return start, end
+
+
+def _mcp_monthly_cost_cache_key(user_id: str, month_key: str) -> str:
+    return f"billing:mcp:monthly:{month_key}:{user_id}"
+
+
+def _query_monthly_mcp_cost_cents(
+    db: Session,
+    *,
+    user_id: str,
+    month_start: datetime,
+    month_end: datetime,
+) -> int:
+    dialect = db.bind.dialect.name if db.bind is not None else ""
+
+    try:
+        if dialect == "sqlite":
+            row = db.execute(
+                text(
+                    """
+                    select coalesce(sum(cost_cents), 0) as total
+                    from tool_executions
+                    where user_id = :user_id
+                      and is_mcp = 1
+                      and created_at >= :start
+                      and created_at < :end
+                    """
+                ),
+                {
+                    "user_id": user_id,
+                    "start": month_start.replace(tzinfo=None).isoformat(sep=" "),
+                    "end": month_end.replace(tzinfo=None).isoformat(sep=" "),
+                },
+            ).mappings().first()
+            return int(float((row or {}).get("total") or 0))
+
+        row = db.execute(
+            text(
+                """
+                select coalesce(sum(cost_cents), 0) as total
+                from tool_executions
+                where user_id::text = :user_id
+                  and coalesce(is_mcp, false) = true
+                  and created_at >= :start
+                  and created_at < :end
+                """
+            ),
+            {
+                "user_id": user_id,
+                "start": month_start.replace(tzinfo=None),
+                "end": month_end.replace(tzinfo=None),
+            },
+        ).mappings().first()
+        return int(float((row or {}).get("total") or 0))
+    except Exception:
+        # If MCP tables are absent (legacy DB) or query fails, don't block user traffic.
+        return 0
+
+
+def _load_monthly_mcp_cost_cents(db: Session, *, user_id: str, now: datetime | None = None) -> int:
+    month_start, month_end = _month_bounds_utc(now)
+    month_key = month_start.strftime("%Y-%m")
+    cache_key = _mcp_monthly_cost_cache_key(user_id, month_key)
+    r = get_redis()
+
+    if r is not None:
+        try:
+            cached = r.get(cache_key)
+            if cached is not None:
+                return int(float(cached))
+        except Exception:
+            pass
+
+    total = _query_monthly_mcp_cost_cents(
+        db,
+        user_id=user_id,
+        month_start=month_start,
+        month_end=month_end,
+    )
+
+    if r is not None:
+        try:
+            # Short cache to keep first-gate latency low while adapting to fresh spend quickly.
+            r.set(cache_key, str(total), ex=60)
+        except Exception:
+            pass
+    return total
+
+
+def _resolve_mcp_monthly_budget_cents(*, plan: str, status: str) -> int:
+    p = (plan or "").strip().lower()
+    s = (status or "").strip().lower()
+    if p in {"free_trial", "trial"} or s == "trialing":
+        return int(settings.BILLING_MCP_MONTHLY_LIMIT_CENTS_TRIAL)
+    if p == "professional":
+        return int(settings.BILLING_MCP_MONTHLY_LIMIT_CENTS_PROFESSIONAL)
+    if p in {"enterprise", "business", "team"}:
+        return int(settings.BILLING_MCP_MONTHLY_LIMIT_CENTS_ENTERPRISE)
+    return int(settings.BILLING_MCP_MONTHLY_LIMIT_CENTS_PERSONAL)
+
+
 def enforce_billing_for_inbound_message(db: Session, user_id: str) -> BillingDecision:
     """
     Enforce subscription state + burst limiting + daily caps.
@@ -234,6 +345,23 @@ def enforce_billing_for_inbound_message(db: Session, user_id: str) -> BillingDec
                 ),
             )
 
+    # Monthly MCP spend cap gate (plan-based).
+    monthly_mcp_limit = _resolve_mcp_monthly_budget_cents(plan=plan, status=status)
+    monthly_mcp_cost = _load_monthly_mcp_cost_cents(db, user_id=user_id, now=now)
+    if monthly_mcp_limit > 0 and monthly_mcp_cost >= monthly_mcp_limit:
+        return BillingDecision(
+            allowed=False,
+            plan=plan,
+            status=status,
+            monthly_mcp_cost_cents=monthly_mcp_cost,
+            monthly_mcp_limit_cents=monthly_mcp_limit,
+            block=BillingBlock(
+                reason="mcp_monthly_budget_exceeded",
+                message="You've reached your monthly MCP usage budget for this plan. Upgrade to continue MCP usage.",
+                http_status=402,
+            ),
+        )
+
     # Burst limiter
     burst_ok, retry_after = _allow_burst(user_id)
     if not burst_ok:
@@ -270,7 +398,15 @@ def enforce_billing_for_inbound_message(db: Session, user_id: str) -> BillingDec
                 ),
             )
 
-    return BillingDecision(allowed=True, plan=plan, status=status, daily_count=daily_count, block=None)
+    return BillingDecision(
+        allowed=True,
+        plan=plan,
+        status=status,
+        daily_count=daily_count,
+        monthly_mcp_cost_cents=monthly_mcp_cost,
+        monthly_mcp_limit_cents=monthly_mcp_limit if monthly_mcp_limit > 0 else None,
+        block=None,
+    )
 
 
 def get_billing_subscription(db: Session, user_id: str) -> Subscription:

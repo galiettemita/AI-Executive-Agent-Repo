@@ -57,6 +57,11 @@ class Settings(BaseSettings):
     BILLING_BURST_LIMIT_PER_MINUTE: int = 10
     BILLING_BURST_WINDOW_SECONDS: int = 60
     BILLING_PAST_DUE_GRACE_DAYS: int = 7
+    # 0 means unlimited.
+    BILLING_MCP_MONTHLY_LIMIT_CENTS_TRIAL: int = 500
+    BILLING_MCP_MONTHLY_LIMIT_CENTS_PERSONAL: int = 5000
+    BILLING_MCP_MONTHLY_LIMIT_CENTS_PROFESSIONAL: int = 25000
+    BILLING_MCP_MONTHLY_LIMIT_CENTS_ENTERPRISE: int = 0
 
     # ── Amadeus (Travel) ────────────────────────────────────────
     AMADEUS_API_KEY: str | None = None
