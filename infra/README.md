@@ -58,6 +58,9 @@ Set values for:
 - `SES_CONFIGURATION_SET` (optional)
 - `FROM_EMAIL`
 - `FROM_NAME`
+- `TWILIO_ACCOUNT_SID` (optional, for SMS OTP)
+- `TWILIO_AUTH_TOKEN` (optional, for SMS OTP)
+- `TWILIO_PHONE_NUMBER` (optional, for SMS OTP)
 - `OTEL_EXPORTER_OTLP_ENDPOINT` (or split traces/metrics keys below)
 - `OTEL_EXPORTER_OTLP_HEADERS`
 - `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` (optional)
