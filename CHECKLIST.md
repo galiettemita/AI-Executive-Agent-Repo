@@ -135,7 +135,7 @@ Feature Flag Rollout Reminders (Appendix A)
 - [x] Legal pipeline: immediate step (status=deleted, revoke tokens), +24h (delete knowledge files + conversations + tool_executions + Redis keys), +7d (Stripe + identity provider deletion), +30d (verification + confirmation) (Ops Blueprint Component 6)
 - [x] Legal API: implement `GET /api/v1/auth/me/export` to export all user data as ZIP (JSON) (Ops Blueprint Component 6)
 - [x] DR runbooks: database failure, bad deployment, regional outage, knowledge file corruption, accidental deletion (Ops Blueprint Component 7)
-- [ ] DR drill: automate restore test (restore snapshot to staging, verify integrity) + schedule monthly restore drill (Ops Blueprint Component 7)
+- [x] DR drill: automate restore test (restore snapshot to staging, verify integrity) + schedule monthly restore drill (Ops Blueprint Component 7)
 
 ## Behavioral Intelligence (Parallel) — Phase 1 (Section 38, Section 8, Section 13–17, Appendix D/E/F)
 - [x] Implement full v4.0 DB schema: all 19 tables + enums + indexes + RLS baseline migration (Section 3.1–3.4)

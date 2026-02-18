@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 
 import boto3
 from botocore.exceptions import ClientError
+import psycopg
 
 
 @dataclass(frozen=True)
@@ -20,6 +21,10 @@ class DrillConfig:
     restore_db_instance_class: str
     restore_id_prefix: str
     wait_timeout_seconds: int
+    verify_integrity_sql: bool
+    verify_db_name: str | None
+    verify_db_user: str | None
+    verify_db_password: str | None
     execute: bool
     cleanup: bool
 
@@ -67,6 +72,56 @@ def _delete_temp_instance(rds, *, db_instance_id: str) -> None:
         if code in {"DBInstanceNotFound", "InvalidDBInstanceState"}:
             return
         raise
+
+
+def _verify_integrity_sql(
+    *,
+    endpoint: str,
+    db_name: str,
+    db_user: str,
+    db_password: str,
+) -> dict:
+    # Minimal integrity check: required tables exist and are queryable.
+    expected_tables = [
+        "accounts",
+        "messages",
+        "tool_executions",
+        "knowledge_files",
+        "subscriptions",
+    ]
+    with psycopg.connect(
+        host=endpoint,
+        port=5432,
+        dbname=db_name,
+        user=db_user,
+        password=db_password,
+        connect_timeout=20,
+    ) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                select table_name
+                from information_schema.tables
+                where table_schema = 'public'
+                  and table_name = any(%s)
+                """,
+                (expected_tables,),
+            )
+            present = {str(row[0]) for row in cur.fetchall()}
+
+            missing = [t for t in expected_tables if t not in present]
+            counts: dict[str, int] = {}
+            for table_name in expected_tables:
+                if table_name in present:
+                    cur.execute(f"select count(*) from {table_name}")  # nosec B608 - fixed table allowlist
+                    value = cur.fetchone()
+                    counts[table_name] = int((value or [0])[0] or 0)
+
+    return {
+        "ok": len(missing) == 0,
+        "missing_tables": missing,
+        "table_counts": counts,
+    }
 
 
 def run(cfg: DrillConfig) -> dict:
@@ -117,6 +172,21 @@ def run(cfg: DrillConfig) -> dict:
             endpoint = (instances[0].get("Endpoint") or {}).get("Address")
         result["endpoint"] = endpoint
 
+        if cfg.verify_integrity_sql:
+            if not endpoint:
+                raise RuntimeError("Cannot run integrity verification: restored endpoint missing")
+            if not cfg.verify_db_name or not cfg.verify_db_user or not cfg.verify_db_password:
+                raise RuntimeError("Integrity verification requested but DB credentials are incomplete")
+            integrity = _verify_integrity_sql(
+                endpoint=endpoint,
+                db_name=cfg.verify_db_name,
+                db_user=cfg.verify_db_user,
+                db_password=cfg.verify_db_password,
+            )
+            result["integrity"] = integrity
+            if not bool(integrity.get("ok")):
+                raise RuntimeError(f"Integrity verification failed: {integrity}")
+
         if cfg.cleanup:
             _delete_temp_instance(rds, db_instance_id=restore_id)
             result["cleanup_started"] = True
@@ -155,6 +225,14 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         help="Wait timeout for restored instance to become available",
     )
     parser.add_argument(
+        "--verify-integrity-sql",
+        action="store_true",
+        help="Run SQL table-integrity checks on restored DB instance.",
+    )
+    parser.add_argument("--verify-db-name", default=None, help="Database name used for SQL integrity checks.")
+    parser.add_argument("--verify-db-user", default=None, help="Database user used for SQL integrity checks.")
+    parser.add_argument("--verify-db-password", default=None, help="Database password used for SQL integrity checks.")
+    parser.add_argument(
         "--execute",
         action="store_true",
         help="Execute restore. Without this flag, script runs in dry-run mode.",
@@ -181,6 +259,10 @@ def main(argv: list[str]) -> int:
         restore_db_instance_class=args.restore_db_instance_class,
         restore_id_prefix=args.restore_id_prefix,
         wait_timeout_seconds=int(args.wait_timeout_seconds),
+        verify_integrity_sql=bool(args.verify_integrity_sql),
+        verify_db_name=(str(args.verify_db_name).strip() if args.verify_db_name else None),
+        verify_db_user=(str(args.verify_db_user).strip() if args.verify_db_user else None),
+        verify_db_password=(str(args.verify_db_password).strip() if args.verify_db_password else None),
         execute=bool(args.execute),
         cleanup=bool(args.cleanup),
     )
