@@ -83,6 +83,217 @@ def _session_key(channel: Channel, channel_identifier: str) -> str:
     return f"bp:v1:session:{channel.value}:{channel_identifier}"
 
 
+def _participant_key(*, user_id: str | None, channel: Channel, channel_identifier: str | None) -> str:
+    if user_id:
+        return user_id
+    return f"{channel.value}:{channel_identifier or 'anonymous'}"
+
+
+def _active_channel_key(participant_key: str) -> str:
+    return f"bp:v1:active-channel:{participant_key}"
+
+
+def _processing_lock_key(participant_key: str) -> str:
+    return f"bp:v1:processing-lock:{participant_key}"
+
+
+def _set_active_channel(*, participant_key: str, channel: Channel) -> None:
+    client = get_redis()
+    if client is None:
+        return
+    try:
+        client.set(
+            _active_channel_key(participant_key),
+            channel.value,
+            ex=max(60, settings.REDIS_SESSION_TTL_SECONDS),
+        )
+    except Exception:
+        pass
+
+
+def _get_active_channel(*, participant_key: str, fallback: Channel) -> Channel:
+    client = get_redis()
+    if client is None:
+        return fallback
+    try:
+        raw = client.get(_active_channel_key(participant_key))
+    except Exception:
+        return fallback
+    if not raw:
+        return fallback
+    try:
+        return Channel(str(raw))
+    except Exception:
+        return fallback
+
+
+def _acquire_processing_lock(*, participant_key: str) -> tuple[bool, str | None]:
+    client = get_redis()
+    if client is None:
+        return True, None
+    token = str(uuid.uuid4())
+    try:
+        ok = client.set(_processing_lock_key(participant_key), token, nx=True, ex=30)
+        return bool(ok), token if ok else None
+    except Exception:
+        # Prefer availability over strict lock enforcement if Redis is unavailable.
+        return True, None
+
+
+def _release_processing_lock(*, participant_key: str, token: str | None) -> None:
+    if not token:
+        return
+    client = get_redis()
+    if client is None:
+        return
+    key = _processing_lock_key(participant_key)
+    try:
+        current = client.get(key)
+        if current == token:
+            client.delete(key)
+    except Exception:
+        pass
+
+
+def _resolve_channel_identifier_for_user(*, user_id: str | None, channel: Channel, fallback: str) -> str:
+    if not user_id:
+        return fallback
+    db = SessionLocal()
+    try:
+        dialect = db.bind.dialect.name if db.bind is not None else ""
+        if dialect == "sqlite":
+            row = db.execute(
+                text(
+                    """
+                    select channel_identifier
+                    from channel_connections
+                    where user_id = :user_id and channel = :channel
+                    order by is_primary desc
+                    limit 1
+                    """
+                ),
+                {"user_id": user_id, "channel": channel.value},
+            ).mappings().first()
+        else:
+            row = db.execute(
+                text(
+                    """
+                    select channel_identifier
+                    from channel_connections
+                    where user_id::text = :user_id and channel = (:channel)::channel_type
+                    order by is_primary desc
+                    limit 1
+                    """
+                ),
+                {"user_id": user_id, "channel": channel.value},
+            ).mappings().first()
+        ident = str((row or {}).get("channel_identifier") or "").strip()
+        return ident or fallback
+    except Exception:
+        return fallback
+    finally:
+        try:
+            db.close()
+        except Exception:
+            pass
+
+
+def _format_response_for_channel(*, channel: Channel, text_value: str) -> str:
+    if channel == Channel.IMESSAGE:
+        return apply_imessage_constraints(text_value)
+    if channel == Channel.SLACK:
+        return apply_slack_constraints(text_value)
+    # WhatsApp formatting/splitting is handled by adapter at send time.
+    return text_value
+
+
+def _update_conversation_channel_state(*, conversation_id: str, channel: Channel) -> None:
+    db = SessionLocal()
+    try:
+        dialect = db.bind.dialect.name if db.bind is not None else ""
+        has_table = False
+        try:
+            if dialect == "sqlite":
+                has_table = bool(
+                    db.execute(
+                        text("select name from sqlite_master where type='table' and name='conversations'")
+                    ).first()
+                )
+            else:
+                has_table = bool(
+                    db.execute(
+                        text(
+                            "select 1 from information_schema.tables "
+                            "where table_schema = current_schema() and table_name = 'conversations'"
+                        )
+                    ).first()
+                )
+        except Exception:
+            has_table = False
+        if not has_table:
+            return
+
+        if dialect == "sqlite":
+            row = db.execute(
+                text("select channels_used from conversations where id = :id"),
+                {"id": conversation_id},
+            ).mappings().first()
+            used = []
+            if row and row.get("channels_used"):
+                try:
+                    used = json.loads(str(row.get("channels_used") or "[]"))
+                except Exception:
+                    used = []
+            if channel.value not in used:
+                used.append(channel.value)
+            db.execute(
+                text(
+                    """
+                    update conversations
+                    set active_channel = :active_channel,
+                        channels_used = :channels_used
+                    where id = :id
+                    """
+                ),
+                {
+                    "active_channel": channel.value,
+                    "channels_used": json.dumps(used, ensure_ascii=False),
+                    "id": conversation_id,
+                },
+            )
+        else:
+            # v5 uses UUID IDs and JSONB channels_used.
+            db.execute(
+                text(
+                    """
+                    update conversations
+                    set active_channel = :active_channel,
+                        channels_used = (
+                          case
+                            when channels_used is null then to_jsonb(array[:active_channel]::text[])
+                            when jsonb_typeof(channels_used) = 'array' and not (channels_used ? :active_channel)
+                              then channels_used || to_jsonb(array[:active_channel]::text[])
+                            else channels_used
+                          end
+                        )
+                    where id::text = :id
+                    """
+                ),
+                {"active_channel": channel.value, "id": conversation_id},
+            )
+        db.commit()
+    except Exception:
+        try:
+            db.rollback()
+        except Exception:
+            pass
+    finally:
+        try:
+            db.close()
+        except Exception:
+            pass
+
+
 def _get_account_emotion_sensitivity(user_id: str | None) -> float:
     if not user_id:
         return 0.5
@@ -235,6 +446,29 @@ def _brain_respond(msg: InboundMessage) -> OutboundMessage:
 
 def _process_message_run(run_id: str, inbound: InboundMessage) -> None:
     started = time.perf_counter()
+    participant_key = _participant_key(
+        user_id=inbound.user_id,
+        channel=inbound.channel,
+        channel_identifier=inbound.channel_identifier,
+    )
+    lock_ok, lock_token = _acquire_processing_lock(participant_key=participant_key)
+    if not lock_ok:
+        msg = "I’m still finishing your previous message. Please try again in a few seconds."
+        payload = {
+            "ok": False,
+            "blocked": True,
+            "run_id": run_id,
+            "reason": "concurrent_message_in_progress",
+            "reply": msg,
+        }
+        set_run_result(run_id, payload)
+        append_progress(run_id, step="done", status="failed", partial_result=payload)
+        return
+
+    _set_active_channel(participant_key=participant_key, channel=inbound.channel)
+    if inbound.conversation_id:
+        _update_conversation_channel_state(conversation_id=inbound.conversation_id, channel=inbound.channel)
+
     try:
         # Billing is the first gate: if blocked, do not run any LLM work.
         append_progress(run_id, step="billing", status="running")
@@ -398,15 +632,29 @@ def _process_message_run(run_id: str, inbound: InboundMessage) -> None:
         append_progress(run_id, step="brain", status="running")
 
         outbound = _brain_respond(normalized_inbound)
-        if inbound.channel == Channel.IMESSAGE:
-            constrained = apply_imessage_constraints(outbound.content)
-            outbound = outbound.model_copy(update={"content": constrained, "text": constrained})
-        elif inbound.channel == Channel.SLACK:
-            constrained = apply_slack_constraints(outbound.content)
-            outbound = outbound.model_copy(update={"content": constrained, "text": constrained})
+
+        target_channel = _get_active_channel(participant_key=participant_key, fallback=inbound.channel)
+        target_identifier = _resolve_channel_identifier_for_user(
+            user_id=inbound.user_id,
+            channel=target_channel,
+            fallback=inbound.channel_identifier,
+        )
+        formatted_text = _format_response_for_channel(channel=target_channel, text_value=outbound.content)
+        outbound = outbound.model_copy(
+            update={
+                "channel": target_channel,
+                "recipient_id": target_identifier,
+                "content": formatted_text,
+                "text": formatted_text,
+            }
+        )
+
+        if inbound.conversation_id:
+            _update_conversation_channel_state(conversation_id=inbound.conversation_id, channel=target_channel)
+
         elapsed_ms = int((time.perf_counter() - started) * 1000)
 
-        if inbound.channel == Channel.WHATSAPP and outbound.recipient_id:
+        if outbound.channel == Channel.WHATSAPP and outbound.recipient_id:
             # WhatsApp has no direct typing indicator API; marking as read gives immediate UX feedback.
             if inbound.wa_message_id:
                 try:
@@ -439,7 +687,7 @@ def _process_message_run(run_id: str, inbound: InboundMessage) -> None:
                         db.close()
                     except Exception:
                         pass
-        elif inbound.channel == Channel.SLACK and outbound.recipient_id and inbound.user_id:
+        elif outbound.channel == Channel.SLACK and outbound.recipient_id and inbound.user_id:
             try:
                 db = SessionLocal()
                 try:
@@ -466,6 +714,9 @@ def _process_message_run(run_id: str, inbound: InboundMessage) -> None:
                         pass
             except Exception:
                 logger.warning("Slack send failed run_id=%s", run_id, exc_info=True)
+        elif outbound.channel == Channel.IMESSAGE and outbound.recipient_id:
+            # iMessage delivery is currently handled by upstream MBfB transport.
+            logger.info("iMessage outbound prepared run_id=%s recipient=%s", run_id, outbound.recipient_id)
 
         if inbound.user_id:
             db = SessionLocal()
@@ -578,6 +829,8 @@ def _process_message_run(run_id: str, inbound: InboundMessage) -> None:
                 except Exception:
                     pass
         append_progress(run_id, step="done", status="failed", partial_result={"error": str(exc)})
+    finally:
+        _release_processing_lock(participant_key=participant_key, token=lock_token)
 
 
 @rate_limit_user()

@@ -379,50 +379,74 @@ def insert_message(
         # v5 schema message shape (content is text, no conversation_id)
         text_content = str((content or {}).get("text") or payload)
         channel_value = str((content or {}).get("channel") or "whatsapp")
+        has_wa_message_id = _column_exists(db, "messages", "wa_message_id")
+        has_channel_message_id = _column_exists(db, "messages", "channel_message_id")
+
+        cols = [
+            "id",
+            "user_id",
+            "run_id",
+            "channel",
+            "direction",
+            "content",
+            "input_modality",
+            "original_media_url",
+            "transcription_confidence",
+            "extracted_entities",
+            "content_provenance",
+            "emotion_detected",
+            "metadata",
+            "created_at",
+        ]
+        values = [
+            "(:id)::uuid",
+            "(:user_id)::uuid",
+            "(:run_id)::uuid",
+            "(:channel)::channel_type",
+            "(:direction)::message_direction",
+            ":content",
+            "(:input_modality)::input_modality",
+            ":original_media_url",
+            ":transcription_confidence",
+            "(:extracted_entities)::jsonb",
+            "(:content_provenance)::content_provenance",
+            "(:emotion_detected)::emotion_state",
+            "(:metadata)::jsonb",
+            "now()",
+        ]
+        params = {
+            "id": msg_id,
+            "user_id": user_id,
+            "run_id": run_id,
+            "channel": channel_value,
+            "direction": direction.value,
+            "content": text_content,
+            "input_modality": str((content or {}).get("input_modality") or "text"),
+            "original_media_url": (content or {}).get("media_url"),
+            "transcription_confidence": (content or {}).get("transcription_confidence"),
+            "extracted_entities": json.dumps((content or {}).get("extracted_entities") or {}, ensure_ascii=False),
+            "content_provenance": str((content or {}).get("content_provenance") or "user_direct"),
+            "emotion_detected": str((content or {}).get("emotion_detected") or "neutral"),
+            "metadata": json.dumps({"intent": intent, "tier": tier, "latency_ms": latency_ms}, ensure_ascii=False),
+        }
+        if has_wa_message_id:
+            cols.append("wa_message_id")
+            values.append(":wa_message_id")
+            params["wa_message_id"] = channel_msg_id
+        if has_channel_message_id:
+            cols.append("channel_message_id")
+            values.append(":channel_message_id")
+            params["channel_message_id"] = channel_msg_id
+
         row = db.execute(
             text(
-                """
-                insert into messages (
-                    id, user_id, run_id, channel, direction, content,
-                    input_modality, original_media_url, transcription_confidence,
-                    extracted_entities, content_provenance, emotion_detected, wa_message_id,
-                    metadata, created_at
-                ) values (
-                    (:id)::uuid,
-                    (:user_id)::uuid,
-                    (:run_id)::uuid,
-                    (:channel)::channel_type,
-                    (:direction)::message_direction,
-                    :content,
-                    (:input_modality)::input_modality,
-                    :original_media_url,
-                    :transcription_confidence,
-                    (:extracted_entities)::jsonb,
-                    (:content_provenance)::content_provenance,
-                    (:emotion_detected)::emotion_state,
-                    :wa_message_id,
-                    (:metadata)::jsonb,
-                    now()
-                )
+                f"""
+                insert into messages ({', '.join(cols)})
+                values ({', '.join(values)})
                 returning id
                 """
             ),
-            {
-                "id": msg_id,
-                "user_id": user_id,
-                "run_id": run_id,
-                "channel": channel_value,
-                "direction": direction.value,
-                "content": text_content,
-                "input_modality": str((content or {}).get("input_modality") or "text"),
-                "original_media_url": (content or {}).get("media_url"),
-                "transcription_confidence": (content or {}).get("transcription_confidence"),
-                "extracted_entities": json.dumps((content or {}).get("extracted_entities") or {}, ensure_ascii=False),
-                "content_provenance": str((content or {}).get("content_provenance") or "user_direct"),
-                "emotion_detected": str((content or {}).get("emotion_detected") or "neutral"),
-                "wa_message_id": channel_msg_id,
-                "metadata": json.dumps({"intent": intent, "tier": tier, "latency_ms": latency_ms}, ensure_ascii=False),
-            },
+            params,
         ).mappings().first()
         db.commit()
         return str((row or {}).get("id") or msg_id)

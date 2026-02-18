@@ -13,6 +13,7 @@ from app.api.deps import get_db, get_or_create_user
 from app.core.config import settings
 from app.db.models import Invoice, Subscription
 from app.middleware.rate_limiter import rate_limit_payment, rate_limit_webhook
+from app.services.oauth_vault import store_stripe_billing_tokens
 from app.services.subscriptions import get_subscription, upsert_subscription
 
 
@@ -135,6 +136,14 @@ def create_checkout(request: Request, payload: CheckoutRequest, db: Session = De
         provider="stripe",
         provider_customer_id=customer_id,
     )
+    store_stripe_billing_tokens(
+        db,
+        user_id=payload.user_id,
+        customer_id=customer_id,
+        subscription_id=None,
+        plan=payload.plan,
+        status="pending",
+    )
 
     return {"ok": True, "checkout_url": session.url, "session_id": session.id}
 
@@ -219,6 +228,14 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
                 provider_subscription_id=str(obj.get("id") or "") or None,
                 current_period_end=period_end,
             )
+            store_stripe_billing_tokens(
+                db,
+                user_id=user_id,
+                customer_id=str(obj.get("customer") or "") or "",
+                subscription_id=str(obj.get("id") or "") or None,
+                plan=plan,
+                status=str(obj.get("status") or "active"),
+            )
 
     if event_type == "customer.subscription.deleted":
         if user_id:
@@ -232,6 +249,14 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
                 provider="stripe",
                 provider_customer_id=str(obj.get("customer") or "") or None,
                 provider_subscription_id=str(obj.get("id") or "") or None,
+            )
+            store_stripe_billing_tokens(
+                db,
+                user_id=user_id,
+                customer_id=str(obj.get("customer") or "") or "",
+                subscription_id=str(obj.get("id") or "") or None,
+                plan=plan,
+                status="canceled",
             )
 
     if event_type in {"invoice.paid", "invoice.payment_failed"}:
@@ -250,6 +275,14 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
                 provider="stripe",
                 provider_customer_id=str(obj.get("customer") or "") or None,
                 provider_subscription_id=str(obj.get("subscription") or "") or None,
+            )
+            store_stripe_billing_tokens(
+                db,
+                user_id=user_id,
+                customer_id=str(obj.get("customer") or "") or "",
+                subscription_id=str(obj.get("subscription") or "") or None,
+                plan=plan,
+                status=new_status,
             )
 
     return {"ok": True, "event_type": event_type}

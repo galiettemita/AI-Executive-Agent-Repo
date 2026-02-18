@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_db, get_or_create_user
 from app.db.models import Subscription
 from app.services.subscriptions import get_subscription, upsert_subscription
+from app.services.oauth_vault import store_stripe_billing_tokens
 from app.core.config import settings
 from app.middleware.rate_limiter import rate_limit_payment, rate_limit_webhook
 
@@ -76,6 +77,14 @@ def stripe_checkout(
         provider="stripe",
         provider_customer_id=customer_id,
     )
+    store_stripe_billing_tokens(
+        db,
+        user_id=user_id,
+        customer_id=customer_id,
+        subscription_id=None,
+        plan="starter",
+        status="pending",
+    )
 
     return {"checkout_url": session.url}
 
@@ -127,14 +136,23 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
     if event_type == "checkout.session.completed":
         user_id = _resolve_user_id(data)
         if user_id:
+            plan = _plan_from_metadata(data.get("metadata"))
             upsert_subscription(
                 db,
                 user_id,
-                plan=_plan_from_metadata(data.get("metadata")),
+                plan=plan,
                 status="active",
                 provider="stripe",
                 provider_customer_id=data.get("customer"),
                 provider_subscription_id=data.get("subscription"),
+            )
+            store_stripe_billing_tokens(
+                db,
+                user_id=user_id,
+                customer_id=str(data.get("customer") or ""),
+                subscription_id=str(data.get("subscription") or "") or None,
+                plan=plan,
+                status="active",
             )
 
     # customer.subscription.updated or created
@@ -144,28 +162,47 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
             period_end = None
             if data.get("current_period_end"):
                 period_end = datetime.utcfromtimestamp(data["current_period_end"])
+            plan = _plan_from_metadata(data.get("metadata"))
+            status = data.get("status") or "active"
             upsert_subscription(
                 db,
                 user_id,
-                plan=_plan_from_metadata(data.get("metadata")),
-                status=data.get("status") or "active",
+                plan=plan,
+                status=status,
                 provider="stripe",
                 provider_customer_id=data.get("customer"),
                 provider_subscription_id=data.get("id"),
                 current_period_end=period_end,
             )
+            store_stripe_billing_tokens(
+                db,
+                user_id=user_id,
+                customer_id=str(data.get("customer") or ""),
+                subscription_id=str(data.get("id") or "") or None,
+                plan=plan,
+                status=str(status),
+            )
 
     if event_type == "customer.subscription.deleted":
         user_id = _resolve_user_id(data)
         if user_id:
+            plan = _plan_from_metadata(data.get("metadata"))
             upsert_subscription(
                 db,
                 user_id,
-                plan=_plan_from_metadata(data.get("metadata")),
+                plan=plan,
                 status="canceled",
                 provider="stripe",
                 provider_customer_id=data.get("customer"),
                 provider_subscription_id=data.get("id"),
+            )
+            store_stripe_billing_tokens(
+                db,
+                user_id=user_id,
+                customer_id=str(data.get("customer") or ""),
+                subscription_id=str(data.get("id") or "") or None,
+                plan=plan,
+                status="canceled",
             )
 
     if event_type == "invoice.paid":
@@ -180,6 +217,14 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
                 provider_customer_id=data.get("customer"),
                 provider_subscription_id=data.get("subscription"),
             )
+            store_stripe_billing_tokens(
+                db,
+                user_id=user_id,
+                customer_id=str(data.get("customer") or ""),
+                subscription_id=str(data.get("subscription") or "") or None,
+                plan="starter",
+                status="active",
+            )
 
     if event_type == "invoice.payment_failed":
         user_id = _resolve_user_id(data)
@@ -192,6 +237,14 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
                 provider="stripe",
                 provider_customer_id=data.get("customer"),
                 provider_subscription_id=data.get("subscription"),
+            )
+            store_stripe_billing_tokens(
+                db,
+                user_id=user_id,
+                customer_id=str(data.get("customer") or ""),
+                subscription_id=str(data.get("subscription") or "") or None,
+                plan="starter",
+                status="past_due",
             )
 
     return {"ok": True}

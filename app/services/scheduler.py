@@ -26,6 +26,7 @@ from app.services.email_monitoring import run_email_monitoring as run_email_moni
 from app.services.wardrobe_rotation import run_rotation_for_all_users
 from app.services.gift_reminders import enqueue_gift_reminders
 from app.services.relationship_service import enqueue_relationship_reminders
+from app.services.account_deletion_pipeline import run_due_account_deletion_jobs
 from app.blueprint.bones import refresh_bones_catalog
 from app.blueprint.embedding_audit import run_embedding_reembed_audit_all_users
 from app.blueprint.knowledge_review import run_nightly_consolidation, run_weekly_self_review
@@ -330,6 +331,20 @@ def run_data_retention():
         logger.info("Data retention purge completed: %s", result)
     except Exception as e:
         logger.error("Fatal error in data retention job: %s", e)
+    finally:
+        db.close()
+
+
+def run_account_deletion_pipeline():
+    """
+    Process due account deletion pipeline jobs (24h/7d/30d stages).
+    """
+    db = SessionLocal()
+    try:
+        result = run_due_account_deletion_jobs(db, limit=100)
+        logger.info("Account deletion pipeline run: %s", result)
+    except Exception as e:
+        logger.error("Fatal error in account deletion pipeline job: %s", e)
     finally:
         db.close()
 
@@ -643,6 +658,17 @@ def setup_scheduler() -> BackgroundScheduler:
         replace_existing=True,
     )
     logger.info("Data retention job scheduled for %02d:%02d UTC daily", retention_hour, retention_minute)
+
+    # Account deletion pipeline processing (runs every hour).
+    scheduler.add_job(
+        run_account_deletion_pipeline,
+        trigger="interval",
+        hours=1,
+        id="account_deletion_pipeline_job",
+        name="Account Deletion Pipeline",
+        replace_existing=True,
+    )
+    logger.info("Account deletion pipeline job scheduled every 1 hour")
 
     # Billing daily counter reset (UTC midnight)
     scheduler.add_job(

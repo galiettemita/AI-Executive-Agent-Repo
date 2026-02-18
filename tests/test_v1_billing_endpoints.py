@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 
 from app.core.config import settings
 from app.db.database import SessionLocal
-from app.db.models import Invoice
+from app.db.models import Invoice, OAuthToken
 from app.main import app
 from app.services.subscriptions import get_subscription
 
@@ -52,6 +52,13 @@ def test_v1_billing_checkout_portal_and_webhook(monkeypatch):
         assert sub.status == "pending"
         assert sub.provider == "stripe"
         assert sub.provider_customer_id == "cus_123"
+        vault = (
+            db.query(OAuthToken)
+            .filter(OAuthToken.user_id == user_id, OAuthToken.provider == "stripe_billing")
+            .one_or_none()
+        )
+        assert vault is not None
+        assert vault.access_token == "cus_123"
     finally:
         db.close()
 
@@ -99,5 +106,13 @@ def test_v1_billing_checkout_portal_and_webhook(monkeypatch):
         sub2 = get_subscription(db2, user_id)
         assert sub2 is not None
         assert sub2.status == "active"
+        vault2 = (
+            db2.query(OAuthToken)
+            .filter(OAuthToken.user_id == user_id, OAuthToken.provider == "stripe_billing")
+            .one_or_none()
+        )
+        assert vault2 is not None
+        assert vault2.access_token == "cus_123"
+        assert vault2.refresh_token_enc  # encrypted subscription id path
     finally:
         db2.close()

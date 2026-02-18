@@ -1,0 +1,89 @@
+name: DR Restore Drill
+
+on:
+  workflow_dispatch:
+    inputs:
+      execute:
+        description: "Execute restore drill (false = dry run only)"
+        required: true
+        default: "false"
+      cleanup:
+        description: "Delete temporary restore instance after verification"
+        required: true
+        default: "true"
+  schedule:
+    - cron: "0 8 1 * *" # Monthly at 08:00 UTC, day 1
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: dr-restore-drill
+  cancel-in-progress: false
+
+jobs:
+  restore-drill:
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::105914556507:role/github-actions-deploy-staging
+          aws-region: ${{ vars.DR_REGION || 'us-east-1' }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install runtime dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install boto3
+
+      - name: Validate required config
+        run: |
+          set -euo pipefail
+          : "${DR_REGION:?Missing DR_REGION variable}"
+          : "${DR_SOURCE_DB_INSTANCE_ID:?Missing DR_SOURCE_DB_INSTANCE_ID variable}"
+          : "${DR_RESTORE_DB_SUBNET_GROUP:?Missing DR_RESTORE_DB_SUBNET_GROUP variable}"
+          : "${DR_RESTORE_VPC_SECURITY_GROUP_IDS:?Missing DR_RESTORE_VPC_SECURITY_GROUP_IDS variable}"
+
+      - name: Run restore drill
+        env:
+          DR_REGION: ${{ vars.DR_REGION || 'us-east-1' }}
+          DR_SOURCE_DB_INSTANCE_ID: ${{ vars.DR_SOURCE_DB_INSTANCE_ID }}
+          DR_RESTORE_DB_SUBNET_GROUP: ${{ vars.DR_RESTORE_DB_SUBNET_GROUP }}
+          DR_RESTORE_VPC_SECURITY_GROUP_IDS: ${{ vars.DR_RESTORE_VPC_SECURITY_GROUP_IDS }}
+          DR_RESTORE_DB_INSTANCE_CLASS: ${{ vars.DR_RESTORE_DB_INSTANCE_CLASS || 'db.t4g.medium' }}
+          DR_RESTORE_ID_PREFIX: ${{ vars.DR_RESTORE_ID_PREFIX || 'drill-restore' }}
+          DR_WAIT_TIMEOUT_SECONDS: ${{ vars.DR_WAIT_TIMEOUT_SECONDS || '5400' }}
+        run: |
+          set -euo pipefail
+
+          EXECUTE_FLAG="--execute"
+          CLEANUP_FLAG="--cleanup"
+
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            if [ "${{ github.event.inputs.execute }}" != "true" ]; then
+              EXECUTE_FLAG=""
+            fi
+            if [ "${{ github.event.inputs.cleanup }}" != "true" ]; then
+              CLEANUP_FLAG=""
+            fi
+          fi
+
+          PYTHONPATH=. python scripts/dr_restore_drill.py \
+            --region "$DR_REGION" \
+            --source-db-instance-id "$DR_SOURCE_DB_INSTANCE_ID" \
+            --restore-db-subnet-group "$DR_RESTORE_DB_SUBNET_GROUP" \
+            --restore-vpc-security-group-ids "$DR_RESTORE_VPC_SECURITY_GROUP_IDS" \
+            --restore-db-instance-class "$DR_RESTORE_DB_INSTANCE_CLASS" \
+            --restore-id-prefix "$DR_RESTORE_ID_PREFIX" \
+            --wait-timeout-seconds "$DR_WAIT_TIMEOUT_SECONDS" \
+            $EXECUTE_FLAG \
+            $CLEANUP_FLAG

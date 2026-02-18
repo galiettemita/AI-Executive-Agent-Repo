@@ -65,6 +65,8 @@ class Conversation(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     user_id: Mapped[str] = mapped_column(String, ForeignKey("users.id"), index=True)
+    active_channel: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    channels_used: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
 class ChatMessage(Base):
     __tablename__ = "chat_messages"
@@ -72,6 +74,8 @@ class ChatMessage(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     conversation_id: Mapped[int] = mapped_column(Integer, index=True)
     user_id: Mapped[str] = mapped_column(String, ForeignKey("users.id"), index=True)
+    channel: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    channel_message_id: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
     role: Mapped[str] = mapped_column(String)  # "user" or "assistant"
     content: Mapped[str] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)

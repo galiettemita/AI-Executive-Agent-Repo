@@ -8,4 +8,5 @@
 - Critical artifacts retained for 365 days
 
 ## Verification
-- Monthly restore drill in staging
+- Monthly restore drill in staging via `.github/workflows/dr-restore-drill.yml`
+- Operational playbooks: `docs/DR_OPERATIONAL_RUNBOOKS.md`
