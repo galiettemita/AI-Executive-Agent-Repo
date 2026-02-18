@@ -18,9 +18,23 @@ import app.db.models  # noqa: F401,E402
 target_metadata = Base.metadata
 
 
+def _normalize_sqlalchemy_url(url: str) -> str:
+    # ECS secrets currently provide asyncpg DSNs; Alembic uses a sync SQLAlchemy engine.
+    if url.startswith("postgresql+asyncpg://"):
+        return url.replace("postgresql+asyncpg://", "postgresql+psycopg://", 1)
+    # Some platforms still use the deprecated postgres:// scheme.
+    if url.startswith("postgres://"):
+        return url.replace("postgres://", "postgresql+psycopg://", 1)
+    # Ensure a driver we actually ship (psycopg) is selected by SQLAlchemy.
+    if url.startswith("postgresql://"):
+        return url.replace("postgresql://", "postgresql+psycopg://", 1)
+    return url
+
+
 def get_url() -> str:
     # Prefer env var, fallback to alembic.ini value
-    return os.getenv("DATABASE_URL") or config.get_main_option("sqlalchemy.url")
+    raw = os.getenv("DATABASE_URL") or config.get_main_option("sqlalchemy.url") or ""
+    return _normalize_sqlalchemy_url(raw)
 
 
 def run_migrations_offline() -> None:

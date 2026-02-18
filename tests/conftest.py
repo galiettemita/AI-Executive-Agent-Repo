@@ -8,7 +8,10 @@ def _setenv_once(key: str, value: str) -> None:
 
 
 # Ensure a writable SQLite DB for tests (avoid stale local .env paths)
-TEST_DB_PATH = Path("/tmp/executive_ai_agent_test.db")
+#
+# Use a per-process DB path so concurrent pytest runs (or parallel CI steps)
+# don't race on the same file and fail with "table already exists".
+TEST_DB_PATH = Path(f"/tmp/executive_ai_agent_test_{os.getpid()}.db")
 if TEST_DB_PATH.exists():
     try:
         TEST_DB_PATH.unlink()
