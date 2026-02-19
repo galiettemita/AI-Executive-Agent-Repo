@@ -225,6 +225,7 @@ def _llm_classify(text_value: str) -> SafetyVerdict:
         "required": ["risk_score", "categories", "reason", "flagged"],
     }
     req = LLMRequest(
+        prompt_group="evaluator_prompt_safety",
         task_type="intent_classification",
         messages=[
             {

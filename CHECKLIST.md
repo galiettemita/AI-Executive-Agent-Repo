@@ -264,7 +264,7 @@ Feature Flag Rollout Reminders (Appendix A)
 
 ## M7 (Operational Overlay): Prompt Versioning + Analytics + Notifications Content (Operational Blueprint Components 5, 11, 12)
 - [x] Prompt versioning schema: create `prompt_versions` table (Ops Blueprint Component 5; Ops Blueprint Section 16)
-- [ ] Prompt versioning: version-control ALL prompts (system prompt, knowledge templates, context compiler templates, tool descriptions, evaluator prompts) (Ops Blueprint Component 5)
+- [x] Prompt versioning: version-control ALL prompts (system prompt, knowledge templates, context compiler templates, tool descriptions, evaluator prompts) (Ops Blueprint Component 5) — implemented prompt-group overrides for knowledge templates (`knowledge_template:*`), context compiler template (`context_compiler_template`), tool descriptions (`tool_description:*`), and evaluator prompts (`evaluator_prompt_*`) with test coverage in `tests/test_prompt_versioning_surfaces.py`
 - [x] Prompt rollout pipeline: draft -> canary (5%) -> rolling (25% -> 50% -> 100%) -> active (Ops Blueprint Component 5)
 - [x] Prompt selection: implement deterministic user hashing + `select_prompt_version()` in LLM Router (Ops Blueprint Component 5)
 - [x] Prompt rollback: one admin API call reverts to previous active version within 60 seconds (Ops Blueprint Component 5)

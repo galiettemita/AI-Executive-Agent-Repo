@@ -174,7 +174,7 @@ def _maybe_reflect_response(
     }
     reflection_req = LLMRequest(
         user_id=user_id,
-        prompt_group="evaluator_prompt",
+        prompt_group="evaluator_prompt_reflection",
         task_type="knowledge_extraction",
         temperature=0.1,
         max_tokens=250,
@@ -537,7 +537,7 @@ def generate_reply(
                     }
                 )
         tool_registry = get_tool_registry()
-        tools = compile_tool_schemas(tier=tier) if tier >= 2 else []
+        tools = compile_tool_schemas(tier=tier, user_id=user_id) if tier >= 2 else []
         max_iterations = _adaptive_iteration_limit(tier=tier, user_text=user_text, tools_count=len(tools))
 
         tool_calls_used = 0

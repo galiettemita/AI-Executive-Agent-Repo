@@ -151,6 +151,7 @@ def _llm_scores(*, user_text: str, assistant_text: str, used_tools: bool) -> dic
         "required": ["coherence", "helpfulness", "safety", "tool_usage"],
     }
     req = LLMRequest(
+        prompt_group="evaluator_prompt_quality",
         task_type="intent_classification",
         messages=[
             {

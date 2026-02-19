@@ -81,20 +81,55 @@ class ToolRegistry:
             out.append(entry.spec)
         return out
 
-    def list_llm_tool_schemas(self, tier: int, tags: list[str] | None = None) -> list[dict[str, Any]]:
+    def list_llm_tool_schemas(
+        self,
+        tier: int,
+        tags: list[str] | None = None,
+        user_id: str | None = None,
+    ) -> list[dict[str, Any]]:
         schemas: list[dict[str, Any]] = []
-        for spec in self.list_for_context(tier=tier, tags=tags):
-            entry = self._entries[spec.name]
-            schemas.append(
-                {
-                    "type": "function",
-                    "function": {
-                        "name": entry.llm_name,
-                        "description": spec.description,
-                        "parameters": spec.input_schema or {"type": "object", "properties": {}},
-                    },
-                }
-            )
+        db = None
+        resolve_prompt_content = None
+        try:
+            from app.db.database import SessionLocal
+            from app.services.prompt_versions import resolve_prompt_content as _resolve_prompt_content
+
+            db = SessionLocal()
+            resolve_prompt_content = _resolve_prompt_content
+        except Exception:
+            db = None
+            resolve_prompt_content = None
+
+        try:
+            for spec in self.list_for_context(tier=tier, tags=tags):
+                entry = self._entries[spec.name]
+                description = spec.description
+                if db is not None and resolve_prompt_content is not None:
+                    try:
+                        description, _version_id, _status = resolve_prompt_content(
+                            db,
+                            user_id=user_id,
+                            prompt_group=f"tool_description:{spec.name}",
+                            default_content=description,
+                        )
+                    except Exception:
+                        description = spec.description
+                schemas.append(
+                    {
+                        "type": "function",
+                        "function": {
+                            "name": entry.llm_name,
+                            "description": description,
+                            "parameters": spec.input_schema or {"type": "object", "properties": {}},
+                        },
+                    }
+                )
+        finally:
+            if db is not None:
+                try:
+                    db.close()
+                except Exception:
+                    pass
         return schemas
 
 

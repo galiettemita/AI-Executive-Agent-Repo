@@ -6,6 +6,7 @@ from sqlalchemy import text
 
 from app.db.database import SessionLocal
 from app.blueprint.tools import get_tool_registry
+from app.services.prompt_versions import resolve_prompt_content
 
 
 KNOWLEDGE_PRIORITY = [
@@ -19,6 +20,8 @@ KNOWLEDGE_PRIORITY = [
     "WORKFLOWS.md",
     "MEMORY.md",
 ]
+
+DEFAULT_CONTEXT_COMPILER_TEMPLATE = "{base_system_prompt}\n\n{knowledge_blocks}"
 
 
 def _approx_tokens(text_value: str) -> int:
@@ -60,6 +63,41 @@ def _latest_knowledge_by_file(user_id: str) -> dict[str, str]:
     return out
 
 
+def _resolve_context_compiler_template(*, user_id: str | None) -> tuple[str, str | None]:
+    db = SessionLocal()
+    try:
+        content, version_id, _status = resolve_prompt_content(
+            db,
+            user_id=user_id,
+            prompt_group="context_compiler_template",
+            default_content=DEFAULT_CONTEXT_COMPILER_TEMPLATE,
+        )
+        return content, version_id
+    except Exception:
+        return DEFAULT_CONTEXT_COMPILER_TEMPLATE, None
+    finally:
+        try:
+            db.close()
+        except Exception:
+            pass
+
+
+def _render_context_compiler_template(
+    *,
+    template: str,
+    base_system_prompt: str,
+    knowledge_blocks: str,
+) -> str:
+    rendered = str(template or "").replace("{base_system_prompt}", base_system_prompt.strip())
+    rendered = rendered.replace("{knowledge_blocks}", knowledge_blocks.strip())
+    rendered = rendered.strip()
+    if rendered:
+        return rendered
+    if knowledge_blocks.strip():
+        return f"{base_system_prompt.strip()}\n\n{knowledge_blocks.strip()}".strip()
+    return base_system_prompt.strip()
+
+
 def compile_context_messages(
     *,
     base_system_prompt: str,
@@ -75,15 +113,18 @@ def compile_context_messages(
     """
     history = history_messages or []
     max_context_tokens = 1000 if tier <= 1 else 1800
+    template_content, template_version_id = _resolve_context_compiler_template(user_id=user_id)
 
     injected_files: list[str] = []
-    system_parts: list[str] = [base_system_prompt.strip()]
-    used_tokens = _approx_tokens(system_parts[0])
+    knowledge_blocks: list[str] = []
+    base_prompt_clean = base_system_prompt.strip()
+    used_tokens = _approx_tokens(base_prompt_clean)
     context_chunks: list[dict[str, str]] = [
         {
             "role": "system",
-            "source": "base_system_prompt",
+            "source": "context_compiler_template",
             "provenance": "system",
+            "prompt_version_id": template_version_id or "default",
         }
     ]
 
@@ -97,7 +138,7 @@ def compile_context_messages(
             block_tokens = _approx_tokens(block)
             if used_tokens + block_tokens > max_context_tokens:
                 continue
-            system_parts.append(block)
+            knowledge_blocks.append(block)
             injected_files.append(file_path)
             used_tokens += block_tokens
             context_chunks.append(
@@ -108,7 +149,11 @@ def compile_context_messages(
                 }
             )
 
-    system_text = "\n\n".join(system_parts).strip()
+    system_text = _render_context_compiler_template(
+        template=template_content,
+        base_system_prompt=base_prompt_clean,
+        knowledge_blocks="\n\n".join(knowledge_blocks).strip(),
+    )
     messages: list[dict[str, Any]] = [{"role": "system", "content": system_text}]
     if history:
         for item in history:
@@ -126,9 +171,14 @@ def compile_context_messages(
     return messages, injected_files, context_chunks
 
 
-def compile_tool_schemas(*, tier: int, tags: list[str] | None = None) -> list[dict[str, Any]]:
+def compile_tool_schemas(
+    *,
+    tier: int,
+    tags: list[str] | None = None,
+    user_id: str | None = None,
+) -> list[dict[str, Any]]:
     """
     Build tool schemas for the active reasoning tier from the shared registry.
     """
     registry = get_tool_registry()
-    return registry.list_llm_tool_schemas(tier=tier, tags=tags)
+    return registry.list_llm_tool_schemas(tier=tier, tags=tags, user_id=user_id)

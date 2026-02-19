@@ -197,6 +197,26 @@ def select_prompt_version(
     return {"content": default_content, "prompt_version_id": None, "status": "default"}
 
 
+def resolve_prompt_content(
+    db: Session,
+    *,
+    user_id: str | None,
+    prompt_group: str,
+    default_content: str,
+) -> tuple[str, str | None, str]:
+    selected = select_prompt_version(
+        db,
+        user_id=user_id,
+        prompt_group=prompt_group,
+        default_content=default_content,
+    )
+    content = str(selected.get("content") or default_content)
+    raw_id = selected.get("prompt_version_id")
+    version_id = str(raw_id) if raw_id else None
+    status = str(selected.get("status") or "default")
+    return content, version_id, status
+
+
 def rollback_prompt(
     db: Session,
     *,

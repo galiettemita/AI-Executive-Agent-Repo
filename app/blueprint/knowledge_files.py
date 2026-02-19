@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.core.redis import cache_delete, cache_get_json, cache_set_json
 from app.core.storage import S3Storage
+from app.services.prompt_versions import resolve_prompt_content
 
 
 logger = logging.getLogger(__name__)
@@ -61,6 +62,25 @@ HOT_CACHE_FILES = {"IDENTITY.md", "SOUL.md", "AGENTS.md"}
 
 def _render(content: str, *, display_name: str, timezone: str) -> str:
     return content.format(display_name=display_name or "User", timezone=timezone or "America/New_York")
+
+
+def _resolve_knowledge_template(
+    db: Session,
+    *,
+    user_id: str,
+    file_path: str,
+    default_content: str,
+) -> tuple[str, str | None]:
+    try:
+        content, version_id, _status = resolve_prompt_content(
+            db,
+            user_id=user_id,
+            prompt_group=f"knowledge_template:{file_path}",
+            default_content=default_content,
+        )
+        return content, version_id
+    except Exception:
+        return default_content, None
 
 
 def _table_exists(db: Session, table_name: str) -> bool:
@@ -174,9 +194,18 @@ def ensure_default_knowledge_files(
         if row:
             continue
 
-        content = _render(spec["content"], display_name=display_name, timezone=timezone)
+        template_content, template_prompt_version_id = _resolve_knowledge_template(
+            db,
+            user_id=user_id,
+            file_path=file_path,
+            default_content=spec["content"],
+        )
+        content = _render(template_content, display_name=display_name, timezone=timezone)
         content_hash = hashlib.sha256(content.encode("utf-8")).hexdigest()
         metadata_obj: dict[str, Any] = {}
+        if template_prompt_version_id:
+            metadata_obj["template_prompt_group"] = f"knowledge_template:{file_path}"
+            metadata_obj["template_prompt_version_id"] = template_prompt_version_id
         snapshot = _write_snapshot(
             user_id=user_id,
             file_path=file_path,

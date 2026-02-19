@@ -14,7 +14,7 @@ from openai import OpenAI
 
 from app.blueprint.contracts import LLMProvider, LLMProviderHealth, LLMRequest, LLMResponse, TokenUsage
 from app.core.config import settings
-from app.core.redis import cache_get_json, cache_set_json
+from app.core.redis import cache_get_json, cache_set_json, get_redis
 from app.db.database import SessionLocal
 from app.services.prompt_versions import select_prompt_version
 
@@ -64,6 +64,10 @@ _TASK_ROUTING_TABLE: dict[str, dict[str, Any]] = {
     },
 }
 
+_HEALTH_OVERRIDE_PREFIX = "bp:llm:health_override"
+_OVERRIDE_LOCK = threading.Lock()
+_MEM_HEALTH_OVERRIDES: dict[str, tuple[bool, float]] = {}
+
 
 def _now_utc() -> datetime:
     return datetime.now(timezone.utc)
@@ -71,6 +75,80 @@ def _now_utc() -> datetime:
 
 def _health_cache_key(provider: LLMProvider) -> str:
     return f"bp:llm:health:{provider.value}"
+
+
+def _health_override_key(provider: LLMProvider) -> str:
+    return f"{_HEALTH_OVERRIDE_PREFIX}:{provider.value}"
+
+
+def _parse_override_value(value: Any) -> bool | None:
+    if value is None:
+        return None
+    if isinstance(value, bytes):
+        value = value.decode("utf-8", errors="ignore")
+    raw = str(value).strip().lower()
+    if raw in {"1", "true", "healthy"}:
+        return True
+    if raw in {"0", "false", "unhealthy"}:
+        return False
+    return None
+
+
+def set_provider_health_override(
+    *,
+    provider: LLMProvider,
+    healthy: bool,
+    ttl_seconds: int = 300,
+) -> dict[str, Any]:
+    ttl = max(30, int(ttl_seconds or 300))
+    expires_at = time.time() + ttl
+    client = get_redis()
+    if client is not None:
+        client.set(_health_override_key(provider), "healthy" if healthy else "unhealthy", ex=ttl)
+    else:
+        with _OVERRIDE_LOCK:
+            _MEM_HEALTH_OVERRIDES[provider.value] = (bool(healthy), expires_at)
+    return {
+        "provider": provider.value,
+        "healthy": bool(healthy),
+        "ttl_seconds": ttl,
+        "expires_at_epoch": int(expires_at),
+    }
+
+
+def clear_provider_health_override(*, provider: LLMProvider) -> dict[str, Any]:
+    client = get_redis()
+    if client is not None:
+        client.delete(_health_override_key(provider))
+    else:
+        with _OVERRIDE_LOCK:
+            _MEM_HEALTH_OVERRIDES.pop(provider.value, None)
+    return {"provider": provider.value, "cleared": True}
+
+
+def get_provider_health_override(provider: LLMProvider) -> bool | None:
+    client = get_redis()
+    if client is not None:
+        return _parse_override_value(client.get(_health_override_key(provider)))
+    with _OVERRIDE_LOCK:
+        item = _MEM_HEALTH_OVERRIDES.get(provider.value)
+        if not item:
+            return None
+        healthy, expires_at = item
+        if expires_at <= time.time():
+            _MEM_HEALTH_OVERRIDES.pop(provider.value, None)
+            return None
+        return bool(healthy)
+
+
+def list_provider_health_overrides() -> dict[str, Any]:
+    out: dict[str, Any] = {}
+    for provider in (LLMProvider.OPENAI, LLMProvider.ANTHROPIC, LLMProvider.GOOGLE, LLMProvider.LOCAL):
+        state = get_provider_health_override(provider)
+        if state is None:
+            continue
+        out[provider.value] = {"healthy": bool(state)}
+    return out
 
 
 def _parse_provider_model(selector: str) -> tuple[LLMProvider, str]:
@@ -183,6 +261,16 @@ class LLMRouter:
     def _probe_provider(self, provider: LLMProvider) -> LLMProviderHealth:
         started = time.perf_counter()
         try:
+            override = get_provider_health_override(provider)
+            if override is not None:
+                latency = int((time.perf_counter() - started) * 1000)
+                return LLMProviderHealth(
+                    provider=provider,
+                    is_healthy=bool(override),
+                    latency_p50_ms=latency,
+                    latency_p95_ms=latency,
+                    error_rate_1h=0.0 if override else 1.0,
+                )
             if not self._provider_enabled(provider):
                 return LLMProviderHealth(provider=provider, is_healthy=False, error_rate_1h=1.0)
 
