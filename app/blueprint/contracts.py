@@ -89,6 +89,34 @@ class WorkflowTriggerType(str, Enum):
     MANUAL = "manual"
 
 
+class ProvisioningState(str, Enum):
+    INITIATED = "initiated"
+    AWAITING_AUTH = "awaiting_auth"
+    AUTH_RECEIVED = "auth_received"
+    PROVISIONING = "provisioning"
+    ACTIVE = "active"
+    FAILED = "failed"
+    EXPIRED = "expired"
+    CANCELED = "canceled"
+
+
+class ProvisionTrigger(str, Enum):
+    CAPABILITY_GAP = "capability_gap"
+    ONBOARDING = "onboarding"
+    CONTEXTUAL = "contextual"
+    USER_INITIATED = "user_initiated"
+    RETRY = "retry"
+
+
+class AuthType(str, Enum):
+    OAUTH2 = "oauth2"
+    OAUTH2_CONSOLIDATED = "oauth2_consolidated"
+    API_KEY = "api_key"
+    PRE_PROVISIONED = "pre_provisioned"
+    PLAID_LINK = "plaid_link"
+    TESLA_SSO = "tesla_sso"
+
+
 class StrictModel(BaseModel):
     """
     Blueprint contracts are strict by default:
@@ -292,6 +320,59 @@ class ToolResult(StrictModel):
         if isinstance(self.error, str):
             self.error = {"message": self.error}
         return self
+
+
+class ProvisioningRequest(StrictModel):
+    id: str = Field(min_length=1)
+    user_id: str = Field(min_length=1)
+    server_id: str = Field(min_length=1)
+    state: ProvisioningState = ProvisioningState.INITIATED
+    trigger: ProvisionTrigger = ProvisionTrigger.CAPABILITY_GAP
+    auth_type: AuthType = AuthType.OAUTH2
+    reason: str = ""
+    original_task_id: Optional[str] = None
+    retry_count: int = Field(default=0, ge=0)
+    state_history: list[dict[str, Any]] = Field(default_factory=list)
+    error_message: Optional[str] = None
+    expires_at: Optional[datetime] = None
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    completed_at: Optional[datetime] = None
+
+
+class ServerCatalogEntry(StrictModel):
+    server_id: str = Field(min_length=1)
+    display_name: str = ""
+    description: str = ""
+    auth_type: AuthType = AuthType.OAUTH2
+    min_plan: str = "free"
+    setup_seconds: int = Field(default=30, ge=10)
+    capabilities: list[str] = Field(default_factory=list)
+    keywords: list[str] = Field(default_factory=list)
+    hosting_model: str = ""
+    container_image: str = ""
+    source: str = "local"
+    signature: Optional[str] = None
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class ServerProvisionedEvent(StrictModel):
+    request_id: str = Field(min_length=1)
+    user_id: str = Field(min_length=1)
+    server_id: str = Field(min_length=1)
+    original_task_id: Optional[str] = None
+    connected_tools: list[str] = Field(default_factory=list)
+    emitted_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class ProvisioningFailedEvent(StrictModel):
+    request_id: str = Field(min_length=1)
+    user_id: str = Field(min_length=1)
+    server_id: str = Field(min_length=1)
+    state: ProvisioningState = ProvisioningState.FAILED
+    reason: str = ""
+    retriable: bool = True
+    emitted_at: datetime = Field(default_factory=datetime.utcnow)
 
 
 class TokenUsage(StrictModel):

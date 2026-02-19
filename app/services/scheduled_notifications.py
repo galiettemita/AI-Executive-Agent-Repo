@@ -12,7 +12,9 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from app.blueprint.knowledge_files import get_latest_knowledge_file
 from app.core.redis import get_redis
+from app.services.preferences import get_preferences
 
 _TABLE_LOCK = threading.Lock()
 _TABLE_READY = False
@@ -23,6 +25,9 @@ class NotificationRunResult:
     sent: int = 0
     deferred_quiet_hours: int = 0
     deferred_rate_limit: int = 0
+    deferred_inactive: int = 0
+    paused_inactive: int = 0
+    skipped_preferences: int = 0
     failed: int = 0
 
 
@@ -286,6 +291,182 @@ def _enqueue_outbound_message(
         )
 
 
+def _parse_payload(payload_raw: Any) -> dict[str, Any]:
+    if isinstance(payload_raw, dict):
+        return payload_raw
+    if isinstance(payload_raw, str) and payload_raw.strip():
+        try:
+            parsed = json.loads(payload_raw)
+            return parsed if isinstance(parsed, dict) else {}
+        except Exception:
+            return {}
+    return {}
+
+
+def _is_proactive_notification(notification_type: str) -> bool:
+    value = (notification_type or "").strip().lower()
+    return value in {"morning_briefing", "deadline_alert", "task_reminder", "weekly_summary", "proactive"}
+
+
+def _is_critical_notification(notification_type: str, payload: dict[str, Any]) -> bool:
+    if bool(payload.get("critical")):
+        return True
+    value = (notification_type or "").strip().lower()
+    return value in {"deadline_alert", "critical_alert"}
+
+
+def _notification_allowed_by_preferences(db: Session, *, user_id: str, notification_type: str) -> bool:
+    prefs = get_preferences(db, user_id)
+    if not isinstance(prefs, dict) or not prefs:
+        return True
+    if bool(prefs.get("notifications_disabled")):
+        return False
+    if bool(prefs.get("proactive_disabled")) and _is_proactive_notification(notification_type):
+        return False
+    proactive_enabled = prefs.get("proactive_notifications_enabled")
+    if proactive_enabled is False and _is_proactive_notification(notification_type):
+        return False
+    if (notification_type or "").strip().lower() == "morning_briefing" and prefs.get("morning_briefings_enabled") is False:
+        return False
+    if (notification_type or "").strip().lower() == "weekly_summary" and prefs.get("weekly_summaries_enabled") is False:
+        return False
+    return True
+
+
+def _latest_inbound_message_at(db: Session, *, user_id: str) -> datetime | None:
+    if not _table_exists(db, "messages"):
+        return None
+    dialect = db.bind.dialect.name if db.bind is not None else ""
+    queries: list[tuple[str, dict[str, Any]]] = []
+    if dialect == "sqlite":
+        queries.append(
+            (
+                "select max(created_at) as ts from messages where user_id = :user_id and lower(direction) = 'inbound'",
+                {"user_id": user_id},
+            )
+        )
+    else:
+        queries.append(
+            (
+                "select max(created_at) as ts from messages where user_id::text = :user_id and direction::text = 'inbound'",
+                {"user_id": user_id},
+            )
+        )
+        queries.append(
+            (
+                "select max(created_at) as ts from messages where user_id::text = :user_id and lower(direction::text) = 'inbound'",
+                {"user_id": user_id},
+            )
+        )
+    for sql, params in queries:
+        try:
+            row = db.execute(text(sql), params).mappings().first()
+        except Exception:
+            continue
+        value = (row or {}).get("ts")
+        if isinstance(value, datetime):
+            if value.tzinfo is None:
+                return value.replace(tzinfo=timezone.utc)
+            return value.astimezone(timezone.utc)
+        if isinstance(value, str) and value.strip():
+            try:
+                parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+                if parsed.tzinfo is None:
+                    return parsed.replace(tzinfo=timezone.utc)
+                return parsed.astimezone(timezone.utc)
+            except Exception:
+                continue
+    return None
+
+
+def _inactivity_days(db: Session, *, user_id: str, now_utc: datetime) -> float:
+    latest = _latest_inbound_message_at(db, user_id=user_id)
+    if latest is None:
+        return 999.0
+    delta = now_utc - latest
+    return max(0.0, float(delta.total_seconds()) / 86400.0)
+
+
+def _detect_travel_timezone(payload: dict[str, Any]) -> str | None:
+    events = payload.get("calendar_events")
+    if not isinstance(events, list):
+        return None
+    for event in events:
+        if not isinstance(event, dict):
+            continue
+        tz_value = str(event.get("timezone") or event.get("tz") or "").strip()
+        if tz_value:
+            return tz_value
+    return None
+
+
+def _heartbeat_focus(db: Session, *, user_id: str) -> list[str]:
+    try:
+        item = get_latest_knowledge_file(db, user_id=user_id, file_path="HEARTBEAT.md")
+    except Exception:
+        return []
+    content = str((item or {}).get("content") or "")
+    if not content.strip():
+        return []
+    lines: list[str] = []
+    for raw in content.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("-"):
+            lines.append(line[1:].strip())
+        elif line.lower().startswith("## "):
+            continue
+        else:
+            lines.append(line)
+        if len(lines) >= 4:
+            break
+    return [line for line in lines if line]
+
+
+def _generate_notification_message(
+    db: Session,
+    *,
+    user_id: str,
+    notification_type: str,
+    payload: dict[str, Any],
+    now_local: datetime,
+) -> str:
+    explicit = str(payload.get("message") or payload.get("text") or "").strip()
+    if explicit:
+        return explicit
+
+    ntype = (notification_type or "").strip().lower()
+    if ntype == "morning_briefing":
+        events = payload.get("calendar_events")
+        tasks = payload.get("tasks")
+        event_count = len(events) if isinstance(events, list) else 0
+        task_count = len(tasks) if isinstance(tasks, list) else 0
+        focus = _heartbeat_focus(db, user_id=user_id)
+        focus_line = f" Focus: {focus[0]}." if focus else ""
+        return (
+            f"Good morning. You have {event_count} calendar item(s) and {task_count} task(s) today."
+            f"{focus_line}"
+        ).strip()
+
+    if ntype == "deadline_alert":
+        milestone = str(payload.get("milestone") or payload.get("title") or "a milestone").strip()
+        due = str(payload.get("due_date") or payload.get("due_at") or "soon").strip()
+        return f"Deadline alert: {milestone} is due {due}."
+
+    if ntype == "task_reminder":
+        task_name = str(payload.get("task") or payload.get("task_name") or "a task").strip()
+        due = str(payload.get("due_date") or payload.get("due_at") or "soon").strip()
+        return f"Reminder: {task_name} is due {due}."
+
+    if ntype == "weekly_summary":
+        completed = int(payload.get("completed_tasks") or 0)
+        meetings = int(payload.get("meetings") or 0)
+        return f"Weekly summary: {completed} task(s) completed, {meetings} meeting(s) attended."
+
+    return f"You have a scheduled update at {now_local.strftime('%H:%M')}."
+
+
 def run_due_scheduled_notifications(db: Session) -> dict[str, int]:
     ensure_scheduled_notifications_table(db)
     now_utc = datetime.now(timezone.utc)
@@ -304,7 +485,41 @@ def run_due_scheduled_notifications(db: Session) -> dict[str, int]:
         if not user_id:
             result.failed += 1
             continue
+
+        notification_type = str(row.get("notification_type") or "custom")
+        payload = _parse_payload(row.get("payload_json"))
+        if not _notification_allowed_by_preferences(db, user_id=user_id, notification_type=notification_type):
+            db.execute(
+                text("update scheduled_notifications set status = 'canceled', updated_at = :updated_at where id = :id"),
+                {"id": row["id"], "updated_at": datetime.utcnow()},
+            )
+            result.skipped_preferences += 1
+            continue
+
+        inactivity_days = _inactivity_days(db, user_id=user_id, now_utc=now_utc)
+        if _is_proactive_notification(notification_type):
+            if inactivity_days >= 7.0:
+                db.execute(
+                    text("update scheduled_notifications set status = 'paused', updated_at = :updated_at where id = :id"),
+                    {"id": row["id"], "updated_at": datetime.utcnow()},
+                )
+                result.paused_inactive += 1
+                continue
+            if inactivity_days >= 3.0 and not _is_critical_notification(notification_type, payload):
+                db.execute(
+                    text(
+                        "update scheduled_notifications set scheduled_for = :scheduled_for, updated_at = :updated_at where id = :id"
+                    ),
+                    {"id": row["id"], "scheduled_for": now_utc + timedelta(days=1), "updated_at": datetime.utcnow()},
+                )
+                result.deferred_inactive += 1
+                continue
+
         tz_name = _resolve_timezone(db, user_id=user_id, fallback=str(row.get("timezone") or "") or None)
+        if notification_type.strip().lower() == "morning_briefing":
+            travel_tz = _detect_travel_timezone(payload)
+            if travel_tz:
+                tz_name = travel_tz
         try:
             tz = ZoneInfo(tz_name)
         except Exception:
@@ -330,18 +545,13 @@ def run_due_scheduled_notifications(db: Session) -> dict[str, int]:
             result.deferred_rate_limit += 1
             continue
 
-        payload_raw = row.get("payload_json")
-        if isinstance(payload_raw, dict):
-            payload = payload_raw
-        elif isinstance(payload_raw, str) and payload_raw.strip():
-            try:
-                payload = json.loads(payload_raw)
-            except Exception:
-                payload = {}
-        else:
-            payload = {}
-
-        message = str(payload.get("message") or payload.get("text") or "You have a scheduled update.")
+        message = _generate_notification_message(
+            db,
+            user_id=user_id,
+            notification_type=notification_type,
+            payload=payload,
+            now_local=now_local,
+        )
         channel = _active_channel(user_id, fallback=str(row.get("channel") or "") or None)
         formatted = _format_for_channel(channel, message)
         _enqueue_outbound_message(db, user_id=user_id, channel=channel, body=formatted)
@@ -365,5 +575,8 @@ def run_due_scheduled_notifications(db: Session) -> dict[str, int]:
         "sent": result.sent,
         "deferred_quiet_hours": result.deferred_quiet_hours,
         "deferred_rate_limit": result.deferred_rate_limit,
+        "deferred_inactive": result.deferred_inactive,
+        "paused_inactive": result.paused_inactive,
+        "skipped_preferences": result.skipped_preferences,
         "failed": result.failed,
     }

@@ -7,6 +7,7 @@ from sqlalchemy import text
 
 from app.db.database import SessionLocal
 from app.main import app
+from app.services.preferences import update_preferences
 from app.services import quality_eval, scheduled_notifications, user_feedback
 
 
@@ -142,5 +143,65 @@ def test_scheduled_notifications_delivery_and_rate_limit(monkeypatch):
         ).scalar()
         assert int(sent_rows or 0) == 2
         assert int(queued_rows or 0) >= 2
+    finally:
+        db.close()
+
+
+def test_scheduled_notifications_respects_user_opt_out(monkeypatch):
+    fake = _FakeRedis()
+    monkeypatch.setattr(scheduled_notifications, "get_redis", lambda: fake)
+    monkeypatch.setattr(scheduled_notifications, "_quiet_hours_active", lambda now_local: False)
+
+    db = SessionLocal()
+    try:
+        update_preferences(db, "notify-optout-user", {"proactive_notifications_enabled": False})
+        scheduled_notifications.schedule_notification(
+            db,
+            user_id="notify-optout-user",
+            notification_type="morning_briefing",
+            payload={"calendar_events": [], "tasks": []},
+            scheduled_for=datetime.now(timezone.utc),
+            channel="web",
+            timezone_name="UTC",
+        )
+
+        result = scheduled_notifications.run_due_scheduled_notifications(db)
+        assert int(result.get("sent") or 0) == 0
+        assert int(result.get("skipped_preferences") or 0) == 1
+
+        status = db.execute(
+            text("select status from scheduled_notifications where user_id = :user_id order by created_at desc limit 1"),
+            {"user_id": "notify-optout-user"},
+        ).scalar()
+        assert str(status) == "canceled"
+    finally:
+        db.close()
+
+
+def test_scheduled_notifications_pauses_proactive_on_absence(monkeypatch):
+    fake = _FakeRedis()
+    monkeypatch.setattr(scheduled_notifications, "get_redis", lambda: fake)
+    monkeypatch.setattr(scheduled_notifications, "_quiet_hours_active", lambda now_local: False)
+
+    db = SessionLocal()
+    try:
+        scheduled_notifications.schedule_notification(
+            db,
+            user_id="notify-absent-user",
+            notification_type="morning_briefing",
+            payload={"calendar_events": [], "tasks": []},
+            scheduled_for=datetime.now(timezone.utc),
+            channel="web",
+            timezone_name="UTC",
+        )
+        result = scheduled_notifications.run_due_scheduled_notifications(db)
+        assert int(result.get("paused_inactive") or 0) == 1
+        assert int(result.get("sent") or 0) == 0
+
+        status = db.execute(
+            text("select status from scheduled_notifications where user_id = :user_id order by created_at desc limit 1"),
+            {"user_id": "notify-absent-user"},
+        ).scalar()
+        assert str(status) == "paused"
     finally:
         db.close()

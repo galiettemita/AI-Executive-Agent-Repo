@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from app.blueprint.knowledge_files import get_latest_knowledge_file, put_knowledge_file_version
 from app.blueprint.mcp.registry import MCPServerRegistry
 from app.blueprint.tools import get_tool_registry
+from app.services.provisioning_catalog import available_servers_for_user, render_available_servers_section
 
 
 _SKIP_DIRS = {
@@ -48,6 +49,7 @@ def _tools_catalog_markdown(
     *,
     native_tools: list[dict[str, Any]],
     mcp_servers: list[dict[str, Any]],
+    available_servers: list[dict[str, Any]],
     services: list[str],
     skills: list[str],
 ) -> str:
@@ -74,6 +76,8 @@ def _tools_catalog_markdown(
             )
     else:
         lines.append("- No MCP servers bound.")
+
+    lines.extend(["", render_available_servers_section(available_servers)])
 
     lines.extend(["", "## Service Modules (Repository Scan)"])
     if services:
@@ -114,12 +118,23 @@ def refresh_bones_catalog(
     mcp_registry = MCPServerRegistry()
     mcp_registry.ensure_tables(db)
     mcp_servers = [item.model_dump() for item in mcp_registry.list_servers(db, user_id=user_id)]
+    connected_ids = {
+        str(item.get("server_id") or "").strip()
+        for item in mcp_servers
+        if str(item.get("server_id") or "").strip()
+    }
+    available_servers = available_servers_for_user(
+        db,
+        user_id=user_id,
+        connected_server_ids=connected_ids,
+    )
 
     services = _discover_service_modules(root)
     skills = _discover_skill_files(root)
     content = _tools_catalog_markdown(
         native_tools=native_tools,
         mcp_servers=mcp_servers,
+        available_servers=available_servers,
         services=services,
         skills=skills,
     )
@@ -136,6 +151,7 @@ def refresh_bones_catalog(
                 "source": "bones_scan",
                 "native_tool_count": len(native_tools),
                 "mcp_server_count": len(mcp_servers),
+                "available_server_count": len(available_servers),
                 "service_module_count": len(services),
                 "skill_count": len(skills),
             },
@@ -149,4 +165,3 @@ def refresh_bones_catalog(
         "service_module_count": len(services),
         "skill_count": len(skills),
     }
-

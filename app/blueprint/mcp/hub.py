@@ -30,6 +30,7 @@ from app.blueprint.tools import get_tool_registry
 from app.core.config import settings
 from app.db.database import SessionLocal
 from app.services.analytics import emit_event_async
+from app.services.provisioning_catalog import available_servers_for_user, render_available_servers_section
 
 logger = logging.getLogger(__name__)
 
@@ -518,7 +519,13 @@ class MCPClientHub:
                         f"- {server.display_name} ({server.server_id}) — state: {server.state}, tools: {server.tools_count}"
                     )
 
-            lines.extend(["", "## Tool Preferences", "-", "", "## Cost Limits", "-"])
+            connected_ids = {str(server.server_id) for server in servers if getattr(server, "server_id", None)}
+            available = available_servers_for_user(
+                db,
+                user_id=user_id,
+                connected_server_ids=connected_ids,
+            )
+            lines.extend(["", render_available_servers_section(available), "", "## Tool Preferences", "-", "", "## Cost Limits", "-"])
             content = "\n".join(lines)
             latest = get_latest_knowledge_file(db, user_id=user_id, file_path="TOOLS.md")
             if latest and str(latest.get("content") or "").strip() == content.strip():
@@ -528,7 +535,10 @@ class MCPClientHub:
                 user_id=user_id,
                 file_path="TOOLS.md",
                 content=content,
-                metadata={"source": "mcp_registry_refresh"},
+                metadata={
+                    "source": "mcp_registry_refresh",
+                    "available_server_count": len(available),
+                },
             )
         except RuntimeError as exc:
             if "knowledge_files table does not exist" in str(exc).lower():

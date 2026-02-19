@@ -51,6 +51,7 @@ from app.services.plaid_connector import (
     list_accounts as plaid_list_accounts,
     list_transactions as plaid_list_transactions,
 )
+from app.services.provisioning_catalog import available_servers_for_user
 
 
 router = APIRouter(prefix="/internal/hands", tags=["internal-hands"])
@@ -342,6 +343,89 @@ async def execute(call: ToolCall) -> ToolResult:
                     db.close()
                 except Exception:
                     pass
+        return result
+
+    if tool == "provision_server":
+        server_id = str(args.get("server_id") or "").strip().lower()
+        reason = str(args.get("reason") or "").strip()
+        if not server_id:
+            return ToolResult(tool_name=tool, tool=tool, ok=False, error="provision_server requires server_id")
+        if not reason:
+            reason = "Capability gap detected by planner"
+
+        started = time.perf_counter()
+        output_payload_provision: dict[str, object] | None = None
+        error_payload_provision: dict[str, str] | None = None
+        status_provision = "success"
+        db = SessionLocal()
+        try:
+            available = available_servers_for_user(db, user_id=call.user_id, connected_server_ids=set())
+            matched = next((item for item in available if str(item.get("server_id") or "").strip().lower() == server_id), None)
+            if not matched:
+                result = ToolResult(
+                    tool_name=tool,
+                    tool=tool,
+                    ok=False,
+                    error=f"{server_id} is not available on this account or plan",
+                )
+                status_provision = "failed"
+                error_payload_provision = {"type": "catalog_not_available", "message": str(result.error or "")}
+            else:
+                output_payload_provision = {
+                    "status": "awaiting_auth",
+                    "server_id": server_id,
+                    "reason": reason,
+                    "auth_type": str(matched.get("auth_type") or "oauth"),
+                    "setup_seconds": int(matched.get("setup_seconds") or 30),
+                    "message": (
+                        f"{server_id} is available. "
+                        "Provisioning is not fully enabled in this environment yet; "
+                        "complete the connect flow from onboarding/connectors and retry."
+                    ),
+                }
+                result = ToolResult(tool_name=tool, tool=tool, ok=True, result=output_payload_provision)
+        except Exception as exc:
+            result = ToolResult(tool_name=tool, tool=tool, ok=False, error=str(exc))
+            status_provision = "failed"
+            output_payload_provision = None
+            error_payload_provision = {"type": exc.__class__.__name__, "message": str(exc)}
+        finally:
+            try:
+                db.close()
+            except Exception:
+                pass
+
+        latency_ms = int((time.perf_counter() - started) * 1000)
+        if call.user_id and call.run_id:
+            db = SessionLocal()
+            try:
+                insert_tool_execution(
+                    db,
+                    run_id=call.run_id,
+                    user_id=call.user_id,
+                    tool_name=tool,
+                    input_payload={
+                        "args": args,
+                        "is_mcp": False,
+                        "mcp_server_id": None,
+                        "input_provenance": call.input_provenance.value,
+                    },
+                    output_payload=output_payload_provision,
+                    status=status_provision,
+                    error_payload=error_payload_provision,
+                    idempotency_key=idempotency_key,
+                    risk_level="low",
+                    cost_cents=0,
+                    latency_ms=latency_ms,
+                )
+            except Exception:
+                pass
+            finally:
+                try:
+                    db.close()
+                except Exception:
+                    pass
+
         return result
 
     if tool in ("web.search", "tavily.search"):

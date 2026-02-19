@@ -104,6 +104,32 @@ _REGISTRY: ToolRegistry | None = None
 def _register_native_tools(registry: ToolRegistry) -> None:
     registry.register(
         ToolSpec(
+            name="provision_server",
+            description=(
+                "Connect a new MCP server to unlock missing capabilities. "
+                "Use this when a required capability is not currently connected "
+                "but exists in the Available Servers catalog."
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "server_id": {"type": "string", "description": "Server ID from Available Servers catalog"},
+                    "reason": {"type": "string", "description": "Why this server is needed for the current task"},
+                },
+                "required": ["server_id", "reason"],
+            },
+            output_schema={"type": "object"},
+            risk_level=RiskLevel.LOW,
+            tags=["system", "provisioning"],
+            is_mcp=False,
+        ),
+        min_tier=2,
+        tags=["system", "provisioning"],
+        llm_name="provision_server",
+    )
+
+    registry.register(
+        ToolSpec(
             name="web.search",
             description="Search the web for recent/factual information and return relevant snippets and URLs.",
             input_schema={

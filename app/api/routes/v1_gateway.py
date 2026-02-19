@@ -42,6 +42,7 @@ from app.services.content_safety import (
 )
 from app.services.analytics import emit_event_async
 from app.services.quality_eval import enqueue_live_quality_eval
+from app.services.preferences import get_preferences, update_preferences
 from app.services.slack_connector import slack_send_message
 
 logger = logging.getLogger(__name__)
@@ -213,6 +214,60 @@ def _format_response_for_channel(*, channel: Channel, text_value: str) -> str:
         return apply_slack_constraints(text_value)
     # WhatsApp formatting/splitting is handled by adapter at send time.
     return text_value
+
+
+def _notification_preference_command(text_value: str) -> tuple[dict[str, Any], str] | None:
+    text_norm = " ".join(str(text_value or "").strip().lower().split())
+    if not text_norm:
+        return None
+
+    stop_morning = (
+        "stop sending me morning briefings",
+        "stop morning briefings",
+        "no morning briefings",
+        "dont send morning briefings",
+        "don't send morning briefings",
+    )
+    start_morning = (
+        "start morning briefings",
+        "resume morning briefings",
+        "enable morning briefings",
+    )
+    stop_proactive = (
+        "stop proactive",
+        "stop proactive messages",
+        "dont send proactive",
+        "don't send proactive",
+        "i dont want proactive messages",
+        "i don't want proactive messages",
+    )
+    start_proactive = (
+        "resume proactive",
+        "start proactive",
+        "enable proactive messages",
+    )
+
+    if any(phrase in text_norm for phrase in stop_morning):
+        return (
+            {"morning_briefings_enabled": False},
+            "Understood. I’ll stop sending morning briefings.",
+        )
+    if any(phrase in text_norm for phrase in start_morning):
+        return (
+            {"morning_briefings_enabled": True},
+            "Done. Morning briefings are enabled again.",
+        )
+    if any(phrase in text_norm for phrase in stop_proactive):
+        return (
+            {"proactive_notifications_enabled": False, "proactive_disabled": True},
+            "Understood. I’ll pause proactive messages.",
+        )
+    if any(phrase in text_norm for phrase in start_proactive):
+        return (
+            {"proactive_notifications_enabled": True, "proactive_disabled": False},
+            "Done. Proactive messages are enabled again.",
+        )
+    return None
 
 
 def _update_conversation_channel_state(*, conversation_id: str, channel: Channel) -> None:
@@ -592,6 +647,120 @@ def _process_message_run(run_id: str, inbound: InboundMessage) -> None:
 
         append_progress(run_id, step="preprocess", status="running")
         processed = preprocess_inbound_message(inbound)
+
+        pref_cmd = _notification_preference_command(processed.normalized_text)
+        if pref_cmd:
+            patch, pref_reply = pref_cmd
+            if not inbound.user_id:
+                pref_reply = "I can update notification preferences after you sign in."
+            else:
+                db = SessionLocal()
+                try:
+                    existing = get_preferences(db, inbound.user_id)
+                    merged_patch = dict(patch)
+                    # Keep proactive enabled when user explicitly re-enables morning briefings.
+                    if merged_patch.get("morning_briefings_enabled") is True and existing.get("proactive_notifications_enabled") is False:
+                        merged_patch["proactive_notifications_enabled"] = True
+                    update_preferences(db, inbound.user_id, merged_patch)
+                except Exception:
+                    logger.warning("Failed to update notification preferences", exc_info=True)
+                    pref_reply = "I couldn't update that preference right now. Please try again."
+                finally:
+                    try:
+                        db.close()
+                    except Exception:
+                        pass
+
+            emit_event_async(
+                event_name="message_received",
+                user_id=inbound.user_id,
+                source="gateway_v1",
+                payload={
+                    "run_id": run_id,
+                    "channel": inbound.channel.value,
+                    "conversation_id": inbound.conversation_id,
+                    "intent": "notification_preferences",
+                },
+            )
+
+            target_channel = _get_active_channel(participant_key=participant_key, fallback=inbound.channel)
+            target_identifier = _resolve_channel_identifier_for_user(
+                user_id=inbound.user_id,
+                channel=target_channel,
+                fallback=inbound.channel_identifier,
+            )
+            formatted_pref_reply = _format_response_for_channel(channel=target_channel, text_value=pref_reply)
+
+            if target_channel == Channel.WHATSAPP and target_identifier:
+                send_whatsapp_adapted(to_phone_e164=target_identifier, text=formatted_pref_reply)
+            elif target_channel == Channel.SLACK and target_identifier and inbound.user_id:
+                try:
+                    db = SessionLocal()
+                    try:
+                        slack_send_message(
+                            db=db,
+                            user_id=inbound.user_id,
+                            channel_id=target_identifier,
+                            text_body=formatted_pref_reply,
+                        )
+                    finally:
+                        db.close()
+                except Exception:
+                    logger.warning("Slack preference reply failed run_id=%s", run_id, exc_info=True)
+
+            _persist_v1_message(
+                user_id=inbound.user_id,
+                conversation_id=inbound.conversation_id,
+                run_id=run_id,
+                direction=MessageDirection.INBOUND,
+                channel=inbound.channel,
+                text=processed.normalized_text,
+                input_modality=inbound.input_modality,
+                media_url=inbound.media_url,
+                transcription_confidence=processed.transcription_confidence,
+                extracted_entities=processed.extracted_entities,
+                content_provenance=processed.content_provenance if isinstance(processed.content_provenance, ContentProvenance) else ContentProvenance.USER_DIRECT,
+                emotion_detected=processed.emotion_detected.value,
+                channel_msg_id=inbound.channel_msg_id,
+                intent="notification_preferences",
+                tier=0,
+            )
+            _persist_v1_message(
+                user_id=inbound.user_id,
+                conversation_id=inbound.conversation_id,
+                run_id=run_id,
+                direction=MessageDirection.OUTBOUND,
+                channel=target_channel,
+                text=formatted_pref_reply,
+                input_modality=InputModality.TEXT,
+                content_provenance=ContentProvenance.USER_DIRECT,
+                emotion_detected=str(processed.emotion_detected.value or "neutral"),
+                channel_msg_id=inbound.channel_msg_id,
+                intent="notification_preferences",
+                tier=0,
+                latency_ms=int((time.perf_counter() - started) * 1000),
+            )
+            emit_event_async(
+                event_name="message_sent",
+                user_id=inbound.user_id,
+                source="gateway_v1",
+                payload={
+                    "run_id": run_id,
+                    "channel": target_channel.value,
+                    "conversation_id": inbound.conversation_id,
+                    "intent": "notification_preferences",
+                },
+            )
+
+            payload = {
+                "ok": True,
+                "run_id": run_id,
+                "reply": formatted_pref_reply,
+                "metadata": {"intent": "notification_preferences", "preferences_patch": patch},
+            }
+            set_run_result(run_id, payload)
+            append_progress(run_id, step="done", status="completed", partial_result=payload, metadata=payload.get("metadata"))
+            return
 
         append_progress(
             run_id,

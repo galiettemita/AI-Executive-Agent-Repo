@@ -13,12 +13,14 @@ from sqlalchemy import text
 from app.blueprint.contracts import LLMRequest
 from app.blueprint.contracts import ContentProvenance, ToolCall, ToolResult
 from app.blueprint.context_compiler import compile_context_messages, compile_tool_schemas
+from app.blueprint.knowledge_files import get_latest_knowledge_file
 from app.blueprint.llm.degraded_retry import enqueue_degraded_retry, should_send_degraded_notice
 from app.blueprint.llm.router import LLMDegradedModeQueuedError, get_llm_router
 from app.blueprint.temporal_orchestration import orchestrate_tier3_plan
 from app.blueprint.tools import get_tool_registry
 from app.core.config import settings
 from app.db.database import SessionLocal
+from app.services.provisioning_catalog import find_server_match, parse_available_servers_section
 from app.services.semantic_cache import get_cached_response, put_cached_response
 
 logger = logging.getLogger(__name__)
@@ -233,6 +235,59 @@ def _decompose_subtasks(user_text: str) -> list[str]:
         seen.add(key)
         deduped.append(p)
     return deduped[:8]
+
+
+def _load_tools_markdown(*, user_id: str | None) -> str:
+    if not user_id:
+        return ""
+    db = SessionLocal()
+    try:
+        latest = get_latest_knowledge_file(db, user_id=user_id, file_path="TOOLS.md")
+        return str((latest or {}).get("content") or "")
+    except Exception:
+        return ""
+    finally:
+        try:
+            db.close()
+        except Exception:
+            pass
+
+
+def _attempt_capability_gap_provision(
+    *,
+    raw_tool_name: str,
+    user_text: str,
+    user_id: str | None,
+    run_id: str | None,
+    provenance: ContentProvenance,
+    capability_token: str | None,
+) -> ToolResult | None:
+    tools_markdown = _load_tools_markdown(user_id=user_id)
+    available_servers = parse_available_servers_section(tools_markdown)
+    if not available_servers:
+        return None
+    capability_text = " ".join(part for part in [raw_tool_name, user_text] if part).strip()
+    match = find_server_match(capability_text, entries=available_servers)
+    if not match:
+        return None
+
+    server_id = str(match.get("server_id") or "").strip()
+    if not server_id:
+        return None
+    reason = (
+        f"Missing tool '{raw_tool_name or 'unknown'}' for request: "
+        f"{(user_text or '').strip()[:180]}"
+    )
+    return _execute_tool(
+        tool="provision_server",
+        args={"server_id": server_id, "reason": reason},
+        user_id=user_id,
+        run_id=run_id,
+        input_provenance=provenance,
+        required_capabilities=[],
+        capability_token=capability_token,
+        timeout_s=10.0,
+    )
 
 
 def _score_plan(plan: list[str]) -> float:
@@ -599,13 +654,27 @@ def generate_reply(
                         # Validate tool exists in registry before execution.
                         spec = tool_registry.get(tool_name)
                     except Exception:
-                        result = ToolResult(
-                            tool_name=tool_name or raw_tool_name or "unknown",
-                            tool=tool_name or raw_tool_name or "unknown",
-                            ok=False,
-                            error="Unsupported tool",
+                        provision_result = _attempt_capability_gap_provision(
+                            raw_tool_name=raw_tool_name,
+                            user_text=user_text,
+                            user_id=user_id,
+                            run_id=run_id,
+                            provenance=provenance,
+                            capability_token=capability_token,
                         )
-                        failed_tools += 1
+                        if provision_result is not None:
+                            result = provision_result
+                            tool_name = "provision_server"
+                            if not result.ok:
+                                failed_tools += 1
+                        else:
+                            result = ToolResult(
+                                tool_name=tool_name or raw_tool_name or "unknown",
+                                tool=tool_name or raw_tool_name or "unknown",
+                                ok=False,
+                                error="Unsupported tool",
+                            )
+                            failed_tools += 1
                     else:
                         try:
                             parsed = json.loads(tool_args_json or "{}")
