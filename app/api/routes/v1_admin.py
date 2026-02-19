@@ -598,8 +598,11 @@ def admin_provisioning_dashboard(
         offset=0,
         db=db,
     )
+    mcp_payload = admin_mcp_health(request=request, db=db)
     stats = stats_payload.get("totals") or {}
     success_rate = float(stats_payload.get("success_rate") or 0.0) * 100.0
+    mcp_servers = list(mcp_payload.get("servers") or [])
+    healthy_mcp = sum(1 for item in mcp_servers if str(item.get("health_status") or "").strip().lower() in {"healthy", "ok"})
     rows_html = "".join(
         (
             "<tr>"
@@ -617,6 +620,12 @@ def admin_provisioning_dashboard(
 
     html = (
         "<html><body style='font-family: sans-serif; padding: 20px;'>"
+        "<h2>System Health</h2>"
+        "<ul>"
+        "<li>API status: healthy</li>"
+        f"<li>MCP servers total: {len(mcp_servers)}</li>"
+        f"<li>MCP servers healthy: {healthy_mcp}</li>"
+        "</ul>"
         "<h2>Provisioning Dashboard</h2>"
         f"<p>Window: last {int(days)} day(s)</p>"
         "<ul>"
@@ -632,6 +641,99 @@ def admin_provisioning_dashboard(
         "<thead><tr><th>Created</th><th>User</th><th>Server</th><th>State</th><th>Updated</th></tr></thead>"
         f"<tbody>{rows_html}</tbody>"
         "</table>"
+        "</body></html>"
+    )
+    return HTMLResponse(content=html)
+
+
+@router.get("/dashboard", response_class=HTMLResponse)
+def admin_dashboard(
+    request: Request,
+    days: int = Query(default=30, ge=1, le=365),
+    db: Session = Depends(get_db),
+):
+    _decode_admin_claims(request)
+
+    users_payload = admin_list_users(request=request, q=None, limit=25, offset=0, db=db)
+    moderation_payload = admin_moderation_queue(request=request, status="", limit=25, db=db)
+    mcp_payload = admin_mcp_health(request=request, db=db)
+    analytics_payload = admin_analytics_daily(request=request, days=days, db=db)
+    provisioning_payload = admin_provisioning_stats(request=request, days=days, db=db)
+
+    eval_avg_overall = 0.0
+    eval_avg_safety = 0.0
+    if _table_exists(db, "eval_results"):
+        row = db.execute(
+            text(
+                "select avg(overall_score) as avg_overall, avg(safety_score) as avg_safety "
+                "from eval_results"
+            )
+        ).mappings().first()
+        eval_avg_overall = round(float((row or {}).get("avg_overall") or 0.0), 3)
+        eval_avg_safety = round(float((row or {}).get("avg_safety") or 0.0), 3)
+
+    users = list(users_payload.get("users") or [])
+    moderation_items = list(moderation_payload.get("items") or [])
+    mcp_servers = list(mcp_payload.get("servers") or [])
+    analytics_rows = list(analytics_payload.get("rows") or [])
+
+    latest_analytics = analytics_rows[0] if analytics_rows else {}
+    dau = int(latest_analytics.get("dau") or 0)
+    mau = int(latest_analytics.get("mau") or 0)
+    revenue_cents = int(latest_analytics.get("revenue_cents") or 0)
+    message_volume = int(latest_analytics.get("message_volume") or 0)
+    tool_calls = int(latest_analytics.get("tool_calls") or 0)
+
+    healthy_mcp = sum(1 for item in mcp_servers if str(item.get("health_status") or "").strip().lower() in {"healthy", "ok"})
+    prov_totals = provisioning_payload.get("totals") or {}
+    prov_success_rate = float(provisioning_payload.get("success_rate") or 0.0) * 100.0
+
+    users_rows_html = "".join(
+        f"<tr><td>{str(item.get('id') or '')}</td><td>{str(item.get('email') or item.get('phone') or '')}</td><td>{str(item.get('account_status') or '')}</td></tr>"
+        for item in users
+    ) or "<tr><td colspan='3'>No users found</td></tr>"
+
+    moderation_rows_html = "".join(
+        f"<tr><td>{str(item.get('id') or '')}</td><td>{str(item.get('status') or '')}</td><td>{str(item.get('risk_score') or '')}</td></tr>"
+        for item in moderation_items
+    ) or "<tr><td colspan='3'>No moderation items</td></tr>"
+
+    html = (
+        "<html><body style='font-family: sans-serif; padding: 20px;'>"
+        "<h1>Admin Dashboard</h1>"
+        "<h2>System Health</h2>"
+        "<ul>"
+        "<li>API status: healthy</li>"
+        f"<li>MCP healthy: {healthy_mcp}/{len(mcp_servers)}</li>"
+        f"<li>Provisioning success rate: {prov_success_rate:.2f}%</li>"
+        "</ul>"
+        "<h2>User Management</h2>"
+        "<table border='1' cellspacing='0' cellpadding='6'>"
+        "<thead><tr><th>User ID</th><th>Contact</th><th>Status</th></tr></thead>"
+        f"<tbody>{users_rows_html}</tbody></table>"
+        "<h2>Moderation Queue</h2>"
+        "<table border='1' cellspacing='0' cellpadding='6'>"
+        "<thead><tr><th>Item ID</th><th>Status</th><th>Risk</th></tr></thead>"
+        f"<tbody>{moderation_rows_html}</tbody></table>"
+        "<h2>Financial Dashboard</h2>"
+        "<ul>"
+        f"<li>Revenue (latest day): ${revenue_cents / 100.0:.2f}</li>"
+        f"<li>Message volume (latest day): {message_volume}</li>"
+        f"<li>Tool calls (latest day): {tool_calls}</li>"
+        "</ul>"
+        "<h2>Eval & Quality</h2>"
+        "<ul>"
+        f"<li>Average overall score: {eval_avg_overall:.3f}</li>"
+        f"<li>Average safety score: {eval_avg_safety:.3f}</li>"
+        f"<li>Provisioning successful: {int(prov_totals.get('success') or 0)}</li>"
+        f"<li>Provisioning failed: {int(prov_totals.get('failed') or 0)}</li>"
+        "</ul>"
+        "<h2>Analytics Panel</h2>"
+        "<ul>"
+        f"<li>DAU: {dau}</li>"
+        f"<li>MAU: {mau}</li>"
+        f"<li>Feature adoption rows: {len(analytics_rows)}</li>"
+        "</ul>"
         "</body></html>"
     )
     return HTMLResponse(content=html)

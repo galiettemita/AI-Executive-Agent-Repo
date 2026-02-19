@@ -76,6 +76,39 @@ def test_live_quality_eval_inserts_result(monkeypatch):
         db.close()
 
 
+def test_live_quality_eval_scores_mcp_tool_usage(monkeypatch):
+    monkeypatch.setattr(quality_eval, "_sampled_for_live_eval", lambda **kwargs: True)
+    monkeypatch.setattr(quality_eval, "_maybe_emit_quality_alerts", lambda db: None)
+
+    row = quality_eval.evaluate_response_quality(
+        user_id="quality-mcp-user",
+        conversation_id="conv-mcp",
+        run_id="run-quality-mcp",
+        message_id="msg-mcp-1",
+        user_text="Summarize my connected MCP data sources.",
+        assistant_text="I pulled your connected tools and summarized MCP activity.",
+        used_tools=True,
+        metadata={"content_provenance": "mcp_result", "used_mcp_tools": True},
+    )
+    assert row is not None
+
+    db = SessionLocal()
+    try:
+        eval_row = db.execute(
+            text(
+                "select tool_usage_score, metadata_json from eval_results "
+                "where run_id = :run_id order by created_at desc limit 1"
+            ),
+            {"run_id": "run-quality-mcp"},
+        ).mappings().first()
+        assert eval_row is not None
+        assert float(eval_row.get("tool_usage_score") or 0.0) >= 4.0
+        metadata_json = str(eval_row.get("metadata_json") or "")
+        assert "mcp_result" in metadata_json
+    finally:
+        db.close()
+
+
 def test_feedback_endpoint_persists_and_enqueues_moderation(monkeypatch):
     monkeypatch.setattr(user_feedback, "send_alert", lambda *args, **kwargs: None)
     client = TestClient(app)
@@ -203,5 +236,46 @@ def test_scheduled_notifications_pauses_proactive_on_absence(monkeypatch):
             {"user_id": "notify-absent-user"},
         ).scalar()
         assert str(status) == "paused"
+    finally:
+        db.close()
+
+
+def test_scheduled_notifications_use_active_channel_and_mcp_payload(monkeypatch):
+    fake = _FakeRedis()
+    fake.set("bp:v1:active-channel:notify-mcp-user", "whatsapp")
+    monkeypatch.setattr(scheduled_notifications, "get_redis", lambda: fake)
+    monkeypatch.setattr(scheduled_notifications, "_quiet_hours_active", lambda now_local: False)
+    monkeypatch.setattr(scheduled_notifications, "_inactivity_days", lambda db, user_id, now_utc: 0.0)
+
+    db = SessionLocal()
+    try:
+        scheduled_notifications.schedule_notification(
+            db,
+            user_id="notify-mcp-user",
+            notification_type="morning_briefing",
+            payload={
+                "calendar_events": [
+                    {"title": "MCP Calendar Sync", "starts_at": "2026-02-19T09:00:00Z", "source": "mcp_result"}
+                ],
+                "tasks": [{"title": "Review MCP rollout"}],
+            },
+            scheduled_for=datetime.now(timezone.utc),
+            channel="web",
+            timezone_name="UTC",
+        )
+        result = scheduled_notifications.run_due_scheduled_notifications(db)
+        assert int(result.get("sent") or 0) == 1
+
+        row = db.execute(
+            text(
+                "select channel, body from outbound_messages "
+                "where user_id = :user_id order by created_at desc limit 1"
+            ),
+            {"user_id": "notify-mcp-user"},
+        ).mappings().first()
+        assert row is not None
+        assert str(row.get("channel") or "") == "whatsapp"
+        body = str(row.get("body") or "")
+        assert "calendar item" in body.lower()
     finally:
         db.close()

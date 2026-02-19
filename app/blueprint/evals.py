@@ -80,6 +80,24 @@ def default_golden_scenarios() -> list[GoldenScenario]:
             ),
         ]
     )
+    mcp_templates = [
+        ("Sync my Notion tasks with Todoist and mark overdue items.", 3, "transactional", "tasks"),
+        ("Find three flights to SFO and compare refund policies.", 3, "transactional", "travel"),
+        ("Pull last 7 days of bank transactions and summarize anomalies.", 3, "transactional", "finance"),
+        ("Get GitHub PR blockers and draft a Slack status update.", 3, "transactional", "workflow"),
+        ("Search Brave for latest NVIDIA earnings call highlights.", 2, "informational", "research"),
+    ]
+    for idx in range(1, 21):
+        prompt, tier, action_type, anchor = mcp_templates[(idx - 1) % len(mcp_templates)]
+        scenarios.append(
+            GoldenScenario(
+                scenario_id=f"MCP-GT-{idx:03d}",
+                prompt=f"{prompt} [mcp:{idx}]",
+                expected_tier=tier,
+                expected_action_type=action_type,
+                personalization_anchor=anchor,
+            )
+        )
     return scenarios
 
 

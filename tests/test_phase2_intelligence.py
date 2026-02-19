@@ -6,6 +6,7 @@ from sqlalchemy import text
 
 from app.blueprint.ace import build_dual_memory_signals, classify_action
 from app.blueprint.evals import run_agentic_eval
+from app.blueprint.evals import default_golden_scenarios
 from app.blueprint.preferences_learning import record_feedback_signal
 from app.blueprint.team import build_team_snapshot
 from app.blueprint.temporal_orchestration import orchestrate_tier3_plan
@@ -254,3 +255,9 @@ def test_agentic_eval_suite_shape_and_count() -> None:
     assert 0.0 <= float(result["action_accuracy"]) <= 1.0
     assert 0.0 <= float(result["personalization_avg"]) <= 1.0
     assert 0.0 <= float(result["overall_score"]) <= 1.0
+
+
+def test_agentic_eval_includes_mcp_specific_scenarios() -> None:
+    scenarios = default_golden_scenarios()
+    mcp_scenarios = [s for s in scenarios if str(s.scenario_id).startswith("MCP-GT-")]
+    assert len(mcp_scenarios) >= 20

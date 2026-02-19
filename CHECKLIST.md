@@ -206,7 +206,7 @@ Feature Flag Rollout Reminders (Appendix A)
 - [x] Admin auth: separate admin role in identity provider; enforce via JWT claim (role: admin) (Ops Blueprint Invariant 12) — `/api/v1/admin/*` now requires Bearer JWT with `role=admin` (or `roles` containing `admin`)
 - [x] Admin audit trail: log admin actions (suspend user, resolve moderation, rollback prompt) with admin identity (Ops Blueprint Invariant 12) — added admin action logging into `audit_logs` via `_log_admin_action` in `v1_admin` routes
 - [x] Admin API v1: `/api/v1/admin/users` (list/search), `/api/v1/admin/users/:id` (detail), `/api/v1/admin/mcp/health`, `/api/v1/admin/moderation/queue` (Ops Blueprint Component 3) — implemented in `app/api/routes/v1_admin.py` and mounted in `app/main.py`
-- [ ] Admin UI v1 (minimal dashboard): System Health + User Management + Moderation Queue (Ops Blueprint Component 3)
+- [x] Admin UI v1 (minimal dashboard): System Health + User Management + Moderation Queue (Ops Blueprint Component 3)
 
 ## M5–6 S11–14: Tavily + Tier 3 Planner + Saga Compensation (Section 25, Section 26, Section 31, Section 38)
 - [x] Implement Tavily web search tool (Section 2, Section 38)
@@ -234,7 +234,7 @@ Feature Flag Rollout Reminders (Appendix A)
 - [x] Live quality scoring: evaluator LLM scores ~10% of production responses on coherence/helpfulness/safety/tool_usage; runs async (never adds latency) (Ops Blueprint Component 4; Invariant 13) — async evaluator pipeline (`enqueue_live_quality_eval`) wired from `/api/v1/message` and sampled at 10%
 - [x] Quality alerts: score drop below threshold -> PagerDuty; safety_score drop -> immediate flag; negative feedback spike -> product alert (Ops Blueprint Component 4) — implemented alert hooks in `quality_eval.py` (PagerDuty) and `user_feedback.py` (Slack spike alert)
 - [x] User feedback UX: thumbs up/down on responses; persist to `user_feedback`; negative feedback creates moderation_queue entry (Ops Blueprint Component 4) — added `/api/v1/feedback/response` endpoint + persistence + moderation enqueue
-- [ ] Admin UI v2: add Financial panel (Stripe MRR/churn/cost per user), Moderation workflow, Eval/Quality panel (Ops Blueprint Component 3)
+- [x] Admin UI v2: add Financial panel (Stripe MRR/churn/cost per user), Moderation workflow, Eval/Quality panel (Ops Blueprint Component 3)
 - [x] Notification scheduler: enforce quiet hours (default 10pm–7am user TZ) + rate limits (5/day, 2/hour) + timezone-aware scheduling (Ops Blueprint Component 11; Invariant 15) — implemented in `scheduled_notifications.py` + scheduler job `run_scheduled_notifications`
 - [x] Notification delivery: route to `active_channel` and format per channel constraints (Ops Blueprint Component 11) — scheduler resolves active channel (`bp:v1:active-channel:{user_id}`), formats per channel, and enqueues outbound delivery
 - [x] Notifications: build infra only in Month 6 (no content generation yet; content comes after knowledge files exist) (Ops Blueprint Component 11) — infra endpoints added (`/api/v1/notifications/schedule`, `/api/v1/notifications/run`), no content-generation layer added
@@ -272,7 +272,7 @@ Feature Flag Rollout Reminders (Appendix A)
 - [x] Analytics schema: create `analytics_events` + `analytics_daily` tables (Ops Blueprint Component 12; Ops Blueprint Section 16)
 - [x] Analytics emission: emit events for key actions (message_received/sent, tool_invoked, mcp_server_connected, onboarding_step_completed, feedback_given, subscription status changes) to SQS/EventBridge (Ops Blueprint Component 12)
 - [x] Analytics aggregation: daily job computes DAU/MAU, retention, message volume, tool usage, quality scores, revenue; writes to `analytics_daily` (Ops Blueprint Component 12)
-- [ ] Admin analytics panel: DAU/MAU, retention curves, feature adoption, revenue metrics (Ops Blueprint Component 12)
+- [x] Admin analytics panel: DAU/MAU, retention curves, feature adoption, revenue metrics (Ops Blueprint Component 12)
 - [x] Notification content generation: morning briefing, deadline alerts, task reminders, weekly summary (uses HEARTBEAT/ROUTINES/knowledge files; Brain generates content, Gateway delivers) (Ops Blueprint Component 11)
 - [x] Notifications respect agency: user can disable proactive messages immediately (persist preferences and check before delivery) (Ops Blueprint Invariant 15)
 - [x] Absence detection: 3+ days inactive -> reduce to critical-only; 7+ days -> pause proactive (Ops Blueprint Component 11)
@@ -356,12 +356,12 @@ Feature Flag Rollout Reminders (Appendix A)
 - [x] Add golden scenarios GT-101..GT-105 for provisioning flows (Ops Blueprint Component 4; Auto-Provisioning Section 17)
 
 ## M8–9 (Operational Hardening): MCP + Operational Monitoring (Operational Blueprint Months 8–9)
-- [ ] Billing: verify MCP tool calls increment per-user monthly MCP cost and enforce MCP budgets/plan caps (Ops Blueprint Month 8–9)
-- [ ] Eval: verify eval scoring works for responses that include MCP tool usage (tool_usage dimension) (Ops Blueprint Month 8–9)
-- [ ] Abuse prevention: verify classifiers handle MCP-sourced content correctly (`content_provenance=mcp_result`) (Ops Blueprint Month 8–9)
-- [ ] Admin: verify dashboard surfaces MCP server health alongside system health (Ops Blueprint Month 8–9)
-- [ ] Notifications: verify scheduler/delivery can route across channels and use MCP data sources where connected (Ops Blueprint Month 8–9)
-- [ ] Golden tests: run suite with MCP tools connected; add 20+ MCP-specific scenarios (Ops Blueprint Month 8–9)
+- [x] Billing: verify MCP tool calls increment per-user monthly MCP cost and enforce MCP budgets/plan caps (Ops Blueprint Month 8–9)
+- [x] Eval: verify eval scoring works for responses that include MCP tool usage (tool_usage dimension) (Ops Blueprint Month 8–9)
+- [x] Abuse prevention: verify classifiers handle MCP-sourced content correctly (`content_provenance=mcp_result`) (Ops Blueprint Month 8–9)
+- [x] Admin: verify dashboard surfaces MCP server health alongside system health (Ops Blueprint Month 8–9)
+- [x] Notifications: verify scheduler/delivery can route across channels and use MCP data sources where connected (Ops Blueprint Month 8–9)
+- [x] Golden tests: run suite with MCP tools connected; add 20+ MCP-specific scenarios (Ops Blueprint Month 8–9)
 
 ## M9 S17–18: Red-Team Eval Suite (Section 34, Section 38)
 - [x] Implement prompt injection red-team scenarios for email/calendar/web/MCP

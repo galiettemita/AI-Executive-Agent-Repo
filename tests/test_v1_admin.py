@@ -123,6 +123,19 @@ def test_admin_provisioning_history_and_stats():
     dashboard = client.get("/api/v1/admin/dashboard/provisioning", headers=headers)
     assert dashboard.status_code == 200
     html = dashboard.text
+    assert "System Health" in html
+    assert "MCP servers total" in html
     assert "Provisioning Dashboard" in html
     assert "Success rate:" in html
     assert "duffel-mcp" in html or "zoom-mcp" in html
+
+    full_dashboard = client.get("/api/v1/admin/dashboard", headers=headers)
+    assert full_dashboard.status_code == 200
+    full_html = full_dashboard.text
+    assert "Admin Dashboard" in full_html
+    assert "System Health" in full_html
+    assert "User Management" in full_html
+    assert "Moderation Queue" in full_html
+    assert "Financial Dashboard" in full_html
+    assert "Eval & Quality" in full_html
+    assert "Analytics Panel" in full_html
