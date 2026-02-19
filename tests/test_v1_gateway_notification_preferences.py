@@ -24,3 +24,9 @@ def test_provisioning_decline_command_detection():
     assert v1_gateway._is_provisioning_decline_command("not now")
     assert v1_gateway._is_provisioning_decline_command("maybe later, skip for now")
     assert not v1_gateway._is_provisioning_decline_command("yes connect it")
+
+
+def test_self_knowledge_query_detection():
+    assert v1_gateway._is_self_knowledge_query("What do you know about me?")
+    assert v1_gateway._is_self_knowledge_query("show my knowledge profile")
+    assert not v1_gateway._is_self_knowledge_query("plan my week")

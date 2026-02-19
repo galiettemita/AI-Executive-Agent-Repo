@@ -18,7 +18,7 @@ from app.blueprint.brain.responder import generate_reply
 from app.blueprint.brain.tier_router import route_tier
 from app.blueprint.db import is_uuid, insert_message, record_side_effect
 from app.blueprint.contracts import Channel, ContentProvenance, InboundMessage, InputModality, MessageDirection, OutboundMessage, ProvisioningState
-from app.blueprint.knowledge_files import get_latest_knowledge_file
+from app.blueprint.knowledge_files import get_latest_knowledge_file, list_knowledge_files
 from app.blueprint.memory_engine import record_memory_dual_path
 from app.blueprint.multimodal import preprocess_inbound_message, transcribe_audio_url
 from app.blueprint.preferences_learning import record_feedback_signal
@@ -269,6 +269,67 @@ def _notification_preference_command(text_value: str) -> tuple[dict[str, Any], s
             "Done. Proactive messages are enabled again.",
         )
     return None
+
+
+def _is_self_knowledge_query(text_value: str) -> bool:
+    normalized = " ".join(str(text_value or "").strip().lower().split())
+    if not normalized:
+        return False
+    patterns = (
+        "what do you know about me",
+        "what do you know about me?",
+        "show me what you know about me",
+        "show my knowledge profile",
+        "show my knowledge files",
+    )
+    return any(pattern in normalized for pattern in patterns)
+
+
+def _build_self_knowledge_reply(user_id: str | None) -> str:
+    if not user_id:
+        return "I can show your knowledge profile once you sign in."
+    db = SessionLocal()
+    try:
+        files = list_knowledge_files(db, user_id=user_id)
+    except Exception:
+        files = []
+    finally:
+        try:
+            db.close()
+        except Exception:
+            pass
+
+    if not files:
+        return (
+            "I do not have a stored profile yet. "
+            "Share your preferences and goals, and I will build it."
+        )
+
+    preferred_order = ("IDENTITY.md", "PREFERENCES.md", "HEARTBEAT.md", "AGENTS.md", "TOOLS.md")
+    ordered: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for name in preferred_order:
+        for item in files:
+            path = str(item.get("file_path") or "").strip()
+            if path.lower() == name.lower() and path not in seen:
+                ordered.append(item)
+                seen.add(path)
+    for item in files:
+        path = str(item.get("file_path") or "").strip()
+        if path and path not in seen:
+            ordered.append(item)
+            seen.add(path)
+
+    lines = ["Here is what I currently know about you:"]
+    for item in ordered[:8]:
+        path = str(item.get("file_path") or "").strip()
+        completeness = item.get("completeness")
+        if isinstance(completeness, (int, float)):
+            lines.append(f"- {path} (completeness: {int(round(float(completeness) * 100))}%)")
+        else:
+            lines.append(f"- {path}")
+    lines.append("You can view or edit any file via `/api/v1/knowledge` and related endpoints.")
+    return "\n".join(lines)
 
 
 def _is_provisioning_decline_command(text_value: str) -> bool:
@@ -913,6 +974,86 @@ def _process_message_run(run_id: str, inbound: InboundMessage) -> None:
                 "run_id": run_id,
                 "reply": formatted_pref_reply,
                 "metadata": {"intent": "notification_preferences", "preferences_patch": patch},
+            }
+            set_run_result(run_id, payload)
+            append_progress(run_id, step="done", status="completed", partial_result=payload, metadata=payload.get("metadata"))
+            return
+
+        if _is_self_knowledge_query(processed.normalized_text):
+            knowledge_reply = _build_self_knowledge_reply(inbound.user_id)
+            target_channel = _get_active_channel(participant_key=participant_key, fallback=inbound.channel)
+            target_identifier = _resolve_channel_identifier_for_user(
+                user_id=inbound.user_id,
+                channel=target_channel,
+                fallback=inbound.channel_identifier,
+            )
+            formatted_reply = _format_response_for_channel(channel=target_channel, text_value=knowledge_reply)
+
+            if target_channel == Channel.WHATSAPP and target_identifier:
+                send_whatsapp_adapted(to_phone_e164=target_identifier, text=formatted_reply)
+            elif target_channel == Channel.SLACK and target_identifier and inbound.user_id:
+                try:
+                    db = SessionLocal()
+                    try:
+                        slack_send_message(
+                            db=db,
+                            user_id=inbound.user_id,
+                            channel_id=target_identifier,
+                            text_body=formatted_reply,
+                        )
+                    finally:
+                        db.close()
+                except Exception:
+                    logger.warning("Slack knowledge summary send failed run_id=%s", run_id, exc_info=True)
+
+            _persist_v1_message(
+                user_id=inbound.user_id,
+                conversation_id=inbound.conversation_id,
+                run_id=run_id,
+                direction=MessageDirection.INBOUND,
+                channel=inbound.channel,
+                text=processed.normalized_text,
+                input_modality=inbound.input_modality,
+                media_url=inbound.media_url,
+                transcription_confidence=processed.transcription_confidence,
+                extracted_entities=processed.extracted_entities,
+                content_provenance=processed.content_provenance if isinstance(processed.content_provenance, ContentProvenance) else ContentProvenance.USER_DIRECT,
+                emotion_detected=processed.emotion_detected.value,
+                channel_msg_id=inbound.channel_msg_id,
+                intent="knowledge_self_query",
+                tier=0,
+            )
+            _persist_v1_message(
+                user_id=inbound.user_id,
+                conversation_id=inbound.conversation_id,
+                run_id=run_id,
+                direction=MessageDirection.OUTBOUND,
+                channel=target_channel,
+                text=formatted_reply,
+                input_modality=InputModality.TEXT,
+                content_provenance=ContentProvenance.USER_DIRECT,
+                emotion_detected=str(processed.emotion_detected.value or "neutral"),
+                channel_msg_id=inbound.channel_msg_id,
+                intent="knowledge_self_query",
+                tier=0,
+                latency_ms=int((time.perf_counter() - started) * 1000),
+            )
+            emit_event_async(
+                event_name="message_sent",
+                user_id=inbound.user_id,
+                source="gateway_v1",
+                payload={
+                    "run_id": run_id,
+                    "channel": target_channel.value,
+                    "conversation_id": inbound.conversation_id,
+                    "intent": "knowledge_self_query",
+                },
+            )
+            payload = {
+                "ok": True,
+                "run_id": run_id,
+                "reply": formatted_reply,
+                "metadata": {"intent": "knowledge_self_query"},
             }
             set_run_result(run_id, payload)
             append_progress(run_id, step="done", status="completed", partial_result=payload, metadata=payload.get("metadata"))

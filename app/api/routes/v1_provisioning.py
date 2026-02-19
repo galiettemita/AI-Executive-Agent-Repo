@@ -1,19 +1,45 @@
 from __future__ import annotations
 
+from pydantic import BaseModel
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
-from app.blueprint.contracts import ProvisioningState, ServerProvisionedEvent
+from app.blueprint.contracts import AuthType, ProvisionTrigger, ProvisioningState, ServerProvisionedEvent
 from app.services.provisioning_activator import activate_server
 from app.services.analytics import emit_event_async
 from app.services.provisioning_pipeline import ProvisioningPipeline, get_request, validate_catalog_security_for_server
 from app.services.provisioning_retry import retry_original_task_after_provisioning
 from app.services.provisioning_sessions import delete_provisioning_session, get_provisioning_session
 from app.services.url_shortener import resolve_short_url
+from app.services.provisioning_catalog import available_servers_for_user
+from app.services.provisioning_handlers import ProvisionAuthContext, get_auth_handler
 
 router = APIRouter(prefix="/api/v1/provision", tags=["provisioning-v1"])
+
+
+class ProvisionStartRequest(BaseModel):
+    user_id: str
+    server_id: str
+    reason: str = "Server connection requested"
+    trigger: ProvisionTrigger = ProvisionTrigger.USER_INITIATED
+    original_task_id: str | None = None
+
+
+def _map_auth_type(auth_value: str | None) -> AuthType:
+    value = str(auth_value or "oauth2").strip().lower()
+    if value in {"api_key", "apikey"}:
+        return AuthType.API_KEY
+    if value in {"pre_provisioned", "none", "internal"}:
+        return AuthType.PRE_PROVISIONED
+    if value in {"plaid_link"}:
+        return AuthType.PLAID_LINK
+    if value in {"tesla_sso"}:
+        return AuthType.TESLA_SSO
+    if value in {"oauth2_consolidated"}:
+        return AuthType.OAUTH2_CONSOLIDATED
+    return AuthType.OAUTH2
 
 
 @router.get("/short/{token}")
@@ -22,6 +48,84 @@ def redirect_short_url(token: str):
     if not target:
         return RedirectResponse(url="/api/v1/provision/expired", status_code=302)
     return RedirectResponse(url=target, status_code=302)
+
+
+@router.post("/start")
+def provision_start(payload: ProvisionStartRequest, db: Session = Depends(get_db)):
+    server_id = str(payload.server_id or "").strip().lower()
+    if not server_id:
+        return {"ok": False, "error": "server_id is required"}
+
+    pipeline = ProvisioningPipeline(db)
+    _ = pipeline.expire_timeouts()
+
+    available = available_servers_for_user(db, user_id=payload.user_id, connected_server_ids=set())
+    matched = next((item for item in available if str(item.get("server_id") or "").strip().lower() == server_id), None)
+    if not matched:
+        return {"ok": False, "error": f"{server_id} is not available on this account or plan"}
+
+    reason = str(payload.reason or "").strip() or "Server connection requested"
+    auth_type = _map_auth_type(str(matched.get("auth_type") or "oauth2"))
+    request_row = pipeline.begin(
+        user_id=payload.user_id,
+        server_id=server_id,
+        reason=reason,
+        trigger=payload.trigger,
+        auth_type=auth_type,
+        original_task_id=payload.original_task_id,
+    )
+    auth_handler = get_auth_handler(auth_type.value)
+    auth_payload = auth_handler.begin(
+        ProvisionAuthContext(
+            request_id=request_row.id,
+            user_id=payload.user_id,
+            server_id=server_id,
+            reason=reason,
+            original_task_id=payload.original_task_id,
+        )
+    )
+    status_value = str(auth_payload.get("status") or "awaiting_auth").strip().lower()
+    if status_value == "auth_received":
+        request_row = pipeline.transition(
+            request_id=request_row.id,
+            new_state=ProvisioningState.AUTH_RECEIVED,
+            note="auth_not_required",
+        )
+    elif request_row.state != ProvisioningState.AWAITING_AUTH:
+        request_row = pipeline.transition(
+            request_id=request_row.id,
+            new_state=ProvisioningState.AWAITING_AUTH,
+            note="auth_pending",
+        )
+
+    emit_event_async(
+        event_name="provisioning_requested",
+        user_id=payload.user_id,
+        source="provision_start",
+        payload={
+            "request_id": request_row.id,
+            "server_id": server_id,
+            "trigger": request_row.trigger.value,
+            "state": request_row.state.value,
+        },
+    )
+    if request_row.state == ProvisioningState.AWAITING_AUTH:
+        emit_event_async(
+            event_name="awaiting_auth",
+            user_id=payload.user_id,
+            source="provision_start",
+            payload={"request_id": request_row.id, "server_id": server_id, "trigger": request_row.trigger.value},
+        )
+
+    return {
+        "ok": True,
+        "request_id": request_row.id,
+        "server_id": server_id,
+        "trigger": request_row.trigger.value,
+        "state": request_row.state.value,
+        "auth_type": auth_type.value,
+        **auth_payload,
+    }
 
 
 @router.get("/callback")

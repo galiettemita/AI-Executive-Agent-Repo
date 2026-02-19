@@ -122,6 +122,7 @@ def _seed_server_catalog_if_empty(db: Session) -> None:
             "capabilities": json.dumps(list(entry.get("capabilities") or []), ensure_ascii=False),
             "keywords": json.dumps(list(entry.get("keywords") or []), ensure_ascii=False),
             "hosting_model": str(entry.get("hosting_model") or ""),
+            "oauth_config": json.dumps(dict(entry.get("oauth_config") or {}), ensure_ascii=False),
             "container_image": str(entry.get("container_image") or ""),
             "source": str(entry.get("source") or "local"),
             "signature": signature,
@@ -135,10 +136,10 @@ def _seed_server_catalog_if_empty(db: Session) -> None:
                     """
                     insert or replace into server_catalog (
                       server_id, display_name, description, auth_type, min_plan, setup_seconds,
-                      capabilities, keywords, hosting_model, container_image, source, signature, status
+                      capabilities, keywords, hosting_model, oauth_config, container_image, source, signature, status
                     ) values (
                       :server_id, :display_name, :description, :auth_type, :min_plan, :setup_seconds,
-                      :capabilities, :keywords, :hosting_model, :container_image, :source, :signature, :status
+                      :capabilities, :keywords, :hosting_model, :oauth_config, :container_image, :source, :signature, :status
                     )
                     """
                 ),
@@ -150,10 +151,10 @@ def _seed_server_catalog_if_empty(db: Session) -> None:
                     """
                     insert into server_catalog (
                       server_id, display_name, description, auth_type, min_plan, setup_seconds,
-                      capabilities, keywords, hosting_model, container_image, source, signature, status
+                      capabilities, keywords, hosting_model, oauth_config, container_image, source, signature, status
                     ) values (
                       :server_id, :display_name, :description, :auth_type, :min_plan, :setup_seconds,
-                      cast(:capabilities as jsonb), cast(:keywords as jsonb), :hosting_model, :container_image,
+                      cast(:capabilities as jsonb), cast(:keywords as jsonb), :hosting_model, cast(:oauth_config as jsonb), :container_image,
                       :source, :signature, :status
                     )
                     on conflict (server_id) do update
@@ -165,6 +166,7 @@ def _seed_server_catalog_if_empty(db: Session) -> None:
                         capabilities = excluded.capabilities,
                         keywords = excluded.keywords,
                         hosting_model = excluded.hosting_model,
+                        oauth_config = excluded.oauth_config,
                         container_image = excluded.container_image,
                         source = excluded.source,
                         signature = excluded.signature,

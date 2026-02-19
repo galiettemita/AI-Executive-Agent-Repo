@@ -54,6 +54,7 @@ from app.services.plaid_connector import (
     list_accounts as plaid_list_accounts,
     list_transactions as plaid_list_transactions,
 )
+from app.services.docs_search import search_connected_docs
 from app.services.analytics import emit_event_async
 from app.services.billing_middleware import enforce_billing_for_tool_call
 from app.services.provisioning_catalog import available_servers_for_user
@@ -621,6 +622,70 @@ async def execute(call: ToolCall) -> ToolResult:
                 except Exception:
                     pass
 
+        return result
+
+    if tool == "docs.search":
+        if not call.user_id:
+            raise HTTPException(status_code=400, detail="docs.search requires user_id")
+        query = str(args.get("query") or "").strip()
+        if not query:
+            raise HTTPException(status_code=400, detail="docs.search requires query")
+        max_results = int(args.get("max_results") or 8)
+
+        started = time.perf_counter()
+        output_payload_docs: dict[str, object] | None = None
+        error_payload_docs: dict[str, str] | None = None
+        status_docs = "success"
+        db = SessionLocal()
+        try:
+            output_payload_docs = search_connected_docs(
+                db,
+                user_id=call.user_id,
+                query=query,
+                max_results=max_results,
+            )
+            result = ToolResult(tool_name=tool, tool=tool, ok=True, result=output_payload_docs)
+        except Exception as exc:
+            result = ToolResult(tool_name=tool, tool=tool, ok=False, error=str(exc))
+            status_docs = "failed"
+            output_payload_docs = None
+            error_payload_docs = {"type": exc.__class__.__name__, "message": str(exc)}
+        finally:
+            try:
+                db.close()
+            except Exception:
+                pass
+
+        latency_ms = int((time.perf_counter() - started) * 1000)
+        if call.user_id and call.run_id:
+            db = SessionLocal()
+            try:
+                insert_tool_execution(
+                    db,
+                    run_id=call.run_id,
+                    user_id=call.user_id,
+                    tool_name=tool,
+                    input_payload={
+                        "args": args,
+                        "is_mcp": spec.is_mcp,
+                        "mcp_server_id": spec.mcp_server_id,
+                        "input_provenance": call.input_provenance.value,
+                    },
+                    output_payload=output_payload_docs,
+                    status=status_docs,
+                    error_payload=error_payload_docs,
+                    idempotency_key=idempotency_key,
+                    risk_level="none",
+                    cost_cents=0,
+                    latency_ms=latency_ms,
+                )
+            except Exception:
+                pass
+            finally:
+                try:
+                    db.close()
+                except Exception:
+                    pass
         return result
 
     if tool in (

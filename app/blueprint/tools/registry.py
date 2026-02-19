@@ -200,6 +200,28 @@ def _register_native_tools(registry: ToolRegistry) -> None:
         tags=["web", "research"],
         llm_name="tavily_search",
     )
+    registry.register(
+        ToolSpec(
+            name="docs.search",
+            description="Search connected Notion and Google Docs/Drive content by keyword.",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string"},
+                    "max_results": {"type": "integer", "minimum": 1, "maximum": 50},
+                },
+                "required": ["query"],
+            },
+            output_schema={"type": "object"},
+            risk_level=RiskLevel.NONE,
+            tags=["docs", "knowledge", "productivity"],
+            capability_scope=["docs:search"],
+            is_mcp=False,
+        ),
+        min_tier=2,
+        tags=["docs", "knowledge", "productivity"],
+        llm_name="docs_search",
+    )
 
     registry.register(
         ToolSpec(

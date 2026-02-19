@@ -22,7 +22,8 @@ class CatalogEntry:
     min_plan: str = "free"
     capabilities: tuple[str, ...] = ()
     keywords: tuple[str, ...] = ()
-    hosting_model: str = ""
+    hosting_model: str = "sidecar"
+    oauth_config: dict[str, Any] | None = None
     container_image: str = ""
     source: str = "local"
     signature: str | None = None
@@ -114,42 +115,306 @@ _WAVE1_DEFAULT_CATALOG: tuple[CatalogEntry, ...] = (
     ),
 )
 
-_EXTRA_CATALOG: tuple[CatalogEntry, ...] = (
+_WAVE2_DEFAULT_CATALOG: tuple[CatalogEntry, ...] = (
+    CatalogEntry(
+        server_id="slack-mcp",
+        description="Slack channels, threads, and messaging workflows.",
+        auth_type="oauth",
+        setup_seconds=35,
+        min_plan="personal",
+        capabilities=("slack", "chat", "channels", "threads", "notifications"),
+        keywords=("wave2", "communication", "collaboration"),
+    ),
+    CatalogEntry(
+        server_id="outlook-mcp",
+        description="Outlook email and calendar management.",
+        auth_type="oauth",
+        setup_seconds=35,
+        min_plan="personal",
+        capabilities=("outlook", "email", "calendar", "microsoft"),
+        keywords=("wave2", "communication", "microsoft"),
+    ),
+    CatalogEntry(
+        server_id="teams-mcp",
+        description="Microsoft Teams meetings and channel collaboration.",
+        auth_type="oauth",
+        setup_seconds=35,
+        min_plan="personal",
+        capabilities=("teams", "meetings", "channels", "chat"),
+        keywords=("wave2", "collaboration", "microsoft"),
+    ),
+    CatalogEntry(
+        server_id="linear-mcp",
+        description="Linear issue tracking and sprint updates.",
+        auth_type="oauth",
+        setup_seconds=30,
+        min_plan="personal",
+        capabilities=("linear", "issues", "sprint", "project tracking"),
+        keywords=("wave2", "engineering", "planning"),
+    ),
+    CatalogEntry(
+        server_id="asana-mcp",
+        description="Asana project, task, and milestone operations.",
+        auth_type="oauth",
+        setup_seconds=30,
+        min_plan="personal",
+        capabilities=("asana", "tasks", "projects", "deadlines"),
+        keywords=("wave2", "project management"),
+    ),
+    CatalogEntry(
+        server_id="discord-mcp",
+        description="Discord server and channel messaging tools.",
+        auth_type="oauth",
+        setup_seconds=30,
+        min_plan="personal",
+        capabilities=("discord", "community", "channels", "messages"),
+        keywords=("wave2", "communication"),
+    ),
+    CatalogEntry(
+        server_id="whatsapp-business-mcp",
+        description="WhatsApp Business message and template operations.",
+        auth_type="api_key",
+        setup_seconds=45,
+        min_plan="personal",
+        capabilities=("whatsapp", "messaging", "templates", "business"),
+        keywords=("wave2", "communication", "whatsapp"),
+    ),
+)
+
+_WAVE3_DEFAULT_CATALOG: tuple[CatalogEntry, ...] = (
+    CatalogEntry(
+        server_id="stripe-mcp",
+        description="Stripe billing and payments workflows.",
+        auth_type="api_key",
+        setup_seconds=45,
+        min_plan="personal",
+        capabilities=("stripe", "payments", "subscriptions", "invoices"),
+        keywords=("wave3", "finance", "billing"),
+    ),
+    CatalogEntry(
+        server_id="quickbooks-mcp",
+        description="QuickBooks accounting and ledger operations.",
+        auth_type="oauth",
+        setup_seconds=45,
+        min_plan="personal",
+        capabilities=("quickbooks", "accounting", "ledger", "bookkeeping"),
+        keywords=("wave3", "finance", "accounting"),
+    ),
+    CatalogEntry(
+        server_id="hubspot-mcp",
+        description="HubSpot CRM contacts, deals, and pipeline updates.",
+        auth_type="oauth",
+        setup_seconds=35,
+        min_plan="personal",
+        capabilities=("hubspot", "crm", "deals", "contacts"),
+        keywords=("wave3", "sales", "crm"),
+    ),
+    CatalogEntry(
+        server_id="salesforce-mcp",
+        description="Salesforce account and opportunity management.",
+        auth_type="oauth",
+        setup_seconds=35,
+        min_plan="personal",
+        capabilities=("salesforce", "crm", "opportunities", "pipeline"),
+        keywords=("wave3", "sales", "crm"),
+    ),
+    CatalogEntry(
+        server_id="google-sheets-mcp",
+        description="Google Sheets read/write and formula workflows.",
+        auth_type="oauth",
+        setup_seconds=30,
+        min_plan="personal",
+        capabilities=("sheets", "spreadsheets", "tables", "reporting"),
+        keywords=("wave3", "analysis", "google"),
+    ),
+    CatalogEntry(
+        server_id="airtable-mcp",
+        description="Airtable base search and record updates.",
+        auth_type="api_key",
+        setup_seconds=30,
+        min_plan="personal",
+        capabilities=("airtable", "database", "records", "workspace"),
+        keywords=("wave3", "analysis", "data"),
+    ),
+    CatalogEntry(
+        server_id="jira-mcp",
+        description="Jira issue lifecycle and sprint board tooling.",
+        auth_type="oauth",
+        setup_seconds=35,
+        min_plan="personal",
+        capabilities=("jira", "tickets", "sprint", "issues"),
+        keywords=("wave3", "engineering", "project tracking"),
+    ),
+    CatalogEntry(
+        server_id="sentry-mcp",
+        description="Sentry errors, traces, and issue triage.",
+        auth_type="api_key",
+        setup_seconds=30,
+        min_plan="personal",
+        capabilities=("sentry", "errors", "monitoring", "alerts"),
+        keywords=("wave3", "engineering", "observability"),
+    ),
+)
+
+_WAVE4_DEFAULT_CATALOG: tuple[CatalogEntry, ...] = (
+    CatalogEntry(
+        server_id="google-maps-mcp",
+        description="Maps search, routing, and ETA capabilities.",
+        auth_type="api_key",
+        setup_seconds=30,
+        min_plan="personal",
+        capabilities=("maps", "route", "distance", "places"),
+        keywords=("wave4", "lifestyle", "travel"),
+    ),
+    CatalogEntry(
+        server_id="uber-lyft-mcp",
+        description="Rideshare estimates and trip coordination.",
+        auth_type="oauth",
+        setup_seconds=40,
+        min_plan="personal",
+        capabilities=("ride", "uber", "lyft", "transport"),
+        keywords=("wave4", "lifestyle", "travel"),
+    ),
+    CatalogEntry(
+        server_id="opentable-resy-mcp",
+        description="Restaurant discovery and reservation workflows.",
+        auth_type="api_key",
+        setup_seconds=40,
+        min_plan="personal",
+        capabilities=("restaurant", "reservation", "dining", "tables"),
+        keywords=("wave4", "lifestyle", "food"),
+    ),
+    CatalogEntry(
+        server_id="homeassistant-mcp",
+        description="Smart-home controls, scenes, and telemetry.",
+        auth_type="pre_provisioned",
+        setup_seconds=30,
+        min_plan="personal",
+        capabilities=("home assistant", "smart home", "devices", "automation"),
+        keywords=("wave4", "lifestyle", "smart home"),
+    ),
+    CatalogEntry(
+        server_id="spotify-mcp",
+        description="Spotify playlists and playback controls.",
+        auth_type="oauth",
+        setup_seconds=30,
+        min_plan="personal",
+        capabilities=("spotify", "music", "playlist", "audio"),
+        keywords=("wave4", "lifestyle", "media"),
+    ),
+    CatalogEntry(
+        server_id="evernote-mcp",
+        description="Evernote notes and notebook management.",
+        auth_type="oauth",
+        setup_seconds=30,
+        min_plan="personal",
+        capabilities=("evernote", "notes", "notebooks", "knowledge"),
+        keywords=("wave4", "lifestyle", "notes"),
+    ),
+    CatalogEntry(
+        server_id="dropbox-mcp",
+        description="Dropbox document search and file operations.",
+        auth_type="oauth",
+        setup_seconds=30,
+        min_plan="personal",
+        capabilities=("dropbox", "files", "documents", "storage"),
+        keywords=("wave4", "lifestyle", "storage"),
+    ),
+)
+
+_WAVE5_DEFAULT_CATALOG: tuple[CatalogEntry, ...] = (
     CatalogEntry(
         server_id="duffel-mcp",
-        description="Flight search and booking",
+        description="Flight search and booking operations.",
         auth_type="api_key",
         setup_seconds=30,
         min_plan="free",
         capabilities=("flight", "flights", "airfare", "travel booking", "book flight"),
-        keywords=("duffel", "trip", "airport", "ticket"),
+        keywords=("wave5", "travel", "booking", "duffel"),
     ),
     CatalogEntry(
         server_id="zoom-mcp",
-        description="Meeting management, recordings, transcripts",
+        description="Meeting management, recordings, and transcripts.",
         auth_type="oauth",
         setup_seconds=30,
-        min_plan="free",
+        min_plan="professional",
         capabilities=("zoom", "meeting", "recording", "transcript"),
-        keywords=("video", "call", "conference"),
+        keywords=("wave5", "communication", "video"),
+    ),
+    CatalogEntry(
+        server_id="calendly-mcp",
+        description="Scheduling links and availability management.",
+        auth_type="oauth",
+        setup_seconds=30,
+        min_plan="professional",
+        capabilities=("calendly", "schedule", "availability", "meetings"),
+        keywords=("wave5", "productivity", "calendar"),
     ),
     CatalogEntry(
         server_id="plaid-mcp",
-        description="Bank balances and transactions",
+        description="Bank balances, transactions, and account insights.",
         auth_type="plaid_link",
         setup_seconds=60,
         min_plan="professional",
         capabilities=("bank", "transactions", "spending", "finance"),
-        keywords=("plaid", "balance", "account"),
+        keywords=("wave5", "finance", "plaid"),
+    ),
+    CatalogEntry(
+        server_id="crunchbase-mcp",
+        description="Company intelligence and funding research.",
+        auth_type="api_key",
+        setup_seconds=45,
+        min_plan="professional",
+        capabilities=("company research", "funding", "investors", "market intel"),
+        keywords=("wave5", "research", "finance"),
+    ),
+)
+
+_WAVE6_DEFAULT_CATALOG: tuple[CatalogEntry, ...] = (
+    CatalogEntry(
+        server_id="booking-com-mcp",
+        description="Hotel search and booking flows with policy checks.",
+        auth_type="api_key",
+        setup_seconds=45,
+        min_plan="professional",
+        capabilities=("hotels", "booking", "lodging", "travel"),
+        keywords=("wave6", "travel", "booking"),
+    ),
+    CatalogEntry(
+        server_id="docusign-mcp",
+        description="Envelope creation, signing, and document workflows.",
+        auth_type="oauth",
+        setup_seconds=35,
+        min_plan="professional",
+        capabilities=("docusign", "signatures", "contracts", "documents"),
+        keywords=("wave6", "legal", "documents"),
+    ),
+    CatalogEntry(
+        server_id="canva-mcp",
+        description="Template-based design generation and asset export.",
+        auth_type="oauth",
+        setup_seconds=35,
+        min_plan="professional",
+        capabilities=("canva", "design", "templates", "brand assets"),
+        keywords=("wave6", "creative", "design"),
+    ),
+    CatalogEntry(
+        server_id="instacart-mcp",
+        description="Grocery list fulfillment and checkout proposals.",
+        auth_type="oauth",
+        setup_seconds=45,
+        min_plan="professional",
+        capabilities=("grocery", "delivery", "cart", "checkout"),
+        keywords=("wave6", "lifestyle", "commerce"),
     ),
     CatalogEntry(
         server_id="tesla-mcp",
-        description="Vehicle control, charge status, climate",
+        description="Vehicle control, charge status, and climate actions.",
         auth_type="tesla_sso",
         setup_seconds=45,
         min_plan="professional",
         capabilities=("tesla", "vehicle", "charging", "climate"),
-        keywords=("car", "ev"),
+        keywords=("wave6", "lifestyle", "vehicle"),
     ),
 )
 
@@ -158,11 +423,22 @@ _CAPABILITY_HINTS: dict[str, str] = {
     "flights": "duffel-mcp",
     "airfare": "duffel-mcp",
     "book": "duffel-mcp",
+    "hotel": "booking-com-mcp",
+    "hotels": "booking-com-mcp",
     "meeting": "zoom-mcp",
     "zoom": "zoom-mcp",
     "bank": "plaid-mcp",
     "transaction": "plaid-mcp",
     "transactions": "plaid-mcp",
+    "slack": "slack-mcp",
+    "teams": "teams-mcp",
+    "jira": "jira-mcp",
+    "maps": "google-maps-mcp",
+    "rides": "uber-lyft-mcp",
+    "restaurant": "opentable-resy-mcp",
+    "docusign": "docusign-mcp",
+    "design": "canva-mcp",
+    "grocery": "instacart-mcp",
     "tesla": "tesla-mcp",
 }
 
@@ -241,6 +517,7 @@ def _safe_parse_list(value: Any) -> tuple[str, ...]:
 
 
 def _canonical_catalog_payload(entry: dict[str, Any]) -> str:
+    oauth_config = entry.get("oauth_config") if isinstance(entry.get("oauth_config"), dict) else {}
     payload = {
         "server_id": str(entry.get("server_id") or "").strip().lower(),
         "display_name": str(entry.get("display_name") or "").strip(),
@@ -251,6 +528,7 @@ def _canonical_catalog_payload(entry: dict[str, Any]) -> str:
         "capabilities": sorted({str(v).strip().lower() for v in (entry.get("capabilities") or []) if str(v).strip()}),
         "keywords": sorted({str(v).strip().lower() for v in (entry.get("keywords") or []) if str(v).strip()}),
         "hosting_model": str(entry.get("hosting_model") or "").strip().lower(),
+        "oauth_config": oauth_config,
         "container_image": str(entry.get("container_image") or "").strip().lower(),
         "source": str(entry.get("source") or "local").strip().lower(),
         "status": str(entry.get("status") or "active").strip().lower(),
@@ -282,9 +560,27 @@ def is_container_image_allowed(image: str, *, allowed_prefixes: list[str]) -> bo
 
 
 def _default_catalog_entries() -> list[CatalogEntry]:
-    items: list[CatalogEntry] = list(_WAVE1_DEFAULT_CATALOG)
-    items.extend(_EXTRA_CATALOG)
+    items: list[CatalogEntry] = []
+    items.extend(_WAVE1_DEFAULT_CATALOG)
+    items.extend(_WAVE2_DEFAULT_CATALOG)
+    items.extend(_WAVE3_DEFAULT_CATALOG)
+    items.extend(_WAVE4_DEFAULT_CATALOG)
+    items.extend(_WAVE5_DEFAULT_CATALOG)
+    items.extend(_WAVE6_DEFAULT_CATALOG)
     return items
+
+
+def _safe_parse_dict(value: Any) -> dict[str, Any]:
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, str) and value.strip():
+        try:
+            parsed = json.loads(value)
+            if isinstance(parsed, dict):
+                return parsed
+        except Exception:
+            return {}
+    return {}
 
 
 def _catalog_from_table(db: Session) -> list[CatalogEntry]:
@@ -310,6 +606,7 @@ def _catalog_from_table(db: Session) -> list[CatalogEntry]:
         capabilities = _safe_parse_list(row.get("capabilities") or row.get("capabilities_json") or row.get("capability_tags"))
         keywords = _safe_parse_list(row.get("keywords") or row.get("tags"))
         hosting_model = str(row.get("hosting_model") or "").strip().lower()
+        oauth_config = _safe_parse_dict(row.get("oauth_config"))
         container_image = str(row.get("container_image") or "").strip()
         source = str(row.get("source") or "local").strip().lower() or "local"
         signature = str(row.get("signature") or "").strip() or None
@@ -324,6 +621,7 @@ def _catalog_from_table(db: Session) -> list[CatalogEntry]:
                 capabilities=capabilities,
                 keywords=keywords,
                 hosting_model=hosting_model,
+                oauth_config=oauth_config,
                 container_image=container_image,
                 source=source,
                 signature=signature,
@@ -331,6 +629,85 @@ def _catalog_from_table(db: Session) -> list[CatalogEntry]:
             )
         )
     return out
+
+
+def _catalog_from_mcp_servers(db: Session) -> list[CatalogEntry]:
+    if not _table_exists(db, "mcp_servers"):
+        return []
+    dialect = db.bind.dialect.name if db.bind is not None else ""
+    try:
+        if dialect == "sqlite":
+            rows = db.execute(
+                text(
+                    """
+                    select server_id, display_name, description, tags_json, transport_json
+                    from mcp_servers
+                    order by server_id asc
+                    """
+                )
+            ).mappings().all()
+        else:
+            rows = db.execute(
+                text(
+                    """
+                    select server_id, display_name, description, tags_json, tags, transport_json, transport
+                    from mcp_servers
+                    order by server_id asc
+                    """
+                )
+            ).mappings().all()
+    except Exception:
+        return []
+
+    entries: list[CatalogEntry] = []
+    for row in rows:
+        server_id = str(row.get("server_id") or "").strip()
+        if not server_id:
+            continue
+        display_name = str(row.get("display_name") or server_id).strip() or server_id
+        description = str(row.get("description") or "MCP server capability").strip() or "MCP server capability"
+        tags = _safe_parse_list(row.get("tags") or row.get("tags_json"))
+        transport = _safe_parse_dict(row.get("transport") or row.get("transport_json"))
+        auth_type = "oauth"
+        if any("api_key" in tag.lower() for tag in tags):
+            auth_type = "api_key"
+        if any("pre_provisioned" in tag.lower() for tag in tags):
+            auth_type = "pre_provisioned"
+        entries.append(
+            CatalogEntry(
+                server_id=server_id,
+                display_name=display_name,
+                description=description,
+                auth_type=auth_type,
+                setup_seconds=30,
+                min_plan="personal",
+                capabilities=tags,
+                keywords=tags,
+                hosting_model=str(transport.get("type") or "").strip().lower(),
+                oauth_config={},
+                source="mcp_servers",
+                status="active",
+            )
+        )
+    return entries
+
+
+def _merge_catalog_entries(*sources: list[CatalogEntry]) -> list[CatalogEntry]:
+    merged: dict[str, CatalogEntry] = {}
+    for source in sources:
+        for entry in source:
+            key = str(entry.server_id or "").strip().lower()
+            if not key:
+                continue
+            merged[key] = entry
+    return [merged[key] for key in sorted(merged.keys())]
+
+
+def _resolved_catalog(db: Session) -> list[CatalogEntry]:
+    defaults = _default_catalog_entries()
+    mcp_rows = _catalog_from_mcp_servers(db)
+    table_rows = _catalog_from_table(db)
+    return _merge_catalog_entries(defaults, mcp_rows, table_rows)
 
 
 def _declined_server_ids(db: Session, *, user_id: str | None, now_utc: datetime) -> set[str]:
@@ -375,9 +752,7 @@ def available_servers_for_user(
     connected = {str(item).strip() for item in (connected_server_ids or set()) if str(item).strip()}
     declined = _declined_server_ids(db, user_id=user_id, now_utc=now_utc)
 
-    catalog = _catalog_from_table(db)
-    if not catalog:
-        catalog = _default_catalog_entries()
+    catalog = _resolved_catalog(db)
 
     items: list[dict[str, Any]] = []
     for entry in catalog:
@@ -398,6 +773,7 @@ def available_servers_for_user(
                 "capabilities": list(entry.capabilities),
                 "keywords": list(entry.keywords),
                 "hosting_model": entry.hosting_model,
+                "oauth_config": dict(entry.oauth_config or {}),
                 "container_image": entry.container_image,
                 "source": entry.source,
                 "signature": entry.signature,
@@ -412,9 +788,7 @@ def get_catalog_entry(db: Session, *, server_id: str) -> dict[str, Any] | None:
     target = str(server_id or "").strip().lower()
     if not target:
         return None
-    catalog = _catalog_from_table(db)
-    if not catalog:
-        catalog = _default_catalog_entries()
+    catalog = _resolved_catalog(db)
     for entry in catalog:
         if str(entry.server_id or "").strip().lower() != target:
             continue
@@ -428,6 +802,7 @@ def get_catalog_entry(db: Session, *, server_id: str) -> dict[str, Any] | None:
             "capabilities": list(entry.capabilities),
             "keywords": list(entry.keywords),
             "hosting_model": entry.hosting_model,
+            "oauth_config": dict(entry.oauth_config or {}),
             "container_image": entry.container_image,
             "source": entry.source,
             "signature": entry.signature,
@@ -437,9 +812,7 @@ def get_catalog_entry(db: Session, *, server_id: str) -> dict[str, Any] | None:
 
 
 def all_catalog_entries(db: Session) -> list[dict[str, Any]]:
-    catalog = _catalog_from_table(db)
-    if not catalog:
-        catalog = _default_catalog_entries()
+    catalog = _resolved_catalog(db)
     out: list[dict[str, Any]] = []
     for entry in catalog:
         out.append(
@@ -453,6 +826,7 @@ def all_catalog_entries(db: Session) -> list[dict[str, Any]]:
                 "capabilities": list(entry.capabilities),
                 "keywords": list(entry.keywords),
                 "hosting_model": entry.hosting_model,
+                "oauth_config": dict(entry.oauth_config or {}),
                 "container_image": entry.container_image,
                 "source": entry.source,
                 "signature": entry.signature,
@@ -474,6 +848,15 @@ def render_available_servers_section(entries: list[dict[str, Any]]) -> str:
     lines = ["## Available Servers (Not Connected)"]
     if not entries:
         lines.append("- None available on your current plan.")
+        lines.extend(
+            [
+                "",
+                "### How to Connect",
+                "1. Ask: `Connect <server-id>` or press a connection card.",
+                "2. Complete OAuth/API-key authorization when prompted.",
+                "3. Return to chat and your original task will retry automatically.",
+            ]
+        )
         return "\n".join(lines)
     for item in entries:
         server_id = str(item.get("server_id") or "").strip()
@@ -485,6 +868,15 @@ def render_available_servers_section(entries: list[dict[str, Any]]) -> str:
         lines.append(
             f"- {server_id}: {description} | auth: {auth_type} | setup: {_setup_label(setup_seconds)}"
         )
+    lines.extend(
+        [
+            "",
+            "### How to Connect",
+            "1. Ask: `Connect <server-id>` or tap a connection button in onboarding.",
+            "2. Complete the secure OAuth/API-key step.",
+            "3. Return to chat. Executive OS resumes your original request with new tools.",
+        ]
+    )
     return "\n".join(lines)
 
 

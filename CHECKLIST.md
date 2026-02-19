@@ -393,15 +393,15 @@ You must prove it.
 # PHASE 4 — POLISH & SCALE (Month 10–12) (Section 38)
 
 ## M10 S1–4: Document Generation + Voice Output + Connectors (Section 27, Section 21.3, Section 38)
-- [ ] Implement document generation engine (Markdown → PDF/DOCX) with templates and S3 output (Section 27)
-- [ ] Implement document ingestion pipeline (PDF/DOCX/XLSX → Unstructured.io → chunks + entities + action items → ProcessedMessage) (Section 1.4, Section 21, Section 2)
-- [ ] Implement Voice TTS output pipeline (OpenAI TTS-1 and optional ElevenLabs) (Section 21.3, Appendix A)
-- [ ] Implement travel connectors, smart home, Notion/Google Docs search (Section 38)
+- [x] Implement document generation engine (Markdown → PDF/DOCX) with templates and S3 output (Section 27)
+- [x] Implement document ingestion pipeline (PDF/DOCX/XLSX → Unstructured.io → chunks + entities + action items → ProcessedMessage) (Section 1.4, Section 21, Section 2)
+- [x] Implement Voice TTS output pipeline (OpenAI TTS-1 and optional ElevenLabs) (Section 21.3, Appendix A)
+- [x] Implement travel connectors, smart home, Notion/Google Docs search (Section 38)
 
 ## M10: MCP Wave 2 — Communication & Collaboration (Deployment Plan Section 5, Section 14.1)
 - [ ] Deploy Wave 2 servers: Slack, Outlook, Teams, Linear, Asana, Discord, WhatsApp Business MCP
 - [ ] Complete onboarding UX block for ecosystem detection + connection cards + OAuth consolidation + confirmation flow using ProvisioningPipeline (one code path) (Deployment Plan Section 10; Auto-Provisioning Invariant 17)
-- [ ] Onboarding: connection buttons trigger `provision_server(server_id, trigger=ONBOARDING)` (Auto-Provisioning Month 10–12 integration)
+- [x] Onboarding: connection buttons trigger `provision_server(server_id, trigger=ONBOARDING)` (Auto-Provisioning Month 10–12 integration)
 - [ ] Run 12-step deployment checklist for every Wave 2 server (Deployment Plan Section 15)
 
 ## M11: MCP Wave 3 — Business Intelligence & Finance (Deployment Plan Section 6, Section 14.1)
@@ -418,11 +418,11 @@ You must prove it.
 - [ ] Prepare fallback server choices if partner approvals are denied (Zoom PAT, Amazon Fresh/DoorDash, Figma/design fallback, Booking affiliate fallback)
 
 ## M10–12 (Auto-Provisioning): Catalog Expansion + Conversational Discovery (Deployment Plan Sections 10–12; Auto-Provisioning Section 12)
-- [ ] Expand `server_catalog` entries as Wave 2–4 servers deploy (auth_type, oauth_config, hosting_model, container_image, min_plan, setup_time) (Auto-Provisioning Section 12)
-- [ ] Ensure TOOLS.md regeneration shows: connected servers + available-but-not-connected servers (plan-gated) + “how to connect” instructions (Deployment Plan Section 11; Auto-Provisioning Layer 1)
-- [ ] Conversational discovery triggers call ProvisioningPipeline (user mentions Slack -> `provision_server`) instead of separate/manual connection flows (Deployment Plan Section 12; Auto-Provisioning Invariant 17)
-- [ ] Seed migration: generate `server_catalog` entries from `mcp_servers` + Waves 1–6 specs (no hardcoded server lists outside catalog) (Auto-Provisioning Invariant 18)
-- [ ] Seed `server_catalog` with Waves 1–4 by launch (Month 12) and Waves 1–6 by end of Month 12 (Auto-Provisioning Section 12.1)
+- [x] Expand `server_catalog` entries as Wave 2–4 servers deploy (auth_type, oauth_config, hosting_model, container_image, min_plan, setup_time) (Auto-Provisioning Section 12)
+- [x] Ensure TOOLS.md regeneration shows: connected servers + available-but-not-connected servers (plan-gated) + “how to connect” instructions (Deployment Plan Section 11; Auto-Provisioning Layer 1)
+- [x] Conversational discovery triggers call ProvisioningPipeline (user mentions Slack -> `provision_server`) instead of separate/manual connection flows (Deployment Plan Section 12; Auto-Provisioning Invariant 17)
+- [x] Seed migration: generate `server_catalog` entries from `mcp_servers` + Waves 1–6 specs (no hardcoded server lists outside catalog) (Auto-Provisioning Invariant 18)
+- [x] Seed `server_catalog` with Waves 1–4 by launch (Month 12) and Waves 1–6 by end of Month 12 (Auto-Provisioning Section 12.1)
 
 ## M10–12 (Operational Hardening): Launch Readiness (Operational Blueprint Section 17)
 - [ ] Run comprehensive eval across all 30 launch MCP servers; establish quality baseline for launch (Ops Blueprint Component 4)
@@ -450,12 +450,12 @@ You must prove it.
 - [ ] Production launch readiness: runbooks, incident playbooks, on-call, documentation (Section 38)
 
 ## Behavioral Intelligence (Parallel) — Phase 4 (Section 28, Section 33)
-- [ ] Implement “What do you know about me?” command + knowledge file viewer/editor via chat (Section 38)
-- [ ] Implement knowledge graph query interface + `/api/v1/knowledge/graph` (Section 5.3)
+- [x] Implement “What do you know about me?” command + knowledge file viewer/editor via chat (Section 38)
+- [x] Implement knowledge graph query interface + `/api/v1/knowledge/graph` (Section 5.3)
 - [ ] Implement personalization eval dashboards (profiling coverage, knowledge accuracy, correction frequency, satisfaction) (Section 38)
 - [ ] Implement opt-in cross-user anonymized insights (Section 38)
-- [ ] Implement A/B testing framework + experiments endpoints `/internal/experiments` (Section 5.5, Section 38)
-- [ ] Implement GDPR/CCPA data export endpoint `/api/v1/export` (Section 5.4, Section 38)
+- [x] Implement A/B testing framework + experiments endpoints `/internal/experiments` (Section 5.5, Section 38)
+- [x] Implement GDPR/CCPA data export endpoint `/api/v1/export` (Section 5.4, Section 38)
 - [ ] Ship documentation bundle: knowledge format spec, question bank, signal catalog, MCP guide, delegation protocol, research API guide (Section 38)
 
 ---
@@ -612,7 +612,7 @@ You must prove it.
 - [x] Implement `DELETE /api/v1/workflows/{id}` (Phase 3) (Section 5.4)
 - [x] Implement `POST /api/v1/workflows/{id}/test` (Phase 3) (Section 5.4)
 - [x] Implement `GET /api/v1/team` (Phase 2–3) (Section 5.4)
-- [ ] Implement `GET /api/v1/export` (Phase 4) (Section 5.4)
+- [x] Implement `GET /api/v1/export` (Phase 4) (Section 5.4)
 - [x] Implement `POST /api/v1/auth/link-channel` (Ops: channel linking) (Operational Blueprint Component 2)
 - [x] Implement `DELETE /api/v1/auth/me` (trigger deletion pipeline) (Operational Blueprint Component 6)
 - [x] Implement `GET /api/v1/auth/me/export` (data export ZIP) (Operational Blueprint Component 6)
@@ -633,8 +633,8 @@ You must prove it.
 - [x] Implement `POST /internal/knowledge/review` (Phase 3) (Section 5.5)
 - [x] Implement `GET /internal/llm/health` (Phase 1) (Section 5.5)
 - [x] Implement `POST /internal/llm/route-test` (Phase 1) (Section 5.5)
-- [ ] Implement `GET /internal/experiments` (Phase 4) (Section 5.5)
-- [ ] Implement `POST /internal/experiments` (Phase 4) (Section 5.5)
+- [x] Implement `GET /internal/experiments` (Phase 4) (Section 5.5)
+- [x] Implement `POST /internal/experiments` (Phase 4) (Section 5.5)
 - [ ] Implement Appendix B error codes taxonomy across endpoints + logs
 
 ## Knowledge Files (Section 8, Appendix D)
@@ -657,8 +657,8 @@ You must prove it.
 
 ## Auto-Provisioning Engine (Auto_Provisioning_Engine.pdf) — Integration Points To Verify
 - [x] Billing middleware allows `provision_server` tool calls (native tool) without misclassifying as user message usage (Auto-Provisioning integration checks)
-- [ ] All server connections flow through ProvisioningPipeline (onboarding, contextual suggestions, user-initiated, capability-gap-triggered) (Auto-Provisioning Invariant 17)
-- [ ] Server catalog is source of truth: Brain discovers via TOOLS.md generated from `server_catalog`; pipeline reads provisioning details from same table (Auto-Provisioning Invariant 18)
+- [x] All server connections flow through ProvisioningPipeline (onboarding, contextual suggestions, user-initiated, capability-gap-triggered) (Auto-Provisioning Invariant 17)
+- [x] Server catalog is source of truth: Brain discovers via TOOLS.md generated from `server_catalog`; pipeline reads provisioning details from same table (Auto-Provisioning Invariant 18)
 - [x] Plan gating works: free users can only provision Wave 1 servers; paid users can provision per plan (Auto-Provisioning Section 13; Ops Component 1)
 - [x] Eval system scores provisioning flows and includes GT-101..GT-105 scenarios (Auto-Provisioning Section 17; Ops Component 4)
 - [x] Analytics tracks provisioning events: `provisioning_requested`, `awaiting_auth`, `server_provisioned`, `provisioning_failed`, `provisioning_declined`, `provisioning_expired` (Ops Component 12)

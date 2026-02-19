@@ -23,6 +23,7 @@ from app.blueprint.knowledge_review import run_nightly_consolidation, run_weekly
 from app.blueprint.mcp.hub import get_mcp_client_hub
 from app.services.proactive_rules import run_due_rules
 from app.services.scheduler import run_due_research
+from app.services.experiments import assign_variant, create_experiment, list_experiments
 
 
 router = APIRouter(prefix="/internal", tags=["internal-platform"])
@@ -43,6 +44,16 @@ class CacheFlushRequest(BaseModel):
 
 class UserScopedRequest(BaseModel):
     user_id: str
+
+
+class ExperimentCreateRequest(BaseModel):
+    name: str
+    description: str = ""
+    status: str = "draft"
+    prompt_group: str | None = None
+    allocation: dict[str, int] | None = None
+    config: dict[str, object] | None = None
+    created_by: str | None = None
 
 
 def _db_status() -> str:
@@ -257,5 +268,52 @@ def internal_knowledge_review(payload: KnowledgeReviewRequest):
     except Exception as exc:
         db.rollback()
         raise HTTPException(status_code=400, detail=f"Self review failed: {exc}")
+    finally:
+        db.close()
+
+
+@router.get("/experiments")
+def internal_list_experiments(
+    status: str | None = None,
+    limit: int = 100,
+    user_id: str | None = None,
+):
+    db = SessionLocal()
+    try:
+        rows = list_experiments(db, status=status, limit=limit)
+        if user_id:
+            for row in rows:
+                allocation = row.get("allocation") if isinstance(row.get("allocation"), dict) else {}
+                row["assigned_variant"] = assign_variant(
+                    experiment_id=str(row.get("id") or ""),
+                    user_id=user_id,
+                    allocation=allocation if isinstance(allocation, dict) else {},
+                )
+        return {"ok": True, "items": rows}
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Experiment lookup failed: {exc}")
+    finally:
+        db.close()
+
+
+@router.post("/experiments")
+def internal_create_experiment(payload: ExperimentCreateRequest):
+    db = SessionLocal()
+    try:
+        row = create_experiment(
+            db,
+            name=payload.name,
+            description=payload.description,
+            status=payload.status,
+            prompt_group=payload.prompt_group,
+            allocation=payload.allocation,
+            config=payload.config,
+            created_by=payload.created_by,
+        )
+        return {"ok": True, "experiment": row}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Experiment create failed: {exc}")
     finally:
         db.close()

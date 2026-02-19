@@ -30,7 +30,7 @@ from app.services.twilio_voice import create_outbound_call, generate_twiml_strea
 from app.services.voice_ai import generate_call_response, summarize_call
 from app.services.voice_profiles import resolve_voice_id
 from app.services.stt_deepgram import DeepgramStream
-from app.services.tts_elevenlabs import stream_tts_audio
+from app.services.tts_pipeline import stream_tts_audio
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)

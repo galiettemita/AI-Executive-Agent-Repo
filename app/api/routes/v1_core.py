@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+import io
+import json
+import zipfile
 from datetime import datetime
 from typing import Any
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -19,6 +23,9 @@ from app.blueprint.knowledge_files import (
 from app.blueprint.preferences_learning import record_feedback_signal
 from app.services.google_oauth import build_google_auth_url, get_google_connection_status
 from app.services.microsoft_oauth import build_microsoft_auth_url, get_microsoft_connection_status
+from app.services.document_generation import generate_document
+from app.services.docs_search import search_connected_docs
+from app.services.gdpr_service import export_user_data
 from app.core.config import settings
 
 
@@ -33,6 +40,15 @@ class RunApprovalRequest(BaseModel):
 class KnowledgePutRequest(BaseModel):
     user_id: str
     content: str = Field(default="", min_length=1)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class DocumentGenerateRequest(BaseModel):
+    user_id: str
+    title: str
+    markdown: str
+    output_format: str = Field(default="pdf", pattern="^(pdf|docx)$")
+    template: str = "default"
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -67,6 +83,24 @@ def _serialize_row(row: dict[str, Any]) -> dict[str, Any]:
         else:
             out[k] = v
     return out
+
+
+def _build_export_zip_payload(*, user_id: str, payload: dict[str, Any]) -> bytes:
+    bio = io.BytesIO()
+    with zipfile.ZipFile(bio, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr(
+            "manifest.json",
+            json.dumps({"user_id": user_id, "generated_at": datetime.utcnow().isoformat()}, ensure_ascii=False, indent=2),
+        )
+        zf.writestr("export.json", json.dumps(payload, ensure_ascii=False, indent=2))
+        rows = payload.get("data") if isinstance(payload, dict) else {}
+        if isinstance(rows, dict):
+            for table_name, table_rows in rows.items():
+                if not isinstance(table_name, str):
+                    continue
+                zf.writestr(f"tables/{table_name}.json", json.dumps(table_rows, ensure_ascii=False, indent=2))
+    bio.seek(0)
+    return bio.getvalue()
 
 
 def _build_slack_auth_url(*, user_id: str) -> str:
@@ -219,6 +253,47 @@ def connector_auth(provider: str, user_id: str = Query(...), db: Session = Depen
     raise HTTPException(status_code=404, detail=f"Connector '{provider}' is not supported")
 
 
+@router.get("/connectors/docs/search")
+def connector_docs_search(
+    user_id: str = Query(...),
+    query: str = Query(..., min_length=1),
+    limit: int = Query(default=8, ge=1, le=50),
+    db: Session = Depends(get_db),
+):
+    try:
+        result = search_connected_docs(
+            db,
+            user_id=user_id,
+            query=query,
+            max_results=limit,
+        )
+        return {"ok": True, **result}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"docs search failed: {exc}")
+
+
+@router.post("/documents/generate")
+def document_generate(payload: DocumentGenerateRequest):
+    if not settings.FEATURE_DOCUMENT_GENERATION:
+        raise HTTPException(status_code=403, detail="Document generation feature is disabled")
+    try:
+        result = generate_document(
+            user_id=payload.user_id,
+            title=payload.title,
+            markdown=payload.markdown,
+            output_format=payload.output_format,
+            template=payload.template,
+            metadata=payload.metadata,
+        )
+        return {"ok": True, "document": result}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"document generation failed: {exc}")
+
+
 @router.get("/knowledge/{file_path:path}")
 def knowledge_get(file_path: str, user_id: str = Query(...), db: Session = Depends(get_db)):
     normalized = file_path.strip().replace("\\", "/")
@@ -267,3 +342,27 @@ def knowledge_graph(user_id: str = Query(...), limit: int = Query(default=200, g
         {"user_id": user_id, "limit": int(limit)},
     ).mappings().all()
     return {"ok": True, "edges": [_serialize_row(dict(r)) for r in rows]}
+
+
+@router.get("/export")
+def export_data(
+    user_id: str = Query(...),
+    format: str = Query(default="zip"),
+    db: Session = Depends(get_db),
+):
+    payload = export_user_data(db=db, user_id=user_id)
+    fmt = str(format or "zip").strip().lower()
+    if fmt == "json":
+        return {"ok": True, **payload}
+    if fmt != "zip":
+        raise HTTPException(status_code=400, detail="format must be one of: zip, json")
+    zip_bytes = _build_export_zip_payload(user_id=user_id, payload=payload)
+    headers = {
+        "Content-Disposition": f'attachment; filename="user-export-{user_id}.zip"',
+        "Cache-Control": "no-store",
+    }
+    return StreamingResponse(
+        io.BytesIO(zip_bytes),
+        media_type="application/zip",
+        headers=headers,
+    )

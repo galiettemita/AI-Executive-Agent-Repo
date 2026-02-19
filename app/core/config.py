@@ -31,6 +31,9 @@ class Settings(BaseSettings):
     OPENAI_MODEL: str = "gpt-4o-mini"
     OPENAI_EMBEDDING_MODEL: str = "text-embedding-3-small"
     OPENAI_ORG_ID: str | None = None
+    OPENAI_TTS_MODEL: str = "tts-1"
+    OPENAI_TTS_VOICE: str = "alloy"
+    OPENAI_TTS_RESPONSE_FORMAT: str = "wav"
 
     # ── Multi-Provider LLM Router (Blueprint v5 Section 9) ─────
     ANTHROPIC_API_KEY: str | None = None
@@ -161,6 +164,11 @@ class Settings(BaseSettings):
     # ── Tavily (Discovery) ──────────────────────────────────────
     TAVILY_API_KEY: str | None = None
     TAVILY_SEARCH_DEPTH: str = "basic"  # basic | advanced
+
+    # ── Unstructured.io (Document Parsing) ──────────────────────
+    UNSTRUCTURED_API_KEY: str | None = None
+    UNSTRUCTURED_API_URL: str = "https://api.unstructuredapp.io/general/v0/general"
+    UNSTRUCTURED_STRATEGY: str = "fast"
 
     # ── Wave 1 MCP Provider Keys ───────────────────────────────
     BRAVE_API_KEY: str | None = None
