@@ -5,10 +5,11 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
-from app.blueprint.contracts import ProvisioningState
+from app.blueprint.contracts import ProvisioningState, ServerProvisionedEvent
 from app.services.provisioning_activator import activate_server
 from app.services.analytics import emit_event_async
 from app.services.provisioning_pipeline import ProvisioningPipeline, get_request, validate_catalog_security_for_server
+from app.services.provisioning_retry import retry_original_task_after_provisioning
 from app.services.provisioning_sessions import delete_provisioning_session, get_provisioning_session
 from app.services.url_shortener import resolve_short_url
 
@@ -104,9 +105,24 @@ async def provision_callback(
         )
         delete_provisioning_session(state)
         original_task_id = str(session.get("original_task_id") or "").strip()
+        retried = "0"
+        if original_task_id:
+            retry_result = retry_original_task_after_provisioning(
+                ServerProvisionedEvent(
+                    request_id=request_id,
+                    user_id=user_id,
+                    server_id=server_id,
+                    original_task_id=original_task_id,
+                    connected_tools=[],
+                )
+            )
+            retried = "1" if bool(retry_result.get("ok")) else "0"
         missing_task = "1" if not original_task_id else "0"
         return RedirectResponse(
-            url=f"/api/v1/provision/success?server_id={server_id}&request_id={request_id}&missing_task={missing_task}",
+            url=(
+                f"/api/v1/provision/success?server_id={server_id}&request_id={request_id}"
+                f"&missing_task={missing_task}&retried={retried}"
+            ),
             status_code=302,
         )
 
@@ -135,13 +151,18 @@ def provision_success(
     server_id: str = Query(default=""),
     request_id: str = Query(default=""),
     missing_task: str = Query(default="0"),
+    retried: str = Query(default="0"),
 ):
     safe_server = (server_id or "").strip() or "server"
     safe_request = (request_id or "").strip()
     next_step = (
         "<p>Connection complete. Your prior task context expired, so tell me what you want to do next.</p>"
         if str(missing_task or "0") == "1"
-        else "<p>Connection complete. Returning to chat will resume your original request.</p>"
+        else (
+            "<p>Connection complete. Your original request has been retried in chat.</p>"
+            if str(retried or "0") == "1"
+            else "<p>Connection complete. Returning to chat will resume your original request.</p>"
+        )
     )
     return HTMLResponse(
         content=(

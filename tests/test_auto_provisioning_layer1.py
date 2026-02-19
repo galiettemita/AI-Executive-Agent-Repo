@@ -190,3 +190,79 @@ def test_generate_reply_capability_gap_calls_provision_server(monkeypatch):
     args = calls[0]["args"] if isinstance(calls[0]["args"], dict) else {}
     assert args.get("server_id") == "duffel-mcp"
     assert int(meta.get("iterations") or 0) >= 2
+
+
+def test_generate_reply_capability_gap_still_works_in_degraded_mode(monkeypatch):
+    class _DegradedCapabilityGapRouter(_CapabilityGapRouter):
+        def system_mode(self, force_refresh: bool = False) -> str:
+            return "degraded"
+
+    router = _DegradedCapabilityGapRouter()
+    monkeypatch.setattr(responder, "get_llm_router", lambda: router)
+    monkeypatch.setattr(
+        responder,
+        "compile_context_messages",
+        lambda **kwargs: ([{"role": "system", "content": "x"}, {"role": "user", "content": kwargs.get("user_text") or ""}], [], []),
+    )
+    monkeypatch.setattr(
+        responder,
+        "compile_tool_schemas",
+        lambda **kwargs: [
+            {
+                "type": "function",
+                "function": {
+                    "name": "web_search",
+                    "description": "Search",
+                    "parameters": {"type": "object", "properties": {"query": {"type": "string"}}},
+                },
+            }
+        ],
+    )
+    monkeypatch.setattr(responder, "get_cached_response", lambda **kwargs: None)
+    monkeypatch.setattr(responder, "put_cached_response", lambda **kwargs: None)
+    monkeypatch.setattr(
+        responder,
+        "_load_tools_markdown",
+        lambda **kwargs: (
+            "# TOOLS.md\n"
+            "## Available Servers (Not Connected)\n"
+            "- duffel-mcp: Flight search and booking | auth: api_key | setup: ~30s\n"
+        ),
+    )
+    monkeypatch.setattr(
+        responder,
+        "_maybe_reflect_response",
+        lambda **kwargs: (kwargs.get("current_response") or "", {"applied": False}),
+    )
+    monkeypatch.setattr(
+        responder,
+        "_prepend_degraded_notice",
+        lambda user_id, body: (f"[degraded] {body}", True),
+    )
+
+    calls: list[dict[str, object]] = []
+
+    def _fake_execute_tool(**kwargs):
+        calls.append({"tool": kwargs.get("tool"), "args": kwargs.get("args")})
+        return ToolResult(
+            tool_name="provision_server",
+            tool="provision_server",
+            ok=True,
+            result={"status": "awaiting_auth", "server_id": "duffel-mcp"},
+        )
+
+    monkeypatch.setattr(responder, "_execute_tool", _fake_execute_tool)
+
+    text_value, meta = responder.generate_reply(
+        user_text="Book me a flight to New York next week",
+        tier=2,
+        user_id="layer1-user",
+        conversation_id="conv-layer1",
+        run_id="run-layer1-degraded",
+    )
+
+    assert "started setup" in text_value
+    assert text_value.startswith("[degraded]")
+    assert calls
+    assert calls[0]["tool"] == "provision_server"
+    assert meta.get("degraded_mode") is True

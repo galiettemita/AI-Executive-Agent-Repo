@@ -8,7 +8,46 @@ from sqlalchemy import text
 from app.core.config import settings
 from app.db.database import SessionLocal
 from app.db.models import Subscription, User
-from app.services.billing_middleware import enforce_billing_for_inbound_message
+from app.services.billing_middleware import enforce_billing_for_inbound_message, enforce_billing_for_tool_call
+
+
+class _NoIncrRedis:
+    def __init__(self) -> None:
+        self.values: dict[str, str] = {}
+
+    def get(self, key: str):
+        return self.values.get(key)
+
+    def set(self, key: str, value: str, ex: int | None = None):
+        self.values[key] = str(value)
+        return True
+
+    def incr(self, key: str):  # pragma: no cover - should never be called in tool-call billing test
+        raise AssertionError("daily counter increment should not run for provision_server tool calls")
+
+    def ttl(self, key: str):
+        return -1
+
+    def expire(self, key: str, seconds: int):
+        return True
+
+    def pipeline(self):
+        return self
+
+    def execute(self):
+        return []
+
+    def zremrangebyscore(self, *args, **kwargs):
+        return 0
+
+    def zadd(self, *args, **kwargs):
+        return 1
+
+    def zcard(self, *args, **kwargs):
+        return 0
+
+    def zrange(self, *args, **kwargs):
+        return []
 
 
 def _ensure_tool_executions_table(db) -> None:
@@ -104,5 +143,55 @@ def test_billing_middleware_ignores_non_mcp_cost_for_budget(monkeypatch) -> None
         assert decision.allowed is True
         assert decision.monthly_mcp_cost_cents == 120
         assert decision.monthly_mcp_limit_cents == 500
+    finally:
+        db.close()
+
+
+def test_billing_tool_call_allows_provision_server_without_daily_counter(monkeypatch) -> None:
+    user_id = f"billing-tool-{uuid.uuid4()}"
+    fake = _NoIncrRedis()
+    monkeypatch.setattr("app.services.billing_middleware.get_redis", lambda: fake)
+
+    db = SessionLocal()
+    try:
+        db.add(User(id=user_id))
+        db.add(
+            Subscription(
+                user_id=user_id,
+                plan="free_trial",
+                status="trialing",
+                current_period_end=datetime.utcnow() + timedelta(days=1),
+                updated_at=datetime.utcnow(),
+            )
+        )
+        db.commit()
+
+        decision = enforce_billing_for_tool_call(db, user_id, tool_name="provision_server")
+        assert decision.allowed is True
+        assert decision.daily_count is None
+    finally:
+        db.close()
+
+
+def test_billing_tool_call_blocks_inactive_subscription() -> None:
+    user_id = f"billing-tool-inactive-{uuid.uuid4()}"
+    db = SessionLocal()
+    try:
+        db.add(User(id=user_id))
+        db.add(
+            Subscription(
+                user_id=user_id,
+                plan="personal",
+                status="inactive",
+                current_period_end=datetime.utcnow() + timedelta(days=30),
+                updated_at=datetime.utcnow(),
+            )
+        )
+        db.commit()
+
+        decision = enforce_billing_for_tool_call(db, user_id, tool_name="provision_server")
+        assert decision.allowed is False
+        assert decision.block is not None
+        assert decision.block.reason == "subscription_inactive"
     finally:
         db.close()

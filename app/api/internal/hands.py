@@ -55,6 +55,7 @@ from app.services.plaid_connector import (
     list_transactions as plaid_list_transactions,
 )
 from app.services.analytics import emit_event_async
+from app.services.billing_middleware import enforce_billing_for_tool_call
 from app.services.provisioning_catalog import available_servers_for_user
 from app.services.provisioning_handlers import ProvisionAuthContext, get_auth_handler
 from app.services.provisioning_pipeline import ProvisioningPipeline
@@ -397,6 +398,11 @@ async def execute(call: ToolCall) -> ToolResult:
         try:
             if not call.user_id:
                 raise RuntimeError("provision_server requires user_id")
+            billing_decision = enforce_billing_for_tool_call(db, call.user_id, tool_name="provision_server")
+            if not billing_decision.allowed:
+                block = billing_decision.block
+                msg = (block.message if block else "Billing restriction prevents provisioning right now.").strip()
+                raise RuntimeError(msg)
             if not _allow_provisioning_hourly_rate(call.user_id):
                 raise RuntimeError("Provisioning rate limit reached (max 5 requests/hour)")
 

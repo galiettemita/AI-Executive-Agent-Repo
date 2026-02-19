@@ -33,6 +33,10 @@ def test_provision_callback_transitions_request_to_active(monkeypatch):
         return {"ok": True, "server_id": server_id, "connected": True}
 
     monkeypatch.setattr("app.api.routes.v1_provisioning.activate_server", _fake_activate_server)
+    monkeypatch.setattr(
+        "app.api.routes.v1_provisioning.retry_original_task_after_provisioning",
+        lambda event: {"ok": True, "reply": "Server connected! ✓ done"},
+    )
 
     db = SessionLocal()
     try:
@@ -63,6 +67,7 @@ def test_provision_callback_transitions_request_to_active(monkeypatch):
     resp = client.get(f"/api/v1/provision/callback?state={state}&code=oauth-code", follow_redirects=False)
     assert resp.status_code in (302, 307)
     assert "/api/v1/provision/success" in str(resp.headers.get("location") or "")
+    assert "retried=1" in str(resp.headers.get("location") or "")
 
     db = SessionLocal()
     try:
@@ -118,5 +123,57 @@ def test_provision_callback_fails_when_security_validation_fails(monkeypatch):
         final = get_request(db2, request_id=request_row.id)
         assert final is not None
         assert final.state == ProvisioningState.FAILED
+    finally:
+        db2.close()
+
+
+def test_provision_callback_remains_valid_after_channel_switch(monkeypatch):
+    async def _fake_activate_server(db, *, user_id: str, server_id: str):  # pragma: no cover - executed via route
+        return {"ok": True, "server_id": server_id, "connected": True}
+
+    monkeypatch.setattr("app.api.routes.v1_provisioning.activate_server", _fake_activate_server)
+    monkeypatch.setattr(
+        "app.api.routes.v1_provisioning.retry_original_task_after_provisioning",
+        lambda event: {"ok": False, "reason": "no_original_task"},
+    )
+
+    db = SessionLocal()
+    try:
+        pipeline = ProvisioningPipeline(db)
+        request_row = pipeline.begin(
+            user_id="provision-channel-user",
+            server_id="duffel-mcp",
+            reason="Need flights",
+        )
+        request_row = pipeline.transition(
+            request_id=request_row.id,
+            new_state=ProvisioningState.AWAITING_AUTH,
+            note="auth_link_sent_whatsapp",
+        )
+        # Provisioning session is intentionally server-side and channel-agnostic.
+        state = create_provisioning_session(
+            {
+                "request_id": request_row.id,
+                "user_id": "provision-channel-user",
+                "server_id": "duffel-mcp",
+                "original_task_id": "run-channel",
+                "started_channel": "whatsapp",
+                "latest_channel": "imessage",
+            },
+            ttl_seconds=300,
+        )
+    finally:
+        db.close()
+
+    client = TestClient(app)
+    resp = client.get(f"/api/v1/provision/callback?state={state}&code=oauth-code", follow_redirects=False)
+    assert resp.status_code in (302, 307)
+    assert "/api/v1/provision/success" in str(resp.headers.get("location") or "")
+
+    db2 = SessionLocal()
+    try:
+        final = get_request(db2, request_id=request_row.id)
+        assert final is not None
+        assert final.state == ProvisioningState.ACTIVE
     finally:
         db2.close()

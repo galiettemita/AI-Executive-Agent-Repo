@@ -343,8 +343,8 @@ Feature Flag Rollout Reminders (Appendix A)
 - [ ] Run 12-step server deployment checklist for every Wave 1 server (Deployment Plan Section 15)
 
 ## M9 (Auto-Provisioning Layer 2): End-to-End Integration + Extra Handlers (Auto-Provisioning Sections 9, 10, 14, 15, 17)
-- [ ] E2E test: Brain calls `provision_server` -> Hands generates auth link -> user authorizes -> callback stores token -> server activates -> tools register -> Brain retries original task and delivers result with confirmation prefix (Auto-Provisioning Section 16)
-- [ ] Brain: implement `ServerProvisionedEvent` handler to re-enter ReAct loop for `original_task_id` with new tools available (Auto-Provisioning Section 9)
+- [x] E2E test: Brain calls `provision_server` -> Hands generates auth link -> user authorizes -> callback stores token -> server activates -> tools register -> Brain retries original task and delivers result with confirmation prefix (Auto-Provisioning Section 16)
+- [x] Brain: implement `ServerProvisionedEvent` handler to re-enter ReAct loop for `original_task_id` with new tools available (Auto-Provisioning Section 9)
 - [x] Concurrency: if user sends unrelated message while auth pending, process normally; if same server requested twice, return existing request (Auto-Provisioning Section 15)
 - [x] Declines: user says “not now” -> write `provisioning_declined` cooldown (7 days) and fall back to best alternative (Auto-Provisioning Section 14)
 - [x] Expiration: auth link TTL 15 minutes; on timeout set state=EXPIRED and offer fresh link on request (Auto-Provisioning Sections 10, 14)
@@ -656,7 +656,7 @@ You must prove it.
 - [ ] DR posture validated: Multi-AZ + snapshots + PITR + monthly restore drills + runbooks (Ops Component 7)
 
 ## Auto-Provisioning Engine (Auto_Provisioning_Engine.pdf) — Integration Points To Verify
-- [ ] Billing middleware allows `provision_server` tool calls (native tool) without misclassifying as user message usage (Auto-Provisioning integration checks)
+- [x] Billing middleware allows `provision_server` tool calls (native tool) without misclassifying as user message usage (Auto-Provisioning integration checks)
 - [ ] All server connections flow through ProvisioningPipeline (onboarding, contextual suggestions, user-initiated, capability-gap-triggered) (Auto-Provisioning Invariant 17)
 - [ ] Server catalog is source of truth: Brain discovers via TOOLS.md generated from `server_catalog`; pipeline reads provisioning details from same table (Auto-Provisioning Invariant 18)
 - [x] Plan gating works: free users can only provision Wave 1 servers; paid users can provision per plan (Auto-Provisioning Section 13; Ops Component 1)
@@ -665,8 +665,8 @@ You must prove it.
 - [x] Admin dashboard shows provisioning request history + success/failure rates (Ops Component 3)
 - [x] GDPR deletion pipeline deletes `provisioning_requests` + `provisioning_declined` and revokes any stored tokens/keys (Ops Component 6)
 - [x] Safety classifier allowlists OAuth links/short links (don’t flag as suspicious) (Ops Component 9)
-- [ ] Multi-channel continuity: provisioning started on WhatsApp, user switches channels; callback remains valid (server-side session) (Ops Component 10)
-- [ ] LLM failover: in degraded mode, `provision_server` remains available and system fails gracefully if gap detection quality drops (Ops Component 8)
+- [x] Multi-channel continuity: provisioning started on WhatsApp, user switches channels; callback remains valid (server-side session) (Ops Component 10)
+- [x] LLM failover: in degraded mode, `provision_server` remains available and system fails gracefully if gap detection quality drops (Ops Component 8)
 
 ## Observability (Section 33)
 - [ ] Implement all metrics in Section 33 (latency, error rate, tier distribution, cache hit rate, provider failover, etc.)

@@ -286,18 +286,13 @@ def _resolve_mcp_monthly_budget_cents(*, plan: str, status: str) -> int:
     return int(settings.BILLING_MCP_MONTHLY_LIMIT_CENTS_PERSONAL)
 
 
-def enforce_billing_for_inbound_message(db: Session, user_id: str) -> BillingDecision:
-    """
-    Enforce subscription state + burst limiting + daily caps.
-
-    This function is designed to run before any LLM/tool work.
-    """
-    sub = _load_subscription_cached(db, user_id)
-    plan = (sub.plan or "free_trial").strip().lower()
-    status = (sub.status or "active").strip().lower()
-    now = _now_utc()
-
-    # Subscription state gate
+def _subscription_state_gate(
+    *,
+    sub: Subscription,
+    plan: str,
+    status: str,
+    now: datetime,
+) -> BillingDecision | None:
     if status in {"canceled", "cancelled", "inactive", "paused", "unpaid"}:
         return BillingDecision(
             allowed=False,
@@ -310,9 +305,7 @@ def enforce_billing_for_inbound_message(db: Session, user_id: str) -> BillingDec
             ),
         )
 
-    # Past-due grace period gate
     if status == "past_due":
-        # We treat Subscription.updated_at as "last status update" (good enough for v1).
         updated = sub.updated_at.replace(tzinfo=timezone.utc) if sub.updated_at else now
         grace_days = int(settings.BILLING_PAST_DUE_GRACE_DAYS)
         if (now - updated) > timedelta(days=grace_days):
@@ -327,7 +320,6 @@ def enforce_billing_for_inbound_message(db: Session, user_id: str) -> BillingDec
                 ),
             )
 
-    # Free trial expiry gate
     if plan in {"free_trial", "trial", "trialing"} or status == "trialing":
         trial_end = sub.current_period_end.replace(tzinfo=timezone.utc) if sub.current_period_end else None
         if trial_end is not None and now > trial_end:
@@ -341,6 +333,23 @@ def enforce_billing_for_inbound_message(db: Session, user_id: str) -> BillingDec
                     http_status=402,
                 ),
             )
+    return None
+
+
+def enforce_billing_for_inbound_message(db: Session, user_id: str) -> BillingDecision:
+    """
+    Enforce subscription state + burst limiting + daily caps.
+
+    This function is designed to run before any LLM/tool work.
+    """
+    sub = _load_subscription_cached(db, user_id)
+    plan = (sub.plan or "free_trial").strip().lower()
+    status = (sub.status or "active").strip().lower()
+    now = _now_utc()
+
+    blocked = _subscription_state_gate(sub=sub, plan=plan, status=status, now=now)
+    if blocked is not None:
+        return blocked
 
     # Monthly MCP spend cap gate (plan-based).
     monthly_mcp_limit = _resolve_mcp_monthly_budget_cents(plan=plan, status=status)
@@ -404,6 +413,35 @@ def enforce_billing_for_inbound_message(db: Session, user_id: str) -> BillingDec
         monthly_mcp_limit_cents=monthly_mcp_limit if monthly_mcp_limit > 0 else None,
         block=None,
     )
+
+
+def enforce_billing_for_tool_call(db: Session, user_id: str, *, tool_name: str) -> BillingDecision:
+    """
+    Tool-level billing policy.
+
+    `provision_server` should not consume message quota counters.
+    """
+    sub = _load_subscription_cached(db, user_id)
+    plan = (sub.plan or "free_trial").strip().lower()
+    status = (sub.status or "active").strip().lower()
+    now = _now_utc()
+
+    blocked = _subscription_state_gate(sub=sub, plan=plan, status=status, now=now)
+    if blocked is not None:
+        return blocked
+
+    if str(tool_name or "").strip().lower() == "provision_server":
+        return BillingDecision(
+            allowed=True,
+            plan=plan,
+            status=status,
+            daily_count=None,
+            monthly_mcp_cost_cents=None,
+            monthly_mcp_limit_cents=None,
+            block=None,
+        )
+
+    return enforce_billing_for_inbound_message(db, user_id)
 
 
 def get_billing_subscription(db: Session, user_id: str) -> Subscription:
