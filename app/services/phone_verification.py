@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from twilio.rest import Client
 
 from app.core.config import settings
+from app.db.user_compat import ensure_fk_parent_row
 from app.services.profile_service import update_profile
 from app.services.preferences import update_preferences
 
@@ -260,6 +261,14 @@ def request_phone_verification(
     code = force_code or _generate_code(settings.PHONE_VERIFICATION_CODE_LENGTH)
     code_hash = _hash_code(code)
     expires_at = now + timedelta(minutes=settings.PHONE_VERIFICATION_CODE_TTL_MINUTES)
+
+    if not ensure_fk_parent_row(
+        db,
+        child_table="phone_verifications",
+        fk_column="user_id",
+        user_id=user_id,
+    ):
+        raise ValueError("Unable to associate verification with authenticated user")
 
     _insert_phone_verification(
         db,

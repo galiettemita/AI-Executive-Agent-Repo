@@ -17,6 +17,7 @@ from app.api.deps import get_db, get_or_create_user
 from app.blueprint.db import normalize_e164
 from app.core.config import settings
 from app.db.database import SessionLocal
+from app.db.user_compat import ensure_fk_parent_row
 from app.middleware.rate_limiter import rate_limit_user
 from app.services.account_deletion_pipeline import run_due_account_deletion_jobs, start_account_deletion_pipeline
 from app.services.gdpr_service import export_user_data
@@ -63,6 +64,13 @@ def _link_channel_connection(
     _ensure_channel_connections_sqlite(db)
     dialect = db.bind.dialect.name if db.bind is not None else ""
     meta_json = json.dumps(metadata or {}, ensure_ascii=False)
+    if not ensure_fk_parent_row(
+        db,
+        child_table="channel_connections",
+        fk_column="user_id",
+        user_id=user_id,
+    ):
+        raise HTTPException(status_code=400, detail="Unable to associate channel with authenticated user")
 
     if dialect == "sqlite":
         existing = db.execute(
