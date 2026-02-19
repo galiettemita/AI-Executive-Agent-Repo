@@ -26,6 +26,7 @@ from app.services.microsoft_oauth import build_microsoft_auth_url, get_microsoft
 from app.services.document_generation import generate_document
 from app.services.docs_search import search_connected_docs
 from app.services.gdpr_service import export_user_data
+from app.services.preferences import update_preferences
 from app.core.config import settings
 
 
@@ -50,6 +51,12 @@ class DocumentGenerateRequest(BaseModel):
     output_format: str = Field(default="pdf", pattern="^(pdf|docx)$")
     template: str = "default"
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class InsightsOptInRequest(BaseModel):
+    user_id: str
+    opt_in: bool = True
+    source: str | None = None
 
 
 def _table_exists(db: Session, table_name: str) -> bool:
@@ -366,3 +373,17 @@ def export_data(
         media_type="application/zip",
         headers=headers,
     )
+
+
+@router.post("/insights/opt-in")
+def insights_opt_in(payload: InsightsOptInRequest, db: Session = Depends(get_db)):
+    if not _table_exists(db, "preferences"):
+        raise HTTPException(status_code=404, detail="preferences table not found")
+    patch: dict[str, Any] = {
+        "share_anonymized_insights": bool(payload.opt_in),
+        "share_anonymized_insights_at": datetime.utcnow().isoformat(),
+    }
+    if payload.source:
+        patch["share_anonymized_insights_source"] = payload.source
+    updated = update_preferences(db, payload.user_id, patch)
+    return {"ok": True, "user_id": payload.user_id, "opt_in": bool(payload.opt_in), "preferences": updated}

@@ -12,6 +12,9 @@ from app.blueprint.mcp.registry import MCPServerRegistry
 from app.blueprint.contracts import ToolCall, ContentProvenance
 from app.blueprint.mcp.wave1_catalog import bootstrap_wave1_servers
 from app.blueprint.mcp.wave1_catalog import WAVE1_SPECS
+from app.blueprint.mcp.wave2_catalog import bootstrap_wave2_servers, WAVE2_SPECS
+from app.blueprint.mcp.wave3_catalog import bootstrap_wave3_servers, WAVE3_SPECS
+from app.blueprint.mcp.wave4_catalog import bootstrap_wave4_servers, WAVE4_SPECS
 from app.blueprint.mcp.wave5_catalog import bootstrap_wave5_servers, WAVE5_SPECS
 from app.blueprint.mcp.wave6_catalog import bootstrap_wave6_servers, WAVE6_SPECS
 from app.core.config import settings
@@ -149,6 +152,93 @@ async def bootstrap_mcp_wave1(
             try:
                 _enforce_mcp_connect_gate(db, user_id=user_id, server_id=server_id)
                 result = await hub.connect_server(db, user_id=user_id, server_id=server_id)
+                if result.get("connected"):
+                    connected += 1
+            except Exception:
+                failed += 1
+        summary["connected_count"] = connected
+        summary["failed_count"] = failed
+    return summary
+
+
+@router.post("/bootstrap/wave2")
+async def bootstrap_mcp_wave2(
+    user_id: str,
+    payload: MCPWaveBootstrapRequest,
+    db: Session = Depends(get_db),
+):
+    summary = await bootstrap_wave2_servers(
+        db,
+        user_id=user_id,
+        transport_mode=payload.transport_mode,
+        connect=False,
+    )
+    if payload.connect:
+        hub = get_mcp_client_hub()
+        connected = 0
+        failed = 0
+        for spec in WAVE2_SPECS:
+            try:
+                _enforce_mcp_connect_gate(db, user_id=user_id, server_id=spec.server_id)
+                result = await hub.connect_server(db, user_id=user_id, server_id=spec.server_id)
+                if result.get("connected"):
+                    connected += 1
+            except Exception:
+                failed += 1
+        summary["connected_count"] = connected
+        summary["failed_count"] = failed
+    return summary
+
+
+@router.post("/bootstrap/wave3")
+async def bootstrap_mcp_wave3(
+    user_id: str,
+    payload: MCPWaveBootstrapRequest,
+    db: Session = Depends(get_db),
+):
+    summary = await bootstrap_wave3_servers(
+        db,
+        user_id=user_id,
+        transport_mode=payload.transport_mode,
+        connect=False,
+    )
+    if payload.connect:
+        hub = get_mcp_client_hub()
+        connected = 0
+        failed = 0
+        for spec in WAVE3_SPECS:
+            try:
+                _enforce_mcp_connect_gate(db, user_id=user_id, server_id=spec.server_id)
+                result = await hub.connect_server(db, user_id=user_id, server_id=spec.server_id)
+                if result.get("connected"):
+                    connected += 1
+            except Exception:
+                failed += 1
+        summary["connected_count"] = connected
+        summary["failed_count"] = failed
+    return summary
+
+
+@router.post("/bootstrap/wave4")
+async def bootstrap_mcp_wave4(
+    user_id: str,
+    payload: MCPWaveBootstrapRequest,
+    db: Session = Depends(get_db),
+):
+    summary = await bootstrap_wave4_servers(
+        db,
+        user_id=user_id,
+        transport_mode=payload.transport_mode,
+        connect=False,
+    )
+    if payload.connect:
+        hub = get_mcp_client_hub()
+        connected = 0
+        failed = 0
+        for spec in WAVE4_SPECS:
+            try:
+                _enforce_mcp_connect_gate(db, user_id=user_id, server_id=spec.server_id)
+                result = await hub.connect_server(db, user_id=user_id, server_id=spec.server_id)
                 if result.get("connected"):
                     connected += 1
             except Exception:

@@ -15,6 +15,8 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_db
 from app.core.config import settings
 from app.services.analytics import wave56_server_prioritization
+from app.services.anonymized_insights import summarize_anonymized_insights
+from app.services.personalization_dashboard import get_personalization_dashboard
 from app.services.prompt_versions import create_prompt_version, ensure_prompt_versions_table, rollback_prompt
 
 router = APIRouter(prefix="/api/v1/admin", tags=["admin-v1"])
@@ -749,3 +751,59 @@ def admin_dashboard(
         "</body></html>"
     )
     return HTMLResponse(content=html)
+
+
+@router.get("/dashboard/personalization", response_class=HTMLResponse)
+def admin_personalization_dashboard(
+    request: Request,
+    days: int = Query(default=30, ge=1, le=365),
+    db: Session = Depends(get_db),
+):
+    _decode_admin_claims(request)
+    payload = get_personalization_dashboard(db, days=int(days))
+    profiling = payload.get("profiling") or {}
+    knowledge = payload.get("knowledge_accuracy") or {}
+    satisfaction = payload.get("satisfaction") or {}
+    correction_freq = payload.get("correction_frequency") or {}
+
+    html = (
+        "<html><body style='font-family: sans-serif; padding: 20px;'>"
+        "<h1>Personalization Dashboard</h1>"
+        f"<p>Window: last {int(payload.get('window_days') or days)} day(s)</p>"
+        "<h2>Profiling Coverage</h2>"
+        "<ul>"
+        f"<li>Coverage: {profiling.get('coverage_pct', 0.0)}%</li>"
+        f"<li>Completed sessions: {profiling.get('completed_sessions', 0)}</li>"
+        f"<li>Total sessions: {profiling.get('total_sessions', 0)}</li>"
+        "</ul>"
+        "<h2>Knowledge Accuracy</h2>"
+        "<ul>"
+        f"<li>Accuracy estimate: {knowledge.get('knowledge_accuracy_estimate', 0.0)}</li>"
+        f"<li>Correction rate: {knowledge.get('correction_rate_pct', 0.0)}%</li>"
+        f"<li>Correction signals: {knowledge.get('correction_signals', 0)}</li>"
+        "</ul>"
+        "<h2>Correction Frequency</h2>"
+        "<ul>"
+        f"<li>Corrections per 100 messages: {correction_freq.get('corrections_per_100_messages', 0.0)}</li>"
+        f"<li>Messages received: {correction_freq.get('message_received', 0)}</li>"
+        "</ul>"
+        "<h2>Satisfaction</h2>"
+        "<ul>"
+        f"<li>Positive rate: {satisfaction.get('satisfaction_rate_pct', 0.0)}%</li>"
+        f"<li>Positive feedback: {satisfaction.get('positive', 0)}</li>"
+        f"<li>Negative feedback: {satisfaction.get('negative', 0)}</li>"
+        "</ul>"
+        "</body></html>"
+    )
+    return HTMLResponse(content=html)
+
+
+@router.get("/insights/anonymized")
+def admin_anonymized_insights(
+    request: Request,
+    days: int = Query(default=30, ge=1, le=365),
+    db: Session = Depends(get_db),
+):
+    _decode_admin_claims(request)
+    payload = summarize_anonymized_insights(db, days=int(days))
+    return {"ok": True, **payload}

@@ -35,6 +35,7 @@ from app.blueprint.embedding_audit import run_embedding_reembed_audit_all_users
 from app.blueprint.knowledge_review import run_nightly_consolidation, run_weekly_self_review
 from app.blueprint.muscles import capture_muscles_snapshot
 from app.blueprint.research import run_research_job
+from app.services.heartbeat_proactive import enqueue_heartbeat_checkin
 from app.core.redis import get_redis
 
 logger = logging.getLogger(__name__)
@@ -458,6 +459,25 @@ def run_self_review():
         db.close()
 
 
+def run_heartbeat_proactive():
+    db = SessionLocal()
+    try:
+        user_ids = _distinct_blueprint_user_ids(db)
+        results = []
+        for user_id in user_ids:
+            try:
+                results.append(enqueue_heartbeat_checkin(db, user_id=user_id))
+            except Exception as exc:
+                results.append({"ok": False, "user_id": user_id, "error": str(exc)})
+        logger.info("Heartbeat proactive run complete for %d users", len(user_ids))
+        return {"users": len(user_ids), "results": results}
+    except Exception as e:
+        logger.error("Fatal error in heartbeat proactive job: %s", e)
+        return {"users": 0, "results": [], "error": str(e)}
+    finally:
+        db.close()
+
+
 def run_due_research():
     db = SessionLocal()
     try:
@@ -841,6 +861,15 @@ def setup_scheduler() -> BackgroundScheduler:
             replace_existing=True,
         )
         logger.info("Muscles snapshot job scheduled every 6 hours")
+
+        scheduler.add_job(
+            run_heartbeat_proactive,
+            trigger=CronTrigger(hour=9, minute=5),
+            id="heartbeat_proactive_job",
+            name="Heartbeat Proactive Check-ins",
+            replace_existing=True,
+        )
+        logger.info("Heartbeat proactive job scheduled daily at 09:05 UTC")
 
     scheduler.add_job(
         run_embedding_audit,

@@ -235,6 +235,123 @@ _WAVE1_MOCK_TOOLS: dict[str, list[MCPToolSchema]] = {
     ],
 }
 
+_WAVE2_MOCK_TOOLS: dict[str, list[MCPToolSchema]] = {
+    "slack-mcp": [
+        MCPToolSchema(name="channels.list", description="List Slack channels"),
+        MCPToolSchema(name="messages.search", description="Search Slack messages"),
+        MCPToolSchema(name="messages.send", description="Send Slack message"),
+    ],
+    "outlook-mcp": [
+        MCPToolSchema(name="mail.search", description="Search Outlook mail"),
+        MCPToolSchema(name="calendar.list", description="List Outlook calendar events"),
+        MCPToolSchema(name="mail.send", description="Send Outlook mail"),
+    ],
+    "teams-mcp": [
+        MCPToolSchema(name="teams.list", description="List Teams"),
+        MCPToolSchema(name="channels.list", description="List Teams channels"),
+        MCPToolSchema(name="messages.send", description="Send Teams message"),
+    ],
+    "linear-mcp": [
+        MCPToolSchema(name="issues.list", description="List Linear issues"),
+        MCPToolSchema(name="issues.create", description="Create Linear issue"),
+        MCPToolSchema(name="issues.update", description="Update Linear issue"),
+    ],
+    "asana-mcp": [
+        MCPToolSchema(name="tasks.list", description="List Asana tasks"),
+        MCPToolSchema(name="tasks.create", description="Create Asana task"),
+        MCPToolSchema(name="tasks.update", description="Update Asana task"),
+    ],
+    "discord-mcp": [
+        MCPToolSchema(name="channels.list", description="List Discord channels"),
+        MCPToolSchema(name="messages.send", description="Send Discord message"),
+    ],
+    "whatsapp-business-mcp": [
+        MCPToolSchema(name="templates.list", description="List WhatsApp templates"),
+        MCPToolSchema(name="messages.send", description="Send WhatsApp message"),
+    ],
+}
+
+_WAVE3_MOCK_TOOLS: dict[str, list[MCPToolSchema]] = {
+    "stripe-mcp": [
+        MCPToolSchema(name="customers.list", description="List Stripe customers"),
+        MCPToolSchema(name="invoices.create", description="Create Stripe invoice"),
+        MCPToolSchema(name="payments.create", description="Create Stripe payment"),
+    ],
+    "quickbooks-mcp": [
+        MCPToolSchema(name="invoices.create", description="Create QuickBooks invoice"),
+        MCPToolSchema(name="payments.create", description="Create QuickBooks payment"),
+        MCPToolSchema(name="reports.get", description="Fetch QuickBooks report"),
+    ],
+    "hubspot-mcp": [
+        MCPToolSchema(name="contacts.search", description="Search HubSpot contacts"),
+        MCPToolSchema(name="deals.create", description="Create HubSpot deal"),
+        MCPToolSchema(name="deals.update", description="Update HubSpot deal"),
+    ],
+    "salesforce-mcp": [
+        MCPToolSchema(name="accounts.search", description="Search Salesforce accounts"),
+        MCPToolSchema(name="opportunities.update", description="Update Salesforce opportunity"),
+        MCPToolSchema(name="leads.create", description="Create Salesforce lead"),
+    ],
+    "google-sheets-mcp": [
+        MCPToolSchema(name="sheets.read", description="Read Google Sheet"),
+        MCPToolSchema(name="sheets.write", description="Write Google Sheet"),
+        MCPToolSchema(name="sheets.append", description="Append to Google Sheet"),
+    ],
+    "airtable-mcp": [
+        MCPToolSchema(name="records.search", description="Search Airtable records"),
+        MCPToolSchema(name="records.create", description="Create Airtable record"),
+        MCPToolSchema(name="records.update", description="Update Airtable record"),
+    ],
+    "jira-mcp": [
+        MCPToolSchema(name="issues.search", description="Search Jira issues"),
+        MCPToolSchema(name="issues.create", description="Create Jira issue"),
+        MCPToolSchema(name="issues.update", description="Update Jira issue"),
+    ],
+    "sentry-mcp": [
+        MCPToolSchema(name="issues.list", description="List Sentry issues"),
+        MCPToolSchema(name="issues.assign", description="Assign Sentry issue"),
+        MCPToolSchema(name="projects.list", description="List Sentry projects"),
+    ],
+}
+
+_WAVE4_MOCK_TOOLS: dict[str, list[MCPToolSchema]] = {
+    "google-maps-mcp": [
+        MCPToolSchema(name="places.search", description="Search places"),
+        MCPToolSchema(name="routes.get", description="Get route"),
+        MCPToolSchema(name="eta.get", description="Get ETA"),
+    ],
+    "uber-lyft-mcp": [
+        MCPToolSchema(name="rides.estimate", description="Estimate ride"),
+        MCPToolSchema(name="rides.request", description="Request ride"),
+        MCPToolSchema(name="rides.status", description="Ride status"),
+    ],
+    "opentable-resy-mcp": [
+        MCPToolSchema(name="restaurants.search", description="Search restaurants"),
+        MCPToolSchema(name="reservations.create", description="Create reservation"),
+        MCPToolSchema(name="reservations.cancel", description="Cancel reservation"),
+    ],
+    "homeassistant-mcp": [
+        MCPToolSchema(name="devices.list", description="List smart home devices"),
+        MCPToolSchema(name="devices.command", description="Send device command"),
+        MCPToolSchema(name="scenes.activate", description="Activate scene"),
+    ],
+    "spotify-mcp": [
+        MCPToolSchema(name="playlists.list", description="List Spotify playlists"),
+        MCPToolSchema(name="playback.start", description="Start playback"),
+        MCPToolSchema(name="playback.pause", description="Pause playback"),
+    ],
+    "evernote-mcp": [
+        MCPToolSchema(name="notes.search", description="Search Evernote notes"),
+        MCPToolSchema(name="notes.create", description="Create Evernote note"),
+        MCPToolSchema(name="notes.update", description="Update Evernote note"),
+    ],
+    "dropbox-mcp": [
+        MCPToolSchema(name="files.search", description="Search Dropbox files"),
+        MCPToolSchema(name="files.get", description="Get Dropbox file"),
+        MCPToolSchema(name="files.upload", description="Upload Dropbox file"),
+    ],
+}
+
 
 def build_echo_manifest(server_id: str = "mcp-echo") -> MCPServerManifest:
     return MCPServerManifest(
@@ -305,6 +422,12 @@ def mock_tools_for(server_id: str) -> list[MCPToolSchema]:
         ]
     if server_id in _WAVE1_MOCK_TOOLS:
         return list(_WAVE1_MOCK_TOOLS[server_id])
+    if server_id in _WAVE2_MOCK_TOOLS:
+        return list(_WAVE2_MOCK_TOOLS[server_id])
+    if server_id in _WAVE3_MOCK_TOOLS:
+        return list(_WAVE3_MOCK_TOOLS[server_id])
+    if server_id in _WAVE4_MOCK_TOOLS:
+        return list(_WAVE4_MOCK_TOOLS[server_id])
     return []
 
 

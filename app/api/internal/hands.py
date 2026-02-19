@@ -355,6 +355,10 @@ def _transaction_operation_for_call(*, tool_name: str, args: dict, mcp_server_id
     except Exception:
         args_blob = str(args or "").lower()
     signal_text = f"{lowered_tool} {args_blob} {server_id}"
+    if server_id in {"stripe-mcp", "quickbooks-mcp"}:
+        return "financial"
+    if any(k in signal_text for k in ("invoice", "refund", "payout", "transfer", "bill", "expense", "ledger", "charge")):
+        return "financial"
     if server_id in {"duffel-mcp", "booking-com-mcp"} or any(k in signal_text for k in ("book", "flight", "hotel", "reservation")):
         return "booking"
     if server_id in {"instacart-mcp"} or any(k in signal_text for k in ("checkout", "cart", "order", "purchase", "payment")):
@@ -364,7 +368,7 @@ def _transaction_operation_for_call(*, tool_name: str, args: dict, mcp_server_id
 
 def _requires_explicit_transaction_approval(*, tool_name: str, operation: str) -> bool:
     op = str(operation or "").strip().lower()
-    if op not in {"booking", "checkout"}:
+    if op not in {"booking", "checkout", "financial"}:
         return False
     lowered_tool = str(tool_name or "").strip().lower()
     write_markers = (
@@ -380,6 +384,13 @@ def _requires_explicit_transaction_approval(*, tool_name: str, operation: str) -
         "update",
         "delete",
         "submit",
+        "invoice",
+        "refund",
+        "payout",
+        "transfer",
+        "bill",
+        "expense",
+        "void",
     )
     return any(marker in lowered_tool for marker in write_markers)
 

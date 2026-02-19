@@ -245,6 +245,39 @@ def test_wave56_checkout_requires_explicit_approval(monkeypatch) -> None:
     assert "requires explicit approval" in str(result.error).lower()
 
 
+def test_wave3_financial_requires_explicit_approval(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "FEATURE_MCP_CLIENT", True)
+    spec = ToolSpec(
+        name="mcp.wave3.stripe.charge.create",
+        description="Wave 3 Stripe charge creation.",
+        input_schema={"type": "object", "properties": {"amount": {"type": "number"}}},
+        output_schema={"type": "object"},
+        risk_level=RiskLevel.HIGH,
+        is_mcp=True,
+        mcp_server_id="stripe-mcp",
+    )
+    get_tool_registry().register(spec, min_tier=2, tags=["test"], llm_name="mcp_wave3_stripe_charge_create")
+
+    monkeypatch.setattr(
+        hands,
+        "invoke_mcp_tool",
+        lambda *args, **kwargs: pytest.fail("invoke_mcp_tool should not run without explicit approval"),
+    )
+
+    call = ToolCall(
+        tool_name="mcp.wave3.stripe.charge.create",
+        tool="mcp_wave3_stripe_charge_create",
+        arguments={"amount": 42.0, "currency": "USD"},
+        args={"amount": 42.0, "currency": "USD"},
+        user_id="wave3-finance-user",
+        run_id="run-wave3-finance-approval",
+        input_provenance=ContentProvenance.USER_DIRECT,
+    )
+    result = asyncio.run(hands_execute(call))
+    assert result.ok is False
+    assert "requires explicit approval" in str(result.error).lower()
+
+
 def test_mcp_invocation_records_tool_execution_with_server_binding(monkeypatch) -> None:
     monkeypatch.setattr(settings, "FEATURE_MCP_CLIENT", True)
     spec = ToolSpec(

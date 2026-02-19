@@ -4,6 +4,7 @@ import json
 import logging
 import time
 import uuid
+from datetime import datetime
 from typing import Any, Literal
 
 import httpx
@@ -89,7 +90,9 @@ def _default_brain_base_url() -> str | None:
     return None
 
 
-def _session_key(channel: Channel, channel_identifier: str) -> str:
+def _session_key(channel: Channel, channel_identifier: str, user_id: str | None = None) -> str:
+    if settings.FEATURE_CROSS_CHANNEL_CONTINUITY and user_id:
+        return f"bp:v1:session:user:{user_id}"
     return f"bp:v1:session:{channel.value}:{channel_identifier}"
 
 
@@ -538,8 +541,8 @@ def _persist_v1_message(
             pass
 
 
-def _resolve_session_id(channel: Channel, channel_identifier: str) -> str:
-    key = _session_key(channel, channel_identifier)
+def _resolve_session_id(channel: Channel, channel_identifier: str, *, user_id: str | None = None) -> str:
+    key = _session_key(channel, channel_identifier, user_id=user_id)
     client = get_redis()
     if client is not None:
         existing = client.get(key)
@@ -551,6 +554,33 @@ def _resolve_session_id(channel: Channel, channel_identifier: str) -> str:
 
     # Fallback if Redis is unavailable.
     return str(uuid.uuid4())
+
+
+def _update_channel_preference(*, user_id: str | None, channel: Channel) -> None:
+    if not settings.FEATURE_CROSS_CHANNEL_CONTINUITY:
+        return
+    if not user_id or not is_uuid(user_id):
+        return
+    db = SessionLocal()
+    try:
+        prefs = get_preferences(db, user_id)
+        current = str(prefs.get("preferred_channel") or "").strip().lower()
+        if current != channel.value:
+            update_preferences(
+                db,
+                user_id,
+                {
+                    "preferred_channel": channel.value,
+                    "preferred_channel_updated_at": datetime.utcnow().isoformat(),
+                },
+            )
+    except Exception:
+        logger.warning("Failed to update preferred channel for user=%s", user_id, exc_info=True)
+    finally:
+        try:
+            db.close()
+        except Exception:
+            pass
 
 
 def _sse(data: dict[str, Any]) -> str:
@@ -1434,7 +1464,8 @@ def post_message(request: Request, payload: MessageRequest, background_tasks: Ba
     run_id = str(uuid.uuid4())
     resolved_user_id = _resolve_user_id(payload, request)
     channel_identifier = payload.channel_identifier or resolved_user_id or "anonymous"
-    conversation_id = _resolve_session_id(payload.channel, channel_identifier)
+    conversation_id = _resolve_session_id(payload.channel, channel_identifier, user_id=resolved_user_id)
+    _update_channel_preference(user_id=resolved_user_id, channel=payload.channel)
 
     inbound = InboundMessage(
         channel=payload.channel,
