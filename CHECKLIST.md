@@ -428,7 +428,7 @@ You must prove it.
 - [ ] Run comprehensive eval across all 30 launch MCP servers; establish quality baseline for launch (Ops Blueprint Component 4)
 - [ ] Run A/B test(s) on system prompt to optimize MCP tool selection; use prompt versioning pipeline + rollback (Ops Blueprint Component 5)
 - [ ] Analytics-driven server prioritization and onboarding tuning based on adoption + retention (Ops Blueprint Component 12)
-- [ ] External legal counsel review; finalize privacy policy + ToS; verify deletion/export cover MCP OAuth tokens + caches (Ops Blueprint Component 6)
+- [ ] DEFERRED (approved on February 19, 2026): External legal counsel review; finalize privacy policy + ToS; verify deletion/export cover MCP OAuth tokens + caches (REQUIRED before public launch) (Ops Blueprint Component 6)
 - [ ] Billing load test under peak signup; verify plan gating + trial logic under load (Ops Blueprint Component 1)
 - [ ] DR: run restore drill and validate runbooks before launch (Ops Blueprint Component 7)
 
