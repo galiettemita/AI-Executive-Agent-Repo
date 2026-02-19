@@ -7,6 +7,7 @@ from typing import Any
 
 import jwt
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -577,3 +578,60 @@ def admin_provisioning_stats(
         "avg_completion_seconds": avg_completion_seconds,
         "by_state": by_state,
     }
+
+
+@router.get("/dashboard/provisioning", response_class=HTMLResponse)
+def admin_provisioning_dashboard(
+    request: Request,
+    days: int = Query(default=30, ge=1, le=365),
+    limit: int = Query(default=50, ge=1, le=500),
+    db: Session = Depends(get_db),
+):
+    _decode_admin_claims(request)
+    stats_payload = admin_provisioning_stats(request=request, days=days, db=db)
+    history_payload = admin_provisioning_requests(
+        request=request,
+        state="",
+        user_id="",
+        server_id="",
+        limit=limit,
+        offset=0,
+        db=db,
+    )
+    stats = stats_payload.get("totals") or {}
+    success_rate = float(stats_payload.get("success_rate") or 0.0) * 100.0
+    rows_html = "".join(
+        (
+            "<tr>"
+            f"<td>{str(item.get('created_at') or '')}</td>"
+            f"<td>{str(item.get('user_id') or '')}</td>"
+            f"<td>{str(item.get('server_id') or '')}</td>"
+            f"<td>{str(item.get('state') or '')}</td>"
+            f"<td>{str(item.get('updated_at') or '')}</td>"
+            "</tr>"
+        )
+        for item in (history_payload.get("items") or [])
+    )
+    if not rows_html:
+        rows_html = "<tr><td colspan='5'>No provisioning requests in this window.</td></tr>"
+
+    html = (
+        "<html><body style='font-family: sans-serif; padding: 20px;'>"
+        "<h2>Provisioning Dashboard</h2>"
+        f"<p>Window: last {int(days)} day(s)</p>"
+        "<ul>"
+        f"<li>Total requests: {int(stats.get('requests') or 0)}</li>"
+        f"<li>Success: {int(stats.get('success') or 0)}</li>"
+        f"<li>Failed: {int(stats.get('failed') or 0)}</li>"
+        f"<li>Expired: {int(stats.get('expired') or 0)}</li>"
+        f"<li>Canceled: {int(stats.get('canceled') or 0)}</li>"
+        f"<li>Active: {int(stats.get('active') or 0)}</li>"
+        f"<li>Success rate: {success_rate:.2f}%</li>"
+        "</ul>"
+        "<table border='1' cellspacing='0' cellpadding='6'>"
+        "<thead><tr><th>Created</th><th>User</th><th>Server</th><th>State</th><th>Updated</th></tr></thead>"
+        f"<tbody>{rows_html}</tbody>"
+        "</table>"
+        "</body></html>"
+    )
+    return HTMLResponse(content=html)

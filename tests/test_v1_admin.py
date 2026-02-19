@@ -119,3 +119,10 @@ def test_admin_provisioning_history_and_stats():
     totals = payload.get("totals") or {}
     assert int(totals.get("requests") or 0) >= 2
     assert int(totals.get("success") or 0) >= 1
+
+    dashboard = client.get("/api/v1/admin/dashboard/provisioning", headers=headers)
+    assert dashboard.status_code == 200
+    html = dashboard.text
+    assert "Provisioning Dashboard" in html
+    assert "Success rate:" in html
+    assert "duffel-mcp" in html or "zoom-mcp" in html

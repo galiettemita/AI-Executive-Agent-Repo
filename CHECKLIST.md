@@ -662,7 +662,7 @@ You must prove it.
 - [x] Plan gating works: free users can only provision Wave 1 servers; paid users can provision per plan (Auto-Provisioning Section 13; Ops Component 1)
 - [x] Eval system scores provisioning flows and includes GT-101..GT-105 scenarios (Auto-Provisioning Section 17; Ops Component 4)
 - [x] Analytics tracks provisioning events: `provisioning_requested`, `awaiting_auth`, `server_provisioned`, `provisioning_failed`, `provisioning_declined`, `provisioning_expired` (Ops Component 12)
-- [ ] Admin dashboard shows provisioning request history + success/failure rates (Ops Component 3)
+- [x] Admin dashboard shows provisioning request history + success/failure rates (Ops Component 3)
 - [x] GDPR deletion pipeline deletes `provisioning_requests` + `provisioning_declined` and revokes any stored tokens/keys (Ops Component 6)
 - [x] Safety classifier allowlists OAuth links/short links (don’t flag as suspicious) (Ops Component 9)
 - [ ] Multi-channel continuity: provisioning started on WhatsApp, user switches channels; callback remains valid (server-side session) (Ops Component 10)
