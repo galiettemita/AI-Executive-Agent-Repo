@@ -94,6 +94,15 @@ def user_exists(db: Session, user_id: str) -> bool:
         return False
 
 
+def _set_app_user_id(db: Session, user_id: str) -> None:
+    if _dialect_name(db) == "sqlite":
+        return
+    try:
+        db.execute(text("select set_config('app.user_id', :user_id, true)"), {"user_id": user_id})
+    except Exception:
+        pass
+
+
 def ensure_user_row(db: Session, user_id: str) -> None:
     uid = str(user_id or "").strip()
     if not uid or not _table_exists(db, "users"):
@@ -112,6 +121,7 @@ def ensure_user_row(db: Session, user_id: str) -> None:
             # Mixed-schema environments may send non-UUID user ids on legacy paths.
             # Don't hard-fail the request if this legacy row cannot be materialized.
             return
+    _set_app_user_id(db, uid)
 
     try:
         if dialect == "sqlite":
@@ -162,4 +172,3 @@ def ensure_user_row(db: Session, user_id: str) -> None:
             db.commit()
         except Exception:
             db.rollback()
-
