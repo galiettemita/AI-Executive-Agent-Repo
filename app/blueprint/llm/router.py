@@ -4,6 +4,7 @@ import json
 import logging
 import threading
 import time
+from hashlib import sha256
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Iterable
@@ -89,12 +90,25 @@ def _safe_float(value: Any) -> float:
         return 0.0
 
 
+class LLMMaintenanceModeError(RuntimeError):
+    pass
+
+
+class LLMDegradedModeQueuedError(RuntimeError):
+    def __init__(self, *, task_type: str):
+        self.task_type = str(task_type or "general")
+        super().__init__(f"LLM Router degraded mode: task queued for retry (task_type={self.task_type})")
+
+
 class LLMRouter:
     def __init__(self) -> None:
         self._openai_client: OpenAI | None = None
         self._probe_thread: threading.Thread | None = None
         self._probe_stop = threading.Event()
         self._probe_interval_seconds = max(10, settings.LLM_ROUTER_HEALTH_CHECK_INTERVAL)
+        self._recovery_ramp_seconds = max(60, settings.LLM_ROUTER_RECOVERY_RAMP_SECONDS)
+        self._last_system_mode: str = "unknown"
+        self._recovery_started_monotonic: float | None = None
         if settings.ENV in {"staging", "production"}:
             self.start_health_probe_loop()
 
@@ -262,12 +276,82 @@ class LLMRouter:
             return False
         return not task.startswith("research")
 
+    def _request_bucket(self, req: LLMRequest) -> int:
+        first_user = ""
+        for msg in req.messages or []:
+            if str(msg.get("role") or "").lower() == "user":
+                first_user = str(msg.get("content") or "")
+                break
+        payload = json.dumps(
+            {
+                "task_type": req.task_type,
+                "first_user": first_user[:400],
+                "tools": [str((tool or {}).get("function", {}).get("name") or "") for tool in (req.tools or [])],
+            },
+            sort_keys=True,
+            ensure_ascii=False,
+        )
+        digest = sha256(payload.encode("utf-8")).hexdigest()
+        return int(digest[:8], 16) % 100
+
+    def _recovery_ramp_fraction(self, mode: str) -> float:
+        # Reset ramp whenever the system is not fully normal.
+        if mode in {"degraded", "maintenance"}:
+            self._last_system_mode = mode
+            self._recovery_started_monotonic = None
+            return 1.0
+
+        if self._last_system_mode in {"degraded", "maintenance"} and self._recovery_started_monotonic is None:
+            self._recovery_started_monotonic = time.monotonic()
+
+        self._last_system_mode = mode
+        if self._recovery_started_monotonic is None:
+            return 1.0
+
+        elapsed = max(0.0, time.monotonic() - self._recovery_started_monotonic)
+        quarter = self._recovery_ramp_seconds / 4.0
+        if elapsed < quarter:
+            return 0.10
+        if elapsed < quarter * 2:
+            return 0.25
+        if elapsed < quarter * 3:
+            return 0.50
+
+        # Final quarter ramps fully back to 100%.
+        if elapsed < self._recovery_ramp_seconds:
+            return 1.0
+
+        self._recovery_started_monotonic = None
+        return 1.0
+
+    def _force_local_during_recovery(self, *, req: LLMRequest, health_map: dict[str, LLMProviderHealth], fraction: float) -> bool:
+        if fraction >= 1.0:
+            return False
+        local_health = health_map.get(LLMProvider.LOCAL.value)
+        if not local_health or not local_health.is_healthy:
+            return False
+        return self._request_bucket(req) >= int(fraction * 100)
+
+    @staticmethod
+    def _prepend_route(preferred: tuple[LLMProvider, str], chain: list[tuple[LLMProvider, str]]) -> list[tuple[LLMProvider, str]]:
+        out = [preferred]
+        for item in chain:
+            if item[0] == preferred[0] and item[1] == preferred[1]:
+                continue
+            out.append(item)
+        return out
+
     def select_route(self, req: LLMRequest) -> dict[str, Any]:
         health_map = self.all_provider_health(force_refresh=False)
         mode = self._system_mode_from_health(health_map)
+        recovery_fraction = self._recovery_ramp_fraction(mode)
         chain = self._route_chain(req)
+        forced_local_recovery = False
         if mode == "degraded":
             chain = [(LLMProvider.LOCAL, "llama-4-8b")]
+        elif mode == "normal" and self._force_local_during_recovery(req=req, health_map=health_map, fraction=recovery_fraction):
+            chain = self._prepend_route((LLMProvider.LOCAL, "llama-4-8b"), chain)
+            forced_local_recovery = True
         selected: tuple[LLMProvider, str] | None = None
         checks: list[dict[str, Any]] = []
 
@@ -286,12 +370,14 @@ class LLMRouter:
 
         if mode == "maintenance":
             selected = None
-        if selected is None and chain:
+        if selected is None and chain and mode != "maintenance":
             selected = chain[0]
 
         return {
             "task_type": req.task_type,
             "system_mode": mode,
+            "recovery_ramp_fraction": round(recovery_fraction, 3),
+            "recovery_forced_local": forced_local_recovery,
             "requested_model_preference": req.model_preference.value if req.model_preference else None,
             "selected_provider": selected[0].value if selected else None,
             "selected_model": selected[1] if selected else None,
@@ -541,16 +627,20 @@ class LLMRouter:
         raise RuntimeError(f"Unsupported provider: {provider.value}")
 
     def call(self, req: LLMRequest) -> LLMResponse:
-        mode = self.system_mode(force_refresh=False)
+        health_map = self.all_provider_health(force_refresh=False)
+        mode = self._system_mode_from_health(health_map)
+        recovery_fraction = self._recovery_ramp_fraction(mode)
         if mode == "maintenance":
-            raise RuntimeError("LLM Router maintenance mode: no healthy providers available")
+            raise LLMMaintenanceModeError("LLM Router maintenance mode: no healthy providers available")
 
         if mode == "degraded":
             if not self._degraded_allows_task(req):
-                raise RuntimeError("LLM Router degraded mode: task queued for retry")
+                raise LLMDegradedModeQueuedError(task_type=req.task_type)
             route = [(LLMProvider.LOCAL, "llama-4-8b")]
         else:
             route = self._route_chain(req)
+            if self._force_local_during_recovery(req=req, health_map=health_map, fraction=recovery_fraction):
+                route = self._prepend_route((LLMProvider.LOCAL, "llama-4-8b"), route)
         if not route:
             raise RuntimeError("No providers configured")
 

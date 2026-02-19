@@ -38,6 +38,7 @@ class Settings(BaseSettings):
     LOCAL_LLM_ENDPOINT: str | None = None
     LLM_ROUTER_FAILOVER_TIMEOUT_S: int = 30
     LLM_ROUTER_HEALTH_CHECK_INTERVAL: int = 30
+    LLM_ROUTER_RECOVERY_RAMP_SECONDS: int = 300
 
     # ── Stripe ──────────────────────────────────────────────────
     STRIPE_SECRET_KEY: str | None = None

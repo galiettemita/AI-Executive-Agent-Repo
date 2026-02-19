@@ -14,6 +14,7 @@ from app.blueprint.contracts import (
 )
 from app.blueprint.progress import get_run_result
 from app.services.billing_middleware import BillingDecision
+from app.services.content_safety import RateLimitDecision
 
 
 def _mk_inbound(*, channel: Channel = Channel.WEB) -> InboundMessage:
@@ -88,3 +89,31 @@ def test_gateway_routes_outbound_to_active_channel(monkeypatch) -> None:
     # iMessage formatter removes markdown syntax.
     assert "##" not in str(outbound.get("content") or "")
     assert "**" not in str(outbound.get("content") or "")
+
+
+def test_gateway_blocks_when_safety_circuit_rate_limited(monkeypatch) -> None:
+    run_id = f"safety-{uuid.uuid4()}"
+    inbound = _mk_inbound()
+    inbound.user_id = "user-123"
+
+    monkeypatch.setattr(
+        v1_gateway,
+        "enforce_billing_for_inbound_message",
+        lambda db, user_id: BillingDecision(allowed=True, plan="free_trial", status="trialing"),
+    )
+    monkeypatch.setattr(
+        v1_gateway,
+        "enforce_gateway_burst_limit",
+        lambda user_id, limit_per_minute=10: RateLimitDecision(allowed=True),
+    )
+    monkeypatch.setattr(
+        v1_gateway,
+        "enforce_safety_circuit_rate_limit",
+        lambda user_id: RateLimitDecision(allowed=False, retry_after_seconds=20, reason="safety_circuit_rate_limited"),
+    )
+
+    v1_gateway._process_message_run(run_id, inbound)
+    result = get_run_result(run_id)
+    assert result is not None
+    assert result.get("blocked") is True
+    assert result.get("reason") == "safety_circuit_rate_limited"

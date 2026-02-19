@@ -176,8 +176,8 @@ Feature Flag Rollout Reminders (Appendix A)
 ## M4 (Operational Overlay): LLM Failover + Degraded Mode (Operational Blueprint Component 8)
 - [x] Implement `LLMProviderHealth` model and background probe loop (default: every 30s per provider) (Ops Blueprint Appendix A) — added `LLMProviderHealth` contract + daemon probe loop in router
 - [x] Implement LLM Router failover matrix: provider down -> next provider; all external down -> degraded mode (local only); all down -> maintenance mode (Ops Blueprint Component 8) — routing now computes `system_mode` (`normal|degraded|maintenance`) and enforces matrix in `call()/select_route()`
-- [ ] Degraded mode behavior: Tier 1/2 handled on local model; Tier 3 queued for retry; Research Engine disabled; notify user on first degraded-mode message (Ops Blueprint Component 8)
-- [ ] Recovery behavior: gradual traffic ramp on recovery (10% -> 25% -> 50% -> 100% over ~5 min) (Ops Blueprint Component 8)
+- [x] Degraded mode behavior: Tier 1/2 handled on local model; Tier 3 queued for retry; Research Engine disabled; notify user on first degraded-mode message (Ops Blueprint Component 8) — responder now routes Tier 2 as `single_tool_call`, queues Tier 3 via `enqueue_degraded_retry`, blocks research task types in degraded mode, and adds first-message degraded notice (30m cooldown)
+- [x] Recovery behavior: gradual traffic ramp on recovery (10% -> 25% -> 50% -> 100% over ~5 min) (Ops Blueprint Component 8) — router applies deterministic recovery ramp (`LLM_ROUTER_RECOVERY_RAMP_SECONDS`, default 300s) with local-first throttling during ramp windows
 - [ ] Staging tests: simulate provider outage and validate automatic failover + recovery ramp (Ops Blueprint Component 8)
 
 ## M4 S3–4: Email Sending (Section 38, Section 12, Section 32)
@@ -198,14 +198,14 @@ Feature Flag Rollout Reminders (Appendix A)
 - [x] Add prompt injection fuzzing to CI (Section 32 table, Section 34)
 
 ## M5 (Operational Overlay): Abuse Prevention + Admin Dashboard v1 (Operational Blueprint Components 3, 9)
-- [ ] Abuse prevention schema: create `moderation_queue` table (FK -> users/accounts, messages) (Ops Blueprint Component 9; Ops Blueprint Section 16)
-- [ ] Safety classifier (input): score every inbound message for injection/harassment/self-harm/illegal activity (parallel, no added latency) (Ops Blueprint Component 9)
-- [ ] Safety classifier (output): score every outbound response before delivery (Ops Blueprint Component 9)
-- [ ] Safety circuit breaker: 3+ safety flags in 1 hour -> rate-limit user to 5 msgs/hr + force synchronous output classifier (Ops Blueprint Component 9)
-- [ ] Gateway burst rate limiting: 10 messages/min per user (Redis sliding window) (Ops Blueprint Component 9)
-- [ ] Admin auth: separate admin role in identity provider; enforce via JWT claim (role: admin) (Ops Blueprint Invariant 12)
-- [ ] Admin audit trail: log admin actions (suspend user, resolve moderation, rollback prompt) with admin identity (Ops Blueprint Invariant 12)
-- [ ] Admin API v1: `/api/v1/admin/users` (list/search), `/api/v1/admin/users/:id` (detail), `/api/v1/admin/mcp/health`, `/api/v1/admin/moderation/queue` (Ops Blueprint Component 3)
+- [x] Abuse prevention schema: create `moderation_queue` table (FK -> users/accounts, messages) (Ops Blueprint Component 9; Ops Blueprint Section 16) — added Alembic migration `b1c2d3e4f5a6_add_moderation_queue.py` + runtime table/index bootstrap for mixed schema compatibility
+- [x] Safety classifier (input): score every inbound message for injection/harassment/self-harm/illegal activity (parallel, no added latency) (Ops Blueprint Component 9) — async classifier (`classify_input_async`) now runs off request path and writes flagged events to `moderation_queue`
+- [x] Safety classifier (output): score every outbound response before delivery (Ops Blueprint Component 9) — synchronous outbound classifier (`classify_output_sync`) runs before channel delivery; high-risk output is replaced with safe fallback text
+- [x] Safety circuit breaker: 3+ safety flags in 1 hour -> rate-limit user to 5 msgs/hr + force synchronous output classifier (Ops Blueprint Component 9) — Redis-backed flag window + circuit key + 5/hr limiter implemented in `content_safety.py`
+- [x] Gateway burst rate limiting: 10 messages/min per user (Redis sliding window) (Ops Blueprint Component 9) — added Redis sliding-window limiter (`enforce_gateway_burst_limit`) and enforced in `/api/v1/message` run path
+- [x] Admin auth: separate admin role in identity provider; enforce via JWT claim (role: admin) (Ops Blueprint Invariant 12) — `/api/v1/admin/*` now requires Bearer JWT with `role=admin` (or `roles` containing `admin`)
+- [x] Admin audit trail: log admin actions (suspend user, resolve moderation, rollback prompt) with admin identity (Ops Blueprint Invariant 12) — added admin action logging into `audit_logs` via `_log_admin_action` in `v1_admin` routes
+- [x] Admin API v1: `/api/v1/admin/users` (list/search), `/api/v1/admin/users/:id` (detail), `/api/v1/admin/mcp/health`, `/api/v1/admin/moderation/queue` (Ops Blueprint Component 3) — implemented in `app/api/routes/v1_admin.py` and mounted in `app/main.py`
 - [ ] Admin UI v1 (minimal dashboard): System Health + User Management + Moderation Queue (Ops Blueprint Component 3)
 
 ## M5–6 S11–14: Tavily + Tier 3 Planner + Saga Compensation (Section 25, Section 26, Section 31, Section 38)

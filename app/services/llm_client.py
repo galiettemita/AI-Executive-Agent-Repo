@@ -7,7 +7,11 @@ from typing import Any, Iterable
 from openai import OpenAI as RealOpenAI
 
 from app.blueprint.contracts import LLMProvider, LLMRequest
-from app.blueprint.llm.router import get_llm_router
+from app.blueprint.llm.router import (
+    LLMDegradedModeQueuedError,
+    LLMMaintenanceModeError,
+    get_llm_router,
+)
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -137,6 +141,8 @@ class OpenAIProxy:
 
         try:
             resp = router.call(req)
+        except (LLMMaintenanceModeError, LLMDegradedModeQueuedError):
+            raise
         except Exception as exc:
             logger.warning("router_chat_failed fallback=openai err=%s", exc)
             return self._raw.chat.completions.create(**kwargs)
@@ -189,6 +195,8 @@ class OpenAIProxy:
         try:
             routed = router.call(req)
             return SimpleNamespace(output_text=routed.content)
+        except (LLMMaintenanceModeError, LLMDegradedModeQueuedError):
+            raise
         except Exception as exc:
             logger.warning("router_responses_failed fallback=openai err=%s", exc)
             return self._raw.responses.create(**kwargs)

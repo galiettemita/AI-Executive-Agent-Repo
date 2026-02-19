@@ -34,6 +34,12 @@ from app.db.database import SessionLocal
 from app.middleware.rate_limiter import rate_limit_user
 from app.services.billing_middleware import enforce_billing_for_inbound_message
 from app.services.clerk_auth import verify_clerk_user_id
+from app.services.content_safety import (
+    classify_input_async,
+    classify_output_sync,
+    enforce_gateway_burst_limit,
+    enforce_safety_circuit_rate_limit,
+)
 from app.services.slack_connector import slack_send_message
 
 logger = logging.getLogger(__name__)
@@ -551,6 +557,37 @@ def _process_message_run(run_id: str, inbound: InboundMessage) -> None:
                 )
                 return
 
+        if inbound.user_id:
+            burst = enforce_gateway_burst_limit(inbound.user_id, limit_per_minute=10)
+            if not burst.allowed:
+                msg = "You’re sending messages too quickly. Please wait a moment and try again."
+                payload = {
+                    "ok": False,
+                    "blocked": True,
+                    "run_id": run_id,
+                    "reason": burst.reason,
+                    "reply": msg,
+                    "retry_after_seconds": burst.retry_after_seconds,
+                }
+                set_run_result(run_id, payload)
+                append_progress(run_id, step="done", status="completed", partial_result=payload)
+                return
+
+            safety_limit = enforce_safety_circuit_rate_limit(inbound.user_id)
+            if not safety_limit.allowed:
+                msg = "I’m temporarily limiting message volume while recent safety alerts are reviewed."
+                payload = {
+                    "ok": False,
+                    "blocked": True,
+                    "run_id": run_id,
+                    "reason": safety_limit.reason,
+                    "reply": msg,
+                    "retry_after_seconds": safety_limit.retry_after_seconds,
+                }
+                set_run_result(run_id, payload)
+                append_progress(run_id, step="done", status="completed", partial_result=payload)
+                return
+
         append_progress(run_id, step="preprocess", status="running")
         processed = preprocess_inbound_message(inbound)
 
@@ -629,6 +666,18 @@ def _process_message_run(run_id: str, inbound: InboundMessage) -> None:
             tier=route_tier(processed.normalized_text),
         )
 
+        # Input safety classification runs asynchronously so it does not add user-visible latency.
+        classify_input_async(
+            user_id=inbound.user_id,
+            run_id=run_id,
+            channel=inbound.channel.value,
+            text_value=processed.normalized_text,
+            metadata={
+                "conversation_id": inbound.conversation_id,
+                "source": "gateway_inbound",
+            },
+        )
+
         append_progress(run_id, step="brain", status="running")
 
         outbound = _brain_respond(normalized_inbound)
@@ -648,6 +697,36 @@ def _process_message_run(run_id: str, inbound: InboundMessage) -> None:
                 "text": formatted_text,
             }
         )
+
+        try:
+            output_safety = classify_output_sync(
+                user_id=inbound.user_id,
+                run_id=run_id,
+                channel=target_channel.value,
+                text_value=outbound.content,
+                metadata={
+                    "conversation_id": inbound.conversation_id,
+                    "source": "gateway_outbound",
+                },
+            )
+            if output_safety.flagged:
+                meta = dict(outbound.metadata or {})
+                meta["output_safety"] = {
+                    "flagged": True,
+                    "risk_score": output_safety.risk_score,
+                    "categories": output_safety.categories,
+                    "classifier": output_safety.classifier,
+                }
+                if output_safety.risk_score >= 0.55:
+                    safe_text = _format_response_for_channel(
+                        channel=target_channel,
+                        text_value="I can’t help with that request, but I can help with a safer alternative.",
+                    )
+                    outbound = outbound.model_copy(update={"content": safe_text, "text": safe_text, "metadata": meta})
+                else:
+                    outbound = outbound.model_copy(update={"metadata": meta})
+        except Exception:
+            logger.warning("output_safety_classifier_failed run_id=%s", run_id, exc_info=True)
 
         if inbound.conversation_id:
             _update_conversation_channel_state(conversation_id=inbound.conversation_id, channel=target_channel)

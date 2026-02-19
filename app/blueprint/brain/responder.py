@@ -13,7 +13,8 @@ from sqlalchemy import text
 from app.blueprint.contracts import LLMRequest
 from app.blueprint.contracts import ContentProvenance, ToolCall, ToolResult
 from app.blueprint.context_compiler import compile_context_messages, compile_tool_schemas
-from app.blueprint.llm.router import get_llm_router
+from app.blueprint.llm.degraded_retry import enqueue_degraded_retry, should_send_degraded_notice
+from app.blueprint.llm.router import LLMDegradedModeQueuedError, get_llm_router
 from app.blueprint.temporal_orchestration import orchestrate_tier3_plan
 from app.blueprint.tools import get_tool_registry
 from app.core.config import settings
@@ -358,6 +359,16 @@ def _run_saga_compensation(
     return {"attempted": attempted, "succeeded": succeeded, "failed": failed, "details": details}
 
 
+def _prepend_degraded_notice(*, user_id: str | None, body: str) -> tuple[str, bool]:
+    text = str(body or "").strip()
+    if not should_send_degraded_notice(user_id):
+        return (text, False)
+    notice = "Heads up: some AI providers are temporarily down, so I’m using backup mode."
+    if not text:
+        return (notice, True)
+    return (f"{notice}\n\n{text}", True)
+
+
 def generate_reply(
     *,
     user_text: str,
@@ -485,16 +496,49 @@ def generate_reply(
         last_failed_tools = 0
         while True:
             iterations += 1
-            task_type = "complex_reasoning" if tier >= 2 else ("intent_classification" if tier <= 1 else "general")
-            resp = llm_router.call(
-                LLMRequest(
-                    messages=messages,
-                    tools=tools or None,
-                    temperature=0.4,
-                    task_type=task_type,
-                    max_tokens=800 if tier <= 1 else 1400,
+            if tier >= 3:
+                task_type = "complex_reasoning"
+            elif tier == 2:
+                task_type = "single_tool_call" if tools else "general"
+            elif tier <= 1:
+                task_type = "intent_classification"
+            else:
+                task_type = "general"
+
+            try:
+                resp = llm_router.call(
+                    LLMRequest(
+                        messages=messages,
+                        tools=tools or None,
+                        temperature=0.4,
+                        task_type=task_type,
+                        max_tokens=800 if tier <= 1 else 1400,
+                    )
                 )
-            )
+            except LLMDegradedModeQueuedError as exc:
+                retry_meta = enqueue_degraded_retry(
+                    run_id=run_id,
+                    user_id=user_id,
+                    conversation_id=conversation_id,
+                    user_text=user_text,
+                    tier=tier,
+                    task_type=task_type,
+                    reason=str(exc),
+                )
+                queued_body = "I queued this advanced request and will retry it automatically when full capacity returns."
+                queued_text, degraded_notice_sent = _prepend_degraded_notice(user_id=user_id, body=queued_body)
+                return (
+                    queued_text,
+                    {
+                        "tier": tier,
+                        "model": model,
+                        "provider": "local",
+                        "degraded_mode": True,
+                        "degraded_notice_sent": degraded_notice_sent,
+                        "queued_for_retry": bool(retry_meta.get("queued")),
+                        "retry_queue": retry_meta,
+                    },
+                )
             provider_name = resp.provider.value
             model = resp.model
             total_input_tokens += resp.usage.input_tokens
@@ -666,9 +710,21 @@ def generate_reply(
         else:
             reflection_meta = {"applied": False}
 
+        degraded_mode = False
+        degraded_notice_sent = False
+        try:
+            degraded_mode = llm_router.system_mode(force_refresh=False) == "degraded"
+        except Exception:
+            degraded_mode = False
+        if degraded_mode:
+            msg, degraded_notice_sent = _prepend_degraded_notice(user_id=user_id, body=msg or "")
+
         meta: dict[str, Any] = {"tier": tier, "model": model}
         if provider_name:
             meta["provider"] = provider_name
+        if degraded_mode:
+            meta["degraded_mode"] = True
+            meta["degraded_notice_sent"] = degraded_notice_sent
         meta["knowledge_files_injected"] = knowledge_files_injected
         meta["context_chunks"] = context_chunks
         if planned_subtasks:
