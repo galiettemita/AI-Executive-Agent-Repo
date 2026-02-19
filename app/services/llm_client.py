@@ -122,6 +122,8 @@ class OpenAIProxy:
         task_type = str(kwargs.get("task_type") or _infer_task_type(messages, tools))
 
         req = LLMRequest(
+            user_id=(str(kwargs.get("user_id") or "").strip() or None),
+            prompt_group=str(kwargs.get("prompt_group") or "system_prompt"),
             messages=messages,
             tools=tools,
             temperature=temperature,
@@ -161,7 +163,12 @@ class OpenAIProxy:
             completion_tokens=resp.usage.output_tokens,
             total_tokens=resp.usage.total_tokens,
         )
-        return SimpleNamespace(choices=[choice], usage=usage, model=resp.model)
+        return SimpleNamespace(
+            choices=[choice],
+            usage=usage,
+            model=resp.model,
+            prompt_version_id=resp.prompt_version_id,
+        )
 
     def _responses_create(self, **kwargs):
         if not self._router_enabled():
@@ -178,6 +185,8 @@ class OpenAIProxy:
 
         messages = [{"role": "user", "content": user_text}]
         req = LLMRequest(
+            user_id=(str(kwargs.get("user_id") or "").strip() or None),
+            prompt_group=str(kwargs.get("prompt_group") or "system_prompt"),
             messages=messages,
             temperature=temperature,
             max_tokens=max_output_tokens,

@@ -10,6 +10,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.core.alerting import send_alert
+from app.services.analytics import emit_event_async
 from app.services.content_safety import enqueue_moderation_item
 
 _TABLE_LOCK = threading.Lock()
@@ -159,6 +160,12 @@ def record_user_feedback(
             payload,
         )
     db.commit()
+    emit_event_async(
+        event_name="feedback_given",
+        user_id=user_id,
+        source="feedback_api",
+        payload={"run_id": run_id, "message_id": message_id, "feedback": fb},
+    )
 
     moderation_item = None
     if fb in {"down", "negative"}:

@@ -301,6 +301,8 @@ class TokenUsage(StrictModel):
 
 
 class LLMRequest(StrictModel):
+    user_id: str | None = None
+    prompt_group: str = "system_prompt"
     model_preference: Optional[LLMProvider] = None
     messages: list[dict[str, Any]]
     tools: Optional[list[dict[str, Any]]] = None
@@ -319,6 +321,7 @@ class LLMResponse(StrictModel):
     provider: LLMProvider
     model: str
     content: str
+    prompt_version_id: str | None = None
     tool_calls: Optional[list[dict[str, Any]]] = None
     usage: TokenUsage = Field(default_factory=TokenUsage)
     cost_cents: float = 0

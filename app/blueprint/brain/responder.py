@@ -154,6 +154,7 @@ def _maybe_reflect_response(
     *,
     llm_router,
     tier: int,
+    user_id: str | None,
     user_text: str,
     current_response: str,
 ) -> tuple[str, dict[str, Any]]:
@@ -170,6 +171,8 @@ def _maybe_reflect_response(
         "required": ["needs_revision", "revised_response", "reason"],
     }
     reflection_req = LLMRequest(
+        user_id=user_id,
+        prompt_group="evaluator_prompt",
         task_type="knowledge_extraction",
         temperature=0.1,
         max_tokens=250,
@@ -489,6 +492,7 @@ def generate_reply(
         total_latency_ms = 0
         total_cost_cents = 0.0
         provider_name: str | None = None
+        prompt_version_id: str | None = None
         msg = ""
         replan_count = 0
         max_replans = 3 if tier >= 3 else 0
@@ -508,6 +512,8 @@ def generate_reply(
             try:
                 resp = llm_router.call(
                     LLMRequest(
+                        user_id=user_id,
+                        prompt_group="system_prompt",
                         messages=messages,
                         tools=tools or None,
                         temperature=0.4,
@@ -541,6 +547,7 @@ def generate_reply(
                 )
             provider_name = resp.provider.value
             model = resp.model
+            prompt_version_id = resp.prompt_version_id
             total_input_tokens += resp.usage.input_tokens
             total_output_tokens += resp.usage.output_tokens
             total_latency_ms += resp.latency_ms
@@ -704,6 +711,7 @@ def generate_reply(
             msg, reflection_meta = _maybe_reflect_response(
                 llm_router=llm_router,
                 tier=tier,
+                user_id=user_id,
                 user_text=user_text,
                 current_response=msg or "",
             )
@@ -722,6 +730,8 @@ def generate_reply(
         meta: dict[str, Any] = {"tier": tier, "model": model}
         if provider_name:
             meta["provider"] = provider_name
+        if prompt_version_id:
+            meta["prompt_version_id"] = prompt_version_id
         if degraded_mode:
             meta["degraded_mode"] = True
             meta["degraded_notice_sent"] = degraded_notice_sent

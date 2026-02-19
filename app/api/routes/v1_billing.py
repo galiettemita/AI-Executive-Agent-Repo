@@ -13,6 +13,7 @@ from app.api.deps import get_db, get_or_create_user
 from app.core.config import settings
 from app.db.models import Invoice, Subscription
 from app.middleware.rate_limiter import rate_limit_payment, rate_limit_webhook
+from app.services.analytics import emit_event_async
 from app.services.oauth_vault import store_stripe_billing_tokens
 from app.services.subscriptions import get_subscription, upsert_subscription
 
@@ -144,6 +145,12 @@ def create_checkout(request: Request, payload: CheckoutRequest, db: Session = De
         plan=payload.plan,
         status="pending",
     )
+    emit_event_async(
+        event_name="subscription_created",
+        user_id=payload.user_id,
+        source="billing_checkout",
+        payload={"plan": payload.plan, "status": "pending"},
+    )
 
     return {"ok": True, "checkout_url": session.url, "session_id": session.id}
 
@@ -236,6 +243,16 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
                 plan=plan,
                 status=str(obj.get("status") or "active"),
             )
+            emit_event_async(
+                event_name="subscription_updated",
+                user_id=user_id,
+                source="stripe_webhook",
+                payload={
+                    "plan": plan,
+                    "status": str(obj.get("status") or "active"),
+                    "event_type": event_type,
+                },
+            )
 
     if event_type == "customer.subscription.deleted":
         if user_id:
@@ -257,6 +274,12 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
                 subscription_id=str(obj.get("id") or "") or None,
                 plan=plan,
                 status="canceled",
+            )
+            emit_event_async(
+                event_name="subscription_canceled",
+                user_id=user_id,
+                source="stripe_webhook",
+                payload={"plan": plan, "event_type": event_type},
             )
 
     if event_type in {"invoice.paid", "invoice.payment_failed"}:
@@ -283,6 +306,12 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
                 subscription_id=str(obj.get("subscription") or "") or None,
                 plan=plan,
                 status=new_status,
+            )
+            emit_event_async(
+                event_name="subscription_updated",
+                user_id=user_id,
+                source="stripe_webhook",
+                payload={"status": new_status, "event_type": event_type, "plan": plan},
             )
 
     return {"ok": True, "event_type": event_type}

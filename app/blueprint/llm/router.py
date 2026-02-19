@@ -15,6 +15,8 @@ from openai import OpenAI
 from app.blueprint.contracts import LLMProvider, LLMProviderHealth, LLMRequest, LLMResponse, TokenUsage
 from app.core.config import settings
 from app.core.redis import cache_get_json, cache_set_json
+from app.db.database import SessionLocal
+from app.services.prompt_versions import select_prompt_version
 
 logger = logging.getLogger(__name__)
 
@@ -626,7 +628,53 @@ class LLMRouter:
             return self._response_from_local(model=model, req=req), None
         raise RuntimeError(f"Unsupported provider: {provider.value}")
 
+    def _apply_prompt_version(self, req: LLMRequest) -> tuple[LLMRequest, str | None]:
+        if not (req.user_id and req.messages):
+            return req, None
+
+        system_index = -1
+        for idx, msg in enumerate(req.messages):
+            if str((msg or {}).get("role") or "").lower() == "system" and isinstance((msg or {}).get("content"), str):
+                system_index = idx
+                break
+        if system_index < 0:
+            return req, None
+
+        default_content = str((req.messages[system_index] or {}).get("content") or "")
+        if not default_content.strip():
+            return req, None
+
+        db = SessionLocal()
+        try:
+            selected = select_prompt_version(
+                db,
+                user_id=req.user_id,
+                prompt_group=str(req.prompt_group or "system_prompt"),
+                default_content=default_content,
+            )
+        except Exception:
+            return req, None
+        finally:
+            try:
+                db.close()
+            except Exception:
+                pass
+
+        chosen = str(selected.get("content") or default_content)
+        prompt_version_id = selected.get("prompt_version_id")
+        if chosen == default_content:
+            return req, prompt_version_id
+
+        patched = list(req.messages)
+        row = dict(patched[system_index] or {})
+        row["content"] = chosen
+        patched[system_index] = row
+        req2 = req.model_copy(update={"messages": patched})
+        return req2, (str(prompt_version_id) if prompt_version_id else None)
+
     def call(self, req: LLMRequest) -> LLMResponse:
+        request_to_run, prompt_version_id = self._apply_prompt_version(req)
+
         health_map = self.all_provider_health(force_refresh=False)
         mode = self._system_mode_from_health(health_map)
         recovery_fraction = self._recovery_ramp_fraction(mode)
@@ -634,12 +682,12 @@ class LLMRouter:
             raise LLMMaintenanceModeError("LLM Router maintenance mode: no healthy providers available")
 
         if mode == "degraded":
-            if not self._degraded_allows_task(req):
-                raise LLMDegradedModeQueuedError(task_type=req.task_type)
+            if not self._degraded_allows_task(request_to_run):
+                raise LLMDegradedModeQueuedError(task_type=request_to_run.task_type)
             route = [(LLMProvider.LOCAL, "llama-4-8b")]
         else:
-            route = self._route_chain(req)
-            if self._force_local_during_recovery(req=req, health_map=health_map, fraction=recovery_fraction):
+            route = self._route_chain(request_to_run)
+            if self._force_local_during_recovery(req=request_to_run, health_map=health_map, fraction=recovery_fraction):
                 route = self._prepend_route((LLMProvider.LOCAL, "llama-4-8b"), route)
         if not route:
             raise RuntimeError("No providers configured")
@@ -661,15 +709,16 @@ class LLMRouter:
                 max_output_validation_retries = 2
                 last_validation_error: str | None = None
                 for attempt in range(max_output_validation_retries + 1):
-                    result, _raw = self._call_provider(provider, model, req)
-                    valid, validation_error = self._validate_structured_output(req, result)
+                    result, _raw = self._call_provider(provider, model, request_to_run)
+                    valid, validation_error = self._validate_structured_output(request_to_run, result)
                     if valid:
                         result.was_failover = idx > 0
+                        result.prompt_version_id = prompt_version_id
                         logger.info(
                             "llm_router_call provider=%s model=%s task_type=%s latency_ms=%s cost_cents=%.4f failover=%s",
                             result.provider.value,
                             result.model,
-                            req.task_type,
+                            request_to_run.task_type,
                             result.latency_ms,
                             result.cost_cents,
                             result.was_failover,
@@ -680,7 +729,7 @@ class LLMRouter:
                         "llm_router_structured_validation_failed provider=%s model=%s task_type=%s attempt=%s err=%s",
                         provider.value,
                         model,
-                        req.task_type,
+                        request_to_run.task_type,
                         attempt + 1,
                         last_validation_error,
                     )
@@ -691,13 +740,13 @@ class LLMRouter:
                     "llm_router_provider_failed provider=%s model=%s task_type=%s err=%s",
                     provider.value,
                     model,
-                    req.task_type,
+                    request_to_run.task_type,
                     exc,
                 )
                 # Force refresh the provider health after a failed call.
                 self.provider_health(provider, force_refresh=True)
 
-        raise RuntimeError(f"All providers failed for task={req.task_type}; attempted={','.join(errors)}")
+        raise RuntimeError(f"All providers failed for task={request_to_run.task_type}; attempted={','.join(errors)}")
 
     def stream_text(self, req: LLMRequest) -> Iterable[str]:
         """

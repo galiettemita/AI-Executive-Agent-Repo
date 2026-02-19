@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
 from app.core.config import settings
+from app.services.prompt_versions import create_prompt_version, ensure_prompt_versions_table, rollback_prompt
 
 router = APIRouter(prefix="/api/v1/admin", tags=["admin-v1"])
 
@@ -29,6 +30,20 @@ class ResolveModerationRequest(BaseModel):
 class PromptRollbackRequest(BaseModel):
     prompt_group: str | None = None
     target_version_id: str | None = None
+
+
+class PromptVersionCreateRequest(BaseModel):
+    prompt_group: str = "system_prompt"
+    version_label: str
+    content: str
+    status: str = "draft"
+    rollout_percentage: int = 0
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class PromptVersionStatusRequest(BaseModel):
+    status: str
+    rollout_percentage: int | None = None
 
 
 @dataclass
@@ -313,31 +328,95 @@ def admin_resolve_moderation(
     return {"ok": True, "id": item_id, "status": payload.status}
 
 
+@router.get("/prompts/versions")
+def admin_list_prompt_versions(
+    request: Request,
+    prompt_group: str = Query(default="system_prompt"),
+    limit: int = Query(default=100, ge=1, le=500),
+    db: Session = Depends(get_db),
+):
+    _decode_admin_claims(request)
+    ensure_prompt_versions_table(db)
+    rows = db.execute(
+        text(
+            "select * from prompt_versions "
+            "where prompt_group = :prompt_group "
+            "order by updated_at desc, created_at desc limit :limit"
+        ),
+        {"prompt_group": prompt_group, "limit": int(limit)},
+    ).mappings().all()
+    return {"ok": True, "count": len(rows), "versions": [dict(row) for row in rows]}
+
+
+@router.post("/prompts/versions")
+def admin_create_prompt_version(request: Request, payload: PromptVersionCreateRequest, db: Session = Depends(get_db)):
+    admin = _decode_admin_claims(request)
+    ensure_prompt_versions_table(db)
+    version_id = create_prompt_version(
+        db,
+        prompt_group=payload.prompt_group,
+        version_label=payload.version_label,
+        content=payload.content,
+        status=payload.status,
+        rollout_percentage=payload.rollout_percentage,
+        metadata=payload.metadata,
+    )
+    _log_admin_action(
+        db,
+        admin_id=admin.admin_id,
+        action="create_prompt_version",
+        resource_type="prompt_versions",
+        resource_id=version_id,
+        metadata={"prompt_group": payload.prompt_group, "status": payload.status},
+    )
+    return {"ok": True, "id": version_id}
+
+
+@router.post("/prompts/versions/{version_id}/status")
+def admin_update_prompt_version_status(
+    request: Request,
+    version_id: str,
+    payload: PromptVersionStatusRequest,
+    db: Session = Depends(get_db),
+):
+    admin = _decode_admin_claims(request)
+    ensure_prompt_versions_table(db)
+    updates = ["status = :status", "updated_at = :updated_at"]
+    params: dict[str, Any] = {"id": version_id, "status": payload.status, "updated_at": datetime.utcnow()}
+    if payload.rollout_percentage is not None:
+        updates.append("rollout_percentage = :rollout_percentage")
+        params["rollout_percentage"] = max(0, min(100, int(payload.rollout_percentage)))
+    updated = db.execute(
+        text(f"update prompt_versions set {', '.join(updates)} where id = :id"),
+        params,
+    ).rowcount
+    db.commit()
+    if not updated:
+        raise HTTPException(status_code=404, detail="Prompt version not found")
+    _log_admin_action(
+        db,
+        admin_id=admin.admin_id,
+        action="update_prompt_version_status",
+        resource_type="prompt_versions",
+        resource_id=version_id,
+        metadata={"status": payload.status, "rollout_percentage": payload.rollout_percentage},
+    )
+    return {"ok": True, "id": version_id, "status": payload.status}
+
+
 @router.post("/prompts/rollback")
 def admin_prompt_rollback(request: Request, payload: PromptRollbackRequest, db: Session = Depends(get_db)):
     admin = _decode_admin_claims(request)
     if not _table_exists(db, "prompt_versions"):
         raise HTTPException(status_code=404, detail="prompt_versions table not found")
-
-    target_id = (payload.target_version_id or "").strip()
-    if target_id:
-        updated = db.execute(
-            text("update prompt_versions set status = 'active' where id = :id"),
-            {"id": target_id},
-        ).rowcount
-        db.commit()
-        if not updated:
-            raise HTTPException(status_code=404, detail="Prompt version not found")
-        active_id = target_id
-    else:
-        row = db.execute(
-            text("select id from prompt_versions order by created_at desc limit 2")
-        ).first()
-        if not row:
-            raise HTTPException(status_code=404, detail="No prompt versions found")
-        active_id = str(row[0])
-        db.execute(text("update prompt_versions set status = 'active' where id = :id"), {"id": active_id})
-        db.commit()
+    prompt_group = str(payload.prompt_group or "system_prompt")
+    active_id = rollback_prompt(
+        db,
+        prompt_group=prompt_group,
+        target_version_id=(str(payload.target_version_id or "").strip() or None),
+    )
+    if not active_id:
+        raise HTTPException(status_code=404, detail="No prompt versions found for rollback")
 
     _log_admin_action(
         db,
@@ -345,6 +424,22 @@ def admin_prompt_rollback(request: Request, payload: PromptRollbackRequest, db: 
         action="rollback_prompt",
         resource_type="prompt_versions",
         resource_id=active_id,
-        metadata={"prompt_group": payload.prompt_group},
+        metadata={"prompt_group": prompt_group},
     )
     return {"ok": True, "active_prompt_version_id": active_id}
+
+
+@router.get("/analytics/daily")
+def admin_analytics_daily(
+    request: Request,
+    days: int = Query(default=30, ge=1, le=365),
+    db: Session = Depends(get_db),
+):
+    _decode_admin_claims(request)
+    if not _table_exists(db, "analytics_daily"):
+        return {"ok": True, "rows": [], "count": 0, "note": "analytics_daily table not found"}
+    rows = db.execute(
+        text("select * from analytics_daily order by day desc limit :limit"),
+        {"limit": int(days)},
+    ).mappings().all()
+    return {"ok": True, "count": len(rows), "rows": [dict(row) for row in rows]}

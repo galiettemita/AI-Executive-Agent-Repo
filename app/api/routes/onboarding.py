@@ -15,6 +15,7 @@ from app.services.preferences import (
 )
 from app.services.profile_service import get_profile
 from app.services.phone_verification import request_phone_verification, verify_phone_code
+from app.services.analytics import emit_event_async
 from app.middleware.rate_limiter import rate_limit_user
 
 router = APIRouter(prefix="/onboarding", tags=["onboarding"])
@@ -77,6 +78,12 @@ def onboarding_answer(request: Request, payload: OnboardingAnswerRequest, db: Se
     reply, updated = handle_onboarding_step(payload.message or "", prefs)
     if reply:
         update_preferences(db, payload.user_id, updated)
+        emit_event_async(
+            event_name="onboarding_step_completed",
+            user_id=payload.user_id,
+            source="onboarding_answer",
+            payload={"step": "preferences"},
+        )
     return {
         "ok": True,
         "reply": reply,
@@ -102,4 +109,11 @@ def phone_verify(request: Request, payload: PhoneVerifyRequest, db: Session = De
         result = verify_phone_code(db, payload.user_id, payload.phone_number, payload.code)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
+    if result.get("ok") is True:
+        emit_event_async(
+            event_name="onboarding_step_completed",
+            user_id=payload.user_id,
+            source="onboarding_phone_verify",
+            payload={"step": "phone_verification"},
+        )
     return result

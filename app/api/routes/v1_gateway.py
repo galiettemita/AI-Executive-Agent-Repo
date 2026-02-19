@@ -40,6 +40,7 @@ from app.services.content_safety import (
     enforce_gateway_burst_limit,
     enforce_safety_circuit_rate_limit,
 )
+from app.services.analytics import emit_event_async
 from app.services.quality_eval import enqueue_live_quality_eval
 from app.services.slack_connector import slack_send_message
 
@@ -667,6 +668,17 @@ def _process_message_run(run_id: str, inbound: InboundMessage) -> None:
             tier=route_tier(processed.normalized_text),
         )
 
+        emit_event_async(
+            event_name="message_received",
+            user_id=inbound.user_id,
+            source="gateway_v1",
+            payload={
+                "run_id": run_id,
+                "channel": inbound.channel.value,
+                "conversation_id": inbound.conversation_id,
+            },
+        )
+
         # Input safety classification runs asynchronously so it does not add user-visible latency.
         classify_input_async(
             user_id=inbound.user_id,
@@ -846,6 +858,23 @@ def _process_message_run(run_id: str, inbound: InboundMessage) -> None:
                 prompt_version_id=(str((outbound.metadata or {}).get("prompt_version_id") or "").strip() or None),
                 metadata={"channel": outbound.channel.value, "tier": int((outbound.metadata or {}).get("tier") or 1)},
             )
+            emit_event_async(
+                event_name="message_sent",
+                user_id=inbound.user_id,
+                source="gateway_v1",
+                payload={
+                    "run_id": run_id,
+                    "channel": outbound.channel.value,
+                    "conversation_id": inbound.conversation_id,
+                },
+            )
+            if used_tools:
+                emit_event_async(
+                    event_name="tool_invoked",
+                    user_id=inbound.user_id,
+                    source="gateway_v1",
+                    payload={"run_id": run_id, "conversation_id": inbound.conversation_id},
+                )
         except Exception:
             logger.warning("live_quality_eval_enqueue_failed run_id=%s", run_id, exc_info=True)
 

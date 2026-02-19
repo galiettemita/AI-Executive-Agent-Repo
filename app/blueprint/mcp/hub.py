@@ -29,6 +29,7 @@ from app.blueprint.mcp.transports import MCPServerError, MCPTransport, MCPTransp
 from app.blueprint.tools import get_tool_registry
 from app.core.config import settings
 from app.db.database import SessionLocal
+from app.services.analytics import emit_event_async
 
 logger = logging.getLogger(__name__)
 
@@ -144,6 +145,12 @@ class MCPClientHub:
             health_status="healthy" if conn.is_connected else "unhealthy",
         )
         self._refresh_tools_knowledge_file(db, user_id=user_id)
+        emit_event_async(
+            event_name="mcp_server_connected",
+            user_id=user_id,
+            source="mcp_hub",
+            payload={"server_id": server_id, "connected": bool(conn.is_connected)},
+        )
         return {"ok": True, "server_id": server_id, "connected": conn.is_connected}
 
     async def disconnect_server(self, db: Session, *, user_id: str, server_id: str) -> dict[str, Any]:
