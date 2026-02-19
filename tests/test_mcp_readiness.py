@@ -9,6 +9,7 @@ from app.blueprint.context_compiler import compile_tool_schemas
 from app.blueprint.contracts import ContentProvenance, RiskLevel, ToolCall, ToolSpec
 from app.blueprint.security import PrivilegeViolation, validate_tool_privilege
 from app.blueprint.tools import get_tool_registry
+from app.core.config import settings
 
 
 def _register_test_mcp_tool() -> ToolSpec:
@@ -38,7 +39,8 @@ def test_mcp_tool_registered_in_context_compiler_tool_schemas() -> None:
     assert "mcp_test_echo" in names
 
 
-def test_mcp_branch_stub_raises_not_implemented() -> None:
+def test_mcp_branch_stub_raises_not_implemented(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "FEATURE_MCP_CLIENT", False)
     with pytest.raises(NotImplementedError):
         _assert_native_tool(is_mcp=True)
 
@@ -52,7 +54,8 @@ def test_privilege_isolation_for_mcp_result() -> None:
         validate_tool_privilege(tool_name="calendar.create", provenance=ContentProvenance.MCP_RESULT)
 
 
-def test_hands_routes_fake_mcp_tool_to_stub_branch() -> None:
+def test_hands_routes_fake_mcp_tool_to_stub_branch(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "FEATURE_MCP_CLIENT", False)
     _register_test_mcp_tool()
     call = ToolCall(
         tool_name="mcp.test.echo",

@@ -160,6 +160,13 @@ EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
 
 -- Core v5 tables
+-- Canonical identity (accounts) + compatibility identity (users) must exist in baseline migration.
+CREATE TABLE IF NOT EXISTS users (
+  id TEXT PRIMARY KEY,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  deletion_requested_at TIMESTAMPTZ
+);
+
 CREATE TABLE IF NOT EXISTS accounts (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   clerk_user_id TEXT UNIQUE,
@@ -188,6 +195,38 @@ CREATE TABLE IF NOT EXISTS channel_connections (
   created_at TIMESTAMPTZ DEFAULT now(),
   UNIQUE(channel, channel_identifier)
 );
+
+-- Operational Month-1 schema (billing baseline) lives in this same migration.
+CREATE TABLE IF NOT EXISTS subscriptions (
+  user_id TEXT PRIMARY KEY REFERENCES users(id),
+  plan TEXT NOT NULL DEFAULT 'free',
+  status TEXT NOT NULL DEFAULT 'active',
+  provider TEXT,
+  provider_customer_id TEXT,
+  provider_subscription_id TEXT,
+  current_period_end TIMESTAMPTZ,
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_subscriptions_plan_status ON subscriptions(plan, status);
+
+CREATE TABLE IF NOT EXISTS invoices (
+  id BIGSERIAL PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id),
+  provider TEXT NOT NULL DEFAULT 'stripe',
+  provider_invoice_id TEXT NOT NULL UNIQUE,
+  provider_customer_id TEXT,
+  provider_subscription_id TEXT,
+  status TEXT NOT NULL DEFAULT 'open',
+  amount_due INT,
+  amount_paid INT,
+  currency TEXT,
+  hosted_invoice_url TEXT,
+  invoice_pdf_url TEXT,
+  paid_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_invoices_user_status_created ON invoices(user_id, status, created_at DESC);
 
 CREATE TABLE IF NOT EXISTS runs (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
