@@ -14,6 +14,7 @@ This is a high-level API reference. The canonical schema is the generated OpenAP
 ## Messaging
 - `POST /messages/send` queue outbound messages (WhatsApp/SMS)
 - `POST /webhooks/whatsapp` inbound WhatsApp messages
+- `POST /webhooks/sms` inbound Twilio SMS messages
 - `POST /webhooks/sms/status` delivery receipts
 
 ## Email

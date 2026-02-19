@@ -571,6 +571,7 @@ You must prove it.
 - [x] Implement `POST /webhook/whatsapp` (Phase 1) (Section 5.1)
 - [x] Implement `POST /webhook/imessage` (Phase 3) (Section 5.1)
 - [x] Implement `POST /webhook/slack` (Phase 3) (Section 5.1)
+- [x] Implement `POST /webhooks/sms` (Twilio inbound SMS webhook) (Gateway messaging channel)
 - [x] Implement `POST /api/v1/message` (Phase 1) (Section 5.1)
 - [x] Implement `GET /api/v1/stream/{run_id}` (SSE) (Phase 1) (Section 5.1)
 - [x] Implement `POST /api/v1/voice/transcribe` (Phase 1) (Section 5.1)
