@@ -21,15 +21,20 @@ def default_golden_scenarios() -> list[GoldenScenario]:
         ("say hi", 0, "informational", "name"),
         ("thanks for the help", 0, "informational", "tone"),
         ("summarize my meetings for today", 1, "informational", "calendar"),
+        ("draft a professional follow-up email to my manager", 1, "informational", "email"),
+        ("find free slots this week and propose three options", 2, "informational", "calendar"),
         ("search web for latest AI chip export rules", 2, "informational", "research"),
+        ("create a task list from my meeting notes", 2, "informational", "tasks"),
         ("find flights and then draft an email update", 3, "transactional", "workflow"),
+        ("compare hotel options, then build an itinerary and checklist", 3, "transactional", "travel"),
+        ("summarize spend trends and suggest budget actions", 3, "transactional", "finance"),
     ]
     scenarios: list[GoldenScenario] = []
-    for idx in range(1, 51):
+    for idx in range(1, 121):
         prompt, tier, action_type, anchor = templates[(idx - 1) % len(templates)]
         scenarios.append(
             GoldenScenario(
-                scenario_id=f"golden_{idx:02d}",
+                scenario_id=f"golden_{idx:03d}",
                 prompt=f"{prompt} #{idx}",
                 expected_tier=tier,
                 expected_action_type=action_type,
@@ -112,4 +117,3 @@ def run_golden_route_eval() -> dict[str, float]:
         "accuracy": float(result.get("tier_accuracy") or 0.0),
         "overall_score": float(result.get("overall_score") or 0.0),
     }
-

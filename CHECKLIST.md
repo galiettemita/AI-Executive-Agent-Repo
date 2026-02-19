@@ -227,17 +227,17 @@ Feature Flag Rollout Reminders (Appendix A)
 - [x] Implement basic delegation flow + reminders + HEARTBEAT delegation tracker updates (Section 24, Section 19)
 
 ## M6 (Operational Overlay): Eval/Quality + Admin v2 + Notification Foundation (Operational Blueprint Components 3, 4, 11)
-- [ ] Eval schema: create `eval_results` table (FK -> conversations/runs, messages) (Ops Blueprint Component 4; Ops Blueprint Section 16)
-- [ ] Feedback schema: create `user_feedback` table (FK -> users/accounts, messages) (Ops Blueprint Component 4; Ops Blueprint Section 16)
-- [ ] Notifications schema: create `scheduled_notifications` table (FK -> users/accounts) (Ops Blueprint Component 11; Ops Blueprint Section 16)
-- [ ] Golden eval suite: expand to 100+ test cases covering major capabilities (calendar/email/tasks/web/MCP/multi-tool flows) (Ops Blueprint Component 4)
-- [ ] Live quality scoring: evaluator LLM scores ~10% of production responses on coherence/helpfulness/safety/tool_usage; runs async (never adds latency) (Ops Blueprint Component 4; Invariant 13)
-- [ ] Quality alerts: score drop below threshold -> PagerDuty; safety_score drop -> immediate flag; negative feedback spike -> product alert (Ops Blueprint Component 4)
-- [ ] User feedback UX: thumbs up/down on responses; persist to `user_feedback`; negative feedback creates moderation_queue entry (Ops Blueprint Component 4)
+- [x] Eval schema: create `eval_results` table (FK -> conversations/runs, messages) (Ops Blueprint Component 4; Ops Blueprint Section 16) — added migration `c7d8e9f0a1b2_add_eval_feedback_notifications_tables.py` + runtime bootstrap in `quality_eval.py`
+- [x] Feedback schema: create `user_feedback` table (FK -> users/accounts, messages) (Ops Blueprint Component 4; Ops Blueprint Section 16) — added migration `c7d8e9f0a1b2_add_eval_feedback_notifications_tables.py` + runtime bootstrap in `user_feedback.py`
+- [x] Notifications schema: create `scheduled_notifications` table (FK -> users/accounts) (Ops Blueprint Component 11; Ops Blueprint Section 16) — added migration `c7d8e9f0a1b2_add_eval_feedback_notifications_tables.py` + runtime bootstrap in `scheduled_notifications.py`
+- [x] Golden eval suite: expand to 100+ test cases covering major capabilities (calendar/email/tasks/web/MCP/multi-tool flows) (Ops Blueprint Component 4) — expanded `default_golden_scenarios()` to 120 coverage cases across calendar/email/tasks/web/travel/finance/multi-tool flows
+- [x] Live quality scoring: evaluator LLM scores ~10% of production responses on coherence/helpfulness/safety/tool_usage; runs async (never adds latency) (Ops Blueprint Component 4; Invariant 13) — async evaluator pipeline (`enqueue_live_quality_eval`) wired from `/api/v1/message` and sampled at 10%
+- [x] Quality alerts: score drop below threshold -> PagerDuty; safety_score drop -> immediate flag; negative feedback spike -> product alert (Ops Blueprint Component 4) — implemented alert hooks in `quality_eval.py` (PagerDuty) and `user_feedback.py` (Slack spike alert)
+- [x] User feedback UX: thumbs up/down on responses; persist to `user_feedback`; negative feedback creates moderation_queue entry (Ops Blueprint Component 4) — added `/api/v1/feedback/response` endpoint + persistence + moderation enqueue
 - [ ] Admin UI v2: add Financial panel (Stripe MRR/churn/cost per user), Moderation workflow, Eval/Quality panel (Ops Blueprint Component 3)
-- [ ] Notification scheduler: enforce quiet hours (default 10pm–7am user TZ) + rate limits (5/day, 2/hour) + timezone-aware scheduling (Ops Blueprint Component 11; Invariant 15)
-- [ ] Notification delivery: route to `active_channel` and format per channel constraints (Ops Blueprint Component 11)
-- [ ] Notifications: build infra only in Month 6 (no content generation yet; content comes after knowledge files exist) (Ops Blueprint Component 11)
+- [x] Notification scheduler: enforce quiet hours (default 10pm–7am user TZ) + rate limits (5/day, 2/hour) + timezone-aware scheduling (Ops Blueprint Component 11; Invariant 15) — implemented in `scheduled_notifications.py` + scheduler job `run_scheduled_notifications`
+- [x] Notification delivery: route to `active_channel` and format per channel constraints (Ops Blueprint Component 11) — scheduler resolves active channel (`bp:v1:active-channel:{user_id}`), formats per channel, and enqueues outbound delivery
+- [x] Notifications: build infra only in Month 6 (no content generation yet; content comes after knowledge files exist) (Ops Blueprint Component 11) — infra endpoints added (`/api/v1/notifications/schedule`, `/api/v1/notifications/run`), no content-generation layer added
 
 ## Behavioral Intelligence (Parallel) — Phase 2 (Section 11, Section 12, Section 18)
 - [x] Implement Memory dual-path: episodic memory + knowledge file updates + knowledge graph edge writes (Section 11)

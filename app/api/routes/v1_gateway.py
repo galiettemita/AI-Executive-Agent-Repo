@@ -40,6 +40,7 @@ from app.services.content_safety import (
     enforce_gateway_burst_limit,
     enforce_safety_circuit_rate_limit,
 )
+from app.services.quality_eval import enqueue_live_quality_eval
 from app.services.slack_connector import slack_send_message
 
 logger = logging.getLogger(__name__)
@@ -830,6 +831,23 @@ def _process_message_run(run_id: str, inbound: InboundMessage) -> None:
             tier=int((outbound.metadata or {}).get("tier") or route_tier(processed.normalized_text)),
             latency_ms=elapsed_ms,
         )
+
+        try:
+            context_chunks = list((outbound.metadata or {}).get("context_chunks") or [])
+            used_tools = any(str((chunk or {}).get("source") or "").startswith("tool:") for chunk in context_chunks)
+            enqueue_live_quality_eval(
+                user_id=inbound.user_id,
+                conversation_id=inbound.conversation_id,
+                run_id=run_id,
+                message_id=inbound.channel_msg_id,
+                user_text=processed.normalized_text,
+                assistant_text=outbound.content,
+                used_tools=used_tools,
+                prompt_version_id=(str((outbound.metadata or {}).get("prompt_version_id") or "").strip() or None),
+                metadata={"channel": outbound.channel.value, "tier": int((outbound.metadata or {}).get("tier") or 1)},
+            )
+        except Exception:
+            logger.warning("live_quality_eval_enqueue_failed run_id=%s", run_id, exc_info=True)
 
         payload = {
             "ok": True,

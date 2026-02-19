@@ -27,6 +27,7 @@ from app.services.wardrobe_rotation import run_rotation_for_all_users
 from app.services.gift_reminders import enqueue_gift_reminders
 from app.services.relationship_service import enqueue_relationship_reminders
 from app.services.account_deletion_pipeline import run_due_account_deletion_jobs
+from app.services.scheduled_notifications import run_due_scheduled_notifications
 from app.blueprint.bones import refresh_bones_catalog
 from app.blueprint.embedding_audit import run_embedding_reembed_audit_all_users
 from app.blueprint.knowledge_review import run_nightly_consolidation, run_weekly_self_review
@@ -217,6 +218,20 @@ def run_notification_delivery():
 
     except Exception as e:
         logger.error("Fatal error in notification delivery job: %s", e)
+    finally:
+        db.close()
+
+
+def run_scheduled_notifications():
+    """
+    Deliver due scheduled notifications with quiet-hours and per-user rate limits.
+    """
+    db = SessionLocal()
+    try:
+        result = run_due_scheduled_notifications(db)
+        logger.info("Scheduled notifications run completed: %s", result)
+    except Exception as e:
+        logger.error("Fatal error in scheduled notifications job: %s", e)
     finally:
         db.close()
 
@@ -581,6 +596,16 @@ def setup_scheduler() -> BackgroundScheduler:
     )
 
     logger.info("Notification delivery job scheduled every %d minutes", settings.NOTIFICATION_DELIVERY_INTERVAL_MINUTES)
+
+    scheduler.add_job(
+        run_scheduled_notifications,
+        trigger="interval",
+        minutes=5,
+        id="scheduled_notifications_job",
+        name="Scheduled Notifications",
+        replace_existing=True,
+    )
+    logger.info("Scheduled notifications job runs every 5 minutes")
 
     if settings.ENABLE_MESSAGING == "1":
         scheduler.add_job(

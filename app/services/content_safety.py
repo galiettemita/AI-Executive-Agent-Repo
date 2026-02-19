@@ -325,6 +325,51 @@ def _insert_moderation_row(
     db.commit()
 
 
+def enqueue_moderation_item(
+    *,
+    user_id: str | None,
+    run_id: str | None,
+    direction: str,
+    channel: str | None,
+    text_value: str,
+    categories: list[str] | None = None,
+    risk_score: float = 0.5,
+    classifier: str = "system",
+    metadata: dict[str, Any] | None = None,
+    increment_safety_flags: bool = False,
+) -> dict[str, Any]:
+    verdict = SafetyVerdict(
+        flagged=True,
+        risk_score=max(0.0, min(1.0, float(risk_score))),
+        categories=[str(item) for item in (categories or []) if str(item).strip()],
+        reason="manual_enqueue",
+        classifier=classifier,
+    )
+    db = SessionLocal()
+    try:
+        _insert_moderation_row(
+            db,
+            user_id=user_id,
+            run_id=run_id,
+            direction=direction,
+            channel=channel,
+            text_value=text_value,
+            verdict=verdict,
+            metadata=metadata,
+        )
+    finally:
+        try:
+            db.close()
+        except Exception:
+            pass
+    if increment_safety_flags and user_id:
+        try:
+            _record_safety_flag(user_id)
+        except Exception:
+            logger.warning("safety_flag_record_failed user_id=%s", user_id, exc_info=True)
+    return {"ok": True, "categories": verdict.categories, "risk_score": verdict.risk_score}
+
+
 def classify_and_record(
     *,
     user_id: str | None,

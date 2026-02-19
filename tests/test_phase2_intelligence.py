@@ -249,7 +249,7 @@ def test_agentic_eval_suite_shape_and_count() -> None:
     result = run_agentic_eval(
         reply_generator=lambda prompt: f"This is your concise plan for {prompt}.",
     )
-    assert int(result["scenario_count"]) == 50
+    assert int(result["scenario_count"]) >= 100
     assert 0.0 <= float(result["tier_accuracy"]) <= 1.0
     assert 0.0 <= float(result["action_accuracy"]) <= 1.0
     assert 0.0 <= float(result["personalization_avg"]) <= 1.0
