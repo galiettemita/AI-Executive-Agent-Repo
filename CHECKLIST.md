@@ -433,8 +433,8 @@ You must prove it.
 - [ ] DR: run restore drill and validate runbooks before launch (Ops Blueprint Component 7)
 
 ## M10–11 S5–8: Advanced Proactive + Cross-Channel Continuity (Section 28, Section 38)
-- [ ] Implement HEARTBEAT-driven proactive triggers + research delivery (Section 19–20)
-- [ ] Implement cross-channel context continuity: unified session, channel preference learning (Section 28)
+- [x] Implement HEARTBEAT-driven proactive triggers + research delivery (Section 19–20)
+- [x] Implement cross-channel context continuity: unified session, channel preference learning (Section 28)
 
 ## M11 S9–12: Performance + LLM Router Optimization (Section 33, Section 37, Section 38)
 - [ ] Meet p95 latency target (<3s) and blended cost target (<$0.035/interaction) (Section 33, Section 37)
@@ -452,11 +452,11 @@ You must prove it.
 ## Behavioral Intelligence (Parallel) — Phase 4 (Section 28, Section 33)
 - [x] Implement “What do you know about me?” command + knowledge file viewer/editor via chat (Section 38)
 - [x] Implement knowledge graph query interface + `/api/v1/knowledge/graph` (Section 5.3)
-- [ ] Implement personalization eval dashboards (profiling coverage, knowledge accuracy, correction frequency, satisfaction) (Section 38)
-- [ ] Implement opt-in cross-user anonymized insights (Section 38)
+- [x] Implement personalization eval dashboards (profiling coverage, knowledge accuracy, correction frequency, satisfaction) (Section 38)
+- [x] Implement opt-in cross-user anonymized insights (Section 38)
 - [x] Implement A/B testing framework + experiments endpoints `/internal/experiments` (Section 5.5, Section 38)
 - [x] Implement GDPR/CCPA data export endpoint `/api/v1/export` (Section 5.4, Section 38)
-- [ ] Ship documentation bundle: knowledge format spec, question bank, signal catalog, MCP guide, delegation protocol, research API guide (Section 38)
+- [x] Ship documentation bundle: knowledge format spec, question bank, signal catalog, MCP guide, delegation protocol, research API guide (Section 38)
 
 ---
 
