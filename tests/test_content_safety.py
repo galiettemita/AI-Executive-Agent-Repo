@@ -138,3 +138,30 @@ def test_mcp_provenance_metadata_is_supported_in_moderation_queue(monkeypatch):
         assert "mcp_result" in metadata_json
     finally:
         db.close()
+
+
+def test_detect_transaction_abuse_flags_cart_manipulation():
+    verdict = content_safety.detect_transaction_abuse(
+        tool_name="instacart.checkout.create",
+        mcp_server_id="instacart-mcp",
+        args={"quantity": 999, "price_override": "0.01", "item": "Milk"},
+    )
+    assert verdict.flagged is True
+    assert "transaction_abuse" in verdict.categories
+    assert "cart_manipulation" in verdict.categories
+
+
+def test_transaction_operation_rate_limit(monkeypatch):
+    fake = _FakeRedis()
+    monkeypatch.setattr(content_safety, "get_redis", lambda: fake)
+    monkeypatch.setattr(content_safety.settings, "TRANSACTION_RATE_LIMIT_WINDOW_SECONDS", 600)
+    monkeypatch.setattr(content_safety.settings, "TRANSACTION_RATE_LIMIT_CHECKOUT_PER_WINDOW", 3)
+    monkeypatch.setattr(content_safety.settings, "TRANSACTION_RATE_LIMIT_PER_HOUR", 10)
+
+    decisions = [
+        content_safety.enforce_transaction_operation_rate_limit("tx-user", operation="checkout")
+        for _ in range(4)
+    ]
+    assert all(d.allowed for d in decisions[:3])
+    assert decisions[3].allowed is False
+    assert decisions[3].reason == "transaction_rate_limited"

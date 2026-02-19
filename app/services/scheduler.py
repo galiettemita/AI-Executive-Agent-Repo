@@ -29,6 +29,7 @@ from app.services.relationship_service import enqueue_relationship_reminders
 from app.services.account_deletion_pipeline import run_due_account_deletion_jobs
 from app.services.scheduled_notifications import run_due_scheduled_notifications
 from app.services.analytics import aggregate_daily
+from app.services.remote_catalog import sync_remote_catalog
 from app.blueprint.bones import refresh_bones_catalog
 from app.blueprint.embedding_audit import run_embedding_reembed_audit_all_users
 from app.blueprint.knowledge_review import run_nightly_consolidation, run_weekly_self_review
@@ -562,6 +563,19 @@ def run_analytics_daily():
         db.close()
 
 
+def run_remote_catalog_daily_sync():
+    db = SessionLocal()
+    try:
+        result = sync_remote_catalog(db)
+        logger.info("Remote catalog daily sync complete: %s", result)
+        return result
+    except Exception as e:
+        logger.error("Fatal error in remote catalog sync: %s", e)
+        return {"ok": False, "error": str(e)}
+    finally:
+        db.close()
+
+
 def setup_scheduler() -> BackgroundScheduler:
     """
     Set up the APScheduler for background jobs.
@@ -727,6 +741,16 @@ def setup_scheduler() -> BackgroundScheduler:
         replace_existing=True,
     )
     logger.info("Analytics daily aggregation job scheduled daily at 00:10 UTC")
+
+    if settings.PROVISIONING_REMOTE_SYNC_ENABLED:
+        scheduler.add_job(
+            run_remote_catalog_daily_sync,
+            trigger=CronTrigger(hour=1, minute=5),
+            id="remote_catalog_daily_sync_job",
+            name="Remote Catalog Daily Sync",
+            replace_existing=True,
+        )
+        logger.info("Remote catalog sync job scheduled daily at 01:05 UTC")
 
     # Wardrobe rotation reminders (daily)
     rotation_time = settings.WARDROBE_ROTATION_SCHEDULE.split()

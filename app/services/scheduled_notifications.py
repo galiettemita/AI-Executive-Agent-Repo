@@ -28,6 +28,7 @@ class NotificationRunResult:
     deferred_inactive: int = 0
     paused_inactive: int = 0
     skipped_preferences: int = 0
+    skipped_plan_gating: int = 0
     failed: int = 0
 
 
@@ -305,13 +306,27 @@ def _parse_payload(payload_raw: Any) -> dict[str, Any]:
 
 def _is_proactive_notification(notification_type: str) -> bool:
     value = (notification_type or "").strip().lower()
-    return value in {"morning_briefing", "deadline_alert", "task_reminder", "weekly_summary", "proactive"}
+    return value in {
+        "morning_briefing",
+        "deadline_alert",
+        "task_reminder",
+        "weekly_summary",
+        "proactive",
+        "travel_alert",
+        "financial_alert",
+    }
 
 
 def _is_critical_notification(notification_type: str, payload: dict[str, Any]) -> bool:
     if bool(payload.get("critical")):
         return True
     value = (notification_type or "").strip().lower()
+    if value == "travel_alert":
+        event = str(payload.get("event") or payload.get("type") or "").strip().lower()
+        if event in {"flight_delay", "flight_canceled", "cancellation", "missed_connection"}:
+            return True
+    if value == "financial_alert":
+        return True
     return value in {"deadline_alert", "critical_alert"}
 
 
@@ -331,6 +346,52 @@ def _notification_allowed_by_preferences(db: Session, *, user_id: str, notificat
     if (notification_type or "").strip().lower() == "weekly_summary" and prefs.get("weekly_summaries_enabled") is False:
         return False
     return True
+
+
+_PLAN_RANK = {
+    "free": 0,
+    "trial": 0,
+    "free_trial": 0,
+    "starter": 1,
+    "personal": 1,
+    "plus": 2,
+    "professional": 3,
+    "pro": 3,
+    "enterprise": 4,
+}
+
+
+def _plan_rank(plan: str | None) -> int:
+    return _PLAN_RANK.get(str(plan or "free").strip().lower(), 0)
+
+
+def _resolve_user_plan(db: Session, *, user_id: str) -> str:
+    if not _table_exists(db, "subscriptions"):
+        return "free"
+    try:
+        row = db.execute(
+            text(
+                "select plan, status from subscriptions "
+                "where user_id = :user_id order by updated_at desc limit 1"
+            ),
+            {"user_id": user_id},
+        ).mappings().first()
+    except Exception:
+        return "free"
+    if not row:
+        return "free"
+    status = str(row.get("status") or "active").strip().lower()
+    plan = str(row.get("plan") or "free").strip().lower()
+    if status == "trialing":
+        return "free"
+    if status in {"active", "pending", "trialing"}:
+        return plan
+    return "free"
+
+
+def _is_plan_gated_notification(notification_type: str) -> bool:
+    value = (notification_type or "").strip().lower()
+    return value in {"travel_alert", "financial_alert"}
 
 
 def _latest_inbound_message_at(db: Session, *, user_id: str) -> datetime | None:
@@ -464,6 +525,28 @@ def _generate_notification_message(
         meetings = int(payload.get("meetings") or 0)
         return f"Weekly summary: {completed} task(s) completed, {meetings} meeting(s) attended."
 
+    if ntype == "travel_alert":
+        event = str(payload.get("event") or payload.get("type") or "travel_update").strip().replace("_", " ")
+        flight = str(payload.get("flight") or payload.get("itinerary") or "your trip").strip()
+        detail = str(payload.get("detail") or payload.get("status") or "").strip()
+        when = str(payload.get("time") or payload.get("departure_time") or "").strip()
+        body = f"Travel alert: {flight} {event}."
+        if detail:
+            body += f" {detail}"
+        if when:
+            body += f" Time: {when}."
+        return body.strip()
+
+    if ntype == "financial_alert":
+        amount = payload.get("amount")
+        currency = str(payload.get("currency") or "USD").strip().upper()
+        merchant = str(payload.get("merchant") or payload.get("name") or "a merchant").strip()
+        reason = str(payload.get("reason") or "Unusual transaction detected").strip()
+        amount_text = ""
+        if amount not in (None, ""):
+            amount_text = f" for {amount} {currency}"
+        return f"Financial alert: {reason} at {merchant}{amount_text}."
+
     return f"You have a scheduled update at {now_local.strftime('%H:%M')}."
 
 
@@ -495,6 +578,16 @@ def run_due_scheduled_notifications(db: Session) -> dict[str, int]:
             )
             result.skipped_preferences += 1
             continue
+
+        if _is_plan_gated_notification(notification_type):
+            plan = _resolve_user_plan(db, user_id=user_id)
+            if _plan_rank(plan) < _plan_rank("professional"):
+                db.execute(
+                    text("update scheduled_notifications set status = 'canceled', updated_at = :updated_at where id = :id"),
+                    {"id": row["id"], "updated_at": datetime.utcnow()},
+                )
+                result.skipped_plan_gating += 1
+                continue
 
         inactivity_days = _inactivity_days(db, user_id=user_id, now_utc=now_utc)
         if _is_proactive_notification(notification_type):
@@ -578,5 +671,6 @@ def run_due_scheduled_notifications(db: Session) -> dict[str, int]:
         "deferred_inactive": result.deferred_inactive,
         "paused_inactive": result.paused_inactive,
         "skipped_preferences": result.skipped_preferences,
+        "skipped_plan_gating": result.skipped_plan_gating,
         "failed": result.failed,
     }

@@ -162,6 +162,29 @@ def _register_native_tools(registry: ToolRegistry) -> None:
         tags=["system", "provisioning"],
         llm_name="provision_server",
     )
+    registry.register(
+        ToolSpec(
+            name="search_remote_catalog",
+            description=(
+                "Search remote MCP catalog entries when a required capability is not in the local Available Servers catalog."
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "capability": {"type": "string", "description": "Capability that is missing"},
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 25},
+                },
+                "required": ["capability"],
+            },
+            output_schema={"type": "object"},
+            risk_level=RiskLevel.NONE,
+            tags=["system", "discovery"],
+            is_mcp=False,
+        ),
+        min_tier=2,
+        tags=["system", "discovery"],
+        llm_name="search_remote_catalog",
+    )
 
     registry.register(
         ToolSpec(

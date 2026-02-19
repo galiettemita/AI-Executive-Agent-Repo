@@ -481,18 +481,18 @@ You must prove it.
 - [ ] Validate Wave 6 extras: Tesla physical operation tests in staging, Instacart checkout approval details, DocuSign recipient/document confirmation
 
 ## M13–15 (Auto-Provisioning Layer 3): Remote Server Discovery Catalog (Auto-Provisioning Sections 5, 12.3, 16)
-- [ ] ToolRegistry: register native tool `search_remote_catalog` (use only if `provision_server` fails due to missing catalog entry) (Auto-Provisioning Section 9)
-- [ ] Hands handler: implement `search_remote_catalog` -> query remote catalog API -> return matched entries (Auto-Provisioning Section 5)
-- [ ] Catalog sync: daily job pulls new/updated remote entries into local `server_catalog` table; marks deprecated entries (Auto-Provisioning Section 12.3)
-- [ ] Extend `server_catalog` with Waves 5–6 entries (total 40) and begin adding post-launch entries based on analytics demand (Auto-Provisioning Section 12.2)
-- [ ] Enforce remote search rate limit (20/hour/user) and provisioning rate limits (5/hour/user, 3 concurrent) (Auto-Provisioning Section 13)
+- [x] ToolRegistry: register native tool `search_remote_catalog` (use only if `provision_server` fails due to missing catalog entry) (Auto-Provisioning Section 9)
+- [x] Hands handler: implement `search_remote_catalog` -> query remote catalog API -> return matched entries (Auto-Provisioning Section 5)
+- [x] Catalog sync: daily job pulls new/updated remote entries into local `server_catalog` table; marks deprecated entries (Auto-Provisioning Section 12.3)
+- [x] Extend `server_catalog` with Waves 5–6 entries (total 40) and begin adding post-launch entries based on analytics demand (Auto-Provisioning Section 12.2)
+- [x] Enforce remote search rate limit (20/hour/user) and provisioning rate limits (5/hour/user, 3 concurrent) (Auto-Provisioning Section 13)
 
 ## M13–15 (Operational Overlay): Post-Launch Expansion Hardening (Ops Blueprint + Wave 5–6)
 - [ ] Analytics-driven server prioritization within Waves 5–6 based on user demand (Ops Blueprint Component 12)
-- [ ] Eval expansion: add financial accuracy scoring (Plaid) and booking verification scoring (Duffel/Booking) (Ops Blueprint Component 4; Wave 5–6)
-- [ ] Notification expansion: travel alerts (Duffel delays) and financial alerts (Plaid unusual transactions) with plan gating (Ops Blueprint Component 11; Wave 5–6)
-- [ ] Billing: Wave 5–6 servers plan-gated to Professional (or higher); enforce in provisioning + tool execution (Ops Blueprint Component 1; Auto-Provisioning Section 13)
-- [ ] Abuse prevention: add transaction-specific abuse detection (booking spikes, cart manipulation) + strict rate limits on checkout operations (Ops Blueprint Component 9; Wave 5–6)
+- [x] Eval expansion: add financial accuracy scoring (Plaid) and booking verification scoring (Duffel/Booking) (Ops Blueprint Component 4; Wave 5–6)
+- [x] Notification expansion: travel alerts (Duffel delays) and financial alerts (Plaid unusual transactions) with plan gating (Ops Blueprint Component 11; Wave 5–6)
+- [x] Billing: Wave 5–6 servers plan-gated to Professional (or higher); enforce in provisioning + tool execution (Ops Blueprint Component 1; Auto-Provisioning Section 13)
+- [x] Abuse prevention: add transaction-specific abuse detection (booking spikes, cart manipulation) + strict rate limits on checkout operations (Ops Blueprint Component 9; Wave 5–6)
 
 ## M15: Full Fleet Validation (Waves 1–6, 40 Servers)
 - [ ] Verify all 40 servers pass health checks simultaneously

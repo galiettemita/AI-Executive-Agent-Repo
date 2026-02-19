@@ -138,6 +138,68 @@ def _heuristic_scores(*, user_text: str, assistant_text: str, used_tools: bool) 
     }
 
 
+def _looks_like_financial_eval(*, user_text: str, assistant_text: str, metadata: dict[str, Any] | None) -> bool:
+    meta = metadata or {}
+    meta_blob = json.dumps(meta, ensure_ascii=False).lower()
+    signal = f"{str(user_text or '').lower()} {str(assistant_text or '').lower()} {meta_blob}"
+    return any(
+        token in signal
+        for token in (
+            "plaid",
+            "transaction",
+            "transactions",
+            "spending",
+            "account balance",
+            "finance",
+            "bank",
+            "financial",
+        )
+    )
+
+
+def _looks_like_booking_eval(*, user_text: str, assistant_text: str, metadata: dict[str, Any] | None) -> bool:
+    meta = metadata or {}
+    meta_blob = json.dumps(meta, ensure_ascii=False).lower()
+    signal = f"{str(user_text or '').lower()} {str(assistant_text or '').lower()} {meta_blob}"
+    return any(
+        token in signal
+        for token in (
+            "duffel",
+            "booking",
+            "book",
+            "reservation",
+            "flight",
+            "hotel",
+            "itinerary",
+        )
+    )
+
+
+def _domain_specific_scores(
+    *,
+    user_text: str,
+    assistant_text: str,
+    metadata: dict[str, Any] | None,
+) -> dict[str, float]:
+    scores: dict[str, float] = {}
+    a = str(assistant_text or "").lower()
+    if _looks_like_financial_eval(user_text=user_text, assistant_text=assistant_text, metadata=metadata):
+        financial = 3.4
+        if any(token in a for token in ("$", "usd", "total", "spent", "balance", "transactions")):
+            financial = 4.1
+        if any(token in a for token in ("estimate", "approx", "could not verify", "not sure")):
+            financial = min(financial, 3.0)
+        scores["financial_accuracy"] = round(max(1.0, min(5.0, financial)), 2)
+    if _looks_like_booking_eval(user_text=user_text, assistant_text=assistant_text, metadata=metadata):
+        booking = 3.3
+        if any(token in a for token in ("confirmed", "reservation", "booking id", "itinerary", "pnr")):
+            booking = 4.2
+        if any(token in a for token in ("failed", "unable to book", "not available", "could not complete")):
+            booking = min(booking, 2.8)
+        scores["booking_verification"] = round(max(1.0, min(5.0, booking)), 2)
+    return scores
+
+
 def _llm_scores(*, user_text: str, assistant_text: str, used_tools: bool) -> dict[str, float]:
     router = get_llm_router()
     schema = {
@@ -212,13 +274,23 @@ def _insert_eval_result(
     evaluator_provider: str,
     prompt_version_id: str | None = None,
     metadata: dict[str, Any] | None = None,
+    domain_scores: dict[str, float] | None = None,
 ) -> dict[str, Any]:
     ensure_eval_results_table(db)
     coherence = float(scores.get("coherence") or 3.0)
     helpfulness = float(scores.get("helpfulness") or 3.0)
     safety = float(scores.get("safety") or 3.0)
     tool_usage = float(scores.get("tool_usage") or 3.0)
-    overall = round((coherence + helpfulness + safety + tool_usage) / 4.0, 3)
+    components = [coherence, helpfulness, safety, tool_usage]
+    for value in (domain_scores or {}).values():
+        try:
+            components.append(float(value))
+        except Exception:
+            continue
+    overall = round(sum(components) / float(len(components) or 1), 3)
+    metadata_payload = dict(metadata or {})
+    if domain_scores:
+        metadata_payload["domain_scores"] = {k: float(v) for k, v in domain_scores.items()}
     payload = {
         "id": str(uuid.uuid4()),
         "user_id": user_id,
@@ -232,7 +304,7 @@ def _insert_eval_result(
         "overall_score": overall,
         "evaluator_provider": evaluator_provider,
         "prompt_version_id": prompt_version_id,
-        "metadata_json": json.dumps(metadata or {}, ensure_ascii=False),
+        "metadata_json": json.dumps(metadata_payload, ensure_ascii=False),
     }
     dialect = db.bind.dialect.name if db.bind is not None else ""
     if dialect == "sqlite":
@@ -323,6 +395,11 @@ def evaluate_response_quality(
         assistant_text=assistant_text,
         used_tools=used_tools,
     )
+    domain_scores = _domain_specific_scores(
+        user_text=user_text,
+        assistant_text=assistant_text,
+        metadata=metadata,
+    )
     db = SessionLocal()
     try:
         row = _insert_eval_result(
@@ -335,6 +412,7 @@ def evaluate_response_quality(
             evaluator_provider=evaluator_provider,
             prompt_version_id=prompt_version_id,
             metadata=metadata,
+            domain_scores=domain_scores,
         )
         try:
             _maybe_emit_quality_alerts(db)

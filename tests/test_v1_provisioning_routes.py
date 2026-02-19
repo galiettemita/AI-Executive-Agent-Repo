@@ -4,6 +4,7 @@ from fastapi.testclient import TestClient
 
 from app.blueprint.contracts import ProvisioningState
 from app.db.database import SessionLocal
+from app.db.models import Subscription
 from app.main import app
 from app.services.provisioning_pipeline import ProvisioningPipeline, get_request
 from app.services.provisioning_sessions import create_provisioning_session
@@ -177,3 +178,33 @@ def test_provision_callback_remains_valid_after_channel_switch(monkeypatch):
         assert final.state == ProvisioningState.ACTIVE
     finally:
         db2.close()
+
+
+def test_provision_start_wave56_requires_professional_plan():
+    db = SessionLocal()
+    try:
+        sub = db.query(Subscription).filter(Subscription.user_id == "prov-start-free-user").first()
+        if sub is None:
+            sub = Subscription(user_id="prov-start-free-user", plan="free", status="active")
+            db.add(sub)
+        else:
+            sub.plan = "free"
+            sub.status = "active"
+        db.commit()
+    finally:
+        db.close()
+
+    client = TestClient(app)
+    resp = client.post(
+        "/api/v1/provision/start",
+        json={
+            "user_id": "prov-start-free-user",
+            "server_id": "duffel-mcp",
+            "reason": "Connect from card",
+            "trigger": "onboarding",
+        },
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["ok"] is False
+    assert "requires the professional plan" in str(body.get("error") or "").lower()

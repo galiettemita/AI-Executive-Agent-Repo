@@ -377,6 +377,24 @@ class Settings(BaseSettings):
     PROVISIONING_CATALOG_SIGNING_SECRET: str | None = None
     PROVISIONING_REQUIRE_CATALOG_SIGNATURE: bool = False
     PROVISIONING_ECR_ALLOWED_PREFIXES: str = ""
+    PROVISIONING_RATE_LIMIT_PER_HOUR: int = 5
+    PROVISIONING_MAX_CONCURRENT: int = 3
+    PROVISIONING_REMOTE_SEARCH_RATE_LIMIT_PER_HOUR: int = 20
+    PROVISIONING_REMOTE_SYNC_ENABLED: bool = True
+    REMOTE_CATALOG_API_URL: str | None = None
+    REMOTE_CATALOG_API_KEY: str | None = None
+    REMOTE_CATALOG_TIMEOUT_SECONDS: int = 8
+
+    # ── Wave 5–6 Post-Launch Gating ────────────────────────────
+    WAVE56_MIN_PLAN: str = "professional"
+    WAVE56_PLAN_GATED_SERVER_IDS: str = (
+        "duffel-mcp,zoom-mcp,calendly-mcp,plaid-mcp,crunchbase-mcp,"
+        "booking-com-mcp,docusign-mcp,canva-mcp,instacart-mcp,tesla-mcp"
+    )
+    TRANSACTION_RATE_LIMIT_WINDOW_SECONDS: int = 600
+    TRANSACTION_RATE_LIMIT_BOOKING_PER_WINDOW: int = 5
+    TRANSACTION_RATE_LIMIT_CHECKOUT_PER_WINDOW: int = 3
+    TRANSACTION_RATE_LIMIT_PER_HOUR: int = 12
 
     # ── Temporal Orchestration (Tier 3) ────────────────────────
     TEMPORAL_ENABLED: bool = False

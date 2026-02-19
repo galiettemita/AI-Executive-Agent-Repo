@@ -58,6 +58,23 @@ _ILLEGAL_MARKERS = (
     "hack into",
 )
 
+_TRANSACTION_ABUSE_MARKERS = (
+    "card testing",
+    "test card",
+    "stolen card",
+    "stolen account",
+    "fraud",
+    "chargeback",
+)
+
+_TRANSACTION_SUSPICIOUS_FIELDS = (
+    "price_override",
+    "total_override",
+    "manual_total",
+    "coupon_override",
+    "discount_override",
+)
+
 _PROVISIONING_LINK_ALLOWLIST_MARKERS = (
     "/api/v1/provision/callback?state=",
     "/api/v1/provision/short/",
@@ -521,4 +538,125 @@ def enforce_gateway_burst_limit(user_id: str | None, *, limit_per_minute: int = 
     member = f"{now:.6f}:{uuid.uuid4().hex[:8]}"
     client.zadd(key, {member: now})
     client.expire(key, window + 5)
+    return RateLimitDecision(allowed=True)
+
+
+def _numeric_value(value: Any) -> float | None:
+    if isinstance(value, (int, float)):
+        return float(value)
+    try:
+        text_value = str(value or "").strip()
+        if not text_value:
+            return None
+        return float(text_value)
+    except Exception:
+        return None
+
+
+def detect_transaction_abuse(
+    *,
+    tool_name: str,
+    args: dict[str, Any],
+    mcp_server_id: str | None = None,
+) -> SafetyVerdict:
+    server = str(mcp_server_id or "").strip().lower()
+    tool = str(tool_name or "").strip().lower()
+    payload = args if isinstance(args, dict) else {}
+    payload_text = json.dumps(payload, ensure_ascii=False).lower()
+    signal = f"{server} {tool} {payload_text}"
+
+    categories: list[str] = []
+
+    # Obvious fraud wording in transaction payload.
+    if any(marker in signal for marker in _TRANSACTION_ABUSE_MARKERS):
+        categories.append("illegal_activity")
+        categories.append("transaction_abuse")
+
+    # Cart/checkout manipulation patterns.
+    for field in _TRANSACTION_SUSPICIOUS_FIELDS:
+        value = payload.get(field)
+        if value not in (None, "", 0, "0", False):
+            categories.append("cart_manipulation")
+            categories.append("transaction_abuse")
+            break
+
+    quantity = _numeric_value(payload.get("quantity") or payload.get("qty") or payload.get("item_count"))
+    if quantity is not None and (quantity <= 0 or quantity > 50):
+        categories.append("cart_manipulation")
+        categories.append("transaction_abuse")
+
+    total = _numeric_value(payload.get("total") or payload.get("amount") or payload.get("checkout_total"))
+    if total is not None and total <= 0:
+        categories.append("cart_manipulation")
+        categories.append("transaction_abuse")
+
+    # Booking spike hints: huge batch bookings or repeated near-identical booking payloads.
+    if any(k in signal for k in ("booking_count", "bulk_booking", "mass_booking")):
+        categories.append("booking_spike")
+        categories.append("transaction_abuse")
+
+    deduped = []
+    seen = set()
+    for item in categories:
+        key = str(item).strip().lower()
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        deduped.append(key)
+
+    score = 0.0
+    if deduped:
+        score = min(1.0, 0.45 + (0.12 * len(deduped)))
+    return SafetyVerdict(
+        flagged=bool(deduped),
+        risk_score=round(score, 3),
+        categories=deduped,
+        reason="transaction_abuse_detected" if deduped else "clean",
+        classifier="transaction_rules",
+    )
+
+
+def enforce_transaction_operation_rate_limit(
+    user_id: str | None,
+    *,
+    operation: str,
+) -> RateLimitDecision:
+    if not user_id:
+        return RateLimitDecision(allowed=True)
+    client = get_redis()
+    if client is None:
+        return RateLimitDecision(allowed=True)
+
+    now = time.time()
+    op = str(operation or "checkout").strip().lower()
+    window_seconds = max(60, int(settings.TRANSACTION_RATE_LIMIT_WINDOW_SECONDS or 600))
+    hourly_limit = max(1, int(settings.TRANSACTION_RATE_LIMIT_PER_HOUR or 12))
+    if op == "booking":
+        window_limit = max(1, int(settings.TRANSACTION_RATE_LIMIT_BOOKING_PER_WINDOW or 5))
+    else:
+        window_limit = max(1, int(settings.TRANSACTION_RATE_LIMIT_CHECKOUT_PER_WINDOW or 3))
+
+    op_key = f"bp:safety:tx:{op}:{user_id}"
+    hour_key = f"bp:safety:tx:hour:{user_id}"
+
+    client.zremrangebyscore(op_key, 0, now - window_seconds)
+    client.zremrangebyscore(hour_key, 0, now - 3600)
+    if int(client.zcard(op_key)) >= window_limit:
+        oldest = client.zrange(op_key, 0, 0, withscores=True)
+        retry_after = None
+        if oldest:
+            retry_after = int(max(1.0, (oldest[0][1] + window_seconds) - now))
+        return RateLimitDecision(allowed=False, retry_after_seconds=retry_after, reason="transaction_rate_limited")
+    if int(client.zcard(hour_key)) >= hourly_limit:
+        oldest = client.zrange(hour_key, 0, 0, withscores=True)
+        retry_after = None
+        if oldest:
+            retry_after = int(max(1.0, (oldest[0][1] + 3600) - now))
+        return RateLimitDecision(allowed=False, retry_after_seconds=retry_after, reason="transaction_rate_limited")
+
+    member = f"{now:.6f}:{uuid.uuid4().hex[:8]}"
+    client.zadd(op_key, {member: now})
+    client.zadd(hour_key, {member: now})
+    client.expire(op_key, window_seconds + 5)
+    client.expire(hour_key, 3605)
     return RateLimitDecision(allowed=True)

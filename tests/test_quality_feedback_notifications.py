@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 
 from fastapi.testclient import TestClient
 from sqlalchemy import text
 
 from app.db.database import SessionLocal
+from app.db.models import Subscription
 from app.main import app
 from app.services.preferences import update_preferences
 from app.services import quality_eval, scheduled_notifications, user_feedback
@@ -105,6 +107,44 @@ def test_live_quality_eval_scores_mcp_tool_usage(monkeypatch):
         assert float(eval_row.get("tool_usage_score") or 0.0) >= 4.0
         metadata_json = str(eval_row.get("metadata_json") or "")
         assert "mcp_result" in metadata_json
+    finally:
+        db.close()
+
+
+def test_live_quality_eval_adds_financial_and_booking_domain_scores(monkeypatch):
+    monkeypatch.setattr(quality_eval, "_sampled_for_live_eval", lambda **kwargs: True)
+    monkeypatch.setattr(quality_eval, "_maybe_emit_quality_alerts", lambda db: None)
+
+    row = quality_eval.evaluate_response_quality(
+        user_id="quality-domain-user",
+        conversation_id="conv-domain",
+        run_id="run-quality-domain",
+        message_id="msg-domain",
+        user_text="Summarize Plaid transactions and confirm my Duffel booking.",
+        assistant_text=(
+            "Total spent is $420 USD across transactions. "
+            "Booking confirmed with itinerary and booking ID ZX12."
+        ),
+        used_tools=True,
+        metadata={"content_provenance": "mcp_result", "provider": "plaid+duffel"},
+    )
+    assert row is not None
+
+    db = SessionLocal()
+    try:
+        eval_row = db.execute(
+            text("select metadata_json from eval_results where run_id = :run_id order by created_at desc limit 1"),
+            {"run_id": "run-quality-domain"},
+        ).mappings().first()
+        assert eval_row is not None
+        metadata_raw = eval_row.get("metadata_json")
+        if isinstance(metadata_raw, dict):
+            metadata_obj = metadata_raw
+        else:
+            metadata_obj = json.loads(str(metadata_raw or "{}"))
+        domain_scores = metadata_obj.get("domain_scores") or {}
+        assert float(domain_scores.get("financial_accuracy") or 0.0) > 0
+        assert float(domain_scores.get("booking_verification") or 0.0) > 0
     finally:
         db.close()
 
@@ -277,5 +317,77 @@ def test_scheduled_notifications_use_active_channel_and_mcp_payload(monkeypatch)
         assert str(row.get("channel") or "") == "whatsapp"
         body = str(row.get("body") or "")
         assert "calendar item" in body.lower()
+    finally:
+        db.close()
+
+
+def test_scheduled_notifications_plan_gate_travel_financial(monkeypatch):
+    fake = _FakeRedis()
+    monkeypatch.setattr(scheduled_notifications, "get_redis", lambda: fake)
+    monkeypatch.setattr(scheduled_notifications, "_quiet_hours_active", lambda now_local: False)
+    monkeypatch.setattr(scheduled_notifications, "_inactivity_days", lambda db, user_id, now_utc: 0.0)
+
+    db = SessionLocal()
+    try:
+        sub = db.query(Subscription).filter(Subscription.user_id == "notify-plan-user").first()
+        if sub is None:
+            sub = Subscription(user_id="notify-plan-user", plan="free", status="active")
+            db.add(sub)
+        else:
+            sub.plan = "free"
+            sub.status = "active"
+        db.commit()
+
+        scheduled_notifications.schedule_notification(
+            db,
+            user_id="notify-plan-user",
+            notification_type="travel_alert",
+            payload={"flight": "AA100", "event": "flight_delay"},
+            scheduled_for=datetime.now(timezone.utc),
+            channel="web",
+            timezone_name="UTC",
+        )
+        result = scheduled_notifications.run_due_scheduled_notifications(db)
+        assert int(result.get("skipped_plan_gating") or 0) == 1
+        assert int(result.get("sent") or 0) == 0
+    finally:
+        db.close()
+
+
+def test_scheduled_notifications_send_financial_alert_for_professional(monkeypatch):
+    fake = _FakeRedis()
+    monkeypatch.setattr(scheduled_notifications, "get_redis", lambda: fake)
+    monkeypatch.setattr(scheduled_notifications, "_quiet_hours_active", lambda now_local: False)
+    monkeypatch.setattr(scheduled_notifications, "_inactivity_days", lambda db, user_id, now_utc: 0.0)
+
+    db = SessionLocal()
+    try:
+        sub = db.query(Subscription).filter(Subscription.user_id == "notify-pro-user").first()
+        if sub is None:
+            sub = Subscription(user_id="notify-pro-user", plan="professional", status="active")
+            db.add(sub)
+        else:
+            sub.plan = "professional"
+            sub.status = "active"
+        db.commit()
+
+        scheduled_notifications.schedule_notification(
+            db,
+            user_id="notify-pro-user",
+            notification_type="financial_alert",
+            payload={"merchant": "Acme", "amount": "199.99", "currency": "USD", "reason": "Unusual transaction"},
+            scheduled_for=datetime.now(timezone.utc),
+            channel="web",
+            timezone_name="UTC",
+        )
+        result = scheduled_notifications.run_due_scheduled_notifications(db)
+        assert int(result.get("sent") or 0) == 1
+
+        row = db.execute(
+            text("select body from outbound_messages where user_id = :user_id order by created_at desc limit 1"),
+            {"user_id": "notify-pro-user"},
+        ).mappings().first()
+        assert row is not None
+        assert "financial alert" in str(row.get("body") or "").lower()
     finally:
         db.close()

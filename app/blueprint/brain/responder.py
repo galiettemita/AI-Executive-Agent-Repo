@@ -264,23 +264,33 @@ def _attempt_capability_gap_provision(
 ) -> ToolResult | None:
     tools_markdown = _load_tools_markdown(user_id=user_id)
     available_servers = parse_available_servers_section(tools_markdown)
-    if not available_servers:
-        return None
     capability_text = " ".join(part for part in [raw_tool_name, user_text] if part).strip()
-    match = find_server_match(capability_text, entries=available_servers)
-    if not match:
-        return None
+    match = find_server_match(capability_text, entries=available_servers) if available_servers else None
 
-    server_id = str(match.get("server_id") or "").strip()
-    if not server_id:
+    if match:
+        server_id = str(match.get("server_id") or "").strip()
+        if server_id:
+            reason = (
+                f"Missing tool '{raw_tool_name or 'unknown'}' for request: "
+                f"{(user_text or '').strip()[:180]}"
+            )
+            return _execute_tool(
+                tool="provision_server",
+                args={"server_id": server_id, "reason": reason},
+                user_id=user_id,
+                run_id=run_id,
+                input_provenance=provenance,
+                required_capabilities=[],
+                capability_token=capability_token,
+                timeout_s=10.0,
+            )
+
+    if not capability_text:
         return None
-    reason = (
-        f"Missing tool '{raw_tool_name or 'unknown'}' for request: "
-        f"{(user_text or '').strip()[:180]}"
-    )
+    # Local catalog has no match; ask the remote catalog for candidate servers.
     return _execute_tool(
-        tool="provision_server",
-        args={"server_id": server_id, "reason": reason},
+        tool="search_remote_catalog",
+        args={"capability": capability_text},
         user_id=user_id,
         run_id=run_id,
         input_provenance=provenance,
@@ -664,7 +674,11 @@ def generate_reply(
                         )
                         if provision_result is not None:
                             result = provision_result
-                            tool_name = "provision_server"
+                            tool_name = str(
+                                provision_result.tool_name
+                                or provision_result.tool
+                                or "provision_server"
+                            )
                             if not result.ok:
                                 failed_tools += 1
                         else:

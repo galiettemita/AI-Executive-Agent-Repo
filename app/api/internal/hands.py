@@ -56,10 +56,16 @@ from app.services.plaid_connector import (
 )
 from app.services.docs_search import search_connected_docs
 from app.services.analytics import emit_event_async
-from app.services.billing_middleware import enforce_billing_for_tool_call
+from app.services.billing_middleware import enforce_billing_for_tool_call, get_billing_subscription
+from app.services.content_safety import (
+    detect_transaction_abuse,
+    enforce_transaction_operation_rate_limit,
+    enqueue_moderation_item,
+)
 from app.services.provisioning_catalog import available_servers_for_user
 from app.services.provisioning_handlers import ProvisionAuthContext, get_auth_handler
 from app.services.provisioning_pipeline import ProvisioningPipeline
+from app.services.remote_catalog import search_remote_catalog as search_remote_catalog_entries
 
 
 router = APIRouter(prefix="/internal/hands", tags=["internal-hands"])
@@ -236,18 +242,124 @@ def _map_auth_type(auth_value: str | None) -> AuthType:
 
 
 def _allow_provisioning_hourly_rate(user_id: str) -> bool:
+    return _allow_hourly_rate(
+        user_id=user_id,
+        key_prefix="bp:provision:hour",
+        limit=max(1, int(settings.PROVISIONING_RATE_LIMIT_PER_HOUR or 5)),
+        window_seconds=3600,
+    )
+
+
+def _allow_remote_catalog_hourly_rate(user_id: str) -> bool:
+    return _allow_hourly_rate(
+        user_id=user_id,
+        key_prefix="bp:provision:remote-search:hour",
+        limit=max(1, int(settings.PROVISIONING_REMOTE_SEARCH_RATE_LIMIT_PER_HOUR or 20)),
+        window_seconds=3600,
+    )
+
+
+def _allow_hourly_rate(*, user_id: str, key_prefix: str, limit: int, window_seconds: int) -> bool:
     client = get_redis()
     if client is None:
         return True
     now = datetime.now(timezone.utc).timestamp()
-    key = f"bp:provision:hour:{user_id}"
-    client.zremrangebyscore(key, 0, now - 3600)
-    if int(client.zcard(key)) >= 5:
+    key = f"{key_prefix}:{user_id}"
+    client.zremrangebyscore(key, 0, now - window_seconds)
+    if int(client.zcard(key)) >= max(1, int(limit)):
         return False
     member = f"{now:.6f}:{uuid.uuid4().hex[:8]}"
     client.zadd(key, {member: now})
-    client.expire(key, 3700)
+    client.expire(key, max(window_seconds + 100, 3600))
     return True
+
+
+_PLAN_RANK = {
+    "free": 0,
+    "trial": 0,
+    "free_trial": 0,
+    "starter": 1,
+    "personal": 1,
+    "plus": 2,
+    "professional": 3,
+    "pro": 3,
+    "enterprise": 4,
+}
+
+
+def _plan_rank(plan: str | None) -> int:
+    return _PLAN_RANK.get(str(plan or "free").strip().lower(), 0)
+
+
+def _plan_meets_min(plan: str | None, min_plan: str | None) -> bool:
+    return _plan_rank(plan) >= _plan_rank(min_plan)
+
+
+def _current_user_plan(db, *, user_id: str | None) -> str:
+    if not user_id:
+        return "free"
+    try:
+        sub = get_billing_subscription(db, user_id)
+    except Exception:
+        return "free"
+    status = str(getattr(sub, "status", "") or "").strip().lower()
+    plan = str(getattr(sub, "plan", "") or "").strip().lower()
+    if status == "trialing":
+        return "free"
+    if plan in {"trial", "free_trial", "trialing", ""}:
+        return "free"
+    return plan
+
+
+def _wave56_server_ids() -> set[str]:
+    raw = str(settings.WAVE56_PLAN_GATED_SERVER_IDS or "")
+    return {
+        item.strip().lower()
+        for item in raw.replace("|", ",").split(",")
+        if item.strip()
+    }
+
+
+def _enforce_wave56_plan_gate(
+    db,
+    *,
+    user_id: str | None,
+    mcp_server_id: str | None,
+) -> tuple[bool, str | None]:
+    server_id = str(mcp_server_id or "").strip().lower()
+    if not user_id or not server_id:
+        return True, None
+    if server_id not in _wave56_server_ids():
+        return True, None
+    plan = _current_user_plan(db, user_id=user_id)
+    min_plan = str(settings.WAVE56_MIN_PLAN or "professional").strip().lower()
+    if _plan_meets_min(plan, min_plan):
+        return True, None
+    upgrade_url = (
+        f"{settings.APP_BASE_URL.rstrip('/')}/api/v1/billing/checkout?user_id={user_id}&plan={min_plan}"
+        if settings.APP_BASE_URL
+        else ""
+    )
+    message = (
+        f"{server_id} requires the {min_plan} plan. "
+        f"{('Upgrade path: ' + upgrade_url) if upgrade_url else ''}"
+    ).strip()
+    return False, message
+
+
+def _transaction_operation_for_call(*, tool_name: str, args: dict, mcp_server_id: str | None) -> str | None:
+    server_id = str(mcp_server_id or "").strip().lower()
+    lowered_tool = str(tool_name or "").strip().lower()
+    try:
+        args_blob = json.dumps(args or {}, ensure_ascii=False).lower()
+    except Exception:
+        args_blob = str(args or "").lower()
+    signal_text = f"{lowered_tool} {args_blob} {server_id}"
+    if server_id in {"duffel-mcp", "booking-com-mcp"} or any(k in signal_text for k in ("book", "flight", "hotel", "reservation")):
+        return "booking"
+    if server_id in {"instacart-mcp"} or any(k in signal_text for k in ("checkout", "cart", "order", "purchase", "payment")):
+        return "checkout"
+    return None
 
 
 @router.post("/execute", response_model=ToolResult)
@@ -323,6 +435,58 @@ async def execute(call: ToolCall) -> ToolResult:
         status = "success"
         db = SessionLocal()
         try:
+            if call.user_id:
+                plan_allowed, plan_message = _enforce_wave56_plan_gate(
+                    db,
+                    user_id=call.user_id,
+                    mcp_server_id=spec.mcp_server_id,
+                )
+                if not plan_allowed:
+                    raise RuntimeError(plan_message or "This MCP server requires a higher plan.")
+
+                operation = _transaction_operation_for_call(
+                    tool_name=tool,
+                    args=args if isinstance(args, dict) else {},
+                    mcp_server_id=spec.mcp_server_id,
+                )
+                if operation:
+                    decision = enforce_transaction_operation_rate_limit(call.user_id, operation=operation)
+                    if not decision.allowed:
+                        retry_after = (
+                            f" Retry after {int(decision.retry_after_seconds)}s."
+                            if decision.retry_after_seconds
+                            else ""
+                        )
+                        raise RuntimeError(
+                            f"Transaction rate limit reached for {operation} operations.{retry_after}".strip()
+                        )
+                    abuse = detect_transaction_abuse(
+                        tool_name=tool,
+                        args=args if isinstance(args, dict) else {},
+                        mcp_server_id=spec.mcp_server_id,
+                    )
+                    if abuse.flagged:
+                        enqueue_moderation_item(
+                            user_id=call.user_id,
+                            run_id=call.run_id,
+                            direction="inbound",
+                            channel="tool_execution",
+                            text_value=f"Transaction operation blocked: {tool}",
+                            categories=abuse.categories,
+                            risk_score=max(0.5, abuse.risk_score),
+                            classifier=abuse.classifier,
+                            metadata={
+                                "tool": tool,
+                                "mcp_server_id": spec.mcp_server_id,
+                                "reason": abuse.reason,
+                                "operation": operation,
+                            },
+                            increment_safety_flags=True,
+                        )
+                        raise RuntimeError(
+                            "Potentially unsafe transaction pattern detected. I blocked this operation for safety."
+                        )
+
             bridge_call = call.model_copy(
                 update={
                     "tool_name": tool,
@@ -405,10 +569,21 @@ async def execute(call: ToolCall) -> ToolResult:
                 msg = (block.message if block else "Billing restriction prevents provisioning right now.").strip()
                 raise RuntimeError(msg)
             if not _allow_provisioning_hourly_rate(call.user_id):
-                raise RuntimeError("Provisioning rate limit reached (max 5 requests/hour)")
+                raise RuntimeError(
+                    f"Provisioning rate limit reached (max {max(1, int(settings.PROVISIONING_RATE_LIMIT_PER_HOUR or 5))} requests/hour)"
+                )
+
+            plan_allowed, plan_message = _enforce_wave56_plan_gate(
+                db,
+                user_id=call.user_id,
+                mcp_server_id=server_id,
+            )
+            if not plan_allowed:
+                raise RuntimeError(plan_message or "This MCP server requires a higher plan.")
 
             pipeline = ProvisioningPipeline(db)
             _ = pipeline.expire_timeouts()
+            max_concurrent = max(1, int(settings.PROVISIONING_MAX_CONCURRENT or 3))
             active_count = int(
                 db.execute(
                     text(
@@ -422,8 +597,8 @@ async def execute(call: ToolCall) -> ToolResult:
                 ).scalar()
                 or 0
             )
-            if active_count >= 3:
-                raise RuntimeError("Too many concurrent provisioning sessions (max 3)")
+            if active_count >= max_concurrent:
+                raise RuntimeError(f"Too many concurrent provisioning sessions (max {max_concurrent})")
 
             available = available_servers_for_user(db, user_id=call.user_id, connected_server_ids=set())
             matched = next((item for item in available if str(item.get("server_id") or "").strip().lower() == server_id), None)
@@ -560,6 +735,98 @@ async def execute(call: ToolCall) -> ToolResult:
                 except Exception:
                     pass
 
+        return result
+
+    if tool == "search_remote_catalog":
+        capability = str(args.get("capability") or "").strip()
+        if not capability:
+            return ToolResult(tool_name=tool, tool=tool, ok=False, error="search_remote_catalog requires capability")
+        limit = max(1, min(25, int(args.get("limit") or 10)))
+
+        started = time.perf_counter()
+        output_payload_search: dict[str, object] | None = None
+        error_payload_search: dict[str, str] | None = None
+        status_search = "success"
+        db = SessionLocal()
+        try:
+            if call.user_id and not _allow_remote_catalog_hourly_rate(call.user_id):
+                raise RuntimeError(
+                    "Remote catalog search rate limit reached "
+                    f"(max {max(1, int(settings.PROVISIONING_REMOTE_SEARCH_RATE_LIMIT_PER_HOUR or 20))} requests/hour)"
+                )
+            rows = search_remote_catalog_entries(capability=capability, limit=limit)
+            plan = _current_user_plan(db, user_id=call.user_id) if call.user_id else "free"
+            filtered: list[dict[str, object]] = []
+            for row in rows:
+                if not isinstance(row, dict):
+                    continue
+                server_id = str(row.get("server_id") or "").strip().lower()
+                min_plan = str(row.get("min_plan") or "free").strip().lower()
+                required_plan = min_plan
+                if server_id and server_id in _wave56_server_ids():
+                    required_plan = str(settings.WAVE56_MIN_PLAN or "professional").strip().lower()
+                if not _plan_meets_min(plan, required_plan):
+                    continue
+                filtered.append(
+                    {
+                        "server_id": server_id,
+                        "display_name": str(row.get("display_name") or row.get("server_id") or "").strip(),
+                        "description": str(row.get("description") or "").strip(),
+                        "auth_type": str(row.get("auth_type") or "oauth2").strip().lower(),
+                        "min_plan": required_plan,
+                        "setup_seconds": int(row.get("setup_seconds") or 30),
+                        "capabilities": list(row.get("capabilities") or []),
+                        "source": str(row.get("source") or "remote").strip().lower(),
+                    }
+                )
+            output_payload_search = {
+                "capability": capability,
+                "matches": filtered,
+                "count": len(filtered),
+                "plan": plan,
+            }
+            result = ToolResult(tool_name=tool, tool=tool, ok=True, result=output_payload_search)
+        except Exception as exc:
+            result = ToolResult(tool_name=tool, tool=tool, ok=False, error=str(exc))
+            status_search = "failed"
+            output_payload_search = None
+            error_payload_search = {"type": exc.__class__.__name__, "message": str(exc)}
+        finally:
+            try:
+                db.close()
+            except Exception:
+                pass
+
+        latency_ms = int((time.perf_counter() - started) * 1000)
+        if call.user_id and call.run_id:
+            db = SessionLocal()
+            try:
+                insert_tool_execution(
+                    db,
+                    run_id=call.run_id,
+                    user_id=call.user_id,
+                    tool_name=tool,
+                    input_payload={
+                        "args": args,
+                        "is_mcp": False,
+                        "mcp_server_id": None,
+                        "input_provenance": call.input_provenance.value,
+                    },
+                    output_payload=output_payload_search,
+                    status=status_search,
+                    error_payload=error_payload_search,
+                    idempotency_key=idempotency_key,
+                    risk_level="none",
+                    cost_cents=0,
+                    latency_ms=latency_ms,
+                )
+            except Exception:
+                pass
+            finally:
+                try:
+                    db.close()
+                except Exception:
+                    pass
         return result
 
     if tool in ("web.search", "tavily.search"):

@@ -7,8 +7,10 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
 from app.blueprint.contracts import AuthType, ProvisionTrigger, ProvisioningState, ServerProvisionedEvent
+from app.core.config import settings
 from app.services.provisioning_activator import activate_server
 from app.services.analytics import emit_event_async
+from app.services.billing_middleware import get_billing_subscription
 from app.services.provisioning_pipeline import ProvisioningPipeline, get_request, validate_catalog_security_for_server
 from app.services.provisioning_retry import retry_original_task_after_provisioning
 from app.services.provisioning_sessions import delete_provisioning_session, get_provisioning_session
@@ -18,6 +20,18 @@ from app.services.provisioning_handlers import ProvisionAuthContext, get_auth_ha
 
 router = APIRouter(prefix="/api/v1/provision", tags=["provisioning-v1"])
 
+_PLAN_RANK = {
+    "free": 0,
+    "trial": 0,
+    "free_trial": 0,
+    "starter": 1,
+    "personal": 1,
+    "plus": 2,
+    "professional": 3,
+    "pro": 3,
+    "enterprise": 4,
+}
+
 
 class ProvisionStartRequest(BaseModel):
     user_id: str
@@ -25,6 +39,46 @@ class ProvisionStartRequest(BaseModel):
     reason: str = "Server connection requested"
     trigger: ProvisionTrigger = ProvisionTrigger.USER_INITIATED
     original_task_id: str | None = None
+
+
+def _plan_rank(value: str | None) -> int:
+    return _PLAN_RANK.get(str(value or "free").strip().lower(), 0)
+
+
+def _wave56_server_ids() -> set[str]:
+    raw = str(settings.WAVE56_PLAN_GATED_SERVER_IDS or "")
+    return {
+        item.strip().lower()
+        for item in raw.replace("|", ",").split(",")
+        if item.strip()
+    }
+
+
+def _enforce_wave56_plan_gate(db: Session, *, user_id: str, server_id: str) -> tuple[bool, str | None]:
+    target = str(server_id or "").strip().lower()
+    if not target or target not in _wave56_server_ids():
+        return True, None
+    try:
+        sub = get_billing_subscription(db, user_id)
+        status = str(getattr(sub, "status", "") or "").strip().lower()
+        plan = str(getattr(sub, "plan", "") or "").strip().lower()
+        if status == "trialing" or plan in {"trial", "free_trial", "trialing", ""}:
+            plan = "free"
+    except Exception:
+        plan = "free"
+    min_plan = str(settings.WAVE56_MIN_PLAN or "professional").strip().lower()
+    if _plan_rank(plan) >= _plan_rank(min_plan):
+        return True, None
+    upgrade_url = (
+        f"{settings.APP_BASE_URL.rstrip('/')}/api/v1/billing/checkout?user_id={user_id}&plan={min_plan}"
+        if settings.APP_BASE_URL
+        else ""
+    )
+    message = (
+        f"{target} requires the {min_plan} plan. "
+        f"{('Upgrade path: ' + upgrade_url) if upgrade_url else ''}"
+    ).strip()
+    return False, message
 
 
 def _map_auth_type(auth_value: str | None) -> AuthType:
@@ -63,6 +117,9 @@ def provision_start(payload: ProvisionStartRequest, db: Session = Depends(get_db
     matched = next((item for item in available if str(item.get("server_id") or "").strip().lower() == server_id), None)
     if not matched:
         return {"ok": False, "error": f"{server_id} is not available on this account or plan"}
+    plan_allowed, plan_error = _enforce_wave56_plan_gate(db, user_id=payload.user_id, server_id=server_id)
+    if not plan_allowed:
+        return {"ok": False, "error": plan_error or f"{server_id} is not available on this account or plan"}
 
     reason = str(payload.reason or "").strip() or "Server connection requested"
     auth_type = _map_auth_type(str(matched.get("auth_type") or "oauth2"))
