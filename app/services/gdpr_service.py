@@ -125,6 +125,12 @@ USER_DATA_MODELS = [
     User,
 ]
 
+EXTRA_USER_TABLES = (
+    "provisioning_requests",
+    "provisioning_declined",
+    "mcp_user_servers",
+)
+
 
 class GDPRService:
     """Service for GDPR-compliant data operations."""
@@ -162,6 +168,52 @@ class GDPRService:
                 {"user_id": user_id},
             )
         return int(getattr(result, "rowcount", 0) or 0)
+
+    def _table_exists(self, table_name: str) -> bool:
+        if self._is_sqlite():
+            row = self.db.execute(
+                text("select name from sqlite_master where type='table' and name=:name"),
+                {"name": table_name},
+            ).first()
+            return bool(row)
+        row = self.db.execute(
+            text(
+                "select 1 from information_schema.tables "
+                "where table_schema = current_schema() and table_name = :name"
+            ),
+            {"name": table_name},
+        ).first()
+        return bool(row)
+
+    def _select_rows_from_extra_table(self, *, table_name: str, user_id: str) -> List[Dict[str, Any]]:
+        if not self._table_exists(table_name):
+            return []
+        if self._is_sqlite():
+            rows = self.db.execute(
+                text(f"select * from {table_name} where user_id = :user_id"),
+                {"user_id": user_id},
+            ).mappings().all()
+        else:
+            rows = self.db.execute(
+                text(f"select * from {table_name} where user_id::text = :user_id"),
+                {"user_id": user_id},
+            ).mappings().all()
+        return [dict(row) for row in rows]
+
+    def _delete_rows_from_extra_table(self, *, table_name: str, user_id: str) -> int:
+        if not self._table_exists(table_name):
+            return 0
+        if self._is_sqlite():
+            res = self.db.execute(
+                text(f"delete from {table_name} where user_id = :user_id"),
+                {"user_id": user_id},
+            )
+        else:
+            res = self.db.execute(
+                text(f"delete from {table_name} where user_id::text = :user_id"),
+                {"user_id": user_id},
+            )
+        return int(getattr(res, "rowcount", 0) or 0)
 
     def delete_user_data(
         self,
@@ -227,6 +279,16 @@ class GDPRService:
                         )
                         self.db.execute(delete_stmt)
 
+                deletion_summary["tables"][table_name] = {
+                    "action": "deleted",
+                    "count": count,
+                }
+
+            for table_name in EXTRA_USER_TABLES:
+                rows = self._select_rows_from_extra_table(table_name=table_name, user_id=user_id)
+                count = len(rows)
+                if not dry_run and count > 0:
+                    count = self._delete_rows_from_extra_table(table_name=table_name, user_id=user_id)
                 deletion_summary["tables"][table_name] = {
                     "action": "deleted",
                     "count": count,
@@ -321,6 +383,11 @@ class GDPRService:
                         self._model_to_dict(r) for r in records
                     ]
 
+        for table_name in EXTRA_USER_TABLES:
+            rows = self._select_rows_from_extra_table(table_name=table_name, user_id=user_id)
+            if rows:
+                export_data["data"][table_name] = [self._serialize_mapping(row) for row in rows]
+
         return export_data
 
     def _model_to_dict(self, model_instance) -> Dict[str, Any]:
@@ -362,6 +429,10 @@ class GDPRService:
                 stmt = select(model).where(getattr(model, user_id_field) == user_id)
                 records = self.db.execute(stmt).scalars().all()
                 summary[table_name] = len(records)
+
+        for table_name in EXTRA_USER_TABLES:
+            rows = self._select_rows_from_extra_table(table_name=table_name, user_id=user_id)
+            summary[table_name] = len(rows)
 
         return summary
 

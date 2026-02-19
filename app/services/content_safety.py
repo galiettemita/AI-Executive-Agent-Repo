@@ -58,6 +58,13 @@ _ILLEGAL_MARKERS = (
     "hack into",
 )
 
+_PROVISIONING_LINK_ALLOWLIST_MARKERS = (
+    "/api/v1/provision/callback?state=",
+    "/api/v1/provision/short/",
+    "tap the secure link to authorize this server",
+    "connected! return to chat.",
+)
+
 
 @dataclass
 class SafetyVerdict:
@@ -169,6 +176,15 @@ def _heuristic_classify(text_value: str) -> SafetyVerdict:
     if not txt:
         return SafetyVerdict(flagged=False, risk_score=0.0, categories=[], reason="empty")
 
+    if _is_allowlisted_provisioning_text(txt):
+        return SafetyVerdict(
+            flagged=False,
+            risk_score=0.0,
+            categories=[],
+            reason="allowlisted_provisioning_link",
+            classifier="heuristic_allowlist",
+        )
+
     categories: list[str] = []
     if any(marker in txt for marker in _PROMPT_INJECTION_MARKERS):
         categories.append("prompt_injection")
@@ -187,6 +203,13 @@ def _heuristic_classify(text_value: str) -> SafetyVerdict:
         reason="heuristic_match" if categories else "clean",
         classifier="heuristic",
     )
+
+
+def _is_allowlisted_provisioning_text(text_value: str) -> bool:
+    txt = str(text_value or "").strip().lower()
+    if not txt:
+        return False
+    return any(marker in txt for marker in _PROVISIONING_LINK_ALLOWLIST_MARKERS)
 
 
 def _llm_classify(text_value: str) -> SafetyVerdict:

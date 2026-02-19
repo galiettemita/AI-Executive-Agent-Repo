@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
 import jwt
@@ -443,3 +443,137 @@ def admin_analytics_daily(
         {"limit": int(days)},
     ).mappings().all()
     return {"ok": True, "count": len(rows), "rows": [dict(row) for row in rows]}
+
+
+@router.get("/provisioning/requests")
+def admin_provisioning_requests(
+    request: Request,
+    state: str = Query(default=""),
+    user_id: str = Query(default=""),
+    server_id: str = Query(default=""),
+    limit: int = Query(default=100, ge=1, le=1000),
+    offset: int = Query(default=0, ge=0),
+    db: Session = Depends(get_db),
+):
+    _decode_admin_claims(request)
+    if not _table_exists(db, "provisioning_requests"):
+        return {"ok": True, "count": 0, "items": [], "note": "provisioning_requests table not found"}
+
+    where_parts = ["1=1"]
+    params: dict[str, Any] = {"limit": int(limit), "offset": int(offset)}
+    if state.strip():
+        where_parts.append("state = :state")
+        params["state"] = state.strip().lower()
+    if user_id.strip():
+        where_parts.append("user_id = :user_id")
+        params["user_id"] = user_id.strip()
+    if server_id.strip():
+        where_parts.append("server_id = :server_id")
+        params["server_id"] = server_id.strip().lower()
+
+    rows = db.execute(
+        text(
+            "select * from provisioning_requests "
+            f"where {' and '.join(where_parts)} "
+            "order by updated_at desc, created_at desc "
+            "limit :limit offset :offset"
+        ),
+        params,
+    ).mappings().all()
+    return {"ok": True, "count": len(rows), "items": [dict(row) for row in rows]}
+
+
+@router.get("/provisioning/stats")
+def admin_provisioning_stats(
+    request: Request,
+    days: int = Query(default=30, ge=1, le=365),
+    db: Session = Depends(get_db),
+):
+    _decode_admin_claims(request)
+    if not _table_exists(db, "provisioning_requests"):
+        return {
+            "ok": True,
+            "window_days": int(days),
+            "totals": {"requests": 0, "active": 0, "success": 0, "failed": 0, "expired": 0, "canceled": 0},
+            "success_rate": 0.0,
+            "avg_completion_seconds": 0.0,
+            "by_state": {},
+            "note": "provisioning_requests table not found",
+        }
+
+    dialect = db.bind.dialect.name if db.bind is not None else ""
+    cutoff = datetime.utcnow() - timedelta(days=int(days))
+    cutoff_value: Any = cutoff if dialect != "sqlite" else cutoff.isoformat(sep=" ")
+
+    state_rows = db.execute(
+        text(
+            """
+            select state, count(*) as c
+            from provisioning_requests
+            where created_at >= :cutoff
+            group by state
+            """
+        ),
+        {"cutoff": cutoff_value},
+    ).mappings().all()
+    by_state: dict[str, int] = {
+        str(row.get("state") or "unknown"): int(row.get("c") or 0) for row in state_rows
+    }
+
+    total = int(sum(by_state.values()))
+    success = int(by_state.get("active", 0))
+    failed = int(by_state.get("failed", 0))
+    expired = int(by_state.get("expired", 0))
+    canceled = int(by_state.get("canceled", 0))
+    active = int(
+        by_state.get("initiated", 0)
+        + by_state.get("awaiting_auth", 0)
+        + by_state.get("auth_received", 0)
+        + by_state.get("provisioning", 0)
+    )
+    terminal = success + failed + expired + canceled
+    success_rate = round((success / terminal), 4) if terminal > 0 else 0.0
+
+    if dialect == "sqlite":
+        avg_row = db.execute(
+            text(
+                """
+                select avg((julianday(completed_at) - julianday(created_at)) * 86400.0) as avg_seconds
+                from provisioning_requests
+                where created_at >= :cutoff
+                  and completed_at is not null
+                  and state = 'active'
+                """
+            ),
+            {"cutoff": cutoff_value},
+        ).mappings().first()
+    else:
+        avg_row = db.execute(
+            text(
+                """
+                select avg(extract(epoch from (completed_at - created_at))) as avg_seconds
+                from provisioning_requests
+                where created_at >= :cutoff
+                  and completed_at is not null
+                  and state = 'active'
+                """
+            ),
+            {"cutoff": cutoff_value},
+        ).mappings().first()
+    avg_completion_seconds = round(float((avg_row or {}).get("avg_seconds") or 0.0), 3)
+
+    return {
+        "ok": True,
+        "window_days": int(days),
+        "totals": {
+            "requests": total,
+            "active": active,
+            "success": success,
+            "failed": failed,
+            "expired": expired,
+            "canceled": canceled,
+        },
+        "success_rate": success_rate,
+        "avg_completion_seconds": avg_completion_seconds,
+        "by_state": by_state,
+    }

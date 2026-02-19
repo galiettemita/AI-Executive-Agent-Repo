@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from app.blueprint.db import _column_exists, _table_exists
 from app.core.config import settings
 from app.core.redis import get_redis
+from app.services.provisioning_sessions import delete_provisioning_sessions_for_user
 from app.services.gdpr_service import delete_user_data, get_user_data_summary
 
 
@@ -94,7 +95,7 @@ def _mark_user_deleted_requested(db: Session, *, user_id: str, now: datetime) ->
 
 
 def _revoke_immediate_tokens(db: Session, *, user_id: str) -> dict[str, Any]:
-    out: dict[str, Any] = {"oauth_tokens": 0, "integration_credentials": 0, "redis_keys_deleted": 0}
+    out: dict[str, Any] = {"oauth_tokens": 0, "integration_credentials": 0, "redis_keys_deleted": 0, "provisioning_sessions_deleted": 0}
     dialect = db.bind.dialect.name if db.bind is not None else ""
 
     if _table_exists(db, "oauth_tokens"):
@@ -135,7 +136,45 @@ def _revoke_immediate_tokens(db: Session, *, user_id: str) -> dict[str, Any]:
         except Exception:
             pass
         out["redis_keys_deleted"] = deleted
+    try:
+        out["provisioning_sessions_deleted"] = int(delete_provisioning_sessions_for_user(user_id))
+    except Exception:
+        out["provisioning_sessions_deleted"] = 0
     return out
+
+
+def _delete_rows_for_user(db: Session, *, table_name: str, user_id: str) -> int:
+    if not _table_exists(db, table_name):
+        return 0
+    dialect = db.bind.dialect.name if db.bind is not None else ""
+    try:
+        if dialect == "sqlite":
+            res = db.execute(text(f"delete from {table_name} where user_id = :user_id"), {"user_id": user_id})
+        else:
+            res = db.execute(text(f"delete from {table_name} where user_id::text = :user_id"), {"user_id": user_id})
+        return int(getattr(res, "rowcount", 0) or 0)
+    except Exception:
+        return 0
+
+
+def _purge_operational_artifacts(db: Session, *, user_id: str) -> dict[str, Any]:
+    tables = (
+        "provisioning_requests",
+        "provisioning_declined",
+        "mcp_user_servers",
+    )
+    summary: dict[str, Any] = {"deleted": {}, "errors": []}
+    for table_name in tables:
+        try:
+            summary["deleted"][table_name] = _delete_rows_for_user(db, table_name=table_name, user_id=user_id)
+        except Exception as exc:
+            summary["deleted"][table_name] = 0
+            summary["errors"].append(f"{table_name}:{exc}")
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+    return summary
 
 
 def _upsert_job(db: Session, *, user_id: str, stage: str, due_at: datetime) -> None:
@@ -295,12 +334,17 @@ def _delete_stripe_customer(db: Session, *, user_id: str) -> dict[str, Any]:
 
 def _process_stage(db: Session, *, user_id: str, stage: str) -> dict[str, Any]:
     if stage == STAGE_PURGE_24H:
-        return delete_user_data(
+        result = delete_user_data(
             db=db,
             user_id=user_id,
             dry_run=False,
             keep_anonymized_transactions=True,
         )
+        cleanup = _purge_operational_artifacts(db, user_id=user_id)
+        if isinstance(result, dict):
+            result["operational_cleanup"] = cleanup
+            result["ok"] = bool(result.get("ok")) and not bool(cleanup.get("errors"))
+        return result
 
     if stage == STAGE_PROVIDERS_7D:
         stripe_result = _delete_stripe_customer(db, user_id=user_id)
@@ -321,6 +365,22 @@ def _process_stage(db: Session, *, user_id: str, stage: str) -> dict[str, Any]:
 
     if stage == STAGE_VERIFY_30D:
         summary = get_user_data_summary(db=db, user_id=user_id)
+        for table_name in ("provisioning_requests", "provisioning_declined", "mcp_user_servers"):
+            if not _table_exists(db, table_name):
+                summary[table_name] = 0
+                continue
+            dialect = db.bind.dialect.name if db.bind is not None else ""
+            if dialect == "sqlite":
+                row = db.execute(
+                    text(f"select count(1) as c from {table_name} where user_id = :user_id"),
+                    {"user_id": user_id},
+                ).mappings().first()
+            else:
+                row = db.execute(
+                    text(f"select count(1) as c from {table_name} where user_id::text = :user_id"),
+                    {"user_id": user_id},
+                ).mappings().first()
+            summary[table_name] = int((row or {}).get("c") or 0)
         total = int(sum(summary.values()))
         return {"ok": total == 0, "remaining_records": total, "summary": summary}
 

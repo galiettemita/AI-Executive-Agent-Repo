@@ -9,6 +9,8 @@ from app.db.database import SessionLocal
 from app.db.models import User
 from app.main import app
 from app.services import content_safety
+from app.services.provisioning_pipeline import ProvisioningPipeline
+from app.blueprint.contracts import ProvisioningState
 
 
 def _token(*, role: str, user_id: str = "admin-user") -> str:
@@ -83,3 +85,37 @@ def test_admin_users_and_moderation_queue_flow(monkeypatch):
         assert str(audit.get("user_id")) == "admin-ops"
     finally:
         db2.close()
+
+
+def test_admin_provisioning_history_and_stats():
+    db = SessionLocal()
+    try:
+        pipeline = ProvisioningPipeline(db)
+        req1 = pipeline.begin(user_id="admin-prov-user", server_id="duffel-mcp", reason="Need flights")
+        _ = pipeline.transition(request_id=req1.id, new_state=ProvisioningState.AWAITING_AUTH, note="pending")
+        req2 = pipeline.begin(user_id="admin-prov-user", server_id="zoom-mcp", reason="Need meetings")
+        _ = pipeline.transition(request_id=req2.id, new_state=ProvisioningState.AWAITING_AUTH, note="pending")
+        _ = pipeline.transition(request_id=req2.id, new_state=ProvisioningState.AUTH_RECEIVED, note="ok")
+        _ = pipeline.transition(request_id=req2.id, new_state=ProvisioningState.PROVISIONING, note="running")
+        _ = pipeline.transition(request_id=req2.id, new_state=ProvisioningState.ACTIVE, note="done")
+    finally:
+        db.close()
+
+    client = TestClient(app)
+    admin_token = _token(role="admin", user_id="admin-ops")
+    headers = {"Authorization": f"Bearer {admin_token}"}
+
+    history = client.get("/api/v1/admin/provisioning/requests", headers=headers)
+    assert history.status_code == 200
+    body = history.json()
+    assert body["ok"] is True
+    items = body.get("items") or []
+    assert any(str(item.get("server_id")) == "duffel-mcp" for item in items)
+
+    stats = client.get("/api/v1/admin/provisioning/stats", headers=headers)
+    assert stats.status_code == 200
+    payload = stats.json()
+    assert payload["ok"] is True
+    totals = payload.get("totals") or {}
+    assert int(totals.get("requests") or 0) >= 2
+    assert int(totals.get("success") or 0) >= 1

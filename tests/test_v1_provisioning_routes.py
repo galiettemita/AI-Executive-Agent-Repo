@@ -71,3 +71,52 @@ def test_provision_callback_transitions_request_to_active(monkeypatch):
         assert final.state == ProvisioningState.ACTIVE
     finally:
         db.close()
+
+
+def test_provision_callback_fails_when_security_validation_fails(monkeypatch):
+    async def _fake_activate_server(db, *, user_id: str, server_id: str):  # pragma: no cover - route should fail before activate
+        return {"ok": True, "server_id": server_id, "connected": True}
+
+    monkeypatch.setattr("app.api.routes.v1_provisioning.activate_server", _fake_activate_server)
+    monkeypatch.setattr(
+        "app.api.routes.v1_provisioning.validate_catalog_security_for_server",
+        lambda db, server_id: (_ for _ in ()).throw(ValueError("catalog_signature_invalid")),
+    )
+
+    db = SessionLocal()
+    try:
+        pipeline = ProvisioningPipeline(db)
+        request_row = pipeline.begin(
+            user_id="provision-security-user",
+            server_id="duffel-mcp",
+            reason="Need flights",
+        )
+        request_row = pipeline.transition(
+            request_id=request_row.id,
+            new_state=ProvisioningState.AWAITING_AUTH,
+            note="auth_link_sent",
+        )
+        state = create_provisioning_session(
+            {
+                "request_id": request_row.id,
+                "user_id": "provision-security-user",
+                "server_id": "duffel-mcp",
+                "original_task_id": "run-security",
+            },
+            ttl_seconds=300,
+        )
+    finally:
+        db.close()
+
+    client = TestClient(app)
+    resp = client.get(f"/api/v1/provision/callback?state={state}&code=oauth-code", follow_redirects=False)
+    assert resp.status_code in (302, 307)
+    assert "reason=security_validation_failed" in str(resp.headers.get("location") or "")
+
+    db2 = SessionLocal()
+    try:
+        final = get_request(db2, request_id=request_row.id)
+        assert final is not None
+        assert final.state == ProvisioningState.FAILED
+    finally:
+        db2.close()

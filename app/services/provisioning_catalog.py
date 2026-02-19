@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import hashlib
+import hmac
+import json
 import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -14,10 +17,16 @@ class CatalogEntry:
     server_id: str
     description: str
     auth_type: str
+    display_name: str = ""
     setup_seconds: int = 30
     min_plan: str = "free"
     capabilities: tuple[str, ...] = ()
     keywords: tuple[str, ...] = ()
+    hosting_model: str = ""
+    container_image: str = ""
+    source: str = "local"
+    signature: str | None = None
+    status: str = "active"
 
 
 _PLAN_RANK = {
@@ -231,6 +240,47 @@ def _safe_parse_list(value: Any) -> tuple[str, ...]:
     return ()
 
 
+def _canonical_catalog_payload(entry: dict[str, Any]) -> str:
+    payload = {
+        "server_id": str(entry.get("server_id") or "").strip().lower(),
+        "display_name": str(entry.get("display_name") or "").strip(),
+        "description": str(entry.get("description") or "").strip(),
+        "auth_type": str(entry.get("auth_type") or "oauth").strip().lower(),
+        "min_plan": str(entry.get("min_plan") or "free").strip().lower(),
+        "setup_seconds": int(entry.get("setup_seconds") or 30),
+        "capabilities": sorted({str(v).strip().lower() for v in (entry.get("capabilities") or []) if str(v).strip()}),
+        "keywords": sorted({str(v).strip().lower() for v in (entry.get("keywords") or []) if str(v).strip()}),
+        "hosting_model": str(entry.get("hosting_model") or "").strip().lower(),
+        "container_image": str(entry.get("container_image") or "").strip().lower(),
+        "source": str(entry.get("source") or "local").strip().lower(),
+        "status": str(entry.get("status") or "active").strip().lower(),
+    }
+    return json.dumps(payload, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+
+
+def compute_catalog_signature(entry: dict[str, Any], *, secret: str) -> str:
+    key = str(secret or "").encode("utf-8")
+    body = _canonical_catalog_payload(entry).encode("utf-8")
+    return hmac.new(key, body, hashlib.sha256).hexdigest()
+
+
+def verify_catalog_entry_signature(entry: dict[str, Any], *, secret: str) -> bool:
+    provided = str(entry.get("signature") or "").strip().lower()
+    if not provided:
+        return False
+    expected = compute_catalog_signature(entry, secret=secret).lower()
+    return hmac.compare_digest(provided, expected)
+
+
+def is_container_image_allowed(image: str, *, allowed_prefixes: list[str]) -> bool:
+    normalized = str(image or "").strip().lower()
+    if not normalized:
+        return True
+    if not allowed_prefixes:
+        return True
+    return any(normalized.startswith(prefix.lower()) for prefix in allowed_prefixes)
+
+
 def _default_catalog_entries() -> list[CatalogEntry]:
     items: list[CatalogEntry] = list(_WAVE1_DEFAULT_CATALOG)
     items.extend(_EXTRA_CATALOG)
@@ -249,21 +299,35 @@ def _catalog_from_table(db: Session) -> list[CatalogEntry]:
         server_id = str(row.get("server_id") or row.get("id") or "").strip()
         if not server_id:
             continue
+        status = str(row.get("status") or "active").strip().lower()
+        if status and status not in {"active", "approved", "ready"}:
+            continue
+        display_name = str(row.get("display_name") or server_id).strip() or server_id
         description = str(row.get("description") or row.get("summary") or "").strip() or "MCP server capability"
         auth_type = str(row.get("auth_type") or row.get("auth") or "oauth").strip().lower()
         setup_seconds = int(row.get("setup_seconds") or row.get("setup_time_seconds") or 30)
         min_plan = str(row.get("min_plan") or row.get("required_plan") or "free").strip().lower()
         capabilities = _safe_parse_list(row.get("capabilities") or row.get("capabilities_json") or row.get("capability_tags"))
         keywords = _safe_parse_list(row.get("keywords") or row.get("tags"))
+        hosting_model = str(row.get("hosting_model") or "").strip().lower()
+        container_image = str(row.get("container_image") or "").strip()
+        source = str(row.get("source") or "local").strip().lower() or "local"
+        signature = str(row.get("signature") or "").strip() or None
         out.append(
             CatalogEntry(
                 server_id=server_id,
+                display_name=display_name,
                 description=description,
                 auth_type=auth_type or "oauth",
                 setup_seconds=max(10, setup_seconds),
                 min_plan=min_plan or "free",
                 capabilities=capabilities,
                 keywords=keywords,
+                hosting_model=hosting_model,
+                container_image=container_image,
+                source=source,
+                signature=signature,
+                status=status or "active",
             )
         )
     return out
@@ -326,16 +390,76 @@ def available_servers_for_user(
         items.append(
             {
                 "server_id": entry.server_id,
+                "display_name": entry.display_name or entry.server_id,
                 "description": entry.description,
                 "auth_type": entry.auth_type,
                 "setup_seconds": entry.setup_seconds,
                 "min_plan": entry.min_plan,
                 "capabilities": list(entry.capabilities),
                 "keywords": list(entry.keywords),
+                "hosting_model": entry.hosting_model,
+                "container_image": entry.container_image,
+                "source": entry.source,
+                "signature": entry.signature,
+                "status": entry.status,
             }
         )
     items.sort(key=lambda item: str(item.get("server_id") or ""))
     return items
+
+
+def get_catalog_entry(db: Session, *, server_id: str) -> dict[str, Any] | None:
+    target = str(server_id or "").strip().lower()
+    if not target:
+        return None
+    catalog = _catalog_from_table(db)
+    if not catalog:
+        catalog = _default_catalog_entries()
+    for entry in catalog:
+        if str(entry.server_id or "").strip().lower() != target:
+            continue
+        return {
+            "server_id": entry.server_id,
+            "display_name": entry.display_name or entry.server_id,
+            "description": entry.description,
+            "auth_type": entry.auth_type,
+            "setup_seconds": entry.setup_seconds,
+            "min_plan": entry.min_plan,
+            "capabilities": list(entry.capabilities),
+            "keywords": list(entry.keywords),
+            "hosting_model": entry.hosting_model,
+            "container_image": entry.container_image,
+            "source": entry.source,
+            "signature": entry.signature,
+            "status": entry.status,
+        }
+    return None
+
+
+def all_catalog_entries(db: Session) -> list[dict[str, Any]]:
+    catalog = _catalog_from_table(db)
+    if not catalog:
+        catalog = _default_catalog_entries()
+    out: list[dict[str, Any]] = []
+    for entry in catalog:
+        out.append(
+            {
+                "server_id": entry.server_id,
+                "display_name": entry.display_name or entry.server_id,
+                "description": entry.description,
+                "auth_type": entry.auth_type,
+                "setup_seconds": entry.setup_seconds,
+                "min_plan": entry.min_plan,
+                "capabilities": list(entry.capabilities),
+                "keywords": list(entry.keywords),
+                "hosting_model": entry.hosting_model,
+                "container_image": entry.container_image,
+                "source": entry.source,
+                "signature": entry.signature,
+                "status": entry.status,
+            }
+        )
+    return out
 
 
 def _setup_label(seconds: int) -> str:

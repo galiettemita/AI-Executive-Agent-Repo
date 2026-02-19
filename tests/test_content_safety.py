@@ -100,3 +100,12 @@ def test_gateway_burst_limit_blocks_after_ten(monkeypatch):
     assert all(d.allowed for d in decisions[:10])
     assert decisions[10].allowed is False
     assert decisions[10].reason == "gateway_burst_rate_limited"
+
+
+def test_provisioning_oauth_links_are_allowlisted():
+    verdict = content_safety.classify_content(
+        "Tap the secure link to authorize this server: "
+        "https://example.com/api/v1/provision/callback?state=abc123&code=pending"
+    )
+    assert verdict.flagged is False
+    assert verdict.reason == "allowlisted_provisioning_link"

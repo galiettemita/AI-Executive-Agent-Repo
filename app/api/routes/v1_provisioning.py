@@ -8,7 +8,7 @@ from app.api.deps import get_db
 from app.blueprint.contracts import ProvisioningState
 from app.services.provisioning_activator import activate_server
 from app.services.analytics import emit_event_async
-from app.services.provisioning_pipeline import ProvisioningPipeline, get_request
+from app.services.provisioning_pipeline import ProvisioningPipeline, get_request, validate_catalog_security_for_server
 from app.services.provisioning_sessions import delete_provisioning_session, get_provisioning_session
 from app.services.url_shortener import resolve_short_url
 
@@ -57,6 +57,24 @@ async def provision_callback(
         )
         delete_provisioning_session(state)
         return RedirectResponse(url="/api/v1/provision/expired?reason=request_closed", status_code=302)
+
+    try:
+        _ = validate_catalog_security_for_server(db, server_id=server_id)
+    except Exception as exc:
+        pipeline.transition(
+            request_id=request_row.id,
+            new_state=ProvisioningState.FAILED,
+            note="security_validation_failed",
+            error_message=str(exc),
+        )
+        emit_event_async(
+            event_name="provisioning_failed",
+            user_id=user_id,
+            source="provision_callback",
+            payload={"request_id": request_id, "server_id": server_id, "error": str(exc)},
+        )
+        delete_provisioning_session(state)
+        return RedirectResponse(url="/api/v1/provision/expired?reason=security_validation_failed", status_code=302)
 
     if request_row.state != ProvisioningState.AUTH_RECEIVED:
         request_row = pipeline.transition(

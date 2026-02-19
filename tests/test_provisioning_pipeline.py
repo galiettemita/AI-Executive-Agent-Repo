@@ -6,7 +6,9 @@ import pytest
 from sqlalchemy import text
 
 from app.blueprint.contracts import ProvisioningState
+from app.core.config import settings
 from app.db.database import SessionLocal
+from app.services.provisioning_catalog import compute_catalog_signature
 from app.services.provisioning_pipeline import (
     ProvisioningPipeline,
     get_request,
@@ -184,4 +186,128 @@ def test_catalog_search_plan_gating_and_decline_cooldown():
         )
         assert all(str(item.get("server_id")) != "duffel-mcp" for item in flight_hits_after_decline)
     finally:
+        db.close()
+
+
+def test_provisioning_pipeline_enforces_catalog_signature(monkeypatch):
+    db = SessionLocal()
+    try:
+        _ = ProvisioningPipeline(db)
+        monkeypatch.setattr(settings, "PROVISIONING_REQUIRE_CATALOG_SIGNATURE", True)
+        monkeypatch.setattr(settings, "PROVISIONING_CATALOG_SIGNING_SECRET", "catalog-secret")
+
+        db.execute(
+            text(
+                """
+                insert or replace into server_catalog (
+                  server_id, display_name, description, auth_type, min_plan, setup_seconds,
+                  capabilities, keywords, hosting_model, container_image, source, signature, status
+                ) values (
+                  :server_id, :display_name, :description, :auth_type, :min_plan, :setup_seconds,
+                  :capabilities, :keywords, :hosting_model, :container_image, :source, :signature, :status
+                )
+                """
+            ),
+            {
+                "server_id": "signed-server-mcp",
+                "display_name": "Signed Server",
+                "description": "Signed entry",
+                "auth_type": "oauth",
+                "min_plan": "free",
+                "setup_seconds": 30,
+                "capabilities": '["signed"]',
+                "keywords": '["signed"]',
+                "hosting_model": "sidecar",
+                "container_image": "123456789012.dkr.ecr.us-east-1.amazonaws.com/signed:latest",
+                "source": "catalog",
+                "signature": "",
+                "status": "active",
+            },
+        )
+        db.commit()
+
+        with pytest.raises(ValueError, match="catalog_signature_missing"):
+            ProvisioningPipeline(db).begin(
+                user_id="security-user",
+                server_id="signed-server-mcp",
+                reason="Need signed server",
+            )
+
+        payload = {
+            "server_id": "signed-server-mcp",
+            "display_name": "Signed Server",
+            "description": "Signed entry",
+            "auth_type": "oauth",
+            "min_plan": "free",
+            "setup_seconds": 30,
+            "capabilities": ["signed"],
+            "keywords": ["signed"],
+            "hosting_model": "sidecar",
+            "container_image": "123456789012.dkr.ecr.us-east-1.amazonaws.com/signed:latest",
+            "source": "catalog",
+            "status": "active",
+        }
+        signature = compute_catalog_signature(payload, secret="catalog-secret")
+        db.execute(
+            text("update server_catalog set signature = :signature where server_id = :server_id"),
+            {"signature": signature, "server_id": "signed-server-mcp"},
+        )
+        db.commit()
+
+        req = ProvisioningPipeline(db).begin(
+            user_id="security-user",
+            server_id="signed-server-mcp",
+            reason="Need signed server",
+        )
+        assert req.server_id == "signed-server-mcp"
+    finally:
+        monkeypatch.setattr(settings, "PROVISIONING_REQUIRE_CATALOG_SIGNATURE", False)
+        monkeypatch.setattr(settings, "PROVISIONING_CATALOG_SIGNING_SECRET", None)
+        db.close()
+
+
+def test_provisioning_pipeline_enforces_ecr_prefix(monkeypatch):
+    db = SessionLocal()
+    try:
+        _ = ProvisioningPipeline(db)
+        monkeypatch.setattr(settings, "PROVISIONING_ECR_ALLOWED_PREFIXES", "123456789012.dkr.ecr.us-east-1.amazonaws.com/")
+
+        db.execute(
+            text(
+                """
+                insert or replace into server_catalog (
+                  server_id, display_name, description, auth_type, min_plan, setup_seconds,
+                  capabilities, keywords, hosting_model, container_image, source, signature, status
+                ) values (
+                  :server_id, :display_name, :description, :auth_type, :min_plan, :setup_seconds,
+                  :capabilities, :keywords, :hosting_model, :container_image, :source, :signature, :status
+                )
+                """
+            ),
+            {
+                "server_id": "bad-image-mcp",
+                "display_name": "Bad Image",
+                "description": "Image should be blocked",
+                "auth_type": "oauth",
+                "min_plan": "free",
+                "setup_seconds": 30,
+                "capabilities": '["files"]',
+                "keywords": '["files"]',
+                "hosting_model": "sidecar",
+                "container_image": "docker.io/library/alpine:latest",
+                "source": "catalog",
+                "signature": None,
+                "status": "active",
+            },
+        )
+        db.commit()
+
+        with pytest.raises(ValueError, match="container_image_not_allowed"):
+            ProvisioningPipeline(db).begin(
+                user_id="security-image-user",
+                server_id="bad-image-mcp",
+                reason="Need image",
+            )
+    finally:
+        monkeypatch.setattr(settings, "PROVISIONING_ECR_ALLOWED_PREFIXES", "")
         db.close()

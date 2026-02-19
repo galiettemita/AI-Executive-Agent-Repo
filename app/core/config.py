@@ -365,6 +365,11 @@ class Settings(BaseSettings):
     MCP_GITHUB_URL: str | None = None
     MCP_APPLE_REMINDERS_URL: str | None = None
 
+    # ── Auto-Provisioning Security ─────────────────────────────
+    PROVISIONING_CATALOG_SIGNING_SECRET: str | None = None
+    PROVISIONING_REQUIRE_CATALOG_SIGNATURE: bool = False
+    PROVISIONING_ECR_ALLOWED_PREFIXES: str = ""
+
     # ── Temporal Orchestration (Tier 3) ────────────────────────
     TEMPORAL_ENABLED: bool = False
     TEMPORAL_HOST: str | None = None

@@ -15,7 +15,15 @@ from app.blueprint.contracts import (
     ProvisioningRequest,
     ProvisioningState,
 )
-from app.services.provisioning_catalog import available_servers_for_user
+from app.core.config import settings
+from app.services.provisioning_catalog import (
+    all_catalog_entries,
+    available_servers_for_user,
+    compute_catalog_signature,
+    get_catalog_entry,
+    is_container_image_allowed,
+    verify_catalog_entry_signature,
+)
 
 _TABLE_LOCK = threading.Lock()
 _TABLE_READY = False
@@ -92,11 +100,18 @@ def _seed_server_catalog_if_empty(db: Session) -> None:
     count = int(db.execute(text("select count(1) from server_catalog")).scalar() or 0)
     if count > 0:
         return
-    seed_entries = available_servers_for_user(db, user_id=None, connected_server_ids=set())
+    seed_entries = all_catalog_entries(db)
     if not seed_entries:
         return
     dialect = db.bind.dialect.name if db.bind is not None else ""
+    signing_secret = str(settings.PROVISIONING_CATALOG_SIGNING_SECRET or "").strip()
     for entry in seed_entries:
+        signature = str(entry.get("signature") or "").strip() or None
+        if not signature and signing_secret:
+            try:
+                signature = compute_catalog_signature(entry, secret=signing_secret)
+            except Exception:
+                signature = None
         payload = {
             "server_id": str(entry.get("server_id") or ""),
             "display_name": str(entry.get("display_name") or entry.get("server_id") or ""),
@@ -106,6 +121,10 @@ def _seed_server_catalog_if_empty(db: Session) -> None:
             "setup_seconds": int(entry.get("setup_seconds") or 30),
             "capabilities": json.dumps(list(entry.get("capabilities") or []), ensure_ascii=False),
             "keywords": json.dumps(list(entry.get("keywords") or []), ensure_ascii=False),
+            "hosting_model": str(entry.get("hosting_model") or ""),
+            "container_image": str(entry.get("container_image") or ""),
+            "source": str(entry.get("source") or "local"),
+            "signature": signature,
             "status": "active",
         }
         if not payload["server_id"]:
@@ -115,9 +134,11 @@ def _seed_server_catalog_if_empty(db: Session) -> None:
                 text(
                     """
                     insert or replace into server_catalog (
-                      server_id, display_name, description, auth_type, min_plan, setup_seconds, capabilities, keywords, status
+                      server_id, display_name, description, auth_type, min_plan, setup_seconds,
+                      capabilities, keywords, hosting_model, container_image, source, signature, status
                     ) values (
-                      :server_id, :display_name, :description, :auth_type, :min_plan, :setup_seconds, :capabilities, :keywords, :status
+                      :server_id, :display_name, :description, :auth_type, :min_plan, :setup_seconds,
+                      :capabilities, :keywords, :hosting_model, :container_image, :source, :signature, :status
                     )
                     """
                 ),
@@ -128,10 +149,12 @@ def _seed_server_catalog_if_empty(db: Session) -> None:
                 text(
                     """
                     insert into server_catalog (
-                      server_id, display_name, description, auth_type, min_plan, setup_seconds, capabilities, keywords, status
+                      server_id, display_name, description, auth_type, min_plan, setup_seconds,
+                      capabilities, keywords, hosting_model, container_image, source, signature, status
                     ) values (
                       :server_id, :display_name, :description, :auth_type, :min_plan, :setup_seconds,
-                      cast(:capabilities as jsonb), cast(:keywords as jsonb), :status
+                      cast(:capabilities as jsonb), cast(:keywords as jsonb), :hosting_model, :container_image,
+                      :source, :signature, :status
                     )
                     on conflict (server_id) do update
                     set display_name = excluded.display_name,
@@ -141,6 +164,10 @@ def _seed_server_catalog_if_empty(db: Session) -> None:
                         setup_seconds = excluded.setup_seconds,
                         capabilities = excluded.capabilities,
                         keywords = excluded.keywords,
+                        hosting_model = excluded.hosting_model,
+                        container_image = excluded.container_image,
+                        source = excluded.source,
+                        signature = excluded.signature,
                         status = excluded.status,
                         updated_at = now()
                     """
@@ -327,6 +354,46 @@ def _to_request(row: dict[str, Any]) -> ProvisioningRequest:
     )
 
 
+def _allowed_ecr_prefixes() -> list[str]:
+    raw = str(settings.PROVISIONING_ECR_ALLOWED_PREFIXES or "").strip()
+    if not raw:
+        return []
+    return [part.strip().lower() for part in raw.split(",") if part.strip()]
+
+
+def _validate_catalog_security(db: Session, *, server_id: str) -> dict[str, Any]:
+    entry = get_catalog_entry(db, server_id=server_id)
+    if not entry:
+        raise ValueError("server_not_in_catalog")
+
+    signature_required = bool(settings.PROVISIONING_REQUIRE_CATALOG_SIGNATURE)
+    signature_secret = str(settings.PROVISIONING_CATALOG_SIGNING_SECRET or "").strip()
+    has_signature = bool(str(entry.get("signature") or "").strip())
+
+    if signature_required:
+        if not signature_secret:
+            raise ValueError("catalog_signature_secret_missing")
+        if not has_signature:
+            raise ValueError("catalog_signature_missing")
+        if not verify_catalog_entry_signature(entry, secret=signature_secret):
+            raise ValueError("catalog_signature_invalid")
+    elif has_signature and signature_secret:
+        if not verify_catalog_entry_signature(entry, secret=signature_secret):
+            raise ValueError("catalog_signature_invalid")
+
+    image = str(entry.get("container_image") or "").strip()
+    allowed_prefixes = _allowed_ecr_prefixes()
+    if image and allowed_prefixes and not is_container_image_allowed(image, allowed_prefixes=allowed_prefixes):
+        raise ValueError("container_image_not_allowed")
+
+    return entry
+
+
+def validate_catalog_security_for_server(db: Session, *, server_id: str) -> dict[str, Any]:
+    ensure_provisioning_tables(db)
+    return _validate_catalog_security(db, server_id=server_id)
+
+
 def get_request(db: Session, *, request_id: str) -> ProvisioningRequest | None:
     ensure_provisioning_tables(db)
     row = db.execute(
@@ -371,6 +438,7 @@ def begin_request(
     expires_in_minutes: int = 15,
 ) -> ProvisioningRequest:
     ensure_provisioning_tables(db)
+    _ = _validate_catalog_security(db, server_id=server_id)
     now_utc = datetime.now(timezone.utc)
     existing = _find_active_request(db, user_id=user_id, server_id=server_id, now_utc=now_utc)
     if existing:
