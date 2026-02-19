@@ -5,7 +5,12 @@ import uuid
 
 from sqlalchemy import text
 
-from app.blueprint.context_compiler import compile_context_messages, compile_tool_schemas
+from app.blueprint.context_compiler import (
+    compile_context_messages,
+    compile_tool_schemas,
+    context_cache_stats,
+    reset_context_cache_stats,
+)
 from app.blueprint.contracts import LLMProvider, LLMResponse, TokenUsage
 from app.blueprint.knowledge_files import ensure_default_knowledge_files
 from app.db.database import SessionLocal
@@ -100,6 +105,30 @@ def test_context_compiler_template_prompt_version_is_applied() -> None:
     assert system_text.startswith("[[CTX]]")
     assert "BASE SYSTEM PROMPT" in system_text
     assert "[[END]]" in system_text
+
+
+def test_context_compiler_precompute_cache_records_hit_rate() -> None:
+    user_id = f"pv-cache-{uuid.uuid4().hex[:8]}"
+    reset_context_cache_stats()
+
+    _ = compile_context_messages(
+        base_system_prompt="BASE SYSTEM PROMPT",
+        user_id=user_id,
+        user_text="hello",
+        history_messages=None,
+        tier=1,
+    )
+    _ = compile_context_messages(
+        base_system_prompt="BASE SYSTEM PROMPT",
+        user_id=user_id,
+        user_text="hello again",
+        history_messages=None,
+        tier=1,
+    )
+
+    stats = context_cache_stats()
+    assert int(stats.get("misses") or 0) >= 1
+    assert int(stats.get("hits") or 0) >= 1
 
 
 def test_tool_description_prompt_version_is_applied() -> None:

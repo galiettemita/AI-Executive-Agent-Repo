@@ -118,3 +118,103 @@ def test_select_route_maintenance_has_no_selected_provider(monkeypatch):
     route = router.select_route(LLMRequest(messages=[{"role": "user", "content": "hello"}], task_type="general"))
     assert route["system_mode"] == "maintenance"
     assert route["selected_provider"] is None
+
+
+def test_select_route_prefers_lower_latency_under_budget(monkeypatch):
+    router = LLMRouter()
+    health_map = {
+        LLMProvider.OPENAI.value: LLMProviderHealth(
+            provider=LLMProvider.OPENAI,
+            is_healthy=True,
+            latency_p95_ms=1200,
+            error_rate_1h=0.0,
+        ),
+        LLMProvider.ANTHROPIC.value: LLMProviderHealth(
+            provider=LLMProvider.ANTHROPIC,
+            is_healthy=True,
+            latency_p95_ms=900,
+            error_rate_1h=0.0,
+        ),
+        LLMProvider.GOOGLE.value: LLMProviderHealth(
+            provider=LLMProvider.GOOGLE,
+            is_healthy=True,
+            latency_p95_ms=220,
+            error_rate_1h=0.0,
+        ),
+        LLMProvider.LOCAL.value: LLMProviderHealth(
+            provider=LLMProvider.LOCAL,
+            is_healthy=False,
+            latency_p95_ms=50,
+            error_rate_1h=1.0,
+        ),
+    }
+    monkeypatch.setattr(router, "all_provider_health", lambda force_refresh=False: health_map)
+    route = router.select_route(
+        LLMRequest(
+            messages=[{"role": "user", "content": "hello"}],
+            task_type="general",
+            max_latency_ms=500,
+            max_cost_cents=5,
+        )
+    )
+    assert route["selected_provider"] == LLMProvider.GOOGLE.value
+
+
+def test_call_skips_over_budget_provider_when_alternative_exists(monkeypatch):
+    router = LLMRouter()
+    health_map = _health_map(openai=True, anthropic=True, google=False, local=False)
+    monkeypatch.setattr(router, "all_provider_health", lambda force_refresh=False: health_map)
+    monkeypatch.setattr(router, "_provider_enabled", lambda provider: provider in {LLMProvider.OPENAI, LLMProvider.ANTHROPIC})
+    monkeypatch.setattr(
+        router,
+        "provider_health",
+        lambda provider, force_refresh=False: LLMProviderHealth(provider=provider, is_healthy=True, latency_p95_ms=100, error_rate_1h=0.0),
+    )
+
+    def _fake_estimate(*, model: str, req: LLMRequest) -> float:
+        if model == "gpt-4o-mini":
+            return 2.0
+        return 0.2
+
+    monkeypatch.setattr(router, "_estimate_request_cost_cents", _fake_estimate)
+    called: list[LLMProvider] = []
+
+    def _fake_call_provider(provider, model, req):
+        called.append(provider)
+        return (
+            LLMResponse(
+                provider=provider,
+                model=model,
+                content="ok",
+                usage=TokenUsage(input_tokens=1, output_tokens=1, total_tokens=2),
+                latency_ms=1,
+            ),
+            None,
+        )
+
+    monkeypatch.setattr(router, "_call_provider", _fake_call_provider)
+    req = LLMRequest(
+        messages=[{"role": "user", "content": "short"}],
+        task_type="single_tool_call",
+        max_cost_cents=0.5,
+    )
+    resp = router.call(req)
+    assert resp.provider == LLMProvider.ANTHROPIC
+    assert called[0] == LLMProvider.ANTHROPIC
+
+
+def test_select_route_batch_biases_low_cost_path(monkeypatch):
+    router = LLMRouter()
+    health_map = _health_map(openai=True, anthropic=True, google=True, local=True)
+    monkeypatch.setattr(router, "all_provider_health", lambda force_refresh=False: health_map)
+    monkeypatch.setattr(router, "_estimate_request_cost_cents", lambda model, req: 0.05 if model == "llama-4-8b" else 1.0)
+
+    route = router.select_route(
+        LLMRequest(
+            messages=[{"role": "user", "content": "batch summarize"}],
+            task_type="bulk",
+            batch_size=200,
+            max_cost_cents=2.0,
+        )
+    )
+    assert route["selected_provider"] == LLMProvider.LOCAL.value

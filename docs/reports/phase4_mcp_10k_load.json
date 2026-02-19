@@ -1,0 +1,11 @@
+{
+  "generated_at": "2026-02-19T23:25:58.377881+00:00",
+  "total_calls": 10000,
+  "max_in_flight": 500,
+  "ok": true,
+  "success_count": 10000,
+  "failure_count": 0,
+  "elapsed_seconds": 5.748,
+  "throughput_rps": 1739.68,
+  "latency_p95_ms": 0
+}

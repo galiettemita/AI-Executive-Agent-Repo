@@ -459,7 +459,12 @@ async def dispatch_mock_tool(server_id: str, tool_name: str, arguments: dict[str
             latency_ms=sleep_ms,
         )
 
-    if server_id in _WAVE1_MOCK_TOOLS:
+    if (
+        server_id in _WAVE1_MOCK_TOOLS
+        or server_id in _WAVE2_MOCK_TOOLS
+        or server_id in _WAVE3_MOCK_TOOLS
+        or server_id in _WAVE4_MOCK_TOOLS
+    ):
         return MCPToolResult(
             server_id=server_id,
             content=[

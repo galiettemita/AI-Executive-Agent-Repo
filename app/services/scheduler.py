@@ -33,6 +33,7 @@ from app.services.remote_catalog import sync_remote_catalog
 from app.blueprint.bones import refresh_bones_catalog
 from app.blueprint.embedding_audit import run_embedding_reembed_audit_all_users
 from app.blueprint.knowledge_review import run_nightly_consolidation, run_weekly_self_review
+from app.blueprint.context_compiler import precompute_context_blocks
 from app.blueprint.muscles import capture_muscles_snapshot
 from app.blueprint.research import run_research_job
 from app.services.heartbeat_proactive import enqueue_heartbeat_checkin
@@ -478,6 +479,30 @@ def run_heartbeat_proactive():
         db.close()
 
 
+def run_context_precompute():
+    db = SessionLocal()
+    try:
+        user_ids = _distinct_blueprint_user_ids(db)
+        results = []
+        for user_id in user_ids:
+            try:
+                results.append(
+                    precompute_context_blocks(
+                        user_id=user_id,
+                        base_system_prompt="You are Executive OS.",
+                    )
+                )
+            except Exception as exc:
+                results.append({"ok": False, "user_id": user_id, "error": str(exc)})
+        logger.info("Context precompute run complete for %d users", len(user_ids))
+        return {"users": len(user_ids), "results": results}
+    except Exception as e:
+        logger.error("Fatal error in context precompute job: %s", e)
+        return {"users": 0, "results": [], "error": str(e)}
+    finally:
+        db.close()
+
+
 def run_due_research():
     db = SessionLocal()
     try:
@@ -870,6 +895,17 @@ def setup_scheduler() -> BackgroundScheduler:
             replace_existing=True,
         )
         logger.info("Heartbeat proactive job scheduled daily at 09:05 UTC")
+
+        if settings.FEATURE_CONTEXT_PRECOMPUTE:
+            scheduler.add_job(
+                run_context_precompute,
+                trigger="interval",
+                hours=4,
+                id="context_precompute_job",
+                name="Context Precompute Cache",
+                replace_existing=True,
+            )
+            logger.info("Context precompute job scheduled every 4 hours")
 
     scheduler.add_job(
         run_embedding_audit,

@@ -29,6 +29,39 @@ _WAVE56_SERVER_IDS: tuple[str, ...] = (
     "tesla-mcp",
 )
 
+_WAVE14_SERVER_IDS: tuple[str, ...] = (
+    "google-calendar-mcp",
+    "google-drive-mcp",
+    "gmail-mcp",
+    "notion-mcp",
+    "todoist-mcp",
+    "brave-search-mcp",
+    "github-mcp",
+    "apple-reminders-mcp",
+    "slack-mcp",
+    "outlook-mcp",
+    "teams-mcp",
+    "linear-mcp",
+    "asana-mcp",
+    "discord-mcp",
+    "whatsapp-business-mcp",
+    "stripe-mcp",
+    "quickbooks-mcp",
+    "hubspot-mcp",
+    "salesforce-mcp",
+    "google-sheets-mcp",
+    "airtable-mcp",
+    "jira-mcp",
+    "sentry-mcp",
+    "google-maps-mcp",
+    "uber-lyft-mcp",
+    "opentable-resy-mcp",
+    "homeassistant-mcp",
+    "spotify-mcp",
+    "evernote-mcp",
+    "dropbox-mcp",
+)
+
 _WAVE56_WEIGHTS: dict[str, int] = {
     "provisioning_requested": 5,
     "provisioning_declined": 3,
@@ -37,6 +70,17 @@ _WAVE56_WEIGHTS: dict[str, int] = {
     "server_provisioned": 4,
     "mcp_server_connected": 4,
     "tool_invoked": 1,
+}
+
+_WAVE14_WEIGHTS: dict[str, int] = {
+    "provisioning_requested": 5,
+    "provisioning_declined": 3,
+    "awaiting_auth": 2,
+    "provisioning_failed": 2,
+    "server_provisioned": 4,
+    "mcp_server_connected": 4,
+    "tool_invoked": 1,
+    "message_received": 1,
 }
 
 
@@ -371,7 +415,13 @@ def _parse_payload_json(value: Any) -> dict[str, Any]:
     return {}
 
 
-def wave56_server_prioritization(db: Session, *, days: int = 30) -> dict[str, Any]:
+def _server_prioritization(
+    db: Session,
+    *,
+    days: int,
+    server_ids: tuple[str, ...],
+    weights: dict[str, int],
+) -> dict[str, Any]:
     ensure_analytics_tables(db)
     window_days = max(1, min(365, int(days or 30)))
     cutoff = datetime.now(timezone.utc) - timedelta(days=window_days)
@@ -391,10 +441,12 @@ def wave56_server_prioritization(db: Session, *, days: int = 30) -> dict[str, An
             "event_count": 0,
             "weighted_events": {},
             "distinct_users": set(),
+            "requested_count": 0,
+            "provisioned_count": 0,
         }
-        for server_id in _WAVE56_SERVER_IDS
+        for server_id in server_ids
     }
-    server_id_set = set(_WAVE56_SERVER_IDS)
+    server_id_set = set(server_ids)
 
     for row in rows:
         event_name = str(row.get("event_name") or "").strip()
@@ -410,9 +462,13 @@ def wave56_server_prioritization(db: Session, *, days: int = 30) -> dict[str, An
         if target_server not in server_id_set:
             continue
 
-        weight = int(_WAVE56_WEIGHTS.get(event_name, 0))
+        weight = int(weights.get(event_name, 0))
         bucket = state[target_server]
         bucket["event_count"] = int(bucket["event_count"] or 0) + 1
+        if event_name == "provisioning_requested":
+            bucket["requested_count"] = int(bucket.get("requested_count") or 0) + 1
+        elif event_name == "server_provisioned":
+            bucket["provisioned_count"] = int(bucket.get("provisioned_count") or 0) + 1
         if weight > 0:
             bucket["demand_score"] = int(bucket["demand_score"] or 0) + weight
             weighted = dict(bucket.get("weighted_events") or {})
@@ -425,9 +481,13 @@ def wave56_server_prioritization(db: Session, *, days: int = 30) -> dict[str, An
                 users.add(user_id)
 
     prioritized_rows: list[dict[str, Any]] = []
-    for server_id in _WAVE56_SERVER_IDS:
+    onboarding_tuning: list[dict[str, Any]] = []
+    for server_id in server_ids:
         bucket = state[server_id]
         users = bucket.get("distinct_users")
+        requested = int(bucket.get("requested_count") or 0)
+        provisioned = int(bucket.get("provisioned_count") or 0)
+        conversion = (provisioned / requested) if requested > 0 else 0.0
         prioritized_rows.append(
             {
                 "server_id": server_id,
@@ -435,8 +495,21 @@ def wave56_server_prioritization(db: Session, *, days: int = 30) -> dict[str, An
                 "event_count": int(bucket.get("event_count") or 0),
                 "distinct_users": len(users) if isinstance(users, set) else 0,
                 "weighted_events": dict(bucket.get("weighted_events") or {}),
+                "requested_count": requested,
+                "provisioned_count": provisioned,
+                "provision_conversion_rate": round(conversion, 3),
             }
         )
+        if requested >= 3 and conversion < 0.5:
+            onboarding_tuning.append(
+                {
+                    "server_id": server_id,
+                    "requested_count": requested,
+                    "provisioned_count": provisioned,
+                    "provision_conversion_rate": round(conversion, 3),
+                    "recommendation": "Improve onboarding card copy and OAuth guidance for this server.",
+                }
+            )
 
     prioritized_rows.sort(
         key=lambda item: (
@@ -446,8 +519,34 @@ def wave56_server_prioritization(db: Session, *, days: int = 30) -> dict[str, An
             str(item.get("server_id") or ""),
         )
     )
+    onboarding_tuning.sort(
+        key=lambda item: (
+            float(item.get("provision_conversion_rate") or 0),
+            -int(item.get("requested_count") or 0),
+            str(item.get("server_id") or ""),
+        )
+    )
     return {
         "window_days": window_days,
         "servers": prioritized_rows,
         "recommended_order": [str(item.get("server_id") or "") for item in prioritized_rows],
+        "onboarding_tuning": onboarding_tuning[:10],
     }
+
+
+def wave56_server_prioritization(db: Session, *, days: int = 30) -> dict[str, Any]:
+    return _server_prioritization(
+        db,
+        days=days,
+        server_ids=_WAVE56_SERVER_IDS,
+        weights=_WAVE56_WEIGHTS,
+    )
+
+
+def wave14_server_prioritization(db: Session, *, days: int = 30) -> dict[str, Any]:
+    return _server_prioritization(
+        db,
+        days=days,
+        server_ids=_WAVE14_SERVER_IDS,
+        weights=_WAVE14_WEIGHTS,
+    )

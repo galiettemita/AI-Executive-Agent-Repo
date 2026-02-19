@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-from typing import Optional
+from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
+from sqlalchemy import text
 
 from app.db.database import get_db
 from app.services.preferences import (
@@ -45,6 +46,119 @@ class OnboardingConnectRequest(BaseModel):
     user_id: str
     server_id: str
     reason: Optional[str] = None
+
+
+def _table_exists(db: Session, table_name: str) -> bool:
+    try:
+        row = db.execute(
+            text(
+                "select 1 from information_schema.tables "
+                "where table_schema = current_schema() and table_name = :name"
+            ),
+            {"name": table_name},
+        ).first()
+        if row:
+            return True
+    except Exception:
+        pass
+    try:
+        row = db.execute(text("select name from sqlite_master where type='table' and name=:name"), {"name": table_name}).first()
+        return bool(row)
+    except Exception:
+        return False
+
+
+def _channel_hints(db: Session, *, user_id: str) -> set[str]:
+    if not _table_exists(db, "channel_connections"):
+        return set()
+    rows = db.execute(
+        text(
+            "select channel_type, provider, external_user_id "
+            "from channel_connections where user_id = :user_id"
+        ),
+        {"user_id": user_id},
+    ).mappings().all()
+    hints: set[str] = set()
+    for row in rows:
+        for key in ("channel_type", "provider", "external_user_id"):
+            value = str(row.get(key) or "").strip().lower()
+            if not value:
+                continue
+            hints.add(value)
+            if "google" in value or "gmail" in value:
+                hints.add("google")
+            if "outlook" in value or "microsoft" in value or "teams" in value:
+                hints.add("microsoft")
+            if "slack" in value:
+                hints.add("slack")
+    return hints
+
+
+_GOOGLE_SUITE = ("google-calendar-mcp", "google-drive-mcp", "gmail-mcp")
+_MICROSOFT_SUITE = ("outlook-mcp", "teams-mcp")
+
+
+def _build_connection_cards(
+    *,
+    available: list[dict[str, Any]],
+    hints: set[str],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[str]]:
+    available_map = {str(item.get("server_id") or "").strip().lower(): item for item in available}
+    recommended: list[str] = []
+    if "google" in hints or "gmail" in hints:
+        recommended.extend([server_id for server_id in _GOOGLE_SUITE if server_id in available_map])
+    if "microsoft" in hints:
+        recommended.extend([server_id for server_id in _MICROSOFT_SUITE if server_id in available_map])
+    if "slack" in hints and "slack-mcp" in available_map:
+        recommended.append("slack-mcp")
+    if "whatsapp" in hints and "whatsapp-business-mcp" in available_map:
+        recommended.append("whatsapp-business-mcp")
+    dedup_recommended = list(dict.fromkeys(recommended))
+
+    def _card(item: dict[str, Any], *, recommended_card: bool) -> dict[str, Any]:
+        setup_seconds = int(item.get("setup_seconds") or 0)
+        return {
+            "server_id": str(item.get("server_id") or "").strip().lower(),
+            "label": str(item.get("display_name") or item.get("server_id") or "").strip(),
+            "description": str(item.get("description") or "").strip(),
+            "auth_type": str(item.get("auth_type") or "oauth2").strip().lower(),
+            "estimated_setup_seconds": setup_seconds,
+            "recommended": bool(recommended_card),
+            "connect_endpoint": "/onboarding/connect",
+            "confirmation_text": "After connect, the app returns a success page and confirms the server is active.",
+        }
+
+    cards: list[dict[str, Any]] = []
+    for server_id in dedup_recommended:
+        item = available_map.get(server_id)
+        if item:
+            cards.append(_card(item, recommended_card=True))
+
+    for item in available:
+        server_id = str(item.get("server_id") or "").strip().lower()
+        if not server_id or server_id in dedup_recommended:
+            continue
+        cards.append(_card(item, recommended_card=False))
+
+    oauth_groups = [
+        {
+            "group_id": "google_workspace",
+            "label": "Google Workspace",
+            "server_ids": [sid for sid in _GOOGLE_SUITE if sid in available_map],
+            "consolidated_auth": True,
+            "recommended": any(sid in dedup_recommended for sid in _GOOGLE_SUITE),
+        },
+        {
+            "group_id": "microsoft_workspace",
+            "label": "Microsoft Workspace",
+            "server_ids": [sid for sid in _MICROSOFT_SUITE if sid in available_map],
+            "consolidated_auth": True,
+            "recommended": any(sid in dedup_recommended for sid in _MICROSOFT_SUITE),
+        },
+    ]
+    oauth_groups = [group for group in oauth_groups if group.get("server_ids")]
+
+    return cards, oauth_groups, dedup_recommended
 
 
 def _map_auth_type(auth_value: str | None) -> AuthType:
@@ -93,6 +207,27 @@ def onboarding_status(request: Request, user_id: str, db: Session = Depends(get_
         "phone_verified": phone_verified,
         "onboarding_complete": onboarding_complete,
         "steps": steps,
+    }
+
+
+@rate_limit_user()
+@router.get("/ecosystem")
+def onboarding_ecosystem(request: Request, user_id: str, db: Session = Depends(get_db)):
+    available = available_servers_for_user(db, user_id=user_id, connected_server_ids=set())
+    hints = _channel_hints(db, user_id=user_id)
+    cards, oauth_groups, recommended = _build_connection_cards(available=available, hints=hints)
+    return {
+        "ok": True,
+        "user_id": user_id,
+        "recommended_servers": recommended,
+        "channel_hints": sorted(hints),
+        "connection_cards": cards,
+        "oauth_consolidation_groups": oauth_groups,
+        "confirmation_flow": [
+            "Select a connection card.",
+            "Complete OAuth/API-key setup in the provider flow.",
+            "Return to the success page and verify the server state is active.",
+        ],
     }
 
 

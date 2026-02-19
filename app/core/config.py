@@ -358,6 +358,8 @@ class Settings(BaseSettings):
     FEATURE_DOCUMENT_GENERATION: bool = False
     FEATURE_CROSS_CHANNEL_CONTINUITY: bool = False
     FEATURE_AB_TESTING: bool = False
+    FEATURE_CONTEXT_PRECOMPUTE: bool = True
+    CONTEXT_PRECOMPUTE_TTL_SECONDS: int = 900
 
     # ── MCP Sandbox Controls ───────────────────────────────────
     MCP_NETWORK_ALLOWLIST: str = ""

@@ -97,6 +97,20 @@ def test_onboarding_connect_flows_through_pipeline():
     assert payload["server_id"] == "google-drive-mcp"
 
 
+def test_onboarding_ecosystem_returns_connection_cards():
+    client = TestClient(app)
+    resp = client.get("/onboarding/ecosystem", params={"user_id": "phase4-eco-user"})
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert payload["ok"] is True
+    cards = payload.get("connection_cards") or []
+    assert cards
+    first = cards[0]
+    assert "server_id" in first
+    assert first.get("connect_endpoint") == "/onboarding/connect"
+    assert isinstance(payload.get("oauth_consolidation_groups"), list)
+
+
 def test_catalog_contains_wave_expansion_and_tools_guidance():
     db = SessionLocal()
     try:

@@ -393,6 +393,7 @@ class LLMRequest(StrictModel):
     task_type: str = "general"
     max_cost_cents: float = 10.0
     max_latency_ms: int = 15000
+    batch_size: int = 1
     pii_content: bool = False
     requires_safety_check: bool = False
     stream: bool = False

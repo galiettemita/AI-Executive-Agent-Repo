@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
 from app.core.config import settings
-from app.services.analytics import wave56_server_prioritization
+from app.services.analytics import wave14_server_prioritization, wave56_server_prioritization
 from app.services.anonymized_insights import summarize_anonymized_insights
 from app.services.personalization_dashboard import get_personalization_dashboard
 from app.services.prompt_versions import create_prompt_version, ensure_prompt_versions_table, rollback_prompt
@@ -457,6 +457,17 @@ def admin_wave56_prioritization(
 ):
     _decode_admin_claims(request)
     payload = wave56_server_prioritization(db, days=int(days))
+    return {"ok": True, **payload}
+
+
+@router.get("/analytics/wave14-prioritization")
+def admin_wave14_prioritization(
+    request: Request,
+    days: int = Query(default=30, ge=1, le=365),
+    db: Session = Depends(get_db),
+):
+    _decode_admin_claims(request)
+    payload = wave14_server_prioritization(db, days=int(days))
     return {"ok": True, **payload}
 
 

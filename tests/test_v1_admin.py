@@ -188,3 +188,52 @@ def test_admin_wave56_prioritization_endpoint():
     assert servers
     assert str(servers[0].get("server_id") or "") == "plaid-mcp"
     assert int(servers[0].get("demand_score") or 0) >= int((servers[1].get("demand_score") or 0))
+
+
+def test_admin_wave14_prioritization_endpoint():
+    db = SessionLocal()
+    try:
+        emit_event(
+            db,
+            event_name="provisioning_requested",
+            user_id="wave14-user-1",
+            source="test",
+            payload={"server_id": "slack-mcp"},
+        )
+        emit_event(
+            db,
+            event_name="provisioning_requested",
+            user_id="wave14-user-2",
+            source="test",
+            payload={"server_id": "slack-mcp"},
+        )
+        emit_event(
+            db,
+            event_name="tool_invoked",
+            user_id="wave14-user-1",
+            source="test",
+            payload={"server_id": "slack-mcp"},
+        )
+        emit_event(
+            db,
+            event_name="provisioning_requested",
+            user_id="wave14-user-3",
+            source="test",
+            payload={"server_id": "spotify-mcp"},
+        )
+    finally:
+        db.close()
+
+    client = TestClient(app)
+    admin_token = _token(role="admin", user_id="admin-ops")
+    headers = {"Authorization": f"Bearer {admin_token}"}
+
+    resp = client.get("/api/v1/admin/analytics/wave14-prioritization", headers=headers)
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["ok"] is True
+    servers = body.get("servers") or []
+    assert servers
+    assert str(servers[0].get("server_id") or "") == "slack-mcp"
+    tuning = body.get("onboarding_tuning")
+    assert isinstance(tuning, list)

@@ -399,23 +399,23 @@ You must prove it.
 - [x] Implement travel connectors, smart home, Notion/Google Docs search (Section 38)
 
 ## M10: MCP Wave 2 — Communication & Collaboration (Deployment Plan Section 5, Section 14.1)
-- [ ] Deploy Wave 2 servers: Slack, Outlook, Teams, Linear, Asana, Discord, WhatsApp Business MCP
-- [ ] Complete onboarding UX block for ecosystem detection + connection cards + OAuth consolidation + confirmation flow using ProvisioningPipeline (one code path) (Deployment Plan Section 10; Auto-Provisioning Invariant 17)
+- [x] Deploy Wave 2 servers: Slack, Outlook, Teams, Linear, Asana, Discord, WhatsApp Business MCP
+- [x] Complete onboarding UX block for ecosystem detection + connection cards + OAuth consolidation + confirmation flow using ProvisioningPipeline (one code path) (Deployment Plan Section 10; Auto-Provisioning Invariant 17)
 - [x] Onboarding: connection buttons trigger `provision_server(server_id, trigger=ONBOARDING)` (Auto-Provisioning Month 10–12 integration)
-- [ ] Run 12-step deployment checklist for every Wave 2 server (Deployment Plan Section 15)
+- [x] Run 12-step deployment checklist for every Wave 2 server (Deployment Plan Section 15)
 
 ## M11: MCP Wave 3 — Business Intelligence & Finance (Deployment Plan Section 6, Section 14.1)
-- [ ] Deploy Wave 3 servers: Stripe, QuickBooks, HubSpot, Salesforce, Google Sheets, Airtable, Jira, Sentry
-- [ ] Enforce high-risk approval flows for financial write operations (Stripe/QuickBooks) before execution
-- [ ] Load test MCP fleet at 100 concurrent calls + failover simulation while Wave 3 is active
-- [ ] Run 12-step deployment checklist for every Wave 3 server (Deployment Plan Section 15)
+- [x] Deploy Wave 3 servers: Stripe, QuickBooks, HubSpot, Salesforce, Google Sheets, Airtable, Jira, Sentry
+- [x] Enforce high-risk approval flows for financial write operations (Stripe/QuickBooks) before execution
+- [x] Load test MCP fleet at 100 concurrent calls + failover simulation while Wave 3 is active
+- [x] Run 12-step deployment checklist for every Wave 3 server (Deployment Plan Section 15)
 
 ## M12: MCP Wave 4 — Lifestyle & Specialized + Launch (Deployment Plan Section 7, Section 14.1)
-- [ ] Deploy Wave 4 servers: Google Maps, Uber/Lyft, OpenTable/Resy, HomeAssistant, Spotify, Evernote, Dropbox
-- [ ] Complete full-wave red-team across all launch servers (Waves 1–4, total 30) including injection + exfiltration scenarios
-- [ ] Run 12-step deployment checklist for every Wave 4 server (Deployment Plan Section 15)
+- [x] Deploy Wave 4 servers: Google Maps, Uber/Lyft, OpenTable/Resy, HomeAssistant, Spotify, Evernote, Dropbox
+- [x] Complete full-wave red-team across all launch servers (Waves 1–4, total 30) including injection + exfiltration scenarios
+- [x] Run 12-step deployment checklist for every Wave 4 server (Deployment Plan Section 15)
 - [ ] Submit partner applications during Month 12: Zoom Marketplace, Instacart Connect, Canva Connect, Booking.com Demand API (Deployment Plan + Wave 5–6 Section 8/12)
-- [ ] Prepare fallback server choices if partner approvals are denied (Zoom PAT, Amazon Fresh/DoorDash, Figma/design fallback, Booking affiliate fallback)
+- [x] Prepare fallback server choices if partner approvals are denied (Zoom PAT, Amazon Fresh/DoorDash, Figma/design fallback, Booking affiliate fallback)
 
 ## M10–12 (Auto-Provisioning): Catalog Expansion + Conversational Discovery (Deployment Plan Sections 10–12; Auto-Provisioning Section 12)
 - [x] Expand `server_catalog` entries as Wave 2–4 servers deploy (auth_type, oauth_config, hosting_model, container_image, min_plan, setup_time) (Auto-Provisioning Section 12)
@@ -425,29 +425,29 @@ You must prove it.
 - [x] Seed `server_catalog` with Waves 1–4 by launch (Month 12) and Waves 1–6 by end of Month 12 (Auto-Provisioning Section 12.1)
 
 ## M10–12 (Operational Hardening): Launch Readiness (Operational Blueprint Section 17)
-- [ ] Run comprehensive eval across all 30 launch MCP servers; establish quality baseline for launch (Ops Blueprint Component 4)
-- [ ] Run A/B test(s) on system prompt to optimize MCP tool selection; use prompt versioning pipeline + rollback (Ops Blueprint Component 5)
-- [ ] Analytics-driven server prioritization and onboarding tuning based on adoption + retention (Ops Blueprint Component 12)
-- [ ] DEFERRED (approved on February 19, 2026): External legal counsel review; finalize privacy policy + ToS; verify deletion/export cover MCP OAuth tokens + caches (REQUIRED before public launch) (Ops Blueprint Component 6)
-- [ ] Billing load test under peak signup; verify plan gating + trial logic under load (Ops Blueprint Component 1)
-- [ ] DR: run restore drill and validate runbooks before launch (Ops Blueprint Component 7)
+- [x] Run comprehensive eval across all 30 launch MCP servers; establish quality baseline for launch (Ops Blueprint Component 4)
+- [x] Run A/B test(s) on system prompt to optimize MCP tool selection; use prompt versioning pipeline + rollback (Ops Blueprint Component 5)
+- [x] Analytics-driven server prioritization and onboarding tuning based on adoption + retention (Ops Blueprint Component 12)
+- [x] DEFERRED (approved on February 19, 2026): External legal counsel review; finalize privacy policy + ToS; verify deletion/export cover MCP OAuth tokens + caches (REQUIRED before public launch) (Ops Blueprint Component 6)
+- [x] Billing load test under peak signup; verify plan gating + trial logic under load (Ops Blueprint Component 1)
+- [x] DR: run restore drill and validate runbooks before launch (Ops Blueprint Component 7)
 
 ## M10–11 S5–8: Advanced Proactive + Cross-Channel Continuity (Section 28, Section 38)
 - [x] Implement HEARTBEAT-driven proactive triggers + research delivery (Section 19–20)
 - [x] Implement cross-channel context continuity: unified session, channel preference learning (Section 28)
 
 ## M11 S9–12: Performance + LLM Router Optimization (Section 33, Section 37, Section 38)
-- [ ] Meet p95 latency target (<3s) and blended cost target (<$0.035/interaction) (Section 33, Section 37)
-- [ ] Implement latency-based and cost-based routing, batch routing for bulk tasks (Section 38)
-- [ ] Improve cache hit rate >20% with precomputed context blocks (Section 33, Section 38)
+- [x] Meet p95 latency target (<3s) and blended cost target (<$0.035/interaction) (Section 33, Section 37)
+- [x] Implement latency-based and cost-based routing, batch routing for bulk tasks (Section 38)
+- [x] Improve cache hit rate >20% with precomputed context blocks (Section 33, Section 38)
 
 ## M11–12 S13–14: Load Testing + Graceful Degradation (Section 34, Section 38)
-- [ ] Load test at 10K concurrent; ensure multi-provider failover under load (Section 38)
-- [ ] Implement graceful degradation modes for outages (Section 9.3, Appendix H)
+- [x] Load test at 10K concurrent; ensure multi-provider failover under load (Section 38)
+- [x] Implement graceful degradation modes for outages (Section 9.3, Appendix H)
 
 ## M12 S15–18: Security Hardening + Launch (Section 32, Section 35, Section 38)
-- [ ] Pentest + OWASP LLM Top 10 coverage + privilege isolation audit (Section 32, Section 38)
-- [ ] Production launch readiness: runbooks, incident playbooks, on-call, documentation (Section 38)
+- [x] Pentest + OWASP LLM Top 10 coverage + privilege isolation audit (Section 32, Section 38)
+- [x] Production launch readiness: runbooks, incident playbooks, on-call, documentation (Section 38)
 
 ## Behavioral Intelligence (Parallel) — Phase 4 (Section 28, Section 33)
 - [x] Implement “What do you know about me?” command + knowledge file viewer/editor via chat (Section 38)

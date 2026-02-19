@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from typing import Any
 
 import redis
@@ -11,6 +12,7 @@ from app.core.config import settings
 logger = logging.getLogger(__name__)
 
 _redis_client: redis.Redis | None = None
+_mem_cache: dict[str, tuple[float | None, str]] = {}
 
 
 def get_redis() -> redis.Redis | None:
@@ -44,7 +46,17 @@ def redis_ping() -> bool:
 def cache_get_json(key: str) -> Any | None:
     client = get_redis()
     if not client:
-        return None
+        item = _mem_cache.get(key)
+        if not item:
+            return None
+        expires_at, raw = item
+        if expires_at is not None and expires_at <= time.time():
+            _mem_cache.pop(key, None)
+            return None
+        try:
+            return json.loads(raw)
+        except Exception:
+            return None
     try:
         raw = client.get(key)
         if raw is None:
@@ -58,6 +70,12 @@ def cache_get_json(key: str) -> Any | None:
 def cache_set_json(key: str, value: Any, ttl_seconds: int | None = None) -> None:
     client = get_redis()
     if not client:
+        try:
+            payload = json.dumps(value, ensure_ascii=False)
+            expires_at = time.time() + int(ttl_seconds) if ttl_seconds else None
+            _mem_cache[key] = (expires_at, payload)
+        except Exception:
+            pass
         return
     try:
         payload = json.dumps(value, ensure_ascii=False)
@@ -72,6 +90,7 @@ def cache_set_json(key: str, value: Any, ttl_seconds: int | None = None) -> None
 def cache_delete(key: str) -> None:
     client = get_redis()
     if not client:
+        _mem_cache.pop(key, None)
         return
     try:
         client.delete(key)

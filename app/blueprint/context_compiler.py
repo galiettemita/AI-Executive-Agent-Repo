@@ -5,6 +5,8 @@ from typing import Any
 from sqlalchemy import text
 
 from app.db.database import SessionLocal
+from app.core.config import settings
+from app.core.redis import cache_get_json, cache_set_json
 from app.blueprint.tools import get_tool_registry
 from app.services.prompt_versions import resolve_prompt_content
 
@@ -22,6 +24,31 @@ KNOWLEDGE_PRIORITY = [
 ]
 
 DEFAULT_CONTEXT_COMPILER_TEMPLATE = "{base_system_prompt}\n\n{knowledge_blocks}"
+_CACHE_HITS = 0
+_CACHE_MISSES = 0
+
+
+def _context_cache_key(*, user_id: str, tier: int, template_version_id: str | None) -> str:
+    version = str(template_version_id or "default").strip() or "default"
+    return f"bp:context:precompute:{user_id}:{tier}:{version}"
+
+
+def _record_cache_hit(hit: bool) -> None:
+    global _CACHE_HITS, _CACHE_MISSES
+    if hit:
+        _CACHE_HITS += 1
+    else:
+        _CACHE_MISSES += 1
+
+
+def context_cache_stats() -> dict[str, int]:
+    return {"hits": int(_CACHE_HITS), "misses": int(_CACHE_MISSES)}
+
+
+def reset_context_cache_stats() -> None:
+    global _CACHE_HITS, _CACHE_MISSES
+    _CACHE_HITS = 0
+    _CACHE_MISSES = 0
 
 
 def _approx_tokens(text_value: str) -> int:
@@ -114,46 +141,75 @@ def compile_context_messages(
     history = history_messages or []
     max_context_tokens = 1000 if tier <= 1 else 1800
     template_content, template_version_id = _resolve_context_compiler_template(user_id=user_id)
-
-    injected_files: list[str] = []
-    knowledge_blocks: list[str] = []
     base_prompt_clean = base_system_prompt.strip()
-    used_tokens = _approx_tokens(base_prompt_clean)
-    context_chunks: list[dict[str, str]] = [
-        {
-            "role": "system",
-            "source": "context_compiler_template",
-            "provenance": "system",
-            "prompt_version_id": template_version_id or "default",
-        }
-    ]
+    cache_key: str | None = None
+    cached_payload: dict[str, Any] | None = None
+    cache_lookup_enabled = bool(user_id and settings.FEATURE_CONTEXT_PRECOMPUTE)
+    if user_id and settings.FEATURE_CONTEXT_PRECOMPUTE:
+        cache_key = _context_cache_key(user_id=user_id, tier=tier, template_version_id=template_version_id)
+        cached = cache_get_json(cache_key)
+        if isinstance(cached, dict):
+            cached_payload = cached
 
-    if user_id:
-        latest = _latest_knowledge_by_file(user_id)
-        for file_path in KNOWLEDGE_PRIORITY:
-            content = latest.get(file_path)
-            if not content:
-                continue
-            block = f"[{file_path}]\n{content}"
-            block_tokens = _approx_tokens(block)
-            if used_tokens + block_tokens > max_context_tokens:
-                continue
-            knowledge_blocks.append(block)
-            injected_files.append(file_path)
-            used_tokens += block_tokens
-            context_chunks.append(
+    use_cached_payload = bool(cached_payload)
+    if use_cached_payload:
+        system_text = str(cached_payload.get("system_text") or "")
+        injected_files = [str(item) for item in (cached_payload.get("injected_files") or []) if str(item)]
+        context_chunks = [dict(item) for item in (cached_payload.get("context_chunks_base") or []) if isinstance(item, dict)]
+        use_cached_payload = bool(system_text.strip())
+    if cache_lookup_enabled:
+        _record_cache_hit(use_cached_payload)
+
+    if not use_cached_payload:
+        injected_files = []
+        knowledge_blocks: list[str] = []
+        used_tokens = _approx_tokens(base_prompt_clean)
+        context_chunks = [
+            {
+                "role": "system",
+                "source": "context_compiler_template",
+                "provenance": "system",
+                "prompt_version_id": template_version_id or "default",
+            }
+        ]
+
+        if user_id:
+            latest = _latest_knowledge_by_file(user_id)
+            for file_path in KNOWLEDGE_PRIORITY:
+                content = latest.get(file_path)
+                if not content:
+                    continue
+                block = f"[{file_path}]\n{content}"
+                block_tokens = _approx_tokens(block)
+                if used_tokens + block_tokens > max_context_tokens:
+                    continue
+                knowledge_blocks.append(block)
+                injected_files.append(file_path)
+                used_tokens += block_tokens
+                context_chunks.append(
+                    {
+                        "role": "system",
+                        "source": file_path,
+                        "provenance": "knowledge_file",
+                    }
+                )
+
+        system_text = _render_context_compiler_template(
+            template=template_content,
+            base_system_prompt=base_prompt_clean,
+            knowledge_blocks="\n\n".join(knowledge_blocks).strip(),
+        )
+        if cache_key and system_text.strip():
+            cache_set_json(
+                cache_key,
                 {
-                    "role": "system",
-                    "source": file_path,
-                    "provenance": "knowledge_file",
-                }
+                    "system_text": system_text,
+                    "injected_files": injected_files,
+                    "context_chunks_base": context_chunks,
+                },
+                ttl_seconds=max(120, int(settings.CONTEXT_PRECOMPUTE_TTL_SECONDS or 900)),
             )
 
-    system_text = _render_context_compiler_template(
-        template=template_content,
-        base_system_prompt=base_prompt_clean,
-        knowledge_blocks="\n\n".join(knowledge_blocks).strip(),
-    )
     messages: list[dict[str, Any]] = [{"role": "system", "content": system_text}]
     if history:
         for item in history:
@@ -182,3 +238,27 @@ def compile_tool_schemas(
     """
     registry = get_tool_registry()
     return registry.list_llm_tool_schemas(tier=tier, tags=tags, user_id=user_id)
+
+
+def precompute_context_blocks(
+    *,
+    user_id: str,
+    base_system_prompt: str,
+    tiers: tuple[int, ...] = (1, 2, 3),
+) -> dict[str, Any]:
+    primed_tiers: list[int] = []
+    for tier in tiers:
+        messages, injected_files, _chunks = compile_context_messages(
+            base_system_prompt=base_system_prompt,
+            user_id=user_id,
+            user_text="",
+            history_messages=[],
+            tier=int(tier),
+        )
+        if messages:
+            primed_tiers.append(int(tier))
+    return {
+        "ok": True,
+        "user_id": user_id,
+        "tiers": primed_tiers,
+    }

@@ -245,6 +245,9 @@ class LLMRouter:
         chain = [_parse_provider_model(routing["primary"])]
         for candidate in routing.get("fallback") or []:
             chain.append(_parse_provider_model(candidate))
+        if self._is_batch_request(req):
+            # Batch work biases toward lower-cost routes first.
+            chain = self._prepend_route((LLMProvider.LOCAL, "llama-4-8b"), chain)
         return chain
 
     def _provider_enabled(self, provider: LLMProvider) -> bool:
@@ -442,6 +445,7 @@ class LLMRouter:
         elif mode == "normal" and self._force_local_during_recovery(req=req, health_map=health_map, fraction=recovery_fraction):
             chain = self._prepend_route((LLMProvider.LOCAL, "llama-4-8b"), chain)
             forced_local_recovery = True
+        chain = self._prioritize_chain(chain=chain, req=req, health_map=health_map)
         selected: tuple[LLMProvider, str] | None = None
         checks: list[dict[str, Any]] = []
 
@@ -453,6 +457,7 @@ class LLMRouter:
                     "model": model,
                     "healthy": health.is_healthy,
                     "latency_p95_ms": health.latency_p95_ms,
+                    "estimated_cost_cents": self._estimate_request_cost_cents(model=model, req=req),
                 }
             )
             if selected is None and health.is_healthy:
@@ -482,6 +487,59 @@ class LLMRouter:
         output_cost = (usage.output_tokens / 1000.0) * costs.output_per_1k
         # configured costs are in USD, keep cents in DB/telemetry as float cents
         return round((input_cost + output_cost) * 100, 4)
+
+    def _is_batch_request(self, req: LLMRequest) -> bool:
+        if int(req.batch_size or 1) > 1:
+            return True
+        task = str(req.task_type or "").strip().lower()
+        return task in {"batch", "bulk", "bulk_extraction", "bulk_reasoning"}
+
+    def _estimate_request_usage(self, req: LLMRequest) -> TokenUsage:
+        input_chars = 0
+        for item in req.messages or []:
+            input_chars += len(str((item or {}).get("content") or ""))
+        input_tokens = max(1, input_chars // 4)
+        output_tokens = int(req.max_tokens or 0)
+        if output_tokens <= 0:
+            output_tokens = 256
+        output_tokens = max(64, min(output_tokens, 1024))
+        return TokenUsage(
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            total_tokens=input_tokens + output_tokens,
+        )
+
+    def _estimate_request_cost_cents(self, *, model: str, req: LLMRequest) -> float:
+        return self._estimate_cost_cents(model=model, usage=self._estimate_request_usage(req))
+
+    def _prioritize_chain(
+        self,
+        *,
+        chain: list[tuple[LLMProvider, str]],
+        req: LLMRequest,
+        health_map: dict[str, LLMProviderHealth],
+    ) -> list[tuple[LLMProvider, str]]:
+        if not chain:
+            return []
+        latency_budget = max(1, int(req.max_latency_ms or 15000))
+        cost_budget = max(0.01, float(req.max_cost_cents or 10.0))
+        cost_weight = 2.0 if self._is_batch_request(req) else 1.0
+        latency_weight = 0.7 if self._is_batch_request(req) else 1.0
+
+        indexed = list(enumerate(chain))
+
+        def _score(item: tuple[int, tuple[LLMProvider, str]]) -> tuple[int, int, float, int]:
+            idx, (provider, model) = item
+            health = health_map.get(provider.value) or LLMProviderHealth(provider=provider, is_healthy=False, error_rate_1h=1.0)
+            estimated_cost = self._estimate_request_cost_cents(model=model, req=req)
+            latency = int(health.latency_p95_ms or 0)
+            over_cost = 1 if estimated_cost > cost_budget else 0
+            over_latency = 1 if latency > latency_budget else 0
+            combined_ratio = (estimated_cost / cost_budget) * cost_weight + (latency / latency_budget) * latency_weight
+            return over_cost, over_latency, round(combined_ratio, 6), idx
+
+        indexed.sort(key=_score)
+        return [pair[1] for pair in indexed]
 
     def _validate_structured_output(self, req: LLMRequest, response: LLMResponse) -> tuple[bool, str | None]:
         schema = req.structured_output or {}
@@ -777,11 +835,11 @@ class LLMRouter:
             route = self._route_chain(request_to_run)
             if self._force_local_during_recovery(req=request_to_run, health_map=health_map, fraction=recovery_fraction):
                 route = self._prepend_route((LLMProvider.LOCAL, "llama-4-8b"), route)
+        route = self._prioritize_chain(chain=route, req=request_to_run, health_map=health_map)
         if not route:
             raise RuntimeError("No providers configured")
 
         errors: list[str] = []
-        first_provider = route[0][0]
 
         for idx, (provider, model) in enumerate(route):
             if not self._provider_enabled(provider):
@@ -791,6 +849,17 @@ class LLMRouter:
             health = self.provider_health(provider)
             if not health.is_healthy:
                 errors.append(f"{provider.value}:unhealthy")
+                continue
+
+            estimated_cost = self._estimate_request_cost_cents(model=model, req=request_to_run)
+            max_cost = float(request_to_run.max_cost_cents or 0)
+            if max_cost > 0 and estimated_cost > max_cost and idx < len(route) - 1:
+                errors.append(f"{provider.value}:over_cost_budget")
+                continue
+
+            max_latency = int(request_to_run.max_latency_ms or 0)
+            if max_latency > 0 and int(health.latency_p95_ms or 0) > max_latency and idx < len(route) - 1:
+                errors.append(f"{provider.value}:over_latency_budget")
                 continue
 
             try:
