@@ -110,7 +110,7 @@ Feature Flag Rollout Reminders (Appendix A)
 - [x] Auth: implement channel linking flow (WhatsApp primary links iMessage identity via OTP) (Ops Blueprint Component 2)
 - [x] Auth API: implement `/api/v1/auth/link-channel` endpoint + conflict detection if channel already linked to different user_id (Ops Blueprint Component 2)
 - [x] Auth (staging+prod): configure Twilio SMS OTP credentials (`TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_PHONE_NUMBER`) and inject into ECS tasks (`/health` reports `twilio_configured=true`) (Ops Blueprint Component 2)
-- [ ] Auth (staging+prod): validate `/api/v1/auth/link-channel` end-to-end SMS OTP delivery (send + verify with real phone number) (Ops Blueprint Component 2) — blocked pending distinct recipient test number + prod legacy `users.id` type mismatch remediation
+- [x] Auth (staging+prod): validate `/api/v1/auth/link-channel` end-to-end SMS OTP delivery (send + verify with real phone number) (Ops Blueprint Component 2) — validated on February 19, 2026 in both staging and production after identity FK compatibility fix (`send=200`, `verify=200`)
 - [x] Legal: draft v1 privacy policy (data types, retention, third-party sharing incl. LLM providers, data rights) (Ops Blueprint Component 6)
 - [x] Legal: implement retention config `DATA_RETENTION_DAYS_CANCELED=90` and persist `deletion_requested_at` (deletion pipeline built in Month 3) (Ops Blueprint Component 6)
 - [x] OAuth vault: ensure ONE token storage mechanism reused for native connectors + MCP OAuth + Stripe customer/billing tokens (Ops Blueprint Month 2 integration note)
