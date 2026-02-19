@@ -16,6 +16,29 @@ _LOCK = threading.Lock()
 _READY = False
 _EXECUTOR = ThreadPoolExecutor(max_workers=3, thread_name_prefix="analytics-events")
 
+_WAVE56_SERVER_IDS: tuple[str, ...] = (
+    "duffel-mcp",
+    "zoom-mcp",
+    "calendly-mcp",
+    "plaid-mcp",
+    "crunchbase-mcp",
+    "booking-com-mcp",
+    "docusign-mcp",
+    "canva-mcp",
+    "instacart-mcp",
+    "tesla-mcp",
+)
+
+_WAVE56_WEIGHTS: dict[str, int] = {
+    "provisioning_requested": 5,
+    "provisioning_declined": 3,
+    "awaiting_auth": 2,
+    "provisioning_failed": 2,
+    "server_provisioned": 4,
+    "mcp_server_connected": 4,
+    "tool_invoked": 1,
+}
+
 
 def _table_exists(db: Session, table_name: str) -> bool:
     try:
@@ -333,3 +356,98 @@ def aggregate_daily(db: Session, *, for_day: date | None = None) -> dict[str, An
         )
     db.commit()
     return data
+
+
+def _parse_payload_json(value: Any) -> dict[str, Any]:
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, str) and value.strip():
+        try:
+            parsed = json.loads(value)
+            if isinstance(parsed, dict):
+                return parsed
+        except Exception:
+            return {}
+    return {}
+
+
+def wave56_server_prioritization(db: Session, *, days: int = 30) -> dict[str, Any]:
+    ensure_analytics_tables(db)
+    window_days = max(1, min(365, int(days or 30)))
+    cutoff = datetime.now(timezone.utc) - timedelta(days=window_days)
+    rows = db.execute(
+        text(
+            "select user_id, event_name, payload_json "
+            "from analytics_events "
+            "where created_at >= :cutoff"
+        ),
+        {"cutoff": cutoff},
+    ).mappings().all()
+
+    state: dict[str, dict[str, Any]] = {
+        server_id: {
+            "server_id": server_id,
+            "demand_score": 0,
+            "event_count": 0,
+            "weighted_events": {},
+            "distinct_users": set(),
+        }
+        for server_id in _WAVE56_SERVER_IDS
+    }
+    server_id_set = set(_WAVE56_SERVER_IDS)
+
+    for row in rows:
+        event_name = str(row.get("event_name") or "").strip()
+        if not event_name:
+            continue
+        payload = _parse_payload_json(row.get("payload_json"))
+        target_server = str(
+            payload.get("server_id")
+            or payload.get("mcp_server_id")
+            or payload.get("provider")
+            or ""
+        ).strip().lower()
+        if target_server not in server_id_set:
+            continue
+
+        weight = int(_WAVE56_WEIGHTS.get(event_name, 0))
+        bucket = state[target_server]
+        bucket["event_count"] = int(bucket["event_count"] or 0) + 1
+        if weight > 0:
+            bucket["demand_score"] = int(bucket["demand_score"] or 0) + weight
+            weighted = dict(bucket.get("weighted_events") or {})
+            weighted[event_name] = int(weighted.get(event_name) or 0) + 1
+            bucket["weighted_events"] = weighted
+        user_id = str(row.get("user_id") or "").strip()
+        if user_id:
+            users = bucket.get("distinct_users")
+            if isinstance(users, set):
+                users.add(user_id)
+
+    prioritized_rows: list[dict[str, Any]] = []
+    for server_id in _WAVE56_SERVER_IDS:
+        bucket = state[server_id]
+        users = bucket.get("distinct_users")
+        prioritized_rows.append(
+            {
+                "server_id": server_id,
+                "demand_score": int(bucket.get("demand_score") or 0),
+                "event_count": int(bucket.get("event_count") or 0),
+                "distinct_users": len(users) if isinstance(users, set) else 0,
+                "weighted_events": dict(bucket.get("weighted_events") or {}),
+            }
+        )
+
+    prioritized_rows.sort(
+        key=lambda item: (
+            -int(item.get("demand_score") or 0),
+            -int(item.get("event_count") or 0),
+            -int(item.get("distinct_users") or 0),
+            str(item.get("server_id") or ""),
+        )
+    )
+    return {
+        "window_days": window_days,
+        "servers": prioritized_rows,
+        "recommended_order": [str(item.get("server_id") or "") for item in prioritized_rows],
+    }

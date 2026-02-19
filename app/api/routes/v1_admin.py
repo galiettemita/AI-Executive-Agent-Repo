@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
 from app.core.config import settings
+from app.services.analytics import wave56_server_prioritization
 from app.services.prompt_versions import create_prompt_version, ensure_prompt_versions_table, rollback_prompt
 
 router = APIRouter(prefix="/api/v1/admin", tags=["admin-v1"])
@@ -444,6 +445,17 @@ def admin_analytics_daily(
         {"limit": int(days)},
     ).mappings().all()
     return {"ok": True, "count": len(rows), "rows": [dict(row) for row in rows]}
+
+
+@router.get("/analytics/wave56-prioritization")
+def admin_wave56_prioritization(
+    request: Request,
+    days: int = Query(default=30, ge=1, le=365),
+    db: Session = Depends(get_db),
+):
+    _decode_admin_claims(request)
+    payload = wave56_server_prioritization(db, days=int(days))
+    return {"ok": True, **payload}
 
 
 @router.get("/provisioning/requests")

@@ -488,7 +488,7 @@ You must prove it.
 - [x] Enforce remote search rate limit (20/hour/user) and provisioning rate limits (5/hour/user, 3 concurrent) (Auto-Provisioning Section 13)
 
 ## M13–15 (Operational Overlay): Post-Launch Expansion Hardening (Ops Blueprint + Wave 5–6)
-- [ ] Analytics-driven server prioritization within Waves 5–6 based on user demand (Ops Blueprint Component 12)
+- [x] Analytics-driven server prioritization within Waves 5–6 based on user demand (Ops Blueprint Component 12)
 - [x] Eval expansion: add financial accuracy scoring (Plaid) and booking verification scoring (Duffel/Booking) (Ops Blueprint Component 4; Wave 5–6)
 - [x] Notification expansion: travel alerts (Duffel delays) and financial alerts (Plaid unusual transactions) with plan gating (Ops Blueprint Component 11; Wave 5–6)
 - [x] Billing: Wave 5–6 servers plan-gated to Professional (or higher); enforce in provisioning + tool execution (Ops Blueprint Component 1; Auto-Provisioning Section 13)

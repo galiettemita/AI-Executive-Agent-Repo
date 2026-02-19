@@ -8,6 +8,7 @@ from app.core.config import settings
 from app.db.database import SessionLocal
 from app.db.models import User
 from app.main import app
+from app.services.analytics import emit_event
 from app.services import content_safety
 from app.services.provisioning_pipeline import ProvisioningPipeline
 from app.blueprint.contracts import ProvisioningState
@@ -139,3 +140,51 @@ def test_admin_provisioning_history_and_stats():
     assert "Financial Dashboard" in full_html
     assert "Eval & Quality" in full_html
     assert "Analytics Panel" in full_html
+
+
+def test_admin_wave56_prioritization_endpoint():
+    db = SessionLocal()
+    try:
+        emit_event(
+            db,
+            event_name="provisioning_requested",
+            user_id="prio-user-1",
+            source="test",
+            payload={"server_id": "plaid-mcp"},
+        )
+        emit_event(
+            db,
+            event_name="provisioning_requested",
+            user_id="prio-user-2",
+            source="test",
+            payload={"server_id": "plaid-mcp"},
+        )
+        emit_event(
+            db,
+            event_name="provisioning_requested",
+            user_id="prio-user-3",
+            source="test",
+            payload={"server_id": "duffel-mcp"},
+        )
+        emit_event(
+            db,
+            event_name="server_provisioned",
+            user_id="prio-user-1",
+            source="test",
+            payload={"server_id": "plaid-mcp"},
+        )
+    finally:
+        db.close()
+
+    client = TestClient(app)
+    admin_token = _token(role="admin", user_id="admin-ops")
+    headers = {"Authorization": f"Bearer {admin_token}"}
+
+    resp = client.get("/api/v1/admin/analytics/wave56-prioritization", headers=headers)
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["ok"] is True
+    servers = body.get("servers") or []
+    assert servers
+    assert str(servers[0].get("server_id") or "") == "plaid-mcp"
+    assert int(servers[0].get("demand_score") or 0) >= int((servers[1].get("demand_score") or 0))
