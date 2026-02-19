@@ -4,12 +4,14 @@ import hashlib
 import json
 import re
 import time
+import uuid
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, HTTPException
+from sqlalchemy import text
 
 from app.blueprint.capability_tokens import enforce_capability_token
-from app.blueprint.contracts import ToolCall, ToolResult
+from app.blueprint.contracts import AuthType, ProvisionTrigger, ProvisioningState, ToolCall, ToolResult
 from app.blueprint.mcp.hub import invoke_mcp_tool
 from app.blueprint.security import CapabilityViolation, PrivilegeViolation, validate_tool_privilege
 from app.blueprint.tools import get_tool_registry
@@ -40,6 +42,7 @@ from app.services.outlook_mail import (
 )
 from app.services.email_service import EmailService
 from app.core.config import settings
+from app.core.redis import get_redis
 from app.services.slack_connector import (
     SlackNotConfiguredError,
     slack_channel_summary,
@@ -52,6 +55,8 @@ from app.services.plaid_connector import (
     list_transactions as plaid_list_transactions,
 )
 from app.services.provisioning_catalog import available_servers_for_user
+from app.services.provisioning_handlers import ProvisionAuthContext, get_auth_handler
+from app.services.provisioning_pipeline import ProvisioningPipeline
 
 
 router = APIRouter(prefix="/internal/hands", tags=["internal-hands"])
@@ -212,6 +217,36 @@ def _send_email_by_provider(
     return {"provider": selected or settings.EMAIL_PROVIDER or "ses", "message_id": ""}
 
 
+def _map_auth_type(auth_value: str | None) -> AuthType:
+    value = str(auth_value or "oauth2").strip().lower()
+    if value in {"api_key", "apikey"}:
+        return AuthType.API_KEY
+    if value in {"pre_provisioned", "none", "internal"}:
+        return AuthType.PRE_PROVISIONED
+    if value in {"plaid_link"}:
+        return AuthType.PLAID_LINK
+    if value in {"tesla_sso"}:
+        return AuthType.TESLA_SSO
+    if value in {"oauth2_consolidated"}:
+        return AuthType.OAUTH2_CONSOLIDATED
+    return AuthType.OAUTH2
+
+
+def _allow_provisioning_hourly_rate(user_id: str) -> bool:
+    client = get_redis()
+    if client is None:
+        return True
+    now = datetime.now(timezone.utc).timestamp()
+    key = f"bp:provision:hour:{user_id}"
+    client.zremrangebyscore(key, 0, now - 3600)
+    if int(client.zcard(key)) >= 5:
+        return False
+    member = f"{now:.6f}:{uuid.uuid4().hex[:8]}"
+    client.zadd(key, {member: now})
+    client.expire(key, 3700)
+    return True
+
+
 @router.post("/execute", response_model=ToolResult)
 async def execute(call: ToolCall) -> ToolResult:
     """
@@ -359,6 +394,28 @@ async def execute(call: ToolCall) -> ToolResult:
         status_provision = "success"
         db = SessionLocal()
         try:
+            if not call.user_id:
+                raise RuntimeError("provision_server requires user_id")
+            if not _allow_provisioning_hourly_rate(call.user_id):
+                raise RuntimeError("Provisioning rate limit reached (max 5 requests/hour)")
+
+            pipeline = ProvisioningPipeline(db)
+            active_count = int(
+                db.execute(
+                    text(
+                        """
+                        select count(1) as cnt from provisioning_requests
+                        where user_id = :user_id
+                          and state in ('initiated', 'awaiting_auth', 'auth_received', 'provisioning')
+                        """
+                    ),
+                    {"user_id": call.user_id},
+                ).scalar()
+                or 0
+            )
+            if active_count >= 3:
+                raise RuntimeError("Too many concurrent provisioning sessions (max 3)")
+
             available = available_servers_for_user(db, user_id=call.user_id, connected_server_ids=set())
             matched = next((item for item in available if str(item.get("server_id") or "").strip().lower() == server_id), None)
             if not matched:
@@ -371,17 +428,49 @@ async def execute(call: ToolCall) -> ToolResult:
                 status_provision = "failed"
                 error_payload_provision = {"type": "catalog_not_available", "message": str(result.error or "")}
             else:
+                auth_type = _map_auth_type(str(matched.get("auth_type") or "oauth2"))
+                request_record = pipeline.begin(
+                    user_id=call.user_id,
+                    server_id=server_id,
+                    reason=reason,
+                    trigger=ProvisionTrigger.CAPABILITY_GAP,
+                    auth_type=auth_type,
+                    original_task_id=call.run_id,
+                )
+                auth_handler = get_auth_handler(auth_type.value)
+                auth_payload = auth_handler.begin(
+                    ProvisionAuthContext(
+                        request_id=request_record.id,
+                        user_id=call.user_id,
+                        server_id=server_id,
+                        reason=reason,
+                        original_task_id=call.run_id,
+                    )
+                )
+
+                status_value = str(auth_payload.get("status") or "awaiting_auth").strip().lower()
+                if status_value == "auth_received":
+                    request_record = pipeline.transition(
+                        request_id=request_record.id,
+                        new_state=ProvisioningState.AUTH_RECEIVED,
+                        note="auth_not_required",
+                    )
+                else:
+                    if request_record.state != ProvisioningState.AWAITING_AUTH:
+                        request_record = pipeline.transition(
+                            request_id=request_record.id,
+                            new_state=ProvisioningState.AWAITING_AUTH,
+                            note="auth_pending",
+                        )
+
                 output_payload_provision = {
-                    "status": "awaiting_auth",
+                    "request_id": request_record.id,
+                    "state": request_record.state.value,
                     "server_id": server_id,
                     "reason": reason,
-                    "auth_type": str(matched.get("auth_type") or "oauth"),
+                    "auth_type": auth_type.value,
                     "setup_seconds": int(matched.get("setup_seconds") or 30),
-                    "message": (
-                        f"{server_id} is available. "
-                        "Provisioning is not fully enabled in this environment yet; "
-                        "complete the connect flow from onboarding/connectors and retry."
-                    ),
+                    **auth_payload,
                 }
                 result = ToolResult(tool_name=tool, tool=tool, ok=True, result=output_payload_provision)
         except Exception as exc:

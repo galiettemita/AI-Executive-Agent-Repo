@@ -97,6 +97,7 @@ from app.api.routes.v1_mcp import router as v1_mcp_router  # noqa: E402
 from app.api.routes.v1_admin import router as v1_admin_router  # noqa: E402
 from app.api.routes.v1_feedback import router as v1_feedback_router  # noqa: E402
 from app.api.routes.v1_notifications import router as v1_notifications_router  # noqa: E402
+from app.api.routes.v1_provisioning import router as v1_provisioning_router  # noqa: E402
 from app.api.routes.plaid import router as plaid_router  # noqa: E402
 from app.api.routes.webhook_aliases import router as webhook_aliases_router  # noqa: E402
 from app.api.routes.webhooks_phase3 import router as phase3_webhooks_router  # noqa: E402
@@ -235,6 +236,7 @@ app.include_router(v1_mcp_router)
 app.include_router(v1_admin_router)
 app.include_router(v1_feedback_router)
 app.include_router(v1_notifications_router)
+app.include_router(v1_provisioning_router)
 app.include_router(mcp_wave1_host_router)
 app.include_router(plaid_router)
 app.include_router(llm_router)
