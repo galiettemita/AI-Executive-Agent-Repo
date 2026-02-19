@@ -41,6 +41,7 @@ async def provision_callback(
         return RedirectResponse(url="/api/v1/provision/expired?reason=invalid_session", status_code=302)
 
     pipeline = ProvisioningPipeline(db)
+    _ = pipeline.expire_timeouts()
     request_row = get_request(db, request_id=request_id)
     if not request_row:
         delete_provisioning_session(state)
@@ -71,8 +72,10 @@ async def provision_callback(
             note="activation_complete",
         )
         delete_provisioning_session(state)
+        original_task_id = str(session.get("original_task_id") or "").strip()
+        missing_task = "1" if not original_task_id else "0"
         return RedirectResponse(
-            url=f"/api/v1/provision/success?server_id={server_id}&request_id={request_id}",
+            url=f"/api/v1/provision/success?server_id={server_id}&request_id={request_id}&missing_task={missing_task}",
             status_code=302,
         )
 
@@ -90,14 +93,21 @@ async def provision_callback(
 def provision_success(
     server_id: str = Query(default=""),
     request_id: str = Query(default=""),
+    missing_task: str = Query(default="0"),
 ):
     safe_server = (server_id or "").strip() or "server"
     safe_request = (request_id or "").strip()
+    next_step = (
+        "<p>Connection complete. Your prior task context expired, so tell me what you want to do next.</p>"
+        if str(missing_task or "0") == "1"
+        else "<p>Connection complete. Returning to chat will resume your original request.</p>"
+    )
     return HTMLResponse(
         content=(
             "<html><body style='font-family: sans-serif; padding: 24px;'>"
             "<h2>Connected! Return to chat.</h2>"
             f"<p>{safe_server} is now connected.</p>"
+            f"{next_step}"
             f"<p style='color:#666;'>request_id={safe_request}</p>"
             "</body></html>"
         )

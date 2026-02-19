@@ -68,8 +68,38 @@ class PreProvisionedHandler:
         }
 
 
+class OAuthConsolidatedHandler(OAuthProvisionHandler):
+    def begin(self, context: ProvisionAuthContext) -> dict[str, object]:
+        payload = super().begin(context)
+        payload["auth_type"] = "oauth2_consolidated"
+        payload["message"] = "Use this single link to connect the full suite for this provider."
+        return payload
+
+
+class PlaidLinkProvisionHandler(OAuthProvisionHandler):
+    def begin(self, context: ProvisionAuthContext) -> dict[str, object]:
+        payload = super().begin(context)
+        payload["auth_type"] = "plaid_link"
+        payload["message"] = "Open Plaid Link and complete bank authorization, then return to chat."
+        return payload
+
+
+class TeslaSSOProvisionHandler(OAuthProvisionHandler):
+    def begin(self, context: ProvisionAuthContext) -> dict[str, object]:
+        payload = super().begin(context)
+        payload["auth_type"] = "tesla_sso"
+        payload["message"] = "Authorize Tesla SSO and return to chat to finish setup."
+        return payload
+
+
 def get_auth_handler(auth_type: str) -> AuthHandler:
     key = str(auth_type or "oauth2").strip().lower()
+    if key in {"oauth2_consolidated"}:
+        return OAuthConsolidatedHandler()
+    if key in {"plaid_link"}:
+        return PlaidLinkProvisionHandler()
+    if key in {"tesla_sso"}:
+        return TeslaSSOProvisionHandler()
     if key in {"api_key", "apikey"}:
         return ApiKeyProvisionHandler()
     if key in {"pre_provisioned", "none", "internal"}:

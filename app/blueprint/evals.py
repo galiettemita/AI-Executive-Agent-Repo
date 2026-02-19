@@ -41,6 +41,45 @@ def default_golden_scenarios() -> list[GoldenScenario]:
                 personalization_anchor=anchor,
             )
         )
+    scenarios.extend(
+        [
+            GoldenScenario(
+                scenario_id="GT-101",
+                prompt="Book me a flight to NYC tomorrow morning.",
+                expected_tier=3,
+                expected_action_type="transactional",
+                personalization_anchor="travel",
+            ),
+            GoldenScenario(
+                scenario_id="GT-102",
+                prompt="Not now on connecting flight tools. Give me an alternative.",
+                expected_tier=2,
+                expected_action_type="informational",
+                personalization_anchor="workflow",
+            ),
+            GoldenScenario(
+                scenario_id="GT-103",
+                prompt="I authorized Google. Continue what you were doing.",
+                expected_tier=2,
+                expected_action_type="transactional",
+                personalization_anchor="calendar",
+            ),
+            GoldenScenario(
+                scenario_id="GT-104",
+                prompt="My auth link expired. Send a fresh one.",
+                expected_tier=2,
+                expected_action_type="informational",
+                personalization_anchor="workflow",
+            ),
+            GoldenScenario(
+                scenario_id="GT-105",
+                prompt="Connect Plaid and summarize last week's spend safely.",
+                expected_tier=3,
+                expected_action_type="transactional",
+                personalization_anchor="finance",
+            ),
+        ]
+    )
     return scenarios
 
 

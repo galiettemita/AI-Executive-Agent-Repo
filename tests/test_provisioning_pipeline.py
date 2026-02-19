@@ -41,6 +41,16 @@ def test_provisioning_pipeline_transitions_and_invalid_transition():
         db.close()
 
 
+def test_provisioning_pipeline_seeds_catalog_defaults():
+    db = SessionLocal()
+    try:
+        _ = ProvisioningPipeline(db)
+        count = int(db.execute(text("select count(1) from server_catalog")).scalar() or 0)
+        assert count >= 1
+    finally:
+        db.close()
+
+
 def test_provisioning_pipeline_dedup_and_expiration():
     db = SessionLocal()
     try:

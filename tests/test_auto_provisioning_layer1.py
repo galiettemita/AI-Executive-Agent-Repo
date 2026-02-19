@@ -41,6 +41,56 @@ def test_provision_server_stub_handler_returns_awaiting_auth(monkeypatch):
     assert payload.get("server_id") == "duffel-mcp"
 
 
+def test_provision_server_dedups_same_active_request(monkeypatch):
+    monkeypatch.setattr(hands.settings, "FEATURE_PRIVILEGE_ISOLATION", False)
+
+    first = asyncio.run(
+        hands.execute(
+            ToolCall(
+                tool_name="provision_server",
+                arguments={"server_id": "duffel-mcp", "reason": "Need flight booking capability"},
+                user_id="layer1-dedup-user",
+                run_id="run-layer1-a",
+            )
+        )
+    )
+    second = asyncio.run(
+        hands.execute(
+            ToolCall(
+                tool_name="provision_server",
+                arguments={"server_id": "duffel-mcp", "reason": "Need flight booking capability"},
+                user_id="layer1-dedup-user",
+                run_id="run-layer1-b",
+            )
+        )
+    )
+
+    assert first.ok is True
+    assert second.ok is True
+    payload_1 = first.result or {}
+    payload_2 = second.result or {}
+    assert payload_1.get("request_id")
+    assert payload_1.get("request_id") == payload_2.get("request_id")
+
+
+def test_provision_server_enforces_plan_gating(monkeypatch):
+    monkeypatch.setattr(hands.settings, "FEATURE_PRIVILEGE_ISOLATION", False)
+    result = asyncio.run(
+        hands.execute(
+            ToolCall(
+                tool_name="provision_server",
+                arguments={"server_id": "plaid-mcp", "reason": "Need bank transactions"},
+                user_id="layer1-free-user",
+                run_id="run-layer1-plan",
+            )
+        )
+    )
+    assert result.ok is False
+    error_text = str(result.error or "")
+    assert "not available on this account or plan" in error_text
+    assert "Upgrade path:" in error_text
+
+
 class _CapabilityGapRouter:
     def __init__(self) -> None:
         self.calls = 0

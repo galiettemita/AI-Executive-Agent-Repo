@@ -85,6 +85,69 @@ def _table_exists(db: Session, table_name: str) -> bool:
         return False
 
 
+def _seed_server_catalog_if_empty(db: Session) -> None:
+    if not _table_exists(db, "server_catalog"):
+        return
+    count = int(db.execute(text("select count(1) from server_catalog")).scalar() or 0)
+    if count > 0:
+        return
+    seed_entries = available_servers_for_user(db, user_id=None, connected_server_ids=set())
+    if not seed_entries:
+        return
+    dialect = db.bind.dialect.name if db.bind is not None else ""
+    for entry in seed_entries:
+        payload = {
+            "server_id": str(entry.get("server_id") or ""),
+            "display_name": str(entry.get("display_name") or entry.get("server_id") or ""),
+            "description": str(entry.get("description") or ""),
+            "auth_type": str(entry.get("auth_type") or "oauth2"),
+            "min_plan": str(entry.get("min_plan") or "free"),
+            "setup_seconds": int(entry.get("setup_seconds") or 30),
+            "capabilities": json.dumps(list(entry.get("capabilities") or []), ensure_ascii=False),
+            "keywords": json.dumps(list(entry.get("keywords") or []), ensure_ascii=False),
+            "status": "active",
+        }
+        if not payload["server_id"]:
+            continue
+        if dialect == "sqlite":
+            db.execute(
+                text(
+                    """
+                    insert or replace into server_catalog (
+                      server_id, display_name, description, auth_type, min_plan, setup_seconds, capabilities, keywords, status
+                    ) values (
+                      :server_id, :display_name, :description, :auth_type, :min_plan, :setup_seconds, :capabilities, :keywords, :status
+                    )
+                    """
+                ),
+                payload,
+            )
+        else:
+            db.execute(
+                text(
+                    """
+                    insert into server_catalog (
+                      server_id, display_name, description, auth_type, min_plan, setup_seconds, capabilities, keywords, status
+                    ) values (
+                      :server_id, :display_name, :description, :auth_type, :min_plan, :setup_seconds,
+                      cast(:capabilities as jsonb), cast(:keywords as jsonb), :status
+                    )
+                    on conflict (server_id) do update
+                    set display_name = excluded.display_name,
+                        description = excluded.description,
+                        auth_type = excluded.auth_type,
+                        min_plan = excluded.min_plan,
+                        setup_seconds = excluded.setup_seconds,
+                        capabilities = excluded.capabilities,
+                        keywords = excluded.keywords,
+                        status = excluded.status,
+                        updated_at = now()
+                    """
+                ),
+                payload,
+            )
+
+
 def ensure_provisioning_tables(db: Session) -> None:
     global _TABLE_READY
     if _TABLE_READY and _table_exists(db, "provisioning_requests") and _table_exists(db, "server_catalog"):
@@ -222,6 +285,7 @@ def ensure_provisioning_tables(db: Session) -> None:
         db.execute(text("create index if not exists idx_provisioning_requests_user_state on provisioning_requests(user_id, state, updated_at)"))
         db.execute(text("create index if not exists idx_provisioning_requests_server_state on provisioning_requests(server_id, state, updated_at)"))
         db.execute(text("create index if not exists idx_provisioning_declined_user_server on provisioning_declined(user_id, server_id, declined_at)"))
+        _seed_server_catalog_if_empty(db)
         db.commit()
         _TABLE_READY = True
 

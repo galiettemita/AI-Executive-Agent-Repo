@@ -400,6 +400,7 @@ async def execute(call: ToolCall) -> ToolResult:
                 raise RuntimeError("Provisioning rate limit reached (max 5 requests/hour)")
 
             pipeline = ProvisioningPipeline(db)
+            _ = pipeline.expire_timeouts()
             active_count = int(
                 db.execute(
                     text(
@@ -419,11 +420,19 @@ async def execute(call: ToolCall) -> ToolResult:
             available = available_servers_for_user(db, user_id=call.user_id, connected_server_ids=set())
             matched = next((item for item in available if str(item.get("server_id") or "").strip().lower() == server_id), None)
             if not matched:
+                upgrade_url = (
+                    f"{settings.APP_BASE_URL.rstrip('/')}/api/v1/billing/checkout?user_id={call.user_id}&plan=professional"
+                    if settings.APP_BASE_URL
+                    else ""
+                )
                 result = ToolResult(
                     tool_name=tool,
                     tool=tool,
                     ok=False,
-                    error=f"{server_id} is not available on this account or plan",
+                    error=(
+                        f"{server_id} is not available on this account or plan. "
+                        f"{('Upgrade path: ' + upgrade_url) if upgrade_url else ''}"
+                    ).strip(),
                 )
                 status_provision = "failed"
                 error_payload_provision = {"type": "catalog_not_available", "message": str(result.error or "")}
