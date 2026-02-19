@@ -362,6 +362,36 @@ def _transaction_operation_for_call(*, tool_name: str, args: dict, mcp_server_id
     return None
 
 
+def _requires_explicit_transaction_approval(*, tool_name: str, operation: str) -> bool:
+    op = str(operation or "").strip().lower()
+    if op not in {"booking", "checkout"}:
+        return False
+    lowered_tool = str(tool_name or "").strip().lower()
+    write_markers = (
+        "create",
+        "book",
+        "order",
+        "checkout",
+        "purchase",
+        "charge",
+        "pay",
+        "confirm",
+        "cancel",
+        "update",
+        "delete",
+        "submit",
+    )
+    return any(marker in lowered_tool for marker in write_markers)
+
+
+def _has_explicit_transaction_approval(args: dict[str, object]) -> bool:
+    approved = args.get("approval_confirmed")
+    if isinstance(approved, bool) and approved:
+        return True
+    token = str(args.get("approval_token") or "").strip()
+    return bool(token)
+
+
 @router.post("/execute", response_model=ToolResult)
 async def execute(call: ToolCall) -> ToolResult:
     """
@@ -450,6 +480,12 @@ async def execute(call: ToolCall) -> ToolResult:
                     mcp_server_id=spec.mcp_server_id,
                 )
                 if operation:
+                    if _requires_explicit_transaction_approval(tool_name=tool, operation=operation):
+                        if not _has_explicit_transaction_approval(args if isinstance(args, dict) else {}):
+                            raise RuntimeError(
+                                "This financial/booking write action requires explicit approval. "
+                                "Re-run with approval_confirmed=true after user confirmation."
+                            )
                     decision = enforce_transaction_operation_rate_limit(call.user_id, operation=operation)
                     if not decision.allowed:
                         retry_after = (

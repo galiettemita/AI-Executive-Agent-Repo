@@ -7,7 +7,7 @@ import pytest
 from app.api.internal.hands import _assert_native_tool, execute as hands_execute
 from app.api.internal import hands
 from app.blueprint.context_compiler import compile_tool_schemas
-from app.blueprint.contracts import ContentProvenance, RiskLevel, ToolCall, ToolSpec
+from app.blueprint.contracts import ContentProvenance, RiskLevel, ToolCall, ToolResult, ToolSpec
 from app.blueprint.security import PrivilegeViolation, validate_tool_privilege
 from app.blueprint.tools import get_tool_registry
 from app.core.config import settings
@@ -150,8 +150,8 @@ def test_wave56_checkout_rate_limit_blocks_before_mcp_call(monkeypatch) -> None:
     call = ToolCall(
         tool_name="mcp.wave6.instacart.checkout",
         tool="mcp_wave6_instacart_checkout",
-        arguments={"cart_id": "cart-1", "checkout": True},
-        args={"cart_id": "cart-1", "checkout": True},
+        arguments={"cart_id": "cart-1", "checkout": True, "approval_confirmed": True},
+        args={"cart_id": "cart-1", "checkout": True, "approval_confirmed": True},
         user_id="wave56-pro-user",
         run_id="run-wave56-checkout-rate",
         input_provenance=ContentProvenance.USER_DIRECT,
@@ -200,8 +200,8 @@ def test_wave56_checkout_abuse_detection_blocks_before_mcp_call(monkeypatch) -> 
     call = ToolCall(
         tool_name="mcp.wave6.instacart.checkout.safe",
         tool="mcp_wave6_instacart_checkout_safe",
-        arguments={"cart_id": "cart-2", "checkout": True},
-        args={"cart_id": "cart-2", "checkout": True},
+        arguments={"cart_id": "cart-2", "checkout": True, "approval_confirmed": True},
+        args={"cart_id": "cart-2", "checkout": True, "approval_confirmed": True},
         user_id="wave56-pro-user-2",
         run_id="run-wave56-checkout-abuse",
         input_provenance=ContentProvenance.USER_DIRECT,
@@ -209,3 +209,87 @@ def test_wave56_checkout_abuse_detection_blocks_before_mcp_call(monkeypatch) -> 
     result = asyncio.run(hands_execute(call))
     assert result.ok is False
     assert "blocked this operation for safety" in str(result.error).lower()
+
+
+def test_wave56_checkout_requires_explicit_approval(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "FEATURE_MCP_CLIENT", True)
+    spec = ToolSpec(
+        name="mcp.wave6.instacart.checkout.confirm",
+        description="Wave 6 checkout confirmation tool.",
+        input_schema={"type": "object", "properties": {"cart_id": {"type": "string"}}},
+        output_schema={"type": "object"},
+        risk_level=RiskLevel.HIGH,
+        is_mcp=True,
+        mcp_server_id="instacart-mcp",
+    )
+    get_tool_registry().register(spec, min_tier=2, tags=["test"], llm_name="mcp_wave6_instacart_checkout_confirm")
+    _upsert_subscription(user_id="wave56-pro-user-3", plan="professional")
+
+    monkeypatch.setattr(
+        hands,
+        "invoke_mcp_tool",
+        lambda *args, **kwargs: pytest.fail("invoke_mcp_tool should not run without explicit approval"),
+    )
+
+    call = ToolCall(
+        tool_name="mcp.wave6.instacart.checkout.confirm",
+        tool="mcp_wave6_instacart_checkout_confirm",
+        arguments={"cart_id": "cart-3", "checkout": True},
+        args={"cart_id": "cart-3", "checkout": True},
+        user_id="wave56-pro-user-3",
+        run_id="run-wave56-checkout-approval",
+        input_provenance=ContentProvenance.USER_DIRECT,
+    )
+    result = asyncio.run(hands_execute(call))
+    assert result.ok is False
+    assert "requires explicit approval" in str(result.error).lower()
+
+
+def test_mcp_invocation_records_tool_execution_with_server_binding(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "FEATURE_MCP_CLIENT", True)
+    spec = ToolSpec(
+        name="mcp.wave5.flight.read",
+        description="Wave 5 read-only flight lookup.",
+        input_schema={"type": "object", "properties": {"query": {"type": "string"}}},
+        output_schema={"type": "object"},
+        risk_level=RiskLevel.LOW,
+        is_mcp=True,
+        mcp_server_id="duffel-mcp",
+    )
+    get_tool_registry().register(spec, min_tier=2, tags=["test"], llm_name="mcp_wave5_flight_read")
+    _upsert_subscription(user_id="wave56-log-user", plan="professional")
+
+    async def _fake_invoke(db, *, spec_server_id: str, call: ToolCall):  # pragma: no cover - executed by hands
+        return ToolResult(
+            tool_name=call.tool_name,
+            tool=call.tool,
+            ok=True,
+            result={"ok": True, "server_id": spec_server_id},
+            output={"ok": True, "server_id": spec_server_id},
+        )
+
+    monkeypatch.setattr(hands, "invoke_mcp_tool", _fake_invoke)
+    captured: dict[str, object] = {}
+
+    def _fake_insert_tool_execution(db, **kwargs):  # pragma: no cover - called by hands
+        captured.update(kwargs)
+        return "tool-exec-1"
+
+    monkeypatch.setattr(hands, "insert_tool_execution", _fake_insert_tool_execution)
+
+    call = ToolCall(
+        tool_name="mcp.wave5.flight.read",
+        tool="mcp_wave5_flight_read",
+        arguments={"query": "SFO to JFK"},
+        args={"query": "SFO to JFK"},
+        user_id="wave56-log-user",
+        run_id="run-wave56-log",
+        input_provenance=ContentProvenance.USER_DIRECT,
+    )
+    result = asyncio.run(hands_execute(call))
+    assert result.ok is True
+    assert captured
+    input_payload = captured.get("input_payload")
+    assert isinstance(input_payload, dict)
+    assert bool(input_payload.get("is_mcp")) is True
+    assert str(input_payload.get("mcp_server_id") or "") == "duffel-mcp"
