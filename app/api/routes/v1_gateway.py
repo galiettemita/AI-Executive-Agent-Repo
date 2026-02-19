@@ -17,7 +17,7 @@ from app.blueprint.capability_tokens import issue_capability_token
 from app.blueprint.brain.responder import generate_reply
 from app.blueprint.brain.tier_router import route_tier
 from app.blueprint.db import is_uuid, insert_message, record_side_effect
-from app.blueprint.contracts import Channel, ContentProvenance, InboundMessage, InputModality, MessageDirection, OutboundMessage
+from app.blueprint.contracts import Channel, ContentProvenance, InboundMessage, InputModality, MessageDirection, OutboundMessage, ProvisioningState
 from app.blueprint.knowledge_files import get_latest_knowledge_file
 from app.blueprint.memory_engine import record_memory_dual_path
 from app.blueprint.multimodal import preprocess_inbound_message, transcribe_audio_url
@@ -42,6 +42,7 @@ from app.services.content_safety import (
 )
 from app.services.analytics import emit_event_async
 from app.services.quality_eval import enqueue_live_quality_eval
+from app.services.provisioning_pipeline import ProvisioningPipeline, record_declined
 from app.services.preferences import get_preferences, update_preferences
 from app.services.slack_connector import slack_send_message
 
@@ -268,6 +269,21 @@ def _notification_preference_command(text_value: str) -> tuple[dict[str, Any], s
             "Done. Proactive messages are enabled again.",
         )
     return None
+
+
+def _is_provisioning_decline_command(text_value: str) -> bool:
+    text_norm = " ".join(str(text_value or "").strip().lower().split())
+    if not text_norm:
+        return False
+    phrases = (
+        "not now",
+        "maybe later",
+        "no thanks",
+        "don't connect",
+        "dont connect",
+        "skip for now",
+    )
+    return any(phrase in text_norm for phrase in phrases)
 
 
 def _update_conversation_channel_state(*, conversation_id: str, channel: Channel) -> None:
@@ -647,6 +663,146 @@ def _process_message_run(run_id: str, inbound: InboundMessage) -> None:
 
         append_progress(run_id, step="preprocess", status="running")
         processed = preprocess_inbound_message(inbound)
+
+        if inbound.user_id and _is_provisioning_decline_command(processed.normalized_text):
+            decline_reply = ""
+            decline_meta: dict[str, Any] | None = None
+            db = SessionLocal()
+            try:
+                pipeline = ProvisioningPipeline(db)
+                row = db.execute(
+                    text(
+                        """
+                        select id, server_id, state
+                        from provisioning_requests
+                        where user_id = :user_id
+                          and state in ('initiated', 'awaiting_auth', 'auth_received', 'provisioning')
+                        order by updated_at desc, created_at desc
+                        limit 1
+                        """
+                    ),
+                    {"user_id": inbound.user_id},
+                ).mappings().first()
+                if row:
+                    request_id = str((row or {}).get("id") or "").strip()
+                    server_id = str((row or {}).get("server_id") or "").strip()
+                    if request_id and server_id:
+                        _ = record_declined(db, user_id=inbound.user_id, server_id=server_id, reason="not_now")
+                        try:
+                            pipeline.transition(
+                                request_id=request_id,
+                                new_state=ProvisioningState.CANCELED,
+                                note="user_declined_not_now",
+                            )
+                        except Exception:
+                            pass
+                        decline_reply = (
+                            f"No problem. I won’t suggest {server_id} again for 7 days. "
+                            "I can still help with a manual alternative right now."
+                        )
+                        decline_meta = {
+                            "intent": "provisioning_declined",
+                            "request_id": request_id,
+                            "server_id": server_id,
+                            "cooldown_days": 7,
+                        }
+            except Exception:
+                logger.warning("Failed to apply provisioning decline cooldown", exc_info=True)
+            finally:
+                try:
+                    db.close()
+                except Exception:
+                    pass
+
+            if decline_meta:
+                emit_event_async(
+                    event_name="message_received",
+                    user_id=inbound.user_id,
+                    source="gateway_v1",
+                    payload={
+                        "run_id": run_id,
+                        "channel": inbound.channel.value,
+                        "conversation_id": inbound.conversation_id,
+                        "intent": "provisioning_declined",
+                    },
+                )
+                target_channel = _get_active_channel(participant_key=participant_key, fallback=inbound.channel)
+                target_identifier = _resolve_channel_identifier_for_user(
+                    user_id=inbound.user_id,
+                    channel=target_channel,
+                    fallback=inbound.channel_identifier,
+                )
+                formatted_decline_reply = _format_response_for_channel(channel=target_channel, text_value=decline_reply)
+
+                if target_channel == Channel.WHATSAPP and target_identifier:
+                    send_whatsapp_adapted(to_phone_e164=target_identifier, text=formatted_decline_reply)
+                elif target_channel == Channel.SLACK and target_identifier and inbound.user_id:
+                    try:
+                        db = SessionLocal()
+                        try:
+                            slack_send_message(
+                                db=db,
+                                user_id=inbound.user_id,
+                                channel_id=target_identifier,
+                                text_body=formatted_decline_reply,
+                            )
+                        finally:
+                            db.close()
+                    except Exception:
+                        logger.warning("Slack decline reply failed run_id=%s", run_id, exc_info=True)
+
+                _persist_v1_message(
+                    user_id=inbound.user_id,
+                    conversation_id=inbound.conversation_id,
+                    run_id=run_id,
+                    direction=MessageDirection.INBOUND,
+                    channel=inbound.channel,
+                    text=processed.normalized_text,
+                    input_modality=inbound.input_modality,
+                    media_url=inbound.media_url,
+                    transcription_confidence=processed.transcription_confidence,
+                    extracted_entities=processed.extracted_entities,
+                    content_provenance=processed.content_provenance if isinstance(processed.content_provenance, ContentProvenance) else ContentProvenance.USER_DIRECT,
+                    emotion_detected=processed.emotion_detected.value,
+                    channel_msg_id=inbound.channel_msg_id,
+                    intent="provisioning_declined",
+                    tier=0,
+                )
+                _persist_v1_message(
+                    user_id=inbound.user_id,
+                    conversation_id=inbound.conversation_id,
+                    run_id=run_id,
+                    direction=MessageDirection.OUTBOUND,
+                    channel=target_channel,
+                    text=formatted_decline_reply,
+                    input_modality=InputModality.TEXT,
+                    content_provenance=ContentProvenance.USER_DIRECT,
+                    emotion_detected=str(processed.emotion_detected.value or "neutral"),
+                    channel_msg_id=inbound.channel_msg_id,
+                    intent="provisioning_declined",
+                    tier=0,
+                    latency_ms=int((time.perf_counter() - started) * 1000),
+                )
+                emit_event_async(
+                    event_name="provisioning_declined",
+                    user_id=inbound.user_id,
+                    source="gateway_v1",
+                    payload={
+                        "run_id": run_id,
+                        "channel": target_channel.value,
+                        "conversation_id": inbound.conversation_id,
+                        "server_id": str(decline_meta.get("server_id") or ""),
+                    },
+                )
+                payload = {
+                    "ok": True,
+                    "run_id": run_id,
+                    "reply": formatted_decline_reply,
+                    "metadata": decline_meta,
+                }
+                set_run_result(run_id, payload)
+                append_progress(run_id, step="done", status="completed", partial_result=payload, metadata=payload.get("metadata"))
+                return
 
         pref_cmd = _notification_preference_command(processed.normalized_text)
         if pref_cmd:

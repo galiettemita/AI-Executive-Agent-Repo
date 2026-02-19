@@ -84,6 +84,35 @@ def test_provisioning_pipeline_dedup_and_expiration():
         db.close()
 
 
+def test_provisioning_pipeline_failure_then_retry_transition():
+    db = SessionLocal()
+    try:
+        pipeline = ProvisioningPipeline(db)
+        req = pipeline.begin(
+            user_id="prov-user-retry",
+            server_id="google-drive-mcp",
+            reason="Need drive access",
+        )
+        req = pipeline.transition(request_id=req.id, new_state=ProvisioningState.AWAITING_AUTH, note="auth_link_sent")
+        req = pipeline.transition(request_id=req.id, new_state=ProvisioningState.AUTH_RECEIVED, note="auth_ok")
+        req = pipeline.transition(request_id=req.id, new_state=ProvisioningState.PROVISIONING, note="activation_start")
+        req = pipeline.transition(
+            request_id=req.id,
+            new_state=ProvisioningState.FAILED,
+            note="activation_failed",
+            error_message="mock failure",
+        )
+        retried = pipeline.transition(
+            request_id=req.id,
+            new_state=ProvisioningState.PROVISIONING,
+            note="retry_activation",
+        )
+        assert retried.state == ProvisioningState.PROVISIONING
+        assert int(retried.retry_count or 0) >= 1
+    finally:
+        db.close()
+
+
 def test_catalog_search_plan_gating_and_decline_cooldown():
     db = SessionLocal()
     try:

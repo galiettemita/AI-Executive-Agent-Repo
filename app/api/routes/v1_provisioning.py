@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_db
 from app.blueprint.contracts import ProvisioningState
 from app.services.provisioning_activator import activate_server
+from app.services.analytics import emit_event_async
 from app.services.provisioning_pipeline import ProvisioningPipeline, get_request
 from app.services.provisioning_sessions import delete_provisioning_session, get_provisioning_session
 from app.services.url_shortener import resolve_short_url
@@ -48,6 +49,12 @@ async def provision_callback(
         return RedirectResponse(url="/api/v1/provision/expired?reason=request_missing", status_code=302)
 
     if request_row.state in {ProvisioningState.EXPIRED, ProvisioningState.CANCELED}:
+        emit_event_async(
+            event_name="provisioning_expired",
+            user_id=user_id,
+            source="provision_callback",
+            payload={"request_id": request_id, "server_id": server_id, "state": request_row.state.value},
+        )
         delete_provisioning_session(state)
         return RedirectResponse(url="/api/v1/provision/expired?reason=request_closed", status_code=302)
 
@@ -71,6 +78,12 @@ async def provision_callback(
             new_state=ProvisioningState.ACTIVE,
             note="activation_complete",
         )
+        emit_event_async(
+            event_name="server_provisioned",
+            user_id=user_id,
+            source="provision_callback",
+            payload={"request_id": request_id, "server_id": server_id},
+        )
         delete_provisioning_session(state)
         original_task_id = str(session.get("original_task_id") or "").strip()
         missing_task = "1" if not original_task_id else "0"
@@ -84,6 +97,16 @@ async def provision_callback(
         new_state=ProvisioningState.FAILED,
         note="activation_failed",
         error_message=str(activation.get("error") or "activation_failed"),
+    )
+    emit_event_async(
+        event_name="provisioning_failed",
+        user_id=user_id,
+        source="provision_callback",
+        payload={
+            "request_id": request_id,
+            "server_id": server_id,
+            "error": str(activation.get("error") or "activation_failed"),
+        },
     )
     delete_provisioning_session(state)
     return RedirectResponse(url="/api/v1/provision/expired?reason=activation_failed", status_code=302)

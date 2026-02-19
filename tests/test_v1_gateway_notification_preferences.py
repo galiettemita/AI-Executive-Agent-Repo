@@ -18,3 +18,9 @@ def test_notification_preference_command_pause_proactive():
     assert patch.get("proactive_notifications_enabled") is False
     assert patch.get("proactive_disabled") is True
     assert "pause proactive messages" in reply.lower()
+
+
+def test_provisioning_decline_command_detection():
+    assert v1_gateway._is_provisioning_decline_command("not now")
+    assert v1_gateway._is_provisioning_decline_command("maybe later, skip for now")
+    assert not v1_gateway._is_provisioning_decline_command("yes connect it")

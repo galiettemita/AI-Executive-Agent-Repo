@@ -11,10 +11,13 @@ from app.blueprint.contracts import (
     InputModality,
     OutboundMessage,
     ProcessedMessage,
+    ProvisioningState,
 )
 from app.blueprint.progress import get_run_result
 from app.services.billing_middleware import BillingDecision
 from app.services.content_safety import RateLimitDecision
+from app.db.database import SessionLocal
+from app.services.provisioning_pipeline import ProvisioningPipeline
 
 
 def _mk_inbound(*, channel: Channel = Channel.WEB) -> InboundMessage:
@@ -117,3 +120,65 @@ def test_gateway_blocks_when_safety_circuit_rate_limited(monkeypatch) -> None:
     assert result is not None
     assert result.get("blocked") is True
     assert result.get("reason") == "safety_circuit_rate_limited"
+
+
+def test_gateway_handles_provisioning_decline_with_cooldown(monkeypatch) -> None:
+    run_id = f"decline-{uuid.uuid4()}"
+    inbound = _mk_inbound()
+    inbound.user_id = "prov-decline-user"
+    inbound.content = "not now"
+
+    db = SessionLocal()
+    try:
+        pipeline = ProvisioningPipeline(db)
+        req = pipeline.begin(
+            user_id=inbound.user_id,
+            server_id="duffel-mcp",
+            reason="Need flights",
+        )
+        _ = pipeline.transition(
+            request_id=req.id,
+            new_state=ProvisioningState.AWAITING_AUTH,
+            note="auth_link_sent",
+        )
+    finally:
+        db.close()
+
+    monkeypatch.setattr(
+        v1_gateway,
+        "enforce_billing_for_inbound_message",
+        lambda db, user_id: BillingDecision(allowed=True, plan="free_trial", status="trialing"),
+    )
+    monkeypatch.setattr(
+        v1_gateway,
+        "enforce_gateway_burst_limit",
+        lambda user_id, limit_per_minute=10: RateLimitDecision(allowed=True),
+    )
+    monkeypatch.setattr(
+        v1_gateway,
+        "enforce_safety_circuit_rate_limit",
+        lambda user_id: RateLimitDecision(allowed=True),
+    )
+    monkeypatch.setattr(
+        v1_gateway,
+        "preprocess_inbound_message",
+        lambda msg: ProcessedMessage(
+            original=msg,
+            normalized_text="not now",
+            modality=InputModality.TEXT,
+            transcription_confidence=None,
+            extracted_entities={},
+            emotion_detected=EmotionState.NEUTRAL,
+            content_provenance=ContentProvenance.USER_DIRECT,
+        ),
+    )
+    monkeypatch.setattr(v1_gateway, "_persist_v1_message", lambda **kwargs: None)
+    monkeypatch.setattr(v1_gateway, "_get_active_channel", lambda **kwargs: Channel.WEB)
+
+    v1_gateway._process_message_run(run_id, inbound)
+    result = get_run_result(run_id)
+    assert result is not None
+    assert result.get("ok") is True
+    meta = result.get("metadata") or {}
+    assert meta.get("intent") == "provisioning_declined"
+    assert meta.get("server_id") == "duffel-mcp"

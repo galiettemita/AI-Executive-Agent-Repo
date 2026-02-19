@@ -49,6 +49,7 @@ _ALLOWED_TRANSITIONS: dict[ProvisioningState, set[ProvisioningState]] = {
         ProvisioningState.ACTIVE,
         ProvisioningState.FAILED,
         ProvisioningState.EXPIRED,
+        ProvisioningState.CANCELED,
     },
     ProvisioningState.FAILED: {
         ProvisioningState.PROVISIONING,

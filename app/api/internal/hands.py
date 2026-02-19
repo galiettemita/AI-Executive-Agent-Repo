@@ -54,6 +54,7 @@ from app.services.plaid_connector import (
     list_accounts as plaid_list_accounts,
     list_transactions as plaid_list_transactions,
 )
+from app.services.analytics import emit_event_async
 from app.services.provisioning_catalog import available_servers_for_user
 from app.services.provisioning_handlers import ProvisionAuthContext, get_auth_handler
 from app.services.provisioning_pipeline import ProvisioningPipeline
@@ -482,11 +483,39 @@ async def execute(call: ToolCall) -> ToolResult:
                     **auth_payload,
                 }
                 result = ToolResult(tool_name=tool, tool=tool, ok=True, result=output_payload_provision)
+                emit_event_async(
+                    event_name="provisioning_requested",
+                    user_id=call.user_id,
+                    source="hands_provision",
+                    payload={
+                        "request_id": request_record.id,
+                        "server_id": server_id,
+                        "state": request_record.state.value,
+                        "auth_type": auth_type.value,
+                    },
+                )
+                if request_record.state == ProvisioningState.AWAITING_AUTH:
+                    emit_event_async(
+                        event_name="awaiting_auth",
+                        user_id=call.user_id,
+                        source="hands_provision",
+                        payload={
+                            "request_id": request_record.id,
+                            "server_id": server_id,
+                        },
+                    )
         except Exception as exc:
             result = ToolResult(tool_name=tool, tool=tool, ok=False, error=str(exc))
             status_provision = "failed"
             output_payload_provision = None
             error_payload_provision = {"type": exc.__class__.__name__, "message": str(exc)}
+            if call.user_id:
+                emit_event_async(
+                    event_name="provisioning_failed",
+                    user_id=call.user_id,
+                    source="hands_provision",
+                    payload={"server_id": server_id, "error": str(exc)},
+                )
         finally:
             try:
                 db.close()
