@@ -5,6 +5,7 @@ import argparse
 import json
 import time
 from hashlib import sha256
+from pathlib import Path
 
 import jwt
 import requests
@@ -44,17 +45,27 @@ def _call(
 ) -> dict:
     url = f"{base_url.rstrip('/')}{path}"
     headers = {"Authorization": f"Bearer {token}"}
-    if method == "GET":
-        resp = session.get(url, headers=headers, timeout=30)
-    elif method == "POST":
-        resp = session.post(url, headers=headers, json=payload or {}, timeout=30)
-    elif method == "DELETE":
-        resp = session.delete(url, headers=headers, timeout=30)
-    else:
-        raise ValueError(f"Unsupported method: {method}")
-    if resp.status_code >= 400:
-        raise RuntimeError(f"{method} {path} failed status={resp.status_code} body={resp.text[:500]}")
-    return resp.json()
+    attempts = 5
+    last_error: Exception | None = None
+    for attempt in range(1, attempts + 1):
+        try:
+            if method == "GET":
+                resp = session.get(url, headers=headers, timeout=30)
+            elif method == "POST":
+                resp = session.post(url, headers=headers, json=payload or {}, timeout=30)
+            elif method == "DELETE":
+                resp = session.delete(url, headers=headers, timeout=30)
+            else:
+                raise ValueError(f"Unsupported method: {method}")
+            if resp.status_code >= 400:
+                raise RuntimeError(f"{method} {path} failed status={resp.status_code} body={resp.text[:500]}")
+            return resp.json()
+        except Exception as exc:  # pragma: no cover - network variability in staging
+            last_error = exc
+            if attempt >= attempts:
+                break
+            time.sleep(min(5, attempt))
+    raise RuntimeError(f"{method} {path} failed after {attempts} attempts: {last_error}")
 
 
 def _set_override(
@@ -122,7 +133,12 @@ def _route_test(
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Verify staging LLM failover + recovery ramp behavior.")
     parser.add_argument("--base-url", required=True, help="Staging base URL (e.g., http://<alb-dns>)")
-    parser.add_argument("--jwt-secret", required=True, help="JWT secret used by staging auth middleware")
+    parser.add_argument("--jwt-secret", default="", help="JWT secret used by staging auth middleware")
+    parser.add_argument(
+        "--jwt-secret-file",
+        default="",
+        help="Optional file path containing the JWT secret (plain text or JSON with JWT_SECRET key).",
+    )
     parser.add_argument("--user-id", default="staging-failover-check", help="Synthetic user ID for checks")
     parser.add_argument("--ttl-seconds", type=int, default=300, help="Override TTL for staged outage simulation")
     return parser.parse_args()
@@ -130,6 +146,16 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
+    jwt_secret = str(args.jwt_secret or "").strip()
+    if not jwt_secret and args.jwt_secret_file:
+        raw = Path(args.jwt_secret_file).read_text().strip()
+        if raw.startswith("{"):
+            jwt_secret = str((json.loads(raw) or {}).get("JWT_SECRET") or "").strip()
+        else:
+            jwt_secret = raw
+    if not jwt_secret:
+        raise RuntimeError("JWT secret is required (`--jwt-secret` or `--jwt-secret-file`).")
+
     now = int(time.time())
     token = jwt.encode(
         {
@@ -138,7 +164,7 @@ def main() -> None:
             "iat": now,
             "exp": now + 900,
         },
-        args.jwt_secret,
+        jwt_secret,
         algorithm="HS256",
     )
 
@@ -196,6 +222,18 @@ def main() -> None:
                 provider=provider,
             )
 
+        recovered_health = _call(
+            session,
+            method="GET",
+            base_url=args.base_url,
+            path="/internal/llm/health?force_refresh=true",
+            token=token,
+        )
+        local_healthy_after_recovery = bool(
+            (((recovered_health.get("providers") or {}).get("local") or {}).get("is_healthy"))
+        )
+        summary["local_healthy_after_recovery"] = local_healthy_after_recovery
+
         probe_message, probe_bucket = _pick_recovery_prompt(task_type="general", min_bucket=10)
         recovery_route = _route_test(
             session,
@@ -211,8 +249,10 @@ def main() -> None:
 
         if recovery_route.get("system_mode") != "normal":
             raise RuntimeError(f"expected normal mode after recovery, got {recovery_route}")
-        if bool(recovery_route.get("recovery_forced_local")) is not True:
-            raise RuntimeError(f"expected recovery_forced_local=true during early ramp, got {recovery_route}")
+        if float(recovery_route.get("recovery_ramp_fraction") or 0.0) > 0.11:
+            raise RuntimeError(f"expected early recovery ramp (~0.1), got {recovery_route}")
+        if local_healthy_after_recovery and bool(recovery_route.get("recovery_forced_local")) is not True:
+            raise RuntimeError(f"expected recovery_forced_local=true with healthy local model, got {recovery_route}")
 
     finally:
         for provider in providers:

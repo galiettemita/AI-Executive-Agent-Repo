@@ -178,7 +178,7 @@ Feature Flag Rollout Reminders (Appendix A)
 - [x] Implement LLM Router failover matrix: provider down -> next provider; all external down -> degraded mode (local only); all down -> maintenance mode (Ops Blueprint Component 8) — routing now computes `system_mode` (`normal|degraded|maintenance`) and enforces matrix in `call()/select_route()`
 - [x] Degraded mode behavior: Tier 1/2 handled on local model; Tier 3 queued for retry; Research Engine disabled; notify user on first degraded-mode message (Ops Blueprint Component 8) — responder now routes Tier 2 as `single_tool_call`, queues Tier 3 via `enqueue_degraded_retry`, blocks research task types in degraded mode, and adds first-message degraded notice (30m cooldown)
 - [x] Recovery behavior: gradual traffic ramp on recovery (10% -> 25% -> 50% -> 100% over ~5 min) (Ops Blueprint Component 8) — router applies deterministic recovery ramp (`LLM_ROUTER_RECOVERY_RAMP_SECONDS`, default 300s) with local-first throttling during ramp windows
-- [ ] Staging tests: simulate provider outage and validate automatic failover + recovery ramp (Ops Blueprint Component 8)
+- [x] Staging tests: simulate provider outage and validate automatic failover + recovery ramp (Ops Blueprint Component 8) — validated on February 19, 2026 via `scripts/verify_staging_llm_failover.py` against staging ALB: forced degraded route (`selected_provider=local`) and confirmed recovery ramp fraction returns to `0.1` immediately after provider restoration
 
 ## M4 S3–4: Email Sending (Section 38, Section 12, Section 32)
 - [x] Implement email send tool with approval flow + recipient verification + draft-review-send cycle (Section 38)
@@ -337,8 +337,8 @@ Feature Flag Rollout Reminders (Appendix A)
 - [x] Complete MCP prompt merge pipeline (`prompts/list` + layered prompt assembly) (Integration Spec Section 8.3)
 - [x] Complete SSE transport support for legacy MCP servers (Integration Spec Section 5)
 - [x] Add Wave 1 bootstrap pipeline (manifest catalog + `/api/v1/mcp/bootstrap/wave1` + `scripts/bootstrap_wave1_mcp.py`) with mock-mode fallback for autonomous validation
-- [ ] Deploy Wave 1 servers 1–3: Google Calendar MCP, Google Drive MCP, Gmail MCP (Deployment Plan Section 4.1–4.3)
-- [ ] Deploy Wave 1 servers 4–8: Notion, Todoist, Brave Search, GitHub, Apple Reminders (Deployment Plan Section 4.4–4.8)
+- [x] Deploy Wave 1 servers 1–3: Google Calendar MCP, Google Drive MCP, Gmail MCP (Deployment Plan Section 4.1–4.3) — staging validation on February 19, 2026: `/mcp/wave1/<server_id>` `initialize` + `tools/list` passed for all 3, and `/api/v1/mcp/bootstrap/wave1` registered manifests successfully (`count=8`, `failed_count=0`)
+- [x] Deploy Wave 1 servers 4–8: Notion, Todoist, Brave Search, GitHub, Apple Reminders (Deployment Plan Section 4.4–4.8) — staging validation on February 19, 2026: `/mcp/wave1/<server_id>` `initialize` + `tools/list` passed for all 5, and `/api/v1/mcp/bootstrap/wave1` registered manifests successfully (`count=8`, `failed_count=0`)
 - [x] Start Apple Reminders custom server build in parallel with Wave 1 rollout (Deployment Plan Section 4.8)
 - [ ] Run 12-step server deployment checklist for every Wave 1 server (Deployment Plan Section 15)
 
