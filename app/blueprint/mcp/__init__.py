@@ -17,6 +17,8 @@ from app.blueprint.mcp.contracts import (
 from app.blueprint.mcp.hub import get_mcp_client_hub
 from app.blueprint.mcp.normalization import normalize_mcp_result, normalize_mcp_tool
 from app.blueprint.mcp.wave1_catalog import build_wave1_manifests, bootstrap_wave1_servers
+from app.blueprint.mcp.wave5_catalog import build_wave5_manifests, bootstrap_wave5_servers
+from app.blueprint.mcp.wave6_catalog import build_wave6_manifests, bootstrap_wave6_servers
 
 __all__ = [
     "MCPContentBlock",
@@ -38,4 +40,8 @@ __all__ = [
     "normalize_mcp_tool",
     "build_wave1_manifests",
     "bootstrap_wave1_servers",
+    "build_wave5_manifests",
+    "bootstrap_wave5_servers",
+    "build_wave6_manifests",
+    "bootstrap_wave6_servers",
 ]

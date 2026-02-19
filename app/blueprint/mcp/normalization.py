@@ -11,6 +11,8 @@ def classify_mcp_tool_risk(tool_name: str, annotations: dict[str, Any] | None = 
     ann = annotations or {}
     if bool(ann.get("critical")):
         return RiskLevel.CRITICAL
+    if "create_order" in name:
+        return RiskLevel.CRITICAL
     if any(k in name for k in ("delete", "remove", "revoke", "send", "pay", "book", "checkout", "create_order")):
         return RiskLevel.HIGH
     if any(k in name for k in ("create", "update", "write", "post", "publish")):

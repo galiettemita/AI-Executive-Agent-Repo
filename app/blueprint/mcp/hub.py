@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.blueprint.contracts import RiskLevel, ToolCall, ToolResult
@@ -507,6 +508,26 @@ class MCPClientHub:
                 llm_name=llm_name,
             )
 
+    @staticmethod
+    def _format_money(cents: float | int | None) -> str:
+        if cents is None:
+            return "n/a"
+        try:
+            value = float(cents)
+        except Exception:
+            return "n/a"
+        return f"${value / 100.0:.2f}"
+
+    @staticmethod
+    def _format_tool_list(names: list[str], limit: int = 8) -> str:
+        cleaned = sorted({str(name).strip() for name in names if str(name).strip()})
+        if not cleaned:
+            return "none"
+        if len(cleaned) <= limit:
+            return ", ".join(cleaned)
+        remaining = len(cleaned) - limit
+        return f"{', '.join(cleaned[:limit])} (+{remaining} more)"
+
     def _refresh_tools_knowledge_file(self, db: Session, *, user_id: str) -> None:
         try:
             servers = self._registry.list_servers(db, user_id=user_id)
@@ -514,9 +535,44 @@ class MCPClientHub:
             if not servers:
                 lines.append("- No MCP servers connected.")
             else:
+                budget_lookup: dict[str, dict[str, object]] = {}
+                try:
+                    for server in servers:
+                        row = db.execute(
+                            text(
+                                """
+                                select daily_budget_cents, total_cost_cents, health_status
+                                from mcp_servers where server_id = :server_id
+                                """
+                            ),
+                            {"server_id": server.server_id},
+                        ).mappings().first()
+                        if row:
+                            budget_lookup[server.server_id] = {
+                                "daily_budget_cents": row.get("daily_budget_cents"),
+                                "total_cost_cents": row.get("total_cost_cents"),
+                                "health_status": row.get("health_status"),
+                            }
+                except Exception:
+                    budget_lookup = {}
+
                 for server in servers:
+                    tool_names: list[str] = []
+                    try:
+                        detail = self._registry.get_server(db, server.server_id)
+                        tool_names = [tool.name for tool in detail.tools]
+                    except Exception:
+                        tool_names = []
+                    budget = budget_lookup.get(server.server_id, {})
+                    daily_budget = self._format_money(budget.get("daily_budget_cents") if budget else None)
+                    total_cost = self._format_money(budget.get("total_cost_cents") if budget else None)
+                    health_status = str(budget.get("health_status") or "unknown")
                     lines.append(
-                        f"- {server.display_name} ({server.server_id}) — state: {server.state}, tools: {server.tools_count}"
+                        f"- {server.display_name} ({server.server_id}) — "
+                        f"state: {server.state}, auth: connected, "
+                        f"tools: {self._format_tool_list(tool_names)}, "
+                        f"budget: {daily_budget}/day, usage_24h: {total_cost}, "
+                        f"health: {health_status}"
                     )
 
             connected_ids = {str(server.server_id) for server in servers if getattr(server, "server_id", None)}

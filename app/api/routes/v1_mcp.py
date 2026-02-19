@@ -12,6 +12,8 @@ from app.blueprint.mcp.registry import MCPServerRegistry
 from app.blueprint.contracts import ToolCall, ContentProvenance
 from app.blueprint.mcp.wave1_catalog import bootstrap_wave1_servers
 from app.blueprint.mcp.wave1_catalog import WAVE1_SPECS
+from app.blueprint.mcp.wave5_catalog import bootstrap_wave5_servers, WAVE5_SPECS
+from app.blueprint.mcp.wave6_catalog import bootstrap_wave6_servers, WAVE6_SPECS
 from app.core.config import settings
 from app.services.billing_middleware import count_connected_mcp_servers, get_billing_subscription
 
@@ -28,7 +30,7 @@ class MCPPromptBuildRequest(BaseModel):
     arguments: dict[str, object] = Field(default_factory=dict)
 
 
-class MCPWave1BootstrapRequest(BaseModel):
+class MCPWaveBootstrapRequest(BaseModel):
     transport_mode: str | None = None
     connect: bool = True
 
@@ -37,6 +39,32 @@ def _is_trial_plan(plan: str | None, status: str | None) -> bool:
     p = (plan or "").strip().lower()
     s = (status or "").strip().lower()
     return p in {"free_trial", "trial"} or s == "trialing"
+
+
+_PLAN_RANK = {
+    "free": 0,
+    "trial": 0,
+    "free_trial": 0,
+    "starter": 1,
+    "personal": 1,
+    "plus": 2,
+    "professional": 3,
+    "pro": 3,
+    "enterprise": 4,
+}
+
+
+def _plan_rank(value: str | None) -> int:
+    return _PLAN_RANK.get(str(value or "free").strip().lower(), 0)
+
+
+def _wave56_server_ids() -> set[str]:
+    raw = str(settings.WAVE56_PLAN_GATED_SERVER_IDS or "")
+    return {
+        item.strip().lower()
+        for item in raw.replace("|", ",").split(",")
+        if item.strip()
+    }
 
 
 def _enforce_mcp_connect_gate(db: Session, *, user_id: str, server_id: str) -> None:
@@ -71,6 +99,15 @@ def _enforce_mcp_connect_gate(db: Session, *, user_id: str, server_id: str) -> N
         if connected >= limit:
             raise HTTPException(status_code=402, detail="Trial plan limit reached (max connected MCP servers)")
 
+    if server_id in _wave56_server_ids():
+        plan = str(getattr(sub, "plan", "") or "").strip().lower()
+        status = str(getattr(sub, "status", "") or "").strip().lower()
+        if status == "trialing" or plan in {"trial", "free_trial", "trialing", ""}:
+            plan = "free"
+        min_plan = str(settings.WAVE56_MIN_PLAN or "professional").strip().lower()
+        if _plan_rank(plan) < _plan_rank(min_plan):
+            raise HTTPException(status_code=402, detail=f"{server_id} requires the {min_plan} plan")
+
 
 @router.get("/servers")
 def list_mcp_servers(user_id: str, db: Session = Depends(get_db)):
@@ -90,7 +127,7 @@ async def create_mcp_server(user_id: str, payload: MCPServerManifest, db: Sessio
 @router.post("/bootstrap/wave1")
 async def bootstrap_mcp_wave1(
     user_id: str,
-    payload: MCPWave1BootstrapRequest,
+    payload: MCPWaveBootstrapRequest,
     db: Session = Depends(get_db),
 ):
     # Always register servers; connecting is plan-gated.
@@ -112,6 +149,64 @@ async def bootstrap_mcp_wave1(
             try:
                 _enforce_mcp_connect_gate(db, user_id=user_id, server_id=server_id)
                 result = await hub.connect_server(db, user_id=user_id, server_id=server_id)
+                if result.get("connected"):
+                    connected += 1
+            except Exception:
+                failed += 1
+        summary["connected_count"] = connected
+        summary["failed_count"] = failed
+    return summary
+
+
+@router.post("/bootstrap/wave5")
+async def bootstrap_mcp_wave5(
+    user_id: str,
+    payload: MCPWaveBootstrapRequest,
+    db: Session = Depends(get_db),
+):
+    summary = await bootstrap_wave5_servers(
+        db,
+        user_id=user_id,
+        transport_mode=payload.transport_mode,
+        connect=False,
+    )
+    if payload.connect:
+        hub = get_mcp_client_hub()
+        connected = 0
+        failed = 0
+        for spec in WAVE5_SPECS:
+            try:
+                _enforce_mcp_connect_gate(db, user_id=user_id, server_id=spec.server_id)
+                result = await hub.connect_server(db, user_id=user_id, server_id=spec.server_id)
+                if result.get("connected"):
+                    connected += 1
+            except Exception:
+                failed += 1
+        summary["connected_count"] = connected
+        summary["failed_count"] = failed
+    return summary
+
+
+@router.post("/bootstrap/wave6")
+async def bootstrap_mcp_wave6(
+    user_id: str,
+    payload: MCPWaveBootstrapRequest,
+    db: Session = Depends(get_db),
+):
+    summary = await bootstrap_wave6_servers(
+        db,
+        user_id=user_id,
+        transport_mode=payload.transport_mode,
+        connect=False,
+    )
+    if payload.connect:
+        hub = get_mcp_client_hub()
+        connected = 0
+        failed = 0
+        for spec in WAVE6_SPECS:
+            try:
+                _enforce_mcp_connect_gate(db, user_id=user_id, server_id=spec.server_id)
+                result = await hub.connect_server(db, user_id=user_id, server_id=spec.server_id)
                 if result.get("connected"):
                     connected += 1
             except Exception:

@@ -509,7 +509,7 @@ You must prove it.
 - [ ] Pass normalization test (Brain → MCP call → normalized `ToolResult`)
 - [ ] Pass security tests (evil-server suite, provenance guardrails, privilege isolation)
 - [ ] Verify cost tracking (per-call/per-run/per-server-daily) + rate limit counters
-- [ ] Ensure `tool_executions` records include `is_mcp=true` and `mcp_server_id`
+- [x] Ensure `tool_executions` records include `is_mcp=true` and `mcp_server_id`
 - [ ] Flag TOOLS.md refresh and verify nightly regeneration includes: connected apps, available-but-not-connected servers (plan-gated), tools list, auth status, and budgets/usage (Deployment Plan Section 11; Auto-Provisioning Layer 1)
 - [ ] Add onboarding card (Waves 1–4) or contextual discovery trigger (Waves 5–6)
 - [ ] Pass 3 golden scenario tests per server
@@ -525,10 +525,10 @@ You must prove it.
 - [ ] Sensitive financial data routes only through local-model path (`pii_content=true`)
 
 ## MCP Deployment Plan Platform Requirements (MCP_Server_Deployment_Plan.docx)
-- [ ] Hosting strategy implemented per-server (sidecar vs internal microservice vs external) and encoded in `server_catalog.hosting_model` (Deployment Plan Section 8; Auto-Provisioning Section 12)
+- [x] Hosting strategy implemented per-server (sidecar vs internal microservice vs external) and encoded in `server_catalog.hosting_model` (Deployment Plan Section 8; Auto-Provisioning Section 12)
 - [ ] OAuth/auth matrix supported across servers (OAuth2, API key, PAT, integration tokens); tokens stored encrypted in `oauth_tokens` and refreshed safely (Deployment Plan Section 9)
 - [ ] Onboarding UX templates + buttons exist for ecosystem detection and connection flows (Deployment Plan Section 10; Auto-Provisioning Appendix B)
-- [ ] TOOLS.md auto-generation includes connected apps details (tools list, auth status, budgets/usage) and not-connected guidance (Deployment Plan Section 11)
+- [x] TOOLS.md auto-generation includes connected apps details (tools list, auth status, budgets/usage) and not-connected guidance (Deployment Plan Section 11)
 - [ ] Conversational discovery triggers (mentions + repeated failures + profile evolution) are implemented and wired to ProvisioningPipeline (Deployment Plan Section 12)
 - [ ] Cost model enforced: per-server budgets + rate limits + per-call metering + billing integration; surfaced in admin + TOOLS.md (Deployment Plan Section 13; Ops Blueprint Component 1)
 - [ ] MCP server health dashboard implemented (admin) per wireframe (Deployment Plan Appendix B; Ops Blueprint Component 3)

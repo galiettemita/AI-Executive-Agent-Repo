@@ -372,6 +372,18 @@ class Settings(BaseSettings):
     MCP_BRAVE_SEARCH_URL: str | None = None
     MCP_GITHUB_URL: str | None = None
     MCP_APPLE_REMINDERS_URL: str | None = None
+    MCP_WAVE5_TRANSPORT_MODE: str = "mock"  # mock | streamable_http | stdio
+    MCP_DUFFEL_URL: str | None = None
+    MCP_ZOOM_URL: str | None = None
+    MCP_CALENDLY_URL: str | None = None
+    MCP_PLAID_URL: str | None = None
+    MCP_CRUNCHBASE_URL: str | None = None
+    MCP_WAVE6_TRANSPORT_MODE: str = "mock"  # mock | streamable_http | stdio
+    MCP_BOOKING_COM_URL: str | None = None
+    MCP_DOCUSIGN_URL: str | None = None
+    MCP_CANVA_URL: str | None = None
+    MCP_INSTACART_URL: str | None = None
+    MCP_TESLA_URL: str | None = None
 
     # ── Auto-Provisioning Security ─────────────────────────────
     PROVISIONING_CATALOG_SIGNING_SECRET: str | None = None
