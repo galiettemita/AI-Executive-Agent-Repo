@@ -12,7 +12,8 @@ from uuid import uuid4
 from sqlalchemy.orm import Session
 
 from app.core.storage import get_storage
-from app.db.models import FileAsset, PhotoAsset, User
+from app.db.models import FileAsset, PhotoAsset
+from app.db.user_compat import ensure_user_row
 from app.services.analytics_service import record_usage_event
 from app.services import file_semantic_search, photo_semantic_search
 
@@ -20,10 +21,7 @@ logger = logging.getLogger(__name__)
 
 
 def _ensure_user(db: Session, user_id: str) -> None:
-    user = db.get(User, user_id)
-    if user is None:
-        db.add(User(id=user_id))
-        db.commit()
+    ensure_user_row(db, user_id)
 
 
 def _sanitize_filename(filename: str) -> str:

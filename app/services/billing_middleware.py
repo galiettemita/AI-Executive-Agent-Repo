@@ -12,7 +12,8 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.redis import get_redis
-from app.db.models import Subscription, User
+from app.db.models import Subscription
+from app.db.user_compat import ensure_user_row
 
 
 SUBSCRIPTION_CACHE_TTL_SECONDS = 60
@@ -42,11 +43,7 @@ def _now_utc() -> datetime:
 
 
 def _ensure_user_row(db: Session, user_id: str) -> None:
-    user = db.get(User, user_id)
-    if user is not None:
-        return
-    db.add(User(id=user_id))
-    db.commit()
+    ensure_user_row(db, user_id)
 
 
 def _get_or_create_subscription(db: Session, user_id: str) -> Subscription:

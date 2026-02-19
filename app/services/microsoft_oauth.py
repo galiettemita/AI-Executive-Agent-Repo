@@ -10,7 +10,8 @@ from urllib.parse import urlencode
 import httpx
 from sqlalchemy.orm import Session
 
-from app.db.models import OAuthToken, User
+from app.db.models import OAuthToken
+from app.db.user_compat import ensure_user_row
 from app.services.oauth_state import make_state, parse_state
 from app.services.token_crypto import decrypt_token, encrypt_token
 
@@ -115,12 +116,7 @@ def _fetch_microsoft_email(access_token: str) -> Optional[str]:
 
 def exchange_code_and_store_tokens(db: Session, code: str, state: str) -> str:
     user_id = parse_state(state)
-
-    user = db.get(User, user_id)
-    if user is None:
-        user = User(id=user_id)
-        db.add(user)
-        db.commit()
+    ensure_user_row(db, user_id)
 
     data = {
         "client_id": _require_env("MS_CLIENT_ID"),

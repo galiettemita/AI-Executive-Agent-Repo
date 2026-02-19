@@ -2,20 +2,12 @@
 
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
+from app.api.deps import get_or_create_user
 from app.db.database import get_db
-from app.db.models import User, TrackedItem
+from app.db.models import TrackedItem
 from app.schemas.tracked import TrackProductRequest, ListTrackedResponse, TrackedItemOut
 
 router = APIRouter()
-
-def get_or_create_user(db: Session, user_id: str) -> User:
-    user = db.get(User, user_id)
-    if user is None:
-        user = User(id=user_id)
-        db.add(user)
-        db.commit()
-        db.refresh(user)
-    return user
 
 @router.post("")
 def track_product(req: TrackProductRequest, db: Session = Depends(get_db)):

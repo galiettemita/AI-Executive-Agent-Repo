@@ -10,8 +10,8 @@ from google_auth_oauthlib.flow import Flow
 from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request as GoogleRequest
 from sqlalchemy.orm import Session
-from app.db.models import User
 from app.db.models import OAuthToken
+from app.db.user_compat import ensure_user_row
 from app.core.config import settings
 from app.services.oauth_state import make_state, parse_state
 from app.services.token_crypto import decrypt_token, encrypt_token
@@ -83,11 +83,7 @@ def build_google_auth_url(user_id: str) -> str:
 def exchange_code_and_store_tokens(db: Session, code: str, state: str) -> str:
     user_id = parse_state(state)
     # Ensure user exists before writing oauth token row (prevents FK issues)
-    user = db.get(User, user_id)
-    if user is None:
-        user = User(id=user_id)
-        db.add(user)
-        db.commit()
+    ensure_user_row(db, user_id)
 
     flow = _build_flow(state)
     flow.fetch_token(code=code)

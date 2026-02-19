@@ -17,7 +17,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, text
 from sqlalchemy.orm import Session
 
 from app.db.models import (
@@ -132,6 +132,37 @@ class GDPRService:
     def __init__(self, db: Session):
         self.db = db
 
+    def _is_sqlite(self) -> bool:
+        bind = getattr(self.db, "bind", None)
+        dialect = getattr(bind, "dialect", None)
+        return str(getattr(dialect, "name", "") or "") == "sqlite"
+
+    def _get_user_row_mapping(self, user_id: str) -> Optional[Dict[str, Any]]:
+        if self._is_sqlite():
+            row = self.db.execute(
+                text("select * from users where id = :user_id limit 1"),
+                {"user_id": user_id},
+            ).mappings().first()
+        else:
+            row = self.db.execute(
+                text("select * from users where id::text = :user_id limit 1"),
+                {"user_id": user_id},
+            ).mappings().first()
+        return dict(row) if row else None
+
+    def _delete_user_row(self, user_id: str) -> int:
+        if self._is_sqlite():
+            result = self.db.execute(
+                text("delete from users where id = :user_id"),
+                {"user_id": user_id},
+            )
+        else:
+            result = self.db.execute(
+                text("delete from users where id::text = :user_id"),
+                {"user_id": user_id},
+            )
+        return int(getattr(result, "rowcount", 0) or 0)
+
     def delete_user_data(
         self,
         user_id: str,
@@ -174,10 +205,10 @@ class GDPRService:
 
                 # Special handling for User model
                 if model == User:
-                    user = self.db.get(User, user_id)
-                    if user:
+                    user_row = self._get_user_row_mapping(user_id)
+                    if user_row:
                         if not dry_run:
-                            self.db.delete(user)
+                            self._delete_user_row(user_id)
                         count = 1
                 else:
                     # Get user_id field name (most models use 'user_id')
@@ -279,9 +310,9 @@ class GDPRService:
                 continue
 
             if model == User:
-                user = self.db.get(User, user_id)
-                if user:
-                    export_data["data"][table_name] = [self._model_to_dict(user)]
+                user_row = self._get_user_row_mapping(user_id)
+                if user_row:
+                    export_data["data"][table_name] = [self._serialize_mapping(user_row)]
             else:
                 stmt = select(model).where(getattr(model, user_id_field) == user_id)
                 records = self.db.execute(stmt).scalars().all()
@@ -326,14 +357,24 @@ class GDPRService:
                 continue
 
             if model == User:
-                user = self.db.get(User, user_id)
-                summary[table_name] = 1 if user else 0
+                summary[table_name] = 1 if self._get_user_row_mapping(user_id) else 0
             else:
                 stmt = select(model).where(getattr(model, user_id_field) == user_id)
                 records = self.db.execute(stmt).scalars().all()
                 summary[table_name] = len(records)
 
         return summary
+
+    def _serialize_mapping(self, row: Dict[str, Any]) -> Dict[str, Any]:
+        result: Dict[str, Any] = {}
+        for key, value in row.items():
+            if isinstance(value, datetime):
+                result[key] = value.isoformat()
+            elif isinstance(value, bytes):
+                result[key] = "<binary data>"
+            else:
+                result[key] = value
+        return result
 
 
 def delete_user_data(

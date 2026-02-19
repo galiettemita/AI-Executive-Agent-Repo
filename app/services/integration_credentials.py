@@ -8,17 +8,13 @@ from typing import Any, Dict, Optional
 
 from sqlalchemy.orm import Session
 
-from app.db.models import User, IntegrationCredential
+from app.db.models import IntegrationCredential
+from app.db.user_compat import ensure_user_row
 from app.services.encryption_service import get_encryption_service
 
 
-def _ensure_user(db: Session, user_id: str) -> User:
-    user = db.get(User, user_id)
-    if user is None:
-        user = User(id=user_id)
-        db.add(user)
-        db.commit()
-    return user
+def _ensure_user(db: Session, user_id: str) -> None:
+    ensure_user_row(db, user_id)
 
 
 def upsert_integration_credential(
