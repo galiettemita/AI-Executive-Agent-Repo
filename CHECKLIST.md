@@ -174,8 +174,8 @@ Feature Flag Rollout Reminders (Appendix A)
 - [x] Add self-reflection loop after T2+ completion (Section 7.1, Section 38)
 
 ## M4 (Operational Overlay): LLM Failover + Degraded Mode (Operational Blueprint Component 8)
-- [ ] Implement `LLMProviderHealth` model and background probe loop (default: every 30s per provider) (Ops Blueprint Appendix A)
-- [ ] Implement LLM Router failover matrix: provider down -> next provider; all external down -> degraded mode (local only); all down -> maintenance mode (Ops Blueprint Component 8)
+- [x] Implement `LLMProviderHealth` model and background probe loop (default: every 30s per provider) (Ops Blueprint Appendix A) — added `LLMProviderHealth` contract + daemon probe loop in router
+- [x] Implement LLM Router failover matrix: provider down -> next provider; all external down -> degraded mode (local only); all down -> maintenance mode (Ops Blueprint Component 8) — routing now computes `system_mode` (`normal|degraded|maintenance`) and enforces matrix in `call()/select_route()`
 - [ ] Degraded mode behavior: Tier 1/2 handled on local model; Tier 3 queued for retry; Research Engine disabled; notify user on first degraded-mode message (Ops Blueprint Component 8)
 - [ ] Recovery behavior: gradual traffic ramp on recovery (10% -> 25% -> 50% -> 100% over ~5 min) (Ops Blueprint Component 8)
 - [ ] Staging tests: simulate provider outage and validate automatic failover + recovery ramp (Ops Blueprint Component 8)

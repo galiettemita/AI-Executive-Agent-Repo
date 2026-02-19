@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import threading
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -10,7 +11,7 @@ from typing import Any, Iterable
 import httpx
 from openai import OpenAI
 
-from app.blueprint.contracts import LLMProvider, LLMRequest, LLMResponse, ProviderHealth, TokenUsage
+from app.blueprint.contracts import LLMProvider, LLMProviderHealth, LLMRequest, LLMResponse, TokenUsage
 from app.core.config import settings
 from app.core.redis import cache_get_json, cache_set_json
 
@@ -91,6 +92,34 @@ def _safe_float(value: Any) -> float:
 class LLMRouter:
     def __init__(self) -> None:
         self._openai_client: OpenAI | None = None
+        self._probe_thread: threading.Thread | None = None
+        self._probe_stop = threading.Event()
+        self._probe_interval_seconds = max(10, settings.LLM_ROUTER_HEALTH_CHECK_INTERVAL)
+        if settings.ENV in {"staging", "production"}:
+            self.start_health_probe_loop()
+
+    def start_health_probe_loop(self) -> None:
+        if self._probe_thread and self._probe_thread.is_alive():
+            return
+        self._probe_stop.clear()
+        self._probe_thread = threading.Thread(
+            target=self._health_probe_loop,
+            name="llm-provider-health-probe",
+            daemon=True,
+        )
+        self._probe_thread.start()
+
+    def stop_health_probe_loop(self) -> None:
+        self._probe_stop.set()
+
+    def _health_probe_loop(self) -> None:
+        while not self._probe_stop.is_set():
+            try:
+                self.all_provider_health(force_refresh=True)
+            except Exception:
+                logger.exception("llm_router_health_probe_loop_error")
+            if self._probe_stop.wait(self._probe_interval_seconds):
+                break
 
     def _openai(self) -> OpenAI:
         if not settings.OPENAI_API_KEY:
@@ -135,11 +164,11 @@ class LLMRouter:
             return bool(settings.LOCAL_LLM_ENDPOINT)
         return False
 
-    def _probe_provider(self, provider: LLMProvider) -> ProviderHealth:
+    def _probe_provider(self, provider: LLMProvider) -> LLMProviderHealth:
         started = time.perf_counter()
         try:
             if not self._provider_enabled(provider):
-                return ProviderHealth(provider=provider, is_healthy=False, error_rate_1h=1.0)
+                return LLMProviderHealth(provider=provider, is_healthy=False, error_rate_1h=1.0)
 
             timeout = max(5, settings.LLM_ROUTER_FAILOVER_TIMEOUT_S)
             if provider == LLMProvider.OPENAI:
@@ -169,7 +198,7 @@ class LLMRouter:
                 healthy = False
 
             latency = int((time.perf_counter() - started) * 1000)
-            return ProviderHealth(
+            return LLMProviderHealth(
                 provider=provider,
                 is_healthy=healthy,
                 latency_p50_ms=latency,
@@ -179,7 +208,7 @@ class LLMRouter:
         except Exception:
             logger.exception("Provider health probe failed provider=%s", provider.value)
             latency = int((time.perf_counter() - started) * 1000)
-            return ProviderHealth(
+            return LLMProviderHealth(
                 provider=provider,
                 is_healthy=False,
                 latency_p50_ms=latency,
@@ -188,7 +217,7 @@ class LLMRouter:
                 last_error_at=_now_utc(),
             )
 
-    def provider_health(self, provider: LLMProvider, force_refresh: bool = False) -> ProviderHealth:
+    def provider_health(self, provider: LLMProvider, force_refresh: bool = False) -> LLMProviderHealth:
         ttl = max(10, settings.LLM_ROUTER_HEALTH_CHECK_INTERVAL)
         key = _health_cache_key(provider)
 
@@ -196,7 +225,7 @@ class LLMRouter:
             cached = cache_get_json(key)
             if cached:
                 try:
-                    return ProviderHealth.model_validate(cached)
+                    return LLMProviderHealth.model_validate(cached)
                 except Exception:
                     pass
 
@@ -204,19 +233,46 @@ class LLMRouter:
         cache_set_json(key, health.model_dump(mode="json"), ttl_seconds=ttl)
         return health
 
-    def all_provider_health(self, force_refresh: bool = False) -> dict[str, ProviderHealth]:
-        out: dict[str, ProviderHealth] = {}
+    def all_provider_health(self, force_refresh: bool = False) -> dict[str, LLMProviderHealth]:
+        out: dict[str, LLMProviderHealth] = {}
         for provider in (LLMProvider.OPENAI, LLMProvider.ANTHROPIC, LLMProvider.GOOGLE, LLMProvider.LOCAL):
             out[provider.value] = self.provider_health(provider, force_refresh=force_refresh)
         return out
 
+    def _system_mode_from_health(self, health_map: dict[str, LLMProviderHealth]) -> str:
+        external_any_healthy = any(
+            bool((health_map.get(p.value) or LLMProviderHealth(provider=p, is_healthy=False)).is_healthy)
+            for p in (LLMProvider.OPENAI, LLMProvider.ANTHROPIC, LLMProvider.GOOGLE)
+        )
+        local_healthy = bool(
+            (health_map.get(LLMProvider.LOCAL.value) or LLMProviderHealth(provider=LLMProvider.LOCAL, is_healthy=False)).is_healthy
+        )
+        if external_any_healthy:
+            return "normal"
+        if local_healthy:
+            return "degraded"
+        return "maintenance"
+
+    def system_mode(self, force_refresh: bool = False) -> str:
+        return self._system_mode_from_health(self.all_provider_health(force_refresh=force_refresh))
+
+    def _degraded_allows_task(self, req: LLMRequest) -> bool:
+        task = (req.task_type or "").strip().lower()
+        if task in {"complex_reasoning", "deep_research", "research", "research_engine"}:
+            return False
+        return not task.startswith("research")
+
     def select_route(self, req: LLMRequest) -> dict[str, Any]:
+        health_map = self.all_provider_health(force_refresh=False)
+        mode = self._system_mode_from_health(health_map)
         chain = self._route_chain(req)
+        if mode == "degraded":
+            chain = [(LLMProvider.LOCAL, "llama-4-8b")]
         selected: tuple[LLMProvider, str] | None = None
         checks: list[dict[str, Any]] = []
 
         for provider, model in chain:
-            health = self.provider_health(provider)
+            health = health_map.get(provider.value) or LLMProviderHealth(provider=provider, is_healthy=False, error_rate_1h=1.0)
             checks.append(
                 {
                     "provider": provider.value,
@@ -228,11 +284,14 @@ class LLMRouter:
             if selected is None and health.is_healthy:
                 selected = (provider, model)
 
+        if mode == "maintenance":
+            selected = None
         if selected is None and chain:
             selected = chain[0]
 
         return {
             "task_type": req.task_type,
+            "system_mode": mode,
             "requested_model_preference": req.model_preference.value if req.model_preference else None,
             "selected_provider": selected[0].value if selected else None,
             "selected_model": selected[1] if selected else None,
@@ -482,7 +541,16 @@ class LLMRouter:
         raise RuntimeError(f"Unsupported provider: {provider.value}")
 
     def call(self, req: LLMRequest) -> LLMResponse:
-        route = self._route_chain(req)
+        mode = self.system_mode(force_refresh=False)
+        if mode == "maintenance":
+            raise RuntimeError("LLM Router maintenance mode: no healthy providers available")
+
+        if mode == "degraded":
+            if not self._degraded_allows_task(req):
+                raise RuntimeError("LLM Router degraded mode: task queued for retry")
+            route = [(LLMProvider.LOCAL, "llama-4-8b")]
+        else:
+            route = self._route_chain(req)
         if not route:
             raise RuntimeError("No providers configured")
 

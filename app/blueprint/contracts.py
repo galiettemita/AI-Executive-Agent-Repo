@@ -337,6 +337,13 @@ class ProviderHealth(StrictModel):
     cost_multiplier: float = 1.0
 
 
+class LLMProviderHealth(ProviderHealth):
+    """
+    Explicit alias for Operational Blueprint failover workstreams.
+    Keeps backward compatibility with existing `ProviderHealth` references.
+    """
+
+
 class DelegationRequest(StrictModel):
     delegate_name: str
     delegate_contact: Optional[str] = None
