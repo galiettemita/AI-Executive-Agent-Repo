@@ -471,6 +471,7 @@ You must prove it.
 - [ ] Replace placeholder `PLAID_WEBHOOK_SECRET` with final webhook validation config used in production
 - [ ] Build + deploy Crunchbase MCP (custom) and wire to research engine ingestion
 - [ ] Validate Wave 5 extras: Duffel sandbox e2e booking, Plaid network audit (no external LLM PII egress), contextual discovery triggers
+- [x] Verified OAuth scopes + webhook events for Wave 5 services (Duffel, Zoom, Calendly, Plaid, Crunchbase)
 
 ## M15: Wave 6 (5 Servers) (Wave 5–6 Section 5, Section 6.6–6.10)
 - [ ] Build + deploy Booking.com MCP (custom) with explicit booking approval details (hotel/room/dates/price/cancellation policy)
@@ -520,7 +521,7 @@ You must prove it.
 - [ ] Content provenance tagging enforced end-to-end, including `mcp_result`
 - [ ] Every MCP invocation recorded in shared `tool_executions` table path
 - [ ] OAuth tokens for MCP servers stored in existing `oauth_tokens` table with `provider=<server_id>`
-- [ ] Financial/booking tools always require explicit approval before write operations
+- [x] Financial/booking tools always require explicit approval before write operations
 - [ ] Sensitive financial data routes only through local-model path (`pii_content=true`)
 
 ## MCP Deployment Plan Platform Requirements (MCP_Server_Deployment_Plan.docx)
