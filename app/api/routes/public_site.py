@@ -218,12 +218,6 @@ def landing_page(request: Request) -> HTMLResponse:
             text-align: center;
             color: #475569;
           }}
-          .footnote {{
-            margin-top: 8px;
-            font-size: 0.78rem;
-            color: #64748b;
-            letter-spacing: 0.02em;
-          }}
           a.link {{
             color: #0f172a;
             font-weight: 600;
@@ -298,7 +292,7 @@ def landing_page(request: Request) -> HTMLResponse:
 
         <footer>
           Questions? Email <a class="link" href="mailto:{support_email}">{support_email}</a>
-          <div class="footnote">Hosted on AWS · OAuth-secured integrations · Approval gates for high-risk actions</div>
+          <div>©️ 2026 SMA Ventures LLC DBA Orbit. All rights reserved.</div>
         </footer>
 
         <script>
