@@ -8,36 +8,50 @@ import (
 
 	"github.com/brevio/brevio/internal/admin"
 	"github.com/brevio/brevio/internal/caching"
+	"github.com/brevio/brevio/internal/capture"
+	"github.com/brevio/brevio/internal/codebase_intel"
 	"github.com/brevio/brevio/internal/compliance"
 	contextlayer "github.com/brevio/brevio/internal/context"
 	errorlayer "github.com/brevio/brevio/internal/errors"
 	"github.com/brevio/brevio/internal/event_schemas"
+	"github.com/brevio/brevio/internal/exploration"
 	"github.com/brevio/brevio/internal/feature_flags"
+	"github.com/brevio/brevio/internal/goals"
 	"github.com/brevio/brevio/internal/guardrails"
+	"github.com/brevio/brevio/internal/learning"
 	"github.com/brevio/brevio/internal/model_tiers"
 	raglayer "github.com/brevio/brevio/internal/rag"
+	"github.com/brevio/brevio/internal/self_modification"
 	"github.com/brevio/brevio/internal/sessions"
 	"github.com/brevio/brevio/internal/streaming"
 	"github.com/brevio/brevio/internal/temporal_reasoning"
 	"github.com/brevio/brevio/internal/tool_health"
+	"github.com/brevio/brevio/internal/trust"
 )
 
 func NewMux(service *Service) *http.ServeMux {
 	mux := http.NewServeMux()
 	adminSvc := admin.NewService()
 	cacheSvc := caching.NewService()
+	captureSvc := capture.NewService()
+	codebaseSvc := codebase_intel.NewService()
 	complianceSvc := compliance.NewService()
 	eventSchemaSvc := event_schemas.NewService()
+	explorationSvc := exploration.NewService()
 	flags := feature_flags.NewService()
+	goalsSvc := goals.NewService()
 	errorSvc := errorlayer.NewService()
 	contextBudgets := contextlayer.NewService()
 	guardrailsSvc := guardrails.NewService()
+	learningSvc := learning.NewService()
 	modelTierSvc := model_tiers.NewService()
 	ragSvc := raglayer.NewService()
+	selfModificationSvc := self_modification.NewService()
 	sessionSvc := sessions.NewService()
 	streamingSvc := streaming.NewService()
 	temporalSvc := temporal_reasoning.NewService()
 	toolHealthSvc := tool_health.NewService()
+	trustSvc := trust.NewService()
 
 	mux.HandleFunc("GET /healthz/ready", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -58,12 +72,36 @@ func NewMux(service *Service) *http.ServeMux {
 			handleFeatureFlags(w, r, flags)
 			return
 		}
+		if strings.HasPrefix(r.URL.Path, "/v1/goals") {
+			handleGoals(w, r, goalsSvc)
+			return
+		}
+		if strings.HasPrefix(r.URL.Path, "/v1/mission-control") {
+			handleMissionControl(w, r, goalsSvc)
+			return
+		}
 		if strings.HasPrefix(r.URL.Path, "/v1/admin") {
 			handleAdmin(w, r, adminSvc)
 			return
 		}
+		if strings.HasPrefix(r.URL.Path, "/v1/autonomy") {
+			handleTrust(w, r, trustSvc)
+			return
+		}
+		if strings.HasPrefix(r.URL.Path, "/v1/capabilities") {
+			handleExploration(w, r, explorationSvc)
+			return
+		}
+		if strings.HasPrefix(r.URL.Path, "/v1/captures") {
+			handleCaptures(w, r, captureSvc)
+			return
+		}
 		if strings.HasPrefix(r.URL.Path, "/v1/compliance") {
 			handleCompliance(w, r, complianceSvc)
+			return
+		}
+		if strings.HasPrefix(r.URL.Path, "/v1/codebase") {
+			handleCodebaseIntel(w, r, codebaseSvc)
 			return
 		}
 		if strings.HasPrefix(r.URL.Path, "/v1/errors") {
@@ -96,6 +134,14 @@ func NewMux(service *Service) *http.ServeMux {
 		}
 		if strings.HasPrefix(r.URL.Path, "/v1/model-tiers") {
 			handleModelTiers(w, r, modelTierSvc)
+			return
+		}
+		if strings.HasPrefix(r.URL.Path, "/v1/learning") {
+			handleLearning(w, r, learningSvc)
+			return
+		}
+		if strings.HasPrefix(r.URL.Path, "/v1/self-modification") {
+			handleSelfModification(w, r, selfModificationSvc)
 			return
 		}
 		if strings.HasPrefix(r.URL.Path, "/v1/sessions") {
@@ -1120,6 +1166,533 @@ func handleTemporalReasoning(w http.ResponseWriter, r *http.Request, svc *tempor
 		http.NotFound(w, r)
 		return
 	}
+}
+
+func handleGoals(w http.ResponseWriter, r *http.Request, svc *goals.Service) {
+	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
+	if len(parts) < 2 {
+		http.NotFound(w, r)
+		return
+	}
+
+	switch {
+	case len(parts) == 2:
+		switch r.Method {
+		case http.MethodGet:
+			workspaceID := r.URL.Query().Get("workspace_id")
+			if workspaceID == "" {
+				workspaceID = "default"
+			}
+			writeJSON(w, http.StatusOK, map[string]any{"goals": svc.ListGoals(workspaceID)})
+			return
+		case http.MethodPost:
+			var payload goals.Goal
+			if err := decodeJSON(r, &payload); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			goal := svc.UpsertGoal(payload)
+			svc.AddProgress(goal.ID, goals.ProgressLog{Summary: "goal created"})
+			writeJSON(w, http.StatusCreated, goal)
+			return
+		default:
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+	case len(parts) == 3:
+		goalID := parts[2]
+		switch r.Method {
+		case http.MethodGet:
+			goal, ok := svc.GetGoal(goalID)
+			if !ok {
+				writeJSON(w, http.StatusOK, map[string]any{"id": goalID, "status": "not_found"})
+				return
+			}
+			writeJSON(w, http.StatusOK, goal)
+			return
+		case http.MethodPut:
+			var payload goals.Goal
+			if err := decodeJSON(r, &payload); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			payload.ID = goalID
+			goal := svc.UpsertGoal(payload)
+			svc.AddProgress(goal.ID, goals.ProgressLog{Summary: "goal updated"})
+			writeJSON(w, http.StatusOK, goal)
+			return
+		case http.MethodDelete:
+			writeJSON(w, http.StatusOK, map[string]any{"deleted": svc.DeleteGoal(goalID)})
+			return
+		default:
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+	case len(parts) == 4 && parts[3] == "milestones":
+		goalID := parts[2]
+		switch r.Method {
+		case http.MethodGet:
+			writeJSON(w, http.StatusOK, map[string]any{"milestones": svc.ListMilestones(goalID)})
+			return
+		case http.MethodPost:
+			var payload goals.Milestone
+			if err := decodeJSON(r, &payload); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			milestone := svc.AddMilestone(goalID, payload)
+			svc.AddProgress(goalID, goals.ProgressLog{Summary: "milestone added"})
+			writeJSON(w, http.StatusCreated, milestone)
+			return
+		default:
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+	case len(parts) == 4 && parts[3] == "progress":
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"progress": svc.ListProgress(parts[2])})
+		return
+
+	default:
+		http.NotFound(w, r)
+		return
+	}
+}
+
+func handleMissionControl(w http.ResponseWriter, r *http.Request, svc *goals.Service) {
+	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
+	if len(parts) != 3 {
+		http.NotFound(w, r)
+		return
+	}
+	workspaceID := r.URL.Query().Get("workspace_id")
+	if workspaceID == "" {
+		workspaceID = "default"
+	}
+
+	switch parts[2] {
+	case "config":
+		if r.Method == http.MethodGet {
+			cfg, ok := svc.GetMissionControlConfig(workspaceID)
+			if !ok {
+				cfg = goals.MissionControlConfig{WorkspaceID: workspaceID, RefreshCadenceMinutes: 30}
+			}
+			writeJSON(w, http.StatusOK, cfg)
+			return
+		}
+		if r.Method == http.MethodPut {
+			var payload goals.MissionControlConfig
+			if err := decodeJSON(r, &payload); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			writeJSON(w, http.StatusOK, svc.UpsertMissionControlConfig(workspaceID, payload))
+			return
+		}
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+
+	case "widgets":
+		if r.Method == http.MethodGet {
+			writeJSON(w, http.StatusOK, map[string]any{"widgets": svc.GetMissionControlWidgets(workspaceID)})
+			return
+		}
+		if r.Method == http.MethodPut {
+			var payload struct {
+				Widgets []goals.MissionControlWidget `json:"widgets"`
+			}
+			if err := decodeJSON(r, &payload); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			writeJSON(w, http.StatusOK, map[string]any{"widgets": svc.SetMissionControlWidgets(workspaceID, payload.Widgets)})
+			return
+		}
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+
+	case "snapshot":
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		writeJSON(w, http.StatusOK, svc.MissionControlSnapshot(workspaceID))
+		return
+	default:
+		http.NotFound(w, r)
+		return
+	}
+}
+
+func handleTrust(w http.ResponseWriter, r *http.Request, svc *trust.Service) {
+	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
+	if len(parts) < 3 {
+		http.NotFound(w, r)
+		return
+	}
+
+	switch parts[2] {
+	case "trust-scores":
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if len(svc.ListScores()) == 0 {
+			svc.UpsertScore(trust.TrustScore{
+				WorkspaceID:      "default",
+				Score:            0.90,
+				SuccessCount30d:  25,
+				FailureCount30d:  0,
+				OverrideCount30d: 1,
+			})
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"trust_scores": svc.ListScores()})
+		return
+	case "promotions":
+		switch {
+		case len(parts) == 3 && r.Method == http.MethodGet:
+			if len(svc.ListPromotions()) == 0 {
+				svc.AddPromotion(trust.Promotion{WorkspaceID: "default"})
+			}
+			writeJSON(w, http.StatusOK, map[string]any{"promotions": svc.ListPromotions()})
+			return
+		case len(parts) == 5 && parts[4] == "decide" && r.Method == http.MethodPost:
+			var payload struct {
+				Decision string `json:"decision"`
+			}
+			if err := decodeJSON(r, &payload); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			updated, ok := svc.DecidePromotion(parts[3], payload.Decision)
+			if !ok {
+				writeJSON(w, http.StatusOK, map[string]any{"id": parts[3], "status": "not_found"})
+				return
+			}
+			writeJSON(w, http.StatusOK, updated)
+			return
+		default:
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+	default:
+		http.NotFound(w, r)
+		return
+	}
+}
+
+func handleLearning(w http.ResponseWriter, r *http.Request, svc *learning.Service) {
+	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
+	if len(parts) < 3 {
+		http.NotFound(w, r)
+		return
+	}
+	workspaceID := r.URL.Query().Get("workspace_id")
+	if workspaceID == "" {
+		workspaceID = "default"
+	}
+
+	switch parts[2] {
+	case "config":
+		if r.Method == http.MethodGet {
+			cfg, ok := svc.GetConfig(workspaceID)
+			if !ok {
+				cfg = learning.Config{WorkspaceID: workspaceID, MaxActiveLessons: 20}
+			}
+			writeJSON(w, http.StatusOK, cfg)
+			return
+		}
+		if r.Method == http.MethodPut {
+			var payload learning.Config
+			if err := decodeJSON(r, &payload); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			writeJSON(w, http.StatusOK, svc.UpsertConfig(workspaceID, payload))
+			return
+		}
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+
+	case "feedback":
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		var payload learning.Feedback
+		if err := decodeJSON(r, &payload); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		payload.WorkspaceID = workspaceID
+		writeJSON(w, http.StatusCreated, svc.AddFeedback(payload))
+		return
+
+	case "lessons":
+		switch {
+		case len(parts) == 3 && r.Method == http.MethodGet:
+			writeJSON(w, http.StatusOK, map[string]any{"lessons": svc.ListLessons(workspaceID)})
+			return
+		case len(parts) == 5 && parts[4] == "confirm" && r.Method == http.MethodPost:
+			lesson, ok := svc.ConfirmLesson(parts[3])
+			if !ok {
+				writeJSON(w, http.StatusOK, map[string]any{"id": parts[3], "status": "not_found"})
+				return
+			}
+			writeJSON(w, http.StatusOK, lesson)
+			return
+		case len(parts) == 5 && parts[4] == "retire" && r.Method == http.MethodPost:
+			lesson, ok := svc.RetireLesson(parts[3])
+			if !ok {
+				writeJSON(w, http.StatusOK, map[string]any{"id": parts[3], "status": "not_found"})
+				return
+			}
+			writeJSON(w, http.StatusOK, lesson)
+			return
+		default:
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+	default:
+		http.NotFound(w, r)
+		return
+	}
+}
+
+func handleCaptures(w http.ResponseWriter, r *http.Request, svc *capture.Service) {
+	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
+	if len(parts) < 3 || parts[2] != "daily" {
+		http.NotFound(w, r)
+		return
+	}
+	workspaceID := r.URL.Query().Get("workspace_id")
+	if workspaceID == "" {
+		workspaceID = "default"
+	}
+	if len(svc.List(workspaceID)) == 0 {
+		svc.Add(capture.DailyCapture{
+			WorkspaceID: workspaceID,
+			Date:        "2026-02-27",
+			Summary:     "Initial daily capture",
+			Status:      "completed",
+		})
+	}
+
+	if len(parts) == 3 && r.Method == http.MethodGet {
+		writeJSON(w, http.StatusOK, map[string]any{"captures": svc.List(workspaceID)})
+		return
+	}
+	if len(parts) == 4 && r.Method == http.MethodGet {
+		entry, ok := svc.Get(workspaceID, parts[3])
+		if !ok {
+			writeJSON(w, http.StatusOK, map[string]any{"date": parts[3], "status": "not_found"})
+			return
+		}
+		writeJSON(w, http.StatusOK, entry)
+		return
+	}
+	http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+}
+
+func handleCodebaseIntel(w http.ResponseWriter, r *http.Request, svc *codebase_intel.Service) {
+	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
+	if len(parts) < 3 {
+		http.NotFound(w, r)
+		return
+	}
+	workspaceID := r.URL.Query().Get("workspace_id")
+	if workspaceID == "" {
+		workspaceID = "default"
+	}
+
+	switch parts[2] {
+	case "dependencies":
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"dependencies": svc.ListDependencies(workspaceID)})
+		return
+
+	case "patterns":
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"patterns": svc.ListPatterns(workspaceID)})
+		return
+
+	case "debt":
+		switch {
+		case len(parts) == 3 && r.Method == http.MethodGet:
+			writeJSON(w, http.StatusOK, map[string]any{"debt_items": svc.ListDebt(workspaceID)})
+			return
+		case len(parts) == 4 && r.Method == http.MethodPut:
+			var payload codebase_intel.DebtItem
+			if err := decodeJSON(r, &payload); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			payload.WorkspaceID = workspaceID
+			writeJSON(w, http.StatusOK, svc.UpsertDebt(parts[3], payload))
+			return
+		case len(parts) == 5 && parts[4] == "tasks" && r.Method == http.MethodGet:
+			writeJSON(w, http.StatusOK, map[string]any{"tasks": svc.ListDebtTasks(parts[3])})
+			return
+		case len(parts) == 5 && parts[4] == "tasks" && r.Method == http.MethodPost:
+			var payload codebase_intel.DebtTask
+			if err := decodeJSON(r, &payload); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			payload.WorkspaceID = workspaceID
+			writeJSON(w, http.StatusCreated, svc.AddDebtTask(parts[3], payload))
+			return
+		case len(parts) == 6 && parts[4] == "tasks" && r.Method == http.MethodGet:
+			task, ok := svc.GetDebtTask(parts[3], parts[5])
+			if !ok {
+				writeJSON(w, http.StatusOK, map[string]any{"id": parts[5], "status": "not_found"})
+				return
+			}
+			writeJSON(w, http.StatusOK, task)
+			return
+		case len(parts) == 6 && parts[4] == "tasks" && r.Method == http.MethodPut:
+			var payload codebase_intel.DebtTask
+			if err := decodeJSON(r, &payload); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			payload.WorkspaceID = workspaceID
+			writeJSON(w, http.StatusOK, svc.UpsertDebtTask(parts[3], parts[5], payload))
+			return
+		default:
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+	case "templates":
+		switch r.Method {
+		case http.MethodGet:
+			writeJSON(w, http.StatusOK, map[string]any{"templates": svc.ListTemplates(workspaceID)})
+			return
+		case http.MethodPost:
+			var payload codebase_intel.ProjectTemplate
+			if err := decodeJSON(r, &payload); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			payload.WorkspaceID = workspaceID
+			writeJSON(w, http.StatusCreated, svc.AddTemplate(payload))
+			return
+		default:
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+	case "context-export":
+		switch {
+		case len(parts) == 3 && r.Method == http.MethodPost:
+			var payload codebase_intel.ContextExport
+			if err := decodeJSON(r, &payload); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			payload.WorkspaceID = workspaceID
+			writeJSON(w, http.StatusCreated, svc.CreateContextExport(payload))
+			return
+		case len(parts) == 4 && r.Method == http.MethodGet:
+			export, ok := svc.GetContextExport(parts[3])
+			if !ok {
+				writeJSON(w, http.StatusOK, map[string]any{"id": parts[3], "status": "not_found"})
+				return
+			}
+			writeJSON(w, http.StatusOK, export)
+			return
+		default:
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+	default:
+		http.NotFound(w, r)
+		return
+	}
+}
+
+func handleExploration(w http.ResponseWriter, r *http.Request, svc *exploration.Service) {
+	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
+	if len(parts) < 3 || parts[2] != "recommendations" {
+		http.NotFound(w, r)
+		return
+	}
+	workspaceID := r.URL.Query().Get("workspace_id")
+	if workspaceID == "" {
+		workspaceID = "default"
+	}
+
+	if len(parts) == 3 && r.Method == http.MethodGet {
+		writeJSON(w, http.StatusOK, map[string]any{"recommendations": svc.ListRecommendations(workspaceID)})
+		return
+	}
+	if len(parts) == 5 && parts[4] == "decide" && r.Method == http.MethodPost {
+		var payload struct {
+			Decision string `json:"decision"`
+		}
+		if err := decodeJSON(r, &payload); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		updated, ok := svc.DecideRecommendation(parts[3], payload.Decision)
+		if !ok {
+			writeJSON(w, http.StatusOK, map[string]any{"id": parts[3], "status": "not_found"})
+			return
+		}
+		writeJSON(w, http.StatusOK, updated)
+		return
+	}
+	http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+}
+
+func handleSelfModification(w http.ResponseWriter, r *http.Request, svc *self_modification.Service) {
+	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
+	if len(parts) != 3 || parts[2] != "policy" {
+		http.NotFound(w, r)
+		return
+	}
+	workspaceID := r.URL.Query().Get("workspace_id")
+	if workspaceID == "" {
+		workspaceID = "default"
+	}
+	if r.Method == http.MethodGet {
+		policy, ok := svc.GetPolicy(workspaceID)
+		if !ok {
+			policy = self_modification.Policy{
+				WorkspaceID:     workspaceID,
+				Enabled:         true,
+				RequireApproval: true,
+				MaxAllowedRisk:  "elevated",
+			}
+		}
+		writeJSON(w, http.StatusOK, policy)
+		return
+	}
+	if r.Method == http.MethodPut {
+		var payload self_modification.Policy
+		if err := decodeJSON(r, &payload); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		writeJSON(w, http.StatusOK, svc.UpsertPolicy(workspaceID, payload))
+		return
+	}
+	http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 }
 
 func handleStreaming(w http.ResponseWriter, r *http.Request, svc *streaming.Service) {

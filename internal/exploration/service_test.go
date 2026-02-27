@@ -2,10 +2,17 @@ package exploration
 
 import "testing"
 
-func TestNewService(t *testing.T) {
+func TestExplorationLifecycle(t *testing.T) {
 	s := NewService()
-	if (s == Service{}) {
-		return
+	recs := s.ListRecommendations("ws_1")
+	if len(recs) == 0 {
+		t.Fatalf("expected seeded recommendation")
 	}
-	t.Fatalf("unexpected service value: %#v", s)
+	decided, ok := s.DecideRecommendation(recs[0].ID, "accept")
+	if !ok {
+		t.Fatalf("expected recommendation decision")
+	}
+	if decided.Status != "accepted" {
+		t.Fatalf("unexpected recommendation status: %#v", decided)
+	}
 }

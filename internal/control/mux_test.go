@@ -469,6 +469,293 @@ func TestControlMuxAdminFlow(t *testing.T) {
 	}
 }
 
+func TestControlMuxV91CoreFlow(t *testing.T) {
+	t.Parallel()
+
+	mux := NewMux(NewService("dev-secret"))
+
+	postGoalBody := []byte(`{"workspace_id":"ws_1","title":"Close v9.1 gaps","status":"active","priority":"high"}`)
+	postGoalReq := httptest.NewRequest(http.MethodPost, "/v1/goals", bytes.NewReader(postGoalBody))
+	postGoalResp := httptest.NewRecorder()
+	mux.ServeHTTP(postGoalResp, postGoalReq)
+	if postGoalResp.Code != http.StatusCreated {
+		t.Fatalf("unexpected goals create status: %d", postGoalResp.Code)
+	}
+	var goalPayload map[string]any
+	if err := json.Unmarshal(postGoalResp.Body.Bytes(), &goalPayload); err != nil {
+		t.Fatalf("decode goal payload: %v", err)
+	}
+	goalID, ok := goalPayload["id"].(string)
+	if !ok || goalID == "" {
+		t.Fatalf("missing goal id payload: %v", goalPayload)
+	}
+
+	postMilestoneBody := []byte(`{"title":"Wire endpoints","status":"pending"}`)
+	postMilestoneReq := httptest.NewRequest(http.MethodPost, "/v1/goals/"+goalID+"/milestones", bytes.NewReader(postMilestoneBody))
+	postMilestoneResp := httptest.NewRecorder()
+	mux.ServeHTTP(postMilestoneResp, postMilestoneReq)
+	if postMilestoneResp.Code != http.StatusCreated {
+		t.Fatalf("unexpected milestone create status: %d", postMilestoneResp.Code)
+	}
+
+	getProgressReq := httptest.NewRequest(http.MethodGet, "/v1/goals/"+goalID+"/progress", nil)
+	getProgressResp := httptest.NewRecorder()
+	mux.ServeHTTP(getProgressResp, getProgressReq)
+	if getProgressResp.Code != http.StatusOK {
+		t.Fatalf("unexpected goal progress status: %d", getProgressResp.Code)
+	}
+
+	putMCConfigBody := []byte(`{"refresh_cadence_minutes":20}`)
+	putMCConfigReq := httptest.NewRequest(http.MethodPut, "/v1/mission-control/config?workspace_id=ws_1", bytes.NewReader(putMCConfigBody))
+	putMCConfigResp := httptest.NewRecorder()
+	mux.ServeHTTP(putMCConfigResp, putMCConfigReq)
+	if putMCConfigResp.Code != http.StatusOK {
+		t.Fatalf("unexpected mission-control config status: %d", putMCConfigResp.Code)
+	}
+
+	putMCWidgetsBody := []byte(`{"widgets":[{"widget_key":"goals_overview","enabled":true,"position":1}]}`)
+	putMCWidgetsReq := httptest.NewRequest(http.MethodPut, "/v1/mission-control/widgets?workspace_id=ws_1", bytes.NewReader(putMCWidgetsBody))
+	putMCWidgetsResp := httptest.NewRecorder()
+	mux.ServeHTTP(putMCWidgetsResp, putMCWidgetsReq)
+	if putMCWidgetsResp.Code != http.StatusOK {
+		t.Fatalf("unexpected mission-control widgets status: %d", putMCWidgetsResp.Code)
+	}
+
+	getMCSnapshotReq := httptest.NewRequest(http.MethodGet, "/v1/mission-control/snapshot?workspace_id=ws_1", nil)
+	getMCSnapshotResp := httptest.NewRecorder()
+	mux.ServeHTTP(getMCSnapshotResp, getMCSnapshotReq)
+	if getMCSnapshotResp.Code != http.StatusOK {
+		t.Fatalf("unexpected mission-control snapshot status: %d", getMCSnapshotResp.Code)
+	}
+
+	getTrustReq := httptest.NewRequest(http.MethodGet, "/v1/autonomy/trust-scores", nil)
+	getTrustResp := httptest.NewRecorder()
+	mux.ServeHTTP(getTrustResp, getTrustReq)
+	if getTrustResp.Code != http.StatusOK {
+		t.Fatalf("unexpected trust scores status: %d", getTrustResp.Code)
+	}
+
+	getPromotionsReq := httptest.NewRequest(http.MethodGet, "/v1/autonomy/promotions", nil)
+	getPromotionsResp := httptest.NewRecorder()
+	mux.ServeHTTP(getPromotionsResp, getPromotionsReq)
+	if getPromotionsResp.Code != http.StatusOK {
+		t.Fatalf("unexpected promotions status: %d", getPromotionsResp.Code)
+	}
+	var promotionsPayload map[string]any
+	if err := json.Unmarshal(getPromotionsResp.Body.Bytes(), &promotionsPayload); err != nil {
+		t.Fatalf("decode promotions payload: %v", err)
+	}
+	promotions, ok := promotionsPayload["promotions"].([]any)
+	if !ok || len(promotions) == 0 {
+		t.Fatalf("expected promotion payload: %v", promotionsPayload)
+	}
+	firstPromotion, ok := promotions[0].(map[string]any)
+	if !ok {
+		t.Fatalf("unexpected promotion item payload: %v", promotions[0])
+	}
+	promotionID, _ := firstPromotion["id"].(string)
+
+	postDecisionBody := []byte(`{"decision":"approve"}`)
+	postDecisionReq := httptest.NewRequest(http.MethodPost, "/v1/autonomy/promotions/"+promotionID+"/decide", bytes.NewReader(postDecisionBody))
+	postDecisionResp := httptest.NewRecorder()
+	mux.ServeHTTP(postDecisionResp, postDecisionReq)
+	if postDecisionResp.Code != http.StatusOK {
+		t.Fatalf("unexpected promotion decide status: %d", postDecisionResp.Code)
+	}
+
+	putLearningCfgBody := []byte(`{"max_active_lessons":10,"auto_apply_lessons":false}`)
+	putLearningCfgReq := httptest.NewRequest(http.MethodPut, "/v1/learning/config?workspace_id=ws_1", bytes.NewReader(putLearningCfgBody))
+	putLearningCfgResp := httptest.NewRecorder()
+	mux.ServeHTTP(putLearningCfgResp, putLearningCfgReq)
+	if putLearningCfgResp.Code != http.StatusOK {
+		t.Fatalf("unexpected learning config status: %d", putLearningCfgResp.Code)
+	}
+
+	postFeedbackBody := []byte(`{"feedback_type":"positive","content":"Great execution quality"}`)
+	postFeedbackReq := httptest.NewRequest(http.MethodPost, "/v1/learning/feedback?workspace_id=ws_1", bytes.NewReader(postFeedbackBody))
+	postFeedbackResp := httptest.NewRecorder()
+	mux.ServeHTTP(postFeedbackResp, postFeedbackReq)
+	if postFeedbackResp.Code != http.StatusCreated {
+		t.Fatalf("unexpected learning feedback status: %d", postFeedbackResp.Code)
+	}
+
+	getLessonsReq := httptest.NewRequest(http.MethodGet, "/v1/learning/lessons?workspace_id=ws_1", nil)
+	getLessonsResp := httptest.NewRecorder()
+	mux.ServeHTTP(getLessonsResp, getLessonsReq)
+	if getLessonsResp.Code != http.StatusOK {
+		t.Fatalf("unexpected lessons list status: %d", getLessonsResp.Code)
+	}
+	var lessonsPayload map[string]any
+	if err := json.Unmarshal(getLessonsResp.Body.Bytes(), &lessonsPayload); err != nil {
+		t.Fatalf("decode lessons payload: %v", err)
+	}
+	lessons, ok := lessonsPayload["lessons"].([]any)
+	if !ok || len(lessons) == 0 {
+		t.Fatalf("expected lessons payload: %v", lessonsPayload)
+	}
+	firstLesson, ok := lessons[0].(map[string]any)
+	if !ok {
+		t.Fatalf("unexpected lesson payload: %v", lessons[0])
+	}
+	lessonID, _ := firstLesson["id"].(string)
+
+	confirmReq := httptest.NewRequest(http.MethodPost, "/v1/learning/lessons/"+lessonID+"/confirm", nil)
+	confirmResp := httptest.NewRecorder()
+	mux.ServeHTTP(confirmResp, confirmReq)
+	if confirmResp.Code != http.StatusOK {
+		t.Fatalf("unexpected lesson confirm status: %d", confirmResp.Code)
+	}
+
+	retireReq := httptest.NewRequest(http.MethodPost, "/v1/learning/lessons/"+lessonID+"/retire", nil)
+	retireResp := httptest.NewRecorder()
+	mux.ServeHTTP(retireResp, retireReq)
+	if retireResp.Code != http.StatusOK {
+		t.Fatalf("unexpected lesson retire status: %d", retireResp.Code)
+	}
+
+	getCapturesReq := httptest.NewRequest(http.MethodGet, "/v1/captures/daily?workspace_id=ws_1", nil)
+	getCapturesResp := httptest.NewRecorder()
+	mux.ServeHTTP(getCapturesResp, getCapturesReq)
+	if getCapturesResp.Code != http.StatusOK {
+		t.Fatalf("unexpected captures list status: %d", getCapturesResp.Code)
+	}
+
+	getCaptureByDateReq := httptest.NewRequest(http.MethodGet, "/v1/captures/daily/2026-02-27?workspace_id=ws_1", nil)
+	getCaptureByDateResp := httptest.NewRecorder()
+	mux.ServeHTTP(getCaptureByDateResp, getCaptureByDateReq)
+	if getCaptureByDateResp.Code != http.StatusOK {
+		t.Fatalf("unexpected capture-by-date status: %d", getCaptureByDateResp.Code)
+	}
+}
+
+func TestControlMuxV91CodebaseFlow(t *testing.T) {
+	t.Parallel()
+
+	mux := NewMux(NewService("dev-secret"))
+
+	for _, path := range []string{"/v1/codebase/dependencies", "/v1/codebase/patterns", "/v1/codebase/debt"} {
+		req := httptest.NewRequest(http.MethodGet, path+"?workspace_id=ws_1", nil)
+		resp := httptest.NewRecorder()
+		mux.ServeHTTP(resp, req)
+		if resp.Code != http.StatusOK {
+			t.Fatalf("unexpected status for %s: %d", path, resp.Code)
+		}
+	}
+
+	putDebtBody := []byte(`{"title":"refactor handlers","severity":"high","status":"open"}`)
+	putDebtReq := httptest.NewRequest(http.MethodPut, "/v1/codebase/debt/debt_1?workspace_id=ws_1", bytes.NewReader(putDebtBody))
+	putDebtResp := httptest.NewRecorder()
+	mux.ServeHTTP(putDebtResp, putDebtReq)
+	if putDebtResp.Code != http.StatusOK {
+		t.Fatalf("unexpected debt upsert status: %d", putDebtResp.Code)
+	}
+
+	postTaskBody := []byte(`{"title":"extract shared parsing","status":"open"}`)
+	postTaskReq := httptest.NewRequest(http.MethodPost, "/v1/codebase/debt/debt_1/tasks?workspace_id=ws_1", bytes.NewReader(postTaskBody))
+	postTaskResp := httptest.NewRecorder()
+	mux.ServeHTTP(postTaskResp, postTaskReq)
+	if postTaskResp.Code != http.StatusCreated {
+		t.Fatalf("unexpected debt task create status: %d", postTaskResp.Code)
+	}
+	var taskPayload map[string]any
+	if err := json.Unmarshal(postTaskResp.Body.Bytes(), &taskPayload); err != nil {
+		t.Fatalf("decode task payload: %v", err)
+	}
+	taskID, ok := taskPayload["id"].(string)
+	if !ok || taskID == "" {
+		t.Fatalf("missing debt task id payload: %v", taskPayload)
+	}
+
+	getTaskReq := httptest.NewRequest(http.MethodGet, "/v1/codebase/debt/debt_1/tasks/"+taskID+"?workspace_id=ws_1", nil)
+	getTaskResp := httptest.NewRecorder()
+	mux.ServeHTTP(getTaskResp, getTaskReq)
+	if getTaskResp.Code != http.StatusOK {
+		t.Fatalf("unexpected debt task get status: %d", getTaskResp.Code)
+	}
+
+	putTaskBody := []byte(`{"title":"extract shared parsing","status":"completed"}`)
+	putTaskReq := httptest.NewRequest(http.MethodPut, "/v1/codebase/debt/debt_1/tasks/"+taskID+"?workspace_id=ws_1", bytes.NewReader(putTaskBody))
+	putTaskResp := httptest.NewRecorder()
+	mux.ServeHTTP(putTaskResp, putTaskReq)
+	if putTaskResp.Code != http.StatusOK {
+		t.Fatalf("unexpected debt task update status: %d", putTaskResp.Code)
+	}
+
+	postTemplateBody := []byte(`{"name":"go_service_template","status":"active"}`)
+	postTemplateReq := httptest.NewRequest(http.MethodPost, "/v1/codebase/templates?workspace_id=ws_1", bytes.NewReader(postTemplateBody))
+	postTemplateResp := httptest.NewRecorder()
+	mux.ServeHTTP(postTemplateResp, postTemplateReq)
+	if postTemplateResp.Code != http.StatusCreated {
+		t.Fatalf("unexpected template create status: %d", postTemplateResp.Code)
+	}
+
+	postExportBody := []byte(`{"format":"markdown","status":"completed"}`)
+	postExportReq := httptest.NewRequest(http.MethodPost, "/v1/codebase/context-export?workspace_id=ws_1", bytes.NewReader(postExportBody))
+	postExportResp := httptest.NewRecorder()
+	mux.ServeHTTP(postExportResp, postExportReq)
+	if postExportResp.Code != http.StatusCreated {
+		t.Fatalf("unexpected context export create status: %d", postExportResp.Code)
+	}
+	var exportPayload map[string]any
+	if err := json.Unmarshal(postExportResp.Body.Bytes(), &exportPayload); err != nil {
+		t.Fatalf("decode context export payload: %v", err)
+	}
+	exportID, ok := exportPayload["id"].(string)
+	if !ok || exportID == "" {
+		t.Fatalf("missing context export id payload: %v", exportPayload)
+	}
+
+	getExportReq := httptest.NewRequest(http.MethodGet, "/v1/codebase/context-export/"+exportID+"?workspace_id=ws_1", nil)
+	getExportResp := httptest.NewRecorder()
+	mux.ServeHTTP(getExportResp, getExportReq)
+	if getExportResp.Code != http.StatusOK {
+		t.Fatalf("unexpected context export get status: %d", getExportResp.Code)
+	}
+
+	getRecsReq := httptest.NewRequest(http.MethodGet, "/v1/capabilities/recommendations?workspace_id=ws_1", nil)
+	getRecsResp := httptest.NewRecorder()
+	mux.ServeHTTP(getRecsResp, getRecsReq)
+	if getRecsResp.Code != http.StatusOK {
+		t.Fatalf("unexpected capability recommendations status: %d", getRecsResp.Code)
+	}
+	var recsPayload map[string]any
+	if err := json.Unmarshal(getRecsResp.Body.Bytes(), &recsPayload); err != nil {
+		t.Fatalf("decode recommendations payload: %v", err)
+	}
+	recs, ok := recsPayload["recommendations"].([]any)
+	if !ok || len(recs) == 0 {
+		t.Fatalf("expected recommendations payload: %v", recsPayload)
+	}
+	firstRec, ok := recs[0].(map[string]any)
+	if !ok {
+		t.Fatalf("unexpected recommendation payload: %v", recs[0])
+	}
+	recID, _ := firstRec["id"].(string)
+
+	postRecDecisionBody := []byte(`{"decision":"accept"}`)
+	postRecDecisionReq := httptest.NewRequest(http.MethodPost, "/v1/capabilities/recommendations/"+recID+"/decide", bytes.NewReader(postRecDecisionBody))
+	postRecDecisionResp := httptest.NewRecorder()
+	mux.ServeHTTP(postRecDecisionResp, postRecDecisionReq)
+	if postRecDecisionResp.Code != http.StatusOK {
+		t.Fatalf("unexpected recommendation decide status: %d", postRecDecisionResp.Code)
+	}
+
+	putPolicyBody := []byte(`{"enabled":true,"require_approval":true,"max_allowed_risk":"elevated"}`)
+	putPolicyReq := httptest.NewRequest(http.MethodPut, "/v1/self-modification/policy?workspace_id=ws_1", bytes.NewReader(putPolicyBody))
+	putPolicyResp := httptest.NewRecorder()
+	mux.ServeHTTP(putPolicyResp, putPolicyReq)
+	if putPolicyResp.Code != http.StatusOK {
+		t.Fatalf("unexpected self-mod policy put status: %d", putPolicyResp.Code)
+	}
+
+	getPolicyReq := httptest.NewRequest(http.MethodGet, "/v1/self-modification/policy?workspace_id=ws_1", nil)
+	getPolicyResp := httptest.NewRecorder()
+	mux.ServeHTTP(getPolicyResp, getPolicyReq)
+	if getPolicyResp.Code != http.StatusOK {
+		t.Fatalf("unexpected self-mod policy get status: %d", getPolicyResp.Code)
+	}
+}
+
 func TestControlMuxContextBudgetFlow(t *testing.T) {
 	t.Parallel()
 
