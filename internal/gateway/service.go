@@ -171,6 +171,8 @@ type Service struct {
 	rateLimiter *RateLimiter
 	audit       *AuditLog
 	router      *WorkspaceRouter
+	injectedMu  sync.Mutex
+	injectedCnt int
 }
 
 func NewService(secret string) *Service {
@@ -194,6 +196,13 @@ type inboundMessage struct {
 	InteractiveReply  string `json:"interactive_reply"`
 	DiscoveryAnswer   string `json:"discovery_answer"`
 	AudioURL          string `json:"audio_url"`
+}
+
+type injectedToolCall struct {
+	WorkspaceID   string         `json:"workspace_id"`
+	IngressTurnID string         `json:"ingress_turn_id"`
+	ToolKey       string         `json:"tool_key"`
+	Arguments     map[string]any `json:"arguments"`
 }
 
 func signatureFor(secret, payload []byte) string {
@@ -279,6 +288,37 @@ func (s *Service) HandleInbound(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusAccepted)
 	_, _ = w.Write([]byte(`{"status":"accepted"}`))
+}
+
+func (s *Service) HandleInjectToolCall(w http.ResponseWriter, r *http.Request) {
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	var call injectedToolCall
+	if err := json.Unmarshal(body, &call); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if call.ToolKey == "" {
+		http.Error(w, "tool_key is required", http.StatusBadRequest)
+		return
+	}
+
+	s.injectedMu.Lock()
+	s.injectedCnt++
+	s.injectedMu.Unlock()
+
+	w.WriteHeader(http.StatusAccepted)
+	_, _ = w.Write([]byte(`{"status":"accepted"}`))
+}
+
+func (s *Service) InjectedToolCallCount() int {
+	s.injectedMu.Lock()
+	defer s.injectedMu.Unlock()
+	return s.injectedCnt
 }
 
 func (s *Service) HandleWhatsAppVerification(w http.ResponseWriter, r *http.Request) {

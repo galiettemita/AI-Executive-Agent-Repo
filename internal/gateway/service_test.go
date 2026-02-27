@@ -97,3 +97,22 @@ func TestRateLimitedUserGets429(t *testing.T) {
 		t.Fatalf("expected 429, got %d", resp.Code)
 	}
 }
+
+func TestInjectToolCallAccepted(t *testing.T) {
+	t.Parallel()
+
+	svc := NewService("test-secret")
+	mux := NewMux(svc)
+
+	payload := []byte(`{"workspace_id":"018f3f6a-9a0f-7cc6-8f2f-1f0f2d2f2d2f","ingress_turn_id":"018f3f6a-9a0f-7cc6-8f2f-1f0f2d2f2d2f","tool_key":"calendar.create_event","arguments":{"title":"Standup"}}`)
+	req := httptest.NewRequest(http.MethodPost, "/v1/gateway/inject/tool_call", bytes.NewReader(payload))
+	resp := httptest.NewRecorder()
+
+	mux.ServeHTTP(resp, req)
+	if resp.Code != http.StatusAccepted {
+		t.Fatalf("unexpected status: %d", resp.Code)
+	}
+	if svc.InjectedToolCallCount() != 1 {
+		t.Fatalf("expected one injected tool call, got %d", svc.InjectedToolCallCount())
+	}
+}
