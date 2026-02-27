@@ -8,770 +8,905 @@ paths:
   /v1/gateway/webhook/whatsapp:
     get:
       summary: "GET /v1/gateway/webhook/whatsapp"
+      operationId: get_v1_gateway_webhook_whatsapp
       responses:
         '200':
           description: OK
     post:
       summary: "POST /v1/gateway/webhook/whatsapp"
+      operationId: post_v1_gateway_webhook_whatsapp
       responses:
         '202':
           description: Accepted
   /v1/gateway/webhook/imessage:
     post:
       summary: "POST /v1/gateway/webhook/imessage"
+      operationId: post_v1_gateway_webhook_imessage
       responses:
         '202':
           description: Accepted
   /v1/gateway/outbound/send:
     post:
       summary: "POST /v1/gateway/outbound/send"
+      operationId: post_v1_gateway_outbound_send
       responses:
         '202':
           description: Accepted
   /v1/gateway/inject/tool_call:
     post:
       summary: "POST /v1/gateway/inject/tool_call"
+      operationId: post_v1_gateway_inject_tool_call
       responses:
         '202':
           description: Accepted
   /v1/canvas/ws:
     get:
       summary: "GET /v1/canvas/ws"
+      operationId: get_v1_canvas_ws
       responses:
         '101':
           description: Switching protocols
   /healthz/ready:
     get:
       summary: "GET /healthz/ready"
+      operationId: get_healthz_ready
       responses:
         '200':
           description: OK
   /healthz/live:
     get:
       summary: "GET /healthz/live"
+      operationId: get_healthz_live
       responses:
         '200':
           description: OK
   /v1/goals:
     get:
       summary: "GET /v1/goals"
+      operationId: get_v1_goals
       responses:
         '200':
           description: OK
     post:
       summary: "POST /v1/goals"
+      operationId: post_v1_goals
       responses:
         '202':
           description: Accepted
   /v1/goals/{id}:
     get:
       summary: "GET /v1/goals/{id}"
+      operationId: get_v1_goals_id
       responses:
         '200':
           description: OK
     put:
       summary: "PUT /v1/goals/{id}"
+      operationId: put_v1_goals_id
       responses:
         '200':
           description: OK
     delete:
       summary: "DELETE /v1/goals/{id}"
+      operationId: delete_v1_goals_id
       responses:
         '200':
           description: OK
   /v1/goals/{id}/milestones:
     get:
       summary: "GET /v1/goals/{id}/milestones"
+      operationId: get_v1_goals_id_milestones
       responses:
         '200':
           description: OK
     post:
       summary: "POST /v1/goals/{id}/milestones"
+      operationId: post_v1_goals_id_milestones
       responses:
         '202':
           description: Accepted
   /v1/goals/{id}/progress:
     get:
       summary: "GET /v1/goals/{id}/progress"
+      operationId: get_v1_goals_id_progress
       responses:
         '200':
           description: OK
   /v1/mission-control/config:
     get:
       summary: "GET /v1/mission-control/config"
+      operationId: get_v1_mission_control_config
       responses:
         '200':
           description: OK
     put:
       summary: "PUT /v1/mission-control/config"
+      operationId: put_v1_mission_control_config
       responses:
         '200':
           description: OK
   /v1/mission-control/widgets:
     get:
       summary: "GET /v1/mission-control/widgets"
+      operationId: get_v1_mission_control_widgets
       responses:
         '200':
           description: OK
     put:
       summary: "PUT /v1/mission-control/widgets"
+      operationId: put_v1_mission_control_widgets
       responses:
         '200':
           description: OK
   /v1/mission-control/snapshot:
     get:
       summary: "GET /v1/mission-control/snapshot"
+      operationId: get_v1_mission_control_snapshot
       responses:
         '200':
           description: OK
   /v1/autonomy/trust-scores:
     get:
       summary: "GET /v1/autonomy/trust-scores"
+      operationId: get_v1_autonomy_trust_scores
       responses:
         '200':
           description: OK
   /v1/autonomy/promotions:
     get:
       summary: "GET /v1/autonomy/promotions"
+      operationId: get_v1_autonomy_promotions
       responses:
         '200':
           description: OK
   /v1/autonomy/promotions/{id}/decide:
     post:
       summary: "POST /v1/autonomy/promotions/{id}/decide"
+      operationId: post_v1_autonomy_promotions_id_decide
       responses:
         '202':
           description: Accepted
   /v1/learning/config:
     get:
       summary: "GET /v1/learning/config"
+      operationId: get_v1_learning_config
       responses:
         '200':
           description: OK
     put:
       summary: "PUT /v1/learning/config"
+      operationId: put_v1_learning_config
       responses:
         '200':
           description: OK
   /v1/learning/feedback:
     post:
       summary: "POST /v1/learning/feedback"
+      operationId: post_v1_learning_feedback
       responses:
         '202':
           description: Accepted
   /v1/learning/lessons:
     get:
       summary: "GET /v1/learning/lessons"
+      operationId: get_v1_learning_lessons
       responses:
         '200':
           description: OK
   /v1/learning/lessons/{id}/confirm:
     post:
       summary: "POST /v1/learning/lessons/{id}/confirm"
+      operationId: post_v1_learning_lessons_id_confirm
       responses:
         '202':
           description: Accepted
   /v1/learning/lessons/{id}/retire:
     post:
       summary: "POST /v1/learning/lessons/{id}/retire"
+      operationId: post_v1_learning_lessons_id_retire
       responses:
         '202':
           description: Accepted
   /v1/captures/daily:
     get:
       summary: "GET /v1/captures/daily"
+      operationId: get_v1_captures_daily
       responses:
         '200':
           description: OK
   /v1/captures/daily/{date}:
     get:
       summary: "GET /v1/captures/daily/{date}"
+      operationId: get_v1_captures_daily_date
       responses:
         '200':
           description: OK
   /v1/codebase/dependencies:
     get:
       summary: "GET /v1/codebase/dependencies"
+      operationId: get_v1_codebase_dependencies
       responses:
         '200':
           description: OK
   /v1/codebase/patterns:
     get:
       summary: "GET /v1/codebase/patterns"
+      operationId: get_v1_codebase_patterns
       responses:
         '200':
           description: OK
   /v1/codebase/debt:
     get:
       summary: "GET /v1/codebase/debt"
+      operationId: get_v1_codebase_debt
       responses:
         '200':
           description: OK
   /v1/codebase/debt/{id}:
     put:
       summary: "PUT /v1/codebase/debt/{id}"
+      operationId: put_v1_codebase_debt_id
       responses:
         '200':
           description: OK
   /v1/codebase/debt/{id}/tasks:
     get:
       summary: "GET /v1/codebase/debt/{id}/tasks"
+      operationId: get_v1_codebase_debt_id_tasks
       responses:
         '200':
           description: OK
     post:
       summary: "POST /v1/codebase/debt/{id}/tasks"
+      operationId: post_v1_codebase_debt_id_tasks
       responses:
         '202':
           description: Accepted
   /v1/codebase/debt/{id}/tasks/{task_id}:
     get:
       summary: "GET /v1/codebase/debt/{id}/tasks/{task_id}"
+      operationId: get_v1_codebase_debt_id_tasks_task_id
       responses:
         '200':
           description: OK
     put:
       summary: "PUT /v1/codebase/debt/{id}/tasks/{task_id}"
+      operationId: put_v1_codebase_debt_id_tasks_task_id
       responses:
         '200':
           description: OK
   /v1/codebase/templates:
     get:
       summary: "GET /v1/codebase/templates"
+      operationId: get_v1_codebase_templates
       responses:
         '200':
           description: OK
     post:
       summary: "POST /v1/codebase/templates"
+      operationId: post_v1_codebase_templates
       responses:
         '202':
           description: Accepted
   /v1/codebase/context-export:
     post:
       summary: "POST /v1/codebase/context-export"
+      operationId: post_v1_codebase_context_export
       responses:
         '202':
           description: Accepted
   /v1/codebase/context-export/{id}:
     get:
       summary: "GET /v1/codebase/context-export/{id}"
+      operationId: get_v1_codebase_context_export_id
       responses:
         '200':
           description: OK
   /v1/capabilities/recommendations:
     get:
       summary: "GET /v1/capabilities/recommendations"
+      operationId: get_v1_capabilities_recommendations
       responses:
         '200':
           description: OK
   /v1/capabilities/recommendations/{id}/decide:
     post:
       summary: "POST /v1/capabilities/recommendations/{id}/decide"
+      operationId: post_v1_capabilities_recommendations_id_decide
       responses:
         '202':
           description: Accepted
   /v1/self-modification/policy:
     get:
       summary: "GET /v1/self-modification/policy"
+      operationId: get_v1_self_modification_policy
       responses:
         '200':
           description: OK
     put:
       summary: "PUT /v1/self-modification/policy"
+      operationId: put_v1_self_modification_policy
       responses:
         '200':
           description: OK
   /v1/admin/trust-scores/recalculate:
     post:
       summary: "POST /v1/admin/trust-scores/recalculate"
+      operationId: post_v1_admin_trust_scores_recalculate
       responses:
         '202':
           description: Accepted
   /v1/admin/learning/lessons/bulk-retire:
     post:
       summary: "POST /v1/admin/learning/lessons/bulk-retire"
+      operationId: post_v1_admin_learning_lessons_bulk_retire
       responses:
         '202':
           description: Accepted
   /v1/context/budget:
     get:
       summary: "GET /v1/context/budget"
+      operationId: get_v1_context_budget
       responses:
         '200':
           description: OK
     put:
       summary: "PUT /v1/context/budget"
+      operationId: put_v1_context_budget
       responses:
         '200':
           description: OK
   /v1/context/allocations:
     get:
       summary: "GET /v1/context/allocations"
+      operationId: get_v1_context_allocations
       responses:
         '200':
           description: OK
   /v1/rag/collections:
     get:
       summary: "GET /v1/rag/collections"
+      operationId: get_v1_rag_collections
       responses:
         '200':
           description: OK
     post:
       summary: "POST /v1/rag/collections"
+      operationId: post_v1_rag_collections
       responses:
         '202':
           description: Accepted
   /v1/rag/collections/{id}:
     get:
       summary: "GET /v1/rag/collections/{id}"
+      operationId: get_v1_rag_collections_id
       responses:
         '200':
           description: OK
     put:
       summary: "PUT /v1/rag/collections/{id}"
+      operationId: put_v1_rag_collections_id
       responses:
         '200':
           description: OK
     delete:
       summary: "DELETE /v1/rag/collections/{id}"
+      operationId: delete_v1_rag_collections_id
       responses:
         '200':
           description: OK
   /v1/rag/collections/{id}/ingest:
     post:
       summary: "POST /v1/rag/collections/{id}/ingest"
+      operationId: post_v1_rag_collections_id_ingest
       responses:
         '202':
           description: Accepted
   /v1/rag/search:
     post:
       summary: "POST /v1/rag/search"
+      operationId: post_v1_rag_search
       responses:
         '202':
           description: Accepted
   /v1/rag/retrievals/{turn_id}:
     get:
       summary: "GET /v1/rag/retrievals/{turn_id}"
+      operationId: get_v1_rag_retrievals_turn_id
       responses:
         '200':
           description: OK
   /v1/rag/eval/scores:
     get:
       summary: "GET /v1/rag/eval/scores"
+      operationId: get_v1_rag_eval_scores
       responses:
         '200':
           description: OK
   /v1/sessions/active:
     get:
       summary: "GET /v1/sessions/active"
+      operationId: get_v1_sessions_active
       responses:
         '200':
           description: OK
   /v1/sessions/{id}:
     get:
       summary: "GET /v1/sessions/{id}"
+      operationId: get_v1_sessions_id
       responses:
         '200':
           description: OK
   /v1/sessions/{id}/entities:
     get:
       summary: "GET /v1/sessions/{id}/entities"
+      operationId: get_v1_sessions_id_entities
       responses:
         '200':
           description: OK
   /v1/temporal/config:
     get:
       summary: "GET /v1/temporal/config"
+      operationId: get_v1_temporal_config
       responses:
         '200':
           description: OK
     put:
       summary: "PUT /v1/temporal/config"
+      operationId: put_v1_temporal_config
       responses:
         '200':
           description: OK
   /v1/temporal/constraints:
     get:
       summary: "GET /v1/temporal/constraints"
+      operationId: get_v1_temporal_constraints
       responses:
         '200':
           description: OK
     post:
       summary: "POST /v1/temporal/constraints"
+      operationId: post_v1_temporal_constraints
       responses:
         '202':
           description: Accepted
   /v1/temporal/constraints/{id}:
     put:
       summary: "PUT /v1/temporal/constraints/{id}"
+      operationId: put_v1_temporal_constraints_id
       responses:
         '200':
           description: OK
     delete:
       summary: "DELETE /v1/temporal/constraints/{id}"
+      operationId: delete_v1_temporal_constraints_id
       responses:
         '200':
           description: OK
   /v1/temporal/resolve:
     post:
       summary: "POST /v1/temporal/resolve"
+      operationId: post_v1_temporal_resolve
       responses:
         '202':
           description: Accepted
   /v1/temporal/conflicts:
     post:
       summary: "POST /v1/temporal/conflicts"
+      operationId: post_v1_temporal_conflicts
       responses:
         '202':
           description: Accepted
   /v1/temporal/travel-time:
     post:
       summary: "POST /v1/temporal/travel-time"
+      operationId: post_v1_temporal_travel_time
       responses:
         '202':
           description: Accepted
   /v1/guardrails/config:
     get:
       summary: "GET /v1/guardrails/config"
+      operationId: get_v1_guardrails_config
       responses:
         '200':
           description: OK
     put:
       summary: "PUT /v1/guardrails/config"
+      operationId: put_v1_guardrails_config
       responses:
         '200':
           description: OK
   /v1/guardrails/rule-sets:
     get:
       summary: "GET /v1/guardrails/rule-sets"
+      operationId: get_v1_guardrails_rule_sets
       responses:
         '200':
           description: OK
     post:
       summary: "POST /v1/guardrails/rule-sets"
+      operationId: post_v1_guardrails_rule_sets
       responses:
         '202':
           description: Accepted
   /v1/guardrails/rule-sets/{id}:
     put:
       summary: "PUT /v1/guardrails/rule-sets/{id}"
+      operationId: put_v1_guardrails_rule_sets_id
       responses:
         '200':
           description: OK
     delete:
       summary: "DELETE /v1/guardrails/rule-sets/{id}"
+      operationId: delete_v1_guardrails_rule_sets_id
       responses:
         '200':
           description: OK
   /v1/guardrails/events:
     get:
       summary: "GET /v1/guardrails/events"
+      operationId: get_v1_guardrails_events
       responses:
         '200':
           description: OK
   /v1/tools/health:
     get:
       summary: "GET /v1/tools/health"
+      operationId: get_v1_tools_health
       responses:
         '200':
           description: OK
   /v1/tools/health/{tool_key}:
     get:
       summary: "GET /v1/tools/health/{tool_key}"
+      operationId: get_v1_tools_health_tool_key
       responses:
         '200':
           description: OK
   /v1/tools/quarantine/{tool_key}/override:
     post:
       summary: "POST /v1/tools/quarantine/{tool_key}/override"
+      operationId: post_v1_tools_quarantine_tool_key_override
       responses:
         '202':
           description: Accepted
   /v1/tools/quarantine/rules:
     get:
       summary: "GET /v1/tools/quarantine/rules"
+      operationId: get_v1_tools_quarantine_rules
       responses:
         '200':
           description: OK
     post:
       summary: "POST /v1/tools/quarantine/rules"
+      operationId: post_v1_tools_quarantine_rules
       responses:
         '202':
           description: Accepted
   /v1/flags:
     get:
       summary: "GET /v1/flags"
+      operationId: get_v1_flags
       responses:
         '200':
           description: OK
     post:
       summary: "POST /v1/flags"
+      operationId: post_v1_flags
       responses:
         '202':
           description: Accepted
   /v1/flags/{key}:
     get:
       summary: "GET /v1/flags/{key}"
+      operationId: get_v1_flags_key
       responses:
         '200':
           description: OK
     put:
       summary: "PUT /v1/flags/{key}"
+      operationId: put_v1_flags_key
       responses:
         '200':
           description: OK
     delete:
       summary: "DELETE /v1/flags/{key}"
+      operationId: delete_v1_flags_key
       responses:
         '200':
           description: OK
   /v1/flags/{key}/evaluate:
     post:
       summary: "POST /v1/flags/{key}/evaluate"
+      operationId: post_v1_flags_key_evaluate
       responses:
         '202':
           description: Accepted
   /v1/flags/{key}/rules:
     get:
       summary: "GET /v1/flags/{key}/rules"
+      operationId: get_v1_flags_key_rules
       responses:
         '200':
           description: OK
     post:
       summary: "POST /v1/flags/{key}/rules"
+      operationId: post_v1_flags_key_rules
       responses:
         '202':
           description: Accepted
   /v1/streaming/config:
     get:
       summary: "GET /v1/streaming/config"
+      operationId: get_v1_streaming_config
       responses:
         '200':
           description: OK
     put:
       summary: "PUT /v1/streaming/config"
+      operationId: put_v1_streaming_config
       responses:
         '200':
           description: OK
   /v1/errors/taxonomy:
     get:
       summary: "GET /v1/errors/taxonomy"
+      operationId: get_v1_errors_taxonomy
       responses:
         '200':
           description: OK
   /v1/errors/templates:
     get:
       summary: "GET /v1/errors/templates"
+      operationId: get_v1_errors_templates
       responses:
         '200':
           description: OK
     post:
       summary: "POST /v1/errors/templates"
+      operationId: post_v1_errors_templates
       responses:
         '202':
           description: Accepted
   /v1/compliance/frameworks:
     get:
       summary: "GET /v1/compliance/frameworks"
+      operationId: get_v1_compliance_frameworks
       responses:
         '200':
           description: OK
     post:
       summary: "POST /v1/compliance/frameworks"
+      operationId: post_v1_compliance_frameworks
       responses:
         '202':
           description: Accepted
   /v1/compliance/evidence:
     get:
       summary: "GET /v1/compliance/evidence"
+      operationId: get_v1_compliance_evidence
       responses:
         '200':
           description: OK
   /v1/compliance/dsr:
     get:
       summary: "GET /v1/compliance/dsr"
+      operationId: get_v1_compliance_dsr
       responses:
         '200':
           description: OK
     post:
       summary: "POST /v1/compliance/dsr"
+      operationId: post_v1_compliance_dsr
       responses:
         '202':
           description: Accepted
   /v1/compliance/dsr/{id}:
     get:
       summary: "GET /v1/compliance/dsr/{id}"
+      operationId: get_v1_compliance_dsr_id
       responses:
         '200':
           description: OK
     put:
       summary: "PUT /v1/compliance/dsr/{id}"
+      operationId: put_v1_compliance_dsr_id
       responses:
         '200':
           description: OK
   /v1/cache/policies:
     get:
       summary: "GET /v1/cache/policies"
+      operationId: get_v1_cache_policies
       responses:
         '200':
           description: OK
     post:
       summary: "POST /v1/cache/policies"
+      operationId: post_v1_cache_policies
       responses:
         '202':
           description: Accepted
   /v1/cache/stats:
     get:
       summary: "GET /v1/cache/stats"
+      operationId: get_v1_cache_stats
       responses:
         '200':
           description: OK
   /v1/cache/invalidate:
     post:
       summary: "POST /v1/cache/invalidate"
+      operationId: post_v1_cache_invalidate
       responses:
         '202':
           description: Accepted
   /v1/model-tiers/policies:
     get:
       summary: "GET /v1/model-tiers/policies"
+      operationId: get_v1_model_tiers_policies
       responses:
         '200':
           description: OK
     post:
       summary: "POST /v1/model-tiers/policies"
+      operationId: post_v1_model_tiers_policies
       responses:
         '202':
           description: Accepted
   /v1/model-tiers/overrides:
     get:
       summary: "GET /v1/model-tiers/overrides"
+      operationId: get_v1_model_tiers_overrides
       responses:
         '200':
           description: OK
   /v1/event-schemas:
     get:
       summary: "GET /v1/event-schemas"
+      operationId: get_v1_event_schemas
       responses:
         '200':
           description: OK
   /v1/event-schemas/{type}/versions:
     get:
       summary: "GET /v1/event-schemas/{type}/versions"
+      operationId: get_v1_event_schemas_type_versions
       responses:
         '200':
           description: OK
     post:
       summary: "POST /v1/event-schemas/{type}/versions"
+      operationId: post_v1_event_schemas_type_versions
       responses:
         '202':
           description: Accepted
   /v1/event-schemas/{type}/validate:
     post:
       summary: "POST /v1/event-schemas/{type}/validate"
+      operationId: post_v1_event_schemas_type_validate
       responses:
         '202':
           description: Accepted
   /v1/admin/users:
     get:
       summary: "GET /v1/admin/users"
+      operationId: get_v1_admin_users
       responses:
         '200':
           description: OK
   /v1/admin/users/{id}:
     get:
       summary: "GET /v1/admin/users/{id}"
+      operationId: get_v1_admin_users_id
       responses:
         '200':
           description: OK
     put:
       summary: "PUT /v1/admin/users/{id}"
+      operationId: put_v1_admin_users_id
       responses:
         '200':
           description: OK
   /v1/admin/users/{id}/sessions:
     get:
       summary: "GET /v1/admin/users/{id}/sessions"
+      operationId: get_v1_admin_users_id_sessions
       responses:
         '200':
           description: OK
   /v1/admin/operations/dashboard:
     get:
       summary: "GET /v1/admin/operations/dashboard"
+      operationId: get_v1_admin_operations_dashboard
       responses:
         '200':
           description: OK
   /v1/admin/operations/workflows:
     get:
       summary: "GET /v1/admin/operations/workflows"
+      operationId: get_v1_admin_operations_workflows
       responses:
         '200':
           description: OK
   /v1/admin/operations/queues:
     get:
       summary: "GET /v1/admin/operations/queues"
+      operationId: get_v1_admin_operations_queues
       responses:
         '200':
           description: OK
   /v1/admin/costs/summary:
     get:
       summary: "GET /v1/admin/costs/summary"
+      operationId: get_v1_admin_costs_summary
       responses:
         '200':
           description: OK
   /v1/admin/costs/anomalies:
     get:
       summary: "GET /v1/admin/costs/anomalies"
+      operationId: get_v1_admin_costs_anomalies
       responses:
         '200':
           description: OK
   /v1/admin/costs/budgets:
     get:
       summary: "GET /v1/admin/costs/budgets"
+      operationId: get_v1_admin_costs_budgets
       responses:
         '200':
           description: OK
     put:
       summary: "PUT /v1/admin/costs/budgets"
+      operationId: put_v1_admin_costs_budgets
       responses:
         '200':
           description: OK
   /v1/admin/alerts/rules:
     get:
       summary: "GET /v1/admin/alerts/rules"
+      operationId: get_v1_admin_alerts_rules
       responses:
         '200':
           description: OK
     post:
       summary: "POST /v1/admin/alerts/rules"
+      operationId: post_v1_admin_alerts_rules
       responses:
         '202':
           description: Accepted
   /v1/admin/alerts/rules/{id}:
     put:
       summary: "PUT /v1/admin/alerts/rules/{id}"
+      operationId: put_v1_admin_alerts_rules_id
       responses:
         '200':
           description: OK
     delete:
       summary: "DELETE /v1/admin/alerts/rules/{id}"
+      operationId: delete_v1_admin_alerts_rules_id
       responses:
         '200':
           description: OK
   /v1/admin/alerts/channels:
     get:
       summary: "GET /v1/admin/alerts/channels"
+      operationId: get_v1_admin_alerts_channels
       responses:
         '200':
           description: OK
     post:
       summary: "POST /v1/admin/alerts/channels"
+      operationId: post_v1_admin_alerts_channels
       responses:
         '202':
           description: Accepted
   /v1/admin/kpi/report:
     get:
       summary: "GET /v1/admin/kpi/report"
+      operationId: get_v1_admin_kpi_report
       responses:
         '200':
           description: OK

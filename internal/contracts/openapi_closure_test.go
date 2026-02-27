@@ -178,6 +178,33 @@ func TestOpenAPIV9EndpointParityClosure(t *testing.T) {
 	}
 }
 
+func TestOpenAPIV9OperationIDsArePresentAndUnique(t *testing.T) {
+	t.Parallel()
+
+	doc := loadOpenAPIDoc(t)
+	seen := map[string]string{}
+
+	for path, operations := range doc.Paths {
+		for method, raw := range operations {
+			op, ok := raw.(map[string]any)
+			if !ok {
+				t.Fatalf("openapi operation payload is not an object: %s %s", strings.ToUpper(method), path)
+			}
+
+			operationID, ok := op["operationId"].(string)
+			if !ok || strings.TrimSpace(operationID) == "" {
+				t.Fatalf("missing operationId for %s %s", strings.ToUpper(method), path)
+			}
+
+			signature := strings.ToUpper(method) + " " + path
+			if prior, exists := seen[operationID]; exists {
+				t.Fatalf("duplicate operationId %q for %s and %s", operationID, prior, signature)
+			}
+			seen[operationID] = signature
+		}
+	}
+}
+
 func loadOpenAPIDoc(t *testing.T) openapiDocument {
 	t.Helper()
 
