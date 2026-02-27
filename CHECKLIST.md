@@ -86,6 +86,7 @@ Legend
 - [x] Strict closure hardening: enforced blueprint source document tracking by adding `internal/contracts/blueprint_docs_test.go` to require all three BREVIO `.docx` files are non-empty and git-tracked (`git ls-files --error-unmatch`)
 - [x] Strict closure hardening: enforced OpenAPI operation identity by auto-populating deterministic `operationId` values for all operations in `api/openapi/v9.yaml` and adding uniqueness/presence gate `TestOpenAPIV9OperationIDsArePresentAndUnique`
 - [x] Strict closure hardening: added migration ordering contract `internal/database/migration_ordering_test.go` to enforce Blueprint Rule Z (`ENUMs -> TABLEs -> RLS -> INDEXes`) and forward-only safeguards (no `DROP TABLE`, `DROP TYPE`, `TRUNCATE TABLE`)
+- [x] Strict closure hardening: expanded CI closure gate coverage (`internal/contracts/ci_closure_test.go`) to assert full V9 Section 13.1 step set (lint/tests/migration/openapi/json schema/determinism/trivy/trufflehog/contracts/integration/prompt-injection/webhook/provisioning/onboarding/sbom) in addition to V9.2 package gates
 
 Migration rules (must follow)
 - Preserve already-working preserved components unchanged unless v4.0 explicitly requires changes (per user instructions).
