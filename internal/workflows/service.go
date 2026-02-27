@@ -51,6 +51,15 @@ type Service struct {
 	idempotencyStore map[string]ToolExecutionResult
 }
 
+// Supported workflow IDs for closure mapping:
+// interactive_turn_v1, provisioning_v9, onboarding_v1, drift_watchdog_v1,
+// outbox_hold_worker, memory_consolidation, daily_capture_v1,
+// daily_log_capture_v1, goal_review_v1, trust_eval_v1,
+// learning_consolidation_v1, capability_exploration_v1,
+// cross_repo_analysis_v1, mission_control_refresh_v1, rag_ingest_v1,
+// rag_eval_v1, tool_health_eval_v1, memory_conflict_resolve_v1,
+// compliance_evidence_v1, admin_kpi_report_v1, admin_alert_eval_v1,
+// cache_maintenance_v1.
 func NewService() *Service {
 	return &Service{idempotencyStore: map[string]ToolExecutionResult{}}
 }

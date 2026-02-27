@@ -59,6 +59,7 @@ Legend
 - [x] Strict closure hardening: upgraded `Makefile` targets to enforce closure gates (`lint`, `migrate`, `contracts`, `acceptance`, `ci`) with strict checks instead of placeholders
 - [x] Strict closure hardening: strengthened provisioning Package B policy fidelity with exact decision-order tests (`DecideProvisioningV1` steps 1-8) plus RBAC hierarchy/approval tests (`owner > admin > delegate > auditor > operator`; OAuth/deploy approvals owner/admin only)
 - [x] Strict closure hardening: extended `internal/workflows` with V9.1/V9.2 additive workflow stubs and tests (daily capture/log, goal review, trust eval formula, learning consolidation, capability exploration, cross-repo analysis, mission control refresh, rag ingest/eval, tool health eval, memory conflict resolve, compliance evidence, admin KPI/alerts, cache maintenance)
+- [x] Strict closure hardening: implemented explicit closure checks for V9 Section 17.2 categories in `internal/contracts/closure_checks_test.go` and added traceability maps (`spec/traceability/prompt_validator_map.csv`, `spec/traceability/workflow_state_map.csv`)
 
 Migration rules (must follow)
 - Preserve already-working preserved components unchanged unless v4.0 explicitly requires changes (per user instructions).
