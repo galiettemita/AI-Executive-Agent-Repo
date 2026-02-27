@@ -28,6 +28,7 @@ Legend
 - [x] Phase 1 Step 1: V9 repo scaffold created (`cmd/`, `internal/`, `db/`, `api/`, `schemas/`, `policies/`, `terraform/`, `helm/`, `runbooks/`, CI)
 - [ ] Phase 1 Step 2: full V9 database core closure (all 27 enums + all 77+ tables + strict RLS/FK/index validation)
 - [x] Phase 1 Step 2 (in progress): migration expanded to full domain table-name coverage with RLS/index scaffolding and append-only audit trigger
+- [x] Phase 1 Step 3: `identity`, `delegation`, and `rbac` packages with UUIDv7 entity creation and role/delegation validation tests
 
 Migration rules (must follow)
 - Preserve already-working preserved components unchanged unless v4.0 explicitly requires changes (per user instructions).
