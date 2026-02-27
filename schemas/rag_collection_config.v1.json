@@ -1,0 +1,8 @@
+{
+  "": "https://json-schema.org/draft/2020-12/schema",
+  "": "https://schemas.brevio.example/rag_collection_config.v1.json",
+  "title": "rag_collection_config.v1",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {}
+}

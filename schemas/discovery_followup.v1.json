@@ -1,0 +1,8 @@
+{
+  "": "https://json-schema.org/draft/2020-12/schema",
+  "": "https://schemas.brevio.example/discovery_followup.v1.json",
+  "title": "discovery_followup.v1",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {}
+}

@@ -1,0 +1,8 @@
+{
+  "": "https://json-schema.org/draft/2020-12/schema",
+  "": "https://schemas.brevio.example/trust_score_report.v1.json",
+  "title": "trust_score_report.v1",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {}
+}

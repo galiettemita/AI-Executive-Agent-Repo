@@ -1,0 +1,8 @@
+{
+  "": "https://json-schema.org/draft/2020-12/schema",
+  "": "https://schemas.brevio.example/admin_kpi_report.v1.json",
+  "title": "admin_kpi_report.v1",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {}
+}
