@@ -63,6 +63,7 @@ Legend
 - [x] Strict closure hardening: added Phase 4 production-readiness artifacts for load/security validation (`evals/load/k6_interactive_turn.js`, `scripts/security/run_security_validation.sh`) with presence gate (`internal/contracts/phase4_artifacts_test.go`) and Make targets (`load-test`, `security-validate`)
 - [x] Strict closure hardening: added infra validation automation (`scripts/infra/validate.sh`) and wired it into CI (`.github/workflows/ci.yaml`) and Make (`infra-validate`) for Terraform/Helm gate execution when toolchains are available
 - [x] Strict closure hardening: added admin frontend scaffolding (`admin/src/pages/Dashboard.tsx`, `admin/src/api/client.ts`) and integrated checks into infrastructure closure tests
+- [x] Strict closure hardening: upgraded V9.2 Helm add-on charts (`BREVIO-admin-api`, `BREVIO-admin-frontend`, `BREVIO-rag-worker`, `BREVIO-guardrails`, `BREVIO-health-checker`) with replica/HPA/resource profiles aligned to prompt ranges and enforced HPA template presence in infrastructure gates
 
 Migration rules (must follow)
 - Preserve already-working preserved components unchanged unless v4.0 explicitly requires changes (per user instructions).

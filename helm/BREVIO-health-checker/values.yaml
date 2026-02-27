@@ -3,4 +3,12 @@ image:
   repository: busybox
   tag: latest
 service:
-  port: 80
+  port: 8080
+autoscaling:
+  enabled: true
+  minReplicas: 1
+  maxReplicas: 2
+resources:
+  requests:
+    cpu: "500m"
+    memory: "512Mi"
