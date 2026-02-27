@@ -52,6 +52,7 @@ Legend
 - [x] Strict closure hardening: completed V9 base IaC/chart scaffolding by adding all required Terraform module entrypoints (`vpc`, `eks`, `rds`, `elasticache`, `sqs`, `s3`, `secrets`, `temporal`, `observability`), wiring staging/production environment module composition, and upgrading core Helm charts (`BREVIO-gateway`, `BREVIO-brain`, `BREVIO-control`, `BREVIO-executor`, `BREVIO-canvas`, `BREVIO-temporal-worker`) with service/HPA templates plus gateway PDB; infrastructure gate test expanded accordingly
 - [x] Strict closure hardening: added production-readiness docs (`README.md`, `docs/DEVELOPMENT.md`, `docs/DEPLOYMENT.md`, `docs/ARCHITECTURE.md`) and documentation presence gate (`internal/contracts/documentation_closure_test.go`)
 - [x] Strict closure hardening: added control-plane HTTP mux (`internal/control/mux.go`) and upgraded `cmd/control` to serve placeholder responses across API surface; added OpenAPI response coverage test (`internal/control/mux_test.go`) to assert non-404/non-405 for spec endpoints
+- [x] Strict closure hardening: added explicit acceptance-gate suites (`internal/contracts/acceptance_gates_test.go`) covering named V9, V9.1, and V9.2 gates as executable subtests with artifact and contract assertions
 
 Migration rules (must follow)
 - Preserve already-working preserved components unchanged unless v4.0 explicitly requires changes (per user instructions).
