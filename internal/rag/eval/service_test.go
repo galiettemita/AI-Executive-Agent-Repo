@@ -2,10 +2,17 @@ package eval
 
 import "testing"
 
-func TestNewService(t *testing.T) {
+func TestRAGEvalGate(t *testing.T) {
 	s := NewService()
-	if (s == Service{}) {
-		return
+	pass := s.Evaluate("collection_1", 0.85, 0.80)
+	if !pass.Pass {
+		t.Fatalf("expected passing eval score: %#v", pass)
 	}
-	t.Fatalf("unexpected service value: %#v", s)
+	fail := s.Evaluate("collection_2", 0.70, 0.60)
+	if fail.Pass {
+		t.Fatalf("expected failing eval score: %#v", fail)
+	}
+	if _, ok := s.Get("collection_1"); !ok {
+		t.Fatalf("expected eval score lookup")
+	}
 }
