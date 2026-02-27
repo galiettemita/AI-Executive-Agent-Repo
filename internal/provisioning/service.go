@@ -24,6 +24,16 @@ const (
 	DecisionRequireUserApproval   Decision = "REQUIRE_USER_APPROVAL"
 )
 
+type Role string
+
+const (
+	RoleOwner    Role = "owner"
+	RoleAdmin    Role = "admin"
+	RoleDelegate Role = "delegate"
+	RoleAuditor  Role = "auditor"
+	RoleOperator Role = "operator"
+)
+
 type PolicyInput struct {
 	ServerID                       string
 	RiskLevel                      string
@@ -157,4 +167,25 @@ func DriftWatchdog(schemaChanged bool) string {
 		return "quarantine"
 	}
 	return "healthy"
+}
+
+func RoleRank(role Role) int {
+	switch role {
+	case RoleOwner:
+		return 5
+	case RoleAdmin:
+		return 4
+	case RoleDelegate:
+		return 3
+	case RoleAuditor:
+		return 2
+	case RoleOperator:
+		return 1
+	default:
+		return 0
+	}
+}
+
+func CanApproveOAuthAndDeploy(role Role) bool {
+	return role == RoleOwner || role == RoleAdmin
 }

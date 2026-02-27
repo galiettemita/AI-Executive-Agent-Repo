@@ -57,6 +57,7 @@ Legend
 - [x] Strict closure hardening: replaced integration stub with executable in-memory E2E pipeline in `internal/integration` (`gateway -> control -> llm/workflows -> executor -> gateway outbound`) including happy-path and budget-exhaustion tests
 - [x] Strict closure hardening: added gateway health endpoints (`GET /healthz/ready`, `GET /healthz/live`) to service mux with dedicated endpoint tests for runtime consistency across services
 - [x] Strict closure hardening: upgraded `Makefile` targets to enforce closure gates (`lint`, `migrate`, `contracts`, `acceptance`, `ci`) with strict checks instead of placeholders
+- [x] Strict closure hardening: strengthened provisioning Package B policy fidelity with exact decision-order tests (`DecideProvisioningV1` steps 1-8) plus RBAC hierarchy/approval tests (`owner > admin > delegate > auditor > operator`; OAuth/deploy approvals owner/admin only)
 
 Migration rules (must follow)
 - Preserve already-working preserved components unchanged unless v4.0 explicitly requires changes (per user instructions).
