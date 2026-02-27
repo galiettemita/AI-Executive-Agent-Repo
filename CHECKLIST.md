@@ -42,6 +42,7 @@ Legend
 - [x] Phase 1 Step 14 (baseline): service health endpoints, OpenAPI v9 surface expansion, compliance matrix scaffold, and eval fixtures
 - [x] Strict closure baseline: added `db/migrations/002_BREVIO_v91_soft_intelligence.sql` (21 enums, 23 tables) and `db/migrations/003_BREVIO_v92_production_hardening.sql` (34 enums, 47 tables) with workspace RLS + FK/workspace indexes + V9.2 specialized `GIN`/`HNSW` indexes; validated with Docker Go 1.22 (`gofmt`, `go build`, `go vet`, `go test`)
 - [x] Strict closure hardening: added migration closure tests (`internal/database/migration_closure_test.go`) for exact enum/table sets across `001/002/003`, enforced workspace RLS coverage checks, and fixed missing V9 RLS scope entries in `001_BREVIO_v9_init.sql` (`key_versions`, `prompt_versions`, `routing_policies`, `runtime_profiles`, `server_artifacts`, `specialist_agents`)
+- [x] Strict closure hardening: expanded `api/openapi/v9.yaml` to include V9/V9.1/V9.2 endpoint surface placeholders and added OpenAPI endpoint parity gate test (`internal/contracts/openapi_closure_test.go`)
 
 Migration rules (must follow)
 - Preserve already-working preserved components unchanged unless v4.0 explicitly requires changes (per user instructions).

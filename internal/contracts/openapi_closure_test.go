@@ -1,0 +1,204 @@
+package contracts
+
+import (
+	"os"
+	"path/filepath"
+	"runtime"
+	"strings"
+	"testing"
+
+	"gopkg.in/yaml.v3"
+)
+
+type openapiDocument struct {
+	Paths map[string]map[string]any `yaml:"paths"`
+}
+
+func TestOpenAPIV9EndpointParityClosure(t *testing.T) {
+	t.Parallel()
+
+	doc := loadOpenAPIDoc(t)
+	if len(doc.Paths) < 95 {
+		t.Fatalf("openapi path count too low: got=%d want_at_least=95", len(doc.Paths))
+	}
+
+	required := []string{
+		"GET /v1/gateway/webhook/whatsapp",
+		"POST /v1/gateway/webhook/whatsapp",
+		"POST /v1/gateway/webhook/imessage",
+		"POST /v1/gateway/outbound/send",
+		"POST /v1/gateway/inject/tool_call",
+		"GET /v1/canvas/ws",
+		"GET /healthz/ready",
+		"GET /healthz/live",
+		"GET /v1/goals",
+		"POST /v1/goals",
+		"GET /v1/goals/{id}",
+		"PUT /v1/goals/{id}",
+		"DELETE /v1/goals/{id}",
+		"GET /v1/goals/{id}/milestones",
+		"POST /v1/goals/{id}/milestones",
+		"GET /v1/goals/{id}/progress",
+		"GET /v1/mission-control/config",
+		"PUT /v1/mission-control/config",
+		"GET /v1/mission-control/widgets",
+		"PUT /v1/mission-control/widgets",
+		"GET /v1/mission-control/snapshot",
+		"GET /v1/autonomy/trust-scores",
+		"GET /v1/autonomy/promotions",
+		"POST /v1/autonomy/promotions/{id}/decide",
+		"GET /v1/learning/config",
+		"PUT /v1/learning/config",
+		"POST /v1/learning/feedback",
+		"GET /v1/learning/lessons",
+		"POST /v1/learning/lessons/{id}/confirm",
+		"POST /v1/learning/lessons/{id}/retire",
+		"GET /v1/captures/daily",
+		"GET /v1/captures/daily/{date}",
+		"GET /v1/codebase/dependencies",
+		"GET /v1/codebase/patterns",
+		"GET /v1/codebase/debt",
+		"PUT /v1/codebase/debt/{id}",
+		"GET /v1/codebase/debt/{id}/tasks",
+		"POST /v1/codebase/debt/{id}/tasks",
+		"GET /v1/codebase/debt/{id}/tasks/{task_id}",
+		"PUT /v1/codebase/debt/{id}/tasks/{task_id}",
+		"GET /v1/codebase/templates",
+		"POST /v1/codebase/templates",
+		"POST /v1/codebase/context-export",
+		"GET /v1/codebase/context-export/{id}",
+		"GET /v1/capabilities/recommendations",
+		"POST /v1/capabilities/recommendations/{id}/decide",
+		"GET /v1/self-modification/policy",
+		"PUT /v1/self-modification/policy",
+		"POST /v1/admin/trust-scores/recalculate",
+		"POST /v1/admin/learning/lessons/bulk-retire",
+		"GET /v1/context/budget",
+		"PUT /v1/context/budget",
+		"GET /v1/context/allocations",
+		"GET /v1/rag/collections",
+		"POST /v1/rag/collections",
+		"GET /v1/rag/collections/{id}",
+		"PUT /v1/rag/collections/{id}",
+		"DELETE /v1/rag/collections/{id}",
+		"POST /v1/rag/collections/{id}/ingest",
+		"POST /v1/rag/search",
+		"GET /v1/rag/retrievals/{turn_id}",
+		"GET /v1/rag/eval/scores",
+		"GET /v1/sessions/active",
+		"GET /v1/sessions/{id}",
+		"GET /v1/sessions/{id}/entities",
+		"GET /v1/temporal/config",
+		"PUT /v1/temporal/config",
+		"GET /v1/temporal/constraints",
+		"POST /v1/temporal/constraints",
+		"PUT /v1/temporal/constraints/{id}",
+		"DELETE /v1/temporal/constraints/{id}",
+		"POST /v1/temporal/resolve",
+		"POST /v1/temporal/conflicts",
+		"POST /v1/temporal/travel-time",
+		"GET /v1/guardrails/config",
+		"PUT /v1/guardrails/config",
+		"GET /v1/guardrails/rule-sets",
+		"POST /v1/guardrails/rule-sets",
+		"PUT /v1/guardrails/rule-sets/{id}",
+		"DELETE /v1/guardrails/rule-sets/{id}",
+		"GET /v1/guardrails/events",
+		"GET /v1/tools/health",
+		"GET /v1/tools/health/{tool_key}",
+		"POST /v1/tools/quarantine/{tool_key}/override",
+		"GET /v1/tools/quarantine/rules",
+		"POST /v1/tools/quarantine/rules",
+		"GET /v1/flags",
+		"POST /v1/flags",
+		"GET /v1/flags/{key}",
+		"PUT /v1/flags/{key}",
+		"DELETE /v1/flags/{key}",
+		"POST /v1/flags/{key}/evaluate",
+		"GET /v1/flags/{key}/rules",
+		"POST /v1/flags/{key}/rules",
+		"GET /v1/streaming/config",
+		"PUT /v1/streaming/config",
+		"GET /v1/errors/taxonomy",
+		"GET /v1/errors/templates",
+		"POST /v1/errors/templates",
+		"GET /v1/compliance/frameworks",
+		"POST /v1/compliance/frameworks",
+		"GET /v1/compliance/evidence",
+		"GET /v1/compliance/dsr",
+		"POST /v1/compliance/dsr",
+		"GET /v1/compliance/dsr/{id}",
+		"PUT /v1/compliance/dsr/{id}",
+		"GET /v1/cache/policies",
+		"POST /v1/cache/policies",
+		"GET /v1/cache/stats",
+		"POST /v1/cache/invalidate",
+		"GET /v1/model-tiers/policies",
+		"POST /v1/model-tiers/policies",
+		"GET /v1/model-tiers/overrides",
+		"GET /v1/event-schemas",
+		"GET /v1/event-schemas/{type}/versions",
+		"POST /v1/event-schemas/{type}/versions",
+		"POST /v1/event-schemas/{type}/validate",
+		"GET /v1/admin/users",
+		"GET /v1/admin/users/{id}",
+		"PUT /v1/admin/users/{id}",
+		"GET /v1/admin/users/{id}/sessions",
+		"GET /v1/admin/operations/dashboard",
+		"GET /v1/admin/operations/workflows",
+		"GET /v1/admin/operations/queues",
+		"GET /v1/admin/costs/summary",
+		"GET /v1/admin/costs/anomalies",
+		"GET /v1/admin/costs/budgets",
+		"PUT /v1/admin/costs/budgets",
+		"GET /v1/admin/alerts/rules",
+		"POST /v1/admin/alerts/rules",
+		"PUT /v1/admin/alerts/rules/{id}",
+		"DELETE /v1/admin/alerts/rules/{id}",
+		"GET /v1/admin/alerts/channels",
+		"POST /v1/admin/alerts/channels",
+		"GET /v1/admin/kpi/report",
+	}
+
+	for _, endpoint := range required {
+		parts := strings.SplitN(endpoint, " ", 2)
+		if len(parts) != 2 {
+			t.Fatalf("invalid required endpoint format: %q", endpoint)
+		}
+		method := strings.ToLower(parts[0])
+		path := parts[1]
+
+		ops, ok := doc.Paths[path]
+		if !ok {
+			t.Fatalf("missing required openapi path: %s", path)
+		}
+		if _, ok := ops[method]; !ok {
+			t.Fatalf("missing required openapi method: %s %s", strings.ToUpper(method), path)
+		}
+	}
+}
+
+func loadOpenAPIDoc(t *testing.T) openapiDocument {
+	t.Helper()
+
+	_, currentFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("unable to resolve current file path")
+	}
+	root := filepath.Clean(filepath.Join(filepath.Dir(currentFile), "..", ".."))
+	path := filepath.Join(root, "api", "openapi", "v9.yaml")
+
+	body, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read openapi file: %v", err)
+	}
+
+	var doc openapiDocument
+	if err := yaml.Unmarshal(body, &doc); err != nil {
+		t.Fatalf("parse openapi yaml: %v", err)
+	}
+	if len(doc.Paths) == 0 {
+		t.Fatal("openapi paths are empty")
+	}
+	return doc
+}
