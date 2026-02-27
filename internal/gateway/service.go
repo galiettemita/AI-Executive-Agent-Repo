@@ -34,6 +34,7 @@ type IngressTurn struct {
 
 type QueueMessage struct {
 	IngressTurnID uuid.UUID
+	WorkspaceID   uuid.UUID
 	GroupKey      string
 	DedupKey      string
 	Payload       []byte
@@ -102,6 +103,17 @@ func (q *InMemoryQueue) Count() int {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	return len(q.messages)
+}
+
+func (q *InMemoryQueue) Pop() (QueueMessage, bool) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	if len(q.messages) == 0 {
+		return QueueMessage{}, false
+	}
+	msg := q.messages[0]
+	q.messages = q.messages[1:]
+	return msg, true
 }
 
 type RateLimiter struct {
@@ -281,6 +293,7 @@ func (s *Service) HandleInbound(w http.ResponseWriter, r *http.Request) {
 
 	s.queue.Enqueue(QueueMessage{
 		IngressTurnID: turn.ID,
+		WorkspaceID:   turn.WorkspaceID,
 		GroupKey:      msg.UserChannelID,
 		DedupKey:      turn.ID.String(),
 		Payload:       body,
@@ -319,6 +332,22 @@ func (s *Service) InjectedToolCallCount() int {
 	s.injectedMu.Lock()
 	defer s.injectedMu.Unlock()
 	return s.injectedCnt
+}
+
+func (s *Service) BindWorkspace(channel, identifier string, workspaceID uuid.UUID) {
+	s.router.Bind(channel, identifier, workspaceID)
+}
+
+func (s *Service) QueueMessageCount() int {
+	return s.queue.Count()
+}
+
+func (s *Service) IngressTurnCount() int {
+	return s.store.TurnCount()
+}
+
+func (s *Service) PopQueueMessage() (QueueMessage, bool) {
+	return s.queue.Pop()
 }
 
 func (s *Service) HandleWhatsAppVerification(w http.ResponseWriter, r *http.Request) {

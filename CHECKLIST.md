@@ -54,6 +54,7 @@ Legend
 - [x] Strict closure hardening: added control-plane HTTP mux (`internal/control/mux.go`) and upgraded `cmd/control` to serve placeholder responses across API surface; added OpenAPI response coverage test (`internal/control/mux_test.go`) to assert non-404/non-405 for spec endpoints
 - [x] Strict closure hardening: added explicit acceptance-gate suites (`internal/contracts/acceptance_gates_test.go`) covering named V9, V9.1, and V9.2 gates as executable subtests with artifact and contract assertions
 - [x] Strict closure hardening: implemented gateway internal tool-call injection endpoint (`POST /v1/gateway/inject/tool_call`) in mux/service with dedicated test coverage (`internal/gateway/service_test.go`)
+- [x] Strict closure hardening: replaced integration stub with executable in-memory E2E pipeline in `internal/integration` (`gateway -> control -> llm/workflows -> executor -> gateway outbound`) including happy-path and budget-exhaustion tests
 
 Migration rules (must follow)
 - Preserve already-working preserved components unchanged unless v4.0 explicitly requires changes (per user instructions).
