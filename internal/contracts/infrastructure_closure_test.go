@@ -27,6 +27,20 @@ func TestV9InfrastructureArtifactsExist(t *testing.T) {
 	for _, module := range requiredTerraformModules {
 		assertFileNonEmpty(t, filepath.Join(root, "terraform", "modules", module, "main.tf"))
 	}
+	requiredModuleTokens := map[string][]string{
+		"vpc":           {"cidr_block", "nat_gateway_enabled", "security_groups"},
+		"eks":           {"kubernetes_version", "irsa_enabled", "managed_node_groups"},
+		"rds":           {"engine_version", "multi_az", "storage_encrypted", "pgbouncer_sidecar"},
+		"elasticache":   {"transit_encryption_enabled", "automatic_failover_enabled"},
+		"sqs":           {"interactive_turns.fifo", "dead_letter_queues", "redrive_policy"},
+		"s3":            {"attachments", "sboms", "exports", "schemas"},
+		"secrets":       {"managed_secrets", "dual_key_read_window_minutes_min"},
+		"temporal":      {"namespace", "retention_days", "task_queue"},
+		"observability": {"prometheus", "grafana", "loki", "jaeger", "otel_collector"},
+	}
+	for module, tokens := range requiredModuleTokens {
+		assertFileContainsTokens(t, filepath.Join(root, "terraform", "modules", module, "main.tf"), tokens)
+	}
 
 	requiredModuleBlocks := []string{
 		`module "vpc"`,
@@ -59,6 +73,17 @@ func TestV9InfrastructureArtifactsExist(t *testing.T) {
 		assertFileNonEmpty(t, filepath.Join(root, "helm", chart, "templates", "service.yaml"))
 		assertFileNonEmpty(t, filepath.Join(root, "helm", chart, "templates", "hpa.yaml"))
 	}
+	coreChartValueTokens := map[string][]string{
+		"BREVIO-gateway":         {"minReplicas: 3", "maxReplicas: 10"},
+		"BREVIO-brain":           {"minReplicas: 2", "maxReplicas: 8"},
+		"BREVIO-control":         {"minReplicas: 2", "maxReplicas: 6"},
+		"BREVIO-executor":        {"minReplicas: 3", "maxReplicas: 12"},
+		"BREVIO-canvas":          {"replicaCount: 2", "maxReplicas: 4"},
+		"BREVIO-temporal-worker": {"minReplicas: 2", "maxReplicas: 8", "taskQueue: BREVIO-tasks"},
+	}
+	for chart, tokens := range coreChartValueTokens {
+		assertFileContainsTokens(t, filepath.Join(root, "helm", chart, "values.yaml"), tokens)
+	}
 
 	canvasChart := filepath.Join(root, "helm", "BREVIO-canvas")
 	assertFileNonEmpty(t, filepath.Join(canvasChart, "Chart.yaml"))
@@ -83,6 +108,14 @@ func TestV92InfrastructureArtifactsExist(t *testing.T) {
 		path := filepath.Join(root, "terraform", "modules", module, "main.tf")
 		assertFileNonEmpty(t, path)
 	}
+	requiredModuleTokens := map[string][]string{
+		"opensearch":          {"data_nodes", "ultra_warm_enabled", "hybrid_rag"},
+		"admin-frontend":      {"cloudfront", "waf_enabled", "admin_ip_allowlist_enabled"},
+		"feature-flags-cache": {"dedicated_cluster", "sub_millisecond_target", "transit_encryption_enabled"},
+	}
+	for module, tokens := range requiredModuleTokens {
+		assertFileContainsTokens(t, filepath.Join(root, "terraform", "modules", module, "main.tf"), tokens)
+	}
 
 	requiredHelmCharts := []string{
 		"BREVIO-admin-api",
@@ -97,6 +130,16 @@ func TestV92InfrastructureArtifactsExist(t *testing.T) {
 		assertFileNonEmpty(t, filepath.Join(root, "helm", chart, "templates", "deployment.yaml"))
 		assertFileNonEmpty(t, filepath.Join(root, "helm", chart, "templates", "service.yaml"))
 		assertFileNonEmpty(t, filepath.Join(root, "helm", chart, "templates", "hpa.yaml"))
+	}
+	requiredHelmValueTokens := map[string][]string{
+		"BREVIO-admin-api":      {"minReplicas: 2", "maxReplicas: 4", "cpu: \"1\"", "memory: \"1Gi\""},
+		"BREVIO-admin-frontend": {"replicaCount: 2", "cpu: \"500m\"", "memory: \"256Mi\""},
+		"BREVIO-rag-worker":     {"minReplicas: 2", "maxReplicas: 6", "cpu: \"2\"", "memory: \"4Gi\""},
+		"BREVIO-guardrails":     {"minReplicas: 2", "maxReplicas: 4", "cpu: \"1\"", "memory: \"1Gi\""},
+		"BREVIO-health-checker": {"minReplicas: 1", "maxReplicas: 2", "cpu: \"500m\"", "memory: \"512Mi\""},
+	}
+	for chart, tokens := range requiredHelmValueTokens {
+		assertFileContainsTokens(t, filepath.Join(root, "helm", chart, "values.yaml"), tokens)
 	}
 
 	assertFileNonEmpty(t, filepath.Join(root, "admin", "src", "pages", "Dashboard.tsx"))
