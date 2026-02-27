@@ -97,6 +97,52 @@ func TestControlMuxFeatureFlagsFlow(t *testing.T) {
 	}
 }
 
+func TestControlMuxContextBudgetFlow(t *testing.T) {
+	t.Parallel()
+
+	mux := NewMux(NewService("dev-secret"))
+
+	putBudgetBody := []byte(`{"workspace_id":"ws_1","budget_tokens":2048,"status":"active","allocations":{"history":1024,"tool":512}}`)
+	putBudgetReq := httptest.NewRequest(http.MethodPut, "/v1/context/budget", bytes.NewReader(putBudgetBody))
+	putBudgetResp := httptest.NewRecorder()
+	mux.ServeHTTP(putBudgetResp, putBudgetReq)
+	if putBudgetResp.Code != http.StatusOK {
+		t.Fatalf("unexpected put budget status: %d", putBudgetResp.Code)
+	}
+
+	getBudgetReq := httptest.NewRequest(http.MethodGet, "/v1/context/budget?workspace_id=ws_1", nil)
+	getBudgetResp := httptest.NewRecorder()
+	mux.ServeHTTP(getBudgetResp, getBudgetReq)
+	if getBudgetResp.Code != http.StatusOK {
+		t.Fatalf("unexpected get budget status: %d", getBudgetResp.Code)
+	}
+	var budgetPayload map[string]any
+	if err := json.Unmarshal(getBudgetResp.Body.Bytes(), &budgetPayload); err != nil {
+		t.Fatalf("decode budget payload: %v", err)
+	}
+	if int(budgetPayload["budget_tokens"].(float64)) != 2048 {
+		t.Fatalf("unexpected budget tokens payload: %v", budgetPayload)
+	}
+
+	getAllocReq := httptest.NewRequest(http.MethodGet, "/v1/context/allocations?workspace_id=ws_1", nil)
+	getAllocResp := httptest.NewRecorder()
+	mux.ServeHTTP(getAllocResp, getAllocReq)
+	if getAllocResp.Code != http.StatusOK {
+		t.Fatalf("unexpected get allocations status: %d", getAllocResp.Code)
+	}
+	var allocPayload map[string]any
+	if err := json.Unmarshal(getAllocResp.Body.Bytes(), &allocPayload); err != nil {
+		t.Fatalf("decode allocation payload: %v", err)
+	}
+	allocs, ok := allocPayload["allocations"].([]any)
+	if !ok {
+		t.Fatalf("missing allocations payload: %v", allocPayload)
+	}
+	if len(allocs) != 2 {
+		t.Fatalf("unexpected allocation count: %d", len(allocs))
+	}
+}
+
 func concretePath(template string) string {
 	replacements := map[string]string{
 		"{id}":       "11111111-1111-1111-1111-111111111111",

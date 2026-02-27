@@ -6,12 +6,14 @@ import (
 	"net/http"
 	"strings"
 
+	contextlayer "github.com/brevio/brevio/internal/context"
 	"github.com/brevio/brevio/internal/feature_flags"
 )
 
 func NewMux(service *Service) *http.ServeMux {
 	mux := http.NewServeMux()
 	flags := feature_flags.NewService()
+	contextBudgets := contextlayer.NewService()
 
 	mux.HandleFunc("GET /healthz/ready", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -32,6 +34,10 @@ func NewMux(service *Service) *http.ServeMux {
 			handleFeatureFlags(w, r, flags)
 			return
 		}
+		if strings.HasPrefix(r.URL.Path, "/v1/context") {
+			handleContextBudget(w, r, contextBudgets)
+			return
+		}
 
 		status := http.StatusOK
 		if r.Method == http.MethodPost {
@@ -47,6 +53,77 @@ func NewMux(service *Service) *http.ServeMux {
 
 	_ = service
 	return mux
+}
+
+func handleContextBudget(w http.ResponseWriter, r *http.Request, svc *contextlayer.Service) {
+	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
+	if len(parts) != 3 {
+		http.NotFound(w, r)
+		return
+	}
+
+	switch parts[2] {
+	case "budget":
+		switch r.Method {
+		case http.MethodGet:
+			workspaceID := r.URL.Query().Get("workspace_id")
+			if workspaceID == "" {
+				workspaceID = "default"
+			}
+			budget, ok := svc.GetBudget(workspaceID)
+			if !ok {
+				budget = contextlayer.Budget{
+					WorkspaceID:  workspaceID,
+					BudgetTokens: 0,
+					Status:       "active",
+				}
+			}
+			writeJSON(w, http.StatusOK, budget)
+			return
+		case http.MethodPut:
+			var payload struct {
+				WorkspaceID  string         `json:"workspace_id"`
+				BudgetTokens int            `json:"budget_tokens"`
+				Status       string         `json:"status"`
+				Allocations  map[string]int `json:"allocations"`
+			}
+			if err := decodeJSON(r, &payload); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			if payload.WorkspaceID == "" {
+				payload.WorkspaceID = "default"
+			}
+			if payload.Status == "" {
+				payload.Status = "active"
+			}
+			budget := svc.SetBudget(payload.WorkspaceID, payload.BudgetTokens, payload.Status)
+			if len(payload.Allocations) > 0 {
+				svc.SetAllocations(payload.WorkspaceID, payload.Allocations)
+			}
+			writeJSON(w, http.StatusOK, budget)
+			return
+		default:
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+	case "allocations":
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		workspaceID := r.URL.Query().Get("workspace_id")
+		if workspaceID == "" {
+			workspaceID = "default"
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"workspace_id": workspaceID,
+			"allocations":  svc.GetAllocations(workspaceID),
+		})
+		return
+	default:
+		http.NotFound(w, r)
+	}
 }
 
 func handleFeatureFlags(w http.ResponseWriter, r *http.Request, flags *feature_flags.Service) {
