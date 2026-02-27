@@ -61,6 +61,7 @@ Legend
 - [x] Strict closure hardening: extended `internal/workflows` with V9.1/V9.2 additive workflow stubs and tests (daily capture/log, goal review, trust eval formula, learning consolidation, capability exploration, cross-repo analysis, mission control refresh, rag ingest/eval, tool health eval, memory conflict resolve, compliance evidence, admin KPI/alerts, cache maintenance)
 - [x] Strict closure hardening: implemented explicit closure checks for V9 Section 17.2 categories in `internal/contracts/closure_checks_test.go` and added traceability maps (`spec/traceability/prompt_validator_map.csv`, `spec/traceability/workflow_state_map.csv`)
 - [x] Strict closure hardening: added Phase 4 production-readiness artifacts for load/security validation (`evals/load/k6_interactive_turn.js`, `scripts/security/run_security_validation.sh`) with presence gate (`internal/contracts/phase4_artifacts_test.go`) and Make targets (`load-test`, `security-validate`)
+- [x] Strict closure hardening: added infra validation automation (`scripts/infra/validate.sh`) and wired it into CI (`.github/workflows/ci.yaml`) and Make (`infra-validate`) for Terraform/Helm gate execution when toolchains are available
 
 Migration rules (must follow)
 - Preserve already-working preserved components unchanged unless v4.0 explicitly requires changes (per user instructions).

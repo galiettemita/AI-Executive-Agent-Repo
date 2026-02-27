@@ -1,4 +1,4 @@
-.PHONY: build test lint migrate docker-build contracts acceptance ci load-test security-validate
+.PHONY: build test lint migrate docker-build contracts acceptance ci load-test security-validate infra-validate
 
 build:
 	go build ./...
@@ -34,3 +34,6 @@ load-test:
 
 security-validate:
 	bash scripts/security/run_security_validation.sh
+
+infra-validate:
+	bash scripts/infra/validate.sh

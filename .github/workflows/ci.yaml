@@ -51,6 +51,8 @@ jobs:
         run: go test ./internal/contracts -run TestOpenAPIV9EndpointParityClosure -count=1
       - name: json schema lint
         run: go test ./internal/contracts -run TestJSONSchemaClosure -count=1
+      - name: infrastructure validate
+        run: bash scripts/infra/validate.sh
       - name: determinism suite
         run: go test ./internal/llm ./internal/workflows -count=1
       - name: dependency cve scan (trivy)

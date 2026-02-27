@@ -13,6 +13,7 @@ func TestPhase4ReadinessArtifactsExist(t *testing.T) {
 		filepath.Join(root, "evals", "load", "k6_interactive_turn.js"),
 		filepath.Join(root, "evals", "load", "README.md"),
 		filepath.Join(root, "scripts", "security", "run_security_validation.sh"),
+		filepath.Join(root, "scripts", "infra", "validate.sh"),
 	}
 	for _, path := range required {
 		assertFileNonEmpty(t, path)
