@@ -34,6 +34,7 @@ Legend
 - [x] Phase 1 Step 6 (baseline): control-plane firewall + execution-gate + approval-token service + initial OPA policy bundle and tests
 - [x] Phase 1 Step 7 (baseline): deterministic workflow runtime package with interactive/provisioning/onboarding/drift/idempotency tests
 - [x] Phase 1 Step 8 (baseline): executor simulate/commit flow with trust receipts, audit hash chain, SSRF blocking, and circuit-breaker tests
+- [x] Phase 1 Step 9 (baseline): memory write gate, exclusion rules, workspace-scoped retrieval, and consolidation duplicate merge tests
 
 Migration rules (must follow)
 - Preserve already-working preserved components unchanged unless v4.0 explicitly requires changes (per user instructions).
