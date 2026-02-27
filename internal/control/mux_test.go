@@ -255,6 +255,220 @@ func TestControlMuxModelTiersFlow(t *testing.T) {
 	}
 }
 
+func TestControlMuxStreamingFlow(t *testing.T) {
+	t.Parallel()
+
+	mux := NewMux(NewService("dev-secret"))
+
+	putBody := []byte(`{"workspace_id":"ws_1","ack_enabled":true,"typing_indicator":true,"first_byte_sla_ms":450,"chunk_size_bytes":4096,"progressive_disclosure":true}`)
+	putReq := httptest.NewRequest(http.MethodPut, "/v1/streaming/config", bytes.NewReader(putBody))
+	putResp := httptest.NewRecorder()
+	mux.ServeHTTP(putResp, putReq)
+	if putResp.Code != http.StatusOK {
+		t.Fatalf("unexpected streaming put status: %d", putResp.Code)
+	}
+
+	getReq := httptest.NewRequest(http.MethodGet, "/v1/streaming/config?workspace_id=ws_1", nil)
+	getResp := httptest.NewRecorder()
+	mux.ServeHTTP(getResp, getReq)
+	if getResp.Code != http.StatusOK {
+		t.Fatalf("unexpected streaming get status: %d", getResp.Code)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(getResp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode streaming payload: %v", err)
+	}
+	if int(payload["first_byte_sla_ms"].(float64)) != 450 {
+		t.Fatalf("unexpected streaming config payload: %v", payload)
+	}
+}
+
+func TestControlMuxComplianceFlow(t *testing.T) {
+	t.Parallel()
+
+	mux := NewMux(NewService("dev-secret"))
+
+	postFrameworkBody := []byte(`{"workspace_id":"ws_1","key":"soc2","status":"active","version_int":1}`)
+	postFrameworkReq := httptest.NewRequest(http.MethodPost, "/v1/compliance/frameworks", bytes.NewReader(postFrameworkBody))
+	postFrameworkResp := httptest.NewRecorder()
+	mux.ServeHTTP(postFrameworkResp, postFrameworkReq)
+	if postFrameworkResp.Code != http.StatusCreated {
+		t.Fatalf("unexpected compliance framework create status: %d", postFrameworkResp.Code)
+	}
+
+	getFrameworksReq := httptest.NewRequest(http.MethodGet, "/v1/compliance/frameworks?workspace_id=ws_1", nil)
+	getFrameworksResp := httptest.NewRecorder()
+	mux.ServeHTTP(getFrameworksResp, getFrameworksReq)
+	if getFrameworksResp.Code != http.StatusOK {
+		t.Fatalf("unexpected compliance frameworks get status: %d", getFrameworksResp.Code)
+	}
+
+	getEvidenceReq := httptest.NewRequest(http.MethodGet, "/v1/compliance/evidence?workspace_id=ws_1", nil)
+	getEvidenceResp := httptest.NewRecorder()
+	mux.ServeHTTP(getEvidenceResp, getEvidenceReq)
+	if getEvidenceResp.Code != http.StatusOK {
+		t.Fatalf("unexpected compliance evidence get status: %d", getEvidenceResp.Code)
+	}
+
+	postDSRBody := []byte(`{"workspace_id":"ws_1","user_id":"user_1","request_type":"deletion","status":"received","deadline_date":"2026-03-31"}`)
+	postDSRReq := httptest.NewRequest(http.MethodPost, "/v1/compliance/dsr", bytes.NewReader(postDSRBody))
+	postDSRResp := httptest.NewRecorder()
+	mux.ServeHTTP(postDSRResp, postDSRReq)
+	if postDSRResp.Code != http.StatusCreated {
+		t.Fatalf("unexpected compliance dsr create status: %d", postDSRResp.Code)
+	}
+	var dsrPayload map[string]any
+	if err := json.Unmarshal(postDSRResp.Body.Bytes(), &dsrPayload); err != nil {
+		t.Fatalf("decode dsr payload: %v", err)
+	}
+	dsrID, ok := dsrPayload["id"].(string)
+	if !ok || dsrID == "" {
+		t.Fatalf("missing dsr id payload: %v", dsrPayload)
+	}
+
+	getDSRReq := httptest.NewRequest(http.MethodGet, "/v1/compliance/dsr/"+dsrID, nil)
+	getDSRResp := httptest.NewRecorder()
+	mux.ServeHTTP(getDSRResp, getDSRReq)
+	if getDSRResp.Code != http.StatusOK {
+		t.Fatalf("unexpected compliance dsr get status: %d", getDSRResp.Code)
+	}
+
+	putDSRBody := []byte(`{"status":"in_progress"}`)
+	putDSRReq := httptest.NewRequest(http.MethodPut, "/v1/compliance/dsr/"+dsrID, bytes.NewReader(putDSRBody))
+	putDSRResp := httptest.NewRecorder()
+	mux.ServeHTTP(putDSRResp, putDSRReq)
+	if putDSRResp.Code != http.StatusOK {
+		t.Fatalf("unexpected compliance dsr update status: %d", putDSRResp.Code)
+	}
+
+	getDSRListReq := httptest.NewRequest(http.MethodGet, "/v1/compliance/dsr?workspace_id=ws_1", nil)
+	getDSRListResp := httptest.NewRecorder()
+	mux.ServeHTTP(getDSRListResp, getDSRListReq)
+	if getDSRListResp.Code != http.StatusOK {
+		t.Fatalf("unexpected compliance dsr list status: %d", getDSRListResp.Code)
+	}
+}
+
+func TestControlMuxAdminFlow(t *testing.T) {
+	t.Parallel()
+
+	mux := NewMux(NewService("dev-secret"))
+
+	trustReq := httptest.NewRequest(http.MethodPost, "/v1/admin/trust-scores/recalculate", nil)
+	trustResp := httptest.NewRecorder()
+	mux.ServeHTTP(trustResp, trustReq)
+	if trustResp.Code != http.StatusAccepted {
+		t.Fatalf("unexpected admin trust recalc status: %d", trustResp.Code)
+	}
+
+	lessonsReq := httptest.NewRequest(http.MethodPost, "/v1/admin/learning/lessons/bulk-retire", nil)
+	lessonsResp := httptest.NewRecorder()
+	mux.ServeHTTP(lessonsResp, lessonsReq)
+	if lessonsResp.Code != http.StatusAccepted {
+		t.Fatalf("unexpected admin lessons bulk-retire status: %d", lessonsResp.Code)
+	}
+
+	putUserBody := []byte(`{"email":"operator@brev.io","role":"operator","status":"active"}`)
+	putUserReq := httptest.NewRequest(http.MethodPut, "/v1/admin/users/user_1", bytes.NewReader(putUserBody))
+	putUserResp := httptest.NewRecorder()
+	mux.ServeHTTP(putUserResp, putUserReq)
+	if putUserResp.Code != http.StatusOK {
+		t.Fatalf("unexpected admin put user status: %d", putUserResp.Code)
+	}
+
+	getUsersReq := httptest.NewRequest(http.MethodGet, "/v1/admin/users", nil)
+	getUsersResp := httptest.NewRecorder()
+	mux.ServeHTTP(getUsersResp, getUsersReq)
+	if getUsersResp.Code != http.StatusOK {
+		t.Fatalf("unexpected admin users list status: %d", getUsersResp.Code)
+	}
+
+	getUserReq := httptest.NewRequest(http.MethodGet, "/v1/admin/users/user_1", nil)
+	getUserResp := httptest.NewRecorder()
+	mux.ServeHTTP(getUserResp, getUserReq)
+	if getUserResp.Code != http.StatusOK {
+		t.Fatalf("unexpected admin get user status: %d", getUserResp.Code)
+	}
+
+	getUserSessionsReq := httptest.NewRequest(http.MethodGet, "/v1/admin/users/user_1/sessions", nil)
+	getUserSessionsResp := httptest.NewRecorder()
+	mux.ServeHTTP(getUserSessionsResp, getUserSessionsReq)
+	if getUserSessionsResp.Code != http.StatusOK {
+		t.Fatalf("unexpected admin user sessions status: %d", getUserSessionsResp.Code)
+	}
+
+	for _, path := range []string{
+		"/v1/admin/operations/dashboard",
+		"/v1/admin/operations/workflows",
+		"/v1/admin/operations/queues",
+		"/v1/admin/costs/summary",
+		"/v1/admin/costs/anomalies",
+		"/v1/admin/costs/budgets",
+		"/v1/admin/kpi/report",
+	} {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		resp := httptest.NewRecorder()
+		mux.ServeHTTP(resp, req)
+		if resp.Code != http.StatusOK {
+			t.Fatalf("unexpected admin get status for %s: %d", path, resp.Code)
+		}
+	}
+
+	putBudgetBody := []byte(`{"workspace_id":"default","monthly_cap":2000,"current_cost":300,"currency":"USD"}`)
+	putBudgetReq := httptest.NewRequest(http.MethodPut, "/v1/admin/costs/budgets", bytes.NewReader(putBudgetBody))
+	putBudgetResp := httptest.NewRecorder()
+	mux.ServeHTTP(putBudgetResp, putBudgetReq)
+	if putBudgetResp.Code != http.StatusOK {
+		t.Fatalf("unexpected admin put budget status: %d", putBudgetResp.Code)
+	}
+
+	postRuleBody := []byte(`{"name":"error_spike","metric":"error_rate_pct","threshold":1.0,"comparator":">","enabled":true}`)
+	postRuleReq := httptest.NewRequest(http.MethodPost, "/v1/admin/alerts/rules", bytes.NewReader(postRuleBody))
+	postRuleResp := httptest.NewRecorder()
+	mux.ServeHTTP(postRuleResp, postRuleReq)
+	if postRuleResp.Code != http.StatusCreated {
+		t.Fatalf("unexpected admin create alert rule status: %d", postRuleResp.Code)
+	}
+	var rulePayload map[string]any
+	if err := json.Unmarshal(postRuleResp.Body.Bytes(), &rulePayload); err != nil {
+		t.Fatalf("decode rule payload: %v", err)
+	}
+	ruleID, ok := rulePayload["id"].(string)
+	if !ok || ruleID == "" {
+		t.Fatalf("missing alert rule id payload: %v", rulePayload)
+	}
+
+	putRuleBody := []byte(`{"name":"error_spike_v2","metric":"error_rate_pct","threshold":1.2,"comparator":">","enabled":true}`)
+	putRuleReq := httptest.NewRequest(http.MethodPut, "/v1/admin/alerts/rules/"+ruleID, bytes.NewReader(putRuleBody))
+	putRuleResp := httptest.NewRecorder()
+	mux.ServeHTTP(putRuleResp, putRuleReq)
+	if putRuleResp.Code != http.StatusOK {
+		t.Fatalf("unexpected admin update alert rule status: %d", putRuleResp.Code)
+	}
+
+	deleteRuleReq := httptest.NewRequest(http.MethodDelete, "/v1/admin/alerts/rules/"+ruleID, nil)
+	deleteRuleResp := httptest.NewRecorder()
+	mux.ServeHTTP(deleteRuleResp, deleteRuleReq)
+	if deleteRuleResp.Code != http.StatusOK {
+		t.Fatalf("unexpected admin delete alert rule status: %d", deleteRuleResp.Code)
+	}
+
+	postChannelBody := []byte(`{"type":"email","target":"ops@brev.io","enabled":true}`)
+	postChannelReq := httptest.NewRequest(http.MethodPost, "/v1/admin/alerts/channels", bytes.NewReader(postChannelBody))
+	postChannelResp := httptest.NewRecorder()
+	mux.ServeHTTP(postChannelResp, postChannelReq)
+	if postChannelResp.Code != http.StatusCreated {
+		t.Fatalf("unexpected admin create alert channel status: %d", postChannelResp.Code)
+	}
+
+	getChannelsReq := httptest.NewRequest(http.MethodGet, "/v1/admin/alerts/channels", nil)
+	getChannelsResp := httptest.NewRecorder()
+	mux.ServeHTTP(getChannelsResp, getChannelsReq)
+	if getChannelsResp.Code != http.StatusOK {
+		t.Fatalf("unexpected admin list alert channels status: %d", getChannelsResp.Code)
+	}
+}
+
 func TestControlMuxContextBudgetFlow(t *testing.T) {
 	t.Parallel()
 

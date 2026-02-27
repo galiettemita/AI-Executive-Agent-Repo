@@ -72,6 +72,7 @@ Legend
 - [x] Strict closure hardening: implemented V9.2 guardrails and tool-health foundations (`internal/guardrails`, `internal/tool_health`) and wired `/v1/guardrails/*` + `/v1/tools/*` handlers with deterministic config/rule/event and quarantine override flows
 - [x] Strict closure hardening: implemented V9.2 error communication and deterministic caching foundations (`internal/errors`, `internal/caching`) and wired `/v1/errors/*` + `/v1/cache/*` handlers with taxonomy/template and policy/stats/invalidate route coverage
 - [x] Strict closure hardening: implemented V9.2 event schema registry and model tier foundations (`internal/event_schemas`, `internal/model_tiers`) and wired `/v1/event-schemas/*` + `/v1/model-tiers/*` handlers with versioning/validation and tier policy/override route coverage
+- [x] Strict closure hardening: implemented V9.2 compliance automation, admin backend, and streaming foundations (`internal/compliance`, `internal/admin`, `internal/streaming`) and wired `/v1/compliance/*`, `/v1/admin/*`, and `/v1/streaming/config` handlers with deterministic CRUD and operations route coverage
 
 Migration rules (must follow)
 - Preserve already-working preserved components unchanged unless v4.0 explicitly requires changes (per user instructions).

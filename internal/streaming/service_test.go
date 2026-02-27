@@ -2,10 +2,25 @@ package streaming
 
 import "testing"
 
-func TestNewService(t *testing.T) {
+func TestStreamingConfigLifecycle(t *testing.T) {
 	s := NewService()
-	if (s == Service{}) {
-		return
+
+	cfg := s.UpsertConfig("ws_1", Config{
+		AckEnabled:            true,
+		TypingIndicator:       true,
+		FirstByteSLAMillis:    450,
+		ChunkSizeBytes:        4096,
+		ProgressiveDisclosure: true,
+	})
+	if cfg.WorkspaceID != "ws_1" {
+		t.Fatalf("unexpected workspace on config: %#v", cfg)
 	}
-	t.Fatalf("unexpected service value: %#v", s)
+
+	loaded, ok := s.GetConfig("ws_1")
+	if !ok {
+		t.Fatalf("expected streaming config lookup success")
+	}
+	if loaded.FirstByteSLAMillis != 450 {
+		t.Fatalf("unexpected streaming config: %#v", loaded)
+	}
 }

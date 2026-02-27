@@ -6,7 +6,9 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/brevio/brevio/internal/admin"
 	"github.com/brevio/brevio/internal/caching"
+	"github.com/brevio/brevio/internal/compliance"
 	contextlayer "github.com/brevio/brevio/internal/context"
 	errorlayer "github.com/brevio/brevio/internal/errors"
 	"github.com/brevio/brevio/internal/event_schemas"
@@ -15,13 +17,16 @@ import (
 	"github.com/brevio/brevio/internal/model_tiers"
 	raglayer "github.com/brevio/brevio/internal/rag"
 	"github.com/brevio/brevio/internal/sessions"
+	"github.com/brevio/brevio/internal/streaming"
 	"github.com/brevio/brevio/internal/temporal_reasoning"
 	"github.com/brevio/brevio/internal/tool_health"
 )
 
 func NewMux(service *Service) *http.ServeMux {
 	mux := http.NewServeMux()
+	adminSvc := admin.NewService()
 	cacheSvc := caching.NewService()
+	complianceSvc := compliance.NewService()
 	eventSchemaSvc := event_schemas.NewService()
 	flags := feature_flags.NewService()
 	errorSvc := errorlayer.NewService()
@@ -30,6 +35,7 @@ func NewMux(service *Service) *http.ServeMux {
 	modelTierSvc := model_tiers.NewService()
 	ragSvc := raglayer.NewService()
 	sessionSvc := sessions.NewService()
+	streamingSvc := streaming.NewService()
 	temporalSvc := temporal_reasoning.NewService()
 	toolHealthSvc := tool_health.NewService()
 
@@ -50,6 +56,14 @@ func NewMux(service *Service) *http.ServeMux {
 
 		if strings.HasPrefix(r.URL.Path, "/v1/flags") {
 			handleFeatureFlags(w, r, flags)
+			return
+		}
+		if strings.HasPrefix(r.URL.Path, "/v1/admin") {
+			handleAdmin(w, r, adminSvc)
+			return
+		}
+		if strings.HasPrefix(r.URL.Path, "/v1/compliance") {
+			handleCompliance(w, r, complianceSvc)
 			return
 		}
 		if strings.HasPrefix(r.URL.Path, "/v1/errors") {
@@ -86,6 +100,10 @@ func NewMux(service *Service) *http.ServeMux {
 		}
 		if strings.HasPrefix(r.URL.Path, "/v1/sessions") {
 			handleSessions(w, r, sessionSvc)
+			return
+		}
+		if strings.HasPrefix(r.URL.Path, "/v1/streaming") {
+			handleStreaming(w, r, streamingSvc)
 			return
 		}
 		if strings.HasPrefix(r.URL.Path, "/v1/temporal") {
@@ -1096,6 +1114,356 @@ func handleTemporalReasoning(w http.ResponseWriter, r *http.Request, svc *tempor
 			"workspace_id": payload.WorkspaceID,
 			"minutes":      svc.EstimateTravelMinutes(payload.WorkspaceID, payload.Origin, payload.Destination, payload.DistanceKM),
 		})
+		return
+
+	default:
+		http.NotFound(w, r)
+		return
+	}
+}
+
+func handleStreaming(w http.ResponseWriter, r *http.Request, svc *streaming.Service) {
+	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
+	if len(parts) != 3 || parts[2] != "config" {
+		http.NotFound(w, r)
+		return
+	}
+
+	switch r.Method {
+	case http.MethodGet:
+		workspaceID := r.URL.Query().Get("workspace_id")
+		if workspaceID == "" {
+			workspaceID = "default"
+		}
+		cfg, ok := svc.GetConfig(workspaceID)
+		if !ok {
+			cfg = svc.DefaultConfig(workspaceID)
+		}
+		writeJSON(w, http.StatusOK, cfg)
+		return
+	case http.MethodPut:
+		var payload streaming.Config
+		if err := decodeJSON(r, &payload); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		workspaceID := payload.WorkspaceID
+		if workspaceID == "" {
+			workspaceID = "default"
+		}
+		writeJSON(w, http.StatusOK, svc.UpsertConfig(workspaceID, payload))
+		return
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+}
+
+func handleCompliance(w http.ResponseWriter, r *http.Request, svc *compliance.Service) {
+	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
+	if len(parts) < 3 {
+		http.NotFound(w, r)
+		return
+	}
+
+	switch parts[2] {
+	case "frameworks":
+		switch r.Method {
+		case http.MethodGet:
+			workspaceID := r.URL.Query().Get("workspace_id")
+			if workspaceID == "" {
+				workspaceID = "default"
+			}
+			writeJSON(w, http.StatusOK, map[string]any{
+				"frameworks": svc.ListFrameworks(workspaceID),
+			})
+			return
+		case http.MethodPost:
+			var payload compliance.Framework
+			if err := decodeJSON(r, &payload); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			framework := svc.UpsertFramework(payload)
+			svc.AddEvidence(compliance.Evidence{
+				WorkspaceID: framework.WorkspaceID,
+				FrameworkID: framework.ID,
+				EventType:   "BREVIO.compliance.framework.created.v1",
+				ArtifactURI: "s3://breviosboms/framework.json",
+				SHA256:      "sha256:framework",
+			})
+			writeJSON(w, http.StatusCreated, framework)
+			return
+		default:
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+	case "evidence":
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		workspaceID := r.URL.Query().Get("workspace_id")
+		if workspaceID == "" {
+			workspaceID = "default"
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"evidence": svc.ListEvidence(workspaceID),
+		})
+		return
+
+	case "dsr":
+		switch {
+		case len(parts) == 3 && r.Method == http.MethodGet:
+			workspaceID := r.URL.Query().Get("workspace_id")
+			if workspaceID == "" {
+				workspaceID = "default"
+			}
+			writeJSON(w, http.StatusOK, map[string]any{
+				"dsr_requests": svc.ListDSR(workspaceID),
+			})
+			return
+		case len(parts) == 3 && r.Method == http.MethodPost:
+			var payload compliance.DSRRequest
+			if err := decodeJSON(r, &payload); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			writeJSON(w, http.StatusCreated, svc.CreateDSR(payload))
+			return
+		case len(parts) == 4 && r.Method == http.MethodGet:
+			request, ok := svc.GetDSR(parts[3])
+			if !ok {
+				writeJSON(w, http.StatusOK, map[string]any{
+					"id":     parts[3],
+					"status": "not_found",
+				})
+				return
+			}
+			writeJSON(w, http.StatusOK, request)
+			return
+		case len(parts) == 4 && r.Method == http.MethodPut:
+			var payload compliance.DSRRequest
+			if err := decodeJSON(r, &payload); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			request, ok := svc.UpdateDSR(parts[3], payload)
+			if !ok {
+				writeJSON(w, http.StatusOK, map[string]any{
+					"id":     parts[3],
+					"status": "not_found",
+				})
+				return
+			}
+			writeJSON(w, http.StatusOK, request)
+			return
+		default:
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+	default:
+		http.NotFound(w, r)
+		return
+	}
+}
+
+func handleAdmin(w http.ResponseWriter, r *http.Request, svc *admin.Service) {
+	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
+	if len(parts) < 3 {
+		http.NotFound(w, r)
+		return
+	}
+
+	switch parts[2] {
+	case "trust-scores":
+		if len(parts) == 4 && parts[3] == "recalculate" && r.Method == http.MethodPost {
+			writeJSON(w, http.StatusAccepted, svc.RecalculateTrustScores())
+			return
+		}
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+
+	case "learning":
+		if len(parts) == 5 && parts[3] == "lessons" && parts[4] == "bulk-retire" && r.Method == http.MethodPost {
+			writeJSON(w, http.StatusAccepted, svc.BulkRetireLessons())
+			return
+		}
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+
+	case "users":
+		switch {
+		case len(parts) == 3 && r.Method == http.MethodGet:
+			writeJSON(w, http.StatusOK, map[string]any{"users": svc.ListUsers()})
+			return
+		case len(parts) == 4 && r.Method == http.MethodGet:
+			user, ok := svc.GetUser(parts[3])
+			if !ok {
+				writeJSON(w, http.StatusOK, map[string]any{"id": parts[3], "status": "not_found"})
+				return
+			}
+			writeJSON(w, http.StatusOK, user)
+			return
+		case len(parts) == 4 && r.Method == http.MethodPut:
+			var payload admin.User
+			if err := decodeJSON(r, &payload); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			payload.ID = parts[3]
+			writeJSON(w, http.StatusOK, svc.UpsertUser(payload))
+			return
+		case len(parts) == 5 && parts[4] == "sessions" && r.Method == http.MethodGet:
+			writeJSON(w, http.StatusOK, map[string]any{"sessions": svc.ListUserSessions(parts[3])})
+			return
+		default:
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+	case "operations":
+		if len(parts) != 4 || r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		switch parts[3] {
+		case "dashboard":
+			writeJSON(w, http.StatusOK, svc.Dashboard())
+			return
+		case "workflows":
+			writeJSON(w, http.StatusOK, map[string]any{"workflows": svc.Workflows()})
+			return
+		case "queues":
+			writeJSON(w, http.StatusOK, map[string]any{"queues": svc.Queues()})
+			return
+		default:
+			http.NotFound(w, r)
+			return
+		}
+
+	case "costs":
+		if len(parts) != 4 {
+			http.NotFound(w, r)
+			return
+		}
+		switch parts[3] {
+		case "summary":
+			if r.Method != http.MethodGet {
+				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+				return
+			}
+			writeJSON(w, http.StatusOK, svc.CostSummary())
+			return
+		case "anomalies":
+			if r.Method != http.MethodGet {
+				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+				return
+			}
+			writeJSON(w, http.StatusOK, map[string]any{"anomalies": svc.CostAnomalies()})
+			return
+		case "budgets":
+			if r.Method == http.MethodGet {
+				writeJSON(w, http.StatusOK, svc.GetBudget())
+				return
+			}
+			if r.Method == http.MethodPut {
+				var payload admin.CostBudget
+				if err := decodeJSON(r, &payload); err != nil {
+					http.Error(w, err.Error(), http.StatusBadRequest)
+					return
+				}
+				writeJSON(w, http.StatusOK, svc.SetBudget(payload))
+				return
+			}
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		default:
+			http.NotFound(w, r)
+			return
+		}
+
+	case "alerts":
+		if len(parts) < 4 {
+			http.NotFound(w, r)
+			return
+		}
+		switch parts[3] {
+		case "rules":
+			if len(parts) == 4 {
+				switch r.Method {
+				case http.MethodGet:
+					writeJSON(w, http.StatusOK, map[string]any{"rules": svc.ListAlertRules()})
+					return
+				case http.MethodPost:
+					var payload admin.AlertRule
+					if err := decodeJSON(r, &payload); err != nil {
+						http.Error(w, err.Error(), http.StatusBadRequest)
+						return
+					}
+					writeJSON(w, http.StatusCreated, svc.UpsertAlertRule(payload))
+					return
+				default:
+					http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+					return
+				}
+			}
+			if len(parts) == 5 {
+				switch r.Method {
+				case http.MethodPut:
+					var payload admin.AlertRule
+					if err := decodeJSON(r, &payload); err != nil {
+						http.Error(w, err.Error(), http.StatusBadRequest)
+						return
+					}
+					payload.ID = parts[4]
+					writeJSON(w, http.StatusOK, svc.UpsertAlertRule(payload))
+					return
+				case http.MethodDelete:
+					writeJSON(w, http.StatusOK, map[string]any{"deleted": svc.DeleteAlertRule(parts[4])})
+					return
+				default:
+					http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+					return
+				}
+			}
+			http.NotFound(w, r)
+			return
+
+		case "channels":
+			if len(parts) != 4 {
+				http.NotFound(w, r)
+				return
+			}
+			switch r.Method {
+			case http.MethodGet:
+				writeJSON(w, http.StatusOK, map[string]any{"channels": svc.ListAlertChannels()})
+				return
+			case http.MethodPost:
+				var payload admin.AlertChannel
+				if err := decodeJSON(r, &payload); err != nil {
+					http.Error(w, err.Error(), http.StatusBadRequest)
+					return
+				}
+				writeJSON(w, http.StatusCreated, svc.UpsertAlertChannel(payload))
+				return
+			default:
+				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+				return
+			}
+
+		default:
+			http.NotFound(w, r)
+			return
+		}
+
+	case "kpi":
+		if len(parts) == 4 && parts[3] == "report" && r.Method == http.MethodGet {
+			writeJSON(w, http.StatusOK, svc.KPIReport())
+			return
+		}
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 
 	default:
