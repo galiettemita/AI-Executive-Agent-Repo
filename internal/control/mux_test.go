@@ -143,6 +143,81 @@ func TestControlMuxContextBudgetFlow(t *testing.T) {
 	}
 }
 
+func TestControlMuxRAGFlow(t *testing.T) {
+	t.Parallel()
+
+	mux := NewMux(NewService("dev-secret"))
+
+	postCollectionBody := []byte(`{"workspace_id":"ws_1","name":"knowledge","description":"workspace docs"}`)
+	postCollectionReq := httptest.NewRequest(http.MethodPost, "/v1/rag/collections", bytes.NewReader(postCollectionBody))
+	postCollectionResp := httptest.NewRecorder()
+	mux.ServeHTTP(postCollectionResp, postCollectionReq)
+	if postCollectionResp.Code != http.StatusCreated {
+		t.Fatalf("unexpected create collection status: %d", postCollectionResp.Code)
+	}
+	var collectionPayload map[string]any
+	if err := json.Unmarshal(postCollectionResp.Body.Bytes(), &collectionPayload); err != nil {
+		t.Fatalf("decode collection payload: %v", err)
+	}
+	collectionID, ok := collectionPayload["id"].(string)
+	if !ok || collectionID == "" {
+		t.Fatalf("missing collection id payload: %v", collectionPayload)
+	}
+
+	postIngestBody := []byte(`{"documents":["alpha policy requires recipient verification","beta policy requires confirmation"]}`)
+	postIngestReq := httptest.NewRequest(http.MethodPost, "/v1/rag/collections/"+collectionID+"/ingest", bytes.NewReader(postIngestBody))
+	postIngestResp := httptest.NewRecorder()
+	mux.ServeHTTP(postIngestResp, postIngestReq)
+	if postIngestResp.Code != http.StatusAccepted {
+		t.Fatalf("unexpected ingest status: %d", postIngestResp.Code)
+	}
+
+	postSearchBody := []byte(`{"workspace_id":"ws_1","turn_id":"turn_1","query_text":"recipient verification","collection_ids":["` + collectionID + `"],"max_results":2}`)
+	postSearchReq := httptest.NewRequest(http.MethodPost, "/v1/rag/search", bytes.NewReader(postSearchBody))
+	postSearchResp := httptest.NewRecorder()
+	mux.ServeHTTP(postSearchResp, postSearchReq)
+	if postSearchResp.Code != http.StatusOK {
+		t.Fatalf("unexpected search status: %d", postSearchResp.Code)
+	}
+	var searchPayload map[string]any
+	if err := json.Unmarshal(postSearchResp.Body.Bytes(), &searchPayload); err != nil {
+		t.Fatalf("decode search payload: %v", err)
+	}
+	results, ok := searchPayload["results"].([]any)
+	if !ok || len(results) == 0 {
+		t.Fatalf("expected non-empty retrieval results: %v", searchPayload)
+	}
+
+	getRetrievalReq := httptest.NewRequest(http.MethodGet, "/v1/rag/retrievals/turn_1", nil)
+	getRetrievalResp := httptest.NewRecorder()
+	mux.ServeHTTP(getRetrievalResp, getRetrievalReq)
+	if getRetrievalResp.Code != http.StatusOK {
+		t.Fatalf("unexpected get retrieval status: %d", getRetrievalResp.Code)
+	}
+
+	getScoresReq := httptest.NewRequest(http.MethodGet, "/v1/rag/eval/scores?workspace_id=ws_1", nil)
+	getScoresResp := httptest.NewRecorder()
+	mux.ServeHTTP(getScoresResp, getScoresReq)
+	if getScoresResp.Code != http.StatusOK {
+		t.Fatalf("unexpected eval scores status: %d", getScoresResp.Code)
+	}
+
+	putCollectionBody := []byte(`{"workspace_id":"ws_1","name":"knowledge-v2","description":"updated docs"}`)
+	putCollectionReq := httptest.NewRequest(http.MethodPut, "/v1/rag/collections/"+collectionID, bytes.NewReader(putCollectionBody))
+	putCollectionResp := httptest.NewRecorder()
+	mux.ServeHTTP(putCollectionResp, putCollectionReq)
+	if putCollectionResp.Code != http.StatusOK {
+		t.Fatalf("unexpected update collection status: %d", putCollectionResp.Code)
+	}
+
+	deleteCollectionReq := httptest.NewRequest(http.MethodDelete, "/v1/rag/collections/"+collectionID, nil)
+	deleteCollectionResp := httptest.NewRecorder()
+	mux.ServeHTTP(deleteCollectionResp, deleteCollectionReq)
+	if deleteCollectionResp.Code != http.StatusOK {
+		t.Fatalf("unexpected delete collection status: %d", deleteCollectionResp.Code)
+	}
+}
+
 func TestControlMuxSessionsFlow(t *testing.T) {
 	t.Parallel()
 

@@ -68,6 +68,7 @@ Legend
 - [x] Strict closure hardening: implemented V9.2 feature flag runtime logic (`internal/feature_flags`) with CRUD/rules/evaluate/kill-switch and wired `/v1/flags*` API handling into control mux with end-to-end route tests
 - [x] Strict closure hardening: implemented V9.2 context engineering API/runtime foundation (`internal/context`) and wired `/v1/context/budget` + `/v1/context/allocations` handlers into control mux with deterministic budget/allocation lifecycle tests
 - [x] Strict closure hardening: implemented V9.2 session management and temporal reasoning foundations (`internal/sessions`, `internal/temporal_reasoning`) and wired `/v1/sessions/*` + `/v1/temporal/*` control-plane handlers with deterministic flow tests (active sessions, constraints/conflicts, resolve, travel-time)
+- [x] Strict closure hardening: implemented V9.2 RAG runtime foundation (`internal/rag`) with deterministic collection CRUD, ingest chunking, hybrid-style retrieval logs, and eval score tracking; wired `/v1/rag/*` control-plane handlers and end-to-end mux route tests
 
 Migration rules (must follow)
 - Preserve already-working preserved components unchanged unless v4.0 explicitly requires changes (per user instructions).

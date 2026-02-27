@@ -8,6 +8,7 @@ import (
 
 	contextlayer "github.com/brevio/brevio/internal/context"
 	"github.com/brevio/brevio/internal/feature_flags"
+	raglayer "github.com/brevio/brevio/internal/rag"
 	"github.com/brevio/brevio/internal/sessions"
 	"github.com/brevio/brevio/internal/temporal_reasoning"
 )
@@ -16,6 +17,7 @@ func NewMux(service *Service) *http.ServeMux {
 	mux := http.NewServeMux()
 	flags := feature_flags.NewService()
 	contextBudgets := contextlayer.NewService()
+	ragSvc := raglayer.NewService()
 	sessionSvc := sessions.NewService()
 	temporalSvc := temporal_reasoning.NewService()
 
@@ -40,6 +42,10 @@ func NewMux(service *Service) *http.ServeMux {
 		}
 		if strings.HasPrefix(r.URL.Path, "/v1/context") {
 			handleContextBudget(w, r, contextBudgets)
+			return
+		}
+		if strings.HasPrefix(r.URL.Path, "/v1/rag") {
+			handleRAG(w, r, ragSvc)
 			return
 		}
 		if strings.HasPrefix(r.URL.Path, "/v1/sessions") {
@@ -249,6 +255,151 @@ func handleFeatureFlags(w http.ResponseWriter, r *http.Request, flags *feature_f
 	}
 
 	http.NotFound(w, r)
+}
+
+func handleRAG(w http.ResponseWriter, r *http.Request, svc *raglayer.Service) {
+	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
+	if len(parts) < 3 {
+		http.NotFound(w, r)
+		return
+	}
+
+	switch parts[2] {
+	case "collections":
+		switch {
+		case len(parts) == 3 && r.Method == http.MethodGet:
+			workspaceID := r.URL.Query().Get("workspace_id")
+			if workspaceID == "" {
+				workspaceID = "default"
+			}
+			writeJSON(w, http.StatusOK, map[string]any{
+				"collections": svc.ListCollections(workspaceID),
+			})
+			return
+
+		case len(parts) == 3 && r.Method == http.MethodPost:
+			var payload raglayer.Collection
+			if err := decodeJSON(r, &payload); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			writeJSON(w, http.StatusCreated, svc.UpsertCollection(payload))
+			return
+
+		case len(parts) == 4 && r.Method == http.MethodGet:
+			collectionID := parts[3]
+			collection, ok := svc.GetCollection(collectionID)
+			if !ok {
+				writeJSON(w, http.StatusOK, raglayer.Collection{
+					ID:          collectionID,
+					WorkspaceID: "default",
+					Status:      "not_found",
+				})
+				return
+			}
+			writeJSON(w, http.StatusOK, collection)
+			return
+
+		case len(parts) == 4 && r.Method == http.MethodPut:
+			var payload raglayer.Collection
+			if err := decodeJSON(r, &payload); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			payload.ID = parts[3]
+			writeJSON(w, http.StatusOK, svc.UpsertCollection(payload))
+			return
+
+		case len(parts) == 4 && r.Method == http.MethodDelete:
+			if svc.DeleteCollection(parts[3]) {
+				writeJSON(w, http.StatusOK, map[string]any{"status": "deleted"})
+				return
+			}
+			writeJSON(w, http.StatusOK, map[string]any{"status": "not_found"})
+			return
+
+		case len(parts) == 5 && parts[4] == "ingest" && r.Method == http.MethodPost:
+			var payload struct {
+				Documents []string `json:"documents"`
+			}
+			if err := decodeJSON(r, &payload); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			collection, ingested, ok := svc.Ingest(parts[3], payload.Documents)
+			if !ok {
+				writeJSON(w, http.StatusOK, map[string]any{
+					"collection_id":   parts[3],
+					"status":          "collection_not_found",
+					"ingested_chunks": 0,
+				})
+				return
+			}
+			writeJSON(w, http.StatusAccepted, map[string]any{
+				"collection":      collection,
+				"ingested_chunks": ingested,
+				"status":          "accepted",
+			})
+			return
+
+		default:
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+	case "search":
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		var payload struct {
+			WorkspaceID   string   `json:"workspace_id"`
+			TurnID        string   `json:"turn_id"`
+			QueryText     string   `json:"query_text"`
+			CollectionIDs []string `json:"collection_ids"`
+			MaxResults    int      `json:"max_results"`
+		}
+		if err := decodeJSON(r, &payload); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		retrieval := svc.Search(payload.WorkspaceID, payload.TurnID, payload.QueryText, payload.CollectionIDs, payload.MaxResults)
+		writeJSON(w, http.StatusOK, retrieval)
+		return
+
+	case "retrievals":
+		if len(parts) != 4 || r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		retrieval, ok := svc.GetRetrieval(parts[3])
+		if !ok {
+			writeJSON(w, http.StatusOK, raglayer.Retrieval{
+				TurnID:  parts[3],
+				Results: []raglayer.RetrievalResult{},
+			})
+			return
+		}
+		writeJSON(w, http.StatusOK, retrieval)
+		return
+
+	case "eval":
+		if len(parts) != 4 || parts[3] != "scores" || r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		workspaceID := r.URL.Query().Get("workspace_id")
+		if workspaceID == "" {
+			workspaceID = "default"
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"scores": svc.ListEvalScores(workspaceID),
+		})
+		return
+	default:
+		http.NotFound(w, r)
+		return
+	}
 }
 
 func handleSessions(w http.ResponseWriter, r *http.Request, svc *sessions.Service) {
