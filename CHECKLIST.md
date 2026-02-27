@@ -30,6 +30,7 @@ Legend
 - [x] Phase 1 Step 2 (in progress): migration expanded to full domain table-name coverage with RLS/index scaffolding and append-only audit trigger
 - [x] Phase 1 Step 3: `identity`, `delegation`, and `rbac` packages with UUIDv7 entity creation and role/delegation validation tests
 - [x] Phase 1 Step 4: `connectors` package with 40+ connector seed loader, AES-256-GCM OAuth envelope vault, key-versioned decrypt, and health tracking
+- [x] Phase 1 Step 5 (baseline): gateway webhook handlers with HMAC validation, replay nonce protection, dedup hashing, rate-limit admission, workspace routing, and queue enqueue tests
 
 Migration rules (must follow)
 - Preserve already-working preserved components unchanged unless v4.0 explicitly requires changes (per user instructions).
