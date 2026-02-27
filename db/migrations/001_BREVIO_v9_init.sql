@@ -905,14 +905,17 @@ DECLARE
     'trajectories','trajectory_tool_calls','document_parse_results','user_oauth_tokens','user_connector_settings',
     'connector_health','voice_profiles','transcription_logs','airport_knowledge','canvas_sessions',
     'canvas_interactions','ha_entity_cache','environment_signals','rate_limit_events','financial_merchant_rules',
-    'financial_anomaly_events','system_autonomy_overrides','user_domain_autonomy_settings','portability_requests',
-    'incident_notifications','user_entity_fingerprints','audit_log_entries','tool_executions',
+    'financial_anomaly_events','system_autonomy_overrides','user_domain_autonomy_settings','key_versions',
+    'portability_requests','incident_notifications','user_entity_fingerprints','audit_log_entries',
+    'tool_executions',
     'provisioning_requests','provisioning_declined','provisioning_steps','provisioning_events',
     'workspace_mcp_servers','mcp_tool_schema_snapshots','provisioning_policy_versions',
     'provisioning_monthly_budgets','provisioning_monthly_usage','workspace_server_rules',
-    'mcp_egress_audit_events','connector_success_stats','capability_resolution_cache','llm_output_replay',
-    'discovery_sessions','discovery_answers','discovery_unparsed_lines','workspace_profiles',
-    'workspace_personas','workspace_behavior_policies','code_repositories','code_repo_profiles','review_tasks'
+    'server_artifacts','runtime_profiles','mcp_egress_audit_events','connector_success_stats',
+    'capability_resolution_cache','prompt_versions','llm_output_replay','discovery_sessions',
+    'discovery_answers','discovery_unparsed_lines','workspace_profiles','workspace_personas',
+    'workspace_behavior_policies','code_repositories','code_repo_profiles','routing_policies',
+    'specialist_agents','review_tasks'
   ];
 BEGIN
   FOREACH t IN ARRAY workspace_tables LOOP
