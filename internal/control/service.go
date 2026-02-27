@@ -1,0 +1,213 @@
+package control
+
+import (
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"regexp"
+	"strings"
+	"sync"
+	"time"
+)
+
+var (
+	ErrFirewallBlocked = errors.New("firewall blocked content")
+	ErrTokenExpired    = errors.New("approval token expired")
+	ErrTokenInvalid    = errors.New("approval token invalid")
+	ErrTokenReplay     = errors.New("approval token nonce replay")
+)
+
+type FirewallResult struct {
+	Allowed bool
+	Reason  string
+}
+
+type DecisionInput struct {
+	AutonomyLevel          string
+	ToolRiskLevel          string
+	IsWrite                bool
+	RateLimited            bool
+	BudgetExhausted        bool
+	FirewallAllowed        bool
+	SemanticVerifierPassed bool
+	BlockedTool            bool
+}
+
+type DecisionOutput struct {
+	Decision   string
+	ReasonCode string
+}
+
+type approvalPayload struct {
+	Action     string    `json:"action"`
+	RiskLevel  string    `json:"risk_level"`
+	Nonce      string    `json:"nonce"`
+	IssuedAt   time.Time `json:"issued_at"`
+	ExpiresAt  time.Time `json:"expires_at"`
+	KeyVersion string    `json:"key_version"`
+}
+
+type ApprovalService struct {
+	mu         sync.Mutex
+	secret     []byte
+	keyVersion string
+	seenNonces map[string]struct{}
+}
+
+func NewApprovalService(secret, keyVersion string) *ApprovalService {
+	return &ApprovalService{
+		secret:     []byte(secret),
+		keyVersion: keyVersion,
+		seenNonces: map[string]struct{}{},
+	}
+}
+
+func (a *ApprovalService) GenerateToken(action, riskLevel, nonce string, now time.Time) (string, error) {
+	ttl := 5 * time.Minute
+	if strings.EqualFold(riskLevel, "CRITICAL") {
+		ttl = 30 * time.Second
+	}
+	payload := approvalPayload{
+		Action:     action,
+		RiskLevel:  strings.ToUpper(riskLevel),
+		Nonce:      nonce,
+		IssuedAt:   now.UTC(),
+		ExpiresAt:  now.UTC().Add(ttl),
+		KeyVersion: a.keyVersion,
+	}
+
+	blob, err := json.Marshal(payload)
+	if err != nil {
+		return "", err
+	}
+	sig := sign(a.secret, blob)
+	return base64.StdEncoding.EncodeToString(blob) + "." + sig, nil
+}
+
+func (a *ApprovalService) ValidateToken(token string, now time.Time) error {
+	parts := strings.Split(token, ".")
+	if len(parts) != 2 {
+		return ErrTokenInvalid
+	}
+
+	blob, err := base64.StdEncoding.DecodeString(parts[0])
+	if err != nil {
+		return ErrTokenInvalid
+	}
+	if !hmac.Equal([]byte(parts[1]), []byte(sign(a.secret, blob))) {
+		return ErrTokenInvalid
+	}
+
+	var payload approvalPayload
+	if err := json.Unmarshal(blob, &payload); err != nil {
+		return ErrTokenInvalid
+	}
+
+	if now.UTC().After(payload.ExpiresAt) {
+		return ErrTokenExpired
+	}
+
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if _, seen := a.seenNonces[payload.Nonce]; seen {
+		return ErrTokenReplay
+	}
+	a.seenNonces[payload.Nonce] = struct{}{}
+	return nil
+}
+
+func sign(secret, blob []byte) string {
+	mac := hmac.New(sha256.New, secret)
+	mac.Write(blob)
+	return base64.StdEncoding.EncodeToString(mac.Sum(nil))
+}
+
+type Service struct {
+	approval *ApprovalService
+}
+
+func NewService(secret string) *Service {
+	return &Service{approval: NewApprovalService(secret, "v1")}
+}
+
+func (s *Service) Approval() *ApprovalService {
+	return s.approval
+}
+
+func (s *Service) FirewallCheck(rawInput string) FirewallResult {
+	if len(rawInput) > 8000 {
+		return FirewallResult{Allowed: false, Reason: "INPUT_TOO_LARGE"}
+	}
+
+	l1 := strings.Map(func(r rune) rune {
+		if r < 32 && r != '\n' && r != '\t' {
+			return -1
+		}
+		return r
+	}, rawInput)
+
+	patterns := []*regexp.Regexp{
+		regexp.MustCompile(`(?i)ignore\s+all\s+previous\s+instructions`),
+		regexp.MustCompile(`(?i)system\s*prompt`),
+		regexp.MustCompile(`(?i)exfiltrate`),
+		regexp.MustCompile(`(?i)\\b(ssrf|169\.254\.169\.254)\\b`),
+	}
+	for _, p := range patterns {
+		if p.MatchString(l1) {
+			return FirewallResult{Allowed: false, Reason: "PATTERN_MATCH_BLOCK"}
+		}
+	}
+
+	if strings.Contains(strings.ToLower(l1), "call arbitrary tool") {
+		return FirewallResult{Allowed: false, Reason: "SEMANTIC_BLOCK"}
+	}
+
+	return FirewallResult{Allowed: true, Reason: "ALLOW"}
+}
+
+func (s *Service) EvaluateGate(input DecisionInput) DecisionOutput {
+	if !input.FirewallAllowed {
+		return DecisionOutput{Decision: "deny", ReasonCode: "FIREWALL_BLOCKED"}
+	}
+	if !input.SemanticVerifierPassed {
+		return DecisionOutput{Decision: "deny", ReasonCode: "SEMANTIC_VERIFIER_FAILED"}
+	}
+	if input.BlockedTool {
+		return DecisionOutput{Decision: "deny", ReasonCode: "TOOL_BLOCKED"}
+	}
+	if input.RateLimited {
+		return DecisionOutput{Decision: "deny", ReasonCode: "RATE_LIMIT_EXCEEDED"}
+	}
+	if input.BudgetExhausted {
+		return DecisionOutput{Decision: "deny", ReasonCode: "BUDGET_CALLS_EXHAUSTED"}
+	}
+	if !input.IsWrite {
+		return DecisionOutput{Decision: "allow", ReasonCode: "READ_ONLY"}
+	}
+
+	autonomy := strings.ToUpper(input.AutonomyLevel)
+	risk := strings.ToUpper(input.ToolRiskLevel)
+	switch autonomy {
+	case "A0":
+		return DecisionOutput{Decision: "deny", ReasonCode: "AUTONOMY_A0_WRITE_DENIED"}
+	case "A1":
+		return DecisionOutput{Decision: "require_approval", ReasonCode: "AUTONOMY_A1_CONFIRM_REQUIRED"}
+	case "A2":
+		if risk == "CRITICAL" || risk == "ELEVATED" {
+			return DecisionOutput{Decision: "require_approval", ReasonCode: "AUTONOMY_A2_CONFIRM_REQUIRED"}
+		}
+		return DecisionOutput{Decision: "allow", ReasonCode: "AUTONOMY_A2_ALLOW"}
+	case "A3":
+		if risk == "CRITICAL" {
+			return DecisionOutput{Decision: "require_approval", ReasonCode: "AUTONOMY_A3_CRITICAL_CONFIRM"}
+		}
+		return DecisionOutput{Decision: "allow", ReasonCode: "AUTONOMY_A3_AUTO_COMMIT"}
+	case "A4":
+		return DecisionOutput{Decision: "allow", ReasonCode: "AUTONOMY_A4_FULL_AUTO"}
+	default:
+		return DecisionOutput{Decision: "deny", ReasonCode: fmt.Sprintf("UNKNOWN_AUTONOMY_%s", autonomy)}
+	}
+}
