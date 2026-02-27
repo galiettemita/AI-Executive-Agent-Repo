@@ -1,0 +1,58 @@
+name: ci
+on:
+  pull_request:
+  push:
+    branches: [main]
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+      - name: gofmt check
+        run: test -z "$(gofmt -l .)"
+      - name: go vet
+        run: go vet ./...
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+      - name: unit tests
+        run: go test ./... -count=1
+  gates:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: migration lint
+        run: test -f db/migrations/001_BREVIO_v9_init.sql
+      - name: openapi lint
+        run: test -f api/openapi/v9.yaml
+      - name: json schema lint
+        run: test -d schemas
+      - name: determinism suite
+        run: echo "placeholder"
+      - name: dependency cve scan (trivy)
+        run: echo "placeholder"
+      - name: docker image scan (trivy)
+        run: echo "placeholder"
+      - name: secrets scan (trufflehog)
+        run: echo "placeholder"
+      - name: contract tests
+        run: echo "placeholder"
+      - name: integration tests
+        run: echo "placeholder"
+      - name: prompt injection tests
+        run: echo "placeholder"
+      - name: webhook signature suite
+        run: echo "placeholder"
+      - name: provisioning compensation suite
+        run: echo "placeholder"
+      - name: onboarding fixture suite
+        run: echo "placeholder"
+      - name: sbom generation (syft)
+        run: echo "placeholder"

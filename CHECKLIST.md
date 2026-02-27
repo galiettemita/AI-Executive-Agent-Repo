@@ -14,6 +14,18 @@ Legend
 - `[x]` Done (verified in code and/or deployed)
 - `[ ]` Not done / blocked
 
+## BREVIO V9 Migration Tracker (Current Program)
+- [x] Phase 0.1: map current repository (`find` + depth-limited directory map) and compare against V9 canonical structure
+- [x] Phase 0.1: create gap report at `docs/codebase_audit_report.md` with required artifact status table
+- [x] Phase 0.1: identify non-V9/V9.1/V9.2 candidate removal areas in audit report
+- [x] Track new source blueprints in Git:
+  - `Brevio_V9_Consolidated_Master_Blueprint.docx`
+  - `Brevio_V91_Addendum_Soft_Intelligence_Layer.docx`
+  - `Brevio_V92_Addendum_Production_Hardening.docx`
+- [x] Phase 0.2: dead-code/duplicate cleanup and naming normalization
+- [ ] Phase 0.3: clean baseline (`go build`, `go vet`, `gofmt`) + commit/tag
+- [x] Phase 0.3 validation complete via Docker Go 1.22 (`go mod tidy`, `go build`, `go vet`, `gofmt`, `go test`, `staticcheck`)
+
 Migration rules (must follow)
 - Preserve already-working preserved components unchanged unless v4.0 explicitly requires changes (per user instructions).
 - Do not jump ahead: build order is Phase 1 → Phase 5 (EXECUTIVE_BLUEPRINT Section 38 + MCP Waves 5–6 plan).
