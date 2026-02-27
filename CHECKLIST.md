@@ -25,6 +25,9 @@ Legend
 - [x] Phase 0.2: dead-code/duplicate cleanup and naming normalization
 - [x] Phase 0.3: clean baseline (`go build`, `go vet`, `gofmt`) + commit/tag
 - [x] Phase 0.3 validation complete via Docker Go 1.22 (`go mod tidy`, `go build`, `go vet`, `gofmt`, `go test`, `staticcheck`)
+- [x] Phase 1 Step 1: V9 repo scaffold created (`cmd/`, `internal/`, `db/`, `api/`, `schemas/`, `policies/`, `terraform/`, `helm/`, `runbooks/`, CI)
+- [ ] Phase 1 Step 2: full V9 database core closure (all 27 enums + all 77+ tables + strict RLS/FK/index validation)
+- [x] Phase 1 Step 2 (in progress): migration expanded to full domain table-name coverage with RLS/index scaffolding and append-only audit trigger
 
 Migration rules (must follow)
 - Preserve already-working preserved components unchanged unless v4.0 explicitly requires changes (per user instructions).
