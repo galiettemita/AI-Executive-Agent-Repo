@@ -45,6 +45,7 @@ Legend
 - [x] Strict closure hardening: expanded `api/openapi/v9.yaml` to include V9/V9.1/V9.2 endpoint surface placeholders and added OpenAPI endpoint parity gate test (`internal/contracts/openapi_closure_test.go`)
 - [x] Strict closure hardening: added all missing V9.1/V9.2 schema files in `schemas/` (46 total now) and enforced schema presence + JSON validity + root `additionalProperties=false` via `internal/contracts/schema_closure_test.go`
 - [x] Strict closure hardening: added prompt seed files (`prompts/seed_prompts_v91.txt`, `prompts/seed_prompts_v92.txt`) and compliance matrices (`spec/traceability/compliance_matrix_v91.csv`, `compliance_matrix_v92.csv`) with parity tests in `internal/contracts/prompt_compliance_closure_test.go`
+- [x] Strict closure hardening: added V9.2 artifact scaffolds for Terraform modules (`opensearch`, `admin-frontend`, `feature-flags-cache`), Helm charts (`BREVIO-admin-api`, `BREVIO-admin-frontend`, `BREVIO-rag-worker`, `BREVIO-guardrails`, `BREVIO-health-checker`), and runbooks (`RB-V92-001..009`) with presence gates in `internal/contracts/infrastructure_closure_test.go`
 
 Migration rules (must follow)
 - Preserve already-working preserved components unchanged unless v4.0 explicitly requires changes (per user instructions).

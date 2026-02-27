@@ -1,0 +1,6 @@
+replicaCount: 1
+image:
+  repository: busybox
+  tag: latest
+service:
+  port: 80
