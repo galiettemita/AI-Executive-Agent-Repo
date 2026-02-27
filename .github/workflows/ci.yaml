@@ -13,8 +13,16 @@ jobs:
           go-version: '1.22'
       - name: gofmt check
         run: test -z "$(gofmt -l .)"
+      - name: go mod tidy check
+        run: |
+          go mod tidy
+          git diff --exit-code go.mod go.sum
       - name: go vet
         run: go vet ./...
+      - name: staticcheck
+        run: |
+          go install honnef.co/go/tools/cmd/staticcheck@latest
+          staticcheck ./...
   tests:
     runs-on: ubuntu-latest
     steps:
@@ -28,31 +36,105 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
       - name: migration lint
-        run: test -f db/migrations/001_BREVIO_v9_init.sql
+        run: |
+          test -f db/migrations/001_BREVIO_v9_init.sql
+          test -f db/migrations/002_BREVIO_v91_soft_intelligence.sql
+          test -f db/migrations/003_BREVIO_v92_production_hardening.sql
+          rg -n "CREATE TYPE" db/migrations/001_BREVIO_v9_init.sql
+          rg -n "CREATE TYPE" db/migrations/002_BREVIO_v91_soft_intelligence.sql
+          rg -n "CREATE TYPE" db/migrations/003_BREVIO_v92_production_hardening.sql
       - name: openapi lint
-        run: test -f api/openapi/v9.yaml
+        run: go test ./internal/contracts -run TestOpenAPIV9EndpointParityClosure -count=1
       - name: json schema lint
-        run: test -d schemas
+        run: go test ./internal/contracts -run TestJSONSchemaClosure -count=1
       - name: determinism suite
-        run: echo "placeholder"
+        run: go test ./internal/llm ./internal/workflows -count=1
       - name: dependency cve scan (trivy)
-        run: echo "placeholder"
+        run: |
+          if command -v trivy >/dev/null 2>&1; then
+            trivy fs --scanners vuln --severity CRITICAL,HIGH --exit-code 1 .
+          else
+            echo "trivy not installed on runner; skip"
+          fi
       - name: docker image scan (trivy)
-        run: echo "placeholder"
+        run: |
+          if command -v trivy >/dev/null 2>&1; then
+            trivy fs --scanners vuln --severity CRITICAL,HIGH --exit-code 1 .
+          else
+            echo "trivy not installed on runner; skip"
+          fi
       - name: secrets scan (trufflehog)
-        run: echo "placeholder"
+        run: |
+          if command -v trufflehog >/dev/null 2>&1; then
+            trufflehog filesystem . --fail
+          else
+            echo "trufflehog not installed on runner; skip"
+          fi
       - name: contract tests
-        run: echo "placeholder"
+        run: go test ./internal/contracts -count=1
       - name: integration tests
-        run: echo "placeholder"
+        run: go test ./internal/integration -count=1
       - name: prompt injection tests
-        run: echo "placeholder"
+        run: go test ./internal/control -count=1
       - name: webhook signature suite
-        run: echo "placeholder"
+        run: go test ./internal/gateway -count=1
       - name: provisioning compensation suite
-        run: echo "placeholder"
+        run: go test ./internal/workflows ./internal/provisioning -count=1
       - name: onboarding fixture suite
-        run: echo "placeholder"
+        run: go test ./internal/onboarding -count=1
       - name: sbom generation (syft)
-        run: echo "placeholder"
+        run: |
+          if command -v syft >/dev/null 2>&1; then
+            syft dir:. -o spdx-json > sbom.spdx.json
+            test -s sbom.spdx.json
+          else
+            echo "syft not installed on runner; skip"
+          fi
+      - name: migration closure gates
+        run: go test ./internal/database -run TestMigration -count=1
+      - name: prompt/compliance closure gates
+        run: go test ./internal/contracts -run "TestPromptSeedClosure|TestComplianceMatrixClosure" -count=1
+      - name: policy/event/metric closure gates
+        run: go test ./internal/contracts -run "TestPolicyRuleClosure|TestCanonicalEventsAndMetricsClosure" -count=1
+      - name: infrastructure closure gates
+        run: go test ./internal/contracts -run "TestV92InfrastructureArtifactsExist|TestV92RunbooksExist" -count=1
+      - name: context budget validation
+        run: go test ./internal/context -count=1
+      - name: rag pipeline tests
+        run: go test ./internal/rag -count=1
+      - name: rag eval gate
+        run: go test ./internal/rag/eval -count=1
+      - name: session management tests
+        run: go test ./internal/sessions -count=1
+      - name: temporal reasoning tests
+        run: go test ./internal/temporal_reasoning -count=1
+      - name: guardrails tests
+        run: go test ./internal/guardrails -count=1
+      - name: tool health tests
+        run: go test ./internal/tool_health -count=1
+      - name: feature flag tests
+        run: go test ./internal/feature_flags -count=1
+      - name: crdt tests
+        run: go test ./internal/crdt -count=1
+      - name: streaming sla tests
+        run: go test ./internal/streaming -count=1
+      - name: error taxonomy tests
+        run: go test ./internal/errors -count=1
+      - name: event schema compat
+        run: go test ./internal/event_schemas -count=1
+      - name: compliance tests
+        run: go test ./internal/compliance -count=1
+      - name: admin api tests
+        run: go test ./internal/admin -count=1
+      - name: pii encryption tests
+        run: go test ./internal/security/pii -count=1
+      - name: mcp sandbox tests
+        run: go test ./internal/security/sandbox -count=1
+      - name: cache layer tests
+        run: go test ./internal/caching -count=1
+      - name: model tier policy tests
+        run: go test ./internal/model_tiers -count=1
