@@ -40,6 +40,7 @@ Legend
 - [x] Phase 1 Step 12 (baseline): staged onboarding discovery with fixed question sets, replay extraction, and workspace profile/persona/policy persistence
 - [x] Phase 1 Step 13 (baseline): canvas websocket session management with interaction-to-tool-call injection tests
 - [x] Phase 1 Step 14 (baseline): service health endpoints, OpenAPI v9 surface expansion, compliance matrix scaffold, and eval fixtures
+- [x] Strict closure baseline: added `db/migrations/002_BREVIO_v91_soft_intelligence.sql` (21 enums, 23 tables) and `db/migrations/003_BREVIO_v92_production_hardening.sql` (34 enums, 47 tables) with workspace RLS + FK/workspace indexes + V9.2 specialized `GIN`/`HNSW` indexes; validated with Docker Go 1.22 (`gofmt`, `go build`, `go vet`, `go test`)
 
 Migration rules (must follow)
 - Preserve already-working preserved components unchanged unless v4.0 explicitly requires changes (per user instructions).
