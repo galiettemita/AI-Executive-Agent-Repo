@@ -364,6 +364,11 @@ func (s *Service) HandleOutboundSend(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte(`{"status":"queued"}`))
 }
 
+func (s *Service) HandleHealth(w http.ResponseWriter, _ *http.Request) {
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte("ok"))
+}
+
 func (s *Service) ParseInteractiveReply(raw string) string {
 	return strings.TrimSpace(raw)
 }

@@ -9,5 +9,7 @@ func NewMux(service *Service) *http.ServeMux {
 	mux.HandleFunc("POST /v1/gateway/webhook/imessage", service.HandleInbound)
 	mux.HandleFunc("POST /v1/gateway/outbound/send", service.HandleOutboundSend)
 	mux.HandleFunc("POST /v1/gateway/inject/tool_call", service.HandleInjectToolCall)
+	mux.HandleFunc("GET /healthz/ready", service.HandleHealth)
+	mux.HandleFunc("GET /healthz/live", service.HandleHealth)
 	return mux
 }

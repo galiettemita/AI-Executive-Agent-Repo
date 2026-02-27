@@ -116,3 +116,19 @@ func TestInjectToolCallAccepted(t *testing.T) {
 		t.Fatalf("expected one injected tool call, got %d", svc.InjectedToolCallCount())
 	}
 }
+
+func TestHealthEndpoints(t *testing.T) {
+	t.Parallel()
+
+	svc := NewService("test-secret")
+	mux := NewMux(svc)
+
+	for _, path := range []string{"/healthz/ready", "/healthz/live"} {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		resp := httptest.NewRecorder()
+		mux.ServeHTTP(resp, req)
+		if resp.Code != http.StatusOK {
+			t.Fatalf("unexpected status for %s: %d", path, resp.Code)
+		}
+	}
+}
