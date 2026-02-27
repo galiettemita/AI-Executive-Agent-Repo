@@ -218,6 +218,131 @@ func TestControlMuxRAGFlow(t *testing.T) {
 	}
 }
 
+func TestControlMuxGuardrailsFlow(t *testing.T) {
+	t.Parallel()
+
+	mux := NewMux(NewService("dev-secret"))
+
+	putConfigBody := []byte(`{"workspace_id":"ws_1","enable_pii_redaction":true,"enable_jailbreak_detection":true,"block_threshold":85}`)
+	putConfigReq := httptest.NewRequest(http.MethodPut, "/v1/guardrails/config", bytes.NewReader(putConfigBody))
+	putConfigResp := httptest.NewRecorder()
+	mux.ServeHTTP(putConfigResp, putConfigReq)
+	if putConfigResp.Code != http.StatusOK {
+		t.Fatalf("unexpected guardrails config status: %d", putConfigResp.Code)
+	}
+
+	postRuleSetBody := []byte(`{"workspace_id":"ws_1","name":"injection_patterns","mode":"block","patterns":["ignore previous instructions","system prompt"],"enabled":true}`)
+	postRuleSetReq := httptest.NewRequest(http.MethodPost, "/v1/guardrails/rule-sets", bytes.NewReader(postRuleSetBody))
+	postRuleSetResp := httptest.NewRecorder()
+	mux.ServeHTTP(postRuleSetResp, postRuleSetReq)
+	if postRuleSetResp.Code != http.StatusCreated {
+		t.Fatalf("unexpected create guardrails rule-set status: %d", postRuleSetResp.Code)
+	}
+	var ruleSetPayload map[string]any
+	if err := json.Unmarshal(postRuleSetResp.Body.Bytes(), &ruleSetPayload); err != nil {
+		t.Fatalf("decode guardrails ruleset payload: %v", err)
+	}
+	ruleSetID, ok := ruleSetPayload["id"].(string)
+	if !ok || ruleSetID == "" {
+		t.Fatalf("missing ruleset id payload: %v", ruleSetPayload)
+	}
+
+	getRuleSetsReq := httptest.NewRequest(http.MethodGet, "/v1/guardrails/rule-sets?workspace_id=ws_1", nil)
+	getRuleSetsResp := httptest.NewRecorder()
+	mux.ServeHTTP(getRuleSetsResp, getRuleSetsReq)
+	if getRuleSetsResp.Code != http.StatusOK {
+		t.Fatalf("unexpected list guardrails rule-sets status: %d", getRuleSetsResp.Code)
+	}
+
+	putRuleSetBody := []byte(`{"workspace_id":"ws_1","name":"injection_patterns_v2","mode":"warn","patterns":["exfiltrate","override"],"enabled":true}`)
+	putRuleSetReq := httptest.NewRequest(http.MethodPut, "/v1/guardrails/rule-sets/"+ruleSetID, bytes.NewReader(putRuleSetBody))
+	putRuleSetResp := httptest.NewRecorder()
+	mux.ServeHTTP(putRuleSetResp, putRuleSetReq)
+	if putRuleSetResp.Code != http.StatusOK {
+		t.Fatalf("unexpected update guardrails rule-set status: %d", putRuleSetResp.Code)
+	}
+
+	getEventsReq := httptest.NewRequest(http.MethodGet, "/v1/guardrails/events?workspace_id=ws_1", nil)
+	getEventsResp := httptest.NewRecorder()
+	mux.ServeHTTP(getEventsResp, getEventsReq)
+	if getEventsResp.Code != http.StatusOK {
+		t.Fatalf("unexpected guardrails events status: %d", getEventsResp.Code)
+	}
+	var eventsPayload map[string]any
+	if err := json.Unmarshal(getEventsResp.Body.Bytes(), &eventsPayload); err != nil {
+		t.Fatalf("decode guardrails events payload: %v", err)
+	}
+	events, ok := eventsPayload["events"].([]any)
+	if !ok || len(events) < 2 {
+		t.Fatalf("expected at least 2 guardrails events, got %v", eventsPayload)
+	}
+
+	deleteRuleSetReq := httptest.NewRequest(http.MethodDelete, "/v1/guardrails/rule-sets/"+ruleSetID, nil)
+	deleteRuleSetResp := httptest.NewRecorder()
+	mux.ServeHTTP(deleteRuleSetResp, deleteRuleSetReq)
+	if deleteRuleSetResp.Code != http.StatusOK {
+		t.Fatalf("unexpected delete guardrails rule-set status: %d", deleteRuleSetResp.Code)
+	}
+}
+
+func TestControlMuxToolHealthFlow(t *testing.T) {
+	t.Parallel()
+
+	mux := NewMux(NewService("dev-secret"))
+
+	getToolReq := httptest.NewRequest(http.MethodGet, "/v1/tools/health/calendar.create_event?workspace_id=ws_1", nil)
+	getToolResp := httptest.NewRecorder()
+	mux.ServeHTTP(getToolResp, getToolReq)
+	if getToolResp.Code != http.StatusOK {
+		t.Fatalf("unexpected initial tool health status: %d", getToolResp.Code)
+	}
+
+	postRuleBody := []byte(`{"workspace_id":"ws_1","tool_key":"calendar.create_event","min_score":0.6,"max_failures":4,"enabled":true}`)
+	postRuleReq := httptest.NewRequest(http.MethodPost, "/v1/tools/quarantine/rules?workspace_id=ws_1", bytes.NewReader(postRuleBody))
+	postRuleResp := httptest.NewRecorder()
+	mux.ServeHTTP(postRuleResp, postRuleReq)
+	if postRuleResp.Code != http.StatusCreated {
+		t.Fatalf("unexpected create quarantine rule status: %d", postRuleResp.Code)
+	}
+
+	postOverrideBody := []byte(`{"workspace_id":"ws_1","status":"quarantined"}`)
+	postOverrideReq := httptest.NewRequest(http.MethodPost, "/v1/tools/quarantine/calendar.create_event/override?workspace_id=ws_1", bytes.NewReader(postOverrideBody))
+	postOverrideResp := httptest.NewRecorder()
+	mux.ServeHTTP(postOverrideResp, postOverrideReq)
+	if postOverrideResp.Code != http.StatusOK {
+		t.Fatalf("unexpected quarantine override status: %d", postOverrideResp.Code)
+	}
+
+	getToolAfterReq := httptest.NewRequest(http.MethodGet, "/v1/tools/health/calendar.create_event?workspace_id=ws_1", nil)
+	getToolAfterResp := httptest.NewRecorder()
+	mux.ServeHTTP(getToolAfterResp, getToolAfterReq)
+	if getToolAfterResp.Code != http.StatusOK {
+		t.Fatalf("unexpected tool health status after override: %d", getToolAfterResp.Code)
+	}
+	var toolPayload map[string]any
+	if err := json.Unmarshal(getToolAfterResp.Body.Bytes(), &toolPayload); err != nil {
+		t.Fatalf("decode tool payload: %v", err)
+	}
+	if toolPayload["status"] != "quarantined" {
+		t.Fatalf("expected quarantined tool status, got %v", toolPayload)
+	}
+
+	postRecoverBody := []byte(`{"workspace_id":"ws_1","status":"healthy"}`)
+	postRecoverReq := httptest.NewRequest(http.MethodPost, "/v1/tools/quarantine/calendar.create_event/override?workspace_id=ws_1", bytes.NewReader(postRecoverBody))
+	postRecoverResp := httptest.NewRecorder()
+	mux.ServeHTTP(postRecoverResp, postRecoverReq)
+	if postRecoverResp.Code != http.StatusOK {
+		t.Fatalf("unexpected healthy override status: %d", postRecoverResp.Code)
+	}
+
+	getRulesReq := httptest.NewRequest(http.MethodGet, "/v1/tools/quarantine/rules?workspace_id=ws_1", nil)
+	getRulesResp := httptest.NewRecorder()
+	mux.ServeHTTP(getRulesResp, getRulesReq)
+	if getRulesResp.Code != http.StatusOK {
+		t.Fatalf("unexpected list quarantine rules status: %d", getRulesResp.Code)
+	}
+}
+
 func TestControlMuxSessionsFlow(t *testing.T) {
 	t.Parallel()
 

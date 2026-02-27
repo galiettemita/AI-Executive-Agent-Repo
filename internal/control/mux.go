@@ -8,18 +8,22 @@ import (
 
 	contextlayer "github.com/brevio/brevio/internal/context"
 	"github.com/brevio/brevio/internal/feature_flags"
+	"github.com/brevio/brevio/internal/guardrails"
 	raglayer "github.com/brevio/brevio/internal/rag"
 	"github.com/brevio/brevio/internal/sessions"
 	"github.com/brevio/brevio/internal/temporal_reasoning"
+	"github.com/brevio/brevio/internal/tool_health"
 )
 
 func NewMux(service *Service) *http.ServeMux {
 	mux := http.NewServeMux()
 	flags := feature_flags.NewService()
 	contextBudgets := contextlayer.NewService()
+	guardrailsSvc := guardrails.NewService()
 	ragSvc := raglayer.NewService()
 	sessionSvc := sessions.NewService()
 	temporalSvc := temporal_reasoning.NewService()
+	toolHealthSvc := tool_health.NewService()
 
 	mux.HandleFunc("GET /healthz/ready", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -44,8 +48,16 @@ func NewMux(service *Service) *http.ServeMux {
 			handleContextBudget(w, r, contextBudgets)
 			return
 		}
+		if strings.HasPrefix(r.URL.Path, "/v1/guardrails") {
+			handleGuardrails(w, r, guardrailsSvc)
+			return
+		}
 		if strings.HasPrefix(r.URL.Path, "/v1/rag") {
 			handleRAG(w, r, ragSvc)
+			return
+		}
+		if strings.HasPrefix(r.URL.Path, "/v1/tools") {
+			handleToolHealth(w, r, toolHealthSvc)
 			return
 		}
 		if strings.HasPrefix(r.URL.Path, "/v1/sessions") {
@@ -396,6 +408,214 @@ func handleRAG(w http.ResponseWriter, r *http.Request, svc *raglayer.Service) {
 			"scores": svc.ListEvalScores(workspaceID),
 		})
 		return
+	default:
+		http.NotFound(w, r)
+		return
+	}
+}
+
+func handleGuardrails(w http.ResponseWriter, r *http.Request, svc *guardrails.Service) {
+	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
+	if len(parts) < 3 {
+		http.NotFound(w, r)
+		return
+	}
+
+	switch parts[2] {
+	case "config":
+		switch r.Method {
+		case http.MethodGet:
+			workspaceID := r.URL.Query().Get("workspace_id")
+			if workspaceID == "" {
+				workspaceID = "default"
+			}
+			cfg, ok := svc.GetConfig(workspaceID)
+			if !ok {
+				cfg = svc.DefaultConfig(workspaceID)
+			}
+			writeJSON(w, http.StatusOK, cfg)
+			return
+		case http.MethodPut:
+			var payload guardrails.Config
+			if err := decodeJSON(r, &payload); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			workspaceID := payload.WorkspaceID
+			if workspaceID == "" {
+				workspaceID = "default"
+			}
+			cfg := svc.UpsertConfig(workspaceID, payload)
+			svc.RecordEvent(workspaceID, "", "BREVIO.guardrail.config_updated.v1", "allow", "config_put")
+			writeJSON(w, http.StatusOK, cfg)
+			return
+		default:
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+	case "rule-sets":
+		switch {
+		case len(parts) == 3 && r.Method == http.MethodGet:
+			workspaceID := r.URL.Query().Get("workspace_id")
+			if workspaceID == "" {
+				workspaceID = "default"
+			}
+			writeJSON(w, http.StatusOK, map[string]any{
+				"rule_sets": svc.ListRuleSets(workspaceID),
+			})
+			return
+
+		case len(parts) == 3 && r.Method == http.MethodPost:
+			var payload guardrails.RuleSet
+			if err := decodeJSON(r, &payload); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			ruleSet := svc.UpsertRuleSet(payload)
+			svc.RecordEvent(ruleSet.WorkspaceID, ruleSet.ID, "BREVIO.guardrail.rule_set_created.v1", "allow", strings.Join(ruleSet.Patterns, ","))
+			writeJSON(w, http.StatusCreated, ruleSet)
+			return
+
+		case len(parts) == 4 && r.Method == http.MethodPut:
+			var payload guardrails.RuleSet
+			if err := decodeJSON(r, &payload); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			payload.ID = parts[3]
+			ruleSet := svc.UpsertRuleSet(payload)
+			svc.RecordEvent(ruleSet.WorkspaceID, ruleSet.ID, "BREVIO.guardrail.rule_set_updated.v1", "allow", strings.Join(ruleSet.Patterns, ","))
+			writeJSON(w, http.StatusOK, ruleSet)
+			return
+
+		case len(parts) == 4 && r.Method == http.MethodDelete:
+			if svc.DeleteRuleSet(parts[3]) {
+				writeJSON(w, http.StatusOK, map[string]any{"status": "deleted"})
+				return
+			}
+			writeJSON(w, http.StatusOK, map[string]any{"status": "not_found"})
+			return
+
+		default:
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+	case "events":
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		workspaceID := r.URL.Query().Get("workspace_id")
+		if workspaceID == "" {
+			workspaceID = "default"
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"events": svc.ListEvents(workspaceID),
+		})
+		return
+
+	default:
+		http.NotFound(w, r)
+		return
+	}
+}
+
+func handleToolHealth(w http.ResponseWriter, r *http.Request, svc *tool_health.Service) {
+	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
+	if len(parts) < 3 {
+		http.NotFound(w, r)
+		return
+	}
+	workspaceID := r.URL.Query().Get("workspace_id")
+	if workspaceID == "" {
+		workspaceID = "default"
+	}
+
+	switch parts[2] {
+	case "health":
+		if len(parts) == 3 {
+			if r.Method != http.MethodGet {
+				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+				return
+			}
+			writeJSON(w, http.StatusOK, map[string]any{
+				"scores": svc.ListScores(workspaceID),
+			})
+			return
+		}
+		if len(parts) == 4 {
+			if r.Method != http.MethodGet {
+				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+				return
+			}
+			toolKey := parts[3]
+			score, ok := svc.GetScore(workspaceID, toolKey)
+			if !ok {
+				score = svc.UpsertScore(tool_health.ToolScore{
+					WorkspaceID:  workspaceID,
+					ToolKey:      toolKey,
+					Score:        1.0,
+					FailureCount: 0,
+				})
+			}
+			writeJSON(w, http.StatusOK, score)
+			return
+		}
+		http.NotFound(w, r)
+		return
+
+	case "quarantine":
+		if len(parts) == 4 && parts[3] == "rules" {
+			switch r.Method {
+			case http.MethodGet:
+				writeJSON(w, http.StatusOK, map[string]any{
+					"rules": svc.ListRules(workspaceID),
+				})
+				return
+			case http.MethodPost:
+				var payload tool_health.QuarantineRule
+				if err := decodeJSON(r, &payload); err != nil {
+					http.Error(w, err.Error(), http.StatusBadRequest)
+					return
+				}
+				if payload.WorkspaceID == "" {
+					payload.WorkspaceID = workspaceID
+				}
+				writeJSON(w, http.StatusCreated, svc.UpsertRule(payload))
+				return
+			default:
+				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+				return
+			}
+		}
+
+		if len(parts) == 5 && parts[4] == "override" {
+			if r.Method != http.MethodPost {
+				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+				return
+			}
+			toolKey := parts[3]
+			var payload struct {
+				WorkspaceID string `json:"workspace_id"`
+				Status      string `json:"status"`
+			}
+			if err := decodeJSON(r, &payload); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			if payload.WorkspaceID == "" {
+				payload.WorkspaceID = workspaceID
+			}
+			score := svc.ApplyOverride(payload.WorkspaceID, toolKey, payload.Status)
+			writeJSON(w, http.StatusOK, score)
+			return
+		}
+
+		http.NotFound(w, r)
+		return
+
 	default:
 		http.NotFound(w, r)
 		return
