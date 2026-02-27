@@ -9,7 +9,7 @@ test:
 lint:
 	test -z "$$(gofmt -l .)"
 	go vet ./...
-	go install honnef.co/go/tools/cmd/staticcheck@latest
+	go install honnef.co/go/tools/cmd/staticcheck@v0.5.1
 	staticcheck ./...
 
 migrate:
