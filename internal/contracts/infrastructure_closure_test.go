@@ -97,6 +97,9 @@ func TestV92InfrastructureArtifactsExist(t *testing.T) {
 		assertFileNonEmpty(t, filepath.Join(root, "helm", chart, "templates", "deployment.yaml"))
 		assertFileNonEmpty(t, filepath.Join(root, "helm", chart, "templates", "service.yaml"))
 	}
+
+	assertFileNonEmpty(t, filepath.Join(root, "admin", "src", "pages", "Dashboard.tsx"))
+	assertFileNonEmpty(t, filepath.Join(root, "admin", "src", "api", "client.ts"))
 }
 
 func TestV92RunbooksExist(t *testing.T) {
