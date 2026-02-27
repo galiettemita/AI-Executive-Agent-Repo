@@ -2,4 +2,65 @@ openapi: 3.1.0
 info:
   title: BREVIO API
   version: v9
-paths: {}
+servers:
+  - url: https://api.brevio.example
+paths:
+  /v1/gateway/webhook/whatsapp:
+    get:
+      summary: WhatsApp webhook verification
+      responses:
+        '200':
+          description: Challenge echoed
+    post:
+      summary: WhatsApp inbound webhook
+      responses:
+        '202':
+          description: Accepted
+        '401':
+          description: Invalid signature
+        '409':
+          description: Replay blocked
+        '429':
+          description: Rate limited
+  /v1/gateway/webhook/imessage:
+    post:
+      summary: iMessage inbound webhook
+      responses:
+        '202':
+          description: Accepted
+  /v1/gateway/outbound/send:
+    post:
+      summary: Enqueue outbound message
+      responses:
+        '202':
+          description: Queued
+  /v1/canvas/ws:
+    get:
+      summary: Canvas websocket endpoint
+      responses:
+        '101':
+          description: Switching protocols
+  /healthz/ready:
+    get:
+      summary: Readiness probe
+      responses:
+        '200':
+          description: Ready
+  /healthz/live:
+    get:
+      summary: Liveness probe
+      responses:
+        '200':
+          description: Live
+components:
+  schemas:
+    Error:
+      type: object
+      additionalProperties: false
+      properties:
+        error_code:
+          type: string
+        message:
+          type: string
+        retryable:
+          type: boolean

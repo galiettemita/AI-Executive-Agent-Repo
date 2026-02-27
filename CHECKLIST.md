@@ -38,6 +38,8 @@ Legend
 - [x] Phase 1 Step 10 (baseline): deterministic LLM layer with prompt registry, replay cache, shadow-eval promotion gate, and determinism tests
 - [x] Phase 1 Step 11 (baseline): provisioning capability resolver + policy decision algorithm + artifact verification + drift quarantine tests
 - [x] Phase 1 Step 12 (baseline): staged onboarding discovery with fixed question sets, replay extraction, and workspace profile/persona/policy persistence
+- [x] Phase 1 Step 13 (baseline): canvas websocket session management with interaction-to-tool-call injection tests
+- [x] Phase 1 Step 14 (baseline): service health endpoints, OpenAPI v9 surface expansion, compliance matrix scaffold, and eval fixtures
 
 Migration rules (must follow)
 - Preserve already-working preserved components unchanged unless v4.0 explicitly requires changes (per user instructions).
