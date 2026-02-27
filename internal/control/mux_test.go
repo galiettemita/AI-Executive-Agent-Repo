@@ -43,6 +43,64 @@ func TestControlMuxRespondsForOpenAPIEndpoints(t *testing.T) {
 	}
 }
 
+func TestControlMuxSpecializedV91V92Endpoints(t *testing.T) {
+	t.Parallel()
+
+	mux := NewMux(NewService("dev-secret"))
+	doc := loadOpenAPIForControlTest(t)
+	requiredPrefixes := []string{
+		"/v1/goals",
+		"/v1/mission-control",
+		"/v1/autonomy",
+		"/v1/learning",
+		"/v1/captures",
+		"/v1/codebase",
+		"/v1/capabilities",
+		"/v1/self-modification",
+		"/v1/context",
+		"/v1/rag",
+		"/v1/sessions",
+		"/v1/temporal",
+		"/v1/guardrails",
+		"/v1/tools",
+		"/v1/flags",
+		"/v1/streaming",
+		"/v1/errors",
+		"/v1/compliance",
+		"/v1/cache",
+		"/v1/model-tiers",
+		"/v1/event-schemas",
+		"/v1/admin",
+	}
+
+	for path, methods := range doc.Paths {
+		if !hasPrefix(path, requiredPrefixes) {
+			continue
+		}
+		for method := range methods {
+			methodUpper := strings.ToUpper(method)
+			reqPath := concretePath(path)
+			var body *bytes.Reader
+			if methodUpper == http.MethodPost || methodUpper == http.MethodPut {
+				body = bytes.NewReader([]byte(`{}`))
+			} else {
+				body = bytes.NewReader(nil)
+			}
+			req := httptest.NewRequest(methodUpper, reqPath, body)
+			rec := httptest.NewRecorder()
+			mux.ServeHTTP(rec, req)
+
+			if rec.Code == http.StatusNotFound || rec.Code == http.StatusMethodNotAllowed {
+				t.Fatalf("specialized endpoint unresolved: %s %s status=%d", methodUpper, reqPath, rec.Code)
+			}
+			bodyText := rec.Body.String()
+			if strings.Contains(bodyText, `"service":"control"`) && strings.Contains(bodyText, `"status":"accepted"`) {
+				t.Fatalf("endpoint fell through generic handler: %s %s body=%s", methodUpper, reqPath, bodyText)
+			}
+		}
+	}
+}
+
 func TestControlMuxFeatureFlagsFlow(t *testing.T) {
 	t.Parallel()
 
@@ -1157,6 +1215,15 @@ func concretePath(template string) string {
 		out = strings.ReplaceAll(out, key, value)
 	}
 	return out
+}
+
+func hasPrefix(path string, prefixes []string) bool {
+	for _, prefix := range prefixes {
+		if strings.HasPrefix(path, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 func loadOpenAPIForControlTest(t *testing.T) openapiDoc {
