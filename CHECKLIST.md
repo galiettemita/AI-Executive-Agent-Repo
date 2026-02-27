@@ -78,6 +78,7 @@ Legend
 - [x] Strict closure hardening: eliminated remaining placeholder runtime services by implementing deterministic CRDT conflict resolution (`internal/crdt`), RAG eval gate (`internal/rag/eval`), field-level PII envelope encryption/redaction (`internal/security/pii`), and sandbox URL/CIDR enforcement (`internal/security/sandbox`) with lifecycle tests
 - [x] Strict closure hardening: added control-plane endpoint specialization guard (`TestControlMuxSpecializedV91V92Endpoints`) to assert V9.1/V9.2 API groups never fall through to generic `"status":"accepted"` fallback responses
 - [x] Strict closure hardening: reran static analysis gate in Docker Go 1.22 using `staticcheck@v0.5.1` (latest compatible with Go 1.22) across `./...` with zero findings
+- [x] Strict closure hardening: fixed CI toolchain mismatch by pinning workflow staticcheck install to `v0.5.1` (Go 1.22 compatible) and added `internal/contracts/ci_closure_test.go` to enforce presence of all V9.2 CI package gate steps
 
 Migration rules (must follow)
 - Preserve already-working preserved components unchanged unless v4.0 explicitly requires changes (per user instructions).
