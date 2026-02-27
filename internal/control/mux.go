@@ -9,8 +9,10 @@ import (
 	"github.com/brevio/brevio/internal/caching"
 	contextlayer "github.com/brevio/brevio/internal/context"
 	errorlayer "github.com/brevio/brevio/internal/errors"
+	"github.com/brevio/brevio/internal/event_schemas"
 	"github.com/brevio/brevio/internal/feature_flags"
 	"github.com/brevio/brevio/internal/guardrails"
+	"github.com/brevio/brevio/internal/model_tiers"
 	raglayer "github.com/brevio/brevio/internal/rag"
 	"github.com/brevio/brevio/internal/sessions"
 	"github.com/brevio/brevio/internal/temporal_reasoning"
@@ -20,10 +22,12 @@ import (
 func NewMux(service *Service) *http.ServeMux {
 	mux := http.NewServeMux()
 	cacheSvc := caching.NewService()
+	eventSchemaSvc := event_schemas.NewService()
 	flags := feature_flags.NewService()
 	errorSvc := errorlayer.NewService()
 	contextBudgets := contextlayer.NewService()
 	guardrailsSvc := guardrails.NewService()
+	modelTierSvc := model_tiers.NewService()
 	ragSvc := raglayer.NewService()
 	sessionSvc := sessions.NewService()
 	temporalSvc := temporal_reasoning.NewService()
@@ -52,6 +56,10 @@ func NewMux(service *Service) *http.ServeMux {
 			handleErrors(w, r, errorSvc)
 			return
 		}
+		if strings.HasPrefix(r.URL.Path, "/v1/event-schemas") {
+			handleEventSchemas(w, r, eventSchemaSvc)
+			return
+		}
 		if strings.HasPrefix(r.URL.Path, "/v1/cache") {
 			handleCaching(w, r, cacheSvc)
 			return
@@ -70,6 +78,10 @@ func NewMux(service *Service) *http.ServeMux {
 		}
 		if strings.HasPrefix(r.URL.Path, "/v1/tools") {
 			handleToolHealth(w, r, toolHealthSvc)
+			return
+		}
+		if strings.HasPrefix(r.URL.Path, "/v1/model-tiers") {
+			handleModelTiers(w, r, modelTierSvc)
 			return
 		}
 		if strings.HasPrefix(r.URL.Path, "/v1/sessions") {
@@ -396,6 +408,121 @@ func handleCaching(w http.ResponseWriter, r *http.Request, svc *caching.Service)
 		})
 		return
 
+	default:
+		http.NotFound(w, r)
+		return
+	}
+}
+
+func handleEventSchemas(w http.ResponseWriter, r *http.Request, svc *event_schemas.Service) {
+	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
+	if len(parts) < 2 {
+		http.NotFound(w, r)
+		return
+	}
+
+	if len(parts) == 2 {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"types": svc.ListTypes(),
+		})
+		return
+	}
+
+	if len(parts) < 4 {
+		http.NotFound(w, r)
+		return
+	}
+	eventType := parts[2]
+	if len(parts) == 4 && parts[3] == "versions" {
+		switch r.Method {
+		case http.MethodGet:
+			writeJSON(w, http.StatusOK, map[string]any{
+				"versions": svc.ListVersions(eventType),
+			})
+			return
+		case http.MethodPost:
+			var payload struct {
+				Schema string `json:"schema"`
+				Status string `json:"status"`
+			}
+			if err := decodeJSON(r, &payload); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			writeJSON(w, http.StatusCreated, svc.RegisterVersion(eventType, payload.Schema, payload.Status))
+			return
+		default:
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+	}
+
+	if len(parts) == 4 && parts[3] == "validate" {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		var payload struct {
+			Event map[string]any `json:"event"`
+		}
+		if err := decodeJSON(r, &payload); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		writeJSON(w, http.StatusOK, svc.Validate(eventType, payload.Event))
+		return
+	}
+
+	http.NotFound(w, r)
+}
+
+func handleModelTiers(w http.ResponseWriter, r *http.Request, svc *model_tiers.Service) {
+	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
+	if len(parts) != 3 {
+		http.NotFound(w, r)
+		return
+	}
+	workspaceID := r.URL.Query().Get("workspace_id")
+	if workspaceID == "" {
+		workspaceID = "default"
+	}
+
+	switch parts[2] {
+	case "policies":
+		switch r.Method {
+		case http.MethodGet:
+			writeJSON(w, http.StatusOK, map[string]any{
+				"policies": svc.ListPolicies(workspaceID),
+			})
+			return
+		case http.MethodPost:
+			var payload model_tiers.Policy
+			if err := decodeJSON(r, &payload); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			if payload.WorkspaceID == "" {
+				payload.WorkspaceID = workspaceID
+			}
+			writeJSON(w, http.StatusCreated, svc.UpsertPolicy(payload))
+			return
+		default:
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+	case "overrides":
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"overrides": svc.ListOverrides(workspaceID),
+		})
+		return
 	default:
 		http.NotFound(w, r)
 		return

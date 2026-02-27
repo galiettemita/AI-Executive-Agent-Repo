@@ -71,6 +71,7 @@ Legend
 - [x] Strict closure hardening: implemented V9.2 RAG runtime foundation (`internal/rag`) with deterministic collection CRUD, ingest chunking, hybrid-style retrieval logs, and eval score tracking; wired `/v1/rag/*` control-plane handlers and end-to-end mux route tests
 - [x] Strict closure hardening: implemented V9.2 guardrails and tool-health foundations (`internal/guardrails`, `internal/tool_health`) and wired `/v1/guardrails/*` + `/v1/tools/*` handlers with deterministic config/rule/event and quarantine override flows
 - [x] Strict closure hardening: implemented V9.2 error communication and deterministic caching foundations (`internal/errors`, `internal/caching`) and wired `/v1/errors/*` + `/v1/cache/*` handlers with taxonomy/template and policy/stats/invalidate route coverage
+- [x] Strict closure hardening: implemented V9.2 event schema registry and model tier foundations (`internal/event_schemas`, `internal/model_tiers`) and wired `/v1/event-schemas/*` + `/v1/model-tiers/*` handlers with versioning/validation and tier policy/override route coverage
 
 Migration rules (must follow)
 - Preserve already-working preserved components unchanged unless v4.0 explicitly requires changes (per user instructions).

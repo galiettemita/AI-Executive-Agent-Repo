@@ -176,6 +176,85 @@ func TestControlMuxCachingFlow(t *testing.T) {
 	}
 }
 
+func TestControlMuxEventSchemasFlow(t *testing.T) {
+	t.Parallel()
+
+	mux := NewMux(NewService("dev-secret"))
+
+	postVersionBody := []byte(`{"schema":"{\"type\":\"object\"}","status":"active"}`)
+	postVersionReq := httptest.NewRequest(http.MethodPost, "/v1/event-schemas/BREVIO.test.event.v1/versions", bytes.NewReader(postVersionBody))
+	postVersionResp := httptest.NewRecorder()
+	mux.ServeHTTP(postVersionResp, postVersionReq)
+	if postVersionResp.Code != http.StatusCreated {
+		t.Fatalf("unexpected register schema version status: %d", postVersionResp.Code)
+	}
+
+	getTypesReq := httptest.NewRequest(http.MethodGet, "/v1/event-schemas", nil)
+	getTypesResp := httptest.NewRecorder()
+	mux.ServeHTTP(getTypesResp, getTypesReq)
+	if getTypesResp.Code != http.StatusOK {
+		t.Fatalf("unexpected list event schema types status: %d", getTypesResp.Code)
+	}
+
+	getVersionsReq := httptest.NewRequest(http.MethodGet, "/v1/event-schemas/BREVIO.test.event.v1/versions", nil)
+	getVersionsResp := httptest.NewRecorder()
+	mux.ServeHTTP(getVersionsResp, getVersionsReq)
+	if getVersionsResp.Code != http.StatusOK {
+		t.Fatalf("unexpected list event schema versions status: %d", getVersionsResp.Code)
+	}
+
+	postValidateBody := []byte(`{"event":{"type":"BREVIO.test.event.v1","version":1}}`)
+	postValidateReq := httptest.NewRequest(http.MethodPost, "/v1/event-schemas/BREVIO.test.event.v1/validate", bytes.NewReader(postValidateBody))
+	postValidateResp := httptest.NewRecorder()
+	mux.ServeHTTP(postValidateResp, postValidateReq)
+	if postValidateResp.Code != http.StatusOK {
+		t.Fatalf("unexpected event schema validate status: %d", postValidateResp.Code)
+	}
+	var validatePayload map[string]any
+	if err := json.Unmarshal(postValidateResp.Body.Bytes(), &validatePayload); err != nil {
+		t.Fatalf("decode validate payload: %v", err)
+	}
+	if valid, ok := validatePayload["valid"].(bool); !ok || !valid {
+		t.Fatalf("expected successful event validation, got %v", validatePayload)
+	}
+}
+
+func TestControlMuxModelTiersFlow(t *testing.T) {
+	t.Parallel()
+
+	mux := NewMux(NewService("dev-secret"))
+
+	postPolicyBody := []byte(`{"workspace_id":"ws_1","tier":"T3","enabled":true}`)
+	postPolicyReq := httptest.NewRequest(http.MethodPost, "/v1/model-tiers/policies?workspace_id=ws_1", bytes.NewReader(postPolicyBody))
+	postPolicyResp := httptest.NewRecorder()
+	mux.ServeHTTP(postPolicyResp, postPolicyReq)
+	if postPolicyResp.Code != http.StatusCreated {
+		t.Fatalf("unexpected model tier policy create status: %d", postPolicyResp.Code)
+	}
+
+	getPoliciesReq := httptest.NewRequest(http.MethodGet, "/v1/model-tiers/policies?workspace_id=ws_1", nil)
+	getPoliciesResp := httptest.NewRecorder()
+	mux.ServeHTTP(getPoliciesResp, getPoliciesReq)
+	if getPoliciesResp.Code != http.StatusOK {
+		t.Fatalf("unexpected model tier policies status: %d", getPoliciesResp.Code)
+	}
+
+	getOverridesReq := httptest.NewRequest(http.MethodGet, "/v1/model-tiers/overrides?workspace_id=ws_1", nil)
+	getOverridesResp := httptest.NewRecorder()
+	mux.ServeHTTP(getOverridesResp, getOverridesReq)
+	if getOverridesResp.Code != http.StatusOK {
+		t.Fatalf("unexpected model tier overrides status: %d", getOverridesResp.Code)
+	}
+	var overridesPayload map[string]any
+	if err := json.Unmarshal(getOverridesResp.Body.Bytes(), &overridesPayload); err != nil {
+		t.Fatalf("decode overrides payload: %v", err)
+	}
+	overrides, ok := overridesPayload["overrides"].([]any)
+	if !ok || len(overrides) == 0 {
+		t.Fatalf("expected at least one override payload: %v", overridesPayload)
+	}
+}
+
 func TestControlMuxContextBudgetFlow(t *testing.T) {
 	t.Parallel()
 
