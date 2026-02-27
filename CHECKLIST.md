@@ -58,6 +58,7 @@ Legend
 - [x] Strict closure hardening: added gateway health endpoints (`GET /healthz/ready`, `GET /healthz/live`) to service mux with dedicated endpoint tests for runtime consistency across services
 - [x] Strict closure hardening: upgraded `Makefile` targets to enforce closure gates (`lint`, `migrate`, `contracts`, `acceptance`, `ci`) with strict checks instead of placeholders
 - [x] Strict closure hardening: strengthened provisioning Package B policy fidelity with exact decision-order tests (`DecideProvisioningV1` steps 1-8) plus RBAC hierarchy/approval tests (`owner > admin > delegate > auditor > operator`; OAuth/deploy approvals owner/admin only)
+- [x] Strict closure hardening: extended `internal/workflows` with V9.1/V9.2 additive workflow stubs and tests (daily capture/log, goal review, trust eval formula, learning consolidation, capability exploration, cross-repo analysis, mission control refresh, rag ingest/eval, tool health eval, memory conflict resolve, compliance evidence, admin KPI/alerts, cache maintenance)
 
 Migration rules (must follow)
 - Preserve already-working preserved components unchanged unless v4.0 explicitly requires changes (per user instructions).

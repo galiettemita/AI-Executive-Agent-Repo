@@ -72,3 +72,78 @@ func TestIdempotencyDoubleSubmitReturnsSameResult(t *testing.T) {
 		t.Fatalf("expected same execution timestamp for idempotent replay")
 	}
 }
+
+func TestTrustEvalFormulaAndPromotionEligibility(t *testing.T) {
+	t.Parallel()
+
+	svc := NewService()
+	result := svc.TrustEvalV1(context.Background(), 20, 0, 0, 0)
+	if result.TrustScore != 1.0 {
+		t.Fatalf("unexpected trust score: %f", result.TrustScore)
+	}
+	if !result.PromotionEligible {
+		t.Fatal("expected promotion eligibility")
+	}
+
+	negative := svc.TrustEvalV1(context.Background(), 5, 2, 1, 1)
+	if negative.PromotionEligible {
+		t.Fatal("did not expect promotion eligibility")
+	}
+}
+
+func TestV91WorkflowStubs(t *testing.T) {
+	t.Parallel()
+
+	svc := NewService()
+	if got := svc.DailyCaptureV1(context.Background(), "cron"); got != "completed" {
+		t.Fatalf("unexpected daily capture status: %s", got)
+	}
+	if got := svc.DailyLogCaptureV1(context.Background(), "turn-1"); got != "captured" {
+		t.Fatalf("unexpected daily log status: %s", got)
+	}
+	if got := svc.GoalReviewV1(context.Background(), 1); got != "stalled_detected" {
+		t.Fatalf("unexpected goal review status: %s", got)
+	}
+	if got := svc.LearningConsolidationV1(context.Background(), 5, true); got != "requires_confirmation" {
+		t.Fatalf("unexpected learning consolidation status: %s", got)
+	}
+	if got := svc.CapabilityExplorationV1(context.Background(), 3); got != "recommendations_created" {
+		t.Fatalf("unexpected capability exploration status: %s", got)
+	}
+	if got := svc.CrossRepoAnalysisV1(context.Background(), 2); got != "patterns_detected" {
+		t.Fatalf("unexpected cross repo status: %s", got)
+	}
+	if got := svc.MissionControlRefreshV1(context.Background(), 4); got != "refreshed" {
+		t.Fatalf("unexpected mission control status: %s", got)
+	}
+}
+
+func TestV92WorkflowStubs(t *testing.T) {
+	t.Parallel()
+
+	svc := NewService()
+	if got := svc.RagIngestV1(context.Background(), 4); got != "ingested" {
+		t.Fatalf("unexpected rag ingest status: %s", got)
+	}
+	if got := svc.RagEvalV1(context.Background(), 0.81, 0.76); got != "passed" {
+		t.Fatalf("unexpected rag eval status: %s", got)
+	}
+	if got := svc.ToolHealthEvalV1(context.Background(), 5); got != "quarantined" {
+		t.Fatalf("unexpected tool health status: %s", got)
+	}
+	if got := svc.MemoryConflictResolveV1(context.Background(), true); got != "resolved" {
+		t.Fatalf("unexpected memory conflict status: %s", got)
+	}
+	if got := svc.ComplianceEvidenceV1(context.Background(), "soc2"); got != "collected" {
+		t.Fatalf("unexpected compliance evidence status: %s", got)
+	}
+	if got := svc.AdminKPIReportV1(context.Background(), 5); got != "generated" {
+		t.Fatalf("unexpected admin report status: %s", got)
+	}
+	if got := svc.AdminAlertEvalV1(context.Background(), true); got != "fired" {
+		t.Fatalf("unexpected admin alert status: %s", got)
+	}
+	if removed := svc.CacheMaintenanceV1(context.Background(), 3); removed != 3 {
+		t.Fatalf("unexpected cache maintenance result: %d", removed)
+	}
+}

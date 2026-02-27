@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"math"
 	"sync"
 	"time"
 )
@@ -34,6 +35,15 @@ type ToolExecutionResult struct {
 	IdempotencyKey string
 	PayloadHash    string
 	CreatedAt      time.Time
+}
+
+type TrustEvalResult struct {
+	TrustScore         float64
+	PromotionEligible  bool
+	SuccessCount30d    int
+	FailureCount30d    int
+	OverrideCount30d   int
+	Trailing14dFailure int
 }
 
 type Service struct {
@@ -129,6 +139,134 @@ func (s *Service) MemoryConsolidation(_ context.Context, entries []string) []str
 	return out
 }
 
+func (s *Service) DailyCaptureV1(_ context.Context, trigger string) string {
+	if trigger == "" {
+		return "skipped"
+	}
+	return "completed"
+}
+
+func (s *Service) DailyLogCaptureV1(_ context.Context, interactiveTurnID string) string {
+	if interactiveTurnID == "" {
+		return "skipped"
+	}
+	return "captured"
+}
+
+func (s *Service) GoalReviewV1(_ context.Context, stalledGoals int) string {
+	if stalledGoals > 0 {
+		return "stalled_detected"
+	}
+	return "reviewed"
+}
+
+// TrustEvalV1 implements the V9.1 deterministic trust-score formula.
+func (s *Service) TrustEvalV1(_ context.Context, successCount30d, failureCount30d, overrideCount30d, trailing14dFailure int) TrustEvalResult {
+	denominator := maxInt(successCount30d+failureCount30d+overrideCount30d, 1)
+	score := float64(successCount30d-2*failureCount30d-3*overrideCount30d) / float64(denominator)
+	score = math.Round(score*10000) / 10000
+
+	eligible := score >= 0.85 &&
+		successCount30d >= 20 &&
+		trailing14dFailure == 0
+
+	return TrustEvalResult{
+		TrustScore:         score,
+		PromotionEligible:  eligible,
+		SuccessCount30d:    successCount30d,
+		FailureCount30d:    failureCount30d,
+		OverrideCount30d:   overrideCount30d,
+		Trailing14dFailure: trailing14dFailure,
+	}
+}
+
+func (s *Service) LearningConsolidationV1(_ context.Context, pendingFeedback int, requiresConfirmation bool) string {
+	if pendingFeedback <= 0 {
+		return "skipped"
+	}
+	if requiresConfirmation {
+		return "requires_confirmation"
+	}
+	return "consolidated"
+}
+
+func (s *Service) CapabilityExplorationV1(_ context.Context, capabilityGapEventsLast7d int) string {
+	if capabilityGapEventsLast7d >= 3 {
+		return "recommendations_created"
+	}
+	return "no_action"
+}
+
+func (s *Service) CrossRepoAnalysisV1(_ context.Context, repositoryCount int) string {
+	if repositoryCount <= 1 {
+		return "insufficient_repositories"
+	}
+	return "patterns_detected"
+}
+
+func (s *Service) MissionControlRefreshV1(_ context.Context, widgetCount int) string {
+	if widgetCount <= 0 {
+		return "empty"
+	}
+	return "refreshed"
+}
+
+func (s *Service) RagIngestV1(_ context.Context, documents int) string {
+	if documents <= 0 {
+		return "skipped"
+	}
+	return "ingested"
+}
+
+func (s *Service) RagEvalV1(_ context.Context, faithfulness, relevance float64) string {
+	if faithfulness >= 0.80 && relevance >= 0.75 {
+		return "passed"
+	}
+	return "failed"
+}
+
+func (s *Service) ToolHealthEvalV1(_ context.Context, failuresLast60s int) string {
+	if failuresLast60s >= 5 {
+		return "quarantined"
+	}
+	return "healthy"
+}
+
+func (s *Service) MemoryConflictResolveV1(_ context.Context, conflictDetected bool) string {
+	if conflictDetected {
+		return "resolved"
+	}
+	return "no_conflict"
+}
+
+func (s *Service) ComplianceEvidenceV1(_ context.Context, framework string) string {
+	if framework == "" {
+		return "skipped"
+	}
+	return "collected"
+}
+
+func (s *Service) AdminKPIReportV1(_ context.Context, metricsCount int) string {
+	if metricsCount <= 0 {
+		return "empty"
+	}
+	return "generated"
+}
+
+func (s *Service) AdminAlertEvalV1(_ context.Context, thresholdBreached bool) string {
+	if thresholdBreached {
+		return "fired"
+	}
+	return "clear"
+}
+
+func (s *Service) CacheMaintenanceV1(_ context.Context, expiredEntries int) int {
+	if expiredEntries <= 0 {
+		return 0
+	}
+	return expiredEntries
+}
+
 func payloadHash(workspaceID, toolKey, logicalAction string) string {
 	sum := sha256.Sum256([]byte(workspaceID + "::" + toolKey + "::" + logicalAction))
 	return hex.EncodeToString(sum[:])
@@ -154,4 +292,11 @@ func (s *Service) ExecuteToolWithIdempotency(workspaceID, toolKey, logicalAction
 	}
 	s.idempotencyStore[key] = result
 	return result, nil
+}
+
+func maxInt(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
 }
