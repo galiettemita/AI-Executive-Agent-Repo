@@ -54,9 +54,40 @@ func TestComplianceMatrixClosure(t *testing.T) {
 	t.Parallel()
 
 	root := repositoryRoot(t)
-	assertCSVRowCountAtLeast(t, filepath.Join(root, "spec", "traceability", "compliance_matrix_v9.csv"), 2)
-	assertCSVRowCountAtLeast(t, filepath.Join(root, "spec", "traceability", "compliance_matrix_v91.csv"), 12)
-	assertCSVRowCountAtLeast(t, filepath.Join(root, "spec", "traceability", "compliance_matrix_v92.csv"), 19)
+	assertMatrixCoverage(
+		t,
+		filepath.Join(root, "spec", "traceability", "compliance_matrix_v9.csv"),
+		"requirement_id",
+		"status",
+		[]string{
+			"V9-001", "V9-002", "V9-003", "V9-004", "V9-005",
+			"V9-006", "V9-007", "V9-008", "V9-009", "V9-010",
+			"V9-011", "V9-012", "V9-013", "V9-014", "V9-015",
+			"V9-016", "V9-017", "V9-018", "V9-019", "V9-020",
+		},
+	)
+	assertMatrixCoverage(
+		t,
+		filepath.Join(root, "spec", "traceability", "compliance_matrix_v91.csv"),
+		"requirement_id",
+		"status",
+		[]string{
+			"V91-GATE-001", "V91-GATE-002", "V91-GATE-003", "V91-GATE-004", "V91-GATE-005",
+			"V91-GATE-006", "V91-GATE-007", "V91-GATE-008", "V91-GATE-009", "V91-GATE-010",
+			"V91-GATE-011",
+		},
+	)
+	assertMatrixCoverage(
+		t,
+		filepath.Join(root, "spec", "traceability", "compliance_matrix_v92.csv"),
+		"requirement_id",
+		"status",
+		[]string{
+			"V92-GATE-001", "V92-GATE-002", "V92-GATE-003", "V92-GATE-004", "V92-GATE-005", "V92-GATE-006",
+			"V92-GATE-007", "V92-GATE-008", "V92-GATE-009", "V92-GATE-010", "V92-GATE-011", "V92-GATE-012",
+			"V92-GATE-013", "V92-GATE-014", "V92-GATE-015", "V92-GATE-016", "V92-GATE-017", "V92-GATE-018",
+		},
+	)
 }
 
 func assertPromptSet(t *testing.T, path string, required []string) {
@@ -100,4 +131,62 @@ func assertCSVRowCountAtLeast(t *testing.T, path string, minRows int) {
 	if len(rows) < minRows {
 		t.Fatalf("csv %s has too few rows: got=%d want_at_least=%d", path, len(rows), minRows)
 	}
+}
+
+func assertMatrixCoverage(t *testing.T, path, idColumn, statusColumn string, requiredIDs []string) {
+	t.Helper()
+	rows := readCSVRowsWithHeader(t, path)
+	if len(rows) == 0 {
+		t.Fatalf("csv %s has no data rows", path)
+	}
+
+	ids := map[string]struct{}{}
+	for _, row := range rows {
+		id := strings.TrimSpace(row[idColumn])
+		status := strings.TrimSpace(strings.ToLower(row[statusColumn]))
+		if id == "" {
+			t.Fatalf("csv %s has empty id in row: %v", path, row)
+		}
+		if status != "implemented" {
+			t.Fatalf("csv %s has non-implemented status for %s: %s", path, id, status)
+		}
+		ids[id] = struct{}{}
+	}
+
+	for _, requiredID := range requiredIDs {
+		if _, ok := ids[requiredID]; !ok {
+			t.Fatalf("csv %s missing required id %s", path, requiredID)
+		}
+	}
+}
+
+func readCSVRowsWithHeader(t *testing.T, path string) []map[string]string {
+	t.Helper()
+	file, err := os.Open(path)
+	if err != nil {
+		t.Fatalf("open csv %s: %v", path, err)
+	}
+	defer file.Close()
+
+	rows, err := csv.NewReader(file).ReadAll()
+	if err != nil {
+		t.Fatalf("parse csv %s: %v", path, err)
+	}
+	if len(rows) < 2 {
+		return nil
+	}
+
+	header := rows[0]
+	out := make([]map[string]string, 0, len(rows)-1)
+	for _, row := range rows[1:] {
+		record := map[string]string{}
+		for i, cell := range row {
+			if i >= len(header) {
+				continue
+			}
+			record[header[i]] = cell
+		}
+		out = append(out, record)
+	}
+	return out
 }

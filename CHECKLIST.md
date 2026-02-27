@@ -82,6 +82,7 @@ Legend
 - [x] Strict closure hardening: upgraded Terraform module contracts (`terraform/modules/*/main.tf`) with explicit V9/V9.2 infrastructure configuration fields and strengthened infrastructure closure gates to assert required module/Helm scaling and resource tokens
 - [x] Strict closure hardening: aligned local lint tooling and container baseline by pinning `Makefile` staticcheck to `v0.5.1` and adding container closure contract test (`internal/contracts/container_closure_test.go`) for Go 1.22 + distroless + nonroot + read-only-FS runtime note
 - [x] Strict closure hardening: replaced placeholder V9 runbooks (`RB-001..RB-009`) with concrete incident procedures and added runbook closure tests (`internal/contracts/runbook_closure_test.go`) enforcing required response sections
+- [x] Strict closure hardening: upgraded compliance matrix validation to require explicit gate IDs and `implemented` status across V9/V9.1/V9.2 matrices (not only minimum row counts)
 
 Migration rules (must follow)
 - Preserve already-working preserved components unchanged unless v4.0 explicitly requires changes (per user instructions).
