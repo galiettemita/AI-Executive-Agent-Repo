@@ -23,7 +23,7 @@ Legend
   - `Brevio_V91_Addendum_Soft_Intelligence_Layer.docx`
   - `Brevio_V92_Addendum_Production_Hardening.docx`
 - [x] Phase 0.2: dead-code/duplicate cleanup and naming normalization
-- [ ] Phase 0.3: clean baseline (`go build`, `go vet`, `gofmt`) + commit/tag
+- [x] Phase 0.3: clean baseline (`go build`, `go vet`, `gofmt`) + commit/tag
 - [x] Phase 0.3 validation complete via Docker Go 1.22 (`go mod tidy`, `go build`, `go vet`, `gofmt`, `go test`, `staticcheck`)
 
 Migration rules (must follow)
