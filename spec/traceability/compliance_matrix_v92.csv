@@ -1,0 +1,19 @@
+requirement_id,source_section,artifact,validation,status
+V92-GATE-001,Section 15 context_budget_enforcement,internal/context+schemas/context_budget_config.v1.json,go test ./... -count=1,implemented
+V92-GATE-002,Section 15 rag_pipeline_functional,internal/rag+schemas/rag_search_request.v1.json,go test ./... -count=1,implemented
+V92-GATE-003,Section 15 rag_eval_gate,internal/rag/eval+schemas/rag_search_response.v1.json,go test ./... -count=1,implemented
+V92-GATE-004,Section 15 session_management,internal/sessions+schemas/session_context.v1.json,go test ./... -count=1,implemented
+V92-GATE-005,Section 15 temporal_reasoning,internal/temporal_reasoning+schemas/temporal_expression.v1.json,go test ./... -count=1,implemented
+V92-GATE-006,Section 15 guardrails_runtime,internal/guardrails+schemas/guardrail_event.v1.json,go test ./... -count=1,implemented
+V92-GATE-007,Section 15 tool_health_scoring,internal/tool_health+schemas/tool_health_report.v1.json,go test ./... -count=1,implemented
+V92-GATE-008,Section 15 feature_flag_system,internal/feature_flags+schemas/feature_flag_evaluation.v1.json,go test ./... -count=1,implemented
+V92-GATE-009,Section 15 crdt_conflict_resolution,internal/crdt+schemas/memory_conflict_report.v1.json,go test ./... -count=1,implemented
+V92-GATE-010,Section 15 streaming_sla,internal/streaming+db/migrations/003_BREVIO_v92_production_hardening.sql,go test ./... -count=1,implemented
+V92-GATE-011,Section 15 error_communication,internal/errors+schemas/error_message.v1.json,go test ./... -count=1,implemented
+V92-GATE-012,Section 15 event_schema_registry,internal/event_schemas+api/openapi/v9.yaml,go test ./... -count=1,implemented
+V92-GATE-013,Section 15 compliance_automation,internal/compliance+schemas/compliance_evidence_manifest.v1.json,go test ./... -count=1,implemented
+V92-GATE-014,Section 15 caching_layers,internal/caching+db/migrations/003_BREVIO_v92_production_hardening.sql,go test ./... -count=1,implemented
+V92-GATE-015,Section 15 model_tier_enforcement,internal/model_tiers+schemas/model_tier_override_request.v1.json,go test ./... -count=1,implemented
+V92-GATE-016,Section 15 react_early_exit,internal/workflows+db/migrations/003_BREVIO_v92_production_hardening.sql,go test ./... -count=1,implemented
+V92-GATE-017,Section 15 security_hardening,internal/security/pii+internal/security/sandbox,go test ./... -count=1,implemented
+V92-GATE-018,Section 15 admin_backend,internal/admin+schemas/admin_kpi_report.v1.json,go test ./... -count=1,implemented

@@ -1,0 +1,8 @@
+brain.daily_capture.v1
+brain.goal_review.v1
+brain.trust_eval.v1
+brain.lesson_extractor.v1
+brain.capability_explorer.v1
+brain.morning_briefing.v1
+brain.discovery.followup_generator.v1
+brain.code_context.assembler.v1
