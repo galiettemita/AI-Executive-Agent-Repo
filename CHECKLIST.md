@@ -26,7 +26,7 @@ Legend
 - [x] Phase 0.3: clean baseline (`go build`, `go vet`, `gofmt`) + commit/tag
 - [x] Phase 0.3 validation complete via Docker Go 1.22 (`go mod tidy`, `go build`, `go vet`, `gofmt`, `go test`, `staticcheck`)
 - [x] Phase 1 Step 1: V9 repo scaffold created (`cmd/`, `internal/`, `db/`, `api/`, `schemas/`, `policies/`, `terraform/`, `helm/`, `runbooks/`, CI)
-- [ ] Phase 1 Step 2: full V9 database core closure (all 27 enums + all 77+ tables + strict RLS/FK/index validation)
+- [x] Phase 1 Step 2: full V9 database core closure (all 27 enums + all 77+ tables + strict RLS/FK/index validation) via `internal/database/migration_closure_test.go` exact-set assertions + RLS coverage checks
 - [x] Phase 1 Step 2 (in progress): migration expanded to full domain table-name coverage with RLS/index scaffolding and append-only audit trigger
 - [x] Phase 1 Step 3: `identity`, `delegation`, and `rbac` packages with UUIDv7 entity creation and role/delegation validation tests
 - [x] Phase 1 Step 4: `connectors` package with 40+ connector seed loader, AES-256-GCM OAuth envelope vault, key-versioned decrypt, and health tracking
@@ -83,6 +83,7 @@ Legend
 - [x] Strict closure hardening: aligned local lint tooling and container baseline by pinning `Makefile` staticcheck to `v0.5.1` and adding container closure contract test (`internal/contracts/container_closure_test.go`) for Go 1.22 + distroless + nonroot + read-only-FS runtime note
 - [x] Strict closure hardening: replaced placeholder V9 runbooks (`RB-001..RB-009`) with concrete incident procedures and added runbook closure tests (`internal/contracts/runbook_closure_test.go`) enforcing required response sections
 - [x] Strict closure hardening: upgraded compliance matrix validation to require explicit gate IDs and `implemented` status across V9/V9.1/V9.2 matrices (not only minimum row counts)
+- [x] Strict closure hardening: enforced blueprint source document tracking by adding `internal/contracts/blueprint_docs_test.go` to require all three BREVIO `.docx` files are non-empty and git-tracked (`git ls-files --error-unmatch`)
 
 Migration rules (must follow)
 - Preserve already-working preserved components unchanged unless v4.0 explicitly requires changes (per user instructions).
