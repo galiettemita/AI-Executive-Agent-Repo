@@ -36,6 +36,7 @@ Legend
 - [x] Phase 1 Step 8 (baseline): executor simulate/commit flow with trust receipts, audit hash chain, SSRF blocking, and circuit-breaker tests
 - [x] Phase 1 Step 9 (baseline): memory write gate, exclusion rules, workspace-scoped retrieval, and consolidation duplicate merge tests
 - [x] Phase 1 Step 10 (baseline): deterministic LLM layer with prompt registry, replay cache, shadow-eval promotion gate, and determinism tests
+- [x] Phase 1 Step 11 (baseline): provisioning capability resolver + policy decision algorithm + artifact verification + drift quarantine tests
 
 Migration rules (must follow)
 - Preserve already-working preserved components unchanged unless v4.0 explicitly requires changes (per user instructions).
