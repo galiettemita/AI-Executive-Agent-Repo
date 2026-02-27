@@ -3,5 +3,5 @@ terraform {
 }
 
 locals {
-  module_name = "admin-frontend"
+  module_name = "elasticache"
 }

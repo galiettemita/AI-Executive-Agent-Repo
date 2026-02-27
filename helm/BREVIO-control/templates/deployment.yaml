@@ -1,17 +1,23 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: placeholder
+  name: {{ .Chart.Name }}
 spec:
+  replicas: {{ .Values.replicaCount }}
   selector:
     matchLabels:
-      app: placeholder
+      app: {{ .Chart.Name }}
   template:
     metadata:
       labels:
-        app: placeholder
+        app: {{ .Chart.Name }}
     spec:
       containers:
         - name: app
-          image: busybox
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           command: ["sh", "-c", "sleep 3600"]
+          ports:
+            - containerPort: {{ .Values.service.port }}
+          env:
+            - name: BREVIO_TASK_QUEUE
+              value: "{{ .Values.taskQueue | default \"\" }}"

@@ -3,5 +3,5 @@ terraform {
 }
 
 locals {
-  module_name = "feature_flags_cache"
+  module_name = "feature-flags-cache"
 }

@@ -1,1 +1,10 @@
-replicaCount: 1
+replicaCount: 3
+image:
+  repository: busybox
+  tag: latest
+service:
+  port: 8080
+autoscaling:
+  enabled: true
+  minReplicas: 3
+  maxReplicas: 12
