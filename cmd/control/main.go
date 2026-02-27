@@ -3,18 +3,12 @@ package main
 import (
 	"log"
 	"net/http"
+
+	"github.com/brevio/brevio/internal/control"
 )
 
 func main() {
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /healthz/ready", func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("ok"))
-	})
-	mux.HandleFunc("GET /healthz/live", func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("ok"))
-	})
+	mux := control.NewMux(control.NewService("dev-secret"))
 
 	addr := ":18082"
 	log.Printf("BREVIO control listening on %s", addr)
