@@ -2,11 +2,17 @@ package control
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
+	"strings"
+
+	"github.com/brevio/brevio/internal/feature_flags"
 )
 
 func NewMux(service *Service) *http.ServeMux {
 	mux := http.NewServeMux()
+	flags := feature_flags.NewService()
+
 	mux.HandleFunc("GET /healthz/ready", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok"))
@@ -22,13 +28,16 @@ func NewMux(service *Service) *http.ServeMux {
 			return
 		}
 
+		if strings.HasPrefix(r.URL.Path, "/v1/flags") {
+			handleFeatureFlags(w, r, flags)
+			return
+		}
+
 		status := http.StatusOK
 		if r.Method == http.MethodPost {
 			status = http.StatusAccepted
 		}
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(status)
-		_ = json.NewEncoder(w).Encode(map[string]any{
+		writeJSON(w, status, map[string]any{
 			"status":  "accepted",
 			"service": "control",
 			"path":    r.URL.Path,
@@ -38,4 +47,135 @@ func NewMux(service *Service) *http.ServeMux {
 
 	_ = service
 	return mux
+}
+
+func handleFeatureFlags(w http.ResponseWriter, r *http.Request, flags *feature_flags.Service) {
+	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
+	// /v1/flags
+	if len(parts) == 2 {
+		switch r.Method {
+		case http.MethodGet:
+			writeJSON(w, http.StatusOK, map[string]any{"flags": flags.ListFlags()})
+			return
+		case http.MethodPost:
+			var payload feature_flags.Flag
+			if err := decodeJSON(r, &payload); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			if payload.Key == "" {
+				http.Error(w, "key is required", http.StatusBadRequest)
+				return
+			}
+			flags.UpsertFlag(payload)
+			writeJSON(w, http.StatusAccepted, map[string]any{"status": "accepted"})
+			return
+		default:
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+	}
+
+	if len(parts) < 3 {
+		http.NotFound(w, r)
+		return
+	}
+
+	key := parts[2]
+	// /v1/flags/{key}
+	if len(parts) == 3 {
+		switch r.Method {
+		case http.MethodGet:
+			flag, ok := flags.GetFlag(key)
+			if !ok {
+				writeJSON(w, http.StatusOK, map[string]any{
+					"key":       key,
+					"flag_type": "boolean",
+					"enabled":   false,
+					"reason":    "FLAG_NOT_FOUND",
+				})
+				return
+			}
+			writeJSON(w, http.StatusOK, flag)
+			return
+		case http.MethodPut:
+			var payload feature_flags.Flag
+			if err := decodeJSON(r, &payload); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			payload.Key = key
+			flags.UpsertFlag(payload)
+			writeJSON(w, http.StatusOK, map[string]any{"status": "updated"})
+			return
+		case http.MethodDelete:
+			flags.DeleteFlag(key)
+			writeJSON(w, http.StatusOK, map[string]any{"status": "deleted"})
+			return
+		default:
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+	}
+
+	// /v1/flags/{key}/evaluate
+	if len(parts) == 4 && parts[3] == "evaluate" {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		var payload struct {
+			Attributes map[string]string `json:"attributes"`
+		}
+		if err := decodeJSON(r, &payload); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		enabled, reason := flags.Evaluate(key, payload.Attributes)
+		writeJSON(w, http.StatusOK, map[string]any{"enabled": enabled, "reason": reason})
+		return
+	}
+
+	// /v1/flags/{key}/rules
+	if len(parts) == 4 && parts[3] == "rules" {
+		switch r.Method {
+		case http.MethodGet:
+			writeJSON(w, http.StatusOK, map[string]any{"rules": flags.GetRules(key)})
+			return
+		case http.MethodPost:
+			var payload struct {
+				Rules []feature_flags.Rule `json:"rules"`
+			}
+			if err := decodeJSON(r, &payload); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			flags.SetRules(key, payload.Rules)
+			writeJSON(w, http.StatusAccepted, map[string]any{"status": "accepted"})
+			return
+		default:
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+	}
+
+	http.NotFound(w, r)
+}
+
+func decodeJSON(r *http.Request, out any) error {
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(out); err != nil {
+		return err
+	}
+	if decoder.More() {
+		return errors.New("multiple json objects are not allowed")
+	}
+	return nil
+}
+
+func writeJSON(w http.ResponseWriter, status int, payload any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(payload)
 }

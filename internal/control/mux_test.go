@@ -1,6 +1,8 @@
 package control
 
 import (
+	"bytes"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -38,6 +40,60 @@ func TestControlMuxRespondsForOpenAPIEndpoints(t *testing.T) {
 				t.Fatalf("endpoint did not respond: %s %s status=%d", methodUpper, reqPath, rec.Code)
 			}
 		}
+	}
+}
+
+func TestControlMuxFeatureFlagsFlow(t *testing.T) {
+	t.Parallel()
+
+	mux := NewMux(NewService("dev-secret"))
+
+	postFlagBody := []byte(`{"key":"new_ui","flag_type":"boolean","enabled":true}`)
+	postFlagReq := httptest.NewRequest(http.MethodPost, "/v1/flags", bytes.NewReader(postFlagBody))
+	postFlagResp := httptest.NewRecorder()
+	mux.ServeHTTP(postFlagResp, postFlagReq)
+	if postFlagResp.Code != http.StatusAccepted {
+		t.Fatalf("unexpected create flag status: %d", postFlagResp.Code)
+	}
+
+	postRulesBody := []byte(`{"rules":[{"match_type":"workspace","match_value":"ws_a","enabled":false}]}`)
+	postRulesReq := httptest.NewRequest(http.MethodPost, "/v1/flags/new_ui/rules", bytes.NewReader(postRulesBody))
+	postRulesResp := httptest.NewRecorder()
+	mux.ServeHTTP(postRulesResp, postRulesReq)
+	if postRulesResp.Code != http.StatusAccepted {
+		t.Fatalf("unexpected create rules status: %d", postRulesResp.Code)
+	}
+
+	evaluateReq := httptest.NewRequest(http.MethodPost, "/v1/flags/new_ui/evaluate", bytes.NewReader([]byte(`{"attributes":{"workspace":"ws_a"}}`)))
+	evaluateResp := httptest.NewRecorder()
+	mux.ServeHTTP(evaluateResp, evaluateReq)
+	if evaluateResp.Code != http.StatusOK {
+		t.Fatalf("unexpected evaluate status: %d", evaluateResp.Code)
+	}
+	var evaluatePayload map[string]any
+	if err := json.Unmarshal(evaluateResp.Body.Bytes(), &evaluatePayload); err != nil {
+		t.Fatalf("decode evaluate payload: %v", err)
+	}
+	enabled, ok := evaluatePayload["enabled"].(bool)
+	if !ok {
+		t.Fatalf("missing enabled field: %v", evaluatePayload)
+	}
+	if enabled {
+		t.Fatalf("expected evaluate deny for ws_a")
+	}
+
+	getFlagReq := httptest.NewRequest(http.MethodGet, "/v1/flags/new_ui", nil)
+	getFlagResp := httptest.NewRecorder()
+	mux.ServeHTTP(getFlagResp, getFlagReq)
+	if getFlagResp.Code != http.StatusOK {
+		t.Fatalf("unexpected get flag status: %d", getFlagResp.Code)
+	}
+
+	deleteFlagReq := httptest.NewRequest(http.MethodDelete, "/v1/flags/new_ui", nil)
+	deleteFlagResp := httptest.NewRecorder()
+	mux.ServeHTTP(deleteFlagResp, deleteFlagReq)
+	if deleteFlagResp.Code != http.StatusOK {
+		t.Fatalf("unexpected delete flag status: %d", deleteFlagResp.Code)
 	}
 }
 

@@ -65,6 +65,7 @@ Legend
 - [x] Strict closure hardening: added admin frontend scaffolding (`admin/src/pages/Dashboard.tsx`, `admin/src/api/client.ts`) and integrated checks into infrastructure closure tests
 - [x] Strict closure hardening: upgraded V9.2 Helm add-on charts (`BREVIO-admin-api`, `BREVIO-admin-frontend`, `BREVIO-rag-worker`, `BREVIO-guardrails`, `BREVIO-health-checker`) with replica/HPA/resource profiles aligned to prompt ranges and enforced HPA template presence in infrastructure gates
 - [x] Strict closure hardening: added explicit temporal worker service entrypoint (`cmd/temporal-worker/main.go`) with health probes so runtime plane set includes the worker binary in build outputs
+- [x] Strict closure hardening: implemented V9.2 feature flag runtime logic (`internal/feature_flags`) with CRUD/rules/evaluate/kill-switch and wired `/v1/flags*` API handling into control mux with end-to-end route tests
 
 Migration rules (must follow)
 - Preserve already-working preserved components unchanged unless v4.0 explicitly requires changes (per user instructions).
