@@ -1,4 +1,4 @@
-.PHONY: build test lint migrate docker-build contracts acceptance ci
+.PHONY: build test lint migrate docker-build contracts acceptance ci load-test security-validate
 
 build:
 	go build ./...
@@ -28,3 +28,9 @@ docker-build:
 	docker build -t brevio:local .
 
 ci: lint build test migrate contracts acceptance
+
+load-test:
+	@echo "Run: k6 run evals/load/k6_interactive_turn.js"
+
+security-validate:
+	bash scripts/security/run_security_validation.sh
