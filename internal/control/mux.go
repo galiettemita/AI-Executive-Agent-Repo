@@ -8,12 +8,16 @@ import (
 
 	contextlayer "github.com/brevio/brevio/internal/context"
 	"github.com/brevio/brevio/internal/feature_flags"
+	"github.com/brevio/brevio/internal/sessions"
+	"github.com/brevio/brevio/internal/temporal_reasoning"
 )
 
 func NewMux(service *Service) *http.ServeMux {
 	mux := http.NewServeMux()
 	flags := feature_flags.NewService()
 	contextBudgets := contextlayer.NewService()
+	sessionSvc := sessions.NewService()
+	temporalSvc := temporal_reasoning.NewService()
 
 	mux.HandleFunc("GET /healthz/ready", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -36,6 +40,14 @@ func NewMux(service *Service) *http.ServeMux {
 		}
 		if strings.HasPrefix(r.URL.Path, "/v1/context") {
 			handleContextBudget(w, r, contextBudgets)
+			return
+		}
+		if strings.HasPrefix(r.URL.Path, "/v1/sessions") {
+			handleSessions(w, r, sessionSvc)
+			return
+		}
+		if strings.HasPrefix(r.URL.Path, "/v1/temporal") {
+			handleTemporalReasoning(w, r, temporalSvc)
 			return
 		}
 
@@ -237,6 +249,228 @@ func handleFeatureFlags(w http.ResponseWriter, r *http.Request, flags *feature_f
 	}
 
 	http.NotFound(w, r)
+}
+
+func handleSessions(w http.ResponseWriter, r *http.Request, svc *sessions.Service) {
+	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
+	if len(parts) < 3 {
+		http.NotFound(w, r)
+		return
+	}
+
+	if len(parts) == 3 && parts[2] == "active" {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		workspaceID := r.URL.Query().Get("workspace_id")
+		if workspaceID == "" {
+			workspaceID = "default"
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"sessions": svc.ListActive(workspaceID),
+		})
+		return
+	}
+
+	sessionID := parts[2]
+	if len(parts) == 3 {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		session, ok := svc.GetSession(sessionID)
+		if !ok {
+			workspaceID := r.URL.Query().Get("workspace_id")
+			userID := r.URL.Query().Get("user_id")
+			if workspaceID == "" {
+				workspaceID = "default"
+			}
+			if userID == "" {
+				userID = "unknown"
+			}
+			session = svc.EnsureSession(sessionID, workspaceID, userID)
+		}
+		writeJSON(w, http.StatusOK, session)
+		return
+	}
+
+	if len(parts) == 4 && parts[3] == "entities" {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"session_id": sessionID,
+			"entities":   svc.GetEntities(sessionID),
+		})
+		return
+	}
+
+	http.NotFound(w, r)
+}
+
+func handleTemporalReasoning(w http.ResponseWriter, r *http.Request, svc *temporal_reasoning.Service) {
+	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
+	if len(parts) < 3 {
+		http.NotFound(w, r)
+		return
+	}
+
+	switch parts[2] {
+	case "config":
+		switch r.Method {
+		case http.MethodGet:
+			workspaceID := r.URL.Query().Get("workspace_id")
+			if workspaceID == "" {
+				workspaceID = "default"
+			}
+			cfg, ok := svc.GetConfig(workspaceID)
+			if !ok {
+				cfg = svc.DefaultConfig(workspaceID)
+			}
+			writeJSON(w, http.StatusOK, cfg)
+			return
+		case http.MethodPut:
+			var payload temporal_reasoning.Config
+			if err := decodeJSON(r, &payload); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			workspaceID := payload.WorkspaceID
+			if workspaceID == "" {
+				workspaceID = "default"
+			}
+			writeJSON(w, http.StatusOK, svc.UpsertConfig(workspaceID, payload))
+			return
+		default:
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+	case "constraints":
+		switch {
+		case len(parts) == 3 && r.Method == http.MethodGet:
+			workspaceID := r.URL.Query().Get("workspace_id")
+			if workspaceID == "" {
+				workspaceID = "default"
+			}
+			writeJSON(w, http.StatusOK, map[string]any{
+				"workspace_id": workspaceID,
+				"constraints":  svc.ListConstraints(workspaceID),
+			})
+			return
+
+		case len(parts) == 3 && r.Method == http.MethodPost:
+			var payload temporal_reasoning.Constraint
+			if err := decodeJSON(r, &payload); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			workspaceID := payload.WorkspaceID
+			if workspaceID == "" {
+				workspaceID = "default"
+			}
+			constraint := svc.UpsertConstraint(workspaceID, payload)
+			writeJSON(w, http.StatusCreated, constraint)
+			return
+
+		case len(parts) == 4 && r.Method == http.MethodPut:
+			var payload temporal_reasoning.Constraint
+			if err := decodeJSON(r, &payload); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			workspaceID := payload.WorkspaceID
+			if workspaceID == "" {
+				workspaceID = "default"
+			}
+			payload.ID = parts[3]
+			constraint := svc.UpsertConstraint(workspaceID, payload)
+			writeJSON(w, http.StatusOK, constraint)
+			return
+
+		case len(parts) == 4 && r.Method == http.MethodDelete:
+			workspaceID := r.URL.Query().Get("workspace_id")
+			if workspaceID == "" {
+				workspaceID = "default"
+			}
+			if svc.DeleteConstraint(workspaceID, parts[3]) {
+				writeJSON(w, http.StatusOK, map[string]any{"status": "deleted"})
+				return
+			}
+			writeJSON(w, http.StatusOK, map[string]any{"status": "not_found"})
+			return
+
+		default:
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+	case "resolve":
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		var payload struct {
+			WorkspaceID   string `json:"workspace_id"`
+			Expression    string `json:"expression"`
+			ReferenceDate string `json:"reference_date"`
+			Timezone      string `json:"timezone"`
+		}
+		if err := decodeJSON(r, &payload); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		resolution := svc.ResolveExpression(payload.WorkspaceID, payload.Expression, payload.ReferenceDate, payload.Timezone)
+		writeJSON(w, http.StatusOK, resolution)
+		return
+
+	case "conflicts":
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		var payload struct {
+			WorkspaceID   string `json:"workspace_id"`
+			ProposedStart string `json:"proposed_start"`
+			ProposedEnd   string `json:"proposed_end"`
+		}
+		if err := decodeJSON(r, &payload); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"conflicts": svc.DetectConflicts(payload.WorkspaceID, payload.ProposedStart, payload.ProposedEnd),
+		})
+		return
+
+	case "travel-time":
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		var payload struct {
+			WorkspaceID string  `json:"workspace_id"`
+			Origin      string  `json:"origin"`
+			Destination string  `json:"destination"`
+			DistanceKM  float64 `json:"distance_km"`
+		}
+		if err := decodeJSON(r, &payload); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"workspace_id": payload.WorkspaceID,
+			"minutes":      svc.EstimateTravelMinutes(payload.WorkspaceID, payload.Origin, payload.Destination, payload.DistanceKM),
+		})
+		return
+
+	default:
+		http.NotFound(w, r)
+		return
+	}
 }
 
 func decodeJSON(r *http.Request, out any) error {

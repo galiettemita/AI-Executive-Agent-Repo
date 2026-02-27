@@ -143,6 +143,146 @@ func TestControlMuxContextBudgetFlow(t *testing.T) {
 	}
 }
 
+func TestControlMuxSessionsFlow(t *testing.T) {
+	t.Parallel()
+
+	mux := NewMux(NewService("dev-secret"))
+
+	getSessionReq := httptest.NewRequest(http.MethodGet, "/v1/sessions/session_1?workspace_id=ws_1&user_id=user_1", nil)
+	getSessionResp := httptest.NewRecorder()
+	mux.ServeHTTP(getSessionResp, getSessionReq)
+	if getSessionResp.Code != http.StatusOK {
+		t.Fatalf("unexpected get session status: %d", getSessionResp.Code)
+	}
+
+	var sessionPayload map[string]any
+	if err := json.Unmarshal(getSessionResp.Body.Bytes(), &sessionPayload); err != nil {
+		t.Fatalf("decode session payload: %v", err)
+	}
+	if sessionPayload["id"] != "session_1" {
+		t.Fatalf("unexpected session payload: %v", sessionPayload)
+	}
+
+	getActiveReq := httptest.NewRequest(http.MethodGet, "/v1/sessions/active?workspace_id=ws_1", nil)
+	getActiveResp := httptest.NewRecorder()
+	mux.ServeHTTP(getActiveResp, getActiveReq)
+	if getActiveResp.Code != http.StatusOK {
+		t.Fatalf("unexpected get active sessions status: %d", getActiveResp.Code)
+	}
+	var activePayload map[string]any
+	if err := json.Unmarshal(getActiveResp.Body.Bytes(), &activePayload); err != nil {
+		t.Fatalf("decode active payload: %v", err)
+	}
+	sessionsAny, ok := activePayload["sessions"].([]any)
+	if !ok || len(sessionsAny) != 1 {
+		t.Fatalf("unexpected active sessions payload: %v", activePayload)
+	}
+
+	getEntitiesReq := httptest.NewRequest(http.MethodGet, "/v1/sessions/session_1/entities", nil)
+	getEntitiesResp := httptest.NewRecorder()
+	mux.ServeHTTP(getEntitiesResp, getEntitiesReq)
+	if getEntitiesResp.Code != http.StatusOK {
+		t.Fatalf("unexpected get session entities status: %d", getEntitiesResp.Code)
+	}
+}
+
+func TestControlMuxTemporalReasoningFlow(t *testing.T) {
+	t.Parallel()
+
+	mux := NewMux(NewService("dev-secret"))
+
+	putConfigBody := []byte(`{"workspace_id":"ws_1","default_timezone":"UTC","max_horizon_days":180,"conflict_priority_threshold":70,"travel_speed_kph":60}`)
+	putConfigReq := httptest.NewRequest(http.MethodPut, "/v1/temporal/config", bytes.NewReader(putConfigBody))
+	putConfigResp := httptest.NewRecorder()
+	mux.ServeHTTP(putConfigResp, putConfigReq)
+	if putConfigResp.Code != http.StatusOK {
+		t.Fatalf("unexpected put temporal config status: %d", putConfigResp.Code)
+	}
+
+	getConfigReq := httptest.NewRequest(http.MethodGet, "/v1/temporal/config?workspace_id=ws_1", nil)
+	getConfigResp := httptest.NewRecorder()
+	mux.ServeHTTP(getConfigResp, getConfigReq)
+	if getConfigResp.Code != http.StatusOK {
+		t.Fatalf("unexpected get temporal config status: %d", getConfigResp.Code)
+	}
+
+	postConstraintBody := []byte(`{"workspace_id":"ws_1","subject":"focus","starts_at":"2026-02-27T10:00:00Z","ends_at":"2026-02-27T11:00:00Z","priority":95}`)
+	postConstraintReq := httptest.NewRequest(http.MethodPost, "/v1/temporal/constraints", bytes.NewReader(postConstraintBody))
+	postConstraintResp := httptest.NewRecorder()
+	mux.ServeHTTP(postConstraintResp, postConstraintReq)
+	if postConstraintResp.Code != http.StatusCreated {
+		t.Fatalf("unexpected create temporal constraint status: %d", postConstraintResp.Code)
+	}
+	var constraintPayload map[string]any
+	if err := json.Unmarshal(postConstraintResp.Body.Bytes(), &constraintPayload); err != nil {
+		t.Fatalf("decode constraint payload: %v", err)
+	}
+	constraintID, ok := constraintPayload["id"].(string)
+	if !ok || constraintID == "" {
+		t.Fatalf("missing constraint id payload: %v", constraintPayload)
+	}
+
+	getConstraintsReq := httptest.NewRequest(http.MethodGet, "/v1/temporal/constraints?workspace_id=ws_1", nil)
+	getConstraintsResp := httptest.NewRecorder()
+	mux.ServeHTTP(getConstraintsResp, getConstraintsReq)
+	if getConstraintsResp.Code != http.StatusOK {
+		t.Fatalf("unexpected list temporal constraints status: %d", getConstraintsResp.Code)
+	}
+
+	postConflictsBody := []byte(`{"workspace_id":"ws_1","proposed_start":"2026-02-27T10:30:00Z","proposed_end":"2026-02-27T10:40:00Z"}`)
+	postConflictsReq := httptest.NewRequest(http.MethodPost, "/v1/temporal/conflicts", bytes.NewReader(postConflictsBody))
+	postConflictsResp := httptest.NewRecorder()
+	mux.ServeHTTP(postConflictsResp, postConflictsReq)
+	if postConflictsResp.Code != http.StatusOK {
+		t.Fatalf("unexpected temporal conflicts status: %d", postConflictsResp.Code)
+	}
+	var conflictsPayload map[string]any
+	if err := json.Unmarshal(postConflictsResp.Body.Bytes(), &conflictsPayload); err != nil {
+		t.Fatalf("decode conflicts payload: %v", err)
+	}
+	conflicts, ok := conflictsPayload["conflicts"].([]any)
+	if !ok || len(conflicts) != 1 {
+		t.Fatalf("unexpected conflicts payload: %v", conflictsPayload)
+	}
+
+	postResolveBody := []byte(`{"workspace_id":"ws_1","expression":"tomorrow morning","reference_date":"2026-02-27"}`)
+	postResolveReq := httptest.NewRequest(http.MethodPost, "/v1/temporal/resolve", bytes.NewReader(postResolveBody))
+	postResolveResp := httptest.NewRecorder()
+	mux.ServeHTTP(postResolveResp, postResolveReq)
+	if postResolveResp.Code != http.StatusOK {
+		t.Fatalf("unexpected temporal resolve status: %d", postResolveResp.Code)
+	}
+	var resolvePayload map[string]any
+	if err := json.Unmarshal(postResolveResp.Body.Bytes(), &resolvePayload); err != nil {
+		t.Fatalf("decode resolve payload: %v", err)
+	}
+	if resolvePayload["resolved_date"] != "2026-02-28" {
+		t.Fatalf("unexpected resolved date payload: %v", resolvePayload)
+	}
+
+	postTravelBody := []byte(`{"workspace_id":"ws_1","origin":"hq","destination":"airport","distance_km":30}`)
+	postTravelReq := httptest.NewRequest(http.MethodPost, "/v1/temporal/travel-time", bytes.NewReader(postTravelBody))
+	postTravelResp := httptest.NewRecorder()
+	mux.ServeHTTP(postTravelResp, postTravelReq)
+	if postTravelResp.Code != http.StatusOK {
+		t.Fatalf("unexpected temporal travel-time status: %d", postTravelResp.Code)
+	}
+	var travelPayload map[string]any
+	if err := json.Unmarshal(postTravelResp.Body.Bytes(), &travelPayload); err != nil {
+		t.Fatalf("decode travel payload: %v", err)
+	}
+	if int(travelPayload["minutes"].(float64)) != 30 {
+		t.Fatalf("unexpected travel-time payload: %v", travelPayload)
+	}
+
+	deleteConstraintReq := httptest.NewRequest(http.MethodDelete, "/v1/temporal/constraints/"+constraintID+"?workspace_id=ws_1", nil)
+	deleteConstraintResp := httptest.NewRecorder()
+	mux.ServeHTTP(deleteConstraintResp, deleteConstraintReq)
+	if deleteConstraintResp.Code != http.StatusOK {
+		t.Fatalf("unexpected delete temporal constraint status: %d", deleteConstraintResp.Code)
+	}
+}
+
 func concretePath(template string) string {
 	replacements := map[string]string{
 		"{id}":       "11111111-1111-1111-1111-111111111111",
