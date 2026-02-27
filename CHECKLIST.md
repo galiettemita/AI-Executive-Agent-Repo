@@ -77,6 +77,7 @@ Legend
 - [x] Strict closure hardening: added runtime acceptance suites (`internal/contracts/acceptance_runtime_test.go`) that exercise V9.1 and V9.2 endpoint flows end-to-end via control mux (goals/mission-control/trust/learning/captures/codebase/capabilities/self-modification + context/rag/sessions/temporal/guardrails/tools/flags/streaming/errors/event-schemas/compliance/cache/model-tiers/admin)
 - [x] Strict closure hardening: eliminated remaining placeholder runtime services by implementing deterministic CRDT conflict resolution (`internal/crdt`), RAG eval gate (`internal/rag/eval`), field-level PII envelope encryption/redaction (`internal/security/pii`), and sandbox URL/CIDR enforcement (`internal/security/sandbox`) with lifecycle tests
 - [x] Strict closure hardening: added control-plane endpoint specialization guard (`TestControlMuxSpecializedV91V92Endpoints`) to assert V9.1/V9.2 API groups never fall through to generic `"status":"accepted"` fallback responses
+- [x] Strict closure hardening: reran static analysis gate in Docker Go 1.22 using `staticcheck@v0.5.1` (latest compatible with Go 1.22) across `./...` with zero findings
 
 Migration rules (must follow)
 - Preserve already-working preserved components unchanged unless v4.0 explicitly requires changes (per user instructions).
