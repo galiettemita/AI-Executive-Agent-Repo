@@ -6,7 +6,9 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/brevio/brevio/internal/caching"
 	contextlayer "github.com/brevio/brevio/internal/context"
+	errorlayer "github.com/brevio/brevio/internal/errors"
 	"github.com/brevio/brevio/internal/feature_flags"
 	"github.com/brevio/brevio/internal/guardrails"
 	raglayer "github.com/brevio/brevio/internal/rag"
@@ -17,7 +19,9 @@ import (
 
 func NewMux(service *Service) *http.ServeMux {
 	mux := http.NewServeMux()
+	cacheSvc := caching.NewService()
 	flags := feature_flags.NewService()
+	errorSvc := errorlayer.NewService()
 	contextBudgets := contextlayer.NewService()
 	guardrailsSvc := guardrails.NewService()
 	ragSvc := raglayer.NewService()
@@ -42,6 +46,14 @@ func NewMux(service *Service) *http.ServeMux {
 
 		if strings.HasPrefix(r.URL.Path, "/v1/flags") {
 			handleFeatureFlags(w, r, flags)
+			return
+		}
+		if strings.HasPrefix(r.URL.Path, "/v1/errors") {
+			handleErrors(w, r, errorSvc)
+			return
+		}
+		if strings.HasPrefix(r.URL.Path, "/v1/cache") {
+			handleCaching(w, r, cacheSvc)
 			return
 		}
 		if strings.HasPrefix(r.URL.Path, "/v1/context") {
@@ -267,6 +279,127 @@ func handleFeatureFlags(w http.ResponseWriter, r *http.Request, flags *feature_f
 	}
 
 	http.NotFound(w, r)
+}
+
+func handleErrors(w http.ResponseWriter, r *http.Request, svc *errorlayer.Service) {
+	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
+	if len(parts) != 3 {
+		http.NotFound(w, r)
+		return
+	}
+
+	switch parts[2] {
+	case "taxonomy":
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"errors": svc.ListTaxonomy(),
+		})
+		return
+
+	case "templates":
+		switch r.Method {
+		case http.MethodGet:
+			workspaceID := r.URL.Query().Get("workspace_id")
+			if workspaceID == "" {
+				workspaceID = "default"
+			}
+			writeJSON(w, http.StatusOK, map[string]any{
+				"templates": svc.ListTemplates(workspaceID),
+			})
+			return
+		case http.MethodPost:
+			var payload errorlayer.Template
+			if err := decodeJSON(r, &payload); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			writeJSON(w, http.StatusCreated, svc.UpsertTemplate(payload))
+			return
+		default:
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+	default:
+		http.NotFound(w, r)
+		return
+	}
+}
+
+func handleCaching(w http.ResponseWriter, r *http.Request, svc *caching.Service) {
+	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
+	if len(parts) != 3 {
+		http.NotFound(w, r)
+		return
+	}
+
+	switch parts[2] {
+	case "policies":
+		switch r.Method {
+		case http.MethodGet:
+			workspaceID := r.URL.Query().Get("workspace_id")
+			if workspaceID == "" {
+				workspaceID = "default"
+			}
+			writeJSON(w, http.StatusOK, map[string]any{
+				"policies": svc.ListPolicies(workspaceID),
+			})
+			return
+		case http.MethodPost:
+			var payload caching.Policy
+			if err := decodeJSON(r, &payload); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			policy := svc.UpsertPolicy(payload)
+			svc.PutEntry(policy.WorkspaceID, policy.CacheKey, "seed")
+			writeJSON(w, http.StatusCreated, policy)
+			return
+		default:
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+	case "stats":
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		workspaceID := r.URL.Query().Get("workspace_id")
+		if workspaceID == "" {
+			workspaceID = "default"
+		}
+		writeJSON(w, http.StatusOK, svc.Stats(workspaceID))
+		return
+
+	case "invalidate":
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		var payload struct {
+			WorkspaceID string `json:"workspace_id"`
+			CacheKey    string `json:"cache_key"`
+		}
+		if err := decodeJSON(r, &payload); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		if payload.WorkspaceID == "" {
+			payload.WorkspaceID = "default"
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"invalidated": svc.Invalidate(payload.WorkspaceID, payload.CacheKey),
+		})
+		return
+
+	default:
+		http.NotFound(w, r)
+		return
+	}
 }
 
 func handleRAG(w http.ResponseWriter, r *http.Request, svc *raglayer.Service) {

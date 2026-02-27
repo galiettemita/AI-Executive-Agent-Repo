@@ -97,6 +97,85 @@ func TestControlMuxFeatureFlagsFlow(t *testing.T) {
 	}
 }
 
+func TestControlMuxErrorsFlow(t *testing.T) {
+	t.Parallel()
+
+	mux := NewMux(NewService("dev-secret"))
+
+	getTaxonomyReq := httptest.NewRequest(http.MethodGet, "/v1/errors/taxonomy", nil)
+	getTaxonomyResp := httptest.NewRecorder()
+	mux.ServeHTTP(getTaxonomyResp, getTaxonomyReq)
+	if getTaxonomyResp.Code != http.StatusOK {
+		t.Fatalf("unexpected get taxonomy status: %d", getTaxonomyResp.Code)
+	}
+	var taxonomyPayload map[string]any
+	if err := json.Unmarshal(getTaxonomyResp.Body.Bytes(), &taxonomyPayload); err != nil {
+		t.Fatalf("decode taxonomy payload: %v", err)
+	}
+	errorsAny, ok := taxonomyPayload["errors"].([]any)
+	if !ok || len(errorsAny) == 0 {
+		t.Fatalf("expected taxonomy entries: %v", taxonomyPayload)
+	}
+
+	postTemplateBody := []byte(`{"workspace_id":"ws_1","persona":"executive","code_pattern":"BUDGET_*","template":"Budget exhausted. Approval required.","status":"active"}`)
+	postTemplateReq := httptest.NewRequest(http.MethodPost, "/v1/errors/templates", bytes.NewReader(postTemplateBody))
+	postTemplateResp := httptest.NewRecorder()
+	mux.ServeHTTP(postTemplateResp, postTemplateReq)
+	if postTemplateResp.Code != http.StatusCreated {
+		t.Fatalf("unexpected create template status: %d", postTemplateResp.Code)
+	}
+
+	getTemplatesReq := httptest.NewRequest(http.MethodGet, "/v1/errors/templates?workspace_id=ws_1", nil)
+	getTemplatesResp := httptest.NewRecorder()
+	mux.ServeHTTP(getTemplatesResp, getTemplatesReq)
+	if getTemplatesResp.Code != http.StatusOK {
+		t.Fatalf("unexpected list templates status: %d", getTemplatesResp.Code)
+	}
+}
+
+func TestControlMuxCachingFlow(t *testing.T) {
+	t.Parallel()
+
+	mux := NewMux(NewService("dev-secret"))
+
+	postPolicyBody := []byte(`{"workspace_id":"ws_1","cache_key":"compiled_context","ttl_seconds":600,"max_bytes":1048576,"enabled":true}`)
+	postPolicyReq := httptest.NewRequest(http.MethodPost, "/v1/cache/policies", bytes.NewReader(postPolicyBody))
+	postPolicyResp := httptest.NewRecorder()
+	mux.ServeHTTP(postPolicyResp, postPolicyReq)
+	if postPolicyResp.Code != http.StatusCreated {
+		t.Fatalf("unexpected create cache policy status: %d", postPolicyResp.Code)
+	}
+
+	getPoliciesReq := httptest.NewRequest(http.MethodGet, "/v1/cache/policies?workspace_id=ws_1", nil)
+	getPoliciesResp := httptest.NewRecorder()
+	mux.ServeHTTP(getPoliciesResp, getPoliciesReq)
+	if getPoliciesResp.Code != http.StatusOK {
+		t.Fatalf("unexpected list cache policies status: %d", getPoliciesResp.Code)
+	}
+
+	getStatsReq := httptest.NewRequest(http.MethodGet, "/v1/cache/stats?workspace_id=ws_1", nil)
+	getStatsResp := httptest.NewRecorder()
+	mux.ServeHTTP(getStatsResp, getStatsReq)
+	if getStatsResp.Code != http.StatusOK {
+		t.Fatalf("unexpected cache stats status: %d", getStatsResp.Code)
+	}
+	var statsPayload map[string]any
+	if err := json.Unmarshal(getStatsResp.Body.Bytes(), &statsPayload); err != nil {
+		t.Fatalf("decode stats payload: %v", err)
+	}
+	if int(statsPayload["entries"].(float64)) != 1 {
+		t.Fatalf("expected seeded cache entry count, got %v", statsPayload)
+	}
+
+	postInvalidateBody := []byte(`{"workspace_id":"ws_1","cache_key":"compiled_context"}`)
+	postInvalidateReq := httptest.NewRequest(http.MethodPost, "/v1/cache/invalidate", bytes.NewReader(postInvalidateBody))
+	postInvalidateResp := httptest.NewRecorder()
+	mux.ServeHTTP(postInvalidateResp, postInvalidateReq)
+	if postInvalidateResp.Code != http.StatusOK {
+		t.Fatalf("unexpected cache invalidate status: %d", postInvalidateResp.Code)
+	}
+}
+
 func TestControlMuxContextBudgetFlow(t *testing.T) {
 	t.Parallel()
 
