@@ -25,7 +25,10 @@ acceptance:
 	go test ./internal/contracts -run "TestAcceptanceGatesV9|TestAcceptanceGatesV91|TestAcceptanceGatesV92" -count=1
 
 docker-build:
-	docker build -t brevio:local .
+	@for svc in gateway brain control executor canvas temporal-worker; do \
+		echo "building $$svc"; \
+		docker build --build-arg SERVICE=$$svc -t brevio-$$svc:local .; \
+	done
 
 ci: lint build test migrate contracts acceptance
 

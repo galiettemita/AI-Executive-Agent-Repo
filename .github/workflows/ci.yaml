@@ -88,10 +88,18 @@ jobs:
         run: bash scripts/infra/validate.sh
       - name: determinism suite
         run: go test ./internal/llm ./internal/workflows -count=1
+      - name: docker build services
+        run: |
+          for svc in gateway brain control executor canvas temporal-worker; do
+            docker build --build-arg SERVICE="$svc" -t "brevio-${svc}:ci" .
+          done
       - name: dependency cve scan (trivy)
         run: trivy fs --scanners vuln --severity CRITICAL,HIGH --exit-code 1 .
       - name: docker image scan (trivy)
-        run: trivy fs --scanners vuln --severity CRITICAL,HIGH --exit-code 1 .
+        run: |
+          for svc in gateway brain control executor canvas temporal-worker; do
+            trivy image --severity CRITICAL,HIGH --exit-code 1 "brevio-${svc}:ci"
+          done
       - name: secrets scan (trufflehog)
         run: trufflehog filesystem . --fail
       - name: govulncheck baseline
