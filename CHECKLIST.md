@@ -124,6 +124,7 @@ Legend
 - [x] Strict closure hardening: added executable V9 runtime acceptance-gate coverage (`schema_closure`, `determinism`, `webhook_security`, `acceptance_suites_1_12`, `workspace_isolation`, `provisioning_pipeline`, `onboarding_completion`, `provisioning_recovery`, `deterministic_llm`, `cve_scanning`) in `internal/contracts/acceptance_gate_runtime_closure_test.go` and bound V9 gate-name contracts to these runtime subtests in `internal/contracts/acceptance_gates_test.go`
 - [x] Strict closure hardening: added exact infrastructure directory-set gates so `terraform/modules` and `helm/` must match the canonical V9/V9.2 module/chart sets with no extras/missing entries (`internal/contracts/infrastructure_closure_test.go`)
 - [x] Strict closure hardening: added exact OpenAPI `components.schemas` key-set parity gate (49 canonical component schema keys, including generic/error wrappers) in `internal/contracts/openapi_closure_test.go`
+- [x] Strict closure hardening: added workflow runtime exercise closure test to execute all 22 mapped V9/V9.1/V9.2 workflow IDs through `internal/workflows.Service` (`internal/contracts/workflow_closure_test.go`)
 
 Migration rules (must follow)
 - Preserve already-working preserved components unchanged unless v4.0 explicitly requires changes (per user instructions).
