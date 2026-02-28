@@ -524,7 +524,26 @@ func TestAcceptanceGateRuntimeCoverageV92(t *testing.T) {
 			"workspace_id": "ws_v92_compliance",
 			"key":          "soc2",
 		}, http.StatusCreated)
-		callJSON(t, mux, http.MethodGet, "/v1/compliance/evidence?workspace_id=ws_v92_compliance", nil, http.StatusOK)
+		payload := callJSON(t, mux, http.MethodGet, "/v1/compliance/evidence?workspace_id=ws_v92_compliance", nil, http.StatusOK)
+		evidenceItems, ok := payload["evidence"].([]any)
+		if !ok || len(evidenceItems) == 0 {
+			t.Fatalf("expected evidence payload, got %v", payload)
+		}
+		first, ok := evidenceItems[0].(map[string]any)
+		if !ok {
+			t.Fatalf("invalid evidence item: %v", evidenceItems[0])
+		}
+		hashValue, _ := first["sha256"].(string)
+		if !strings.HasPrefix(hashValue, "sha256:") {
+			t.Fatalf("expected prefixed sha256 evidence hash, got %q", hashValue)
+		}
+		digest := strings.TrimPrefix(hashValue, "sha256:")
+		if len(digest) != 64 {
+			t.Fatalf("expected 64-hex evidence digest, got %q", hashValue)
+		}
+		if _, err := hex.DecodeString(digest); err != nil {
+			t.Fatalf("expected valid evidence hex digest, got %q: %v", hashValue, err)
+		}
 	})
 
 	t.Run("caching_layers", func(t *testing.T) {

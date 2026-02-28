@@ -1,8 +1,11 @@
 package compliance
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"sort"
+	"strings"
 	"sync"
 )
 
@@ -100,8 +103,10 @@ func (s *Service) AddEvidence(evidence Evidence) Evidence {
 	if evidence.EventType == "" {
 		evidence.EventType = "BREVIO.compliance.evidence_collected.v1"
 	}
-	if evidence.SHA256 == "" {
-		evidence.SHA256 = "sha256:placeholder"
+	if normalized, ok := normalizeSHA256(evidence.SHA256); ok {
+		evidence.SHA256 = normalized
+	} else {
+		evidence.SHA256 = buildEvidenceSHA256(evidence)
 	}
 	s.evidence = append(s.evidence, evidence)
 	return evidence
@@ -183,4 +188,27 @@ func (s *Service) ListDSR(workspaceID string) []DSRRequest {
 		return out[i].ID < out[j].ID
 	})
 	return out
+}
+
+func normalizeSHA256(value string) (string, bool) {
+	candidate := strings.ToLower(strings.TrimSpace(value))
+	candidate = strings.TrimPrefix(candidate, "sha256:")
+	if len(candidate) != 64 {
+		return "", false
+	}
+	if _, err := hex.DecodeString(candidate); err != nil {
+		return "", false
+	}
+	return "sha256:" + candidate, true
+}
+
+func buildEvidenceSHA256(evidence Evidence) string {
+	joined := strings.Join([]string{
+		evidence.WorkspaceID,
+		evidence.FrameworkID,
+		evidence.EventType,
+		evidence.ArtifactURI,
+	}, "::")
+	sum := sha256.Sum256([]byte(joined))
+	return "sha256:" + hex.EncodeToString(sum[:])
 }

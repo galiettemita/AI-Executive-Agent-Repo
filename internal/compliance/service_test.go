@@ -1,6 +1,9 @@
 package compliance
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestComplianceLifecycle(t *testing.T) {
 	s := NewService()
@@ -46,5 +49,41 @@ func TestComplianceLifecycle(t *testing.T) {
 	requests := s.ListDSR("ws_1")
 	if len(requests) != 1 {
 		t.Fatalf("expected 1 dsr request, got %d", len(requests))
+	}
+}
+
+func TestAddEvidenceComputesHashWhenMissing(t *testing.T) {
+	t.Parallel()
+
+	svc := NewService()
+	evidence := svc.AddEvidence(Evidence{
+		WorkspaceID: "ws_hash_missing",
+		FrameworkID: "framework_1",
+		EventType:   "BREVIO.compliance.evidence_collected.v1",
+		ArtifactURI: "s3://breviosboms/evidence.json",
+	})
+	if !strings.HasPrefix(evidence.SHA256, "sha256:") {
+		t.Fatalf("expected sha256 prefix, got %s", evidence.SHA256)
+	}
+	digest := strings.TrimPrefix(evidence.SHA256, "sha256:")
+	if len(digest) != 64 {
+		t.Fatalf("expected 64-hex digest, got %s", evidence.SHA256)
+	}
+}
+
+func TestAddEvidenceNormalizesProvidedDigest(t *testing.T) {
+	t.Parallel()
+
+	svc := NewService()
+	inputDigest := "A237C8B072402B9E53D6329E6A14F1F0B9ABCA81FA0D9A74C8947E7EA7607195"
+	evidence := svc.AddEvidence(Evidence{
+		WorkspaceID: "ws_hash_normalize",
+		FrameworkID: "framework_2",
+		EventType:   "BREVIO.compliance.evidence_collected.v1",
+		ArtifactURI: "s3://breviosboms/evidence.json",
+		SHA256:      inputDigest,
+	})
+	if evidence.SHA256 != "sha256:"+strings.ToLower(inputDigest) {
+		t.Fatalf("unexpected normalized hash: %s", evidence.SHA256)
 	}
 }

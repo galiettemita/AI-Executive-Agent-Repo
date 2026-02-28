@@ -1763,7 +1763,6 @@ func handleCompliance(w http.ResponseWriter, r *http.Request, svc *compliance.Se
 				FrameworkID: framework.ID,
 				EventType:   "BREVIO.compliance.framework.created.v1",
 				ArtifactURI: "s3://breviosboms/framework.json",
-				SHA256:      "sha256:framework",
 			})
 			writeJSON(w, http.StatusCreated, framework)
 			return
