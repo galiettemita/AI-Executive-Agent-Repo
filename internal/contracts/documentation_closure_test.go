@@ -10,14 +10,40 @@ func TestDocumentationClosure(t *testing.T) {
 
 	root := repositoryRoot(t)
 
-	requiredDocs := []string{
-		filepath.Join(root, "README.md"),
-		filepath.Join(root, "docs", "ARCHITECTURE.md"),
-		filepath.Join(root, "docs", "DEVELOPMENT.md"),
-		filepath.Join(root, "docs", "DEPLOYMENT.md"),
+	requiredDocs := map[string][]string{
+		filepath.Join(root, "README.md"): {
+			"# BREVIO Monorepo",
+			"## Services",
+			"## Quick Start",
+			"## Key Directories",
+			"api/openapi/v9.yaml",
+			"db/migrations/001_BREVIO_v9_init.sql",
+		},
+		filepath.Join(root, "docs", "ARCHITECTURE.md"): {
+			"# ARCHITECTURE",
+			"## Runtime Planes",
+			"## Data and Workflows",
+			"## Infrastructure",
+			"internal/workflows/",
+		},
+		filepath.Join(root, "docs", "DEVELOPMENT.md"): {
+			"# DEVELOPMENT",
+			"## Prerequisites",
+			"## Local Validation",
+			"## Project Conventions",
+			"go test ./... -count=1",
+		},
+		filepath.Join(root, "docs", "DEPLOYMENT.md"): {
+			"# DEPLOYMENT",
+			"## Infrastructure",
+			"## Workload Deployment",
+			"terraform plan",
+			"helm lint",
+		},
 	}
 
-	for _, path := range requiredDocs {
+	for path, tokens := range requiredDocs {
 		assertFileNonEmpty(t, path)
+		assertFileContainsTokens(t, path, tokens)
 	}
 }
