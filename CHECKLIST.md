@@ -169,6 +169,7 @@ Legend
 - [x] Phase 0 closure refresh: updated `docs/codebase_audit_report.md` to current repository state (all canonical V9 artifacts present, cleanup status captured, baseline verification rerun)
 - [x] Phase 1 continuation (Step 1 repo_scaffold): added explicit scaffold closure contract covering canonical directories, service entrypoints, `.golangci.yml` linter set, required Make targets, and Docker baseline (`internal/contracts/repo_scaffold_closure_test.go`)
 - [x] Phase 1 continuation (Step 2 database_core): added executable PostgreSQL-16 migration verifier (`scripts/database/verify_postgres_migrations.sh`) with enum-count, RLS coverage, unset `app.workspace_id` rejection, and cross-workspace isolation checks; wired via `make db-verify` and closure tests
+- [x] Phase 1 continuation (Step 3 identity_and_workspace): expanded identity/delegation/RBAC to include account+user retrieval/update lifecycle, workspace retrieval/archive lifecycle, channel support validation (`whatsapp`/`imessage`), delegation revocation + grantee tool visibility, pairing invitation acceptance, and HTTP role-check middleware with strict tests
 
 Migration rules (must follow)
 - Preserve already-working preserved components unchanged unless v4.0 explicitly requires changes (per user instructions).

@@ -27,6 +27,7 @@ type User struct {
 	PhoneE164      string
 	GlobalAutonomy string
 	Timezone       string
+	Status         string
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
 }
@@ -57,6 +58,20 @@ type Service struct {
 	users                map[uuid.UUID]User
 	workspaces           map[uuid.UUID]Workspace
 	channelBindingLookup map[string]uuid.UUID
+}
+
+type AccountUpdate struct {
+	PlanKey            *string
+	Status             *string
+	BillingCustomerRef *string
+}
+
+type UserUpdate struct {
+	Email          *string
+	PhoneE164      *string
+	GlobalAutonomy *string
+	Timezone       *string
+	Status         *string
 }
 
 var defaultDomainAutonomy = map[string]string{
@@ -109,6 +124,40 @@ func (s *Service) CreateAccount(planKey, status, billingRef string) (Account, er
 	return account, nil
 }
 
+func (s *Service) GetAccount(accountID uuid.UUID) (Account, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	account, ok := s.accounts[accountID]
+	if !ok {
+		return Account{}, fmt.Errorf("account not found")
+	}
+	return account, nil
+}
+
+func (s *Service) UpdateAccount(accountID uuid.UUID, update AccountUpdate) (Account, error) {
+	if accountID == uuid.Nil {
+		return Account{}, fmt.Errorf("account_id is required")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	account, ok := s.accounts[accountID]
+	if !ok {
+		return Account{}, fmt.Errorf("account not found")
+	}
+	if update.PlanKey != nil && *update.PlanKey != "" {
+		account.PlanKey = *update.PlanKey
+	}
+	if update.Status != nil && *update.Status != "" {
+		account.Status = *update.Status
+	}
+	if update.BillingCustomerRef != nil {
+		account.BillingCustomerRef = *update.BillingCustomerRef
+	}
+	account.UpdatedAt = time.Now().UTC()
+	s.accounts[accountID] = account
+	return account, nil
+}
+
 func (s *Service) CreateUser(accountID uuid.UUID, email, phoneE164, globalAutonomy, timezone string) (User, error) {
 	if accountID == uuid.Nil {
 		return User{}, fmt.Errorf("account_id is required")
@@ -135,6 +184,7 @@ func (s *Service) CreateUser(accountID uuid.UUID, email, phoneE164, globalAutono
 		PhoneE164:      phoneE164,
 		GlobalAutonomy: globalAutonomy,
 		Timezone:       timezone,
+		Status:         "active",
 		CreatedAt:      now,
 		UpdatedAt:      now,
 	}
@@ -146,6 +196,62 @@ func (s *Service) CreateUser(accountID uuid.UUID, email, phoneE164, globalAutono
 	}
 	s.users[user.ID] = user
 	return user, nil
+}
+
+func (s *Service) GetUser(userID uuid.UUID) (User, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	user, ok := s.users[userID]
+	if !ok {
+		return User{}, fmt.Errorf("user not found")
+	}
+	return user, nil
+}
+
+func (s *Service) UpdateUser(userID uuid.UUID, update UserUpdate) (User, error) {
+	if userID == uuid.Nil {
+		return User{}, fmt.Errorf("user_id is required")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	user, ok := s.users[userID]
+	if !ok {
+		return User{}, fmt.Errorf("user not found")
+	}
+	if update.Email != nil && *update.Email != "" {
+		user.Email = *update.Email
+	}
+	if update.PhoneE164 != nil {
+		user.PhoneE164 = *update.PhoneE164
+	}
+	if update.GlobalAutonomy != nil && *update.GlobalAutonomy != "" {
+		user.GlobalAutonomy = *update.GlobalAutonomy
+	}
+	if update.Timezone != nil && *update.Timezone != "" {
+		user.Timezone = *update.Timezone
+	}
+	if update.Status != nil && *update.Status != "" {
+		user.Status = *update.Status
+	}
+	user.UpdatedAt = time.Now().UTC()
+	s.users[userID] = user
+	return user, nil
+}
+
+func (s *Service) DeleteUser(userID uuid.UUID) error {
+	if userID == uuid.Nil {
+		return fmt.Errorf("user_id is required")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	user, ok := s.users[userID]
+	if !ok {
+		return fmt.Errorf("user not found")
+	}
+	user.Status = "deleted"
+	user.UpdatedAt = time.Now().UTC()
+	s.users[userID] = user
+	return nil
 }
 
 func (s *Service) CreateWorkspace(accountID, ownerUserID uuid.UUID, memoryNamespace, domainAutonomyJSON string, allowedConnectorKeys []string) (Workspace, error) {
@@ -205,6 +311,16 @@ func (s *Service) ArchiveWorkspace(workspaceID uuid.UUID) error {
 	return nil
 }
 
+func (s *Service) GetWorkspace(workspaceID uuid.UUID) (Workspace, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	workspace, ok := s.workspaces[workspaceID]
+	if !ok {
+		return Workspace{}, fmt.Errorf("workspace not found")
+	}
+	return workspace, nil
+}
+
 func bindingKey(channel, identifier string) string {
 	return channel + "::" + identifier
 }
@@ -215,6 +331,9 @@ func (s *Service) BindChannel(workspaceID uuid.UUID, channel, identifier string)
 	}
 	if channel == "" || identifier == "" {
 		return ChannelBinding{}, fmt.Errorf("channel and identifier are required")
+	}
+	if !isSupportedChannel(channel) {
+		return ChannelBinding{}, fmt.Errorf("unsupported channel: %s", channel)
 	}
 
 	s.mu.Lock()
@@ -241,6 +360,15 @@ func (s *Service) BindChannel(workspaceID uuid.UUID, channel, identifier string)
 	}
 	s.channelBindingLookup[lookup] = workspaceID
 	return binding, nil
+}
+
+func isSupportedChannel(channel string) bool {
+	switch channel {
+	case "whatsapp", "imessage":
+		return true
+	default:
+		return false
+	}
 }
 
 func (s *Service) ResolveWorkspaceByChannel(channel, identifier string) (uuid.UUID, error) {
