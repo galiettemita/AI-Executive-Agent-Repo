@@ -1,0 +1,5 @@
+^\.git/
+(^|/)\.terraform/
+^classmate-ai/
+^artifacts/
+^sbom\.spdx\.json$

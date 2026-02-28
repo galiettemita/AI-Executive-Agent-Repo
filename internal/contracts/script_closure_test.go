@@ -85,10 +85,23 @@ func TestSecurityValidationScriptClosure(t *testing.T) {
 	assertFileContainsTokens(t, path, []string{
 		"REQUIRE_SECURITY_TOOLS",
 		"CI/strict mode",
-		"trivy fs --scanners vuln --severity CRITICAL,HIGH --exit-code 1 .",
-		"trufflehog filesystem . --fail",
-		"syft dir:. -o spdx-json > sbom.spdx.json",
+		"trivy_scan_args=(",
+		"--skip-dirs .git",
+		"trufflehog_scan_args=(",
+		"--exclude-paths \"$TRUFFLEHOG_EXCLUDE_PATHS_FILE\"",
+		"syft_scan_args=(",
+		"\"**/.terraform/**\"",
+		"syft \"${syft_scan_args[@]}\" > sbom.spdx.json",
 		"bash scripts/security/run_govulncheck.sh",
+	})
+
+	excludePath := filepath.Join(root, "scripts", "security", "trufflehog_exclude_paths.txt")
+	assertFileNonEmpty(t, excludePath)
+	assertFileContainsTokens(t, excludePath, []string{
+		"^\\.git/",
+		"(^|/)\\.terraform/",
+		"^classmate-ai/",
+		"^artifacts/",
 	})
 }
 

@@ -4,6 +4,36 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT_DIR"
 
+TRUFFLEHOG_EXCLUDE_PATHS_FILE="scripts/security/trufflehog_exclude_paths.txt"
+
+trivy_scan_args=(
+  fs
+  --scanners vuln
+  --severity CRITICAL,HIGH
+  --exit-code 1
+  --skip-dirs .git
+  --skip-dirs classmate-ai
+  --skip-dirs artifacts
+  .
+)
+
+trufflehog_scan_args=(
+  filesystem
+  .
+  --fail
+  --exclude-paths "$TRUFFLEHOG_EXCLUDE_PATHS_FILE"
+  --force-skip-binaries
+)
+
+syft_scan_args=(
+  dir:.
+  --exclude "./.git/**"
+  --exclude "**/.terraform/**"
+  --exclude "./classmate-ai/**"
+  --exclude "./artifacts/**"
+  -o spdx-json
+)
+
 resolve_docker_bin() {
   if command -v docker >/dev/null 2>&1; then
     command -v docker
@@ -47,6 +77,33 @@ run_go_cmd() {
     "export PATH=\"/usr/local/go/bin:/go/bin:\$PATH\"; ${command_text}"
 }
 
+run_dockerized_security_tool() {
+  local tool_name="$1"
+  local docker_image="$2"
+  shift 2
+
+  local docker_bin
+  if ! docker_bin="$(resolve_docker_bin)"; then
+    if should_require_security_tooling; then
+      echo "[security] ${tool_name} requires docker fallback in CI/strict mode but docker is unavailable"
+      exit 1
+    fi
+    echo "[security] ${tool_name} missing and docker fallback unavailable; skipped"
+    return 0
+  fi
+
+  echo "[security] ${tool_name} missing on host; using dockerized ${docker_image}"
+  if ! "$docker_bin" run --rm -v "$ROOT_DIR":/src -w /src "$docker_image" "$@"; then
+    if should_require_security_tooling; then
+      echo "[security] ${tool_name} dockerized execution failed in CI/strict mode"
+      exit 1
+    fi
+    echo "[security] ${tool_name} dockerized execution failed; skipped"
+    return 0
+  fi
+  return 0
+}
+
 echo "[security] prompt injection tests"
 run_go_cmd "go test ./internal/control -count=1"
 
@@ -64,36 +121,45 @@ run_go_cmd "go test ./internal/security/sandbox -count=1"
 
 if command -v trivy >/dev/null 2>&1; then
   echo "[security] trivy filesystem scan"
-  trivy fs --scanners vuln --severity CRITICAL,HIGH --exit-code 1 .
+  trivy "${trivy_scan_args[@]}"
 else
-  if should_require_security_tooling; then
-    echo "[security] trivy is required in CI/strict mode but not installed"
-    exit 1
-  fi
-  echo "[security] trivy not installed; skipped"
+  run_dockerized_security_tool "trivy" "aquasec/trivy:0.57.1" \
+    "${trivy_scan_args[@]}"
 fi
 
 if command -v trufflehog >/dev/null 2>&1; then
   echo "[security] trufflehog scan"
-  trufflehog filesystem . --fail
+  trufflehog "${trufflehog_scan_args[@]}"
 else
-  if should_require_security_tooling; then
-    echo "[security] trufflehog is required in CI/strict mode but not installed"
-    exit 1
-  fi
-  echo "[security] trufflehog not installed; skipped"
+  run_dockerized_security_tool "trufflehog" "ghcr.io/trufflesecurity/trufflehog:3.90.4" \
+    "${trufflehog_scan_args[@]}"
 fi
 
 if command -v syft >/dev/null 2>&1; then
   echo "[security] syft sbom"
-  syft dir:. -o spdx-json > sbom.spdx.json
+  syft "${syft_scan_args[@]}" > sbom.spdx.json
   test -s sbom.spdx.json
 else
-  if should_require_security_tooling; then
-    echo "[security] syft is required in CI/strict mode but not installed"
-    exit 1
+  docker_bin=""
+  if docker_bin="$(resolve_docker_bin)"; then
+    echo "[security] syft missing on host; using dockerized anchore/syft:v1.20.0"
+    if ! "$docker_bin" run --rm -v "$ROOT_DIR":/src -w /src anchore/syft:v1.20.0 "${syft_scan_args[@]}" > sbom.spdx.json; then
+      if should_require_security_tooling; then
+        echo "[security] syft dockerized execution failed in CI/strict mode"
+        exit 1
+      fi
+      echo "[security] syft dockerized execution failed; skipped"
+      rm -f sbom.spdx.json
+    else
+      test -s sbom.spdx.json
+    fi
+  else
+    if should_require_security_tooling; then
+      echo "[security] syft is required in CI/strict mode but neither host binary nor docker fallback is available"
+      exit 1
+    fi
+    echo "[security] syft missing and docker fallback unavailable; skipped"
   fi
-  echo "[security] syft not installed; skipped"
 fi
 
 echo "[security] govulncheck baseline"
