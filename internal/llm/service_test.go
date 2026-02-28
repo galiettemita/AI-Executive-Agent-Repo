@@ -1,6 +1,9 @@
 package llm
 
-import "testing"
+import (
+	"encoding/json"
+	"testing"
+)
 
 func TestDeterminismSameInput20Runs(t *testing.T) {
 	t.Parallel()
@@ -27,7 +30,7 @@ func TestDeterminismSameInput20Runs(t *testing.T) {
 	}
 }
 
-func TestShadowEvalRequiredBeforePromotion(t *testing.T) {
+func TestShadowEvalRequiredBeforePromotionAndRollback(t *testing.T) {
 	t.Parallel()
 
 	svc := NewService()
@@ -41,5 +44,71 @@ func TestShadowEvalRequiredBeforePromotion(t *testing.T) {
 	svc.RegisterPrompt(PromptVersion{PromptKey: "brain.system.v9", VersionInt: 3, Body: "v3", ParentVersionInt: 2, ShadowEvalPassed: true})
 	if err := svc.PromotePrompt("brain.system.v9", 3); err != nil {
 		t.Fatalf("unexpected promotion failure: %v", err)
+	}
+	if got := svc.ActivePromptVersion("brain.system.v9"); got != 3 {
+		t.Fatalf("expected active prompt version 3, got %d", got)
+	}
+
+	if err := svc.RollbackPrompt("brain.system.v9", 1); err != nil {
+		t.Fatalf("rollback prompt: %v", err)
+	}
+	if got := svc.ActivePromptVersion("brain.system.v9"); got != 1 {
+		t.Fatalf("expected rollback to version 1, got %d", got)
+	}
+}
+
+func TestTierMaxOutputTokenCap(t *testing.T) {
+	t.Parallel()
+
+	svc := NewService()
+	resp := svc.Generate(Request{
+		WorkspaceID:     "ws1",
+		PromptKey:       "brain.planner.v9",
+		Input:           "plan",
+		Tier:            "T1",
+		ModelID:         "model-a",
+		ProviderID:      "provider-a",
+		MaxOutputTokens: 999,
+	})
+
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(resp.PlanJSON), &payload); err != nil {
+		t.Fatalf("decode plan json: %v", err)
+	}
+	if int(payload["max_tokens"].(float64)) != 512 {
+		t.Fatalf("expected T1 cap of 512 max tokens, got %v", payload["max_tokens"])
+	}
+	if payload["temperature"].(float64) != 0 || payload["top_p"].(float64) != 1 {
+		t.Fatalf("expected deterministic generation params, got %+v", payload)
+	}
+}
+
+func TestFallbackOnlyWhenNoOutputCommitted(t *testing.T) {
+	t.Parallel()
+
+	svc := NewService()
+	req := Request{
+		WorkspaceID: "ws1",
+		PromptKey:   "brain.planner.v9",
+		Input:       "plan",
+		Tier:        "T2",
+		ModelID:     "model-a",
+		ProviderID:  "provider-primary",
+	}
+
+	fallback := svc.GenerateWithFallback(req, "provider-fallback", true, false)
+	if fallback.ProviderID != "provider-fallback" {
+		t.Fatalf("expected fallback provider, got %s", fallback.ProviderID)
+	}
+	if fallback.FailoverReason == "" {
+		t.Fatal("expected failover reason when fallback is used")
+	}
+
+	noFallback := svc.GenerateWithFallback(req, "provider-fallback", true, true)
+	if noFallback.ProviderID != "provider-primary" {
+		t.Fatalf("expected primary provider when output already committed, got %s", noFallback.ProviderID)
+	}
+	if noFallback.FailoverReason != "" {
+		t.Fatalf("expected no failover reason when output committed, got %s", noFallback.FailoverReason)
 	}
 }
