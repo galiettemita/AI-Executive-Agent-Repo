@@ -177,6 +177,7 @@ Legend
 - [x] Phase 1 continuation (Step 8 executor_tooling): expanded executor runtime with synthesis-evidence emission (`BREVIO.trust.synthesis_evidence.created.v1`), layered L1/L2/L3 cache promotion behavior, circuit-breaker protected fallback execution path, localhost SSRF hardening, and audit payload minimization/redaction with strict regression tests
 - [x] Phase 1 continuation (Step 9 memory_system): rebuilt memory service with full type/data-class/trust validation, workspace write-policy gates, lifecycle transitions (`proposed -> needs_confirmation -> active -> superseded -> deleted`), trust-filtered retrieval, and consolidation that supersedes duplicates, increments embedding version, and expires stale entries
 - [x] Phase 1 continuation (Step 10 llm_layer): upgraded deterministic LLM runtime with tier-normalized token caps (`T0/T1/T2/T3`), request-hash replay identity including prompt version and deterministic params, prompt rollback support, and controlled fallback-provider failover semantics only when no output was committed
+- [x] Phase 1 continuation (Step 11 provisioning_engine): hardened provisioning runtime with versioned deterministic server ranker scoring + explanation replay cache, and expanded artifact verification to enforce SBOM/vulnerability gates with optional Ed25519 signature verification
 
 Migration rules (must follow)
 - Preserve already-working preserved components unchanged unless v4.0 explicitly requires changes (per user instructions).

@@ -1,7 +1,9 @@
 package provisioning
 
 import (
+	"crypto/ed25519"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"fmt"
 	"sort"
@@ -47,17 +49,44 @@ type PolicyInput struct {
 }
 
 type ArtifactManifest struct {
-	ImageDigest  string
-	DigestSHA256 string
+	ImageDigest         string
+	DigestSHA256        string
+	SignaturePublicKey  string
+	Signature           string
+	SBOMS3URI           string
+	VulnerabilityPassed bool
+}
+
+type CandidateMetrics struct {
+	RiskPenalty      float64
+	ReliabilityScore float64
+	CostEfficiency   float64
+}
+
+type RankedCandidate struct {
+	ServerID string
+	Score    float64
+}
+
+type RankerVersion struct {
+	Version int
+	Weights map[string]float64
 }
 
 type Service struct {
-	mu    sync.Mutex
-	cache map[string]CapabilityResult
+	mu                sync.Mutex
+	cache             map[string]CapabilityResult
+	rankers           map[int]RankerVersion
+	activeRanker      int
+	explanationReplay map[string]string
 }
 
 func NewService() *Service {
-	return &Service{cache: map[string]CapabilityResult{}}
+	return &Service{
+		cache:             map[string]CapabilityResult{},
+		rankers:           map[int]RankerVersion{},
+		explanationReplay: map[string]string{},
+	}
 }
 
 func normalizeQuery(query string) string {
@@ -159,6 +188,31 @@ func VerifyArtifact(manifest ArtifactManifest, artifactBytes []byte) error {
 	if !strings.HasPrefix(manifest.ImageDigest, "sha256:") {
 		return fmt.Errorf("invalid image digest format")
 	}
+	if manifest.SBOMS3URI == "" {
+		return fmt.Errorf("missing sbom uri")
+	}
+	if !manifest.VulnerabilityPassed {
+		return fmt.Errorf("vulnerability gate failed")
+	}
+	if manifest.SignaturePublicKey != "" || manifest.Signature != "" {
+		if manifest.SignaturePublicKey == "" || manifest.Signature == "" {
+			return fmt.Errorf("signature and public key must both be provided")
+		}
+		pubKey, err := base64.StdEncoding.DecodeString(manifest.SignaturePublicKey)
+		if err != nil {
+			return fmt.Errorf("invalid signature public key encoding: %w", err)
+		}
+		signature, err := base64.StdEncoding.DecodeString(manifest.Signature)
+		if err != nil {
+			return fmt.Errorf("invalid signature encoding: %w", err)
+		}
+		if len(pubKey) != ed25519.PublicKeySize || len(signature) != ed25519.SignatureSize {
+			return fmt.Errorf("invalid signature key size")
+		}
+		if !ed25519.Verify(ed25519.PublicKey(pubKey), artifactBytes, signature) {
+			return fmt.Errorf("artifact signature verification failed")
+		}
+	}
 	return nil
 }
 
@@ -188,4 +242,67 @@ func RoleRank(role Role) int {
 
 func CanApproveOAuthAndDeploy(role Role) bool {
 	return role == RoleOwner || role == RoleAdmin
+}
+
+func (s *Service) RegisterRankerVersion(version int, weights map[string]float64) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	copyWeights := map[string]float64{}
+	for k, v := range weights {
+		copyWeights[k] = v
+	}
+	s.rankers[version] = RankerVersion{Version: version, Weights: copyWeights}
+	if s.activeRanker == 0 {
+		s.activeRanker = version
+	}
+}
+
+func (s *Service) SetActiveRankerVersion(version int) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.rankers[version]; !ok {
+		return fmt.Errorf("ranker version not found: %d", version)
+	}
+	s.activeRanker = version
+	return nil
+}
+
+func (s *Service) RankServers(metrics map[string]CandidateMetrics) ([]RankedCandidate, string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	ranker, ok := s.rankers[s.activeRanker]
+	if !ok {
+		return nil, "", fmt.Errorf("active ranker not configured")
+	}
+	riskWeight := ranker.Weights["risk_penalty"]
+	reliabilityWeight := ranker.Weights["reliability_score"]
+	costWeight := ranker.Weights["cost_efficiency"]
+
+	out := make([]RankedCandidate, 0, len(metrics))
+	for serverID, values := range metrics {
+		score := (values.ReliabilityScore * reliabilityWeight) + (values.CostEfficiency * costWeight) - (values.RiskPenalty * riskWeight)
+		out = append(out, RankedCandidate{ServerID: serverID, Score: score})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Score == out[j].Score {
+			return out[i].ServerID < out[j].ServerID
+		}
+		return out[i].Score > out[j].Score
+	})
+
+	explanationKey := fmt.Sprintf("v=%d::%s", ranker.Version, rankedCandidatesKey(out))
+	if replay, ok := s.explanationReplay[explanationKey]; ok {
+		return out, replay, nil
+	}
+	explanation := hash(explanationKey)
+	s.explanationReplay[explanationKey] = explanation
+	return out, explanation, nil
+}
+
+func rankedCandidatesKey(candidates []RankedCandidate) string {
+	parts := make([]string, 0, len(candidates))
+	for _, candidate := range candidates {
+		parts = append(parts, fmt.Sprintf("%s=%.6f", candidate.ServerID, candidate.Score))
+	}
+	return strings.Join(parts, ",")
 }

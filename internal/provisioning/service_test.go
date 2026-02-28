@@ -1,6 +1,11 @@
 package provisioning
 
-import "testing"
+import (
+	"crypto/ed25519"
+	"crypto/rand"
+	"encoding/base64"
+	"testing"
+)
 
 func TestCapabilityResolutionDeterministicAcross20Calls(t *testing.T) {
 	t.Parallel()
@@ -158,9 +163,70 @@ func TestProvisioningRBACHierarchy(t *testing.T) {
 func TestArtifactVerificationRejectsTamperedDigest(t *testing.T) {
 	t.Parallel()
 
-	manifest := ArtifactManifest{ImageDigest: "sha256:abc", DigestSHA256: "deadbeef"}
+	manifest := ArtifactManifest{ImageDigest: "sha256:abc", DigestSHA256: "deadbeef", SBOMS3URI: "s3://sboms/example.spdx.json", VulnerabilityPassed: true}
 	if err := VerifyArtifact(manifest, []byte("artifact-content")); err == nil {
 		t.Fatal("expected digest mismatch error")
+	}
+}
+
+func TestArtifactVerificationWithSignatureAndSBOM(t *testing.T) {
+	t.Parallel()
+
+	artifact := []byte("artifact-content")
+	pub, priv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("generate keypair: %v", err)
+	}
+	signature := ed25519.Sign(priv, artifact)
+
+	manifest := ArtifactManifest{
+		ImageDigest:         "sha256:abc",
+		DigestSHA256:        hash(string(artifact)),
+		SignaturePublicKey:  base64.StdEncoding.EncodeToString(pub),
+		Signature:           base64.StdEncoding.EncodeToString(signature),
+		SBOMS3URI:           "s3://sboms/example.spdx.json",
+		VulnerabilityPassed: true,
+	}
+	if err := VerifyArtifact(manifest, artifact); err != nil {
+		t.Fatalf("expected valid artifact verification, got %v", err)
+	}
+}
+
+func TestRankServersDeterministicAndExplanationReplay(t *testing.T) {
+	t.Parallel()
+
+	svc := NewService()
+	svc.RegisterRankerVersion(1, map[string]float64{
+		"risk_penalty":      0.7,
+		"reliability_score": 1.2,
+		"cost_efficiency":   0.4,
+	})
+	if err := svc.SetActiveRankerVersion(1); err != nil {
+		t.Fatalf("set active ranker: %v", err)
+	}
+
+	metrics := map[string]CandidateMetrics{
+		"server_a": {RiskPenalty: 0.1, ReliabilityScore: 0.9, CostEfficiency: 0.5},
+		"server_b": {RiskPenalty: 0.3, ReliabilityScore: 0.8, CostEfficiency: 0.8},
+	}
+	firstRanked, firstExplanation, err := svc.RankServers(metrics)
+	if err != nil {
+		t.Fatalf("rank servers first call: %v", err)
+	}
+	secondRanked, secondExplanation, err := svc.RankServers(metrics)
+	if err != nil {
+		t.Fatalf("rank servers second call: %v", err)
+	}
+	if len(firstRanked) != len(secondRanked) {
+		t.Fatalf("ranked result size mismatch: %d vs %d", len(firstRanked), len(secondRanked))
+	}
+	for i := range firstRanked {
+		if firstRanked[i] != secondRanked[i] {
+			t.Fatalf("ranked output mismatch at index %d: %+v vs %+v", i, firstRanked[i], secondRanked[i])
+		}
+	}
+	if firstExplanation != secondExplanation {
+		t.Fatalf("expected explanation replay identity, got %s vs %s", firstExplanation, secondExplanation)
 	}
 }
 
