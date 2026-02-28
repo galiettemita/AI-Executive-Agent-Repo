@@ -1,8 +1,29 @@
 {
-  "": "https://json-schema.org/draft/2020-12/schema",
-  "": "https://schemas.brevio.example/error_message.v1.json",
-  "title": "error_message.v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "object",
   "additionalProperties": false,
-  "properties": {}
+  "properties": {
+    "error_code": {
+      "type": "string",
+      "minLength": 1
+    },
+    "user_message": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 700
+    },
+    "retryable": {
+      "type": "boolean"
+    },
+    "next_action": {
+      "type": "string",
+      "maxLength": 200
+    }
+  },
+  "required": [
+    "error_code",
+    "user_message",
+    "retryable",
+    "next_action"
+  ]
 }

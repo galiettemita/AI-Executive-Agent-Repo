@@ -1,8 +1,35 @@
 {
-  "": "https://json-schema.org/draft/2020-12/schema",
-  "": "https://schemas.brevio.example/admin_alert.v1.json",
-  "title": "admin_alert.v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "object",
   "additionalProperties": false,
-  "properties": {}
+  "properties": {
+    "alert_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "rule_key": {
+      "type": "string",
+      "minLength": 1
+    },
+    "severity": {
+      "type": "string",
+      "minLength": 1
+    },
+    "message": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 500
+    },
+    "fired_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "required": [
+    "alert_id",
+    "rule_key",
+    "severity",
+    "message",
+    "fired_at"
+  ]
 }

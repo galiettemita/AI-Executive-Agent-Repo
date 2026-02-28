@@ -1,8 +1,30 @@
 {
-  "": "https://json-schema.org/draft/2020-12/schema",
-  "": "https://schemas.brevio.example/model_tier_override_request.v1.json",
-  "title": "model_tier_override_request.v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "object",
   "additionalProperties": false,
-  "properties": {}
+  "properties": {
+    "workspace_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "target_tier": {
+      "type": "string",
+      "minLength": 1
+    },
+    "reason": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 500
+    },
+    "expires_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "required": [
+    "workspace_id",
+    "target_tier",
+    "reason",
+    "expires_at"
+  ]
 }

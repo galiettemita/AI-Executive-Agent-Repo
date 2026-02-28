@@ -1,8 +1,48 @@
 {
-  "": "https://json-schema.org/draft/2020-12/schema",
-  "": "https://schemas.brevio.example/morning_briefing.v1.json",
-  "title": "morning_briefing.v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "object",
   "additionalProperties": false,
-  "properties": {}
+  "properties": {
+    "workspace_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "briefing_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "headline": {
+      "type": "string",
+      "maxLength": 200
+    },
+    "priorities": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "risks": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "agenda": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  },
+  "required": [
+    "workspace_id",
+    "briefing_date",
+    "headline",
+    "priorities",
+    "risks",
+    "agenda"
+  ]
 }

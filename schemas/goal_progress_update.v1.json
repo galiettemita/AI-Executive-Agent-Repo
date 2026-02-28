@@ -1,8 +1,43 @@
 {
-  "": "https://json-schema.org/draft/2020-12/schema",
-  "": "https://schemas.brevio.example/goal_progress_update.v1.json",
-  "title": "goal_progress_update.v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "object",
   "additionalProperties": false,
-  "properties": {}
+  "properties": {
+    "goal_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "workspace_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "progress_pct": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 100
+    },
+    "note": {
+      "type": "string",
+      "maxLength": 1000
+    },
+    "evidence_refs": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "updated_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "required": [
+    "goal_id",
+    "workspace_id",
+    "progress_pct",
+    "note",
+    "evidence_refs",
+    "updated_at"
+  ]
 }

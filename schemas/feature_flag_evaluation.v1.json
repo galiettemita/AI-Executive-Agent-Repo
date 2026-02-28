@@ -1,8 +1,33 @@
 {
-  "": "https://json-schema.org/draft/2020-12/schema",
-  "": "https://schemas.brevio.example/feature_flag_evaluation.v1.json",
-  "title": "feature_flag_evaluation.v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "object",
   "additionalProperties": false,
-  "properties": {}
+  "properties": {
+    "flag_key": {
+      "type": "string",
+      "minLength": 1
+    },
+    "workspace_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "enabled": {
+      "type": "boolean"
+    },
+    "variant": {
+      "type": "string",
+      "minLength": 1
+    },
+    "reason": {
+      "type": "string",
+      "maxLength": 500
+    }
+  },
+  "required": [
+    "flag_key",
+    "workspace_id",
+    "enabled",
+    "variant",
+    "reason"
+  ]
 }

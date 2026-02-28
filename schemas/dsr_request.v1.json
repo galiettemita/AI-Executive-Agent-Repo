@@ -1,8 +1,39 @@
 {
-  "": "https://json-schema.org/draft/2020-12/schema",
-  "": "https://schemas.brevio.example/dsr_request.v1.json",
-  "title": "dsr_request.v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "object",
   "additionalProperties": false,
-  "properties": {}
+  "properties": {
+    "request_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "workspace_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "request_type": {
+      "type": "string",
+      "minLength": 1
+    },
+    "status": {
+      "type": "string",
+      "minLength": 1
+    },
+    "deadline_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "subject_user_id": {
+      "type": "string",
+      "minLength": 1
+    }
+  },
+  "required": [
+    "request_id",
+    "workspace_id",
+    "request_type",
+    "status",
+    "deadline_at",
+    "subject_user_id"
+  ]
 }

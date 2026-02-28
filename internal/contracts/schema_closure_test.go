@@ -86,6 +86,10 @@ func TestJSONSchemaClosure(t *testing.T) {
 		if doc["additionalProperties"] != false {
 			t.Fatalf("schema %s must set additionalProperties=false", file)
 		}
+		properties, ok := doc["properties"].(map[string]any)
+		if !ok || len(properties) == 0 {
+			t.Fatalf("schema %s must define non-empty properties", file)
+		}
 	}
 }
 

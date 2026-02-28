@@ -1,8 +1,33 @@
 {
-  "": "https://json-schema.org/draft/2020-12/schema",
-  "": "https://schemas.brevio.example/memory_conflict_report.v1.json",
-  "title": "memory_conflict_report.v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "object",
   "additionalProperties": false,
-  "properties": {}
+  "properties": {
+    "conflict_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "workspace_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "entity_key": {
+      "type": "string",
+      "minLength": 1
+    },
+    "resolution_strategy": {
+      "type": "string",
+      "minLength": 1
+    },
+    "requires_manual_review": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "conflict_id",
+    "workspace_id",
+    "entity_key",
+    "resolution_strategy",
+    "requires_manual_review"
+  ]
 }

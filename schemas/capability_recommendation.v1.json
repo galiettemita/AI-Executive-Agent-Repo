@@ -1,8 +1,40 @@
 {
-  "": "https://json-schema.org/draft/2020-12/schema",
-  "": "https://schemas.brevio.example/capability_recommendation.v1.json",
-  "title": "capability_recommendation.v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "object",
   "additionalProperties": false,
-  "properties": {}
+  "properties": {
+    "recommendation_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "workspace_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "capability_key": {
+      "type": "string",
+      "minLength": 1
+    },
+    "confidence": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "reason": {
+      "type": "string",
+      "maxLength": 1000
+    },
+    "status": {
+      "type": "string",
+      "minLength": 1
+    }
+  },
+  "required": [
+    "recommendation_id",
+    "workspace_id",
+    "capability_key",
+    "confidence",
+    "reason",
+    "status"
+  ]
 }

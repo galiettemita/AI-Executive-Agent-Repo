@@ -1,8 +1,33 @@
 {
-  "": "https://json-schema.org/draft/2020-12/schema",
-  "": "https://schemas.brevio.example/code_context_export_request.v1.json",
-  "title": "code_context_export_request.v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "object",
   "additionalProperties": false,
-  "properties": {}
+  "properties": {
+    "workspace_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "repository_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "format": {
+      "type": "string",
+      "minLength": 1
+    },
+    "scope": {
+      "type": "string",
+      "minLength": 1
+    },
+    "include_dependencies": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "workspace_id",
+    "repository_id",
+    "format",
+    "scope",
+    "include_dependencies"
+  ]
 }

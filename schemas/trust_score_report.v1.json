@@ -1,8 +1,40 @@
 {
-  "": "https://json-schema.org/draft/2020-12/schema",
-  "": "https://schemas.brevio.example/trust_score_report.v1.json",
-  "title": "trust_score_report.v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "object",
   "additionalProperties": false,
-  "properties": {}
+  "properties": {
+    "workspace_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "trust_score": {
+      "type": "number",
+      "minimum": -1,
+      "maximum": 1
+    },
+    "success_count_30d": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "failure_count_30d": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "override_count_30d": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "evaluated_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "required": [
+    "workspace_id",
+    "trust_score",
+    "success_count_30d",
+    "failure_count_30d",
+    "override_count_30d",
+    "evaluated_at"
+  ]
 }

@@ -1,8 +1,35 @@
 {
-  "": "https://json-schema.org/draft/2020-12/schema",
-  "": "https://schemas.brevio.example/discovery_followup.v1.json",
-  "title": "discovery_followup.v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "object",
   "additionalProperties": false,
-  "properties": {}
+  "properties": {
+    "followup_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "workspace_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "question": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1000
+    },
+    "trigger": {
+      "type": "string",
+      "minLength": 1
+    },
+    "status": {
+      "type": "string",
+      "minLength": 1
+    }
+  },
+  "required": [
+    "followup_id",
+    "workspace_id",
+    "question",
+    "trigger",
+    "status"
+  ]
 }

@@ -1,8 +1,40 @@
 {
-  "": "https://json-schema.org/draft/2020-12/schema",
-  "": "https://schemas.brevio.example/debt_resolution_task.v1.json",
-  "title": "debt_resolution_task.v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "object",
   "additionalProperties": false,
-  "properties": {}
+  "properties": {
+    "task_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "debt_item_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "severity": {
+      "type": "string",
+      "minLength": 1
+    },
+    "status": {
+      "type": "string",
+      "minLength": 1
+    },
+    "owner_user_id": {
+      "type": "string",
+      "minLength": 1
+    }
+  },
+  "required": [
+    "task_id",
+    "debt_item_id",
+    "title",
+    "severity",
+    "status",
+    "owner_user_id"
+  ]
 }

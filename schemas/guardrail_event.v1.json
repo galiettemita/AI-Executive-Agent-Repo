@@ -1,8 +1,38 @@
 {
-  "": "https://json-schema.org/draft/2020-12/schema",
-  "": "https://schemas.brevio.example/guardrail_event.v1.json",
-  "title": "guardrail_event.v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "object",
   "additionalProperties": false,
-  "properties": {}
+  "properties": {
+    "event_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "rule_key": {
+      "type": "string",
+      "minLength": 1
+    },
+    "event_type": {
+      "type": "string",
+      "minLength": 1
+    },
+    "severity": {
+      "type": "string",
+      "minLength": 1
+    },
+    "blocked": {
+      "type": "boolean"
+    },
+    "reason": {
+      "type": "string",
+      "maxLength": 1000
+    }
+  },
+  "required": [
+    "event_id",
+    "rule_key",
+    "event_type",
+    "severity",
+    "blocked",
+    "reason"
+  ]
 }

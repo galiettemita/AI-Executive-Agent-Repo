@@ -1,8 +1,45 @@
 {
-  "": "https://json-schema.org/draft/2020-12/schema",
-  "": "https://schemas.brevio.example/scheduling_conflict_report.v1.json",
-  "title": "scheduling_conflict_report.v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "object",
   "additionalProperties": false,
-  "properties": {}
+  "properties": {
+    "has_conflict": {
+      "type": "boolean"
+    },
+    "resolution_hint": {
+      "type": "string",
+      "maxLength": 500
+    },
+    "conflicts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "title": {
+            "type": "string",
+            "minLength": 1
+          },
+          "start_ts": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "end_ts": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "title",
+          "start_ts",
+          "end_ts"
+        ]
+      }
+    }
+  },
+  "required": [
+    "has_conflict",
+    "resolution_hint",
+    "conflicts"
+  ]
 }

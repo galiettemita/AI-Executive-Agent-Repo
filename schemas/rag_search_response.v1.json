@@ -1,8 +1,44 @@
 {
-  "": "https://json-schema.org/draft/2020-12/schema",
-  "": "https://schemas.brevio.example/rag_search_response.v1.json",
-  "title": "rag_search_response.v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "object",
   "additionalProperties": false,
-  "properties": {}
+  "properties": {
+    "retrieval_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "query_rewrite": {
+      "type": "string"
+    },
+    "results": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "chunk_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "score": {
+            "type": "number"
+          },
+          "source": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "chunk_id",
+          "score",
+          "source"
+        ]
+      }
+    }
+  },
+  "required": [
+    "retrieval_id",
+    "query_rewrite",
+    "results"
+  ]
 }

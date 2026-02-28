@@ -1,8 +1,35 @@
 {
-  "": "https://json-schema.org/draft/2020-12/schema",
-  "": "https://schemas.brevio.example/feedback_submission.v1.json",
-  "title": "feedback_submission.v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "object",
   "additionalProperties": false,
-  "properties": {}
+  "properties": {
+    "workspace_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "feedback_type": {
+      "type": "string",
+      "minLength": 1
+    },
+    "disposition": {
+      "type": "string",
+      "minLength": 1
+    },
+    "message": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2000
+    },
+    "ingress_turn_id": {
+      "type": "string",
+      "minLength": 1
+    }
+  },
+  "required": [
+    "workspace_id",
+    "feedback_type",
+    "disposition",
+    "message",
+    "ingress_turn_id"
+  ]
 }

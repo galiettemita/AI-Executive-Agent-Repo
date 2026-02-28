@@ -1,8 +1,38 @@
 {
-  "": "https://json-schema.org/draft/2020-12/schema",
-  "": "https://schemas.brevio.example/promotion_proposal.v1.json",
-  "title": "promotion_proposal.v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "object",
   "additionalProperties": false,
-  "properties": {}
+  "properties": {
+    "workspace_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "proposal_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "current_autonomy_level": {
+      "type": "string",
+      "minLength": 1
+    },
+    "proposed_autonomy_level": {
+      "type": "string",
+      "minLength": 1
+    },
+    "reason": {
+      "type": "string",
+      "maxLength": 1000
+    },
+    "eligible": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "workspace_id",
+    "proposal_id",
+    "current_autonomy_level",
+    "proposed_autonomy_level",
+    "reason",
+    "eligible"
+  ]
 }

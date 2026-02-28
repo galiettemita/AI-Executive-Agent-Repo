@@ -1,8 +1,34 @@
 {
-  "": "https://json-schema.org/draft/2020-12/schema",
-  "": "https://schemas.brevio.example/context_allocation_report.v1.json",
-  "title": "context_allocation_report.v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "object",
   "additionalProperties": false,
-  "properties": {}
+  "properties": {
+    "ingress_turn_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "total_budget_tokens": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "allocated_prompt_tokens": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "allocated_rag_tokens": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "allocated_history_tokens": {
+      "type": "integer",
+      "minimum": 0
+    }
+  },
+  "required": [
+    "ingress_turn_id",
+    "total_budget_tokens",
+    "allocated_prompt_tokens",
+    "allocated_rag_tokens",
+    "allocated_history_tokens"
+  ]
 }
