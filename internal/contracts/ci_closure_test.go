@@ -25,6 +25,8 @@ func TestCIWorkflowClosure(t *testing.T) {
 		"gofmt check",
 		"go test ./... -count=1",
 		"migration lint",
+		"migration runtime verify",
+		"bash scripts/database/verify_postgres_migrations.sh",
 		"openapi lint",
 		"api docs sync",
 		"go run ./scripts/docs/generate_api_reference.go",

@@ -80,6 +80,8 @@ jobs:
           rg -n "CREATE TYPE" db/migrations/001_BREVIO_v9_init.sql
           rg -n "CREATE TYPE" db/migrations/002_BREVIO_v91_soft_intelligence.sql
           rg -n "CREATE TYPE" db/migrations/003_BREVIO_v92_production_hardening.sql
+      - name: migration runtime verify
+        run: bash scripts/database/verify_postgres_migrations.sh
       - name: openapi lint
         run: go test ./internal/contracts -run TestOpenAPIV9EndpointParityClosure -count=1
       - name: api docs sync
