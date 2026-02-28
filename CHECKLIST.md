@@ -106,6 +106,7 @@ Legend
 - [x] Strict closure hardening: implemented proactive silent-execution rule enforcement (`autonomy >= A2` AND `proactive_enabled=true`) via `EvaluateProactiveSilentExecution` with explicit control-plane tests
 - [x] Strict closure hardening: implemented reasoning-loop deterministic constraints (`planner/critic retry_limit=1`, `executor loop_limit T1=2/T2=5/T3=10`, `plan candidates T1=1/T2=2/T3=3`), deterministic lexical ordering helpers, and idempotency key format `idem_<base32hex...>` in `internal/workflows`
 - [x] Strict closure hardening: implemented V9 load-shedding tier runtime enforcement (`D0..D5`) in `internal/control` with explicit tier behavior tests (proactive disable, A3+ auto-commit disable, non-critical connector disable, read-only mode, health/audit-only minimal mode)
+- [x] Strict closure hardening: added approval token policy tests for `ELEVATED` TTL (`5min`), nonce uniqueness, and key-version tracking in control-plane consent tokens
 
 Migration rules (must follow)
 - Preserve already-working preserved components unchanged unless v4.0 explicitly requires changes (per user instructions).

@@ -1,6 +1,9 @@
 package control
 
 import (
+	"encoding/base64"
+	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 )
@@ -80,6 +83,49 @@ func TestApprovalTokenTTL(t *testing.T) {
 	}
 	if err := svc.Approval().ValidateToken(expiredToken, now.Add(40*time.Second)); err == nil {
 		t.Fatal("expected token to be expired")
+	}
+}
+
+func TestApprovalTokenElevatedTTLAndKeyVersion(t *testing.T) {
+	t.Parallel()
+
+	svc := NewService("secret")
+	now := time.Now().UTC()
+
+	token, err := svc.Approval().GenerateToken("approve_transfer", "ELEVATED", "nonce-elevated", now)
+	if err != nil {
+		t.Fatalf("generate elevated token: %v", err)
+	}
+
+	parts := strings.Split(token, ".")
+	if len(parts) != 2 {
+		t.Fatalf("unexpected token shape: %s", token)
+	}
+
+	payloadBytes, err := base64.StdEncoding.DecodeString(parts[0])
+	if err != nil {
+		t.Fatalf("decode payload: %v", err)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(payloadBytes, &payload); err != nil {
+		t.Fatalf("decode payload json: %v", err)
+	}
+	if got, _ := payload["key_version"].(string); got != "v1" {
+		t.Fatalf("unexpected key version: %v", payload["key_version"])
+	}
+
+	// 4 minutes should still be valid for elevated risk.
+	if err := svc.Approval().ValidateToken(token, now.Add(4*time.Minute)); err != nil {
+		t.Fatalf("expected token valid before elevated ttl: %v", err)
+	}
+
+	expiredToken, err := svc.Approval().GenerateToken("approve_transfer", "ELEVATED", "nonce-elevated-expired", now)
+	if err != nil {
+		t.Fatalf("generate elevated token: %v", err)
+	}
+	// 6 minutes should be expired for elevated risk.
+	if err := svc.Approval().ValidateToken(expiredToken, now.Add(6*time.Minute)); err == nil {
+		t.Fatal("expected elevated token to be expired")
 	}
 }
 
