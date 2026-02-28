@@ -3,6 +3,8 @@ package tool_health
 import "testing"
 
 func TestToolHealthLifecycle(t *testing.T) {
+	t.Parallel()
+
 	s := NewService()
 
 	score := s.UpsertScore(ToolScore{
@@ -10,6 +12,8 @@ func TestToolHealthLifecycle(t *testing.T) {
 		ToolKey:      "calendar.create_event",
 		Score:        0.42,
 		FailureCount: 6,
+		LatencyMS:    2200,
+		ErrorRate:    0.62,
 	})
 	if score.Status != "quarantined" {
 		t.Fatalf("expected quarantined status, got %#v", score)
@@ -42,5 +46,36 @@ func TestToolHealthLifecycle(t *testing.T) {
 	}
 	if loaded.Status != "healthy" {
 		t.Fatalf("unexpected loaded score state: %#v", loaded)
+	}
+
+	events := s.ListEvents("ws_1")
+	if len(events) == 0 {
+		t.Fatal("expected tool health events for quarantine/recovery transitions")
+	}
+}
+
+func TestToolHealthRuleTriggeredQuarantine(t *testing.T) {
+	t.Parallel()
+
+	s := NewService()
+	s.UpsertRule(QuarantineRule{
+		WorkspaceID:  "ws_2",
+		ToolKey:      "email.send_message",
+		MinScore:     0.7,
+		MaxFailures:  3,
+		MaxErrorRate: 0.3,
+		MaxLatencyMS: 1500,
+		Enabled:      true,
+	})
+	score := s.UpsertScore(ToolScore{
+		WorkspaceID:  "ws_2",
+		ToolKey:      "email.send_message",
+		Score:        0.8,
+		FailureCount: 2,
+		LatencyMS:    900,
+		ErrorRate:    0.35,
+	})
+	if score.Status != "quarantined" {
+		t.Fatalf("expected rule-triggered quarantine status, got %#v", score)
 	}
 }
