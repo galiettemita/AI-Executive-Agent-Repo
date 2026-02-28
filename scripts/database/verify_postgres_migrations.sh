@@ -5,12 +5,12 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT_DIR"
 
 resolve_docker_bin() {
-  if command -v docker >/dev/null 2>&1; then
-    command -v docker
-    return 0
-  fi
   if [[ -x "/Applications/Docker.app/Contents/Resources/bin/docker" ]]; then
     echo "/Applications/Docker.app/Contents/Resources/bin/docker"
+    return 0
+  fi
+  if command -v docker >/dev/null 2>&1; then
+    command -v docker
     return 0
   fi
   return 1
