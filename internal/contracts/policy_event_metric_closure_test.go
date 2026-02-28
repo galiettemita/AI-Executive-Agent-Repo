@@ -83,37 +83,173 @@ func TestCanonicalEventsAndMetricsClosure(t *testing.T) {
 
 	root := repositoryRoot(t)
 
-	v9Events := readLineSet(t, filepath.Join(root, "spec", "events", "canonical_events_v9.txt"))
-	if len(v9Events) != 29 {
-		t.Fatalf("v9 canonical event count mismatch: got=%d want=29", len(v9Events))
-	}
-	if !containsLine(v9Events, "BREVIO.mcp.drift.quarantined.v1") {
-		t.Fatal("v9 canonical events missing BREVIO.mcp.drift.quarantined.v1")
-	}
+	assertLineSetEquals(
+		t,
+		readLineSet(t, filepath.Join(root, "spec", "events", "canonical_events_v9.txt")),
+		[]string{
+			"BREVIO.ingress.received.v1",
+			"BREVIO.ingress.duplicate_dropped.v1",
+			"BREVIO.brain.plan.proposed.v1",
+			"BREVIO.control.gate.decision.v1",
+			"BREVIO.control.consent.challenge_issued.v1",
+			"BREVIO.control.consent.approved.v1",
+			"BREVIO.workflow.created.v1",
+			"BREVIO.workflow.step.started.v1",
+			"BREVIO.workflow.step.completed.v1",
+			"BREVIO.workflow.step.failed.v1",
+			"BREVIO.hands.tool.simulated.v1",
+			"BREVIO.hands.tool.committed.v1",
+			"BREVIO.trust.receipt.created.v1",
+			"BREVIO.trust.evidence.attached.v1",
+			"BREVIO.trust.synthesis_evidence.created.v1",
+			"BREVIO.security.ssrf.blocked.v1",
+			"BREVIO.security.webhook.signature_invalid.v1",
+			"BREVIO.security.webhook.replay_blocked.v1",
+			"BREVIO.provision.request.created.v1",
+			"BREVIO.provision.server.active.v1",
+			"BREVIO.provision.server.failed.v1",
+			"BREVIO.provision.policy_decision.v1",
+			"BREVIO.provision.step_started.v1",
+			"BREVIO.provision.step_succeeded.v1",
+			"BREVIO.provision.step_failed.v1",
+			"BREVIO.provision.compensation_started.v1",
+			"BREVIO.provision.compensation_completed.v1",
+			"BREVIO.provision.server_quarantined.v1",
+			"BREVIO.mcp.drift.quarantined.v1",
+		},
+		"v9 canonical events",
+	)
 
-	v91Events := readLineSet(t, filepath.Join(root, "spec", "events", "canonical_events_v91.txt"))
-	if len(v91Events) != 31 {
-		t.Fatalf("v9.1 canonical event count mismatch: got=%d want=31", len(v91Events))
-	}
-	if !containsLine(v91Events, "BREVIO.discovery.followup_answered.v1") {
-		t.Fatal("v9.1 canonical events missing BREVIO.discovery.followup_answered.v1")
-	}
+	assertLineSetEquals(
+		t,
+		readLineSet(t, filepath.Join(root, "spec", "events", "canonical_events_v91.txt")),
+		[]string{
+			"BREVIO.goal.created.v1",
+			"BREVIO.goal.progress_updated.v1",
+			"BREVIO.goal.milestone_completed.v1",
+			"BREVIO.goal.stalled.v1",
+			"BREVIO.goal.completed.v1",
+			"BREVIO.trust.score_computed.v1",
+			"BREVIO.trust.promotion_proposed.v1",
+			"BREVIO.trust.promotion_decided.v1",
+			"BREVIO.trust.autonomy_upgraded.v1",
+			"BREVIO.learning.feedback_received.v1",
+			"BREVIO.learning.lesson_proposed.v1",
+			"BREVIO.learning.lesson_confirmed.v1",
+			"BREVIO.learning.lesson_applied.v1",
+			"BREVIO.learning.lesson_retired.v1",
+			"BREVIO.capture.daily_completed.v1",
+			"BREVIO.capture.morning_briefing_sent.v1",
+			"BREVIO.mission_control.refreshed.v1",
+			"BREVIO.capability.recommendation_created.v1",
+			"BREVIO.capability.recommendation_adopted.v1",
+			"BREVIO.self_modification.denied.v1",
+			"BREVIO.self_modification.executed.v1",
+			"BREVIO.codebase.dependency_detected.v1",
+			"BREVIO.codebase.pattern_detected.v1",
+			"BREVIO.codebase.debt_identified.v1",
+			"BREVIO.codebase.debt_task_created.v1",
+			"BREVIO.codebase.debt_task_completed.v1",
+			"BREVIO.codebase.template_created.v1",
+			"BREVIO.codebase.template_instantiated.v1",
+			"BREVIO.codebase.context_exported.v1",
+			"BREVIO.discovery.followup_generated.v1",
+			"BREVIO.discovery.followup_answered.v1",
+		},
+		"v9.1 canonical events",
+	)
 
-	v92Events := readLineSet(t, filepath.Join(root, "spec", "events", "canonical_events_v92.txt"))
-	if len(v92Events) != 37 {
-		t.Fatalf("v9.2 canonical event count mismatch: got=%d want=37", len(v92Events))
-	}
-	if !containsLine(v92Events, "BREVIO.mcp.sandbox_violation.v1") {
-		t.Fatal("v9.2 canonical events missing BREVIO.mcp.sandbox_violation.v1")
-	}
+	assertLineSetEquals(
+		t,
+		readLineSet(t, filepath.Join(root, "spec", "events", "canonical_events_v92.txt")),
+		[]string{
+			"BREVIO.context.budget_allocated.v1",
+			"BREVIO.context.expansion_triggered.v1",
+			"BREVIO.context.overflow.v1",
+			"BREVIO.rag.retrieval.completed.v1",
+			"BREVIO.rag.ingestion.completed.v1",
+			"BREVIO.rag.eval.completed.v1",
+			"BREVIO.session.created.v1",
+			"BREVIO.session.expired.v1",
+			"BREVIO.session.intent_continued.v1",
+			"BREVIO.session.intent_corrected.v1",
+			"BREVIO.session.entity_resolved.v1",
+			"BREVIO.temporal.resolved.v1",
+			"BREVIO.temporal.conflict_detected.v1",
+			"BREVIO.guardrail.triggered.v1",
+			"BREVIO.guardrail.blocked.v1",
+			"BREVIO.tool_health.score_computed.v1",
+			"BREVIO.tool_health.quarantined.v1",
+			"BREVIO.tool_health.recovered.v1",
+			"BREVIO.tool_health.degraded.v1",
+			"BREVIO.feature_flag.created.v1",
+			"BREVIO.feature_flag.toggled.v1",
+			"BREVIO.memory.conflict_detected.v1",
+			"BREVIO.memory.conflict_resolved.v1",
+			"BREVIO.streaming.ack_sent.v1",
+			"BREVIO.streaming.first_byte.v1",
+			"BREVIO.error.template_served.v1",
+			"BREVIO.cache.invalidated.v1",
+			"BREVIO.model_tier.override.v1",
+			"BREVIO.react.early_exit.v1",
+			"BREVIO.compliance.evidence_collected.v1",
+			"BREVIO.compliance.dsr_received.v1",
+			"BREVIO.compliance.dsr_completed.v1",
+			"BREVIO.event_schema.registered.v1",
+			"BREVIO.event_schema.deprecated.v1",
+			"BREVIO.admin.alert_fired.v1",
+			"BREVIO.pii.encrypted.v1",
+			"BREVIO.mcp.sandbox_violation.v1",
+		},
+		"v9.2 canonical events",
+	)
 
-	v92Metrics := readLineSet(t, filepath.Join(root, "spec", "metrics", "canonical_metrics_v92.txt"))
-	if len(v92Metrics) != 39 {
-		t.Fatalf("v9.2 metric count mismatch: got=%d want=39", len(v92Metrics))
-	}
-	if !containsLine(v92Metrics, "BREVIO_streaming_first_byte_ms") {
-		t.Fatal("v9.2 metrics missing BREVIO_streaming_first_byte_ms")
-	}
+	assertLineSetEquals(
+		t,
+		readLineSet(t, filepath.Join(root, "spec", "metrics", "canonical_metrics_v92.txt")),
+		[]string{
+			"BREVIO_context_budget_utilization_pct",
+			"BREVIO_context_expansion_triggered_total",
+			"BREVIO_context_overflow_total",
+			"BREVIO_rag_retrieval_latency_ms",
+			"BREVIO_rag_rerank_latency_ms",
+			"BREVIO_rag_faithfulness_score",
+			"BREVIO_rag_relevance_score",
+			"BREVIO_rag_chunks_total",
+			"BREVIO_rag_ingestion_total",
+			"BREVIO_session_active_gauge",
+			"BREVIO_session_duration_ms",
+			"BREVIO_session_turns_per_session",
+			"BREVIO_session_coreference_resolution_total",
+			"BREVIO_temporal_resolution_total",
+			"BREVIO_temporal_conflict_detected_total",
+			"BREVIO_guardrail_trigger_total",
+			"BREVIO_guardrail_latency_ms",
+			"BREVIO_guardrail_block_total",
+			"BREVIO_tool_health_score",
+			"BREVIO_tool_quarantine_total",
+			"BREVIO_tool_recovery_total",
+			"BREVIO_feature_flag_evaluation_total",
+			"BREVIO_memory_conflict_total",
+			"BREVIO_streaming_first_byte_ms",
+			"BREVIO_streaming_ack_sent_total",
+			"BREVIO_error_template_served_total",
+			"BREVIO_cache_hit_rate",
+			"BREVIO_cache_latency_ms",
+			"BREVIO_model_tier_usage_total",
+			"BREVIO_model_tier_override_total",
+			"BREVIO_react_early_exit_total",
+			"BREVIO_react_steps_per_run",
+			"BREVIO_compliance_evidence_collected_total",
+			"BREVIO_dsr_processing_latency_ms",
+			"BREVIO_dsr_sla_breach_total",
+			"BREVIO_event_schema_validation_total",
+			"BREVIO_admin_api_call_total",
+			"BREVIO_pii_encryption_total",
+			"BREVIO_mcp_sandbox_violation_total",
+		},
+		"v9.2 canonical metrics",
+	)
 }
 
 func assertFileContainsAll(t *testing.T, path string, required []string) {
@@ -176,4 +312,21 @@ func containsLine(items []string, needle string) bool {
 		}
 	}
 	return false
+}
+
+func assertLineSetEquals(t *testing.T, actual []string, expected []string, label string) {
+	t.Helper()
+
+	sort.Strings(actual)
+	sort.Strings(expected)
+
+	if len(actual) != len(expected) {
+		t.Fatalf("%s count mismatch: got=%d want=%d", label, len(actual), len(expected))
+	}
+
+	for idx := range expected {
+		if actual[idx] != expected[idx] {
+			t.Fatalf("%s mismatch at index %d: got=%q want=%q", label, idx, actual[idx], expected[idx])
+		}
+	}
 }
