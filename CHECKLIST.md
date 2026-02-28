@@ -206,6 +206,7 @@ Legend
 - [x] Phase 3 continuation (Step 38 deterministic_caching): replaced single-layer cache with deterministic L1/L2/L3 runtime in `internal/caching` (TTL-bound writes, layer promotion on reads, cross-layer invalidation, size-limit enforcement, namespace-based policy matching) and expanded caching/control regression coverage
 - [x] Phase 3 continuation (Step 39 model_tier_constraints): upgraded `internal/model_tiers` with deterministic tier-cap enforcement (`requested_tier -> resolved_tier`), complexity-threshold escalation within workspace caps, override audit records aligned to `target_tier`/`expires_at`, and control-path evaluation support via `/v1/model-tiers/overrides?requested_tier=...&complexity_score=...`
 - [x] Phase 3 continuation (Step 40 react_early_exit): added deterministic ReAct early-exit execution logic in `internal/workflows` (per-tier `max_steps`, signal-based termination, partial result fallback) and strengthened runtime acceptance gates to assert `MAX_STEPS_REACHED` behavior under T3 limits
+- [x] Phase 3 continuation (Step 41 security_hardening): hardened `internal/security/pii` with key-versioned field encryption policies + dual-key read-window rotation handling, and hardened `internal/security/sandbox` with profile-based MCP egress controls (HTTPS enforcement, allow/deny suffixes, blocked CIDRs, IMDS/loopback/private network denial, violation audit records)
 
 Migration rules (must follow)
 - Preserve already-working preserved components unchanged unless v4.0 explicitly requires changes (per user instructions).
