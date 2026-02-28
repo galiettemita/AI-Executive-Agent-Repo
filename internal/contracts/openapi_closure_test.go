@@ -350,6 +350,63 @@ func TestOpenAPIV9ComponentSchemaCatalogClosure(t *testing.T) {
 	if !ok || len(schemas) == 0 {
 		t.Fatal("openapi components.schemas missing")
 	}
+	expectedComponentSchemaKeys := []string{
+		"Error",
+		"action_proposal_v1_json",
+		"admin_alert_v1_json",
+		"admin_kpi_report_v1_json",
+		"capability_extractor_output_v1_json",
+		"capability_recommendation_v1_json",
+		"capability_resolve_request_v1_json",
+		"capability_resolve_response_v1_json",
+		"capability_resolver_contract_v1_json",
+		"code_context_export_request_v1_json",
+		"compliance_evidence_manifest_v1_json",
+		"context_allocation_report_v1_json",
+		"context_budget_config_v1_json",
+		"daily_capture_output_v1_json",
+		"debt_resolution_task_v1_json",
+		"discovery_followup_v1_json",
+		"dsr_request_v1_json",
+		"error_message_v1_json",
+		"error_v9_json",
+		"feature_flag_evaluation_v1_json",
+		"feedback_submission_v1_json",
+		"generic_request_v1",
+		"generic_response_v1",
+		"goal_item_v1_json",
+		"goal_progress_update_v1_json",
+		"guardrail_event_v1_json",
+		"lesson_proposal_v1_json",
+		"llm_request_v1_json",
+		"memory_conflict_report_v1_json",
+		"mission_control_layout_v1_json",
+		"model_tier_override_request_v1_json",
+		"morning_briefing_v1_json",
+		"promotion_proposal_v1_json",
+		"provision_start_request_v1_json",
+		"provisioning_approval_message_v1_json",
+		"provisioning_policy_v1_json",
+		"provisioning_rank_explainer_v1_json",
+		"provisioning_security_justification_v1_json",
+		"provisioning_status_message_v1_json",
+		"rag_collection_config_v1_json",
+		"rag_search_request_v1_json",
+		"rag_search_response_v1_json",
+		"scheduling_conflict_report_v1_json",
+		"server_artifact_manifest_v1_json",
+		"session_context_v1_json",
+		"temporal_expression_v1_json",
+		"tool_call_v9_json",
+		"tool_health_report_v1_json",
+		"trust_score_report_v1_json",
+	}
+
+	actualComponentSchemaKeys := make([]string, 0, len(schemas))
+	for key := range schemas {
+		actualComponentSchemaKeys = append(actualComponentSchemaKeys, key)
+	}
+	assertStringSetEquals(t, actualComponentSchemaKeys, expectedComponentSchemaKeys, "openapi components.schemas keys")
 
 	requiredSchemaFiles := []string{
 		"tool_call.v9.json",
@@ -772,6 +829,38 @@ func has2xxResponseSchemaRef(operation map[string]any, expectedRef string) bool 
 		}
 	}
 	return false
+}
+
+func assertStringSetEquals(t *testing.T, actual []string, expected []string, label string) {
+	t.Helper()
+
+	actualSet := make(map[string]struct{}, len(actual))
+	for _, item := range actual {
+		actualSet[item] = struct{}{}
+	}
+	expectedSet := make(map[string]struct{}, len(expected))
+	for _, item := range expected {
+		expectedSet[item] = struct{}{}
+	}
+
+	missing := make([]string, 0)
+	for item := range expectedSet {
+		if _, ok := actualSet[item]; !ok {
+			missing = append(missing, item)
+		}
+	}
+	extra := make([]string, 0)
+	for item := range actualSet {
+		if _, ok := expectedSet[item]; !ok {
+			extra = append(extra, item)
+		}
+	}
+	if len(missing) == 0 && len(extra) == 0 {
+		return
+	}
+	sort.Strings(missing)
+	sort.Strings(extra)
+	t.Fatalf("%s mismatch: missing=%v extra=%v", label, missing, extra)
 }
 
 func loadOpenAPIDoc(t *testing.T) openapiDocument {
