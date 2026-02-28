@@ -1999,6 +1999,7 @@ func handleCompliance(w http.ResponseWriter, r *http.Request, svc *compliance.Se
 			}
 			writeJSON(w, http.StatusOK, map[string]any{
 				"dsr_requests": svc.ListDSR(workspaceID),
+				"sla_at_risk":  svc.ListDSRAtRisk(workspaceID),
 			})
 			return
 		case len(parts) == 3 && r.Method == http.MethodPost:

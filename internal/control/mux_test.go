@@ -472,6 +472,12 @@ func TestControlMuxComplianceFlow(t *testing.T) {
 	if !ok || dsrID == "" {
 		t.Fatalf("missing dsr id payload: %v", dsrPayload)
 	}
+	if _, ok := dsrPayload["request_id"].(string); !ok {
+		t.Fatalf("missing schema-aligned request_id in dsr payload: %v", dsrPayload)
+	}
+	if _, ok := dsrPayload["deadline_at"].(string); !ok {
+		t.Fatalf("missing schema-aligned deadline_at in dsr payload: %v", dsrPayload)
+	}
 
 	getDSRReq := httptest.NewRequest(http.MethodGet, "/v1/compliance/dsr/"+dsrID, nil)
 	getDSRResp := httptest.NewRecorder()
@@ -493,6 +499,13 @@ func TestControlMuxComplianceFlow(t *testing.T) {
 	mux.ServeHTTP(getDSRListResp, getDSRListReq)
 	if getDSRListResp.Code != http.StatusOK {
 		t.Fatalf("unexpected compliance dsr list status: %d", getDSRListResp.Code)
+	}
+	var dsrListPayload map[string]any
+	if err := json.Unmarshal(getDSRListResp.Body.Bytes(), &dsrListPayload); err != nil {
+		t.Fatalf("decode dsr list payload: %v", err)
+	}
+	if _, ok := dsrListPayload["sla_at_risk"].([]any); !ok {
+		t.Fatalf("expected sla_at_risk list in dsr payload: %v", dsrListPayload)
 	}
 }
 

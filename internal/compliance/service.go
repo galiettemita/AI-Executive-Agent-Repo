@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 )
 
 type Framework struct {
@@ -24,16 +25,21 @@ type Evidence struct {
 	EventType   string `json:"event_type"`
 	ArtifactURI string `json:"artifact_uri"`
 	SHA256      string `json:"sha256"`
+	CollectedAt string `json:"collected_at"`
 }
 
 type DSRRequest struct {
-	ID           string `json:"id"`
-	WorkspaceID  string `json:"workspace_id"`
-	UserID       string `json:"user_id"`
-	RequestType  string `json:"request_type"`
-	Status       string `json:"status"`
-	DeadlineDate string `json:"deadline_date"`
-	CreatedAt    string `json:"created_at"`
+	ID            string `json:"id"`
+	RequestID     string `json:"request_id"`
+	WorkspaceID   string `json:"workspace_id"`
+	UserID        string `json:"user_id"`
+	SubjectUserID string `json:"subject_user_id"`
+	RequestType   string `json:"request_type"`
+	Status        string `json:"status"`
+	DeadlineDate  string `json:"deadline_date"`
+	DeadlineAt    string `json:"deadline_at"`
+	CreatedAt     string `json:"created_at"`
+	SLAAtRisk     bool   `json:"sla_at_risk"`
 }
 
 type Service struct {
@@ -42,6 +48,7 @@ type Service struct {
 	frameworks map[string]Framework
 	evidence   []Evidence
 	dsr        map[string]DSRRequest
+	now        func() time.Time
 }
 
 func NewService() *Service {
@@ -50,22 +57,20 @@ func NewService() *Service {
 		frameworks: map[string]Framework{},
 		evidence:   []Evidence{},
 		dsr:        map[string]DSRRequest{},
+		now:        func() time.Time { return time.Now().UTC() },
 	}
 }
 
 func (s *Service) UpsertFramework(framework Framework) Framework {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
 	if framework.ID == "" {
 		framework.ID = fmt.Sprintf("framework_%06d", s.nextID)
 		s.nextID++
 	}
-	if framework.WorkspaceID == "" {
-		framework.WorkspaceID = "default"
-	}
-	if framework.Key == "" {
-		framework.Key = "soc2"
-	}
+	framework.WorkspaceID = normalizeWorkspaceID(framework.WorkspaceID)
+	framework.Key = normalizeFrameworkKey(framework.Key)
 	if framework.Status == "" {
 		framework.Status = "active"
 	}
@@ -79,9 +84,11 @@ func (s *Service) UpsertFramework(framework Framework) Framework {
 func (s *Service) ListFrameworks(workspaceID string) []Framework {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
+
+	workspaceID = normalizeWorkspaceID(workspaceID)
 	out := make([]Framework, 0, len(s.frameworks))
 	for _, framework := range s.frameworks {
-		if workspaceID != "" && framework.WorkspaceID != workspaceID {
+		if framework.WorkspaceID != workspaceID {
 			continue
 		}
 		out = append(out, framework)
@@ -93,18 +100,34 @@ func (s *Service) ListFrameworks(workspaceID string) []Framework {
 }
 
 func (s *Service) AddEvidence(evidence Evidence) Evidence {
+	return s.addEvidence(evidence, false)
+}
+
+func (s *Service) AddEvidenceStrict(evidence Evidence) (Evidence, error) {
+	stored := s.addEvidence(evidence, true)
+	if !strings.HasPrefix(stored.SHA256, "sha256:") {
+		return Evidence{}, fmt.Errorf("EVIDENCE_HASH_MISSING")
+	}
+	return stored, nil
+}
+
+func (s *Service) addEvidence(evidence Evidence, requireProvidedHash bool) Evidence {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
 	evidence.ID = fmt.Sprintf("evidence_%06d", s.nextID)
 	s.nextID++
-	if evidence.WorkspaceID == "" {
-		evidence.WorkspaceID = "default"
-	}
+	evidence.WorkspaceID = normalizeWorkspaceID(evidence.WorkspaceID)
 	if evidence.EventType == "" {
 		evidence.EventType = "BREVIO.compliance.evidence_collected.v1"
 	}
+	if evidence.CollectedAt == "" {
+		evidence.CollectedAt = s.now().Format(time.RFC3339)
+	}
 	if normalized, ok := normalizeSHA256(evidence.SHA256); ok {
 		evidence.SHA256 = normalized
+	} else if requireProvidedHash {
+		evidence.SHA256 = ""
 	} else {
 		evidence.SHA256 = buildEvidenceSHA256(evidence)
 	}
@@ -115,9 +138,10 @@ func (s *Service) AddEvidence(evidence Evidence) Evidence {
 func (s *Service) ListEvidence(workspaceID string) []Evidence {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
+	workspaceID = normalizeWorkspaceID(workspaceID)
 	out := make([]Evidence, 0, len(s.evidence))
 	for _, evidence := range s.evidence {
-		if workspaceID != "" && evidence.WorkspaceID != workspaceID {
+		if evidence.WorkspaceID != workspaceID {
 			continue
 		}
 		out = append(out, evidence)
@@ -128,21 +152,24 @@ func (s *Service) ListEvidence(workspaceID string) []Evidence {
 func (s *Service) CreateDSR(request DSRRequest) DSRRequest {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	now := s.now().UTC()
 	request.ID = fmt.Sprintf("dsr_%06d", s.nextID)
 	s.nextID++
-	if request.WorkspaceID == "" {
-		request.WorkspaceID = "default"
-	}
+	request.RequestID = request.ID
+	request.WorkspaceID = normalizeWorkspaceID(request.WorkspaceID)
 	if request.RequestType == "" {
 		request.RequestType = "access"
 	}
 	if request.Status == "" {
 		request.Status = "received"
 	}
-	if request.DeadlineDate == "" {
-		request.DeadlineDate = "2026-03-31"
-	}
-	request.CreatedAt = fmt.Sprintf("2026-02-27T00:%02d:00Z", s.nextID%60)
+	request.SubjectUserID = firstNonEmpty(request.SubjectUserID, request.UserID)
+	request.CreatedAt = now.Format(time.RFC3339)
+	deadline := now.Add(dsrDeadlineDuration(request.RequestType))
+	request.DeadlineAt = deadline.Format(time.RFC3339)
+	request.DeadlineDate = request.DeadlineAt
+	request.SLAAtRisk = false
 	s.dsr[request.ID] = request
 	return request
 }
@@ -151,7 +178,10 @@ func (s *Service) GetDSR(id string) (DSRRequest, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	request, ok := s.dsr[id]
-	return request, ok
+	if !ok {
+		return DSRRequest{}, false
+	}
+	return s.withSLAStatus(request, s.now()), true
 }
 
 func (s *Service) UpdateDSR(id string, update DSRRequest) (DSRRequest, bool) {
@@ -164,12 +194,18 @@ func (s *Service) UpdateDSR(id string, update DSRRequest) (DSRRequest, bool) {
 	if update.Status != "" {
 		current.Status = update.Status
 	}
+	if update.DeadlineAt != "" {
+		current.DeadlineAt = update.DeadlineAt
+		current.DeadlineDate = update.DeadlineAt
+	}
 	if update.DeadlineDate != "" {
 		current.DeadlineDate = update.DeadlineDate
+		current.DeadlineAt = update.DeadlineDate
 	}
 	if update.RequestType != "" {
 		current.RequestType = update.RequestType
 	}
+	current.SLAAtRisk = isDSRAtRisk(current, s.now())
 	s.dsr[id] = current
 	return current, true
 }
@@ -177,17 +213,97 @@ func (s *Service) UpdateDSR(id string, update DSRRequest) (DSRRequest, bool) {
 func (s *Service) ListDSR(workspaceID string) []DSRRequest {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
+	workspaceID = normalizeWorkspaceID(workspaceID)
 	out := make([]DSRRequest, 0, len(s.dsr))
 	for _, request := range s.dsr {
-		if workspaceID != "" && request.WorkspaceID != workspaceID {
+		if request.WorkspaceID != workspaceID {
 			continue
 		}
-		out = append(out, request)
+		out = append(out, s.withSLAStatus(request, s.now()))
 	}
 	sort.Slice(out, func(i, j int) bool {
 		return out[i].ID < out[j].ID
 	})
 	return out
+}
+
+func (s *Service) ListDSRAtRisk(workspaceID string) []DSRRequest {
+	all := s.ListDSR(workspaceID)
+	out := make([]DSRRequest, 0, len(all))
+	for _, request := range all {
+		if request.SLAAtRisk {
+			out = append(out, request)
+		}
+	}
+	return out
+}
+
+func (s *Service) withSLAStatus(request DSRRequest, now time.Time) DSRRequest {
+	request.SLAAtRisk = isDSRAtRisk(request, now)
+	return request
+}
+
+func isDSRAtRisk(request DSRRequest, now time.Time) bool {
+	status := strings.ToLower(strings.TrimSpace(request.Status))
+	if status == "completed" || status == "closed" {
+		return false
+	}
+	deadline := parseDeadline(request)
+	if deadline.IsZero() {
+		return true
+	}
+	remaining := deadline.Sub(now)
+	return remaining <= 5*24*time.Hour
+}
+
+func parseDeadline(request DSRRequest) time.Time {
+	for _, candidate := range []string{request.DeadlineAt, request.DeadlineDate} {
+		candidate = strings.TrimSpace(candidate)
+		if candidate == "" {
+			continue
+		}
+		if parsed, err := time.Parse(time.RFC3339, candidate); err == nil {
+			return parsed.UTC()
+		}
+	}
+	return time.Time{}
+}
+
+func normalizeFrameworkKey(key string) string {
+	key = strings.ToLower(strings.TrimSpace(key))
+	switch key {
+	case "soc2", "gdpr", "ccpa":
+		return key
+	default:
+		return "soc2"
+	}
+}
+
+func normalizeWorkspaceID(workspaceID string) string {
+	if strings.TrimSpace(workspaceID) == "" {
+		return "default"
+	}
+	return workspaceID
+}
+
+func dsrDeadlineDuration(requestType string) time.Duration {
+	switch strings.ToLower(strings.TrimSpace(requestType)) {
+	case "portability":
+		return 45 * 24 * time.Hour
+	case "deletion", "access", "rectification":
+		return 30 * 24 * time.Hour
+	default:
+		return 30 * 24 * time.Hour
+	}
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func normalizeSHA256(value string) (string, bool) {
@@ -208,6 +324,7 @@ func buildEvidenceSHA256(evidence Evidence) string {
 		evidence.FrameworkID,
 		evidence.EventType,
 		evidence.ArtifactURI,
+		evidence.CollectedAt,
 	}, "::")
 	sum := sha256.Sum256([]byte(joined))
 	return "sha256:" + hex.EncodeToString(sum[:])

@@ -3,10 +3,15 @@ package compliance
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestComplianceLifecycle(t *testing.T) {
+	t.Parallel()
+
 	s := NewService()
+	base := time.Date(2026, 2, 28, 12, 0, 0, 0, time.UTC)
+	s.now = func() time.Time { return base }
 
 	framework := s.UpsertFramework(Framework{
 		WorkspaceID: "ws_1",
@@ -28,6 +33,9 @@ func TestComplianceLifecycle(t *testing.T) {
 	if len(evidence) != 1 {
 		t.Fatalf("expected 1 evidence item, got %d", len(evidence))
 	}
+	if evidence[0].CollectedAt == "" {
+		t.Fatalf("expected evidence collected timestamp")
+	}
 
 	request := s.CreateDSR(DSRRequest{
 		WorkspaceID: "ws_1",
@@ -36,6 +44,9 @@ func TestComplianceLifecycle(t *testing.T) {
 	})
 	if request.ID == "" {
 		t.Fatalf("expected dsr id")
+	}
+	if request.RequestID == "" || request.DeadlineAt == "" {
+		t.Fatalf("expected schema-aligned request fields: %#v", request)
 	}
 
 	updated, ok := s.UpdateDSR(request.ID, DSRRequest{Status: "in_progress"})
@@ -85,5 +96,36 @@ func TestAddEvidenceNormalizesProvidedDigest(t *testing.T) {
 	})
 	if evidence.SHA256 != "sha256:"+strings.ToLower(inputDigest) {
 		t.Fatalf("unexpected normalized hash: %s", evidence.SHA256)
+	}
+}
+
+func TestDSRSLAAtRiskDetection(t *testing.T) {
+	t.Parallel()
+
+	s := NewService()
+	base := time.Date(2026, 2, 28, 12, 0, 0, 0, time.UTC)
+	s.now = func() time.Time { return base }
+
+	request := s.CreateDSR(DSRRequest{
+		WorkspaceID: "ws_sla",
+		UserID:      "user_sla",
+		RequestType: "access",
+	})
+
+	// Move time near deadline to trigger SLA warning window.
+	s.now = func() time.Time { return base.Add(26 * 24 * time.Hour) }
+	atRisk := s.ListDSRAtRisk("ws_sla")
+	if len(atRisk) != 1 {
+		t.Fatalf("expected one SLA-at-risk request, got %d", len(atRisk))
+	}
+	if atRisk[0].ID != request.ID || !atRisk[0].SLAAtRisk {
+		t.Fatalf("unexpected SLA-at-risk payload: %#v", atRisk[0])
+	}
+
+	if _, ok := s.UpdateDSR(request.ID, DSRRequest{Status: "completed"}); !ok {
+		t.Fatal("expected dsr completion update")
+	}
+	if len(s.ListDSRAtRisk("ws_sla")) != 0 {
+		t.Fatal("expected no SLA-at-risk requests after completion")
 	}
 }
