@@ -30,6 +30,8 @@ func TestMakefileGoFallbackClosure(t *testing.T) {
 		"$(GO_EXEC) run honnef.co/go/tools/cmd/staticcheck@v0.5.1 ./...",
 		"db-verify:",
 		"bash scripts/database/verify_postgres_migrations.sh",
+		"api-docs-check:",
+		"git diff --exit-code docs/API_REFERENCE.md",
 		"$(GO_EXEC) test ./internal/contracts -count=1",
 		"load-test:",
 		"k6 run evals/load/k6_interactive_turn.js",

@@ -228,6 +228,7 @@ Legend
 - [x] Phase 4.4 documentation hardening: added deterministic OpenAPI-generated API reference (`scripts/docs/generate_api_reference.go` -> `docs/API_REFERENCE.md`) and enforced CI sync gate (`api docs sync` with `git diff --exit-code`) plus closure tests
 - [x] Phase 4 validation hardening: normalized all script Docker resolvers to prefer Docker Desktop binary first (`/Applications/Docker.app/Contents/Resources/bin/docker`) across dev/security/infra/database tooling for deterministic autonomous execution paths in this environment
 - [x] Phase 1/4 migration assurance hardening: re-executed PostgreSQL-16 runtime migration verification (`make db-verify`) and promoted DB runtime verification into CI gates (`migration runtime verify` -> `scripts/database/verify_postgres_migrations.sh`)
+- [x] Phase 4 CI parity hardening: aligned local `make ci` with pipeline behavior by adding `api-docs-check` target (regenerate `docs/API_REFERENCE.md` + fail on `git diff`) and enforced via Makefile closure tests
 - [x] Phase 4.5 final validation: executed `make ci`, `make security-validate`, and `make infra-validate` successfully; Terraform module/env validation and Helm lint/template checks passed via dockerized toolchain fallbacks
 - [x] Phase 4 release closure: produced final validation report (`docs/FINAL_VALIDATION_v9.2.0-final.md`) and emitted release tags (`v9.0.0`, `v9.1.0`, `v9.2.0`, `v9.2.0-final`)
 
