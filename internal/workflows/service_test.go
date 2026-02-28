@@ -37,6 +37,50 @@ func TestProvisioningCompensationReverseOrder(t *testing.T) {
 	}
 }
 
+func TestProvisioningCompensationReverseOrderForEveryFailureStep(t *testing.T) {
+	t.Parallel()
+
+	steps := []string{
+		"Preflight",
+		"CreateRequest",
+		"PolicyGate",
+		"AllocateOrReuseServer",
+		"VerifyArtifact",
+		"DeployServer",
+		"FetchToolSchemas",
+		"HealthCheck",
+		"CommitRegistry",
+		"Active",
+	}
+
+	for stepIndex, failAt := range steps {
+		failAt := failAt
+		stepIndex := stepIndex
+		t.Run(failAt, func(t *testing.T) {
+			svc := NewService()
+			result := svc.ProvisioningV9(context.Background(), failAt)
+			if result.Status != "failed" {
+				t.Fatalf("expected failure status for failAt=%s, got %s", failAt, result.Status)
+			}
+			if len(result.ExecutedSteps) != stepIndex+1 {
+				t.Fatalf("unexpected executed step count for failAt=%s: got=%d want=%d", failAt, len(result.ExecutedSteps), stepIndex+1)
+			}
+			if len(result.CompensatedSteps) != len(result.ExecutedSteps) {
+				t.Fatalf("compensation/executed mismatch for failAt=%s: executed=%v compensated=%v", failAt, result.ExecutedSteps, result.CompensatedSteps)
+			}
+			if result.CompensatedSteps[0] != failAt {
+				t.Fatalf("expected first compensation to be failed step for failAt=%s, got %s", failAt, result.CompensatedSteps[0])
+			}
+			for i := range result.ExecutedSteps {
+				expected := result.ExecutedSteps[len(result.ExecutedSteps)-1-i]
+				if result.CompensatedSteps[i] != expected {
+					t.Fatalf("reverse compensation mismatch for failAt=%s at index=%d: got=%s want=%s", failAt, i, result.CompensatedSteps[i], expected)
+				}
+			}
+		})
+	}
+}
+
 func TestOnboardingCompletesAllStages(t *testing.T) {
 	t.Parallel()
 
