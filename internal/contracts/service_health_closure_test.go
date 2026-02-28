@@ -1,8 +1,14 @@
 package contracts
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"path/filepath"
 	"testing"
+
+	"github.com/brevio/brevio/internal/canvas"
+	"github.com/brevio/brevio/internal/control"
+	"github.com/brevio/brevio/internal/gateway"
 )
 
 func TestServiceHealthEndpointClosure(t *testing.T) {
@@ -20,4 +26,35 @@ func TestServiceHealthEndpointClosure(t *testing.T) {
 	assertFileContainsTokens(t, filepath.Join(root, "internal", "gateway", "server.go"), requiredHealthTokens)
 	assertFileContainsTokens(t, filepath.Join(root, "internal", "control", "mux.go"), requiredHealthTokens)
 	assertFileContainsTokens(t, filepath.Join(root, "internal", "canvas", "service.go"), requiredHealthTokens)
+
+	t.Run("gateway_runtime_health_endpoints", func(t *testing.T) {
+		svc := gateway.NewService("health-secret")
+		mux := gateway.NewMux(svc)
+		assertRuntimeHealthEndpoints(t, mux)
+	})
+
+	t.Run("control_runtime_health_endpoints", func(t *testing.T) {
+		svc := control.NewService("health-secret")
+		mux := control.NewMux(svc)
+		assertRuntimeHealthEndpoints(t, mux)
+	})
+
+	t.Run("canvas_runtime_health_endpoints", func(t *testing.T) {
+		svc := canvas.NewService(&canvas.InMemoryInjector{})
+		mux := canvas.NewMux(svc)
+		assertRuntimeHealthEndpoints(t, mux)
+	})
+}
+
+func assertRuntimeHealthEndpoints(t *testing.T, mux *http.ServeMux) {
+	t.Helper()
+
+	for _, path := range []string{"/healthz/ready", "/healthz/live"} {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("unexpected health status for %s: got=%d want=%d", path, rec.Code, http.StatusOK)
+		}
+	}
 }
