@@ -76,6 +76,8 @@ jobs:
           else
             echo "trufflehog not installed on runner; skip"
           fi
+      - name: govulncheck baseline
+        run: bash scripts/security/run_govulncheck.sh
       - name: contract tests
         run: go test ./internal/contracts -count=1
       - name: integration tests

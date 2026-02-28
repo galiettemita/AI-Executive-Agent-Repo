@@ -35,4 +35,7 @@ else
   echo "[security] syft not installed; skipped"
 fi
 
+echo "[security] govulncheck baseline"
+bash scripts/security/run_govulncheck.sh
+
 echo "[security] complete"
