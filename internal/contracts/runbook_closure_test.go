@@ -49,6 +49,25 @@ func TestRunbookClosure(t *testing.T) {
 			"## Escalation",
 		})
 	}
+
+	v92TriggerTokens := map[string]string{
+		"RB-V92-001.md": "more than 10%",
+		"RB-V92-002.md": "BREVIO.tool_health.quarantined.v1",
+		"RB-V92-003.md": "exceeds 20%",
+		"RB-V92-004.md": "exceeds 500ms for more than 5%",
+		"RB-V92-005.md": "correlated with recent feature-flag change",
+		"RB-V92-006.md": "Conflict rate spikes",
+		"RB-V92-007.md": "5-day-to-deadline",
+		"RB-V92-008.md": "block rate exceeds 5%",
+		"RB-V92-009.md": "unavailable or serving degraded responses",
+	}
+	for name, triggerToken := range v92TriggerTokens {
+		path := filepath.Join(root, "runbooks", name)
+		content := readRunbook(t, path)
+		if !strings.Contains(content, triggerToken) {
+			t.Fatalf("v9.2 runbook trigger mismatch in %s; missing token %q", path, triggerToken)
+		}
+	}
 }
 
 func expectedRunbookNames() []string {
