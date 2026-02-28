@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 )
@@ -14,6 +15,7 @@ func TestV9InfrastructureArtifactsExist(t *testing.T) {
 	root := repositoryRoot(t)
 
 	requiredTerraformModules := []string{
+		"admin-frontend",
 		"vpc",
 		"eks",
 		"rds",
@@ -23,7 +25,10 @@ func TestV9InfrastructureArtifactsExist(t *testing.T) {
 		"secrets",
 		"temporal",
 		"observability",
+		"opensearch",
+		"feature-flags-cache",
 	}
+	assertExactDirectorySet(t, filepath.Join(root, "terraform", "modules"), requiredTerraformModules)
 	for _, module := range requiredTerraformModules {
 		assertFileNonEmpty(t, filepath.Join(root, "terraform", "modules", module, "main.tf"))
 	}
@@ -98,6 +103,19 @@ func TestV92InfrastructureArtifactsExist(t *testing.T) {
 	t.Parallel()
 
 	root := repositoryRoot(t)
+	assertExactDirectorySet(t, filepath.Join(root, "helm"), []string{
+		"BREVIO-gateway",
+		"BREVIO-brain",
+		"BREVIO-control",
+		"BREVIO-executor",
+		"BREVIO-canvas",
+		"BREVIO-temporal-worker",
+		"BREVIO-admin-api",
+		"BREVIO-admin-frontend",
+		"BREVIO-rag-worker",
+		"BREVIO-guardrails",
+		"BREVIO-health-checker",
+	})
 
 	requiredTerraformModules := []string{
 		"opensearch",
@@ -183,6 +201,34 @@ func assertFileContainsTokens(t *testing.T, path string, required []string) {
 	for _, token := range required {
 		if !strings.Contains(content, token) {
 			t.Fatalf("missing token %q in %s", token, path)
+		}
+	}
+}
+
+func assertExactDirectorySet(t *testing.T, path string, expected []string) {
+	t.Helper()
+
+	entries, err := os.ReadDir(path)
+	if err != nil {
+		t.Fatalf("read directory %s: %v", path, err)
+	}
+
+	actual := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		if entry.IsDir() {
+			actual = append(actual, entry.Name())
+		}
+	}
+
+	sort.Strings(actual)
+	sort.Strings(expected)
+
+	if len(actual) != len(expected) {
+		t.Fatalf("directory count mismatch for %s: got=%d want=%d actual=%v expected=%v", path, len(actual), len(expected), actual, expected)
+	}
+	for i := range actual {
+		if actual[i] != expected[i] {
+			t.Fatalf("directory set mismatch for %s: actual=%v expected=%v", path, actual, expected)
 		}
 	}
 }

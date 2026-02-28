@@ -122,6 +122,7 @@ Legend
 - [x] Strict closure hardening: replaced remaining minimum-threshold closure checks with exact parity assertions for migration table counts, OpenAPI path count, schema catalog membership, and compliance matrix row-count/ID-set exactness (`internal/contracts/closure_checks_test.go`, `internal/contracts/openapi_closure_test.go`, `internal/contracts/schema_closure_test.go`, `internal/contracts/prompt_compliance_closure_test.go`)
 - [x] Strict closure hardening: enforced exact OpenAPI operation parity by matching the full `METHOD path` operation-set with no extras/missing operations in `internal/contracts/openapi_closure_test.go`
 - [x] Strict closure hardening: added executable V9 runtime acceptance-gate coverage (`schema_closure`, `determinism`, `webhook_security`, `acceptance_suites_1_12`, `workspace_isolation`, `provisioning_pipeline`, `onboarding_completion`, `provisioning_recovery`, `deterministic_llm`, `cve_scanning`) in `internal/contracts/acceptance_gate_runtime_closure_test.go` and bound V9 gate-name contracts to these runtime subtests in `internal/contracts/acceptance_gates_test.go`
+- [x] Strict closure hardening: added exact infrastructure directory-set gates so `terraform/modules` and `helm/` must match the canonical V9/V9.2 module/chart sets with no extras/missing entries (`internal/contracts/infrastructure_closure_test.go`)
 
 Migration rules (must follow)
 - Preserve already-working preserved components unchanged unless v4.0 explicitly requires changes (per user instructions).
