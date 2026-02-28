@@ -46,6 +46,15 @@ type ProactiveDecision struct {
 	ReasonCode  string
 }
 
+type LoadSheddingInput struct {
+	Tier                   string
+	IsHealthOrAudit        bool
+	IsWriteOperation       bool
+	IsProactiveBehavior    bool
+	IsA3PlusAutoCommit     bool
+	IsNonCriticalConnector bool
+}
+
 type approvalPayload struct {
 	Action     string    `json:"action"`
 	RiskLevel  string    `json:"risk_level"`
@@ -231,5 +240,40 @@ func (s *Service) EvaluateProactiveSilentExecution(domainAutonomy string, proact
 		return ProactiveDecision{AllowSilent: false, ReasonCode: "PROACTIVE_AUTONOMY_TOO_LOW"}
 	default:
 		return ProactiveDecision{AllowSilent: false, ReasonCode: "PROACTIVE_UNKNOWN_AUTONOMY"}
+	}
+}
+
+// EvaluateLoadShedding enforces V9 load shedding tiers D0-D5.
+func (s *Service) EvaluateLoadShedding(input LoadSheddingInput) DecisionOutput {
+	tier := strings.ToUpper(strings.TrimSpace(input.Tier))
+	if tier == "" {
+		tier = "D0"
+	}
+
+	if tier == "D5" {
+		if input.IsHealthOrAudit {
+			return DecisionOutput{Decision: "allow", ReasonCode: "LOAD_SHEDDING_D5_HEALTH_AUDIT_ONLY"}
+		}
+		return DecisionOutput{Decision: "deny", ReasonCode: "LOAD_SHEDDING_D5_MINIMAL_MODE"}
+	}
+
+	if tier == "D4" && input.IsWriteOperation {
+		return DecisionOutput{Decision: "deny", ReasonCode: "LOAD_SHEDDING_D4_READ_ONLY"}
+	}
+	if tier == "D3" && input.IsNonCriticalConnector {
+		return DecisionOutput{Decision: "deny", ReasonCode: "LOAD_SHEDDING_D3_NON_CRITICAL_DISABLED"}
+	}
+	if tier == "D2" && input.IsA3PlusAutoCommit {
+		return DecisionOutput{Decision: "deny", ReasonCode: "LOAD_SHEDDING_D2_A3_PLUS_AUTOCOMMIT_DISABLED"}
+	}
+	if tier == "D1" && input.IsProactiveBehavior {
+		return DecisionOutput{Decision: "deny", ReasonCode: "LOAD_SHEDDING_D1_PROACTIVE_DISABLED"}
+	}
+
+	switch tier {
+	case "D0", "D1", "D2", "D3", "D4":
+		return DecisionOutput{Decision: "allow", ReasonCode: "LOAD_SHEDDING_ALLOWED"}
+	default:
+		return DecisionOutput{Decision: "deny", ReasonCode: "LOAD_SHEDDING_UNKNOWN_TIER"}
 	}
 }

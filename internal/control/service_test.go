@@ -113,3 +113,37 @@ func TestEvaluateProactiveSilentExecutionRules(t *testing.T) {
 		})
 	}
 }
+
+func TestEvaluateLoadSheddingTiers(t *testing.T) {
+	t.Parallel()
+
+	svc := NewService("secret")
+	cases := []struct {
+		name   string
+		input  LoadSheddingInput
+		result string
+		reason string
+	}{
+		{name: "d0_allows", input: LoadSheddingInput{Tier: "D0", IsWriteOperation: true}, result: "allow", reason: "LOAD_SHEDDING_ALLOWED"},
+		{name: "d1_blocks_proactive", input: LoadSheddingInput{Tier: "D1", IsProactiveBehavior: true}, result: "deny", reason: "LOAD_SHEDDING_D1_PROACTIVE_DISABLED"},
+		{name: "d2_blocks_a3_autocommit", input: LoadSheddingInput{Tier: "D2", IsA3PlusAutoCommit: true}, result: "deny", reason: "LOAD_SHEDDING_D2_A3_PLUS_AUTOCOMMIT_DISABLED"},
+		{name: "d3_blocks_non_critical", input: LoadSheddingInput{Tier: "D3", IsNonCriticalConnector: true}, result: "deny", reason: "LOAD_SHEDDING_D3_NON_CRITICAL_DISABLED"},
+		{name: "d4_blocks_writes", input: LoadSheddingInput{Tier: "D4", IsWriteOperation: true}, result: "deny", reason: "LOAD_SHEDDING_D4_READ_ONLY"},
+		{name: "d5_allows_health_audit", input: LoadSheddingInput{Tier: "D5", IsHealthOrAudit: true}, result: "allow", reason: "LOAD_SHEDDING_D5_HEALTH_AUDIT_ONLY"},
+		{name: "d5_blocks_regular", input: LoadSheddingInput{Tier: "D5", IsWriteOperation: false}, result: "deny", reason: "LOAD_SHEDDING_D5_MINIMAL_MODE"},
+		{name: "unknown_denied", input: LoadSheddingInput{Tier: "DX"}, result: "deny", reason: "LOAD_SHEDDING_UNKNOWN_TIER"},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			got := svc.EvaluateLoadShedding(tc.input)
+			if got.Decision != tc.result {
+				t.Fatalf("decision mismatch: got=%s want=%s", got.Decision, tc.result)
+			}
+			if got.ReasonCode != tc.reason {
+				t.Fatalf("reason mismatch: got=%s want=%s", got.ReasonCode, tc.reason)
+			}
+		})
+	}
+}
