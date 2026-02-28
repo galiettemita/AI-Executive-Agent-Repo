@@ -198,6 +198,7 @@ Legend
 - [x] Phase 3 continuation (Step 30 temporal_reasoning): expanded temporal resolver coverage (`next <weekday>`, `in X weeks`, horizon-aware confidence), added schema-aligned scheduling conflict reports (`has_conflict`, `resolution_hint`, conflict windows), and updated control temporal routes to accept `reference_ts` while preserving existing request compatibility
 - [x] Phase 3 continuation (Step 31 guardrails_runtime): replaced passive guardrail stubs with runtime input evaluation (pattern/jailbreak scoring + PII redaction), schema-aligned guardrail event payloads, and middleware enforcement on RAG search path with `403 GUARDRAIL_BLOCK_ACTIVE` blocking behavior under configured thresholds
 - [x] Phase 3 continuation (Step 32 tool_health_scorer): upgraded tool health scoring to include latency/error telemetry (`latency_ms`, `error_rate`), rule-driven auto-quarantine, recovery/degradation event emission (`BREVIO.tool_health.*`), and deterministic override/recovery semantics with regression coverage
+- [x] Phase 3 continuation (Step 33 feature_flags): restored and hardened `internal/feature_flags/service.go` with deterministic evaluation cache invalidation, kill-switch policy enforcement, workspace-aware evaluation outputs aligned to `feature_flag_evaluation.v1.json` (`flag_key`, `workspace_id`, `enabled`, `variant`, `reason`), and control-route/unit regression coverage
 
 Migration rules (must follow)
 - Preserve already-working preserved components unchanged unless v4.0 explicitly requires changes (per user instructions).

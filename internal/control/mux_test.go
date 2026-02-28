@@ -138,12 +138,26 @@ func TestControlMuxFeatureFlagsFlow(t *testing.T) {
 	if err := json.Unmarshal(evaluateResp.Body.Bytes(), &evaluatePayload); err != nil {
 		t.Fatalf("decode evaluate payload: %v", err)
 	}
+	if evaluatePayload["flag_key"] != "new_ui" {
+		t.Fatalf("unexpected flag_key in evaluate payload: %v", evaluatePayload)
+	}
+	if evaluatePayload["workspace_id"] != "ws_a" {
+		t.Fatalf("unexpected workspace_id in evaluate payload: %v", evaluatePayload)
+	}
 	enabled, ok := evaluatePayload["enabled"].(bool)
 	if !ok {
 		t.Fatalf("missing enabled field: %v", evaluatePayload)
 	}
 	if enabled {
 		t.Fatalf("expected evaluate deny for ws_a")
+	}
+	reason, ok := evaluatePayload["reason"].(string)
+	if !ok || reason != "FEATURE_RULE_MATCH_DENY" {
+		t.Fatalf("unexpected reason in evaluate payload: %v", evaluatePayload)
+	}
+	variant, ok := evaluatePayload["variant"].(string)
+	if !ok || variant != "off" {
+		t.Fatalf("unexpected variant in evaluate payload: %v", evaluatePayload)
 	}
 
 	getFlagReq := httptest.NewRequest(http.MethodGet, "/v1/flags/new_ui", nil)

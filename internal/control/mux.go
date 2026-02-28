@@ -357,14 +357,15 @@ func handleFeatureFlags(w http.ResponseWriter, r *http.Request, flags *feature_f
 			return
 		}
 		var payload struct {
-			Attributes map[string]string `json:"attributes"`
+			WorkspaceID string            `json:"workspace_id"`
+			Attributes  map[string]string `json:"attributes"`
 		}
 		if err := decodeJSON(r, &payload); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		enabled, reason := flags.Evaluate(key, payload.Attributes)
-		writeJSON(w, http.StatusOK, map[string]any{"enabled": enabled, "reason": reason})
+		evaluation := flags.EvaluateForWorkspace(key, payload.WorkspaceID, payload.Attributes)
+		writeJSON(w, http.StatusOK, evaluation)
 		return
 	}
 
