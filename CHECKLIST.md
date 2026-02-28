@@ -135,6 +135,7 @@ Legend
 - [x] Strict closure hardening: upgraded documentation closure from non-empty checks to required section/token parity across `README.md`, `docs/ARCHITECTURE.md`, `docs/DEVELOPMENT.md`, and `docs/DEPLOYMENT.md` (`internal/contracts/documentation_closure_test.go`)
 - [x] Strict closure hardening: added exact runbook file-set closure for canonical V9 (`RB-001..009`) and V9.2 (`RB-V92-001..009`) runbooks in `internal/contracts/runbook_closure_test.go`
 - [x] Strict closure hardening: fixed executor commit idempotency to prevent duplicate side effects/receipts on retries, added canonical executor/trust event emissions (`BREVIO.hands.tool.simulated.v1`, `BREVIO.hands.tool.committed.v1`, `BREVIO.trust.receipt.created.v1`, `BREVIO.trust.evidence.attached.v1`), and added runtime tests in `internal/executor/service_test.go`
+- [x] Strict closure hardening: extended integration + acceptance runtime pipeline checks to assert canonical event emission across gateway/executor (`BREVIO.ingress.received.v1`, `BREVIO.hands.tool.simulated.v1`, `BREVIO.hands.tool.committed.v1`, `BREVIO.trust.receipt.created.v1`, `BREVIO.trust.evidence.attached.v1`) via `internal/integration` and `internal/contracts/acceptance_gate_runtime_closure_test.go`
 
 Migration rules (must follow)
 - Preserve already-working preserved components unchanged unless v4.0 explicitly requires changes (per user instructions).

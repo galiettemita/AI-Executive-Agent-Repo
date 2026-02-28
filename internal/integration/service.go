@@ -153,6 +153,19 @@ func (s *Service) ProcessNextQueuedTurn(ctx context.Context, budgetExhausted boo
 	return result, nil
 }
 
+func (s *Service) ExecutorAuditEventTypes() []string {
+	entries := s.executor.AuditEntries()
+	out := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		out = append(out, entry.EventType)
+	}
+	return out
+}
+
+func (s *Service) GatewayAuditEventTypes() []string {
+	return s.gateway.AuditEntries()
+}
+
 func signPayload(secret, payload []byte) string {
 	mac := hmac.New(sha256.New, secret)
 	mac.Write(payload)

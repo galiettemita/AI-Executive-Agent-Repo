@@ -42,6 +42,23 @@ func TestPipelineEndToEndHappyPath(t *testing.T) {
 	if result.OutboundCode != 202 {
 		t.Fatalf("unexpected outbound status: %d", result.OutboundCode)
 	}
+
+	executorEvents := s.ExecutorAuditEventTypes()
+	for _, event := range []string{
+		"BREVIO.hands.tool.simulated.v1",
+		"BREVIO.hands.tool.committed.v1",
+		"BREVIO.trust.receipt.created.v1",
+		"BREVIO.trust.evidence.attached.v1",
+	} {
+		if !containsString(executorEvents, event) {
+			t.Fatalf("missing executor canonical event %s in %v", event, executorEvents)
+		}
+	}
+
+	gatewayEvents := s.GatewayAuditEventTypes()
+	if !containsString(gatewayEvents, "BREVIO.ingress.received.v1") {
+		t.Fatalf("missing gateway canonical ingress event in %v", gatewayEvents)
+	}
 }
 
 func TestPipelineBudgetExhaustionStopsBeforeCommit(t *testing.T) {
@@ -73,4 +90,13 @@ func TestPipelineBudgetExhaustionStopsBeforeCommit(t *testing.T) {
 	if result.Committed || result.Simulated {
 		t.Fatalf("expected no tool execution when budget exhausted: %+v", result)
 	}
+}
+
+func containsString(items []string, needle string) bool {
+	for _, item := range items {
+		if item == needle {
+			return true
+		}
+	}
+	return false
 }

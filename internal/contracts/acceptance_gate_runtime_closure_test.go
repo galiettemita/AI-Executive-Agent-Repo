@@ -134,6 +134,22 @@ func TestAcceptanceGateRuntimeCoverageV9(t *testing.T) {
 		if result.GateDecision != "allow" || !result.Simulated || !result.Committed || result.WorkflowState != "TERMINAL" {
 			t.Fatalf("unexpected pipeline result: %+v", result)
 		}
+
+		executorEvents := svc.ExecutorAuditEventTypes()
+		for _, event := range []string{
+			"BREVIO.hands.tool.simulated.v1",
+			"BREVIO.hands.tool.committed.v1",
+			"BREVIO.trust.receipt.created.v1",
+			"BREVIO.trust.evidence.attached.v1",
+		} {
+			if !containsString(executorEvents, event) {
+				t.Fatalf("missing executor canonical event %s in %v", event, executorEvents)
+			}
+		}
+		gatewayEvents := svc.GatewayAuditEventTypes()
+		if !containsString(gatewayEvents, "BREVIO.ingress.received.v1") {
+			t.Fatalf("missing gateway canonical ingress event in %v", gatewayEvents)
+		}
 	})
 
 	t.Run("workspace_isolation", func(t *testing.T) {
