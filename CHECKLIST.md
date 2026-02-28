@@ -190,6 +190,7 @@ Legend
 - [x] Phase 2 continuation (Step 22 capability_exploration): replaced static recommendation stubs with deterministic capability-gap accumulation + thresholded recommendation materialization (`>=3` events/7d), confidence scoring and reason updates, strict recommendation decision validation (`accept|reject|defer`), and workflow mirror hardening for `capability_exploration_v1`
 - [x] Phase 2 continuation (Step 23 project_templates_export): hardened project template/export runtime with strict context-export validation (`format`, `scope`, required repo linkage), enforced V9.1 export-rate policy (`max 10 exports/workspace/day` -> `EXPORT_RATE_LIMIT` + HTTP `429`), normalized template statuses, and added service+mux regression coverage
 - [x] Phase 2 continuation (Step 24 adaptive_discovery): added deterministic follow-up rule engine and adaptive question lifecycle to onboarding completion (`followup_rules` -> `adaptive_questions`, `pending -> answered`), with rule-trigger evaluation (`onboarding_completed`, `meeting_load_high`, `low_autonomy_preference`) and acceptance/onboarding regression coverage
+- [x] Phase 2 continuation (Step 25 v91_observability_gates): added explicit V9.1 canonical metrics catalog (`spec/metrics/canonical_metrics_v91.txt`) and hardened closure tests to assert exact V9.1 metrics/event coverage plus observability registry loading across V9.1+V9.2 catalogs
 
 Migration rules (must follow)
 - Preserve already-working preserved components unchanged unless v4.0 explicitly requires changes (per user instructions).

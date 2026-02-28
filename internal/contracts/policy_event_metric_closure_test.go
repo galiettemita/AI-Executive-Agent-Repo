@@ -206,6 +206,39 @@ func TestCanonicalEventsAndMetricsClosure(t *testing.T) {
 
 	assertLineSetEquals(
 		t,
+		readLineSet(t, filepath.Join(root, "spec", "metrics", "canonical_metrics_v91.txt")),
+		[]string{
+			"BREVIO_goal_items_total",
+			"BREVIO_goal_progress_updates_total",
+			"BREVIO_goal_stalled_total",
+			"BREVIO_goal_completed_total",
+			"BREVIO_trust_score",
+			"BREVIO_trust_promotion_proposed_total",
+			"BREVIO_trust_promotion_decided_total",
+			"BREVIO_learning_feedback_received_total",
+			"BREVIO_learning_lessons_active",
+			"BREVIO_learning_lessons_retired_total",
+			"BREVIO_daily_capture_completed_total",
+			"BREVIO_daily_capture_pending_total",
+			"BREVIO_mission_control_refresh_total",
+			"BREVIO_mission_control_widget_render_latency_ms",
+			"BREVIO_capability_recommendation_created_total",
+			"BREVIO_capability_recommendation_adopted_total",
+			"BREVIO_self_modification_decision_total",
+			"BREVIO_code_context_exports_total",
+			"BREVIO_cross_repo_patterns_detected_total",
+			"BREVIO_technical_debt_items_total",
+			"BREVIO_debt_task_created_total",
+			"BREVIO_debt_task_completed_total",
+			"BREVIO_project_template_created_total",
+			"BREVIO_discovery_followup_generated_total",
+			"BREVIO_discovery_followup_answered_total",
+		},
+		"v9.1 canonical metrics",
+	)
+
+	assertLineSetEquals(
+		t,
 		readLineSet(t, filepath.Join(root, "spec", "metrics", "canonical_metrics_v92.txt")),
 		[]string{
 			"BREVIO_context_budget_utilization_pct",

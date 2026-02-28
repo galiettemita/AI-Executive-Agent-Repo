@@ -31,12 +31,25 @@ func TestStructuredLogEntryRequiredFields(t *testing.T) {
 func TestMetricRegistryCanonicalValidation(t *testing.T) {
 	t.Parallel()
 
-	metrics, err := LoadCanonicalMetricNames(filepath.Join("..", "..", "spec", "metrics", "canonical_metrics_v92.txt"))
+	metrics, err := LoadCanonicalMetricNames(
+		filepath.Join("..", "..", "spec", "metrics", "canonical_metrics_v91.txt"),
+		filepath.Join("..", "..", "spec", "metrics", "canonical_metrics_v92.txt"),
+	)
 	if err != nil {
 		t.Fatalf("load canonical metrics: %v", err)
 	}
 	if len(metrics) == 0 {
 		t.Fatal("expected canonical metrics list to be non-empty")
+	}
+	foundV91Metric := false
+	for _, metric := range metrics {
+		if metric == "BREVIO_goal_items_total" {
+			foundV91Metric = true
+			break
+		}
+	}
+	if !foundV91Metric {
+		t.Fatal("expected V9.1 canonical metric set to be loaded")
 	}
 
 	registry := NewMetricRegistry(metrics)
