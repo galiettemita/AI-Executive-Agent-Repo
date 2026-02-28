@@ -204,3 +204,36 @@ func TestV92WorkflowStubs(t *testing.T) {
 		t.Fatalf("unexpected cache maintenance result: %d", removed)
 	}
 }
+
+func TestV91WorkflowTriggerSpecs(t *testing.T) {
+	t.Parallel()
+
+	specs := V91WorkflowTriggerSpecs()
+	expected := map[string]string{
+		"daily_capture_v1":           "end_of_last_session_each_day_or_cron_if_no_session_by_configured_time",
+		"daily_log_capture_v1":       "after_each_interactive_turn_v1_completion",
+		"goal_review_v1":             "mission_control_refresh_or_cron_default_weekly",
+		"trust_eval_v1":              "daily_03_00_utc_or_after_operator_override_event",
+		"learning_consolidation_v1":  "weekly_or_pending_feedback_gt_20",
+		"capability_exploration_v1":  "monthly_or_capability_gap_events_gte_3_within_7d",
+		"cross_repo_analysis_v1":     "after_codebase_map_ingestion_v1_or_operator_request",
+		"mission_control_refresh_v1": "cron_per_mission_control_config_refresh_cadence_minutes",
+	}
+
+	if len(specs) != len(expected) {
+		t.Fatalf("unexpected trigger-spec count: got=%d want=%d", len(specs), len(expected))
+	}
+
+	for workflowID, trigger := range expected {
+		spec, ok := specs[workflowID]
+		if !ok {
+			t.Fatalf("missing trigger spec for workflow %s", workflowID)
+		}
+		if spec.WorkflowID != workflowID {
+			t.Fatalf("workflow id mismatch for %s: got=%s", workflowID, spec.WorkflowID)
+		}
+		if spec.Trigger != trigger {
+			t.Fatalf("trigger mismatch for %s: got=%s want=%s", workflowID, spec.Trigger, trigger)
+		}
+	}
+}

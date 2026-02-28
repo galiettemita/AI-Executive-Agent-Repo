@@ -58,6 +58,11 @@ type ReasoningConstraints struct {
 	ResolvedTier      string
 }
 
+type TriggerSpec struct {
+	WorkflowID string
+	Trigger    string
+}
+
 type Service struct {
 	mu               sync.Mutex
 	idempotencyStore map[string]ToolExecutionResult
@@ -74,6 +79,43 @@ type Service struct {
 // cache_maintenance_v1.
 func NewService() *Service {
 	return &Service{idempotencyStore: map[string]ToolExecutionResult{}}
+}
+
+func V91WorkflowTriggerSpecs() map[string]TriggerSpec {
+	return map[string]TriggerSpec{
+		"daily_capture_v1": {
+			WorkflowID: "daily_capture_v1",
+			Trigger:    "end_of_last_session_each_day_or_cron_if_no_session_by_configured_time",
+		},
+		"daily_log_capture_v1": {
+			WorkflowID: "daily_log_capture_v1",
+			Trigger:    "after_each_interactive_turn_v1_completion",
+		},
+		"goal_review_v1": {
+			WorkflowID: "goal_review_v1",
+			Trigger:    "mission_control_refresh_or_cron_default_weekly",
+		},
+		"trust_eval_v1": {
+			WorkflowID: "trust_eval_v1",
+			Trigger:    "daily_03_00_utc_or_after_operator_override_event",
+		},
+		"learning_consolidation_v1": {
+			WorkflowID: "learning_consolidation_v1",
+			Trigger:    "weekly_or_pending_feedback_gt_20",
+		},
+		"capability_exploration_v1": {
+			WorkflowID: "capability_exploration_v1",
+			Trigger:    "monthly_or_capability_gap_events_gte_3_within_7d",
+		},
+		"cross_repo_analysis_v1": {
+			WorkflowID: "cross_repo_analysis_v1",
+			Trigger:    "after_codebase_map_ingestion_v1_or_operator_request",
+		},
+		"mission_control_refresh_v1": {
+			WorkflowID: "mission_control_refresh_v1",
+			Trigger:    "cron_per_mission_control_config_refresh_cadence_minutes",
+		},
+	}
 }
 
 func (s *Service) InteractiveTurnV1(_ context.Context, message string) InteractiveResult {
