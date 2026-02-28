@@ -204,6 +204,7 @@ Legend
 - [x] Phase 3 continuation (Step 36 error_communication): upgraded `internal/errors` to persona-aware template resolution with deterministic precedence, schema-aligned user-facing message rendering (`error_code`, `user_message`, `retryable`, `next_action`), and internal reference redaction so runtime errors never expose UUID/trace/internal IDs
 - [x] Phase 3 continuation (Step 37 event_schema_registry): hardened `internal/event_schemas` with strict schema parsing, required/type/additionalProperties validation, backward-compatibility checks on new version registration (breaking-change rejection), and control-plane strict registration handling for `/v1/event-schemas/{type}/versions`
 - [x] Phase 3 continuation (Step 38 deterministic_caching): replaced single-layer cache with deterministic L1/L2/L3 runtime in `internal/caching` (TTL-bound writes, layer promotion on reads, cross-layer invalidation, size-limit enforcement, namespace-based policy matching) and expanded caching/control regression coverage
+- [x] Phase 3 continuation (Step 39 model_tier_constraints): upgraded `internal/model_tiers` with deterministic tier-cap enforcement (`requested_tier -> resolved_tier`), complexity-threshold escalation within workspace caps, override audit records aligned to `target_tier`/`expires_at`, and control-path evaluation support via `/v1/model-tiers/overrides?requested_tier=...&complexity_score=...`
 
 Migration rules (must follow)
 - Preserve already-working preserved components unchanged unless v4.0 explicitly requires changes (per user instructions).

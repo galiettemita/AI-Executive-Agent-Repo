@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -685,6 +686,23 @@ func handleModelTiers(w http.ResponseWriter, r *http.Request, svc *model_tiers.S
 	case "overrides":
 		if r.Method != http.MethodGet {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if requestedTier := strings.TrimSpace(r.URL.Query().Get("requested_tier")); requestedTier != "" {
+			complexityScore := 0
+			if rawComplexity := strings.TrimSpace(r.URL.Query().Get("complexity_score")); rawComplexity != "" {
+				parsedComplexity, err := strconv.Atoi(rawComplexity)
+				if err != nil {
+					http.Error(w, "invalid complexity_score", http.StatusBadRequest)
+					return
+				}
+				complexityScore = parsedComplexity
+			}
+			decision := svc.EnforceTier(workspaceID, requestedTier, complexityScore)
+			writeJSON(w, http.StatusOK, map[string]any{
+				"overrides": svc.ListOverrides(workspaceID),
+				"decision":  decision,
+			})
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]any{

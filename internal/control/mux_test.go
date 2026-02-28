@@ -368,6 +368,24 @@ func TestControlMuxModelTiersFlow(t *testing.T) {
 	if !ok || len(overrides) == 0 {
 		t.Fatalf("expected at least one override payload: %v", overridesPayload)
 	}
+
+	getDecisionReq := httptest.NewRequest(http.MethodGet, "/v1/model-tiers/overrides?workspace_id=ws_1&requested_tier=T1&complexity_score=95", nil)
+	getDecisionResp := httptest.NewRecorder()
+	mux.ServeHTTP(getDecisionResp, getDecisionReq)
+	if getDecisionResp.Code != http.StatusOK {
+		t.Fatalf("unexpected model tier decision status: %d", getDecisionResp.Code)
+	}
+	var decisionPayload map[string]any
+	if err := json.Unmarshal(getDecisionResp.Body.Bytes(), &decisionPayload); err != nil {
+		t.Fatalf("decode decision payload: %v", err)
+	}
+	decision, ok := decisionPayload["decision"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected decision payload: %v", decisionPayload)
+	}
+	if decision["resolved_tier"] != "T2" {
+		t.Fatalf("expected complexity-based resolution to T2, got %v", decisionPayload)
+	}
 }
 
 func TestControlMuxStreamingFlow(t *testing.T) {
