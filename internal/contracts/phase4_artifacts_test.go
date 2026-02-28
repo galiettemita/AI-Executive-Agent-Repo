@@ -33,7 +33,16 @@ func TestPhase4ReadinessArtifactsExist(t *testing.T) {
 		"govulncheck baseline",
 	})
 	assertFileContainsTokens(t, filepath.Join(root, "scripts", "infra", "validate.sh"), []string{
+		"required_terraform_modules=(",
+		"required_terraform_environments=(",
+		"required_helm_charts=(",
+		"assert_exact_dir_set \"terraform/modules\"",
+		"assert_exact_dir_set \"terraform/environments\"",
+		"assert_exact_dir_set \"helm\"",
 		"terraform validate modules",
+		"terraform validate environments",
 		"helm lint charts",
+		"REQUIRE_INFRA_TOOLS",
+		"CI/strict mode",
 	})
 }
