@@ -3,7 +3,12 @@ package canvas
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"net"
 	"net/http"
+	"net/netip"
+	"net/url"
+	"strings"
 	"sync"
 	"time"
 
@@ -11,9 +16,10 @@ import (
 )
 
 type Interaction struct {
-	SessionID string `json:"session_id"`
-	Type      string `json:"type"`
-	Payload   string `json:"payload"`
+	SessionID string    `json:"session_id"`
+	Type      string    `json:"type"`
+	Payload   string    `json:"payload"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 type ToolCall struct {
@@ -49,6 +55,7 @@ type Service struct {
 	injector Injector
 	mu       sync.Mutex
 	sessions map[*websocket.Conn]string
+	logs     []Interaction
 }
 
 func NewService(injector Injector) *Service {
@@ -56,6 +63,7 @@ func NewService(injector Injector) *Service {
 		upgrader: websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }},
 		injector: injector,
 		sessions: map[*websocket.Conn]string{},
+		logs:     []Interaction{},
 	}
 }
 
@@ -89,6 +97,11 @@ func (s *Service) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 		if interaction.SessionID == "" {
 			interaction.SessionID = sessionID
 		}
+		interaction.CreatedAt = time.Now().UTC()
+
+		s.mu.Lock()
+		s.logs = append(s.logs, interaction)
+		s.mu.Unlock()
 
 		_ = s.injector.Inject(r.Context(), ToolCall{
 			SessionID: interaction.SessionID,
@@ -104,6 +117,71 @@ func (s *Service) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 	s.mu.Unlock()
 }
 
+func (s *Service) HandleA2UISurface(w http.ResponseWriter, r *http.Request) {
+	surface := map[string]any{
+		"surface_id": "mission_control",
+		"widgets": []map[string]any{
+			{"type": "goal_progress", "title": "Goals"},
+			{"type": "trust_score", "title": "Autonomy Trust"},
+			{"type": "daily_capture", "title": "Daily Capture"},
+		},
+	}
+	writeJSON(w, http.StatusOK, surface)
+}
+
+func (s *Service) HandleFetchPreview(w http.ResponseWriter, r *http.Request) {
+	var payload struct {
+		URL string `json:"url"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if err := validateFetchURL(payload.URL); err != nil {
+		http.Error(w, err.Error(), http.StatusForbidden)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"url":     payload.URL,
+		"preview": "fetch_allowed",
+	})
+}
+
+func validateFetchURL(raw string) error {
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		return fmt.Errorf("invalid url: %w", err)
+	}
+	host := strings.ToLower(parsed.Hostname())
+	if host == "" {
+		return fmt.Errorf("missing host")
+	}
+	if host == "localhost" || strings.HasPrefix(host, "127.") || host == "169.254.169.254" || host == "::1" {
+		return fmt.Errorf("blocked host")
+	}
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return nil
+	}
+	addr, ok := netip.AddrFromSlice(ip)
+	if ok && addr.IsLoopback() {
+		return fmt.Errorf("blocked loopback host")
+	}
+	return nil
+}
+
+func (s *Service) ActiveSessionCount() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return len(s.sessions)
+}
+
+func (s *Service) InteractionCount() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return len(s.logs)
+}
+
 func (s *Service) HandleHealth(w http.ResponseWriter, _ *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte("ok"))
@@ -112,7 +190,15 @@ func (s *Service) HandleHealth(w http.ResponseWriter, _ *http.Request) {
 func NewMux(service *Service) *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /v1/canvas/ws", service.HandleWebSocket)
+	mux.HandleFunc("GET /v1/canvas/surfaces/mission_control", service.HandleA2UISurface)
+	mux.HandleFunc("POST /v1/canvas/fetch", service.HandleFetchPreview)
 	mux.HandleFunc("GET /healthz/ready", service.HandleHealth)
 	mux.HandleFunc("GET /healthz/live", service.HandleHealth)
 	return mux
+}
+
+func writeJSON(w http.ResponseWriter, status int, payload any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(payload)
 }

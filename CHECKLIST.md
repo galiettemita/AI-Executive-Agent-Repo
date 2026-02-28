@@ -179,6 +179,7 @@ Legend
 - [x] Phase 1 continuation (Step 10 llm_layer): upgraded deterministic LLM runtime with tier-normalized token caps (`T0/T1/T2/T3`), request-hash replay identity including prompt version and deterministic params, prompt rollback support, and controlled fallback-provider failover semantics only when no output was committed
 - [x] Phase 1 continuation (Step 11 provisioning_engine): hardened provisioning runtime with versioned deterministic server ranker scoring + explanation replay cache, and expanded artifact verification to enforce SBOM/vulnerability gates with optional Ed25519 signature verification
 - [x] Phase 1 continuation (Step 12 onboarding_discovery): expanded fixed discovery question sets across all four onboarding stages, enforced replay-locked extraction on schema-required keys, and persisted versioned workspace state with `workspace_profiles` (13 dimensions), `workspace_personas`, and `workspace_behavior_policies` (10 dimensions), including acceptance-fixture parity updates
+- [x] Phase 1 continuation (Step 13 a2ui_canvas): expanded canvas runtime with explicit A2UI mission-control surface rendering endpoint, SSRF-protected fetch-preview endpoint, persistent interaction logging, and websocket injection regression coverage while retaining tool-call forwarding semantics
 
 Migration rules (must follow)
 - Preserve already-working preserved components unchanged unless v4.0 explicitly requires changes (per user instructions).
