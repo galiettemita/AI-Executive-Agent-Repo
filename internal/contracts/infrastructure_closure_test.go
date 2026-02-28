@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"testing"
@@ -46,6 +47,40 @@ func TestV9InfrastructureArtifactsExist(t *testing.T) {
 	for module, tokens := range requiredModuleTokens {
 		assertFileContainsTokens(t, filepath.Join(root, "terraform", "modules", module, "main.tf"), tokens)
 	}
+	assertModuleQuotedListEquals(t, filepath.Join(root, "terraform", "modules", "sqs", "main.tf"), "fifo_queues", []string{
+		"interactive_turns.fifo",
+	})
+	assertModuleQuotedListEquals(t, filepath.Join(root, "terraform", "modules", "sqs", "main.tf"), "standard_queues", []string{
+		"workflow_tasks",
+		"ledger_writes",
+		"trajectory_writes",
+		"rate_limit_ledger_writes",
+	})
+	assertModuleQuotedListEquals(t, filepath.Join(root, "terraform", "modules", "sqs", "main.tf"), "dead_letter_queues", []string{
+		"interactive_turns_dlq",
+		"workflow_tasks_dlq",
+		"ledger_writes_dlq",
+		"trajectory_writes_dlq",
+		"rate_limit_ledger_writes_dlq",
+	})
+	assertModuleQuotedListEquals(t, filepath.Join(root, "terraform", "modules", "s3", "main.tf"), "buckets", []string{
+		"attachments",
+		"sboms",
+		"exports",
+		"schemas",
+	})
+	assertModuleQuotedListEquals(t, filepath.Join(root, "terraform", "modules", "observability", "main.tf"), "stack", []string{
+		"prometheus",
+		"grafana",
+		"loki",
+		"jaeger",
+		"otel_collector",
+	})
+	assertModuleQuotedListEquals(t, filepath.Join(root, "terraform", "modules", "secrets", "main.tf"), "managed_secrets", []string{
+		"app_secret",
+		"encryption_keys",
+		"oauth_client_secrets",
+	})
 
 	requiredModuleBlocks := []string{
 		`module "vpc"`,
@@ -63,6 +98,34 @@ func TestV9InfrastructureArtifactsExist(t *testing.T) {
 	}
 	assertFileContainsTokens(t, filepath.Join(root, "terraform", "environments", "staging", "main.tf"), requiredModuleBlocks)
 	assertFileContainsTokens(t, filepath.Join(root, "terraform", "environments", "production", "main.tf"), requiredModuleBlocks)
+	assertTerraformEnvironmentModuleSet(t, filepath.Join(root, "terraform", "environments", "staging", "main.tf"), []string{
+		"vpc",
+		"eks",
+		"rds",
+		"elasticache",
+		"sqs",
+		"s3",
+		"secrets",
+		"temporal",
+		"observability",
+		"opensearch",
+		"admin_frontend",
+		"feature_flags_cache",
+	})
+	assertTerraformEnvironmentModuleSet(t, filepath.Join(root, "terraform", "environments", "production", "main.tf"), []string{
+		"vpc",
+		"eks",
+		"rds",
+		"elasticache",
+		"sqs",
+		"s3",
+		"secrets",
+		"temporal",
+		"observability",
+		"opensearch",
+		"admin_frontend",
+		"feature_flags_cache",
+	})
 
 	coreChartsWithHPA := []string{
 		"BREVIO-gateway",
@@ -231,4 +294,77 @@ func assertExactDirectorySet(t *testing.T, path string, expected []string) {
 			t.Fatalf("directory set mismatch for %s: actual=%v expected=%v", path, actual, expected)
 		}
 	}
+}
+
+func assertModuleQuotedListEquals(t *testing.T, path, key string, expected []string) {
+	t.Helper()
+	body, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read module file %s: %v", path, err)
+	}
+	content := string(body)
+	pattern := regexp.MustCompile(`(?s)` + regexp.QuoteMeta(key) + `\s*=\s*\[(.*?)\]`)
+	match := pattern.FindStringSubmatch(content)
+	if len(match) < 2 {
+		t.Fatalf("list key %q not found in %s", key, path)
+	}
+	valueBlock := match[1]
+	stringPattern := regexp.MustCompile(`"([^"]+)"`)
+	extracted := make([]string, 0)
+	for _, hit := range stringPattern.FindAllStringSubmatch(valueBlock, -1) {
+		if len(hit) < 2 {
+			continue
+		}
+		extracted = append(extracted, hit[1])
+	}
+	assertStringSliceSetEquals(t, extracted, expected, fmt.Sprintf("%s:%s", path, key))
+}
+
+func assertTerraformEnvironmentModuleSet(t *testing.T, path string, expected []string) {
+	t.Helper()
+	body, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read environment file %s: %v", path, err)
+	}
+	content := string(body)
+	modulePattern := regexp.MustCompile(`module\s+"([^"]+)"`)
+	matches := modulePattern.FindAllStringSubmatch(content, -1)
+	actual := make([]string, 0, len(matches))
+	for _, match := range matches {
+		if len(match) < 2 {
+			continue
+		}
+		actual = append(actual, match[1])
+	}
+	assertStringSliceSetEquals(t, actual, expected, path+":module_set")
+}
+
+func assertStringSliceSetEquals(t *testing.T, actual, expected []string, label string) {
+	t.Helper()
+	actualSet := map[string]struct{}{}
+	for _, item := range actual {
+		actualSet[item] = struct{}{}
+	}
+	expectedSet := map[string]struct{}{}
+	for _, item := range expected {
+		expectedSet[item] = struct{}{}
+	}
+	missing := make([]string, 0)
+	for item := range expectedSet {
+		if _, ok := actualSet[item]; !ok {
+			missing = append(missing, item)
+		}
+	}
+	extra := make([]string, 0)
+	for item := range actualSet {
+		if _, ok := expectedSet[item]; !ok {
+			extra = append(extra, item)
+		}
+	}
+	sort.Strings(missing)
+	sort.Strings(extra)
+	if len(missing) == 0 && len(extra) == 0 {
+		return
+	}
+	t.Fatalf("%s mismatch: missing=%v extra=%v", label, missing, extra)
 }
