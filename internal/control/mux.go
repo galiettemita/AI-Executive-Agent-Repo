@@ -157,16 +157,7 @@ func NewMux(service *Service) *http.ServeMux {
 			return
 		}
 
-		status := http.StatusOK
-		if r.Method == http.MethodPost {
-			status = http.StatusAccepted
-		}
-		writeJSON(w, status, map[string]any{
-			"status":  "accepted",
-			"service": "control",
-			"path":    r.URL.Path,
-			"method":  r.Method,
-		})
+		http.NotFound(w, r)
 	})
 
 	_ = service

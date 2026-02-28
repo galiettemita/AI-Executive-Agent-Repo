@@ -23,14 +23,14 @@ func TestControlMuxRespondsForOpenAPIEndpoints(t *testing.T) {
 
 	mux := NewMux(NewService("dev-secret"))
 	doc := loadOpenAPIForControlTest(t)
+	controlPrefixes := controlEndpointPrefixes()
 
 	for path, methods := range doc.Paths {
+		if !hasPrefix(path, controlPrefixes) {
+			continue
+		}
 		for method := range methods {
 			methodUpper := strings.ToUpper(method)
-			if methodUpper == "GET" && path == "/v1/canvas/ws" {
-				continue
-			}
-
 			reqPath := concretePath(path)
 			req := httptest.NewRequest(methodUpper, reqPath, nil)
 			rec := httptest.NewRecorder()
@@ -43,35 +43,41 @@ func TestControlMuxRespondsForOpenAPIEndpoints(t *testing.T) {
 	}
 }
 
+func TestControlMuxRejectsNonControlOpenAPIEndpoints(t *testing.T) {
+	t.Parallel()
+
+	mux := NewMux(NewService("dev-secret"))
+	doc := loadOpenAPIForControlTest(t)
+
+	nonControlPrefixes := []string{
+		"/v1/gateway",
+		"/v1/canvas",
+	}
+
+	for path, methods := range doc.Paths {
+		if !hasPrefix(path, nonControlPrefixes) {
+			continue
+		}
+		for method := range methods {
+			methodUpper := strings.ToUpper(method)
+			reqPath := concretePath(path)
+			req := httptest.NewRequest(methodUpper, reqPath, nil)
+			rec := httptest.NewRecorder()
+			mux.ServeHTTP(rec, req)
+
+			if rec.Code != http.StatusNotFound {
+				t.Fatalf("non-control endpoint should 404 in control mux: %s %s status=%d body=%s", methodUpper, reqPath, rec.Code, rec.Body.String())
+			}
+		}
+	}
+}
+
 func TestControlMuxSpecializedV91V92Endpoints(t *testing.T) {
 	t.Parallel()
 
 	mux := NewMux(NewService("dev-secret"))
 	doc := loadOpenAPIForControlTest(t)
-	requiredPrefixes := []string{
-		"/v1/goals",
-		"/v1/mission-control",
-		"/v1/autonomy",
-		"/v1/learning",
-		"/v1/captures",
-		"/v1/codebase",
-		"/v1/capabilities",
-		"/v1/self-modification",
-		"/v1/context",
-		"/v1/rag",
-		"/v1/sessions",
-		"/v1/temporal",
-		"/v1/guardrails",
-		"/v1/tools",
-		"/v1/flags",
-		"/v1/streaming",
-		"/v1/errors",
-		"/v1/compliance",
-		"/v1/cache",
-		"/v1/model-tiers",
-		"/v1/event-schemas",
-		"/v1/admin",
-	}
+	requiredPrefixes := specializedControlPrefixes()
 
 	for path, methods := range doc.Paths {
 		if !hasPrefix(path, requiredPrefixes) {
@@ -1224,6 +1230,37 @@ func hasPrefix(path string, prefixes []string) bool {
 		}
 	}
 	return false
+}
+
+func specializedControlPrefixes() []string {
+	return []string{
+		"/v1/goals",
+		"/v1/mission-control",
+		"/v1/autonomy",
+		"/v1/learning",
+		"/v1/captures",
+		"/v1/codebase",
+		"/v1/capabilities",
+		"/v1/self-modification",
+		"/v1/context",
+		"/v1/rag",
+		"/v1/sessions",
+		"/v1/temporal",
+		"/v1/guardrails",
+		"/v1/tools",
+		"/v1/flags",
+		"/v1/streaming",
+		"/v1/errors",
+		"/v1/compliance",
+		"/v1/cache",
+		"/v1/model-tiers",
+		"/v1/event-schemas",
+		"/v1/admin",
+	}
+}
+
+func controlEndpointPrefixes() []string {
+	return append([]string{"/healthz/ready", "/healthz/live"}, specializedControlPrefixes()...)
 }
 
 func loadOpenAPIForControlTest(t *testing.T) openapiDoc {
