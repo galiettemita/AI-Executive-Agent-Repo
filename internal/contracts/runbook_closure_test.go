@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 )
@@ -11,6 +12,7 @@ import (
 func TestRunbookClosure(t *testing.T) {
 	t.Parallel()
 	root := repositoryRoot(t)
+	assertExactRunbookSet(t, filepath.Join(root, "runbooks"), expectedRunbookNames())
 
 	for i := 1; i <= 9; i++ {
 		path := filepath.Join(root, "runbooks", fmt.Sprintf("RB-%03d.md", i))
@@ -47,6 +49,61 @@ func TestRunbookClosure(t *testing.T) {
 			"## Escalation",
 		})
 	}
+}
+
+func expectedRunbookNames() []string {
+	names := make([]string, 0, 18)
+	for i := 1; i <= 9; i++ {
+		names = append(names, fmt.Sprintf("RB-%03d.md", i))
+	}
+	for i := 1; i <= 9; i++ {
+		names = append(names, fmt.Sprintf("RB-V92-%03d.md", i))
+	}
+	return names
+}
+
+func assertExactRunbookSet(t *testing.T, dir string, expected []string) {
+	t.Helper()
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("read runbook dir %s: %v", dir, err)
+	}
+
+	actualSet := map[string]struct{}{}
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		if strings.HasPrefix(name, "RB-") && strings.HasSuffix(name, ".md") {
+			actualSet[name] = struct{}{}
+		}
+	}
+
+	expectedSet := map[string]struct{}{}
+	for _, name := range expected {
+		expectedSet[name] = struct{}{}
+	}
+
+	missing := make([]string, 0)
+	for name := range expectedSet {
+		if _, ok := actualSet[name]; !ok {
+			missing = append(missing, name)
+		}
+	}
+	extra := make([]string, 0)
+	for name := range actualSet {
+		if _, ok := expectedSet[name]; !ok {
+			extra = append(extra, name)
+		}
+	}
+	sort.Strings(missing)
+	sort.Strings(extra)
+	if len(missing) == 0 && len(extra) == 0 {
+		return
+	}
+	t.Fatalf("runbook file-set mismatch: missing=%v extra=%v", missing, extra)
 }
 
 func readRunbook(t *testing.T, path string) string {

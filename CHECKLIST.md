@@ -133,6 +133,7 @@ Legend
 - [x] Strict closure hardening: tightened prompt-to-validator closure to exact prompt mapping parity (fixed row count + exact seed prompt ID set match, no extra mapped prompts) in `internal/contracts/closure_checks_test.go`
 - [x] Strict closure hardening: added exact workflow traceability row-count closure for `spec/traceability/workflow_state_map.csv` (22 workflows + header) in `internal/contracts/closure_checks_test.go`
 - [x] Strict closure hardening: upgraded documentation closure from non-empty checks to required section/token parity across `README.md`, `docs/ARCHITECTURE.md`, `docs/DEVELOPMENT.md`, and `docs/DEPLOYMENT.md` (`internal/contracts/documentation_closure_test.go`)
+- [x] Strict closure hardening: added exact runbook file-set closure for canonical V9 (`RB-001..009`) and V9.2 (`RB-V92-001..009`) runbooks in `internal/contracts/runbook_closure_test.go`
 
 Migration rules (must follow)
 - Preserve already-working preserved components unchanged unless v4.0 explicitly requires changes (per user instructions).
