@@ -166,6 +166,8 @@ Legend
 - [x] Strict closure hardening: prevented false-positive comment hygiene failures from Terraform provider artifacts by skipping `.terraform` directories in source scans and ignoring Terraform working dirs in `.gitignore` (`internal/contracts/comment_hygiene_closure_test.go`, `.gitignore`)
 - [x] Strict closure hardening: fixed Terraform formatting drift detected by Dockerized `infra-validate` (applied `terraform fmt -recursive`) and resolved Helm template parsing errors for `taskQueue` default rendering in all task-queue services
 - [x] Strict closure hardening: normalized all Helm template resource names/labels to lowercase (`{{ .Chart.Name | lower }}`) to satisfy Kubernetes naming requirements and eliminate lint warnings
+- [x] Phase 0 closure refresh: updated `docs/codebase_audit_report.md` to current repository state (all canonical V9 artifacts present, cleanup status captured, baseline verification rerun)
+- [x] Phase 1 continuation (Step 1 repo_scaffold): added explicit scaffold closure contract covering canonical directories, service entrypoints, `.golangci.yml` linter set, required Make targets, and Docker baseline (`internal/contracts/repo_scaffold_closure_test.go`)
 
 Migration rules (must follow)
 - Preserve already-working preserved components unchanged unless v4.0 explicitly requires changes (per user instructions).
