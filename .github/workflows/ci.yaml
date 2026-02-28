@@ -39,10 +39,20 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: '1.22'
-      - name: install security tooling
+      - name: install infrastructure and security tooling
         run: |
           sudo apt-get update
-          sudo apt-get install -y wget tar
+          sudo apt-get install -y wget tar unzip
+
+          TERRAFORM_VERSION=1.9.8
+          wget -q "https://releases.hashicorp.com/terraform/${TERRAFORM_VERSION}/terraform_${TERRAFORM_VERSION}_linux_amd64.zip"
+          unzip -q "terraform_${TERRAFORM_VERSION}_linux_amd64.zip"
+          sudo mv terraform /usr/local/bin/terraform
+
+          HELM_VERSION=v3.16.4
+          wget -q "https://get.helm.sh/helm-${HELM_VERSION}-linux-amd64.tar.gz"
+          tar -xzf "helm-${HELM_VERSION}-linux-amd64.tar.gz"
+          sudo mv linux-amd64/helm /usr/local/bin/helm
 
           TRIVY_VERSION=0.53.0
           wget -q "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz"
@@ -57,6 +67,8 @@ jobs:
           tar -xzf "syft_${SYFT_VERSION}_linux_amd64.tar.gz" syft
           sudo mv syft /usr/local/bin/syft
 
+          terraform version
+          helm version
           trivy --version
           trufflehog --version
           syft version

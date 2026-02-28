@@ -14,7 +14,11 @@ func TestCIWorkflowClosure(t *testing.T) {
 
 	assertFileContainsTokens(t, ciPath, []string{
 		"go install honnef.co/go/tools/cmd/staticcheck@v0.5.1",
-		"install security tooling",
+		"install infrastructure and security tooling",
+		"TERRAFORM_VERSION=1.9.8",
+		"HELM_VERSION=v3.16.4",
+		"terraform version",
+		"helm version",
 		"github.com/trufflesecurity/trufflehog/v3@v3.90.4",
 		"trivy --version",
 		"syft version",
