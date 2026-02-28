@@ -52,6 +52,22 @@ type EvalScore struct {
 	ComputedAt   string  `json:"computed_at"`
 }
 
+type RerankerConfig struct {
+	WorkspaceID  string  `json:"workspace_id"`
+	DenseWeight  float64 `json:"dense_weight"`
+	BM25Weight   float64 `json:"bm25_weight"`
+	Enabled      bool    `json:"enabled"`
+	VersionLabel string  `json:"version_label"`
+}
+
+type RetrievalEvalScore struct {
+	RetrievalID  string  `json:"retrieval_id"`
+	WorkspaceID  string  `json:"workspace_id"`
+	Faithfulness float64 `json:"faithfulness"`
+	Relevance    float64 `json:"relevance"`
+	Pass         bool    `json:"pass"`
+}
+
 type chunk struct {
 	ID           string
 	CollectionID string
@@ -62,21 +78,25 @@ type chunk struct {
 }
 
 type Service struct {
-	mu          sync.RWMutex
-	nextID      int
-	collections map[string]Collection
-	chunks      map[string][]chunk
-	retrievals  map[string]Retrieval
-	evalScores  map[string]EvalScore
+	mu             sync.RWMutex
+	nextID         int
+	collections    map[string]Collection
+	chunks         map[string][]chunk
+	retrievals     map[string]Retrieval
+	evalScores     map[string]EvalScore
+	rerankers      map[string]RerankerConfig
+	retrievalEvals map[string]RetrievalEvalScore
 }
 
 func NewService() *Service {
 	return &Service{
-		nextID:      1,
-		collections: map[string]Collection{},
-		chunks:      map[string][]chunk{},
-		retrievals:  map[string]Retrieval{},
-		evalScores:  map[string]EvalScore{},
+		nextID:         1,
+		collections:    map[string]Collection{},
+		chunks:         map[string][]chunk{},
+		retrievals:     map[string]Retrieval{},
+		evalScores:     map[string]EvalScore{},
+		rerankers:      map[string]RerankerConfig{},
+		retrievalEvals: map[string]RetrievalEvalScore{},
 	}
 }
 
@@ -184,6 +204,7 @@ func (s *Service) Search(workspaceID, turnID, queryText string, collectionIDs []
 	queryRewrite := normalizeQueryRewrite(queryText)
 	queryTokens := tokenize(queryRewrite)
 	queryEmbedding := embeddingFromTokens(queryTokens, 12)
+	reranker := s.rerankerConfigLocked(workspaceID)
 
 	allowedCollections := s.collectionSelection(workspaceID, collectionIDs)
 	results := make([]RetrievalResult, 0)
@@ -192,8 +213,8 @@ func (s *Service) Search(workspaceID, turnID, queryText string, collectionIDs []
 			dense := cosineSimilarity(queryEmbedding, storedChunk.Embedding)
 			bm25 := bm25TokenOverlap(queryTokens, storedChunk.Tokens)
 			hybrid := dense
-			if collection.BM25Enabled {
-				hybrid = (0.6 * dense) + (0.4 * bm25)
+			if reranker.Enabled && collection.BM25Enabled {
+				hybrid = (reranker.DenseWeight * dense) + (reranker.BM25Weight * bm25)
 			}
 			results = append(results, RetrievalResult{
 				ChunkID:     storedChunk.ID,
@@ -228,6 +249,7 @@ func (s *Service) Search(workspaceID, turnID, queryText string, collectionIDs []
 		Results:      results,
 	}
 	s.retrievals[turnID] = retrieval
+	s.retrievalEvals[turnID] = evaluateRetrieval(retrieval)
 	return retrieval
 }
 
@@ -252,6 +274,44 @@ func (s *Service) ListEvalScores(workspaceID string) []EvalScore {
 	}
 	sort.Slice(out, func(i, j int) bool {
 		return out[i].CollectionID < out[j].CollectionID
+	})
+	return out
+}
+
+func (s *Service) SetRerankerConfig(workspaceID string, denseWeight, bm25Weight float64) RerankerConfig {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	workspaceID = normalizeWorkspaceID(workspaceID)
+	cfg := normalizeRerankerConfig(RerankerConfig{
+		WorkspaceID:  workspaceID,
+		DenseWeight:  denseWeight,
+		BM25Weight:   bm25Weight,
+		Enabled:      true,
+		VersionLabel: "reranker_v1",
+	})
+	s.rerankers[workspaceID] = cfg
+	return cfg
+}
+
+func (s *Service) GetRerankerConfig(workspaceID string) RerankerConfig {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.rerankerConfigLocked(normalizeWorkspaceID(workspaceID))
+}
+
+func (s *Service) ListRetrievalEvalScores(workspaceID string) []RetrievalEvalScore {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	workspaceID = normalizeWorkspaceID(workspaceID)
+	out := make([]RetrievalEvalScore, 0, len(s.retrievalEvals))
+	for _, score := range s.retrievalEvals {
+		if score.WorkspaceID != workspaceID {
+			continue
+		}
+		out = append(out, score)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].RetrievalID < out[j].RetrievalID
 	})
 	return out
 }
@@ -306,11 +366,48 @@ func normalizeCollection(collection Collection) Collection {
 	return collection
 }
 
+func normalizeRerankerConfig(config RerankerConfig) RerankerConfig {
+	if strings.TrimSpace(config.WorkspaceID) == "" {
+		config.WorkspaceID = "default"
+	}
+	if config.DenseWeight <= 0 {
+		config.DenseWeight = 0.6
+	}
+	if config.BM25Weight < 0 {
+		config.BM25Weight = 0
+	}
+	total := config.DenseWeight + config.BM25Weight
+	if total == 0 {
+		config.DenseWeight = 0.6
+		config.BM25Weight = 0.4
+		total = 1
+	}
+	config.DenseWeight = config.DenseWeight / total
+	config.BM25Weight = config.BM25Weight / total
+	if strings.TrimSpace(config.VersionLabel) == "" {
+		config.VersionLabel = "reranker_v1"
+	}
+	return config
+}
+
 func normalizeWorkspaceID(workspaceID string) string {
 	if strings.TrimSpace(workspaceID) == "" {
 		return "default"
 	}
 	return workspaceID
+}
+
+func (s *Service) rerankerConfigLocked(workspaceID string) RerankerConfig {
+	if config, ok := s.rerankers[workspaceID]; ok {
+		return normalizeRerankerConfig(config)
+	}
+	return normalizeRerankerConfig(RerankerConfig{
+		WorkspaceID:  workspaceID,
+		DenseWeight:  0.6,
+		BM25Weight:   0.4,
+		Enabled:      true,
+		VersionLabel: "reranker_v1",
+	})
 }
 
 func splitChunks(input string, chunkSize int) []string {
@@ -443,6 +540,24 @@ func evaluateCollection(collection Collection) EvalScore {
 		Relevance:    roundScore(relevance),
 		ComputedAt:   time.Now().UTC().Format(time.RFC3339),
 	}
+}
+
+func evaluateRetrieval(retrieval Retrieval) RetrievalEvalScore {
+	score := RetrievalEvalScore{
+		RetrievalID: retrieval.RetrievalID,
+		WorkspaceID: retrieval.WorkspaceID,
+	}
+	if len(retrieval.Results) == 0 {
+		return score
+	}
+	score.Relevance = retrieval.Results[0].Score
+	sum := 0.0
+	for _, result := range retrieval.Results {
+		sum += result.Score
+	}
+	score.Faithfulness = roundScore(sum / float64(len(retrieval.Results)))
+	score.Pass = score.Faithfulness >= 0.80 && score.Relevance >= 0.75
+	return score
 }
 
 func maxInt(left, right int) int {

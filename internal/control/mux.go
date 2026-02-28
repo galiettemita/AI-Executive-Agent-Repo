@@ -784,7 +784,9 @@ func handleRAG(w http.ResponseWriter, r *http.Request, svc *raglayer.Service) {
 			workspaceID = "default"
 		}
 		writeJSON(w, http.StatusOK, map[string]any{
-			"scores": svc.ListEvalScores(workspaceID),
+			"scores":           svc.ListEvalScores(workspaceID),
+			"retrieval_scores": svc.ListRetrievalEvalScores(workspaceID),
+			"reranker_config":  svc.GetRerankerConfig(workspaceID),
 		})
 		return
 	default:

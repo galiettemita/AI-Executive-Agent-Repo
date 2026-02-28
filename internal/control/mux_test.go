@@ -978,6 +978,16 @@ func TestControlMuxRAGFlow(t *testing.T) {
 	if getScoresResp.Code != http.StatusOK {
 		t.Fatalf("unexpected eval scores status: %d", getScoresResp.Code)
 	}
+	var scoresPayload map[string]any
+	if err := json.Unmarshal(getScoresResp.Body.Bytes(), &scoresPayload); err != nil {
+		t.Fatalf("decode rag eval scores payload: %v", err)
+	}
+	if _, ok := scoresPayload["retrieval_scores"].([]any); !ok {
+		t.Fatalf("missing retrieval_scores payload: %v", scoresPayload)
+	}
+	if _, ok := scoresPayload["reranker_config"].(map[string]any); !ok {
+		t.Fatalf("missing reranker_config payload: %v", scoresPayload)
+	}
 
 	putCollectionBody := []byte(`{"workspace_id":"ws_1","name":"knowledge-v2","description":"updated docs"}`)
 	putCollectionReq := httptest.NewRequest(http.MethodPut, "/v1/rag/collections/"+collectionID, bytes.NewReader(putCollectionBody))

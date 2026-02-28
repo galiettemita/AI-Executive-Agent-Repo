@@ -193,6 +193,7 @@ Legend
 - [x] Phase 2 continuation (Step 25 v91_observability_gates): added explicit V9.1 canonical metrics catalog (`spec/metrics/canonical_metrics_v91.txt`) and hardened closure tests to assert exact V9.1 metrics/event coverage plus observability registry loading across V9.1+V9.2 catalogs
 - [x] Phase 3 continuation (Step 26 context_engineering): replaced placeholder context budget layer with deterministic token-budget configuration/allocation runtime (tiered config, reserved response budget, RAG cap), overflow gating (`CONTEXT_BUDGET_EXCEEDED`), schema-aligned allocation reporting fields, and control API overflow enforcement/regression coverage
 - [x] Phase 3 continuation (Step 27 rag_pipeline_core): upgraded RAG runtime to deterministic hybrid retrieval core (chunking by configurable size, hashed embedding vectors, BM25 token overlap, weighted hybrid scoring), schema-aligned collection/retrieval identifiers (`collection_id`, `retrieval_id`, `query_rewrite`, `source`), and control-route compatibility for both legacy and V9.2 request shapes
+- [x] Phase 3 continuation (Step 28 rag_retrieval_and_eval): added deterministic reranker configuration (dense/BM25 normalized weights), retrieval-level RAG eval scoring (`faithfulness`, `relevance`, pass/fail thresholding), and expanded `/v1/rag/eval/scores` output to include collection scores, retrieval scores, and active reranker config
 
 Migration rules (must follow)
 - Preserve already-working preserved components unchanged unless v4.0 explicitly requires changes (per user instructions).

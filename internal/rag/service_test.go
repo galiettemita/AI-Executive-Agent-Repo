@@ -6,6 +6,10 @@ func TestRAGServiceLifecycle(t *testing.T) {
 	t.Parallel()
 
 	s := NewService()
+	cfg := s.SetRerankerConfig("ws_1", 0.7, 0.3)
+	if cfg.DenseWeight <= cfg.BM25Weight {
+		t.Fatalf("expected dense weight normalization, got %+v", cfg)
+	}
 
 	collection := s.UpsertCollection(Collection{
 		WorkspaceID:    "ws_1",
@@ -52,6 +56,13 @@ func TestRAGServiceLifecycle(t *testing.T) {
 	}
 	if len(stored.Results) == 0 {
 		t.Fatalf("expected stored retrieval results")
+	}
+	retrievalScores := s.ListRetrievalEvalScores("ws_1")
+	if len(retrievalScores) == 0 {
+		t.Fatalf("expected retrieval eval scores")
+	}
+	if retrievalScores[0].RetrievalID != "turn_1" {
+		t.Fatalf("unexpected retrieval eval payload: %+v", retrievalScores[0])
 	}
 
 	scores := s.ListEvalScores("ws_1")
