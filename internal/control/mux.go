@@ -664,9 +664,10 @@ func handleRAG(w http.ResponseWriter, r *http.Request, svc *raglayer.Service) {
 			collection, ok := svc.GetCollection(collectionID)
 			if !ok {
 				writeJSON(w, http.StatusOK, raglayer.Collection{
-					ID:          collectionID,
-					WorkspaceID: "default",
-					Status:      "not_found",
+					ID:           collectionID,
+					CollectionID: collectionID,
+					WorkspaceID:  "default",
+					Status:       "not_found",
 				})
 				return
 			}
@@ -726,17 +727,33 @@ func handleRAG(w http.ResponseWriter, r *http.Request, svc *raglayer.Service) {
 			return
 		}
 		var payload struct {
-			WorkspaceID   string   `json:"workspace_id"`
-			TurnID        string   `json:"turn_id"`
-			QueryText     string   `json:"query_text"`
-			CollectionIDs []string `json:"collection_ids"`
-			MaxResults    int      `json:"max_results"`
+			WorkspaceID       string   `json:"workspace_id"`
+			TurnID            string   `json:"turn_id"`
+			QueryText         string   `json:"query_text"`
+			Query             string   `json:"query"`
+			CollectionID      string   `json:"collection_id"`
+			CollectionIDs     []string `json:"collection_ids"`
+			MaxResults        int      `json:"max_results"`
+			TopK              int      `json:"top_k"`
+			IncludeProvenance bool     `json:"include_provenance"`
 		}
 		if err := decodeJSON(r, &payload); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		retrieval := svc.Search(payload.WorkspaceID, payload.TurnID, payload.QueryText, payload.CollectionIDs, payload.MaxResults)
+		queryText := payload.QueryText
+		if strings.TrimSpace(queryText) == "" {
+			queryText = payload.Query
+		}
+		collectionIDs := payload.CollectionIDs
+		if len(collectionIDs) == 0 && strings.TrimSpace(payload.CollectionID) != "" {
+			collectionIDs = []string{payload.CollectionID}
+		}
+		maxResults := payload.MaxResults
+		if maxResults == 0 {
+			maxResults = payload.TopK
+		}
+		retrieval := svc.Search(payload.WorkspaceID, payload.TurnID, queryText, collectionIDs, maxResults)
 		writeJSON(w, http.StatusOK, retrieval)
 		return
 
@@ -748,8 +765,9 @@ func handleRAG(w http.ResponseWriter, r *http.Request, svc *raglayer.Service) {
 		retrieval, ok := svc.GetRetrieval(parts[3])
 		if !ok {
 			writeJSON(w, http.StatusOK, raglayer.Retrieval{
-				TurnID:  parts[3],
-				Results: []raglayer.RetrievalResult{},
+				RetrievalID: parts[3],
+				TurnID:      parts[3],
+				Results:     []raglayer.RetrievalResult{},
 			})
 			return
 		}

@@ -3,15 +3,23 @@ package rag
 import "testing"
 
 func TestRAGServiceLifecycle(t *testing.T) {
+	t.Parallel()
+
 	s := NewService()
 
 	collection := s.UpsertCollection(Collection{
-		WorkspaceID: "ws_1",
-		Name:        "policies",
-		Description: "workspace policy docs",
+		WorkspaceID:    "ws_1",
+		Name:           "policies",
+		Description:    "workspace policy docs",
+		EmbeddingModel: "text-embedding-3-small",
+		ChunkSize:      96,
+		BM25Enabled:    true,
 	})
 	if collection.ID == "" {
 		t.Fatalf("expected collection id")
+	}
+	if collection.CollectionID == "" || collection.CollectionID != collection.ID {
+		t.Fatalf("expected collection_id mirror: %+v", collection)
 	}
 
 	if _, ingested, ok := s.Ingest(collection.ID, []string{
@@ -25,8 +33,17 @@ func TestRAGServiceLifecycle(t *testing.T) {
 	if results.TurnID != "turn_1" {
 		t.Fatalf("unexpected retrieval turn id: %#v", results)
 	}
+	if results.RetrievalID != "turn_1" {
+		t.Fatalf("unexpected retrieval id mirror: %#v", results)
+	}
+	if results.QueryRewrite == "" {
+		t.Fatalf("expected query rewrite")
+	}
 	if len(results.Results) == 0 {
 		t.Fatalf("expected search results")
+	}
+	if results.Results[0].Source == "" {
+		t.Fatalf("expected result source provenance: %#v", results.Results[0])
 	}
 
 	stored, ok := s.GetRetrieval("turn_1")
