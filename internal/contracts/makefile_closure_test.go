@@ -31,6 +31,10 @@ func TestMakefileGoFallbackClosure(t *testing.T) {
 		"db-verify:",
 		"bash scripts/database/verify_postgres_migrations.sh",
 		"$(GO_EXEC) test ./internal/contracts -count=1",
+		"load-test:",
+		"k6 run evals/load/k6_interactive_turn.js",
+		"k6 run evals/load/k6_load_shedding.js",
+		"k6 run evals/load/k6_streaming_first_byte.js",
 	})
 	assertFileNonEmpty(t, filepath.Join(root, "scripts", "dev", "go_exec.sh"))
 	assertFileNonEmpty(t, filepath.Join(root, "scripts", "dev", "gofmt_exec.sh"))

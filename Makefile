@@ -39,6 +39,8 @@ ci: lint build test migrate contracts acceptance
 
 load-test:
 	@echo "Run: k6 run evals/load/k6_interactive_turn.js"
+	@echo "Run: k6 run evals/load/k6_load_shedding.js"
+	@echo "Run: k6 run evals/load/k6_streaming_first_byte.js"
 
 security-validate:
 	bash scripts/security/run_security_validation.sh
