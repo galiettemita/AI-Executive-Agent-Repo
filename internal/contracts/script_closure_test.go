@@ -92,6 +92,38 @@ func TestSecurityValidationScriptClosure(t *testing.T) {
 	})
 }
 
+func TestScriptPortabilityAndFallbackClosure(t *testing.T) {
+	t.Parallel()
+	root := repositoryRoot(t)
+
+	infraScriptPath := filepath.Join(root, "scripts", "infra", "validate.sh")
+	infraContent := readFileString(t, infraScriptPath)
+	if strings.Contains(infraContent, "local -A") {
+		t.Fatalf("infra validation script must remain Bash 3 compatible: %s", infraScriptPath)
+	}
+	assertFileContainsTokens(t, infraScriptPath, []string{
+		"array_contains()",
+		"assert_exact_dir_set()",
+	})
+
+	govulnScriptPath := filepath.Join(root, "scripts", "security", "run_govulncheck.sh")
+	govulnContent := readFileString(t, govulnScriptPath)
+	if strings.Contains(govulnContent, "mapfile ") {
+		t.Fatalf("govulncheck script must remain Bash 3 compatible (no mapfile): %s", govulnScriptPath)
+	}
+	assertFileContainsTokens(t, govulnScriptPath, []string{
+		"resolve_docker_bin()",
+		"go toolchain unavailable; using dockerized go1.22 scanner",
+		"run --rm -v \"$ROOT_DIR\":/src -w /src golang:1.22",
+	})
+
+	securityScriptPath := filepath.Join(root, "scripts", "security", "run_security_validation.sh")
+	assertFileContainsTokens(t, securityScriptPath, []string{
+		"run_go_cmd()",
+		"run --rm -v \"$ROOT_DIR\":/src -w /src golang:1.22",
+	})
+}
+
 func assertScriptArraySetEquals(t *testing.T, content, variable string, expected []string) {
 	t.Helper()
 	pattern := regexp.MustCompile(`(?s)` + regexp.QuoteMeta(variable) + `=\((.*?)\)`)
