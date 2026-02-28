@@ -907,6 +907,17 @@ func TestControlMuxContextBudgetFlow(t *testing.T) {
 	if len(allocs) != 2 {
 		t.Fatalf("unexpected allocation count: %d", len(allocs))
 	}
+	if int(allocPayload["total_budget_tokens"].(float64)) != 2048 {
+		t.Fatalf("unexpected allocation total budget payload: %v", allocPayload)
+	}
+
+	overflowBudgetBody := []byte(`{"workspace_id":"ws_1","max_context_tokens":2048,"reserved_response_tokens":256,"max_rag_tokens":512,"prompt_requested_tokens":1800,"rag_requested_tokens":700,"history_requested_tokens":400}`)
+	overflowBudgetReq := httptest.NewRequest(http.MethodPut, "/v1/context/budget", bytes.NewReader(overflowBudgetBody))
+	overflowBudgetResp := httptest.NewRecorder()
+	mux.ServeHTTP(overflowBudgetResp, overflowBudgetReq)
+	if overflowBudgetResp.Code != http.StatusTooManyRequests {
+		t.Fatalf("expected context budget overflow status, got: %d", overflowBudgetResp.Code)
+	}
 }
 
 func TestControlMuxRAGFlow(t *testing.T) {

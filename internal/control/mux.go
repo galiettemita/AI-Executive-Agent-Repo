@@ -183,19 +183,31 @@ func handleContextBudget(w http.ResponseWriter, r *http.Request, svc *contextlay
 			budget, ok := svc.GetBudget(workspaceID)
 			if !ok {
 				budget = contextlayer.Budget{
-					WorkspaceID:  workspaceID,
-					BudgetTokens: 0,
-					Status:       "active",
+					WorkspaceID:            workspaceID,
+					Tier:                   "T2",
+					MaxContextTokens:       0,
+					ReservedResponseTokens: 256,
+					MaxRAGTokens:           0,
+					BudgetTokens:           0,
+					Status:                 "active",
 				}
 			}
 			writeJSON(w, http.StatusOK, budget)
 			return
 		case http.MethodPut:
 			var payload struct {
-				WorkspaceID  string         `json:"workspace_id"`
-				BudgetTokens int            `json:"budget_tokens"`
-				Status       string         `json:"status"`
-				Allocations  map[string]int `json:"allocations"`
+				WorkspaceID            string         `json:"workspace_id"`
+				Tier                   string         `json:"tier"`
+				MaxContextTokens       int            `json:"max_context_tokens"`
+				ReservedResponseTokens int            `json:"reserved_response_tokens"`
+				MaxRAGTokens           int            `json:"max_rag_tokens"`
+				BudgetTokens           int            `json:"budget_tokens"`
+				Status                 string         `json:"status"`
+				IngressTurnID          string         `json:"ingress_turn_id"`
+				PromptRequestedTokens  int            `json:"prompt_requested_tokens"`
+				RAGRequestedTokens     int            `json:"rag_requested_tokens"`
+				HistoryRequestedTokens int            `json:"history_requested_tokens"`
+				Allocations            map[string]int `json:"allocations"`
 			}
 			if err := decodeJSON(r, &payload); err != nil {
 				http.Error(w, err.Error(), http.StatusBadRequest)
@@ -204,12 +216,28 @@ func handleContextBudget(w http.ResponseWriter, r *http.Request, svc *contextlay
 			if payload.WorkspaceID == "" {
 				payload.WorkspaceID = "default"
 			}
+			if payload.MaxContextTokens == 0 {
+				payload.MaxContextTokens = payload.BudgetTokens
+			}
 			if payload.Status == "" {
 				payload.Status = "active"
 			}
-			budget := svc.SetBudget(payload.WorkspaceID, payload.BudgetTokens, payload.Status)
+			budget := svc.UpsertBudgetConfig(
+				payload.WorkspaceID,
+				payload.Tier,
+				payload.MaxContextTokens,
+				payload.ReservedResponseTokens,
+				payload.MaxRAGTokens,
+				payload.Status,
+			)
 			if len(payload.Allocations) > 0 {
 				svc.SetAllocations(payload.WorkspaceID, payload.Allocations)
+			}
+			if payload.PromptRequestedTokens > 0 || payload.RAGRequestedTokens > 0 || payload.HistoryRequestedTokens > 0 {
+				if _, err := svc.AllocateContext(payload.WorkspaceID, payload.IngressTurnID, payload.PromptRequestedTokens, payload.RAGRequestedTokens, payload.HistoryRequestedTokens); err != nil {
+					http.Error(w, err.Error(), http.StatusTooManyRequests)
+					return
+				}
 			}
 			writeJSON(w, http.StatusOK, budget)
 			return
@@ -226,9 +254,26 @@ func handleContextBudget(w http.ResponseWriter, r *http.Request, svc *contextlay
 		if workspaceID == "" {
 			workspaceID = "default"
 		}
+		report, ok := svc.GetAllocationReport(workspaceID)
+		if !ok {
+			report = contextlayer.AllocationReport{
+				IngressTurnID:          "context_unset",
+				TotalBudgetTokens:      0,
+				AllocatedPromptTokens:  0,
+				AllocatedRAGTokens:     0,
+				AllocatedHistoryTokens: 0,
+				Overflowed:             false,
+			}
+		}
 		writeJSON(w, http.StatusOK, map[string]any{
-			"workspace_id": workspaceID,
-			"allocations":  svc.GetAllocations(workspaceID),
+			"workspace_id":             workspaceID,
+			"allocations":              svc.GetAllocations(workspaceID),
+			"ingress_turn_id":          report.IngressTurnID,
+			"total_budget_tokens":      report.TotalBudgetTokens,
+			"allocated_prompt_tokens":  report.AllocatedPromptTokens,
+			"allocated_rag_tokens":     report.AllocatedRAGTokens,
+			"allocated_history_tokens": report.AllocatedHistoryTokens,
+			"overflowed":               report.Overflowed,
 		})
 		return
 	default:

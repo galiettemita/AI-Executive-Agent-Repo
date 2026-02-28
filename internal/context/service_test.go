@@ -18,6 +18,9 @@ func TestBudgetAndAllocationLifecycle(t *testing.T) {
 	if stored.Status != "active" {
 		t.Fatalf("unexpected budget status: %s", stored.Status)
 	}
+	if stored.MaxContextTokens != 2048 || stored.ReservedResponseTokens == 0 {
+		t.Fatalf("unexpected normalized budget config: %+v", stored)
+	}
 
 	s.SetAllocations("ws_1", map[string]int{
 		"history":   1024,
@@ -30,5 +33,31 @@ func TestBudgetAndAllocationLifecycle(t *testing.T) {
 	}
 	if allocs[0].ItemType != "history" {
 		t.Fatalf("expected deterministic item ordering, got %s", allocs[0].ItemType)
+	}
+}
+
+func TestAllocateContextDeterministicAndOverflowGate(t *testing.T) {
+	t.Parallel()
+
+	s := NewService()
+	s.UpsertBudgetConfig("ws_2", "T2", 2048, 256, 512, "active")
+
+	okReport, err := s.AllocateContext("ws_2", "turn_1", 800, 400, 200)
+	if err != nil {
+		t.Fatalf("expected successful allocation, got %v", err)
+	}
+	if okReport.AllocatedPromptTokens != 800 || okReport.AllocatedRAGTokens != 400 || okReport.AllocatedHistoryTokens != 200 {
+		t.Fatalf("unexpected deterministic allocation report: %+v", okReport)
+	}
+	if okReport.Overflowed {
+		t.Fatalf("did not expect overflow for valid allocation: %+v", okReport)
+	}
+
+	overflowReport, err := s.AllocateContext("ws_2", "turn_2", 1600, 800, 500)
+	if err == nil {
+		t.Fatal("expected context budget overflow error")
+	}
+	if !overflowReport.Overflowed {
+		t.Fatalf("expected overflow report state, got %+v", overflowReport)
 	}
 }
