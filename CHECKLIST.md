@@ -139,6 +139,7 @@ Legend
 - [x] Strict closure hardening: upgraded blueprint source document gate to exact root `.docx` set parity (no missing/no extra) while retaining non-empty and git-tracked enforcement in `internal/contracts/blueprint_docs_test.go`
 - [x] Strict closure hardening: removed control-plane generic API fallback and enforced endpoint ownership in mux tests so only control-owned OpenAPI paths resolve in `internal/control` while gateway/canvas paths 404 on control (`internal/control/mux.go`, `internal/control/mux_test.go`)
 - [x] Strict closure hardening: hardened infra validation script to enforce exact Terraform module/environment and Helm chart sets, validate both module+environment Terraform roots, and fail in CI/strict mode when Terraform/Helm tooling is missing (`scripts/infra/validate.sh`, `internal/contracts/phase4_artifacts_test.go`)
+- [x] Strict closure hardening: added OpenAPI service-ownership contract tests to enforce endpoint routing boundaries across gateway/control/canvas muxes and fail on cross-service endpoint leakage (`internal/contracts/openapi_service_ownership_closure_test.go`)
 
 Migration rules (must follow)
 - Preserve already-working preserved components unchanged unless v4.0 explicitly requires changes (per user instructions).
