@@ -93,6 +93,7 @@ Legend
 - [x] Strict closure hardening: added explicit DB workspace-session guard tests (`internal/database/pool_test.go`) for query rejection when `workspace_id` is missing and deterministic `SET app.workspace_id = $1` execution before query dispatch
 - [x] Strict closure hardening: added workflow ID exact-set gate (`internal/contracts/workflow_closure_test.go`) to enforce the full 22-workflow parity set across V9/V9.1/V9.2 in `spec/traceability/workflow_state_map.csv`
 - [x] Strict closure hardening: aligned V9.1/V9.2 OPA reason codes to prompt semantics (`REQUIRE_APPROVAL`, `ALLOW_WITH_AUDIT`, `ADMIN_ACTION_AUDIT`) and upgraded policy closure tests to enforce exact `rule -> result/reason` bindings
+- [x] Strict closure hardening: added service-plane health closure gate (`internal/contracts/service_health_closure_test.go`) to enforce `/healthz/ready` and `/healthz/live` handler coverage across all runtime planes
 
 Migration rules (must follow)
 - Preserve already-working preserved components unchanged unless v4.0 explicitly requires changes (per user instructions).
