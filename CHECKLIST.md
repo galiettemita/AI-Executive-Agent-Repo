@@ -112,6 +112,7 @@ Legend
 - [x] Strict closure hardening: added `internal/contracts/schema_v91_v92_fields_closure_test.go` to enforce required key fields for all 31 V9.1/V9.2 schemas plus critical constraint checks (`trust_score` bounds, `rag.top_k`, `tool_key` pattern, evidence hash format)
 - [x] Strict closure hardening: specialized key OpenAPI endpoint request/response bindings away from generic payload refs (`tool_call`, goals, mission-control, context budget/allocations, rag search/retrieval, tool health, flag evaluation, error templates, compliance DSR, admin KPI) and added `TestOpenAPIV9EndpointSchemaSpecializationClosure`
 - [x] Strict closure hardening: encoded V9.1 workflow trigger semantics from Addendum §P in `internal/workflows.V91WorkflowTriggerSpecs()` and added exact trigger mapping tests (`TestV91WorkflowTriggerSpecs`)
+- [x] Strict closure hardening: upgraded Go dependency floor within Go 1.22 constraints (`pgx/v5 v5.6.0`, `x/crypto v0.31.0`, `x/sync v0.11.0`, `x/text v0.21.0`) and added `internal/contracts/dependency_closure_test.go` to lock minimum versions
 
 Migration rules (must follow)
 - Preserve already-working preserved components unchanged unless v4.0 explicitly requires changes (per user instructions).
