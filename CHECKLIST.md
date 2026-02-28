@@ -202,6 +202,7 @@ Legend
 - [x] Phase 3 continuation (Step 34 crdt_resolution): rebuilt `internal/crdt` with explicit vector-clock dominance/concurrency comparison, deterministic conflict classification, strategy-driven resolution flows (`last_writer_wins`, `merge_concat`, `manual_review`), workspace-scoped conflict reporting aligned to `memory_conflict_report.v1.json`, and backward-compatible apply/resolve API regression coverage
 - [x] Phase 3 continuation (Step 35 streaming_ux): expanded `internal/streaming` with deterministic delivery planning (ack/typing/progressive chunks), first-byte SLA tracking (`<=500ms`) with breach accounting, strict streaming config guardrails in control routes, and streaming/control regression coverage
 - [x] Phase 3 continuation (Step 36 error_communication): upgraded `internal/errors` to persona-aware template resolution with deterministic precedence, schema-aligned user-facing message rendering (`error_code`, `user_message`, `retryable`, `next_action`), and internal reference redaction so runtime errors never expose UUID/trace/internal IDs
+- [x] Phase 3 continuation (Step 37 event_schema_registry): hardened `internal/event_schemas` with strict schema parsing, required/type/additionalProperties validation, backward-compatibility checks on new version registration (breaking-change rejection), and control-plane strict registration handling for `/v1/event-schemas/{type}/versions`
 
 Migration rules (must follow)
 - Preserve already-working preserved components unchanged unless v4.0 explicitly requires changes (per user instructions).

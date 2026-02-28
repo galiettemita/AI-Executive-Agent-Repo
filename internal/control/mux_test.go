@@ -288,7 +288,7 @@ func TestControlMuxEventSchemasFlow(t *testing.T) {
 
 	mux := NewMux(NewService("dev-secret"))
 
-	postVersionBody := []byte(`{"schema":"{\"type\":\"object\"}","status":"active"}`)
+	postVersionBody := []byte(`{"schema":"{\"type\":\"object\",\"properties\":{\"type\":{\"type\":\"string\"},\"version\":{\"type\":\"integer\"}},\"required\":[\"type\",\"version\"],\"additionalProperties\":true}","status":"active"}`)
 	postVersionReq := httptest.NewRequest(http.MethodPost, "/v1/event-schemas/BREVIO.test.event.v1/versions", bytes.NewReader(postVersionBody))
 	postVersionResp := httptest.NewRecorder()
 	mux.ServeHTTP(postVersionResp, postVersionReq)
@@ -323,6 +323,14 @@ func TestControlMuxEventSchemasFlow(t *testing.T) {
 	}
 	if valid, ok := validatePayload["valid"].(bool); !ok || !valid {
 		t.Fatalf("expected successful event validation, got %v", validatePayload)
+	}
+
+	postBreakingBody := []byte(`{"schema":"{\"type\":\"object\",\"properties\":{\"type\":{\"type\":\"string\"},\"version\":{\"type\":\"string\"}},\"required\":[\"type\"],\"additionalProperties\":true}","status":"active"}`)
+	postBreakingReq := httptest.NewRequest(http.MethodPost, "/v1/event-schemas/BREVIO.test.event.v1/versions", bytes.NewReader(postBreakingBody))
+	postBreakingResp := httptest.NewRecorder()
+	mux.ServeHTTP(postBreakingResp, postBreakingReq)
+	if postBreakingResp.Code != http.StatusBadRequest {
+		t.Fatalf("expected breaking schema registration to be rejected: status=%d body=%s", postBreakingResp.Code, postBreakingResp.Body.String())
 	}
 }
 

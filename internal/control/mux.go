@@ -616,7 +616,12 @@ func handleEventSchemas(w http.ResponseWriter, r *http.Request, svc *event_schem
 				http.Error(w, err.Error(), http.StatusBadRequest)
 				return
 			}
-			writeJSON(w, http.StatusCreated, svc.RegisterVersion(eventType, payload.Schema, payload.Status))
+			version, err := svc.RegisterVersionStrict(eventType, payload.Schema, payload.Status)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			writeJSON(w, http.StatusCreated, version)
 			return
 		default:
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
