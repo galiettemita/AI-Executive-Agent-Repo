@@ -166,7 +166,7 @@ func TestV92InfrastructureArtifactsExist(t *testing.T) {
 	t.Parallel()
 
 	root := repositoryRoot(t)
-	assertExactDirectorySet(t, filepath.Join(root, "helm"), []string{
+	allHelmCharts := []string{
 		"BREVIO-gateway",
 		"BREVIO-brain",
 		"BREVIO-control",
@@ -178,7 +178,11 @@ func TestV92InfrastructureArtifactsExist(t *testing.T) {
 		"BREVIO-rag-worker",
 		"BREVIO-guardrails",
 		"BREVIO-health-checker",
-	})
+	}
+	assertExactDirectorySet(t, filepath.Join(root, "helm"), allHelmCharts)
+	for _, chart := range allHelmCharts {
+		assertHelmImageNotPlaceholder(t, filepath.Join(root, "helm", chart, "values.yaml"))
+	}
 
 	requiredTerraformModules := []string{
 		"opensearch",
@@ -367,4 +371,15 @@ func assertStringSliceSetEquals(t *testing.T, actual, expected []string, label s
 		return
 	}
 	t.Fatalf("%s mismatch: missing=%v extra=%v", label, missing, extra)
+}
+
+func assertHelmImageNotPlaceholder(t *testing.T, path string) {
+	t.Helper()
+	content := readFileString(t, path)
+	if strings.Contains(content, "repository: busybox") {
+		t.Fatalf("helm chart still uses placeholder repository in %s", path)
+	}
+	if strings.Contains(content, "tag: latest") {
+		t.Fatalf("helm chart still uses floating latest tag in %s", path)
+	}
 }

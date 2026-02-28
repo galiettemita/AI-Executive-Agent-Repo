@@ -1,7 +1,7 @@
 replicaCount: 1
 image:
-  repository: busybox
-  tag: latest
+  repository: ghcr.io/brevio/health-checker
+  tag: v9.2.0
 service:
   port: 8080
 autoscaling:

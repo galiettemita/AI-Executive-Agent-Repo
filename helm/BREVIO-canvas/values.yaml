@@ -1,7 +1,7 @@
 replicaCount: 2
 image:
-  repository: busybox
-  tag: latest
+  repository: ghcr.io/brevio/canvas
+  tag: v9.2.0
 service:
   port: 18793
 autoscaling:
