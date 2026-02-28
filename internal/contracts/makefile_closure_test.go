@@ -22,12 +22,14 @@ func TestMakefileGoFallbackClosure(t *testing.T) {
 	makefilePath := filepath.Join(root, "Makefile")
 	assertFileContainsTokens(t, makefilePath, []string{
 		"GO_EXEC := ./scripts/dev/go_exec.sh",
+		"GOFMT_EXEC := ./scripts/dev/gofmt_exec.sh",
 		"$(GO_EXEC) build ./...",
 		"$(GO_EXEC) test ./... -count=1",
-		"$(GO_EXEC) tool gofmt -l .",
+		"$(GOFMT_EXEC) -l .",
 		"$(GO_EXEC) vet ./...",
 		"$(GO_EXEC) run honnef.co/go/tools/cmd/staticcheck@v0.5.1 ./...",
 		"$(GO_EXEC) test ./internal/contracts -count=1",
 	})
 	assertFileNonEmpty(t, filepath.Join(root, "scripts", "dev", "go_exec.sh"))
+	assertFileNonEmpty(t, filepath.Join(root, "scripts", "dev", "gofmt_exec.sh"))
 }

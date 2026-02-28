@@ -160,6 +160,8 @@ Legend
 - [x] Strict closure hardening: ignored generated security/build outputs to keep repository clean during autonomous validation runs (`artifacts/`, `sbom.spdx.json` in `.gitignore`)
 - [x] Strict closure hardening: added script closure tests to enforce Bash 3 portability (`no local -A`, `no mapfile`) and preserve Dockerized Go fallback behavior in security/infra validation scripts (`internal/contracts/script_closure_test.go`)
 - [x] Strict closure hardening: added `scripts/dev/go_exec.sh` and switched Make targets to Dockerized Go fallback (`build`, `test`, `lint`, `migrate`, `contracts`, `acceptance`) so local validation works without host Go installation
+- [x] Strict closure hardening: resolved `staticcheck` failure in contracts suite by removing dead helper `containsLine` from policy/event/metric closure tests (`internal/contracts/policy_event_metric_closure_test.go`)
+- [x] Strict closure hardening: fixed Makefile lint formatting gate by adding `scripts/dev/gofmt_exec.sh` (Dockerized gofmt fallback) and wiring `GOFMT_EXEC` into `lint` target with closure coverage (`Makefile`, `scripts/dev/gofmt_exec.sh`, `internal/contracts/makefile_closure_test.go`)
 
 Migration rules (must follow)
 - Preserve already-working preserved components unchanged unless v4.0 explicitly requires changes (per user instructions).

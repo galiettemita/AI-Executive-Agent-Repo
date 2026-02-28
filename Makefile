@@ -1,6 +1,7 @@
 .PHONY: build test lint migrate docker-build contracts acceptance ci load-test security-validate infra-validate
 
 GO_EXEC := ./scripts/dev/go_exec.sh
+GOFMT_EXEC := ./scripts/dev/gofmt_exec.sh
 
 build:
 	$(GO_EXEC) build ./...
@@ -9,7 +10,7 @@ test:
 	$(GO_EXEC) test ./... -count=1
 
 lint:
-	test -z "$$($(GO_EXEC) tool gofmt -l .)"
+	test -z "$$($(GOFMT_EXEC) -l .)"
 	$(GO_EXEC) vet ./...
 	$(GO_EXEC) run honnef.co/go/tools/cmd/staticcheck@v0.5.1 ./...
 

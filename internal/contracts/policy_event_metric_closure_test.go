@@ -305,15 +305,6 @@ func readLineSet(t *testing.T, path string) []string {
 	return out
 }
 
-func containsLine(items []string, needle string) bool {
-	for _, item := range items {
-		if item == needle {
-			return true
-		}
-	}
-	return false
-}
-
 func assertLineSetEquals(t *testing.T, actual []string, expected []string, label string) {
 	t.Helper()
 
