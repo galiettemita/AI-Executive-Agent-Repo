@@ -690,6 +690,16 @@ func TestControlMuxV91CoreFlow(t *testing.T) {
 	if getCaptureByDateResp.Code != http.StatusOK {
 		t.Fatalf("unexpected capture-by-date status: %d", getCaptureByDateResp.Code)
 	}
+	var captureByDate map[string]any
+	if err := json.Unmarshal(getCaptureByDateResp.Body.Bytes(), &captureByDate); err != nil {
+		t.Fatalf("decode capture-by-date payload: %v", err)
+	}
+	if captureByDate["capture_date"] != "2026-02-27" {
+		t.Fatalf("unexpected capture date payload: %v", captureByDate)
+	}
+	if _, ok := captureByDate["wins"].([]any); !ok {
+		t.Fatalf("expected wins array payload: %v", captureByDate)
+	}
 }
 
 func TestControlMuxV91CodebaseFlow(t *testing.T) {

@@ -89,6 +89,8 @@ type Service struct {
 	workflowSteps     map[string][]WorkflowStepMirror
 	twoPhaseStore     map[string]TwoPhaseExecutionResult
 	idempotencyTTL    time.Duration
+	dailyCaptureDates map[string]struct{}
+	dailyLogTurns     map[string]struct{}
 }
 
 // Supported workflow IDs for closure mapping:
@@ -107,6 +109,8 @@ func NewService() *Service {
 		workflowSteps:     map[string][]WorkflowStepMirror{},
 		twoPhaseStore:     map[string]TwoPhaseExecutionResult{},
 		idempotencyTTL:    30 * 24 * time.Hour,
+		dailyCaptureDates: map[string]struct{}{},
+		dailyLogTurns:     map[string]struct{}{},
 	}
 }
 
@@ -297,6 +301,20 @@ func (s *Service) DailyCaptureV1(_ context.Context, trigger string) string {
 	if trigger == "" {
 		return "skipped"
 	}
+
+	dayKey := time.Now().UTC().Format("2006-01-02")
+	s.mu.Lock()
+	_, exists := s.dailyCaptureDates[dayKey]
+	if !exists {
+		s.dailyCaptureDates[dayKey] = struct{}{}
+	}
+	s.mu.Unlock()
+	if exists {
+		return "skipped"
+	}
+
+	s.recordWorkflowInstance("daily_capture_v1", "completed")
+	s.appendWorkflowStep("daily_capture_v1", "memory_item_daily_log", "completed", formatIdempotencyKey("daily_capture_v1::"+dayKey))
 	return "completed"
 }
 
@@ -304,6 +322,16 @@ func (s *Service) DailyLogCaptureV1(_ context.Context, interactiveTurnID string)
 	if interactiveTurnID == "" {
 		return "skipped"
 	}
+
+	s.mu.Lock()
+	if _, exists := s.dailyLogTurns[interactiveTurnID]; !exists {
+		s.dailyLogTurns[interactiveTurnID] = struct{}{}
+		s.mu.Unlock()
+		s.recordWorkflowInstance("daily_log_capture_v1", "captured")
+		s.appendWorkflowStep("daily_log_capture_v1", "append_daily_log", "completed", formatIdempotencyKey("daily_log_capture_v1::"+interactiveTurnID))
+		return "captured"
+	}
+	s.mu.Unlock()
 	return "captured"
 }
 

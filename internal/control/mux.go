@@ -1471,25 +1471,13 @@ func handleCaptures(w http.ResponseWriter, r *http.Request, svc *capture.Service
 	if workspaceID == "" {
 		workspaceID = "default"
 	}
-	if len(svc.List(workspaceID)) == 0 {
-		svc.Add(capture.DailyCapture{
-			WorkspaceID: workspaceID,
-			Date:        "2026-02-27",
-			Summary:     "Initial daily capture",
-			Status:      "completed",
-		})
-	}
 
 	if len(parts) == 3 && r.Method == http.MethodGet {
 		writeJSON(w, http.StatusOK, map[string]any{"captures": svc.List(workspaceID)})
 		return
 	}
 	if len(parts) == 4 && r.Method == http.MethodGet {
-		entry, ok := svc.Get(workspaceID, parts[3])
-		if !ok {
-			writeJSON(w, http.StatusOK, map[string]any{"date": parts[3], "status": "not_found"})
-			return
-		}
+		entry := svc.CompleteDailyCapture(workspaceID, parts[3])
 		writeJSON(w, http.StatusOK, entry)
 		return
 	}

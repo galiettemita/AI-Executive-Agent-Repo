@@ -156,6 +156,9 @@ func TestV91WorkflowStubs(t *testing.T) {
 	if got := svc.DailyCaptureV1(context.Background(), "cron"); got != "completed" {
 		t.Fatalf("unexpected daily capture status: %s", got)
 	}
+	if got := svc.DailyCaptureV1(context.Background(), "cron"); got != "skipped" {
+		t.Fatalf("expected idempotent daily capture skip, got: %s", got)
+	}
 	if got := svc.DailyLogCaptureV1(context.Background(), "turn-1"); got != "captured" {
 		t.Fatalf("unexpected daily log status: %s", got)
 	}
