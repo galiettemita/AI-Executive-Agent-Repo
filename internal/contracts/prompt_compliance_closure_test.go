@@ -4,6 +4,7 @@ import (
 	"encoding/csv"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 )
@@ -54,6 +55,10 @@ func TestComplianceMatrixClosure(t *testing.T) {
 	t.Parallel()
 
 	root := repositoryRoot(t)
+	assertCSVRowCountExact(t, filepath.Join(root, "spec", "traceability", "compliance_matrix_v9.csv"), 21)
+	assertCSVRowCountExact(t, filepath.Join(root, "spec", "traceability", "compliance_matrix_v91.csv"), 20)
+	assertCSVRowCountExact(t, filepath.Join(root, "spec", "traceability", "compliance_matrix_v92.csv"), 31)
+
 	assertMatrixCoverage(
 		t,
 		filepath.Join(root, "spec", "traceability", "compliance_matrix_v9.csv"),
@@ -120,7 +125,7 @@ func assertPromptSet(t *testing.T, path string, required []string) {
 	}
 }
 
-func assertCSVRowCountAtLeast(t *testing.T, path string, minRows int) {
+func assertCSVRowCountExact(t *testing.T, path string, expectedRows int) {
 	t.Helper()
 
 	file, err := os.Open(path)
@@ -133,8 +138,8 @@ func assertCSVRowCountAtLeast(t *testing.T, path string, minRows int) {
 	if err != nil {
 		t.Fatalf("parse csv %s: %v", path, err)
 	}
-	if len(rows) < minRows {
-		t.Fatalf("csv %s has too few rows: got=%d want_at_least=%d", path, len(rows), minRows)
+	if len(rows) != expectedRows {
+		t.Fatalf("csv %s row count mismatch: got=%d want=%d", path, len(rows), expectedRows)
 	}
 }
 
@@ -152,6 +157,9 @@ func assertMatrixCoverage(t *testing.T, path, idColumn, statusColumn string, req
 		if id == "" {
 			t.Fatalf("csv %s has empty id in row: %v", path, row)
 		}
+		if _, exists := ids[id]; exists {
+			t.Fatalf("csv %s has duplicate id %s", path, id)
+		}
 		if status != "implemented" {
 			t.Fatalf("csv %s has non-implemented status for %s: %s", path, id, status)
 		}
@@ -162,6 +170,21 @@ func assertMatrixCoverage(t *testing.T, path, idColumn, statusColumn string, req
 		if _, ok := ids[requiredID]; !ok {
 			t.Fatalf("csv %s missing required id %s", path, requiredID)
 		}
+	}
+
+	requiredSet := make(map[string]struct{}, len(requiredIDs))
+	for _, requiredID := range requiredIDs {
+		requiredSet[requiredID] = struct{}{}
+	}
+	extra := make([]string, 0)
+	for id := range ids {
+		if _, ok := requiredSet[id]; !ok {
+			extra = append(extra, id)
+		}
+	}
+	if len(extra) != 0 {
+		sort.Strings(extra)
+		t.Fatalf("csv %s has unexpected requirement ids: %v", path, extra)
 	}
 }
 

@@ -118,15 +118,15 @@ func TestClosureChecksV9Section172(t *testing.T) {
 	})
 
 	t.Run("tables_to_migrations", func(t *testing.T) {
-		assertMinCount(t, filepath.Join(root, "db", "migrations", "001_BREVIO_v9_init.sql"), `(?mi)^CREATE TABLE\s+`, 77)
-		assertMinCount(t, filepath.Join(root, "db", "migrations", "002_BREVIO_v91_soft_intelligence.sql"), `(?mi)^CREATE TABLE\s+`, 23)
-		assertMinCount(t, filepath.Join(root, "db", "migrations", "003_BREVIO_v92_production_hardening.sql"), `(?mi)^CREATE TABLE\s+`, 47)
+		assertExactCount(t, filepath.Join(root, "db", "migrations", "001_BREVIO_v9_init.sql"), `(?mi)^CREATE TABLE\s+`, 91)
+		assertExactCount(t, filepath.Join(root, "db", "migrations", "002_BREVIO_v91_soft_intelligence.sql"), `(?mi)^CREATE TABLE\s+`, 23)
+		assertExactCount(t, filepath.Join(root, "db", "migrations", "003_BREVIO_v92_production_hardening.sql"), `(?mi)^CREATE TABLE\s+`, 47)
 	})
 
 	t.Run("compliance_matrix_row_count_validation", func(t *testing.T) {
-		assertCSVMinRows(t, filepath.Join(root, "spec", "traceability", "compliance_matrix_v9.csv"), 2)
-		assertCSVMinRows(t, filepath.Join(root, "spec", "traceability", "compliance_matrix_v91.csv"), 12)
-		assertCSVMinRows(t, filepath.Join(root, "spec", "traceability", "compliance_matrix_v92.csv"), 19)
+		assertCSVExactRows(t, filepath.Join(root, "spec", "traceability", "compliance_matrix_v9.csv"), 21)
+		assertCSVExactRows(t, filepath.Join(root, "spec", "traceability", "compliance_matrix_v91.csv"), 20)
+		assertCSVExactRows(t, filepath.Join(root, "spec", "traceability", "compliance_matrix_v92.csv"), 31)
 	})
 }
 
@@ -167,20 +167,20 @@ func assertNoDuplicateCreateStatements(t *testing.T, path, pattern string) {
 	}
 }
 
-func assertMinCount(t *testing.T, path, pattern string, min int) {
+func assertExactCount(t *testing.T, path, pattern string, expected int) {
 	t.Helper()
 	re := regexp.MustCompile(pattern)
 	count := len(re.FindAllString(readFileString(t, path), -1))
-	if count < min {
-		t.Fatalf("count in %s too low for pattern %s: got=%d want_at_least=%d", path, pattern, count, min)
+	if count != expected {
+		t.Fatalf("count mismatch in %s for pattern %s: got=%d want=%d", path, pattern, count, expected)
 	}
 }
 
-func assertCSVMinRows(t *testing.T, path string, minRows int) {
+func assertCSVExactRows(t *testing.T, path string, expectedRows int) {
 	t.Helper()
 	rows := readCSVRows(t, path)
-	if len(rows) < minRows {
-		t.Fatalf("csv has too few rows %s: got=%d want_at_least=%d", path, len(rows), minRows)
+	if len(rows) != expectedRows {
+		t.Fatalf("csv row count mismatch %s: got=%d want=%d", path, len(rows), expectedRows)
 	}
 }
 

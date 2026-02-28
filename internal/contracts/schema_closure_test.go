@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"testing"
 )
 
@@ -67,8 +68,28 @@ func TestJSONSchemaClosure(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read schemas directory: %v", err)
 	}
-	if len(entries) < len(required) {
-		t.Fatalf("schemas directory too small: got=%d want_at_least=%d", len(entries), len(required))
+	requiredSet := map[string]struct{}{}
+	for _, file := range required {
+		requiredSet[file] = struct{}{}
+	}
+	extraFiles := make([]string, 0)
+	seenRequired := map[string]struct{}{}
+	for _, entry := range entries {
+		name := entry.Name()
+		if _, ok := requiredSet[name]; ok {
+			seenRequired[name] = struct{}{}
+			continue
+		}
+		if filepath.Ext(name) == ".json" {
+			extraFiles = append(extraFiles, name)
+		}
+	}
+	if len(extraFiles) != 0 {
+		sort.Strings(extraFiles)
+		t.Fatalf("schemas directory has unexpected json schemas: %v", extraFiles)
+	}
+	if len(seenRequired) != len(required) {
+		t.Fatalf("schema catalog mismatch: got=%d required=%d", len(seenRequired), len(required))
 	}
 
 	for _, file := range required {

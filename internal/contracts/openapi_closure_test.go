@@ -18,8 +18,8 @@ func TestOpenAPIV9EndpointParityClosure(t *testing.T) {
 	t.Parallel()
 
 	doc := loadOpenAPIDoc(t)
-	if len(doc.Paths) < 95 {
-		t.Fatalf("openapi path count too low: got=%d want_at_least=95", len(doc.Paths))
+	if len(doc.Paths) != 95 {
+		t.Fatalf("openapi path count mismatch: got=%d want=95", len(doc.Paths))
 	}
 
 	required := []string{
