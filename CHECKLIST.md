@@ -155,6 +155,7 @@ Legend
 - [x] Strict closure hardening: added migration strict-closure contracts for exact enum/table sets across 001/002/003, enforced migration ordering (enum → table → RLS → index), and verified workspace-scoped table parity with `workspace_tables` RLS declarations (`internal/contracts/migration_closure_test.go`)
 - [x] Strict closure hardening: removed Helm `sleep` placeholders and hardened all deployment charts for distroless runtime (`/app/service`, non-root `65532`, read-only root FS, dropped capabilities, tmp `emptyDir`) with contract enforcement (`helm/*/templates/deployment.yaml`, `internal/contracts/infrastructure_closure_test.go`)
 - [x] Strict closure hardening: made `scripts/infra/validate.sh` Bash 3-compatible by removing associative-array usage (`local -A`) and preserving exact-set validation semantics for Terraform modules/environments and Helm charts on macOS default shell
+- [x] Strict closure hardening: added readiness/liveness probes (`/healthz/ready`, `/healthz/live`) to all Helm deployments and enforced probe presence in infrastructure closure contracts (`helm/*/templates/deployment.yaml`, `internal/contracts/infrastructure_closure_test.go`)
 
 Migration rules (must follow)
 - Preserve already-working preserved components unchanged unless v4.0 explicitly requires changes (per user instructions).

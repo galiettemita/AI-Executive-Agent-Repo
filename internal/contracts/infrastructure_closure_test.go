@@ -418,6 +418,8 @@ func assertHelmDeploymentHardening(t *testing.T, path string) {
 		"runAsGroup: 65532",
 		"fsGroup: 65532",
 		`command: ["/app/service"]`,
+		"path: /healthz/ready",
+		"path: /healthz/live",
 		"allowPrivilegeEscalation: false",
 		"readOnlyRootFilesystem: true",
 		`drop: ["ALL"]`,

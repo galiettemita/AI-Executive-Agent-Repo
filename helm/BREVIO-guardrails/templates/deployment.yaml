@@ -31,6 +31,18 @@ spec:
               mountPath: /tmp
           ports:
             - containerPort: {{ .Values.service.port }}
+          readinessProbe:
+            httpGet:
+              path: /healthz/ready
+              port: {{ .Values.service.port }}
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz/live
+              port: {{ .Values.service.port }}
+            initialDelaySeconds: 10
+            periodSeconds: 10
           resources:
             requests:
               cpu: {{ .Values.resources.requests.cpu | quote }}
