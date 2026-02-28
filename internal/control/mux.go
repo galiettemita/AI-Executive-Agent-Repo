@@ -1829,6 +1829,18 @@ func handleStreaming(w http.ResponseWriter, r *http.Request, svc *streaming.Serv
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
+		if payload.FirstByteSLAMillis > 500 {
+			http.Error(w, "first_byte_sla_ms must be <= 500", http.StatusBadRequest)
+			return
+		}
+		if payload.FirstByteSLAMillis < 0 {
+			http.Error(w, "first_byte_sla_ms must be >= 0", http.StatusBadRequest)
+			return
+		}
+		if payload.ChunkSizeBytes < 0 {
+			http.Error(w, "chunk_size_bytes must be >= 0", http.StatusBadRequest)
+			return
+		}
 		workspaceID := payload.WorkspaceID
 		if workspaceID == "" {
 			workspaceID = "default"

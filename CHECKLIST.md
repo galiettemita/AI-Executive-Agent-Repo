@@ -200,6 +200,7 @@ Legend
 - [x] Phase 3 continuation (Step 32 tool_health_scorer): upgraded tool health scoring to include latency/error telemetry (`latency_ms`, `error_rate`), rule-driven auto-quarantine, recovery/degradation event emission (`BREVIO.tool_health.*`), and deterministic override/recovery semantics with regression coverage
 - [x] Phase 3 continuation (Step 33 feature_flags): restored and hardened `internal/feature_flags/service.go` with deterministic evaluation cache invalidation, kill-switch policy enforcement, workspace-aware evaluation outputs aligned to `feature_flag_evaluation.v1.json` (`flag_key`, `workspace_id`, `enabled`, `variant`, `reason`), and control-route/unit regression coverage
 - [x] Phase 3 continuation (Step 34 crdt_resolution): rebuilt `internal/crdt` with explicit vector-clock dominance/concurrency comparison, deterministic conflict classification, strategy-driven resolution flows (`last_writer_wins`, `merge_concat`, `manual_review`), workspace-scoped conflict reporting aligned to `memory_conflict_report.v1.json`, and backward-compatible apply/resolve API regression coverage
+- [x] Phase 3 continuation (Step 35 streaming_ux): expanded `internal/streaming` with deterministic delivery planning (ack/typing/progressive chunks), first-byte SLA tracking (`<=500ms`) with breach accounting, strict streaming config guardrails in control routes, and streaming/control regression coverage
 
 Migration rules (must follow)
 - Preserve already-working preserved components unchanged unless v4.0 explicitly requires changes (per user instructions).

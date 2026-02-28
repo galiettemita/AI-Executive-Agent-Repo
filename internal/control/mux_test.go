@@ -361,6 +361,20 @@ func TestControlMuxStreamingFlow(t *testing.T) {
 	}
 }
 
+func TestControlMuxStreamingRejectsInvalidFirstByteSLA(t *testing.T) {
+	t.Parallel()
+
+	mux := NewMux(NewService("dev-secret"))
+
+	putBody := []byte(`{"workspace_id":"ws_1","ack_enabled":true,"typing_indicator":true,"first_byte_sla_ms":900,"chunk_size_bytes":4096,"progressive_disclosure":true}`)
+	putReq := httptest.NewRequest(http.MethodPut, "/v1/streaming/config", bytes.NewReader(putBody))
+	putResp := httptest.NewRecorder()
+	mux.ServeHTTP(putResp, putReq)
+	if putResp.Code != http.StatusBadRequest {
+		t.Fatalf("expected invalid SLA request to fail with 400, got: %d", putResp.Code)
+	}
+}
+
 func TestControlMuxComplianceFlow(t *testing.T) {
 	t.Parallel()
 
