@@ -89,6 +89,7 @@ Legend
 - [x] Strict closure hardening: expanded CI closure gate coverage (`internal/contracts/ci_closure_test.go`) to assert full V9 Section 13.1 step set (lint/tests/migration/openapi/json schema/determinism/trivy/trufflehog/contracts/integration/prompt-injection/webhook/provisioning/onboarding/sbom) in addition to V9.2 package gates
 - [x] Strict closure hardening: added canonical naming gate `internal/contracts/naming_closure_test.go` to enforce event format (`BREVIO.<domain>.<noun>.v1`) and metric format (`BREVIO_<subsystem>_<noun>`) across V9/V9.1/V9.2 registries
 - [x] Strict closure hardening: added UUIDv7 identity gate `internal/database/uuid_closure_test.go` to require every `id uuid PRIMARY KEY` table column in migrations `001/002/003` uses `DEFAULT uuid_v7_generate()`
+- [x] Strict closure hardening: upgraded OpenAPI schema-pointer closure by adding `TestOpenAPIV9SchemaPointersClosure` and wiring request/response `$ref` pointers (`generic_request_v1`, `generic_response_v1`) for all write operations and 2xx responses in `api/openapi/v9.yaml`
 
 Migration rules (must follow)
 - Preserve already-working preserved components unchanged unless v4.0 explicitly requires changes (per user instructions).

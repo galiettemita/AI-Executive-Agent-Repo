@@ -205,6 +205,92 @@ func TestOpenAPIV9OperationIDsArePresentAndUnique(t *testing.T) {
 	}
 }
 
+func TestOpenAPIV9SchemaPointersClosure(t *testing.T) {
+	t.Parallel()
+
+	doc := loadOpenAPIDoc(t)
+
+	for path, operations := range doc.Paths {
+		for method, raw := range operations {
+			methodLower := strings.ToLower(method)
+			op, ok := raw.(map[string]any)
+			if !ok {
+				t.Fatalf("openapi operation payload is not an object: %s %s", strings.ToUpper(methodLower), path)
+			}
+
+			if methodLower == "post" || methodLower == "put" || methodLower == "patch" {
+				requestBody, ok := op["requestBody"].(map[string]any)
+				if !ok {
+					t.Fatalf("missing requestBody for %s %s", strings.ToUpper(methodLower), path)
+				}
+				content, ok := requestBody["content"].(map[string]any)
+				if !ok {
+					t.Fatalf("missing requestBody.content for %s %s", strings.ToUpper(methodLower), path)
+				}
+				mediaType, ok := content["application/json"].(map[string]any)
+				if !ok {
+					t.Fatalf("missing requestBody application/json for %s %s", strings.ToUpper(methodLower), path)
+				}
+				schema, ok := mediaType["schema"].(map[string]any)
+				if !ok {
+					t.Fatalf("missing requestBody schema for %s %s", strings.ToUpper(methodLower), path)
+				}
+				ref, _ := schema["$ref"].(string)
+				if strings.TrimSpace(ref) == "" {
+					t.Fatalf("missing requestBody schema ref for %s %s", strings.ToUpper(methodLower), path)
+				}
+			}
+
+			// WebSocket upgrade path is intentionally 101-only.
+			if path == "/v1/canvas/ws" && methodLower == "get" {
+				continue
+			}
+
+			responses, ok := op["responses"].(map[string]any)
+			if !ok {
+				t.Fatalf("missing responses for %s %s", strings.ToUpper(methodLower), path)
+			}
+
+			has2xx := false
+			has2xxWithSchema := false
+			for statusCode, rawResponse := range responses {
+				if !strings.HasPrefix(statusCode, "2") {
+					continue
+				}
+				has2xx = true
+
+				response, ok := rawResponse.(map[string]any)
+				if !ok {
+					continue
+				}
+				content, ok := response["content"].(map[string]any)
+				if !ok {
+					continue
+				}
+				mediaType, ok := content["application/json"].(map[string]any)
+				if !ok {
+					continue
+				}
+				schema, ok := mediaType["schema"].(map[string]any)
+				if !ok {
+					continue
+				}
+				ref, _ := schema["$ref"].(string)
+				if strings.TrimSpace(ref) != "" {
+					has2xxWithSchema = true
+				}
+			}
+
+			if !has2xx {
+				t.Fatalf("missing 2xx response for %s %s", strings.ToUpper(methodLower), path)
+			}
+			if !has2xxWithSchema {
+				t.Fatalf("missing 2xx response schema ref for %s %s", strings.ToUpper(methodLower), path)
+			}
+		}
+	}
+}
+
 func loadOpenAPIDoc(t *testing.T) openapiDocument {
 	t.Helper()
 
