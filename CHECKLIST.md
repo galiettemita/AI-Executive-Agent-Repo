@@ -233,6 +233,7 @@ Legend
 - [x] Phase 4 security baseline hardening: expanded vulnerability-baseline closure contracts to validate `trivy_allowlist.txt` format/content + Trivy allowlist enforcement wiring, and updated `docs/SECURITY_VULNERABILITY_BASELINE.md` to include explicit Trivy exception governance (`CVE-2025-22869` under Go 1.22 constraint)
 - [x] Phase 4 evidence closure hardening: added `internal/contracts/final_validation_closure_test.go` to enforce structure/tokens/timestamp format for `docs/FINAL_VALIDATION_v9.2.0-final.md` (validation commands, PASS results, and blueprint `.docx` tracking section)
 - [x] Phase 4 dependency-constraint hardening: added executable compatibility guard (`TestGoToolchainCryptoCompatibilityConstraint`) requiring Go `1.22` release-line builds to pin `golang.org/x/crypto` below `v0.35.0` (avoids non-buildable upgrades requiring Go `>=1.23`)
+- [x] Phase 4 final lock: re-ran full command gate set at HEAD (`make ci`, `make security-validate`, `make infra-validate`, `make db-verify`) and refreshed final validation evidence timestamp for release-lock state
 - [x] Phase 4.5 final validation: executed `make ci`, `make security-validate`, and `make infra-validate` successfully; Terraform module/env validation and Helm lint/template checks passed via dockerized toolchain fallbacks
 - [x] Phase 4 release closure: produced final validation report (`docs/FINAL_VALIDATION_v9.2.0-final.md`) and emitted release tags (`v9.0.0`, `v9.1.0`, `v9.2.0`, `v9.2.0-final`)
 
