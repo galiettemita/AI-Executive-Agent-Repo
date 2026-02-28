@@ -128,6 +128,25 @@ func TestScriptPortabilityAndFallbackClosure(t *testing.T) {
 	})
 }
 
+func TestDatabaseVerificationScriptClosure(t *testing.T) {
+	t.Parallel()
+	root := repositoryRoot(t)
+	path := filepath.Join(root, "scripts", "database", "verify_postgres_migrations.sh")
+	assertFileNonEmpty(t, path)
+	assertFileContainsTokens(t, path, []string{
+		"pgvector/pgvector:pg16",
+		"001_BREVIO_v9_init.sql",
+		"002_BREVIO_v91_soft_intelligence.sql",
+		"003_BREVIO_v92_production_hardening.sql",
+		"enum count mismatch",
+		"RLS coverage failure",
+		"SET ROLE brevio_app",
+		"expected current_setting('app.workspace_id') to fail when unset",
+		"cross-workspace isolation failed",
+		"success: migrations apply cleanly",
+	})
+}
+
 func assertScriptArraySetEquals(t *testing.T, content, variable string, expected []string) {
 	t.Helper()
 	pattern := regexp.MustCompile(`(?s)` + regexp.QuoteMeta(variable) + `=\((.*?)\)`)
