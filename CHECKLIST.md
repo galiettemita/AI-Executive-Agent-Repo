@@ -128,6 +128,7 @@ Legend
 - [x] Strict closure hardening: removed compliance evidence hash placeholders by computing/normalizing real SHA-256 digests in `internal/compliance.Service`, wired framework evidence creation through computed digests (`internal/control/mux.go`), and added runtime/test enforcement of valid `sha256:<64hex>` evidence hashes
 - [x] Strict closure hardening: strengthened govuln baseline closure by enforcing allowlist ID format/uniqueness/non-empty rules and requiring baseline documentation linkage in `internal/contracts/security_vuln_baseline_closure_test.go`
 - [x] Strict closure hardening: upgraded service health closure from token-only checks to executable runtime health assertions for gateway/control/canvas (`/healthz/ready`, `/healthz/live`) in `internal/contracts/service_health_closure_test.go`
+- [x] Strict closure hardening: fixed Phase 4 k6 webhook load test to use real HMAC-SHA256 request signatures (`WEBHOOK_SECRET`) and tightened Phase 4 artifact gates for load/security/infra script semantics (`internal/contracts/phase4_artifacts_test.go`)
 
 Migration rules (must follow)
 - Preserve already-working preserved components unchanged unless v4.0 explicitly requires changes (per user instructions).

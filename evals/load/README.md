@@ -8,3 +8,4 @@ k6 run evals/load/k6_interactive_turn.js
 
 Environment variable:
 - `BASE_URL` (optional): target control/gateway endpoint base URL.
+- `WEBHOOK_SECRET` (optional): HMAC secret used to sign `X-Signature` for webhook admission tests.
