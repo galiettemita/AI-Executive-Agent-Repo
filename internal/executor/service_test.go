@@ -1,6 +1,8 @@
 package executor
 
 import (
+	"context"
+	"net"
 	"strings"
 	"testing"
 	"time"
@@ -51,6 +53,75 @@ func TestSSRFBlocked(t *testing.T) {
 	_, err := svc.Simulate(ExecutionRequest{WorkspaceID: "ws1", ToolKey: "web.fetch", Action: "fetch", TargetURL: "http://169.254.169.254/latest/meta-data"})
 	if err == nil {
 		t.Fatal("expected ssrf block error")
+	}
+}
+
+func TestSSRFBlockedPrivateCIDRs(t *testing.T) {
+	t.Parallel()
+
+	svc := NewService()
+	targets := []string{
+		"http://10.10.10.10/internal",
+		"http://172.16.4.5/health",
+		"http://192.168.1.42/meta",
+		"http://127.0.0.1:8080/admin",
+	}
+	for _, target := range targets {
+		_, err := svc.Simulate(ExecutionRequest{
+			WorkspaceID: "ws1",
+			ToolKey:     "web.fetch",
+			Action:      "fetch",
+			TargetURL:   target,
+		})
+		if err == nil {
+			t.Fatalf("expected ssrf block for target=%s", target)
+		}
+	}
+}
+
+func TestSSRFBlockedByResolvedRebindingAddress(t *testing.T) {
+	t.Parallel()
+
+	svc := NewService()
+	svc.resolver = staticResolver{
+		results: map[string][]net.IPAddr{
+			"api.example.com": {
+				{IP: net.ParseIP("127.0.0.1")},
+			},
+		},
+	}
+
+	_, err := svc.Simulate(ExecutionRequest{
+		WorkspaceID: "ws1",
+		ToolKey:     "web.fetch",
+		Action:      "fetch",
+		TargetURL:   "https://api.example.com/resource",
+	})
+	if err == nil {
+		t.Fatal("expected ssrf block due to rebinding resolution into loopback")
+	}
+}
+
+func TestSSRFAllowsPublicResolvedAddress(t *testing.T) {
+	t.Parallel()
+
+	svc := NewService()
+	svc.resolver = staticResolver{
+		results: map[string][]net.IPAddr{
+			"api.example.com": {
+				{IP: net.ParseIP("93.184.216.34")},
+			},
+		},
+	}
+
+	_, err := svc.Simulate(ExecutionRequest{
+		WorkspaceID: "ws1",
+		ToolKey:     "web.fetch",
+		Action:      "fetch",
+		TargetURL:   "https://api.example.com/resource",
+	})
+	if err != nil {
+		t.Fatalf("expected public host simulate success, got %v", err)
 	}
 }
 
@@ -202,4 +273,16 @@ func assertAuditHasEvent(t *testing.T, entries []AuditLogEntry, eventType string
 		}
 	}
 	t.Fatalf("expected audit event %s in entries=%v", eventType, entries)
+}
+
+type staticResolver struct {
+	results map[string][]net.IPAddr
+	err     error
+}
+
+func (r staticResolver) LookupIPAddr(_ context.Context, host string) ([]net.IPAddr, error) {
+	if r.err != nil {
+		return nil, r.err
+	}
+	return r.results[host], nil
 }

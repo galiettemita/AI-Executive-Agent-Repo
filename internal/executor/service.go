@@ -1,6 +1,7 @@
 package executor
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -73,6 +74,10 @@ type CircuitState struct {
 	Failures  []time.Time
 }
 
+type ipResolver interface {
+	LookupIPAddr(ctx context.Context, host string) ([]net.IPAddr, error)
+}
+
 type Service struct {
 	mu            sync.Mutex
 	sideEffects   map[string]int
@@ -88,6 +93,7 @@ type Service struct {
 	l1Cache       map[string]string
 	l2Cache       map[string]string
 	l3Cache       map[string]string
+	resolver      ipResolver
 	nowFunc       func() time.Time
 }
 
@@ -105,6 +111,7 @@ func NewService() *Service {
 		l1Cache:       map[string]string{},
 		l2Cache:       map[string]string{},
 		l3Cache:       map[string]string{},
+		resolver:      net.DefaultResolver,
 		nowFunc:       func() time.Time { return time.Now().UTC() },
 	}
 }
@@ -115,7 +122,7 @@ func logicalActionHash(workspaceID, toolKey, action string) string {
 }
 
 func (s *Service) Simulate(req ExecutionRequest) (ToolExecution, error) {
-	if err := validateSSRF(req.TargetURL); err != nil {
+	if err := s.validateSSRF(req.TargetURL); err != nil {
 		s.emitAudit("BREVIO.security.ssrf.blocked.v1", err.Error())
 		return ToolExecution{}, err
 	}
@@ -130,7 +137,7 @@ func (s *Service) Simulate(req ExecutionRequest) (ToolExecution, error) {
 }
 
 func (s *Service) Commit(req ExecutionRequest) (ToolExecution, TrustReceipt, error) {
-	if err := validateSSRF(req.TargetURL); err != nil {
+	if err := s.validateSSRF(req.TargetURL); err != nil {
 		s.emitAudit("BREVIO.security.ssrf.blocked.v1", err.Error())
 		return ToolExecution{}, TrustReceipt{}, err
 	}
@@ -225,7 +232,7 @@ func hashAudit(input string) string {
 
 var blockedPrefixes = []string{"169.254.169.254", "127.", "::1"}
 
-func validateSSRF(target string) error {
+func (s *Service) validateSSRF(target string) error {
 	if target == "" {
 		return nil
 	}
@@ -246,15 +253,40 @@ func validateSSRF(target string) error {
 		return fmt.Errorf("blocked host: %s", host)
 	}
 	ip := net.ParseIP(host)
-	if ip == nil {
+	if ip != nil {
+		return validateBlockedIP(host, ip)
+	}
+
+	resolver := s.resolver
+	if resolver == nil {
 		return nil
 	}
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+
+	resolved, err := resolver.LookupIPAddr(ctx, host)
+	if err != nil {
+		// Fail open on DNS resolution failure; hostname checks above still apply.
+		return nil
+	}
+	for _, ipAddr := range resolved {
+		if err := validateBlockedIP(host, ipAddr.IP); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateBlockedIP(host string, ip net.IP) error {
 	addr, ok := netip.AddrFromSlice(ip)
 	if !ok {
 		return nil
 	}
 	if addr.IsLoopback() {
 		return fmt.Errorf("blocked loopback address: %s", host)
+	}
+	if addr.IsPrivate() || addr.IsLinkLocalUnicast() || addr.IsLinkLocalMulticast() || addr.IsMulticast() || addr.IsUnspecified() {
+		return fmt.Errorf("blocked private address: %s", host)
 	}
 	return nil
 }
