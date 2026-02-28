@@ -14,10 +14,14 @@ import (
 )
 
 var (
-	ErrFirewallBlocked = errors.New("firewall blocked content")
-	ErrTokenExpired    = errors.New("approval token expired")
-	ErrTokenInvalid    = errors.New("approval token invalid")
-	ErrTokenReplay     = errors.New("approval token nonce replay")
+	ErrFirewallBlocked  = errors.New("firewall blocked content")
+	ErrTokenExpired     = errors.New("approval token expired")
+	ErrTokenInvalid     = errors.New("approval token invalid")
+	ErrTokenReplay      = errors.New("approval token nonce replay")
+	ErrSchemaValidation = errors.New("schema validation failed")
+	ErrSemanticVerifier = errors.New("semantic verifier failed")
+	ErrToolRateCap      = errors.New("tool rate cap exceeded")
+	ErrBudgetExceeded   = errors.New("budget exhausted")
 )
 
 type FirewallResult struct {
@@ -141,10 +145,22 @@ func sign(secret, blob []byte) string {
 
 type Service struct {
 	approval *ApprovalService
+	mu       sync.Mutex
+
+	toolRateCaps      map[string]int
+	toolUsage         map[string]int
+	monthlyBudgetCaps map[string]int
+	monthlyBudgetUsed map[string]int
 }
 
 func NewService(secret string) *Service {
-	return &Service{approval: NewApprovalService(secret, "v1")}
+	return &Service{
+		approval:          NewApprovalService(secret, "v1"),
+		toolRateCaps:      map[string]int{},
+		toolUsage:         map[string]int{},
+		monthlyBudgetCaps: map[string]int{},
+		monthlyBudgetUsed: map[string]int{},
+	}
 }
 
 func (s *Service) Approval() *ApprovalService {
@@ -179,6 +195,18 @@ func (s *Service) FirewallCheck(rawInput string) FirewallResult {
 		return FirewallResult{Allowed: false, Reason: "SEMANTIC_BLOCK"}
 	}
 
+	return FirewallResult{Allowed: true, Reason: "ALLOW"}
+}
+
+// FirewallCheckWithSchema applies L1-L3 content checks and L4 schema checks.
+func (s *Service) FirewallCheckWithSchema(rawInput string, toolInput map[string]any, requiredFields []string) FirewallResult {
+	result := s.FirewallCheck(rawInput)
+	if !result.Allowed {
+		return result
+	}
+	if err := s.ValidateToolInput(requiredFields, toolInput); err != nil {
+		return FirewallResult{Allowed: false, Reason: "SCHEMA_VALIDATION_FAILED"}
+	}
 	return FirewallResult{Allowed: true, Reason: "ALLOW"}
 }
 
@@ -224,6 +252,117 @@ func (s *Service) EvaluateGate(input DecisionInput) DecisionOutput {
 	default:
 		return DecisionOutput{Decision: "deny", ReasonCode: fmt.Sprintf("UNKNOWN_AUTONOMY_%s", autonomy)}
 	}
+}
+
+// EvaluateExecutionPolicy applies core gate logic and additive recipient/memory constraints.
+func (s *Service) EvaluateExecutionPolicy(input DecisionInput, recipientVerified bool, memoryWriteAllowed bool) DecisionOutput {
+	baseDecision := s.EvaluateGate(input)
+	if baseDecision.Decision == "deny" {
+		return baseDecision
+	}
+	if !recipientVerified {
+		return DecisionOutput{Decision: "deny", ReasonCode: "RECIPIENT_UNVERIFIED"}
+	}
+	if input.IsWrite && !memoryWriteAllowed {
+		return DecisionOutput{Decision: "deny", ReasonCode: "MEMORY_WRITE_BLOCKED"}
+	}
+	return baseDecision
+}
+
+func (s *Service) ValidateToolInput(requiredFields []string, toolInput map[string]any) error {
+	for _, field := range requiredFields {
+		value, ok := toolInput[field]
+		if !ok {
+			return fmt.Errorf("%w: missing required field %s", ErrSchemaValidation, field)
+		}
+		if strValue, isString := value.(string); isString && strings.TrimSpace(strValue) == "" {
+			return fmt.Errorf("%w: empty required field %s", ErrSchemaValidation, field)
+		}
+	}
+	return nil
+}
+
+func (s *Service) VerifyToolOutput(requiredFields []string, output map[string]any) error {
+	for _, field := range requiredFields {
+		if _, ok := output[field]; !ok {
+			return fmt.Errorf("%w: missing field %s", ErrSemanticVerifier, field)
+		}
+	}
+	return nil
+}
+
+func (s *Service) SetToolRateCap(workspaceID, toolKey string, maxCalls int) error {
+	if workspaceID == "" || toolKey == "" {
+		return fmt.Errorf("workspace_id and tool_key are required")
+	}
+	if maxCalls <= 0 {
+		return fmt.Errorf("max_calls must be > 0")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.toolRateCaps[toolUsageKey(workspaceID, toolKey)] = maxCalls
+	return nil
+}
+
+func (s *Service) ConsumeToolCall(workspaceID, toolKey string) error {
+	key := toolUsageKey(workspaceID, toolKey)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	maxCalls, hasCap := s.toolRateCaps[key]
+	if !hasCap {
+		return nil
+	}
+	next := s.toolUsage[key] + 1
+	if next > maxCalls {
+		return ErrToolRateCap
+	}
+	s.toolUsage[key] = next
+	return nil
+}
+
+func (s *Service) SetMonthlyBudgetCap(workspaceID string, maxUnits int) error {
+	if workspaceID == "" {
+		return fmt.Errorf("workspace_id is required")
+	}
+	if maxUnits <= 0 {
+		return fmt.Errorf("max_units must be > 0")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.monthlyBudgetCaps[workspaceID] = maxUnits
+	return nil
+}
+
+func (s *Service) ConsumeBudget(workspaceID string, units int) error {
+	if units <= 0 {
+		return fmt.Errorf("units must be > 0")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	capUnits, hasCap := s.monthlyBudgetCaps[workspaceID]
+	if !hasCap {
+		return nil
+	}
+	next := s.monthlyBudgetUsed[workspaceID] + units
+	if next > capUnits {
+		return ErrBudgetExceeded
+	}
+	s.monthlyBudgetUsed[workspaceID] = next
+	return nil
+}
+
+func (s *Service) BudgetExhausted(workspaceID string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	capUnits, hasCap := s.monthlyBudgetCaps[workspaceID]
+	if !hasCap {
+		return false
+	}
+	return s.monthlyBudgetUsed[workspaceID] >= capUnits
+}
+
+func toolUsageKey(workspaceID, toolKey string) string {
+	return workspaceID + "::" + toolKey
 }
 
 // EvaluateProactiveSilentExecution enforces V9 proactive action rules.

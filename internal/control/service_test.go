@@ -3,6 +3,7 @@ package control
 import (
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -191,5 +192,115 @@ func TestEvaluateLoadSheddingTiers(t *testing.T) {
 				t.Fatalf("reason mismatch: got=%s want=%s", got.ReasonCode, tc.reason)
 			}
 		})
+	}
+}
+
+func TestFirewallCheckWithSchemaBlocksInvalidToolInput(t *testing.T) {
+	t.Parallel()
+
+	svc := NewService("secret")
+	result := svc.FirewallCheckWithSchema(
+		"send message",
+		map[string]any{"recipient": "alice@example.com"},
+		[]string{"recipient", "body"},
+	)
+	if result.Allowed {
+		t.Fatalf("expected schema validation to block request, got %+v", result)
+	}
+	if result.Reason != "SCHEMA_VALIDATION_FAILED" {
+		t.Fatalf("unexpected reason: %s", result.Reason)
+	}
+
+	allowed := svc.FirewallCheckWithSchema(
+		"send message",
+		map[string]any{"recipient": "alice@example.com", "body": "hello"},
+		[]string{"recipient", "body"},
+	)
+	if !allowed.Allowed {
+		t.Fatalf("expected schema-valid request to be allowed, got %+v", allowed)
+	}
+}
+
+func TestEvaluateExecutionPolicyRecipientAndMemoryGates(t *testing.T) {
+	t.Parallel()
+
+	svc := NewService("secret")
+	input := DecisionInput{
+		AutonomyLevel:          "A3",
+		ToolRiskLevel:          "LOW",
+		IsWrite:                true,
+		FirewallAllowed:        true,
+		SemanticVerifierPassed: true,
+	}
+
+	recipientDenied := svc.EvaluateExecutionPolicy(input, false, true)
+	if recipientDenied.Decision != "deny" || recipientDenied.ReasonCode != "RECIPIENT_UNVERIFIED" {
+		t.Fatalf("unexpected recipient gate decision: %+v", recipientDenied)
+	}
+
+	memoryDenied := svc.EvaluateExecutionPolicy(input, true, false)
+	if memoryDenied.Decision != "deny" || memoryDenied.ReasonCode != "MEMORY_WRITE_BLOCKED" {
+		t.Fatalf("unexpected memory gate decision: %+v", memoryDenied)
+	}
+
+	allowed := svc.EvaluateExecutionPolicy(input, true, true)
+	if allowed.Decision != "allow" {
+		t.Fatalf("expected allow after recipient/memory checks, got %+v", allowed)
+	}
+}
+
+func TestVerifyToolOutput(t *testing.T) {
+	t.Parallel()
+
+	svc := NewService("secret")
+	err := svc.VerifyToolOutput([]string{"id", "status"}, map[string]any{"id": "123"})
+	if err == nil {
+		t.Fatal("expected missing output field to fail semantic verifier")
+	}
+
+	okErr := svc.VerifyToolOutput([]string{"id", "status"}, map[string]any{"id": "123", "status": "ok"})
+	if okErr != nil {
+		t.Fatalf("expected semantic verifier success, got %v", okErr)
+	}
+}
+
+func TestToolRateCapPerWorkspaceTool(t *testing.T) {
+	t.Parallel()
+
+	svc := NewService("secret")
+	if err := svc.SetToolRateCap("ws_1", "gmail.send_email", 2); err != nil {
+		t.Fatalf("set tool rate cap: %v", err)
+	}
+
+	if err := svc.ConsumeToolCall("ws_1", "gmail.send_email"); err != nil {
+		t.Fatalf("first consume should pass: %v", err)
+	}
+	if err := svc.ConsumeToolCall("ws_1", "gmail.send_email"); err != nil {
+		t.Fatalf("second consume should pass: %v", err)
+	}
+	err := svc.ConsumeToolCall("ws_1", "gmail.send_email")
+	if !errors.Is(err, ErrToolRateCap) {
+		t.Fatalf("expected ErrToolRateCap, got %v", err)
+	}
+}
+
+func TestMonthlyBudgetEnforcement(t *testing.T) {
+	t.Parallel()
+
+	svc := NewService("secret")
+	if err := svc.SetMonthlyBudgetCap("ws_budget", 100); err != nil {
+		t.Fatalf("set budget cap: %v", err)
+	}
+	if err := svc.ConsumeBudget("ws_budget", 40); err != nil {
+		t.Fatalf("consume budget 40: %v", err)
+	}
+	if err := svc.ConsumeBudget("ws_budget", 60); err != nil {
+		t.Fatalf("consume budget 60: %v", err)
+	}
+	if !svc.BudgetExhausted("ws_budget") {
+		t.Fatal("expected budget to be exhausted at exact cap")
+	}
+	if err := svc.ConsumeBudget("ws_budget", 1); !errors.Is(err, ErrBudgetExceeded) {
+		t.Fatalf("expected ErrBudgetExceeded, got %v", err)
 	}
 }
