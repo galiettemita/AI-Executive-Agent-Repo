@@ -195,6 +195,7 @@ func TestV92InfrastructureArtifactsExist(t *testing.T) {
 	}
 	for _, chart := range allHelmCharts {
 		assertHelmImageBaseline(t, filepath.Join(root, "helm", chart, "values.yaml"), expectedHelmImages[chart], "v9.2.0")
+		assertHelmDeploymentHardening(t, filepath.Join(root, "helm", chart, "templates", "deployment.yaml"))
 	}
 
 	requiredTerraformModules := []string{
@@ -406,5 +407,39 @@ func assertHelmImageBaseline(t *testing.T, path, repository, tag string) {
 	}
 	if !strings.Contains(content, "tag: "+tag) {
 		t.Fatalf("helm chart tag mismatch in %s; expected %s", path, tag)
+	}
+}
+
+func assertHelmDeploymentHardening(t *testing.T, path string) {
+	t.Helper()
+	assertFileContainsTokens(t, path, []string{
+		"runAsNonRoot: true",
+		"runAsUser: 65532",
+		"runAsGroup: 65532",
+		"fsGroup: 65532",
+		`command: ["/app/service"]`,
+		"allowPrivilegeEscalation: false",
+		"readOnlyRootFilesystem: true",
+		`drop: ["ALL"]`,
+		"emptyDir: {}",
+	})
+	assertFileNotContainsTokens(t, path, []string{
+		"sleep 3600",
+		`command: ["sh", "-c"`,
+	})
+}
+
+func assertFileNotContainsTokens(t *testing.T, path string, denied []string) {
+	t.Helper()
+
+	body, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read file %s: %v", path, err)
+	}
+	content := string(body)
+	for _, token := range denied {
+		if strings.Contains(content, token) {
+			t.Fatalf("forbidden token %q found in %s", token, path)
+		}
 	}
 }

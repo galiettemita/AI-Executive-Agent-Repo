@@ -12,12 +12,29 @@ spec:
       labels:
         app: {{ .Chart.Name }}
     spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
       containers:
         - name: app
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
-          command: ["sh", "-c", "sleep 3600"]
+          command: ["/app/service"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
           ports:
             - containerPort: {{ .Values.service.port }}
           env:
             - name: BREVIO_TASK_QUEUE
               value: "{{ .Values.taskQueue | default \"\" }}"
+
+      volumes:
+        - name: tmp
+          emptyDir: {}
