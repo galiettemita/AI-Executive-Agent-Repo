@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"path"
 	"strings"
 	"sync"
 	"time"
@@ -23,13 +24,33 @@ var (
 	ErrRateLimited      = errors.New("rate limited")
 )
 
+type AttachmentInput struct {
+	URL       string `json:"url"`
+	MIMEType  string `json:"mime_type"`
+	Filename  string `json:"filename"`
+	SizeBytes int64  `json:"size_bytes"`
+}
+
+type AttachmentReference struct {
+	ID        string
+	SourceURL string
+	S3URI     string
+	MIMEType  string
+	Filename  string
+	SizeBytes int64
+}
+
 type IngressTurn struct {
-	ID            uuid.UUID
-	WorkspaceID   uuid.UUID
-	UserChannelID string
-	DedupHash     string
-	Payload       []byte
-	CreatedAt     time.Time
+	ID                     uuid.UUID
+	WorkspaceID            uuid.UUID
+	UserChannelID          string
+	DedupHash              string
+	Payload                []byte
+	ParsedInteractiveReply string
+	ParsedDiscoveryAnswer  string
+	Transcript             string
+	Attachments            []AttachmentReference
+	CreatedAt              time.Time
 }
 
 type QueueMessage struct {
@@ -38,6 +59,15 @@ type QueueMessage struct {
 	GroupKey      string
 	DedupKey      string
 	Payload       []byte
+}
+
+type OutboundDispatch struct {
+	ID                uuid.UUID
+	WorkspaceID       uuid.UUID
+	Channel           string
+	ChannelIdentifier string
+	Body              string
+	QueuedAt          time.Time
 }
 
 type InMemoryStore struct {
@@ -59,9 +89,9 @@ func (s *InMemoryStore) AddNonce(nonce string, ttl time.Duration) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	now := time.Now().UTC()
-	for k, expiresAt := range s.byNonce {
+	for key, expiresAt := range s.byNonce {
 		if now.After(expiresAt) {
-			delete(s.byNonce, k)
+			delete(s.byNonce, key)
 		}
 	}
 	if _, exists := s.byNonce[nonce]; exists {
@@ -86,6 +116,15 @@ func (s *InMemoryStore) TurnCount() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return len(s.turns)
+}
+
+func (s *InMemoryStore) LastTurn() (IngressTurn, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(s.turns) == 0 {
+		return IngressTurn{}, false
+	}
+	return s.turns[len(s.turns)-1], true
 }
 
 type InMemoryQueue struct {
@@ -183,6 +222,46 @@ func (r *WorkspaceRouter) Resolve(channel, identifier string) (uuid.UUID, error)
 	return workspaceID, nil
 }
 
+type AttachmentUploader interface {
+	Upload(ctx context.Context, workspaceID uuid.UUID, attachment AttachmentInput) (AttachmentReference, error)
+}
+
+type InMemoryAttachmentUploader struct {
+	bucket string
+}
+
+func NewInMemoryAttachmentUploader(bucket string) *InMemoryAttachmentUploader {
+	if strings.TrimSpace(bucket) == "" {
+		bucket = "attachments"
+	}
+	return &InMemoryAttachmentUploader{bucket: bucket}
+}
+
+func (u *InMemoryAttachmentUploader) Upload(_ context.Context, workspaceID uuid.UUID, attachment AttachmentInput) (AttachmentReference, error) {
+	if strings.TrimSpace(attachment.URL) == "" {
+		return AttachmentReference{}, fmt.Errorf("attachment url is required")
+	}
+	attachmentID, err := uuid.NewV7()
+	if err != nil {
+		return AttachmentReference{}, err
+	}
+	filename := strings.TrimSpace(attachment.Filename)
+	if filename == "" {
+		filename = path.Base(attachment.URL)
+		if filename == "." || filename == "/" {
+			filename = "attachment"
+		}
+	}
+	return AttachmentReference{
+		ID:        attachmentID.String(),
+		SourceURL: attachment.URL,
+		S3URI:     fmt.Sprintf("s3://%s/%s/%s-%s", u.bucket, workspaceID.String(), attachmentID.String(), filename),
+		MIMEType:  attachment.MIMEType,
+		Filename:  filename,
+		SizeBytes: attachment.SizeBytes,
+	}, nil
+}
+
 type Service struct {
 	secret      []byte
 	nonceTTL    time.Duration
@@ -191,8 +270,13 @@ type Service struct {
 	rateLimiter *RateLimiter
 	audit       *AuditLog
 	router      *WorkspaceRouter
+	uploader    AttachmentUploader
+
 	injectedMu  sync.Mutex
 	injectedCnt int
+
+	outboxMu sync.Mutex
+	outbox   []OutboundDispatch
 }
 
 func NewService(secret string) *Service {
@@ -204,18 +288,28 @@ func NewService(secret string) *Service {
 		rateLimiter: NewRateLimiter(5),
 		audit:       &AuditLog{},
 		router:      NewWorkspaceRouter(),
+		uploader:    NewInMemoryAttachmentUploader("attachments"),
+		outbox:      []OutboundDispatch{},
 	}
 }
 
 type inboundMessage struct {
+	Channel           string            `json:"channel"`
+	ChannelIdentifier string            `json:"channel_identifier"`
+	UserChannelID     string            `json:"user_channel_id"`
+	Nonce             string            `json:"nonce"`
+	Message           string            `json:"message"`
+	InteractiveReply  string            `json:"interactive_reply"`
+	DiscoveryAnswer   string            `json:"discovery_answer"`
+	AudioURL          string            `json:"audio_url"`
+	Attachments       []AttachmentInput `json:"attachments"`
+}
+
+type outboundSendRequest struct {
+	WorkspaceID       string `json:"workspace_id"`
 	Channel           string `json:"channel"`
 	ChannelIdentifier string `json:"channel_identifier"`
-	UserChannelID     string `json:"user_channel_id"`
-	Nonce             string `json:"nonce"`
-	Message           string `json:"message"`
-	InteractiveReply  string `json:"interactive_reply"`
-	DiscoveryAnswer   string `json:"discovery_answer"`
-	AudioURL          string `json:"audio_url"`
+	Body              string `json:"body"`
 }
 
 type injectedToolCall struct {
@@ -232,8 +326,9 @@ func signatureFor(secret, payload []byte) string {
 }
 
 func (s *Service) validateSignature(payload []byte, signature string) error {
+	signature = strings.TrimSpace(strings.ToLower(signature))
 	expected := signatureFor(s.secret, payload)
-	if !hmac.Equal([]byte(expected), []byte(strings.ToLower(signature))) {
+	if signature == "" || !hmac.Equal([]byte(expected), []byte(signature)) {
 		s.audit.Append("BREVIO.security.webhook.signature_invalid.v1")
 		return ErrInvalidSignature
 	}
@@ -264,6 +359,15 @@ func (s *Service) HandleInbound(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if msg.Nonce == "" {
+		http.Error(w, "nonce is required", http.StatusBadRequest)
+		return
+	}
+	if msg.UserChannelID == "" {
+		http.Error(w, "user_channel_id is required", http.StatusBadRequest)
+		return
+	}
+
 	if !s.store.AddNonce(msg.Nonce, s.nonceTTL) {
 		s.audit.Append("BREVIO.security.webhook.replay_blocked.v1")
 		http.Error(w, ErrReplayDetected.Error(), http.StatusConflict)
@@ -271,6 +375,7 @@ func (s *Service) HandleInbound(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if !s.rateLimiter.Allow(msg.UserChannelID) {
+		s.audit.Append("BREVIO.gateway.rate_limited.v1")
 		http.Error(w, ErrRateLimited.Error(), http.StatusTooManyRequests)
 		return
 	}
@@ -286,14 +391,30 @@ func (s *Service) HandleInbound(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	turn := IngressTurn{
-		ID:            turnID,
-		WorkspaceID:   workspaceID,
-		UserChannelID: msg.UserChannelID,
-		DedupHash:     dedupHash(body),
-		Payload:       body,
-		CreatedAt:     time.Now().UTC(),
+
+	attachmentRefs := make([]AttachmentReference, 0, len(msg.Attachments))
+	for _, attachment := range msg.Attachments {
+		ref, uploadErr := s.uploader.Upload(r.Context(), workspaceID, attachment)
+		if uploadErr != nil {
+			http.Error(w, uploadErr.Error(), http.StatusBadGateway)
+			return
+		}
+		attachmentRefs = append(attachmentRefs, ref)
 	}
+
+	turn := IngressTurn{
+		ID:                     turnID,
+		WorkspaceID:            workspaceID,
+		UserChannelID:          msg.UserChannelID,
+		DedupHash:              dedupHash(body),
+		Payload:                body,
+		ParsedInteractiveReply: s.ParseInteractiveReply(msg.InteractiveReply),
+		ParsedDiscoveryAnswer:  s.ParseDiscoveryAnswer(msg.DiscoveryAnswer),
+		Transcript:             s.PreprocessVoice(r.Context(), msg.AudioURL),
+		Attachments:            attachmentRefs,
+		CreatedAt:              time.Now().UTC(),
+	}
+
 	if inserted := s.store.InsertIngressTurn(turn); !inserted {
 		s.audit.Append("BREVIO.ingress.duplicate_dropped.v1")
 		w.WriteHeader(http.StatusOK)
@@ -356,12 +477,23 @@ func (s *Service) IngressTurnCount() int {
 	return s.store.TurnCount()
 }
 
+func (s *Service) LastIngressTurn() (IngressTurn, bool) {
+	return s.store.LastTurn()
+}
+
 func (s *Service) AuditEntries() []string {
 	return s.audit.Entries()
 }
 
 func (s *Service) PopQueueMessage() (QueueMessage, bool) {
 	return s.queue.Pop()
+}
+
+func (s *Service) SetAttachmentUploader(uploader AttachmentUploader) {
+	if uploader == nil {
+		return
+	}
+	s.uploader = uploader
 }
 
 func (s *Service) HandleWhatsAppVerification(w http.ResponseWriter, r *http.Request) {
@@ -374,8 +506,48 @@ func (s *Service) HandleWhatsAppVerification(w http.ResponseWriter, r *http.Requ
 }
 
 func (s *Service) HandleOutboundSend(w http.ResponseWriter, r *http.Request) {
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	var outbound outboundSendRequest
+	if err := json.Unmarshal(body, &outbound); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if outbound.WorkspaceID == "" || outbound.Channel == "" || outbound.ChannelIdentifier == "" || outbound.Body == "" {
+		http.Error(w, "workspace_id, channel, channel_identifier, and body are required", http.StatusBadRequest)
+		return
+	}
+	workspaceID, err := uuid.Parse(outbound.WorkspaceID)
+	if err != nil {
+		http.Error(w, "workspace_id must be a valid uuid", http.StatusBadRequest)
+		return
+	}
+	outboundID, err := uuid.NewV7()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	s.outboxMu.Lock()
+	s.outbox = append(s.outbox, OutboundDispatch{
+		ID:                outboundID,
+		WorkspaceID:       workspaceID,
+		Channel:           outbound.Channel,
+		ChannelIdentifier: outbound.ChannelIdentifier,
+		Body:              outbound.Body,
+		QueuedAt:          time.Now().UTC(),
+	})
+	s.outboxMu.Unlock()
 	w.WriteHeader(http.StatusAccepted)
 	_, _ = w.Write([]byte(`{"status":"queued"}`))
+}
+
+func (s *Service) OutboundDispatchCount() int {
+	s.outboxMu.Lock()
+	defer s.outboxMu.Unlock()
+	return len(s.outbox)
 }
 
 func (s *Service) HandleHealth(w http.ResponseWriter, _ *http.Request) {
@@ -384,14 +556,46 @@ func (s *Service) HandleHealth(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (s *Service) ParseInteractiveReply(raw string) string {
-	return strings.TrimSpace(raw)
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return ""
+	}
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(trimmed), &payload); err != nil {
+		return trimmed
+	}
+	if button, ok := payload["button_reply"].(map[string]any); ok {
+		id, _ := button["id"].(string)
+		title, _ := button["title"].(string)
+		return strings.TrimSpace("button:" + id + ":" + title)
+	}
+	if list, ok := payload["list_reply"].(map[string]any); ok {
+		id, _ := list["id"].(string)
+		title, _ := list["title"].(string)
+		return strings.TrimSpace("list:" + id + ":" + title)
+	}
+	return trimmed
 }
 
 func (s *Service) ParseDiscoveryAnswer(raw string) string {
-	return strings.TrimSpace(raw)
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return ""
+	}
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(trimmed), &payload); err != nil {
+		return trimmed
+	}
+	question, _ := payload["question"].(string)
+	answer, _ := payload["answer"].(string)
+	if question != "" || answer != "" {
+		return strings.TrimSpace("question=" + question + ";answer=" + answer)
+	}
+	return trimmed
 }
 
 func (s *Service) PreprocessVoice(_ context.Context, audioURL string) string {
+	audioURL = strings.TrimSpace(audioURL)
 	if audioURL == "" {
 		return ""
 	}

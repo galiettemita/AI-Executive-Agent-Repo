@@ -145,7 +145,12 @@ func (s *Service) ProcessNextQueuedTurn(ctx context.Context, budgetExhausted boo
 	}
 	result.Committed = true
 
-	outboundReq := httptest.NewRequest(http.MethodPost, "/v1/gateway/outbound/send", bytes.NewReader([]byte(`{"status":"ok"}`)))
+	outboundPayload := []byte(fmt.Sprintf(`{"workspace_id":"%s","channel":"%s","channel_identifier":"%s","body":"ok"}`,
+		msg.WorkspaceID.String(),
+		inbound.Channel,
+		inbound.ChannelIdentifier,
+	))
+	outboundReq := httptest.NewRequest(http.MethodPost, "/v1/gateway/outbound/send", bytes.NewReader(outboundPayload))
 	outboundResp := httptest.NewRecorder()
 	s.gatewayMux.ServeHTTP(outboundResp, outboundReq)
 	result.OutboundCode = outboundResp.Code
