@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -33,6 +34,9 @@ func TestInvalidSignatureReturns401AndAuditEntry(t *testing.T) {
 	if svc.audit.Count() != 1 {
 		t.Fatalf("expected 1 audit entry, got %d", svc.audit.Count())
 	}
+	if !containsString(svc.AuditEntries(), "BREVIO.security.webhook.signature_invalid.v1") {
+		t.Fatalf("expected invalid signature event in audit log, got %v", svc.AuditEntries())
+	}
 }
 
 func TestReplayNonceRejected(t *testing.T) {
@@ -53,6 +57,9 @@ func TestReplayNonceRejected(t *testing.T) {
 	if resp2.Code != http.StatusConflict {
 		t.Fatalf("expected replay conflict, got %d", resp2.Code)
 	}
+	if !containsString(svc.AuditEntries(), "BREVIO.security.webhook.replay_blocked.v1") {
+		t.Fatalf("expected replay-blocked event in audit log, got %v", svc.AuditEntries())
+	}
 }
 
 func TestValidMessageCreatesIngressAndQueue(t *testing.T) {
@@ -72,6 +79,9 @@ func TestValidMessageCreatesIngressAndQueue(t *testing.T) {
 	}
 	if svc.queue.Count() != 1 {
 		t.Fatalf("expected 1 queue message, got %d", svc.queue.Count())
+	}
+	if !containsString(svc.AuditEntries(), "BREVIO.ingress.received.v1") {
+		t.Fatalf("expected ingress received event in audit log, got %v", svc.AuditEntries())
 	}
 }
 
@@ -117,6 +127,33 @@ func TestInjectToolCallAccepted(t *testing.T) {
 	}
 }
 
+func TestDuplicateIngressDropsWithCanonicalEvent(t *testing.T) {
+	t.Parallel()
+
+	svc := NewService("test-secret")
+	workspaceID := uuid.MustParse("018f3f6a-9a0f-7cc6-8f2f-1f0f2d2f2d2f")
+	svc.router.Bind("whatsapp", "+15550001111", workspaceID)
+
+	payload := []byte(`{"channel":"whatsapp","channel_identifier":"+15550001111","user_channel_id":"u1","nonce":"n_dedup","message":"hello"}`)
+	svc.store.InsertIngressTurn(IngressTurn{
+		ID:            uuid.MustParse("018f3f6a-9a0f-7cc6-8f2f-1f0f2d2f2d2e"),
+		WorkspaceID:   workspaceID,
+		UserChannelID: "u1",
+		DedupHash:     dedupHash(payload),
+		Payload:       payload,
+		CreatedAt:     time.Now().UTC(),
+	})
+
+	resp := httptest.NewRecorder()
+	svc.HandleInbound(resp, signedRequestBody("test-secret", payload))
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected dedup drop status 200, got %d", resp.Code)
+	}
+	if !containsString(svc.AuditEntries(), "BREVIO.ingress.duplicate_dropped.v1") {
+		t.Fatalf("expected duplicate-dropped event in audit log, got %v", svc.AuditEntries())
+	}
+}
+
 func TestHealthEndpoints(t *testing.T) {
 	t.Parallel()
 
@@ -131,4 +168,13 @@ func TestHealthEndpoints(t *testing.T) {
 			t.Fatalf("unexpected status for %s: %d", path, resp.Code)
 		}
 	}
+}
+
+func containsString(items []string, needle string) bool {
+	for _, item := range items {
+		if item == needle {
+			return true
+		}
+	}
+	return false
 }

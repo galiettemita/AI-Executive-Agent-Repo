@@ -150,6 +150,14 @@ func (a *AuditLog) Count() int {
 	return len(a.entries)
 }
 
+func (a *AuditLog) Entries() []string {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	out := make([]string, len(a.entries))
+	copy(out, a.entries)
+	return out
+}
+
 type WorkspaceRouter struct {
 	mu       sync.RWMutex
 	bindings map[string]uuid.UUID
@@ -287,9 +295,11 @@ func (s *Service) HandleInbound(w http.ResponseWriter, r *http.Request) {
 		CreatedAt:     time.Now().UTC(),
 	}
 	if inserted := s.store.InsertIngressTurn(turn); !inserted {
+		s.audit.Append("BREVIO.ingress.duplicate_dropped.v1")
 		w.WriteHeader(http.StatusOK)
 		return
 	}
+	s.audit.Append("BREVIO.ingress.received.v1")
 
 	s.queue.Enqueue(QueueMessage{
 		IngressTurnID: turn.ID,
@@ -344,6 +354,10 @@ func (s *Service) QueueMessageCount() int {
 
 func (s *Service) IngressTurnCount() int {
 	return s.store.TurnCount()
+}
+
+func (s *Service) AuditEntries() []string {
+	return s.audit.Entries()
 }
 
 func (s *Service) PopQueueMessage() (QueueMessage, bool) {

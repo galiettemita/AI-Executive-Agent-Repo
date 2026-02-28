@@ -95,6 +95,17 @@ func TestAcceptanceGateRuntimeCoverageV9(t *testing.T) {
 		if replayResp.Code != http.StatusConflict {
 			t.Fatalf("expected replay rejection, got %d", replayResp.Code)
 		}
+
+		auditEntries := svc.AuditEntries()
+		if !containsString(auditEntries, "BREVIO.security.webhook.signature_invalid.v1") {
+			t.Fatalf("missing canonical invalid-signature event: %v", auditEntries)
+		}
+		if !containsString(auditEntries, "BREVIO.security.webhook.replay_blocked.v1") {
+			t.Fatalf("missing canonical replay-blocked event: %v", auditEntries)
+		}
+		if !containsString(auditEntries, "BREVIO.ingress.received.v1") {
+			t.Fatalf("missing canonical ingress-received event: %v", auditEntries)
+		}
 	})
 
 	t.Run("acceptance_suites_1_12", func(t *testing.T) {
@@ -621,4 +632,13 @@ func signWebhookPayload(secret string, payload []byte) string {
 	mac := hmac.New(sha256.New, []byte(secret))
 	mac.Write(payload)
 	return hex.EncodeToString(mac.Sum(nil))
+}
+
+func containsString(items []string, needle string) bool {
+	for _, item := range items {
+		if item == needle {
+			return true
+		}
+	}
+	return false
 }
