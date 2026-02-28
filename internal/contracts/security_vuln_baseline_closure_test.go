@@ -3,6 +3,7 @@ package contracts
 import (
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -92,5 +93,33 @@ func assertTrivyAllowlistFormat(t *testing.T, path string) {
 	}
 	if count == 0 {
 		t.Fatalf("trivy allowlist has no vulnerability ids: %s", path)
+	}
+}
+
+func TestGoToolchainCryptoCompatibilityConstraint(t *testing.T) {
+	t.Parallel()
+
+	root := repositoryRoot(t)
+	goModPath := filepath.Join(root, "go.mod")
+	goMod := readFileString(t, goModPath)
+
+	if !strings.Contains(goMod, "\ngo 1.22") {
+		t.Fatalf("go.mod toolchain changed; expected go 1.22 baseline for this release line: %s", goModPath)
+	}
+
+	versionPattern := regexp.MustCompile(`golang\.org/x/crypto\s+v(\d+)\.(\d+)\.(\d+)`)
+	match := versionPattern.FindStringSubmatch(goMod)
+	if len(match) != 4 {
+		t.Fatalf("missing golang.org/x/crypto entry in go.mod: %s", goModPath)
+	}
+
+	major, _ := strconv.Atoi(match[1])
+	minor, _ := strconv.Atoi(match[2])
+	patch, _ := strconv.Atoi(match[3])
+	if major != 0 {
+		t.Fatalf("unexpected golang.org/x/crypto major version in go.mod: %s", match[0])
+	}
+	if minor >= 35 {
+		t.Fatalf("golang.org/x/crypto %d.%d.%d requires Go >= 1.23; Go 1.22 release line must pin below v0.35.0", major, minor, patch)
 	}
 }
