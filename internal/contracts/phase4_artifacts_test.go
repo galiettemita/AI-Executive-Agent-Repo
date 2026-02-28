@@ -50,6 +50,7 @@ func TestPhase4ReadinessArtifactsExist(t *testing.T) {
 		"assert_exact_dir_set \"terraform/modules\"",
 		"assert_exact_dir_set \"terraform/environments\"",
 		"assert_exact_dir_set \"helm\"",
+		"terraform fmt -check -recursive",
 		"terraform validate modules",
 		"terraform validate environments",
 		"helm lint charts",

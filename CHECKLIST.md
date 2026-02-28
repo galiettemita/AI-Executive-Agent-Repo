@@ -149,6 +149,7 @@ Legend
 - [x] Strict closure hardening: expanded infra validation to require successful `helm template` rendering for every canonical chart (in addition to `helm lint`) and locked this behavior in Phase 4 artifact closure checks (`scripts/infra/validate.sh`, `internal/contracts/phase4_artifacts_test.go`)
 - [x] Strict closure hardening: added script-level exactness gates for canonical infra/security automation arrays and required command paths (`internal/contracts/script_closure_test.go`), enforcing exact Terraform module/environment/chart sets and strict scanner/go-test command coverage in validation scripts
 - [x] Strict closure hardening: replaced Helm `busybox:latest` placeholders with service-specific immutable image coordinates and added infra closure checks to forbid placeholder repositories/tags across all canonical charts (`helm/*/values.yaml`, `internal/contracts/infrastructure_closure_test.go`)
+- [x] Strict closure hardening: added `terraform fmt -check -recursive` as a mandatory infra validation gate and enforced it via Phase 4/script closure contracts (`scripts/infra/validate.sh`, `internal/contracts/phase4_artifacts_test.go`, `internal/contracts/script_closure_test.go`)
 
 Migration rules (must follow)
 - Preserve already-working preserved components unchanged unless v4.0 explicitly requires changes (per user instructions).

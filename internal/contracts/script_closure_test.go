@@ -53,6 +53,7 @@ func TestInfraValidationScriptCanonicalSets(t *testing.T) {
 	assertFileContainsTokens(t, path, []string{
 		"REQUIRE_INFRA_TOOLS",
 		"CI/strict mode",
+		"terraform fmt -check -recursive",
 		"terraform validate modules",
 		"terraform validate environments",
 		"helm lint charts",

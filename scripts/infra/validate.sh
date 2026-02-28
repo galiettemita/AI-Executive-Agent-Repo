@@ -93,6 +93,9 @@ assert_exact_dir_set "terraform/environments" "${required_terraform_environments
 assert_exact_dir_set "helm" "${required_helm_charts[@]}"
 
 if command -v terraform >/dev/null 2>&1; then
+  echo "[infra] terraform fmt check"
+  terraform fmt -check -recursive
+
   echo "[infra] terraform validate modules"
   for module in "${required_terraform_modules[@]}"; do
     dir="terraform/modules/${module}"
