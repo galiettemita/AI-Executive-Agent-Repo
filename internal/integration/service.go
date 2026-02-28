@@ -94,7 +94,11 @@ func (s *Service) IngestWebhook(payload WebhookPayload) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	req := httptest.NewRequest(http.MethodPost, "/v1/gateway/webhook/whatsapp", bytes.NewReader(blob))
+	path := "/v1/gateway/webhook/whatsapp"
+	if strings.EqualFold(strings.TrimSpace(payload.Channel), "imessage") {
+		path = "/v1/gateway/webhook/imessage"
+	}
+	req := httptest.NewRequest(http.MethodPost, path, bytes.NewReader(blob))
 	req.Header.Set("X-Signature", signPayload([]byte(s.secret), blob))
 	resp := httptest.NewRecorder()
 	s.gatewayMux.ServeHTTP(resp, req)

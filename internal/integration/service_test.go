@@ -62,6 +62,40 @@ func TestPipelineEndToEndHappyPath(t *testing.T) {
 	}
 }
 
+func TestPipelineEndToEndIMessagePath(t *testing.T) {
+	s := NewService("")
+	workspaceID := uuid.MustParse("018f3f6a-9a0f-7cc6-8f2f-1f0f2d2f2d2f")
+	s.BindWorkspace("imessage", "imsg:user-77", workspaceID)
+
+	status, err := s.IngestWebhook(WebhookPayload{
+		Channel:           "imessage",
+		ChannelIdentifier: "imsg:user-77",
+		UserChannelID:     "imsg_u77",
+		Nonce:             "integration_nonce_imsg_1",
+		Message:           "confirm tomorrow itinerary",
+	})
+	if err != nil {
+		t.Fatalf("ingest imessage webhook: %v", err)
+	}
+	if status != 202 {
+		t.Fatalf("unexpected webhook status: %d", status)
+	}
+
+	result, err := s.ProcessNextQueuedTurn(context.Background(), false)
+	if err != nil {
+		t.Fatalf("process queued imessage turn: %v", err)
+	}
+	if result.GateDecision != "allow" {
+		t.Fatalf("unexpected gate decision for imessage: %s", result.GateDecision)
+	}
+	if !result.Simulated || !result.Committed {
+		t.Fatalf("expected simulate+commit for imessage path: %+v", result)
+	}
+	if result.OutboundCode != 202 {
+		t.Fatalf("unexpected outbound status: %d", result.OutboundCode)
+	}
+}
+
 func TestPipelineBudgetExhaustionStopsBeforeCommit(t *testing.T) {
 	s := NewService("integration-secret")
 	workspaceID := uuid.MustParse("018f3f6a-9a0f-7cc6-8f2f-1f0f2d2f2d2f")
