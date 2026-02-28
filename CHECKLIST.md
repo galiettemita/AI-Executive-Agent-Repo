@@ -230,6 +230,7 @@ Legend
 - [x] Phase 1/4 migration assurance hardening: re-executed PostgreSQL-16 runtime migration verification (`make db-verify`) and promoted DB runtime verification into CI gates (`migration runtime verify` -> `scripts/database/verify_postgres_migrations.sh`)
 - [x] Phase 4 CI parity hardening: aligned local `make ci` with pipeline behavior by adding `api-docs-check` target (regenerate `docs/API_REFERENCE.md` + fail on `git diff`) and enforced via Makefile closure tests
 - [x] Phase 4 release evidence hardening: re-ran `make security-validate`, `make infra-validate`, and `make db-verify`, then refreshed `docs/FINAL_VALIDATION_v9.2.0-final.md` with current timestamped command/results set
+- [x] Phase 4 security baseline hardening: expanded vulnerability-baseline closure contracts to validate `trivy_allowlist.txt` format/content + Trivy allowlist enforcement wiring, and updated `docs/SECURITY_VULNERABILITY_BASELINE.md` to include explicit Trivy exception governance (`CVE-2025-22869` under Go 1.22 constraint)
 - [x] Phase 4.5 final validation: executed `make ci`, `make security-validate`, and `make infra-validate` successfully; Terraform module/env validation and Helm lint/template checks passed via dockerized toolchain fallbacks
 - [x] Phase 4 release closure: produced final validation report (`docs/FINAL_VALIDATION_v9.2.0-final.md`) and emitted release tags (`v9.0.0`, `v9.1.0`, `v9.2.0`, `v9.2.0-final`)
 
