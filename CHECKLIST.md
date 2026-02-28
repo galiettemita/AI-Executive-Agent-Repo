@@ -101,6 +101,7 @@ Legend
 - [x] Strict closure hardening: expanded V9.2 runbooks (`RB-V92-001..009`) into full operational format and tightened `internal/contracts/runbook_closure_test.go` to enforce complete runbook sections
 - [x] Strict closure hardening: added source comment hygiene gate (`internal/contracts/comment_hygiene_closure_test.go`) to continuously enforce no unresolved `TODO`/`FIXME`/`HACK`/`DEPRECATED` markers in implementation artifacts
 - [x] Strict closure hardening: added OpenAPI auth-binding closure for `AdminJWT`, `UserJWT`, and `mTLS` and wired operation-level security requirements in `api/openapi/v9.yaml` for admin, compliance, and mTLS-only endpoints
+- [x] Strict closure hardening: added module contract gate (`internal/contracts/module_closure_test.go`) to enforce canonical module path `github.com/brevio/brevio` and Go toolchain pin `go 1.22`
 
 Migration rules (must follow)
 - Preserve already-working preserved components unchanged unless v4.0 explicitly requires changes (per user instructions).
