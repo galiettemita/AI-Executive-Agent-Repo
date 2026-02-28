@@ -156,6 +156,19 @@ if command -v terraform >/dev/null 2>&1 || resolve_docker_bin >/dev/null 2>&1; t
     run_terraform -chdir="$dir" init -backend=false -input=false >/dev/null
     run_terraform -chdir="$dir" validate
   done
+
+  echo "[infra] terraform plan environments"
+  for env in "${required_terraform_environments[@]}"; do
+    dir="terraform/environments/${env}"
+    if run_terraform -chdir="$dir" plan -refresh=false -lock=false -input=false -detailed-exitcode -no-color >/dev/null; then
+      continue
+    fi
+    plan_rc=$?
+    if [[ $plan_rc -ne 2 ]]; then
+      echo "[infra] terraform plan failed for ${dir} (exit ${plan_rc})"
+      exit "$plan_rc"
+    fi
+  done
 else
   if should_require_tooling; then
     echo "[infra] terraform is required in CI/strict mode but not installed"

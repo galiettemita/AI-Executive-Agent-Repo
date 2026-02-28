@@ -234,6 +234,8 @@ Legend
 - [x] Phase 4 evidence closure hardening: added `internal/contracts/final_validation_closure_test.go` to enforce structure/tokens/timestamp format for `docs/FINAL_VALIDATION_v9.2.0-final.md` (validation commands, PASS results, and blueprint `.docx` tracking section)
 - [x] Phase 4 dependency-constraint hardening: added executable compatibility guard (`TestGoToolchainCryptoCompatibilityConstraint`) requiring Go `1.22` release-line builds to pin `golang.org/x/crypto` below `v0.35.0` (avoids non-buildable upgrades requiring Go `>=1.23`)
 - [x] Phase 4 final lock: re-ran full command gate set at HEAD (`make ci`, `make security-validate`, `make infra-validate`, `make db-verify`) and refreshed final validation evidence timestamp for release-lock state
+- [x] Phase 4 infra hardening: upgraded `scripts/infra/validate.sh` to execute `terraform plan` for both staging and production (`-refresh=false -lock=false -input=false -detailed-exitcode`) and added closure-test enforcement
+- [x] Phase 4 evidence refresh: reran full gate set after infra hardening and updated `docs/FINAL_VALIDATION_v9.2.0-final.md` to capture terraform plan coverage in final validation notes
 - [x] Phase 4.5 final validation: executed `make ci`, `make security-validate`, and `make infra-validate` successfully; Terraform module/env validation and Helm lint/template checks passed via dockerized toolchain fallbacks
 - [x] Phase 4 release closure: produced final validation report (`docs/FINAL_VALIDATION_v9.2.0-final.md`) and emitted release tags (`v9.0.0`, `v9.1.0`, `v9.2.0`, `v9.2.0-final`)
 

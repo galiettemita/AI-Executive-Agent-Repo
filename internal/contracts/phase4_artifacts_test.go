@@ -61,6 +61,8 @@ func TestPhase4ReadinessArtifactsExist(t *testing.T) {
 		"terraform fmt -check -recursive",
 		"terraform validate modules",
 		"terraform validate environments",
+		"terraform plan environments",
+		"plan -refresh=false -lock=false -input=false -detailed-exitcode",
 		"helm lint charts",
 		"helm template",
 		"REQUIRE_INFRA_TOOLS",
