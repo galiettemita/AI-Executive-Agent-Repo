@@ -151,6 +151,7 @@ Legend
 - [x] Strict closure hardening: replaced Helm `busybox:latest` placeholders with service-specific immutable image coordinates and added infra closure checks to forbid placeholder repositories/tags across all canonical charts (`helm/*/values.yaml`, `internal/contracts/infrastructure_closure_test.go`)
 - [x] Strict closure hardening: added `terraform fmt -check -recursive` as a mandatory infra validation gate and enforced it via Phase 4/script closure contracts (`scripts/infra/validate.sh`, `internal/contracts/phase4_artifacts_test.go`, `internal/contracts/script_closure_test.go`)
 - [x] Strict closure hardening: upgraded deployment documentation to explicitly include the canonical `terraform apply` + `helm install` sequence and enforced required deployment tokens/section in docs closure tests (`docs/DEPLOYMENT.md`, `internal/contracts/documentation_closure_test.go`)
+- [x] Strict closure hardening: enforced exact runtime-service build matrix parity (`cmd/` directories, Docker build loop, CI build/scan loops, Dockerfile `SERVICE` target) and exact Helm chart-to-image repository/tag mappings via closure tests (`internal/contracts/service_matrix_closure_test.go`, `internal/contracts/infrastructure_closure_test.go`)
 
 Migration rules (must follow)
 - Preserve already-working preserved components unchanged unless v4.0 explicitly requires changes (per user instructions).

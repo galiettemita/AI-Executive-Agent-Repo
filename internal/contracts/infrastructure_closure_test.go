@@ -180,8 +180,21 @@ func TestV92InfrastructureArtifactsExist(t *testing.T) {
 		"BREVIO-health-checker",
 	}
 	assertExactDirectorySet(t, filepath.Join(root, "helm"), allHelmCharts)
+	expectedHelmImages := map[string]string{
+		"BREVIO-gateway":         "ghcr.io/brevio/gateway",
+		"BREVIO-brain":           "ghcr.io/brevio/brain",
+		"BREVIO-control":         "ghcr.io/brevio/control",
+		"BREVIO-executor":        "ghcr.io/brevio/executor",
+		"BREVIO-canvas":          "ghcr.io/brevio/canvas",
+		"BREVIO-temporal-worker": "ghcr.io/brevio/temporal-worker",
+		"BREVIO-admin-api":       "ghcr.io/brevio/admin-api",
+		"BREVIO-admin-frontend":  "ghcr.io/brevio/admin-frontend",
+		"BREVIO-rag-worker":      "ghcr.io/brevio/rag-worker",
+		"BREVIO-guardrails":      "ghcr.io/brevio/guardrails",
+		"BREVIO-health-checker":  "ghcr.io/brevio/health-checker",
+	}
 	for _, chart := range allHelmCharts {
-		assertHelmImageNotPlaceholder(t, filepath.Join(root, "helm", chart, "values.yaml"))
+		assertHelmImageBaseline(t, filepath.Join(root, "helm", chart, "values.yaml"), expectedHelmImages[chart], "v9.2.0")
 	}
 
 	requiredTerraformModules := []string{
@@ -373,13 +386,25 @@ func assertStringSliceSetEquals(t *testing.T, actual, expected []string, label s
 	t.Fatalf("%s mismatch: missing=%v extra=%v", label, missing, extra)
 }
 
-func assertHelmImageNotPlaceholder(t *testing.T, path string) {
+func assertHelmImageBaseline(t *testing.T, path, repository, tag string) {
 	t.Helper()
 	content := readFileString(t, path)
+	if repository == "" {
+		t.Fatalf("expected repository must be provided for %s", path)
+	}
+	if tag == "" {
+		t.Fatalf("expected tag must be provided for %s", path)
+	}
 	if strings.Contains(content, "repository: busybox") {
 		t.Fatalf("helm chart still uses placeholder repository in %s", path)
 	}
 	if strings.Contains(content, "tag: latest") {
 		t.Fatalf("helm chart still uses floating latest tag in %s", path)
+	}
+	if !strings.Contains(content, "repository: "+repository) {
+		t.Fatalf("helm chart repository mismatch in %s; expected %s", path, repository)
+	}
+	if !strings.Contains(content, "tag: "+tag) {
+		t.Fatalf("helm chart tag mismatch in %s; expected %s", path, tag)
 	}
 }
