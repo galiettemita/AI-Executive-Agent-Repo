@@ -3,6 +3,8 @@ package admin
 import "testing"
 
 func TestAdminLifecycle(t *testing.T) {
+	t.Parallel()
+
 	s := NewService()
 
 	user := s.UpsertUser(User{
@@ -34,14 +36,21 @@ func TestAdminLifecycle(t *testing.T) {
 	}
 
 	rule := s.UpsertAlertRule(AlertRule{
-		Name:      "error_rate_spike",
-		Metric:    "error_rate_pct",
-		Threshold: 1.0,
-		Enabled:   true,
+		Name:       "error_rate_spike",
+		Metric:     "error_rate_pct",
+		Threshold:  0.1,
+		Comparator: ">",
+		Enabled:    true,
 	})
 	if rule.ID == "" {
 		t.Fatalf("expected alert rule id")
 	}
+
+	fired := s.EvaluateAlertRules(map[string]float64{"error_rate_pct": 0.2})
+	if len(fired) != 1 {
+		t.Fatalf("expected one fired alert event, got %d", len(fired))
+	}
+
 	if !s.DeleteAlertRule(rule.ID) {
 		t.Fatalf("expected alert rule delete success")
 	}
@@ -63,5 +72,42 @@ func TestAdminLifecycle(t *testing.T) {
 	trust := s.RecalculateTrustScores()
 	if trust["status"] != "completed" {
 		t.Fatalf("unexpected trust recalc result: %#v", trust)
+	}
+}
+
+func TestAdminDashboardConfigAndSavedViews(t *testing.T) {
+	t.Parallel()
+
+	s := NewService()
+	cfg := s.UpsertDashboardConfig("ws_admin", DashboardConfig{
+		RefreshSeconds: 30,
+		Widgets:        []string{"active_workflows", "queue_backlog"},
+	})
+	if cfg.WorkspaceID != "ws_admin" {
+		t.Fatalf("unexpected dashboard config workspace: %#v", cfg)
+	}
+	loaded := s.GetDashboardConfig("ws_admin")
+	if loaded.RefreshSeconds != 30 {
+		t.Fatalf("unexpected dashboard config load: %#v", loaded)
+	}
+
+	view := s.UpsertSavedView("ws_admin", SavedView{
+		Name: "cost_focus",
+		Filters: map[string]string{
+			"section": "costs",
+		},
+	})
+	if view.ID == "" {
+		t.Fatalf("expected saved view id")
+	}
+	views := s.ListSavedViews("ws_admin")
+	if len(views) != 1 {
+		t.Fatalf("expected one saved view, got %d", len(views))
+	}
+	if !s.DeleteSavedView("ws_admin", view.ID) {
+		t.Fatalf("expected saved view delete success")
+	}
+	if len(s.ListSavedViews("ws_admin")) != 0 {
+		t.Fatalf("expected saved views to be empty after delete")
 	}
 }

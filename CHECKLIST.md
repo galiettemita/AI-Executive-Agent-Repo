@@ -208,6 +208,7 @@ Legend
 - [x] Phase 3 continuation (Step 40 react_early_exit): added deterministic ReAct early-exit execution logic in `internal/workflows` (per-tier `max_steps`, signal-based termination, partial result fallback) and strengthened runtime acceptance gates to assert `MAX_STEPS_REACHED` behavior under T3 limits
 - [x] Phase 3 continuation (Step 41 security_hardening): hardened `internal/security/pii` with key-versioned field encryption policies + dual-key read-window rotation handling, and hardened `internal/security/sandbox` with profile-based MCP egress controls (HTTPS enforcement, allow/deny suffixes, blocked CIDRs, IMDS/loopback/private network denial, violation audit records)
 - [x] Phase 3 continuation (Step 42 compliance_automation): hardened `internal/compliance` with deterministic framework normalization, evidence metadata enrichment (`collected_at`, normalized `sha256`), schema-aligned DSR identifiers/deadlines (`request_id`, `deadline_at`), and automated DSR SLA-at-risk tracking surfaced through compliance API responses
+- [x] Phase 3 continuation (Step 43 admin_backend): hardened `internal/admin` with alert evaluation engine + alert event records, dashboard configuration and saved-view lifecycle support, enriched dashboard/KPI payloads, and maintained full admin endpoint CRUD behavior with updated regression coverage
 
 Migration rules (must follow)
 - Preserve already-working preserved components unchanged unless v4.0 explicitly requires changes (per user instructions).

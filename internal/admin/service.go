@@ -3,7 +3,9 @@ package admin
 import (
 	"fmt"
 	"sort"
+	"strings"
 	"sync"
+	"time"
 )
 
 type User struct {
@@ -42,14 +44,41 @@ type AlertChannel struct {
 	Enabled bool   `json:"enabled"`
 }
 
+type DashboardConfig struct {
+	WorkspaceID    string   `json:"workspace_id"`
+	RefreshSeconds int      `json:"refresh_seconds"`
+	Widgets        []string `json:"widgets"`
+}
+
+type SavedView struct {
+	ID          string            `json:"id"`
+	WorkspaceID string            `json:"workspace_id"`
+	Name        string            `json:"name"`
+	Filters     map[string]string `json:"filters"`
+	CreatedAt   string            `json:"created_at"`
+}
+
+type AlertEvent struct {
+	ID        string  `json:"id"`
+	RuleID    string  `json:"rule_id"`
+	Metric    string  `json:"metric"`
+	Value     float64 `json:"value"`
+	Threshold float64 `json:"threshold"`
+	FiredAt   string  `json:"fired_at"`
+}
+
 type Service struct {
-	mu            sync.RWMutex
-	nextID        int
-	users         map[string]User
-	userSessions  map[string][]UserSession
-	budget        CostBudget
-	alertRules    map[string]AlertRule
-	alertChannels map[string]AlertChannel
+	mu               sync.RWMutex
+	nextID           int
+	users            map[string]User
+	userSessions     map[string][]UserSession
+	budget           CostBudget
+	alertRules       map[string]AlertRule
+	alertChannels    map[string]AlertChannel
+	dashboardConfigs map[string]DashboardConfig
+	savedViews       map[string][]SavedView
+	alertEvents      []AlertEvent
+	now              func() time.Time
 }
 
 func NewService() *Service {
@@ -60,6 +89,16 @@ func NewService() *Service {
 		budget:        CostBudget{WorkspaceID: "default", MonthlyCap: 1000, CurrentCost: 200, Currency: "USD"},
 		alertRules:    map[string]AlertRule{},
 		alertChannels: map[string]AlertChannel{},
+		dashboardConfigs: map[string]DashboardConfig{
+			"default": {
+				WorkspaceID:    "default",
+				RefreshSeconds: 60,
+				Widgets:        []string{"active_workflows", "queue_backlog", "error_rate_pct", "cost_burn"},
+			},
+		},
+		savedViews:  map[string][]SavedView{},
+		alertEvents: []AlertEvent{},
+		now:         func() time.Time { return time.Now().UTC() },
 	}
 }
 
@@ -133,10 +172,19 @@ func (s *Service) ListUserSessions(userID string) []UserSession {
 }
 
 func (s *Service) Dashboard() map[string]any {
-	return map[string]any{
-		"active_workflows": 3,
-		"queue_backlog":    12,
+	metrics := map[string]float64{
 		"error_rate_pct":   0.2,
+		"queue_backlog":    12,
+		"active_workflows": 3,
+	}
+	fired := s.EvaluateAlertRules(metrics)
+	config := s.GetDashboardConfig("default")
+	return map[string]any{
+		"active_workflows":       3,
+		"queue_backlog":          12,
+		"error_rate_pct":         0.2,
+		"dashboard_config":       config,
+		"alerts_fired_last_eval": len(fired),
 	}
 }
 
@@ -157,18 +205,27 @@ func (s *Service) Queues() []map[string]any {
 func (s *Service) CostSummary() map[string]any {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
+	burnPct := 0.0
+	if s.budget.MonthlyCap > 0 {
+		burnPct = (s.budget.CurrentCost / s.budget.MonthlyCap) * 100
+	}
 	return map[string]any{
 		"monthly_cap":  s.budget.MonthlyCap,
 		"current_cost": s.budget.CurrentCost,
 		"currency":     s.budget.Currency,
+		"burn_pct":     burnPct,
 	}
 }
 
 func (s *Service) CostAnomalies() []map[string]any {
+	severity := "low"
+	if s.GetBudget().CurrentCost > s.GetBudget().MonthlyCap*0.9 {
+		severity = "high"
+	}
 	return []map[string]any{
 		{
 			"id":       "cost_anomaly_000001",
-			"severity": "low",
+			"severity": severity,
 			"reason":   "spend_increase_detected",
 		},
 	}
@@ -216,6 +273,7 @@ func (s *Service) UpsertAlertRule(rule AlertRule) AlertRule {
 	if rule.Comparator == "" {
 		rule.Comparator = ">"
 	}
+	rule.Comparator = strings.TrimSpace(rule.Comparator)
 	s.alertRules[rule.ID] = rule
 	return rule
 }
@@ -257,10 +315,164 @@ func (s *Service) UpsertAlertChannel(channel AlertChannel) AlertChannel {
 	return channel
 }
 
+func (s *Service) EvaluateAlertRules(metrics map[string]float64) []AlertEvent {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	fired := make([]AlertEvent, 0)
+	for _, rule := range s.alertRules {
+		if !rule.Enabled {
+			continue
+		}
+		value, ok := metrics[rule.Metric]
+		if !ok {
+			continue
+		}
+		if !compareMetric(value, rule.Comparator, rule.Threshold) {
+			continue
+		}
+		event := AlertEvent{
+			ID:        fmt.Sprintf("alert_event_%06d", s.nextID),
+			RuleID:    rule.ID,
+			Metric:    rule.Metric,
+			Value:     value,
+			Threshold: rule.Threshold,
+			FiredAt:   s.now().Format(time.RFC3339),
+		}
+		s.nextID++
+		s.alertEvents = append(s.alertEvents, event)
+		fired = append(fired, event)
+	}
+	return fired
+}
+
+func (s *Service) ListAlertEvents() []AlertEvent {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]AlertEvent, len(s.alertEvents))
+	copy(out, s.alertEvents)
+	return out
+}
+
+func (s *Service) GetDashboardConfig(workspaceID string) DashboardConfig {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	workspaceID = normalizeWorkspaceID(workspaceID)
+	if cfg, ok := s.dashboardConfigs[workspaceID]; ok {
+		return cfg
+	}
+	return s.dashboardConfigs["default"]
+}
+
+func (s *Service) UpsertDashboardConfig(workspaceID string, config DashboardConfig) DashboardConfig {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	workspaceID = normalizeWorkspaceID(workspaceID)
+	if config.RefreshSeconds <= 0 {
+		config.RefreshSeconds = 60
+	}
+	if len(config.Widgets) == 0 {
+		config.Widgets = []string{"active_workflows", "queue_backlog", "error_rate_pct", "cost_burn"}
+	}
+	config.WorkspaceID = workspaceID
+	s.dashboardConfigs[workspaceID] = config
+	return config
+}
+
+func (s *Service) ListSavedViews(workspaceID string) []SavedView {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	workspaceID = normalizeWorkspaceID(workspaceID)
+	views := s.savedViews[workspaceID]
+	out := make([]SavedView, len(views))
+	copy(out, views)
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].ID < out[j].ID
+	})
+	return out
+}
+
+func (s *Service) UpsertSavedView(workspaceID string, view SavedView) SavedView {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	workspaceID = normalizeWorkspaceID(workspaceID)
+	if view.ID == "" {
+		view.ID = fmt.Sprintf("saved_view_%06d", s.nextID)
+		s.nextID++
+	}
+	if view.Name == "" {
+		view.Name = "default_view"
+	}
+	if view.Filters == nil {
+		view.Filters = map[string]string{}
+	}
+	view.WorkspaceID = workspaceID
+	if view.CreatedAt == "" {
+		view.CreatedAt = s.now().Format(time.RFC3339)
+	}
+
+	views := s.savedViews[workspaceID]
+	updated := false
+	for i := range views {
+		if views[i].ID == view.ID {
+			views[i] = view
+			updated = true
+			break
+		}
+	}
+	if !updated {
+		views = append(views, view)
+	}
+	s.savedViews[workspaceID] = views
+	return view
+}
+
+func (s *Service) DeleteSavedView(workspaceID, id string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	workspaceID = normalizeWorkspaceID(workspaceID)
+	views := s.savedViews[workspaceID]
+	for i := range views {
+		if views[i].ID != id {
+			continue
+		}
+		s.savedViews[workspaceID] = append(views[:i], views[i+1:]...)
+		return true
+	}
+	return false
+}
+
 func (s *Service) KPIReport() map[string]any {
 	return map[string]any{
-		"availability_pct": 99.95,
-		"p95_t1_ms":        2300,
-		"error_rate_pct":   0.2,
+		"availability_pct":          99.95,
+		"p95_t1_ms":                 2300,
+		"error_rate_pct":            0.2,
+		"alerts_total":              len(s.ListAlertEvents()),
+		"active_alert_rules":        len(s.ListAlertRules()),
+		"configured_alert_channels": len(s.ListAlertChannels()),
 	}
+}
+
+func compareMetric(value float64, comparator string, threshold float64) bool {
+	switch comparator {
+	case ">":
+		return value > threshold
+	case ">=":
+		return value >= threshold
+	case "<":
+		return value < threshold
+	case "<=":
+		return value <= threshold
+	case "==":
+		return value == threshold
+	default:
+		return value > threshold
+	}
+}
+
+func normalizeWorkspaceID(workspaceID string) string {
+	if strings.TrimSpace(workspaceID) == "" {
+		return "default"
+	}
+	return workspaceID
 }
