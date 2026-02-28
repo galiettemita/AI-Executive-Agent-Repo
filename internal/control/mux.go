@@ -1340,13 +1340,7 @@ func handleTrust(w http.ResponseWriter, r *http.Request, svc *trust.Service) {
 			return
 		}
 		if len(svc.ListScores()) == 0 {
-			svc.UpsertScore(trust.TrustScore{
-				WorkspaceID:      "default",
-				Score:            0.90,
-				SuccessCount30d:  25,
-				FailureCount30d:  0,
-				OverrideCount30d: 1,
-			})
+			svc.RecalculateScore("default", 25, 0, 0, 0, "A1")
 		}
 		writeJSON(w, http.StatusOK, map[string]any{"trust_scores": svc.ListScores()})
 		return
@@ -1354,7 +1348,7 @@ func handleTrust(w http.ResponseWriter, r *http.Request, svc *trust.Service) {
 		switch {
 		case len(parts) == 3 && r.Method == http.MethodGet:
 			if len(svc.ListPromotions()) == 0 {
-				svc.AddPromotion(trust.Promotion{WorkspaceID: "default"})
+				svc.RecalculateScore("default", 25, 0, 0, 0, "A1")
 			}
 			writeJSON(w, http.StatusOK, map[string]any{"promotions": svc.ListPromotions()})
 			return

@@ -182,6 +182,7 @@ Legend
 - [x] Phase 1 continuation (Step 13 a2ui_canvas): expanded canvas runtime with explicit A2UI mission-control surface rendering endpoint, SSRF-protected fetch-preview endpoint, persistent interaction logging, and websocket injection regression coverage while retaining tool-call forwarding semantics
 - [x] Phase 1 continuation (Step 14 observability_and_gates): added executable observability runtime primitives (`internal/observability`) for required structured log fields (`ts,service,env,workspace_id,user_id,ingress_turn_id,trace_id,span_id,event,severity,attrs`) and canonical-metric registry validation/recording against metric catalogs, with full test coverage and CI-green verification
 - [x] Phase 2 continuation (Step 15 goal_system): added explicit daily goal-creation cap enforcement (20/workspace/day), goal-review stalled detection with deterministic status transition, and wired goal-create API path (`POST /v1/goals`) to strict rate-limit handling with regression coverage
+- [x] Phase 2 continuation (Step 17 trust_autonomy): implemented exact deterministic trust-score formula and promotion-eligibility rules (`score >= 0.85`, `success >= 20`, `trailing14d_failure=0`), promotion proposal generation on recalculation, immutable post-decision promotion status semantics, and control-plane trust endpoint recalculation wiring
 
 Migration rules (must follow)
 - Preserve already-working preserved components unchanged unless v4.0 explicitly requires changes (per user instructions).

@@ -2,24 +2,31 @@ package trust
 
 import (
 	"fmt"
+	"math"
 	"sort"
+	"strings"
 	"sync"
+	"time"
 )
 
 type TrustScore struct {
-	WorkspaceID      string  `json:"workspace_id"`
-	Score            float64 `json:"score"`
-	SuccessCount30d  int     `json:"success_count_30d"`
-	FailureCount30d  int     `json:"failure_count_30d"`
-	OverrideCount30d int     `json:"override_count_30d"`
+	WorkspaceID        string  `json:"workspace_id"`
+	Score              float64 `json:"score"`
+	SuccessCount30d    int     `json:"success_count_30d"`
+	FailureCount30d    int     `json:"failure_count_30d"`
+	OverrideCount30d   int     `json:"override_count_30d"`
+	Trailing14dFailure int     `json:"trailing_14d_failure"`
+	CurrentAutonomy    string  `json:"current_autonomy"`
+	PromotionEligible  bool    `json:"promotion_eligible"`
 }
 
 type Promotion struct {
-	ID           string `json:"id"`
-	WorkspaceID  string `json:"workspace_id"`
-	FromAutonomy string `json:"from_autonomy"`
-	ToAutonomy   string `json:"to_autonomy"`
-	Status       string `json:"status"`
+	ID           string    `json:"id"`
+	WorkspaceID  string    `json:"workspace_id"`
+	FromAutonomy string    `json:"from_autonomy"`
+	ToAutonomy   string    `json:"to_autonomy"`
+	Status       string    `json:"status"`
+	CreatedAt    time.Time `json:"created_at"`
 }
 
 type Service struct {
@@ -37,13 +44,61 @@ func NewService() *Service {
 	}
 }
 
+func computeTrustScore(successCount30d, failureCount30d, overrideCount30d int) float64 {
+	denominator := successCount30d + failureCount30d + overrideCount30d
+	if denominator < 1 {
+		denominator = 1
+	}
+	score := float64(successCount30d-2*failureCount30d-3*overrideCount30d) / float64(denominator)
+	return math.Round(score*10000) / 10000
+}
+
+func isPromotionEligible(score float64, successCount30d, trailing14dFailure int) bool {
+	return score >= 0.85 && successCount30d >= 20 && trailing14dFailure == 0
+}
+
+func nextAutonomyLevel(current string) string {
+	switch strings.ToUpper(strings.TrimSpace(current)) {
+	case "A0":
+		return "A1"
+	case "A1":
+		return "A2"
+	case "A2":
+		return "A3"
+	case "A3":
+		return "A4"
+	default:
+		return "A4"
+	}
+}
+
 func (s *Service) UpsertScore(score TrustScore) TrustScore {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if score.WorkspaceID == "" {
 		score.WorkspaceID = "default"
 	}
+	if score.CurrentAutonomy == "" {
+		score.CurrentAutonomy = "A1"
+	}
+	score.Score = computeTrustScore(score.SuccessCount30d, score.FailureCount30d, score.OverrideCount30d)
+	score.PromotionEligible = isPromotionEligible(score.Score, score.SuccessCount30d, score.Trailing14dFailure)
 	s.scores[score.WorkspaceID] = score
+	return score
+}
+
+func (s *Service) RecalculateScore(workspaceID string, successCount30d, failureCount30d, overrideCount30d, trailing14dFailure int, currentAutonomy string) TrustScore {
+	score := s.UpsertScore(TrustScore{
+		WorkspaceID:        workspaceID,
+		SuccessCount30d:    successCount30d,
+		FailureCount30d:    failureCount30d,
+		OverrideCount30d:   overrideCount30d,
+		Trailing14dFailure: trailing14dFailure,
+		CurrentAutonomy:    currentAutonomy,
+	})
+	if score.PromotionEligible {
+		s.AddPromotion(Promotion{WorkspaceID: workspaceID, FromAutonomy: currentAutonomy, ToAutonomy: nextAutonomyLevel(currentAutonomy)})
+	}
 	return score
 }
 
@@ -63,8 +118,6 @@ func (s *Service) ListScores() []TrustScore {
 func (s *Service) AddPromotion(promotion Promotion) Promotion {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	promotion.ID = fmt.Sprintf("promotion_%06d", s.nextID)
-	s.nextID++
 	if promotion.WorkspaceID == "" {
 		promotion.WorkspaceID = "default"
 	}
@@ -72,10 +125,15 @@ func (s *Service) AddPromotion(promotion Promotion) Promotion {
 		promotion.FromAutonomy = "A1"
 	}
 	if promotion.ToAutonomy == "" {
-		promotion.ToAutonomy = "A2"
+		promotion.ToAutonomy = nextAutonomyLevel(promotion.FromAutonomy)
 	}
 	if promotion.Status == "" {
 		promotion.Status = "pending"
+	}
+	promotion.ID = fmt.Sprintf("promotion_%06d", s.nextID)
+	s.nextID++
+	if promotion.CreatedAt.IsZero() {
+		promotion.CreatedAt = time.Now().UTC()
 	}
 	s.promotions[promotion.ID] = promotion
 	return promotion
@@ -101,7 +159,10 @@ func (s *Service) DecidePromotion(id, decision string) (Promotion, bool) {
 	if !ok {
 		return Promotion{}, false
 	}
-	if decision == "approve" {
+	if promotion.Status != "pending" {
+		return promotion, true
+	}
+	if strings.EqualFold(decision, "approve") {
 		promotion.Status = "approved"
 	} else {
 		promotion.Status = "denied"
