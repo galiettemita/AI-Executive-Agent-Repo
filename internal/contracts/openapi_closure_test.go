@@ -291,6 +291,98 @@ func TestOpenAPIV9SchemaPointersClosure(t *testing.T) {
 	}
 }
 
+func TestOpenAPIV9ComponentSchemaCatalogClosure(t *testing.T) {
+	t.Parallel()
+
+	root := repositoryRoot(t)
+	path := filepath.Join(root, "api", "openapi", "v9.yaml")
+	body, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read openapi file: %v", err)
+	}
+
+	var doc map[string]any
+	if err := yaml.Unmarshal(body, &doc); err != nil {
+		t.Fatalf("parse openapi yaml: %v", err)
+	}
+
+	components, ok := doc["components"].(map[string]any)
+	if !ok {
+		t.Fatal("openapi components missing")
+	}
+	schemas, ok := components["schemas"].(map[string]any)
+	if !ok || len(schemas) == 0 {
+		t.Fatal("openapi components.schemas missing")
+	}
+
+	requiredSchemaFiles := []string{
+		"tool_call.v9.json",
+		"error.v9.json",
+		"capability_resolver_contract.v1.json",
+		"capability_extractor_output.v1.json",
+		"capability_resolve_request.v1.json",
+		"capability_resolve_response.v1.json",
+		"provisioning_policy.v1.json",
+		"provision_start_request.v1.json",
+		"server_artifact_manifest.v1.json",
+		"llm_request.v1.json",
+		"provisioning_approval_message.v1.json",
+		"provisioning_status_message.v1.json",
+		"provisioning_security_justification.v1.json",
+		"provisioning_rank_explainer.v1.json",
+		"action_proposal.v1.json",
+		"goal_item.v1.json",
+		"goal_progress_update.v1.json",
+		"mission_control_layout.v1.json",
+		"trust_score_report.v1.json",
+		"promotion_proposal.v1.json",
+		"feedback_submission.v1.json",
+		"lesson_proposal.v1.json",
+		"daily_capture_output.v1.json",
+		"capability_recommendation.v1.json",
+		"code_context_export_request.v1.json",
+		"debt_resolution_task.v1.json",
+		"discovery_followup.v1.json",
+		"morning_briefing.v1.json",
+		"context_budget_config.v1.json",
+		"context_allocation_report.v1.json",
+		"rag_collection_config.v1.json",
+		"rag_search_request.v1.json",
+		"rag_search_response.v1.json",
+		"session_context.v1.json",
+		"temporal_expression.v1.json",
+		"scheduling_conflict_report.v1.json",
+		"guardrail_event.v1.json",
+		"tool_health_report.v1.json",
+		"feature_flag_evaluation.v1.json",
+		"error_message.v1.json",
+		"compliance_evidence_manifest.v1.json",
+		"dsr_request.v1.json",
+		"admin_kpi_report.v1.json",
+		"admin_alert.v1.json",
+		"memory_conflict_report.v1.json",
+		"model_tier_override_request.v1.json",
+	}
+
+	for _, required := range requiredSchemaFiles {
+		found := false
+		for _, raw := range schemas {
+			entry, ok := raw.(map[string]any)
+			if !ok {
+				continue
+			}
+			ref, _ := entry["$ref"].(string)
+			if strings.HasSuffix(ref, "/"+required) || strings.HasSuffix(ref, required) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("openapi components.schemas missing reference to %s", required)
+		}
+	}
+}
+
 func loadOpenAPIDoc(t *testing.T) openapiDocument {
 	t.Helper()
 
