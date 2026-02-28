@@ -27,6 +27,11 @@ Timestamp (UTC): 2026-02-28 20:49:00 UTC
 - Terraform and Helm checks executed with dockerized fallback toolchains and all module/chart validations passed.
 - `infra-validate` now includes `terraform plan` coverage for both staging and production (`-refresh=false -lock=false -input=false -detailed-exitcode`).
 - `make ci-full` now provides one-command execution for `ci + security-validate + infra-validate + db-verify` and passed at release-lock.
+- Remaining HIGH CVE in Trivy (`CVE-2025-22869`, `golang.org/x/crypto v0.33.0`) is explicitly allowlisted because upstream fix requires `golang.org/x/crypto >= v0.35.0` and Go `>= 1.23`, while this release line is pinned to Go `1.22` by blueprint constraint.
+
+## Human-Required Final Triggers
+- Provision/confirm production credentials and external provider accounts (AWS, OAuth, messaging, LLM providers).
+- Execute production rollout gate (`terraform apply` + `helm install`) in target account/environment.
 
 ## Blueprint Source Tracking
 Tracked in git:

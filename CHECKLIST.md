@@ -238,6 +238,7 @@ Legend
 - [x] Phase 4 evidence refresh: reran full gate set after infra hardening and updated `docs/FINAL_VALIDATION_v9.2.0-final.md` to capture terraform plan coverage in final validation notes
 - [x] Phase 4 CI usability hardening: added `make ci-full` target (`ci + security-validate + infra-validate + db-verify`) and enforced target presence in Makefile closure contracts for one-command full-gate execution
 - [x] Phase 4 one-command closure: executed `make ci-full` successfully (lint/build/test/contracts/acceptance + security + infra + db runtime verification) and refreshed final validation report evidence
+- [x] Phase 4 closure note: captured remaining Trivy HIGH exception (`CVE-2025-22869`) as Go 1.22-constrained allowlist item and documented only remaining human-required triggers (credential provisioning + production apply/install gate)
 - [x] Phase 4.5 final validation: executed `make ci`, `make security-validate`, and `make infra-validate` successfully; Terraform module/env validation and Helm lint/template checks passed via dockerized toolchain fallbacks
 - [x] Phase 4 release closure: produced final validation report (`docs/FINAL_VALIDATION_v9.2.0-final.md`) and emitted release tags (`v9.0.0`, `v9.1.0`, `v9.2.0`, `v9.2.0-final`)
 
