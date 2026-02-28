@@ -50,13 +50,14 @@ type ProjectTemplate struct {
 }
 
 type ContextExport struct {
-	ID                  string `json:"id"`
-	WorkspaceID         string `json:"workspace_id"`
-	RepositoryID        string `json:"repository_id"`
-	Scope               string `json:"scope"`
-	IncludeDependencies bool   `json:"include_dependencies"`
-	Status              string `json:"status"`
-	Format              string `json:"format"`
+	ID                  string    `json:"id"`
+	WorkspaceID         string    `json:"workspace_id"`
+	RepositoryID        string    `json:"repository_id"`
+	Scope               string    `json:"scope"`
+	IncludeDependencies bool      `json:"include_dependencies"`
+	Status              string    `json:"status"`
+	Format              string    `json:"format"`
+	CreatedAt           time.Time `json:"created_at"`
 }
 
 type RepositorySnapshot struct {
@@ -285,34 +286,48 @@ func (s *Service) AddTemplate(template ProjectTemplate) ProjectTemplate {
 	if template.Status == "" {
 		template.Status = "active"
 	}
+	template.Status = normalizeTemplateStatus(template.Status)
 	s.templates[template.ID] = template
 	return template
 }
 
 func (s *Service) CreateContextExport(export ContextExport) ContextExport {
+	created, _ := s.CreateContextExportStrict(export)
+	return created
+}
+
+func (s *Service) CreateContextExportStrict(export ContextExport) (ContextExport, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	workspaceID := normalizeWorkspace(export.WorkspaceID)
+	createdToday := s.contextExportsTodayLocked(workspaceID, time.Now().UTC())
+	if createdToday >= 10 {
+		return ContextExport{}, fmt.Errorf("EXPORT_RATE_LIMIT")
+	}
+
 	export.ID = fmt.Sprintf("context_export_%06d", s.nextID)
 	s.nextID++
-	if export.WorkspaceID == "" {
-		export.WorkspaceID = "default"
-	}
+	export.WorkspaceID = workspaceID
 	if export.RepositoryID == "" {
 		export.RepositoryID = "primary"
 	}
-	if export.Scope == "" {
-		export.Scope = "workspace"
+	scope, ok := normalizeExportScope(export.Scope)
+	if !ok {
+		return ContextExport{}, fmt.Errorf("invalid context export scope")
 	}
+	export.Scope = scope
 	if export.Status == "" {
 		export.Status = "completed"
 	}
-	if export.Format == "" {
-		export.Format = "markdown"
+	format, ok := normalizeExportFormat(export.Format)
+	if !ok {
+		return ContextExport{}, fmt.Errorf("invalid context export format")
 	}
-	export.IncludeDependencies = export.IncludeDependencies || false
+	export.Format = format
+	export.CreatedAt = time.Now().UTC()
 	s.exports[export.ID] = export
-	return export
+	return export, nil
 }
 
 func (s *Service) GetContextExport(id string) (ContextExport, bool) {
@@ -551,4 +566,61 @@ func sortedKeys(values map[string]struct{}) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+func normalizeExportScope(scope string) (string, bool) {
+	switch strings.ToLower(strings.TrimSpace(scope)) {
+	case "":
+		return "workspace", true
+	case "workspace":
+		return "workspace", true
+	case "repository":
+		return "repository", true
+	case "cross_repo":
+		return "cross_repo", true
+	default:
+		return "", false
+	}
+}
+
+func normalizeExportFormat(format string) (string, bool) {
+	switch strings.ToLower(strings.TrimSpace(format)) {
+	case "":
+		return "markdown", true
+	case "markdown":
+		return "markdown", true
+	case "json":
+		return "json", true
+	case "yaml":
+		return "yaml", true
+	default:
+		return "", false
+	}
+}
+
+func normalizeTemplateStatus(status string) string {
+	switch strings.ToLower(strings.TrimSpace(status)) {
+	case "draft":
+		return "draft"
+	case "archived":
+		return "archived"
+	case "active":
+		return "active"
+	default:
+		return "active"
+	}
+}
+
+func (s *Service) contextExportsTodayLocked(workspaceID string, now time.Time) int {
+	today := now.Format("2006-01-02")
+	count := 0
+	for _, export := range s.exports {
+		if export.WorkspaceID != workspaceID {
+			continue
+		}
+		if export.CreatedAt.Format("2006-01-02") == today {
+			count++
+		}
+	}
+	return count
 }

@@ -841,6 +841,28 @@ func TestControlMuxV91CodebaseFlow(t *testing.T) {
 	}
 }
 
+func TestControlMuxCodeContextExportRateLimit(t *testing.T) {
+	t.Parallel()
+
+	mux := NewMux(NewService("dev-secret"))
+	body := []byte(`{"repository_id":"repo_main","format":"markdown","scope":"workspace","include_dependencies":true}`)
+	for i := 0; i < 10; i++ {
+		req := httptest.NewRequest(http.MethodPost, "/v1/codebase/context-export?workspace_id=ws_rate", bytes.NewReader(body))
+		resp := httptest.NewRecorder()
+		mux.ServeHTTP(resp, req)
+		if resp.Code != http.StatusCreated {
+			t.Fatalf("unexpected context export status at %d: %d", i, resp.Code)
+		}
+	}
+
+	overflowReq := httptest.NewRequest(http.MethodPost, "/v1/codebase/context-export?workspace_id=ws_rate", bytes.NewReader(body))
+	overflowResp := httptest.NewRecorder()
+	mux.ServeHTTP(overflowResp, overflowReq)
+	if overflowResp.Code != http.StatusTooManyRequests {
+		t.Fatalf("expected export rate limit status, got: %d", overflowResp.Code)
+	}
+}
+
 func TestControlMuxContextBudgetFlow(t *testing.T) {
 	t.Parallel()
 

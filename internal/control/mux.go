@@ -1602,7 +1602,16 @@ func handleCodebaseIntel(w http.ResponseWriter, r *http.Request, svc *codebase_i
 				return
 			}
 			payload.WorkspaceID = workspaceID
-			writeJSON(w, http.StatusCreated, svc.CreateContextExport(payload))
+			created, err := svc.CreateContextExportStrict(payload)
+			if err != nil {
+				status := http.StatusBadRequest
+				if err.Error() == "EXPORT_RATE_LIMIT" {
+					status = http.StatusTooManyRequests
+				}
+				http.Error(w, err.Error(), status)
+				return
+			}
+			writeJSON(w, http.StatusCreated, created)
 			return
 		case len(parts) == 4 && r.Method == http.MethodGet:
 			export, ok := svc.GetContextExport(parts[3])

@@ -81,3 +81,39 @@ func TestCrossRepoAnalysisDeterministicSharedSignals(t *testing.T) {
 		t.Fatalf("expected repo ingested patterns")
 	}
 }
+
+func TestContextExportRateLimitAndValidation(t *testing.T) {
+	t.Parallel()
+
+	s := NewService()
+	for i := 0; i < 10; i++ {
+		if _, err := s.CreateContextExportStrict(ContextExport{
+			WorkspaceID:         "ws_rate",
+			RepositoryID:        "repo_main",
+			Format:              "markdown",
+			Scope:               "workspace",
+			IncludeDependencies: true,
+		}); err != nil {
+			t.Fatalf("unexpected create context export error at %d: %v", i, err)
+		}
+	}
+	if _, err := s.CreateContextExportStrict(ContextExport{
+		WorkspaceID:         "ws_rate",
+		RepositoryID:        "repo_main",
+		Format:              "markdown",
+		Scope:               "workspace",
+		IncludeDependencies: true,
+	}); err == nil {
+		t.Fatal("expected EXPORT_RATE_LIMIT after 10 exports/day")
+	}
+
+	if _, err := s.CreateContextExportStrict(ContextExport{
+		WorkspaceID:         "ws_invalid",
+		RepositoryID:        "repo_main",
+		Format:              "xml",
+		Scope:               "workspace",
+		IncludeDependencies: false,
+	}); err == nil {
+		t.Fatal("expected invalid context export format error")
+	}
+}
