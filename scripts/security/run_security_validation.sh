@@ -4,6 +4,18 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT_DIR"
 
+resolve_docker_bin() {
+  if command -v docker >/dev/null 2>&1; then
+    command -v docker
+    return 0
+  fi
+  if [[ -x "/Applications/Docker.app/Contents/Resources/bin/docker" ]]; then
+    echo "/Applications/Docker.app/Contents/Resources/bin/docker"
+    return 0
+  fi
+  return 1
+}
+
 should_require_security_tooling() {
   if [[ "${REQUIRE_SECURITY_TOOLS:-0}" == "1" ]]; then
     return 0
@@ -14,14 +26,35 @@ should_require_security_tooling() {
   return 1
 }
 
+run_go_cmd() {
+  local command_text="$1"
+  if command -v go >/dev/null 2>&1; then
+    bash -lc "$command_text"
+    return 0
+  fi
+
+  local docker_bin
+  if ! docker_bin="$(resolve_docker_bin)"; then
+    if should_require_security_tooling; then
+      echo "[security] Go toolchain unavailable and docker fallback missing in CI/strict mode"
+      exit 1
+    fi
+    echo "[security] Go toolchain unavailable and docker fallback missing; skipped: ${command_text}"
+    return 0
+  fi
+
+  "$docker_bin" run --rm -v "$ROOT_DIR":/src -w /src golang:1.22 sh -lc \
+    "export PATH=\"/usr/local/go/bin:/go/bin:\$PATH\"; ${command_text}"
+}
+
 echo "[security] prompt injection tests"
-go test ./internal/control -count=1
+run_go_cmd "go test ./internal/control -count=1"
 
 echo "[security] webhook signature tests"
-go test ./internal/gateway -count=1
+run_go_cmd "go test ./internal/gateway -count=1"
 
 echo "[security] ssrf protection tests"
-go test ./internal/executor -count=1
+run_go_cmd "go test ./internal/executor -count=1"
 
 if command -v trivy >/dev/null 2>&1; then
   echo "[security] trivy filesystem scan"

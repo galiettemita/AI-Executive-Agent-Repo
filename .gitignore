@@ -7,3 +7,5 @@ storage/
 classmate-ai/
 infra/node_modules/
 infra/.sst/
+artifacts/
+sbom.spdx.json

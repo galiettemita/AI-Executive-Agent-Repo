@@ -156,6 +156,8 @@ Legend
 - [x] Strict closure hardening: removed Helm `sleep` placeholders and hardened all deployment charts for distroless runtime (`/app/service`, non-root `65532`, read-only root FS, dropped capabilities, tmp `emptyDir`) with contract enforcement (`helm/*/templates/deployment.yaml`, `internal/contracts/infrastructure_closure_test.go`)
 - [x] Strict closure hardening: made `scripts/infra/validate.sh` Bash 3-compatible by removing associative-array usage (`local -A`) and preserving exact-set validation semantics for Terraform modules/environments and Helm charts on macOS default shell
 - [x] Strict closure hardening: added readiness/liveness probes (`/healthz/ready`, `/healthz/live`) to all Helm deployments and enforced probe presence in infrastructure closure contracts (`helm/*/templates/deployment.yaml`, `internal/contracts/infrastructure_closure_test.go`)
+- [x] Strict closure hardening: made security validation scripts autonomous on hosts without local Go by adding Dockerized Go 1.22 fallback for `go test` and `govulncheck`, plus Bash 3-safe vulnerability ID parsing (`scripts/security/run_security_validation.sh`, `scripts/security/run_govulncheck.sh`)
+- [x] Strict closure hardening: ignored generated security/build outputs to keep repository clean during autonomous validation runs (`artifacts/`, `sbom.spdx.json` in `.gitignore`)
 
 Migration rules (must follow)
 - Preserve already-working preserved components unchanged unless v4.0 explicitly requires changes (per user instructions).
