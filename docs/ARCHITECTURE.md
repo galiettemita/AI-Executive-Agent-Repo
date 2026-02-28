@@ -1,18 +1,20 @@
 # ARCHITECTURE
 
 ## Runtime Planes
-- Gateway: ingress/outbound channel handling and webhook security
-- Brain: planning, reasoning, and deterministic LLM interaction
-- Control: policy/firewall/execution gating
-- Executor: tool execution with simulate/commit semantics
-- Canvas: realtime A2UI interaction surface
+- Gateway: webhook ingress, signature verification, queueing, outbound dispatch
+- Brain: deterministic planning and LLM orchestration
+- Control: policy gates, firewall, rate/budget enforcement
+- Executor: tool simulate/commit, trust receipts, audit emissions
+- Canvas: A2UI websocket interaction surface
+- Temporal Worker: workflow runtime for interactive/provisioning/onboarding/drift and V9.1/V9.2 additive workflows
 
 ## Data and Workflows
-- PostgreSQL schema is defined via forward-only migrations in `db/migrations/`
-- Workflows are implemented in `internal/workflows/`
-- Policy bundles are in `policies/`
-- Contracts are in `schemas/` and `api/openapi/v9.yaml`
+- PostgreSQL migrations: `db/migrations/001_BREVIO_v9_init.sql`, `002_BREVIO_v91_soft_intelligence.sql`, `003_BREVIO_v92_production_hardening.sql`
+- Workflow engine code: `internal/workflows/`
+- Policy bundles: `policies/`
+- API and schema contracts: `api/openapi/v9.yaml`, `schemas/`
 
 ## Infrastructure
-- Terraform modules define platform components (network, compute, data, messaging, observability)
-- Helm charts define service deployments and autoscaling manifests
+- Terraform modules in `terraform/modules/`
+- Environment compositions in `terraform/environments/staging|production`
+- Helm charts in `helm/` for runtime services and V9.2 add-ons

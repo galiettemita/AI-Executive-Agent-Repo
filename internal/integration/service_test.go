@@ -92,6 +92,54 @@ func TestPipelineBudgetExhaustionStopsBeforeCommit(t *testing.T) {
 	}
 }
 
+func TestWorkflowIntegrationProvisioningCompensation(t *testing.T) {
+	t.Parallel()
+
+	svc := NewService("integration-secret")
+	result := svc.RunProvisioningWorkflow(context.Background(), "DeployServer")
+	if result.Status != "failed" {
+		t.Fatalf("expected failed provisioning status, got %s", result.Status)
+	}
+	if len(result.CompensatedSteps) == 0 {
+		t.Fatalf("expected reverse compensation steps, got %+v", result)
+	}
+	if result.CompensatedSteps[0] != "DeployServer" {
+		t.Fatalf("expected failed step compensation first, got %v", result.CompensatedSteps)
+	}
+}
+
+func TestWorkflowIntegrationOnboardingAndDrift(t *testing.T) {
+	t.Parallel()
+
+	svc := NewService("integration-secret")
+	onboarding := svc.RunOnboardingWorkflow(context.Background(), map[string]string{
+		"operator_profile_intake_v1":     "team=ops",
+		"behavior_policy_calibration_v1": "strict",
+		"codebase_map_ingestion_v1":      "repo=backend",
+		"system_map_ingestion_v1":        "services=gateway,control,executor",
+	})
+	if onboarding.Status != "completed" || len(onboarding.CompletedStages) != 4 {
+		t.Fatalf("expected onboarding completion, got %+v", onboarding)
+	}
+
+	drift := svc.RunDriftWorkflow(context.Background(), true)
+	if drift != "quarantined" {
+		t.Fatalf("expected drift quarantine result, got %s", drift)
+	}
+}
+
+func TestWorkflowIntegrationV91AndV92Executions(t *testing.T) {
+	t.Parallel()
+
+	svc := NewService("integration-secret")
+	if status := svc.RunDailyCaptureWorkflow(context.Background(), "cron"); status != "completed" {
+		t.Fatalf("expected daily capture completion, got %s", status)
+	}
+	if status := svc.RunRAGEvalWorkflow(context.Background(), 0.82, 0.78); status != "passed" {
+		t.Fatalf("expected rag eval pass status, got %s", status)
+	}
+}
+
 func containsString(items []string, needle string) bool {
 	for _, item := range items {
 		if item == needle {

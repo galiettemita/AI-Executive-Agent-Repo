@@ -56,6 +56,12 @@ run_go_cmd "go test ./internal/gateway -count=1"
 echo "[security] ssrf protection tests"
 run_go_cmd "go test ./internal/executor -count=1"
 
+echo "[security] pii encryption tests"
+run_go_cmd "go test ./internal/security/pii -count=1"
+
+echo "[security] sandbox enforcement tests"
+run_go_cmd "go test ./internal/security/sandbox -count=1"
+
 if command -v trivy >/dev/null 2>&1; then
   echo "[security] trivy filesystem scan"
   trivy fs --scanners vuln --severity CRITICAL,HIGH --exit-code 1 .

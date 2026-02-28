@@ -158,6 +158,26 @@ func (s *Service) ProcessNextQueuedTurn(ctx context.Context, budgetExhausted boo
 	return result, nil
 }
 
+func (s *Service) RunProvisioningWorkflow(ctx context.Context, failAt string) workflows.ProvisioningResult {
+	return s.workflows.ProvisioningV9(ctx, failAt)
+}
+
+func (s *Service) RunOnboardingWorkflow(ctx context.Context, answers map[string]string) workflows.OnboardingResult {
+	return s.workflows.OnboardingV1(ctx, answers)
+}
+
+func (s *Service) RunDriftWorkflow(ctx context.Context, hasDrift bool) string {
+	return s.workflows.DriftWatchdogV1(ctx, hasDrift)
+}
+
+func (s *Service) RunDailyCaptureWorkflow(ctx context.Context, trigger string) string {
+	return s.workflows.DailyCaptureV1(ctx, trigger)
+}
+
+func (s *Service) RunRAGEvalWorkflow(ctx context.Context, faithfulness, relevance float64) string {
+	return s.workflows.RagEvalV1(ctx, faithfulness, relevance)
+}
+
 func (s *Service) ExecutorAuditEventTypes() []string {
 	entries := s.executor.AuditEntries()
 	out := make([]string, 0, len(entries))
