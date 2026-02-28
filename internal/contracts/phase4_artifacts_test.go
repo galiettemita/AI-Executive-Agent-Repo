@@ -11,6 +11,7 @@ func TestPhase4ReadinessArtifactsExist(t *testing.T) {
 	root := repositoryRoot(t)
 	required := []string{
 		filepath.Join(root, "evals", "load", "k6_interactive_turn.js"),
+		filepath.Join(root, "evals", "load", "k6_streaming_first_byte.js"),
 		filepath.Join(root, "evals", "load", "README.md"),
 		filepath.Join(root, "scripts", "security", "run_security_validation.sh"),
 		filepath.Join(root, "scripts", "infra", "validate.sh"),
@@ -33,6 +34,13 @@ func TestPhase4ReadinessArtifactsExist(t *testing.T) {
 		"BREVIO_tier_t3_latency_ms",
 		"crypto.hmac('sha256'",
 		"WEBHOOK_SECRET",
+		"X-Signature",
+	})
+	assertFileContainsTokens(t, filepath.Join(root, "evals", "load", "k6_streaming_first_byte.js"), []string{
+		"BREVIO_streaming_first_byte_ms",
+		"p(95)<500",
+		"timings.waiting",
+		"crypto.hmac('sha256'",
 		"X-Signature",
 	})
 	assertFileContainsTokens(t, filepath.Join(root, "scripts", "security", "run_security_validation.sh"), []string{
