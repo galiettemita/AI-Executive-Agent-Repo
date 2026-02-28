@@ -110,6 +110,7 @@ Legend
 - [x] Strict closure hardening: replaced V9 JSON schema placeholders with key-field contracts (`tool_call`, `error`, capability resolver/extractor/resolve, provisioning policy/start/manifest, llm request, provisioning message payloads, action proposal) and added `internal/contracts/schema_v9_fields_closure_test.go` to enforce required fields and blueprint constraints
 - [x] Strict closure hardening: replaced all remaining V9.1/V9.2 schema placeholders with concrete object contracts and tightened `internal/contracts/schema_closure_test.go` to fail if any required schema has empty `properties`
 - [x] Strict closure hardening: added `internal/contracts/schema_v91_v92_fields_closure_test.go` to enforce required key fields for all 31 V9.1/V9.2 schemas plus critical constraint checks (`trust_score` bounds, `rag.top_k`, `tool_key` pattern, evidence hash format)
+- [x] Strict closure hardening: specialized key OpenAPI endpoint request/response bindings away from generic payload refs (`tool_call`, goals, mission-control, context budget/allocations, rag search/retrieval, tool health, flag evaluation, error templates, compliance DSR, admin KPI) and added `TestOpenAPIV9EndpointSchemaSpecializationClosure`
 
 Migration rules (must follow)
 - Preserve already-working preserved components unchanged unless v4.0 explicitly requires changes (per user instructions).

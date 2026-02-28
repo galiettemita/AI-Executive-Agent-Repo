@@ -455,6 +455,131 @@ func TestOpenAPIV9SecurityBindingsClosure(t *testing.T) {
 	}
 }
 
+func TestOpenAPIV9EndpointSchemaSpecializationClosure(t *testing.T) {
+	t.Parallel()
+
+	doc := loadOpenAPIDoc(t)
+
+	required := []struct {
+		Method      string
+		Path        string
+		RequestRef  string
+		ResponseRef string
+	}{
+		{
+			Method:      "POST",
+			Path:        "/v1/gateway/inject/tool_call",
+			RequestRef:  "#/components/schemas/tool_call_v9_json",
+			ResponseRef: "#/components/schemas/generic_response_v1",
+		},
+		{
+			Method:      "GET",
+			Path:        "/v1/goals",
+			ResponseRef: "#/components/schemas/goal_item_v1_json",
+		},
+		{
+			Method:      "POST",
+			Path:        "/v1/goals",
+			RequestRef:  "#/components/schemas/goal_item_v1_json",
+			ResponseRef: "#/components/schemas/goal_item_v1_json",
+		},
+		{
+			Method:      "GET",
+			Path:        "/v1/goals/{id}/progress",
+			ResponseRef: "#/components/schemas/goal_progress_update_v1_json",
+		},
+		{
+			Method:      "PUT",
+			Path:        "/v1/mission-control/config",
+			RequestRef:  "#/components/schemas/mission_control_layout_v1_json",
+			ResponseRef: "#/components/schemas/mission_control_layout_v1_json",
+		},
+		{
+			Method:      "PUT",
+			Path:        "/v1/context/budget",
+			RequestRef:  "#/components/schemas/context_budget_config_v1_json",
+			ResponseRef: "#/components/schemas/context_budget_config_v1_json",
+		},
+		{
+			Method:      "GET",
+			Path:        "/v1/context/allocations",
+			ResponseRef: "#/components/schemas/context_allocation_report_v1_json",
+		},
+		{
+			Method:      "POST",
+			Path:        "/v1/rag/search",
+			RequestRef:  "#/components/schemas/rag_search_request_v1_json",
+			ResponseRef: "#/components/schemas/rag_search_response_v1_json",
+		},
+		{
+			Method:      "GET",
+			Path:        "/v1/rag/retrievals/{turn_id}",
+			ResponseRef: "#/components/schemas/rag_search_response_v1_json",
+		},
+		{
+			Method:      "GET",
+			Path:        "/v1/tools/health/{tool_key}",
+			ResponseRef: "#/components/schemas/tool_health_report_v1_json",
+		},
+		{
+			Method:      "POST",
+			Path:        "/v1/flags/{key}/evaluate",
+			RequestRef:  "#/components/schemas/feature_flag_evaluation_v1_json",
+			ResponseRef: "#/components/schemas/feature_flag_evaluation_v1_json",
+		},
+		{
+			Method:      "POST",
+			Path:        "/v1/errors/templates",
+			RequestRef:  "#/components/schemas/error_message_v1_json",
+			ResponseRef: "#/components/schemas/error_message_v1_json",
+		},
+		{
+			Method:      "POST",
+			Path:        "/v1/compliance/dsr",
+			RequestRef:  "#/components/schemas/dsr_request_v1_json",
+			ResponseRef: "#/components/schemas/dsr_request_v1_json",
+		},
+		{
+			Method:      "PUT",
+			Path:        "/v1/compliance/dsr/{id}",
+			RequestRef:  "#/components/schemas/dsr_request_v1_json",
+			ResponseRef: "#/components/schemas/dsr_request_v1_json",
+		},
+		{
+			Method:      "GET",
+			Path:        "/v1/admin/kpi/report",
+			ResponseRef: "#/components/schemas/admin_kpi_report_v1_json",
+		},
+	}
+
+	for _, item := range required {
+		ops, ok := doc.Paths[item.Path]
+		if !ok {
+			t.Fatalf("missing path for schema specialization: %s", item.Path)
+		}
+		opRaw, ok := ops[strings.ToLower(item.Method)]
+		if !ok {
+			t.Fatalf("missing method for schema specialization: %s %s", item.Method, item.Path)
+		}
+		op, ok := opRaw.(map[string]any)
+		if !ok {
+			t.Fatalf("operation payload is not an object: %s %s", item.Method, item.Path)
+		}
+
+		if item.RequestRef != "" {
+			requestRef := requestBodySchemaRef(op)
+			if requestRef != item.RequestRef {
+				t.Fatalf("unexpected request schema ref for %s %s: got=%s want=%s", item.Method, item.Path, requestRef, item.RequestRef)
+			}
+		}
+		if item.ResponseRef != "" {
+			if !has2xxResponseSchemaRef(op, item.ResponseRef) {
+				t.Fatalf("missing expected 2xx response schema ref for %s %s: %s", item.Method, item.Path, item.ResponseRef)
+			}
+		}
+	}
+}
+
 func operationHasSecurityScheme(operation map[string]any, scheme string) bool {
 	securityRaw, ok := operation["security"].([]any)
 	if !ok {
@@ -466,6 +591,60 @@ func operationHasSecurityScheme(operation map[string]any, scheme string) bool {
 			continue
 		}
 		if _, exists := requirement[scheme]; exists {
+			return true
+		}
+	}
+	return false
+}
+
+func requestBodySchemaRef(operation map[string]any) string {
+	requestBody, ok := operation["requestBody"].(map[string]any)
+	if !ok {
+		return ""
+	}
+	content, ok := requestBody["content"].(map[string]any)
+	if !ok {
+		return ""
+	}
+	mediaType, ok := content["application/json"].(map[string]any)
+	if !ok {
+		return ""
+	}
+	schema, ok := mediaType["schema"].(map[string]any)
+	if !ok {
+		return ""
+	}
+	ref, _ := schema["$ref"].(string)
+	return ref
+}
+
+func has2xxResponseSchemaRef(operation map[string]any, expectedRef string) bool {
+	responses, ok := operation["responses"].(map[string]any)
+	if !ok {
+		return false
+	}
+	for statusCode, rawResponse := range responses {
+		if !strings.HasPrefix(statusCode, "2") {
+			continue
+		}
+		response, ok := rawResponse.(map[string]any)
+		if !ok {
+			continue
+		}
+		content, ok := response["content"].(map[string]any)
+		if !ok {
+			continue
+		}
+		mediaType, ok := content["application/json"].(map[string]any)
+		if !ok {
+			continue
+		}
+		schema, ok := mediaType["schema"].(map[string]any)
+		if !ok {
+			continue
+		}
+		ref, _ := schema["$ref"].(string)
+		if ref == expectedRef {
 			return true
 		}
 	}

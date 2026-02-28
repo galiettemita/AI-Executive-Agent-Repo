@@ -30,7 +30,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/generic_request_v1'
+              $ref: '#/components/schemas/tool_call_v9_json'
   /v1/gateway/webhook/imessage:
     post:
       summary: POST /v1/gateway/webhook/imessage
@@ -78,7 +78,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/generic_request_v1'
+              $ref: '#/components/schemas/tool_call_v9_json'
   /v1/canvas/ws:
     get:
       summary: GET /v1/canvas/ws
@@ -118,7 +118,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/generic_response_v1'
+                $ref: '#/components/schemas/goal_item_v1_json'
     post:
       summary: POST /v1/goals
       operationId: post_v1_goals
@@ -128,12 +128,12 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/generic_response_v1'
+                $ref: '#/components/schemas/goal_item_v1_json'
       requestBody:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/generic_request_v1'
+              $ref: '#/components/schemas/goal_item_v1_json'
   /v1/goals/{id}:
     get:
       summary: GET /v1/goals/{id}
@@ -144,7 +144,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/generic_response_v1'
+                $ref: '#/components/schemas/goal_item_v1_json'
     put:
       summary: PUT /v1/goals/{id}
       operationId: put_v1_goals_id
@@ -154,12 +154,12 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/generic_response_v1'
+                $ref: '#/components/schemas/goal_item_v1_json'
       requestBody:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/generic_request_v1'
+              $ref: '#/components/schemas/goal_item_v1_json'
     delete:
       summary: DELETE /v1/goals/{id}
       operationId: delete_v1_goals_id
@@ -206,7 +206,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/generic_response_v1'
+                $ref: '#/components/schemas/goal_progress_update_v1_json'
   /v1/mission-control/config:
     get:
       summary: GET /v1/mission-control/config
@@ -217,7 +217,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/generic_response_v1'
+                $ref: '#/components/schemas/mission_control_layout_v1_json'
     put:
       summary: PUT /v1/mission-control/config
       operationId: put_v1_mission_control_config
@@ -227,12 +227,12 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/generic_response_v1'
+                $ref: '#/components/schemas/mission_control_layout_v1_json'
       requestBody:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/generic_request_v1'
+              $ref: '#/components/schemas/mission_control_layout_v1_json'
   /v1/mission-control/widgets:
     get:
       summary: GET /v1/mission-control/widgets
@@ -668,7 +668,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/generic_response_v1'
+                $ref: '#/components/schemas/context_budget_config_v1_json'
     put:
       summary: PUT /v1/context/budget
       operationId: put_v1_context_budget
@@ -678,12 +678,12 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/generic_response_v1'
+                $ref: '#/components/schemas/context_budget_config_v1_json'
       requestBody:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/generic_request_v1'
+              $ref: '#/components/schemas/context_budget_config_v1_json'
   /v1/context/allocations:
     get:
       summary: GET /v1/context/allocations
@@ -694,7 +694,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/generic_response_v1'
+                $ref: '#/components/schemas/context_allocation_report_v1_json'
   /v1/rag/collections:
     get:
       summary: GET /v1/rag/collections
@@ -783,12 +783,12 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/generic_response_v1'
+                $ref: '#/components/schemas/rag_search_response_v1_json'
       requestBody:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/generic_request_v1'
+              $ref: '#/components/schemas/rag_search_request_v1_json'
       security:
       - mTLS: []
   /v1/rag/retrievals/{turn_id}:
@@ -801,7 +801,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/generic_response_v1'
+                $ref: '#/components/schemas/rag_search_response_v1_json'
   /v1/rag/eval/scores:
     get:
       summary: GET /v1/rag/eval/scores
@@ -1093,7 +1093,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/generic_response_v1'
+                $ref: '#/components/schemas/tool_health_report_v1_json'
   /v1/tools/health/{tool_key}:
     get:
       summary: GET /v1/tools/health/{tool_key}
@@ -1104,7 +1104,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/generic_response_v1'
+                $ref: '#/components/schemas/tool_health_report_v1_json'
   /v1/tools/quarantine/{tool_key}/override:
     post:
       summary: POST /v1/tools/quarantine/{tool_key}/override
@@ -1235,12 +1235,12 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/generic_response_v1'
+                $ref: '#/components/schemas/feature_flag_evaluation_v1_json'
       requestBody:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/generic_request_v1'
+              $ref: '#/components/schemas/feature_flag_evaluation_v1_json'
       security:
       - mTLS: []
   /v1/flags/{key}/rules:
@@ -1322,7 +1322,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/generic_response_v1'
+                $ref: '#/components/schemas/error_message_v1_json'
       security:
       - AdminJWT: []
     post:
@@ -1334,12 +1334,12 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/generic_response_v1'
+                $ref: '#/components/schemas/error_message_v1_json'
       requestBody:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/generic_request_v1'
+              $ref: '#/components/schemas/error_message_v1_json'
       security:
       - AdminJWT: []
   /v1/compliance/frameworks:
@@ -1382,7 +1382,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/generic_response_v1'
+                $ref: '#/components/schemas/compliance_evidence_manifest_v1_json'
       security:
       - AdminJWT: []
   /v1/compliance/dsr:
@@ -1395,7 +1395,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/generic_response_v1'
+                $ref: '#/components/schemas/dsr_request_v1_json'
       security:
       - UserJWT: []
     post:
@@ -1407,12 +1407,12 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/generic_response_v1'
+                $ref: '#/components/schemas/dsr_request_v1_json'
       requestBody:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/generic_request_v1'
+              $ref: '#/components/schemas/dsr_request_v1_json'
       security:
       - UserJWT: []
   /v1/compliance/dsr/{id}:
@@ -1425,7 +1425,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/generic_response_v1'
+                $ref: '#/components/schemas/dsr_request_v1_json'
       security:
       - AdminJWT: []
     put:
@@ -1437,12 +1437,12 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/generic_response_v1'
+                $ref: '#/components/schemas/dsr_request_v1_json'
       requestBody:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/generic_request_v1'
+              $ref: '#/components/schemas/dsr_request_v1_json'
       security:
       - AdminJWT: []
   /v1/cache/policies:
@@ -1861,7 +1861,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/generic_response_v1'
+                $ref: '#/components/schemas/admin_kpi_report_v1_json'
       security:
       - AdminJWT: []
 components:
