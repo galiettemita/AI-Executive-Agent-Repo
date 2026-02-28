@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 	"testing"
 
@@ -160,11 +161,46 @@ func TestOpenAPIV9EndpointParityClosure(t *testing.T) {
 		"GET /v1/admin/kpi/report",
 	}
 
+	requiredSet := make(map[string]struct{}, len(required))
 	for _, endpoint := range required {
 		parts := strings.SplitN(endpoint, " ", 2)
 		if len(parts) != 2 {
 			t.Fatalf("invalid required endpoint format: %q", endpoint)
 		}
+		requiredSet[endpoint] = struct{}{}
+	}
+
+	actualSet := map[string]struct{}{}
+	for path, operations := range doc.Paths {
+		for method := range operations {
+			methodUpper := strings.ToUpper(method)
+			switch methodUpper {
+			case "GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS", "HEAD", "TRACE":
+				actualSet[methodUpper+" "+path] = struct{}{}
+			}
+		}
+	}
+
+	missing := make([]string, 0)
+	for endpoint := range requiredSet {
+		if _, ok := actualSet[endpoint]; !ok {
+			missing = append(missing, endpoint)
+		}
+	}
+	extra := make([]string, 0)
+	for endpoint := range actualSet {
+		if _, ok := requiredSet[endpoint]; !ok {
+			extra = append(extra, endpoint)
+		}
+	}
+	if len(missing) != 0 || len(extra) != 0 {
+		sort.Strings(missing)
+		sort.Strings(extra)
+		t.Fatalf("openapi operation set mismatch: missing=%v extra=%v", missing, extra)
+	}
+
+	for endpoint := range requiredSet {
+		parts := strings.SplitN(endpoint, " ", 2)
 		method := strings.ToLower(parts[0])
 		path := parts[1]
 
