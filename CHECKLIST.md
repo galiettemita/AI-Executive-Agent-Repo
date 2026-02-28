@@ -159,6 +159,7 @@ Legend
 - [x] Strict closure hardening: made security validation scripts autonomous on hosts without local Go by adding Dockerized Go 1.22 fallback for `go test` and `govulncheck`, plus Bash 3-safe vulnerability ID parsing (`scripts/security/run_security_validation.sh`, `scripts/security/run_govulncheck.sh`)
 - [x] Strict closure hardening: ignored generated security/build outputs to keep repository clean during autonomous validation runs (`artifacts/`, `sbom.spdx.json` in `.gitignore`)
 - [x] Strict closure hardening: added script closure tests to enforce Bash 3 portability (`no local -A`, `no mapfile`) and preserve Dockerized Go fallback behavior in security/infra validation scripts (`internal/contracts/script_closure_test.go`)
+- [x] Strict closure hardening: added `scripts/dev/go_exec.sh` and switched Make targets to Dockerized Go fallback (`build`, `test`, `lint`, `migrate`, `contracts`, `acceptance`) so local validation works without host Go installation
 
 Migration rules (must follow)
 - Preserve already-working preserved components unchanged unless v4.0 explicitly requires changes (per user instructions).
