@@ -5,7 +5,6 @@ import (
 	"sort"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/google/uuid"
 )
@@ -53,18 +52,39 @@ func NewService() *Service {
 			"operator_profile_intake_v1": {
 				{Key: "role", Prompt: "What is your role?"},
 				{Key: "goals", Prompt: "What are your primary goals?"},
+				{Key: "industry", Prompt: "What industry does your workspace serve?"},
+				{Key: "team_size", Prompt: "What is your team size?"},
+				{Key: "timezone", Prompt: "What is your default timezone?"},
+				{Key: "decision_style", Prompt: "How do you make decisions?"},
+				{Key: "communication_pref", Prompt: "Preferred communication style?"},
+				{Key: "kpi_primary", Prompt: "What is the primary KPI?"},
 			},
 			"behavior_policy_calibration_v1": {
-				{Key: "tone", Prompt: "Preferred tone?"},
-				{Key: "risk", Prompt: "Risk tolerance?"},
+				{Key: "tone", Prompt: "Preferred assistant tone?"},
+				{Key: "risk_tolerance", Prompt: "Risk tolerance?"},
+				{Key: "autonomy_preference", Prompt: "Autonomy preference?"},
+				{Key: "approval_threshold", Prompt: "When should approvals be required?"},
+				{Key: "proactive_mode", Prompt: "Should proactive actions be enabled?"},
+				{Key: "notification_window", Prompt: "Preferred notification window?"},
+				{Key: "initiative_level", Prompt: "How proactive should assistant initiative be?"},
 			},
 			"codebase_map_ingestion_v1": {
 				{Key: "repo", Prompt: "Primary repository?"},
 				{Key: "stack", Prompt: "Core stack?"},
+				{Key: "planning_horizon", Prompt: "Planning horizon?"},
+				{Key: "meeting_load", Prompt: "Weekly meeting load?"},
+				{Key: "focus_mode", Prompt: "Preferred focus mode?"},
 			},
 			"system_map_ingestion_v1": {
 				{Key: "integrations", Prompt: "Critical integrations?"},
 				{Key: "sla", Prompt: "Critical SLA targets?"},
+				{Key: "escalation_path", Prompt: "Escalation path?"},
+				{Key: "privacy_mode", Prompt: "Privacy mode?"},
+				{Key: "audit_strictness", Prompt: "Audit strictness?"},
+				{Key: "delivery_cadence", Prompt: "Delivery cadence?"},
+				{Key: "context_budget", Prompt: "Context budget preference?"},
+				{Key: "write_actions", Prompt: "Write action policy?"},
+				{Key: "language", Prompt: "Preferred language?"},
 			},
 		},
 		replay:           map[string]map[string]string{},
@@ -87,6 +107,18 @@ func replayKey(workspaceID, stageKey string, answers map[string]string) string {
 	return strings.Join(parts, "::")
 }
 
+func (s *Service) QuestionSet(stageKey string) ([]Question, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	questions, ok := s.questionSets[stageKey]
+	if !ok {
+		return nil, fmt.Errorf("unknown stage: %s", stageKey)
+	}
+	out := make([]Question, len(questions))
+	copy(out, questions)
+	return out, nil
+}
+
 func (s *Service) RunStage(workspaceID, stageKey string, answers map[string]string) (StageResult, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -103,15 +135,30 @@ func (s *Service) RunStage(workspaceID, stageKey string, answers map[string]stri
 
 	key := replayKey(workspaceID, stageKey, answers)
 	if cached, ok := s.replay[key]; ok {
-		return StageResult{StageKey: stageKey, Extracted: cached}, nil
+		return StageResult{StageKey: stageKey, Extracted: copyStringMap(cached)}, nil
 	}
 
 	extracted := map[string]string{}
 	for _, q := range questions {
 		extracted[q.Key] = strings.TrimSpace(answers[q.Key])
 	}
-	s.replay[key] = extracted
+	s.replay[key] = copyStringMap(extracted)
 	return StageResult{StageKey: stageKey, Extracted: extracted}, nil
+}
+
+func copyStringMap(input map[string]string) map[string]string {
+	out := make(map[string]string, len(input))
+	for k, v := range input {
+		out[k] = v
+	}
+	return out
+}
+
+func nextVersion(current int) int {
+	if current < 1 {
+		return 1
+	}
+	return current + 1
 }
 
 func (s *Service) CompleteOnboarding(workspaceID string, stageAnswers map[string]map[string]string) error {
@@ -121,37 +168,70 @@ func (s *Service) CompleteOnboarding(workspaceID string, stageAnswers map[string
 		"codebase_map_ingestion_v1",
 		"system_map_ingestion_v1",
 	}
+	results := map[string]StageResult{}
 	for _, stage := range stages {
-		if _, err := s.RunStage(workspaceID, stage, stageAnswers[stage]); err != nil {
+		result, err := s.RunStage(workspaceID, stage, stageAnswers[stage])
+		if err != nil {
 			return err
 		}
+		results[stage] = result
 	}
 
-	now := time.Now().UTC()
-	_ = now
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	profileVersion := nextVersion(s.profiles[workspaceID].VersionInt)
+	personaVersion := nextVersion(s.personas[workspaceID].VersionInt)
+	policyVersion := nextVersion(s.behaviorPolicies[workspaceID].VersionInt)
+
+	op := results["operator_profile_intake_v1"].Extracted
+	bp := results["behavior_policy_calibration_v1"].Extracted
+	cb := results["codebase_map_ingestion_v1"].Extracted
+	sy := results["system_map_ingestion_v1"].Extracted
+
 	s.profiles[workspaceID] = WorkspaceProfile{
 		WorkspaceID: workspaceID,
-		VersionInt:  1,
+		VersionInt:  profileVersion,
 		Dimensions: map[string]string{
-			"focus":      stageAnswers["operator_profile_intake_v1"]["goals"],
-			"role":       stageAnswers["operator_profile_intake_v1"]["role"],
-			"risk":       stageAnswers["behavior_policy_calibration_v1"]["risk"],
-			"tech_stack": stageAnswers["codebase_map_ingestion_v1"]["stack"],
+			"role":                op["role"],
+			"goals":               op["goals"],
+			"industry":            op["industry"],
+			"team_size":           op["team_size"],
+			"timezone":            op["timezone"],
+			"decision_style":      op["decision_style"],
+			"communication_pref":  op["communication_pref"],
+			"kpi_primary":         op["kpi_primary"],
+			"risk_tolerance":      bp["risk_tolerance"],
+			"autonomy_preference": bp["autonomy_preference"],
+			"planning_horizon":    cb["planning_horizon"],
+			"meeting_load":        cb["meeting_load"],
+			"focus_mode":          cb["focus_mode"],
 		},
 	}
 	s.personas[workspaceID] = WorkspacePersona{
 		WorkspaceID: workspaceID,
-		VersionInt:  1,
+		VersionInt:  personaVersion,
 		Persona: map[string]string{
-			"tone": stageAnswers["behavior_policy_calibration_v1"]["tone"],
+			"tone":               bp["tone"],
+			"initiative_level":   bp["initiative_level"],
+			"language":           sy["language"],
+			"communication_pref": op["communication_pref"],
+			"decision_style":     op["decision_style"],
 		},
 	}
 	s.behaviorPolicies[workspaceID] = WorkspaceBehaviorPolicy{
 		WorkspaceID: workspaceID,
-		VersionInt:  1,
+		VersionInt:  policyVersion,
 		Policy: map[string]string{
-			"integrations": stageAnswers["system_map_ingestion_v1"]["integrations"],
-			"sla":          stageAnswers["system_map_ingestion_v1"]["sla"],
+			"approval_threshold":  bp["approval_threshold"],
+			"proactive_mode":      bp["proactive_mode"],
+			"notification_window": bp["notification_window"],
+			"write_actions":       sy["write_actions"],
+			"escalation_path":     sy["escalation_path"],
+			"privacy_mode":        sy["privacy_mode"],
+			"audit_strictness":    sy["audit_strictness"],
+			"delivery_cadence":    sy["delivery_cadence"],
+			"context_budget":      sy["context_budget"],
+			"sla":                 sy["sla"],
 		},
 	}
 	return nil

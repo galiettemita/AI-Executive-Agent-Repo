@@ -183,24 +183,7 @@ func TestAcceptanceGateRuntimeCoverageV9(t *testing.T) {
 	t.Run("onboarding_completion", func(t *testing.T) {
 		svc := onboarding.NewService()
 		workspaceID := onboarding.NewWorkspaceID()
-		stageAnswers := map[string]map[string]string{
-			"operator_profile_intake_v1": {
-				"role":  "operator",
-				"goals": "stability",
-			},
-			"behavior_policy_calibration_v1": {
-				"tone": "direct",
-				"risk": "medium",
-			},
-			"codebase_map_ingestion_v1": {
-				"repo":  "ai-executive-agent-repo",
-				"stack": "go",
-			},
-			"system_map_ingestion_v1": {
-				"integrations": "github",
-				"sla":          "p95 under 500ms",
-			},
-		}
+		stageAnswers := acceptanceOnboardingStageAnswers()
 		if err := svc.CompleteOnboarding(workspaceID, stageAnswers); err != nil {
 			t.Fatalf("complete onboarding: %v", err)
 		}
@@ -372,24 +355,7 @@ func TestAcceptanceGateRuntimeCoverageV91(t *testing.T) {
 	t.Run("adaptive_discovery", func(t *testing.T) {
 		svc := onboarding.NewService()
 		workspaceID := onboarding.NewWorkspaceID()
-		stageAnswers := map[string]map[string]string{
-			"operator_profile_intake_v1": {
-				"role":  "operator",
-				"goals": "stability",
-			},
-			"behavior_policy_calibration_v1": {
-				"tone": "direct",
-				"risk": "medium",
-			},
-			"codebase_map_ingestion_v1": {
-				"repo":  "ai-executive-agent-repo",
-				"stack": "go",
-			},
-			"system_map_ingestion_v1": {
-				"integrations": "github",
-				"sla":          "p95 under 500ms",
-			},
-		}
+		stageAnswers := acceptanceOnboardingStageAnswers()
 		if err := svc.CompleteOnboarding(workspaceID, stageAnswers); err != nil {
 			t.Fatalf("complete onboarding: %v", err)
 		}
@@ -642,6 +608,48 @@ func TestAcceptanceGateRuntimeCoverageV92(t *testing.T) {
 		assertHasProperties(t, props, "intent", "actions", "risk", "requires_approval")
 		assertRequiredIncludes(t, actionProposal, "intent", "actions", "risk", "requires_approval")
 	})
+}
+
+func acceptanceOnboardingStageAnswers() map[string]map[string]string {
+	return map[string]map[string]string{
+		"operator_profile_intake_v1": {
+			"role":               "operator",
+			"goals":              "stability",
+			"industry":           "saas",
+			"team_size":          "20",
+			"timezone":           "UTC",
+			"decision_style":     "data-driven",
+			"communication_pref": "concise",
+			"kpi_primary":        "uptime",
+		},
+		"behavior_policy_calibration_v1": {
+			"tone":                "direct",
+			"risk_tolerance":      "medium",
+			"autonomy_preference": "A2",
+			"approval_threshold":  "critical_only",
+			"proactive_mode":      "enabled",
+			"notification_window": "09:00-18:00",
+			"initiative_level":    "high",
+		},
+		"codebase_map_ingestion_v1": {
+			"repo":             "ai-executive-agent-repo",
+			"stack":            "go",
+			"planning_horizon": "quarterly",
+			"meeting_load":     "medium",
+			"focus_mode":       "async",
+		},
+		"system_map_ingestion_v1": {
+			"integrations":     "github",
+			"sla":              "p95 under 500ms",
+			"escalation_path":  "oncall",
+			"privacy_mode":     "strict",
+			"audit_strictness": "high",
+			"delivery_cadence": "weekly",
+			"context_budget":   "balanced",
+			"write_actions":    "confirm",
+			"language":         "en-US",
+		},
+	}
 }
 
 func signWebhookPayload(secret string, payload []byte) string {
