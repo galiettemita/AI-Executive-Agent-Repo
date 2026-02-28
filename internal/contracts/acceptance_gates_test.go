@@ -8,39 +8,64 @@ import (
 func TestAcceptanceGatesV9(t *testing.T) {
 	t.Parallel()
 	root := repositoryRoot(t)
+	runtimeGatePath := filepath.Join(root, "internal", "contracts", "acceptance_gate_runtime_closure_test.go")
 
 	t.Run("schema_closure", func(t *testing.T) {
 		assertFileNonEmpty(t, filepath.Join(root, "schemas", "tool_call.v9.json"))
 		assertFileNonEmpty(t, filepath.Join(root, "schemas", "error.v9.json"))
+		assertFileContainsTokens(t, runtimeGatePath, []string{
+			`t.Run("schema_closure",`,
+		})
 	})
 	t.Run("determinism", func(t *testing.T) {
 		assertFileNonEmpty(t, filepath.Join(root, "evals", "determinism_fixtures.json"))
+		assertFileContainsTokens(t, runtimeGatePath, []string{
+			`t.Run("determinism",`,
+		})
 	})
 	t.Run("webhook_security", func(t *testing.T) {
 		assertFileContainsTokens(t, filepath.Join(root, "internal", "gateway", "service.go"), []string{
 			"ErrInvalidSignature",
 			"ErrReplayDetected",
 		})
+		assertFileContainsTokens(t, runtimeGatePath, []string{
+			`t.Run("webhook_security",`,
+		})
 	})
 	t.Run("acceptance_suites_1_12", func(t *testing.T) {
 		assertFileNonEmpty(t, filepath.Join(root, ".github", "workflows", "ci.yaml"))
+		assertFileContainsTokens(t, runtimeGatePath, []string{
+			`t.Run("acceptance_suites_1_12",`,
+		})
 	})
 	t.Run("workspace_isolation", func(t *testing.T) {
 		assertFileContainsTokens(t, filepath.Join(root, "db", "migrations", "001_BREVIO_v9_init.sql"), []string{
 			"ENABLE ROW LEVEL SECURITY",
 			"current_setting(''app.workspace_id'')::uuid",
 		})
+		assertFileContainsTokens(t, runtimeGatePath, []string{
+			`t.Run("workspace_isolation",`,
+		})
 	})
 	t.Run("provisioning_pipeline", func(t *testing.T) {
 		assertFileNonEmpty(t, filepath.Join(root, "internal", "provisioning", "service_test.go"))
+		assertFileContainsTokens(t, runtimeGatePath, []string{
+			`t.Run("provisioning_pipeline",`,
+		})
 	})
 	t.Run("onboarding_completion", func(t *testing.T) {
 		assertFileNonEmpty(t, filepath.Join(root, "internal", "onboarding", "service_test.go"))
+		assertFileContainsTokens(t, runtimeGatePath, []string{
+			`t.Run("onboarding_completion",`,
+		})
 	})
 	t.Run("provisioning_recovery", func(t *testing.T) {
 		assertFileContainsTokens(t, filepath.Join(root, "internal", "workflows", "service_test.go"), []string{
 			"TestProvisioningCompensationReverseOrder",
 			"CompensatedSteps",
+		})
+		assertFileContainsTokens(t, runtimeGatePath, []string{
+			`t.Run("provisioning_recovery",`,
 		})
 	})
 	t.Run("deterministic_llm", func(t *testing.T) {
@@ -48,10 +73,16 @@ func TestAcceptanceGatesV9(t *testing.T) {
 			"TestDeterminismSameInput20Runs",
 			"ReplayHitCount",
 		})
+		assertFileContainsTokens(t, runtimeGatePath, []string{
+			`t.Run("deterministic_llm",`,
+		})
 	})
 	t.Run("cve_scanning", func(t *testing.T) {
 		assertFileContainsTokens(t, filepath.Join(root, ".github", "workflows", "ci.yaml"), []string{
 			"trivy",
+		})
+		assertFileContainsTokens(t, runtimeGatePath, []string{
+			`t.Run("cve_scanning",`,
 		})
 	})
 }

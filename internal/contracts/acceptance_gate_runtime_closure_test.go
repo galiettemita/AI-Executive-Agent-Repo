@@ -1,17 +1,247 @@
 package contracts
 
 import (
+	"bytes"
+	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
+	"errors"
 	"net/http"
+	"net/http/httptest"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/brevio/brevio/internal/control"
 	"github.com/brevio/brevio/internal/crdt"
+	"github.com/brevio/brevio/internal/database"
+	"github.com/brevio/brevio/internal/gateway"
+	"github.com/brevio/brevio/internal/integration"
+	"github.com/brevio/brevio/internal/llm"
 	"github.com/brevio/brevio/internal/onboarding"
 	rageval "github.com/brevio/brevio/internal/rag/eval"
 	"github.com/brevio/brevio/internal/security/pii"
 	"github.com/brevio/brevio/internal/security/sandbox"
 	"github.com/brevio/brevio/internal/workflows"
+	"github.com/google/uuid"
 )
+
+func TestAcceptanceGateRuntimeCoverageV9(t *testing.T) {
+	t.Parallel()
+
+	t.Run("schema_closure", func(t *testing.T) {
+		toolCall := loadSchemaDocument(t, "tool_call.v9.json")
+		toolCallProps := getObject(t, toolCall, "properties")
+		assertHasProperties(t, toolCallProps, "tool_key", "idempotency_key", "arguments", "requested_risk", "workspace_id", "ingress_turn_id")
+		assertRequiredIncludes(t, toolCall, "tool_key", "idempotency_key", "arguments", "workspace_id", "ingress_turn_id")
+
+		errorSchema := loadSchemaDocument(t, "error.v9.json")
+		errorProps := getObject(t, errorSchema, "properties")
+		assertHasProperties(t, errorProps, "error_code", "message", "retryable", "retry_after_ms", "user_message")
+		assertRequiredIncludes(t, errorSchema, "error_code", "message", "retryable", "user_message")
+	})
+
+	t.Run("determinism", func(t *testing.T) {
+		svc := llm.NewService()
+		req := llm.Request{
+			WorkspaceID: "ws_v9_determinism",
+			PromptKey:   "brain.planner.v9",
+			Input:       "plan deterministic turn",
+			Tier:        "T2",
+			ModelID:     "model-a",
+			ProviderID:  "provider-a",
+		}
+
+		first := svc.Generate(req)
+		for i := 0; i < 19; i++ {
+			next := svc.Generate(req)
+			if next.PlanJSON != first.PlanJSON {
+				t.Fatalf("deterministic mismatch on replay run %d", i+2)
+			}
+		}
+		if svc.ReplayHitCount() < 19 {
+			t.Fatalf("expected replay hits >= 19, got %d", svc.ReplayHitCount())
+		}
+	})
+
+	t.Run("webhook_security", func(t *testing.T) {
+		const secret = "runtime-secret"
+		svc := gateway.NewService(secret)
+		svc.BindWorkspace("whatsapp", "+15550001111", uuid.MustParse("018f3f6a-9a0f-7cc6-8f2f-1f0f2d2f2d2f"))
+
+		payload := []byte(`{"channel":"whatsapp","channel_identifier":"+15550001111","user_channel_id":"runtime_user","nonce":"runtime_nonce","message":"hello"}`)
+
+		invalidReq := httptest.NewRequest(http.MethodPost, "/v1/gateway/webhook/whatsapp", bytes.NewReader(payload))
+		invalidReq.Header.Set("X-Signature", "invalid")
+		invalidResp := httptest.NewRecorder()
+		svc.HandleInbound(invalidResp, invalidReq)
+		if invalidResp.Code != http.StatusUnauthorized {
+			t.Fatalf("expected invalid signature rejection, got %d", invalidResp.Code)
+		}
+
+		validReq := httptest.NewRequest(http.MethodPost, "/v1/gateway/webhook/whatsapp", bytes.NewReader(payload))
+		validReq.Header.Set("X-Signature", signWebhookPayload(secret, payload))
+		validResp := httptest.NewRecorder()
+		svc.HandleInbound(validResp, validReq)
+		if validResp.Code != http.StatusAccepted {
+			t.Fatalf("expected accepted webhook, got %d", validResp.Code)
+		}
+
+		replayReq := httptest.NewRequest(http.MethodPost, "/v1/gateway/webhook/whatsapp", bytes.NewReader(payload))
+		replayReq.Header.Set("X-Signature", signWebhookPayload(secret, payload))
+		replayResp := httptest.NewRecorder()
+		svc.HandleInbound(replayResp, replayReq)
+		if replayResp.Code != http.StatusConflict {
+			t.Fatalf("expected replay rejection, got %d", replayResp.Code)
+		}
+	})
+
+	t.Run("acceptance_suites_1_12", func(t *testing.T) {
+		svc := integration.NewService("runtime-integration-secret")
+		workspaceID := uuid.MustParse("018f3f6a-9a0f-7cc6-8f2f-1f0f2d2f2d2f")
+		svc.BindWorkspace("whatsapp", "+15550009999", workspaceID)
+
+		status, err := svc.IngestWebhook(integration.WebhookPayload{
+			Channel:           "whatsapp",
+			ChannelIdentifier: "+15550009999",
+			UserChannelID:     "runtime_acceptance",
+			Nonce:             "runtime_acceptance_nonce",
+			Message:           "run acceptance gate",
+		})
+		if err != nil {
+			t.Fatalf("ingest webhook: %v", err)
+		}
+		if status != http.StatusAccepted {
+			t.Fatalf("unexpected ingest status: %d", status)
+		}
+
+		result, err := svc.ProcessNextQueuedTurn(context.Background(), false)
+		if err != nil {
+			t.Fatalf("process queued turn: %v", err)
+		}
+		if result.GateDecision != "allow" || !result.Simulated || !result.Committed || result.WorkflowState != "TERMINAL" {
+			t.Fatalf("unexpected pipeline result: %+v", result)
+		}
+	})
+
+	t.Run("workspace_isolation", func(t *testing.T) {
+		pool := &database.Pool{}
+		if _, err := pool.Exec(context.Background(), "SELECT 1"); !errors.Is(err, database.ErrWorkspaceUnset) {
+			t.Fatalf("expected ErrWorkspaceUnset from pool exec guard, got %v", err)
+		}
+
+		workspaceID := uuid.MustParse("018f3f6a-9a0f-7cc6-8f2f-1f0f2d2f2d2f")
+		ctx := database.WithWorkspaceID(context.Background(), workspaceID)
+		got, err := database.WorkspaceIDFromContext(ctx)
+		if err != nil {
+			t.Fatalf("workspace from context: %v", err)
+		}
+		if got != workspaceID {
+			t.Fatalf("workspace mismatch: got=%s want=%s", got, workspaceID)
+		}
+	})
+
+	t.Run("provisioning_pipeline", func(t *testing.T) {
+		svc := workflows.NewService()
+		result := svc.ProvisioningV9(context.Background(), "")
+		if result.Status != "active" {
+			t.Fatalf("unexpected provisioning status: %s", result.Status)
+		}
+		if len(result.ExecutedSteps) == 0 || result.ExecutedSteps[len(result.ExecutedSteps)-1] != "Active" {
+			t.Fatalf("unexpected provisioning execution steps: %v", result.ExecutedSteps)
+		}
+	})
+
+	t.Run("onboarding_completion", func(t *testing.T) {
+		svc := onboarding.NewService()
+		workspaceID := onboarding.NewWorkspaceID()
+		stageAnswers := map[string]map[string]string{
+			"operator_profile_intake_v1": {
+				"role":  "operator",
+				"goals": "stability",
+			},
+			"behavior_policy_calibration_v1": {
+				"tone": "direct",
+				"risk": "medium",
+			},
+			"codebase_map_ingestion_v1": {
+				"repo":  "ai-executive-agent-repo",
+				"stack": "go",
+			},
+			"system_map_ingestion_v1": {
+				"integrations": "github",
+				"sla":          "p95 under 500ms",
+			},
+		}
+		if err := svc.CompleteOnboarding(workspaceID, stageAnswers); err != nil {
+			t.Fatalf("complete onboarding: %v", err)
+		}
+		profile, persona, policy, err := svc.WorkspaceState(workspaceID)
+		if err != nil {
+			t.Fatalf("workspace state: %v", err)
+		}
+		if profile.VersionInt < 1 || persona.VersionInt < 1 || policy.VersionInt < 1 {
+			t.Fatalf("expected versioned onboarding artifacts, got profile=%d persona=%d policy=%d", profile.VersionInt, persona.VersionInt, policy.VersionInt)
+		}
+	})
+
+	t.Run("provisioning_recovery", func(t *testing.T) {
+		svc := workflows.NewService()
+		result := svc.ProvisioningV9(context.Background(), "DeployServer")
+		if result.Status != "failed" {
+			t.Fatalf("expected failed provisioning for compensation test, got %s", result.Status)
+		}
+		if len(result.CompensatedSteps) == 0 {
+			t.Fatal("expected compensation steps")
+		}
+		if result.CompensatedSteps[0] != "DeployServer" {
+			t.Fatalf("unexpected first compensation step: %s", result.CompensatedSteps[0])
+		}
+		if len(result.CompensatedSteps) != len(result.ExecutedSteps) {
+			t.Fatalf("expected full reverse compensation, executed=%d compensated=%d", len(result.ExecutedSteps), len(result.CompensatedSteps))
+		}
+	})
+
+	t.Run("deterministic_llm", func(t *testing.T) {
+		svc := llm.NewService()
+		req := llm.Request{
+			WorkspaceID: "ws_v9_llm",
+			PromptKey:   "brain.planner.v9",
+			Input:       "check deterministic output",
+			Tier:        "T3",
+			ModelID:     "model-a",
+			ProviderID:  "provider-a",
+		}
+		first := svc.Generate(req)
+		if !strings.Contains(first.PlanJSON, `"temperature":0`) {
+			t.Fatalf("deterministic plan missing temperature=0: %s", first.PlanJSON)
+		}
+		if !strings.Contains(first.PlanJSON, `"top_p":1`) {
+			t.Fatalf("deterministic plan missing top_p=1: %s", first.PlanJSON)
+		}
+		second := svc.Generate(req)
+		if !second.FromReplay || second.PlanJSON != first.PlanJSON {
+			t.Fatalf("expected replay deterministic response, first=%+v second=%+v", first, second)
+		}
+	})
+
+	t.Run("cve_scanning", func(t *testing.T) {
+		root := repositoryRoot(t)
+		ciPath := filepath.Join(root, ".github", "workflows", "ci.yaml")
+		assertFileContainsTokens(t, ciPath, []string{
+			"trivy",
+			"trufflehog",
+			"govulncheck baseline",
+			"bash scripts/security/run_govulncheck.sh",
+		})
+		assertFileContainsTokens(t, filepath.Join(root, "scripts", "security", "run_security_validation.sh"), []string{
+			"run_govulncheck.sh",
+			"trivy",
+			"trufflehog",
+		})
+	})
+}
 
 func TestAcceptanceGateRuntimeCoverageV91(t *testing.T) {
 	t.Parallel()
@@ -366,4 +596,10 @@ func TestAcceptanceGateRuntimeCoverageV92(t *testing.T) {
 		assertHasProperties(t, props, "intent", "actions", "risk", "requires_approval")
 		assertRequiredIncludes(t, actionProposal, "intent", "actions", "risk", "requires_approval")
 	})
+}
+
+func signWebhookPayload(secret string, payload []byte) string {
+	mac := hmac.New(sha256.New, []byte(secret))
+	mac.Write(payload)
+	return hex.EncodeToString(mac.Sum(nil))
 }
