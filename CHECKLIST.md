@@ -180,6 +180,7 @@ Legend
 - [x] Phase 1 continuation (Step 11 provisioning_engine): hardened provisioning runtime with versioned deterministic server ranker scoring + explanation replay cache, and expanded artifact verification to enforce SBOM/vulnerability gates with optional Ed25519 signature verification
 - [x] Phase 1 continuation (Step 12 onboarding_discovery): expanded fixed discovery question sets across all four onboarding stages, enforced replay-locked extraction on schema-required keys, and persisted versioned workspace state with `workspace_profiles` (13 dimensions), `workspace_personas`, and `workspace_behavior_policies` (10 dimensions), including acceptance-fixture parity updates
 - [x] Phase 1 continuation (Step 13 a2ui_canvas): expanded canvas runtime with explicit A2UI mission-control surface rendering endpoint, SSRF-protected fetch-preview endpoint, persistent interaction logging, and websocket injection regression coverage while retaining tool-call forwarding semantics
+- [x] Phase 1 continuation (Step 14 observability_and_gates): added executable observability runtime primitives (`internal/observability`) for required structured log fields (`ts,service,env,workspace_id,user_id,ingress_turn_id,trace_id,span_id,event,severity,attrs`) and canonical-metric registry validation/recording against metric catalogs, with full test coverage and CI-green verification
 
 Migration rules (must follow)
 - Preserve already-working preserved components unchanged unless v4.0 explicitly requires changes (per user instructions).
