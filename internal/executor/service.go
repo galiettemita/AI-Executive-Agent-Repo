@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/netip"
 	"net/url"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -46,6 +47,18 @@ type TrustReceipt struct {
 	CreatedAt        time.Time
 }
 
+type SynthesisEvidenceReceipt struct {
+	ID            uuid.UUID
+	WorkspaceID   string
+	IngressTurnID string
+	CreatedAt     time.Time
+}
+
+type SynthesisEvidenceItem struct {
+	ReceiptID uuid.UUID
+	Evidence  string
+}
+
 type AuditLogEntry struct {
 	ID        uuid.UUID
 	EventType string
@@ -66,10 +79,15 @@ type Service struct {
 	executions    []ToolExecution
 	receipts      []TrustReceipt
 	receiptByExec map[uuid.UUID]TrustReceipt
+	synthesis     []SynthesisEvidenceReceipt
+	synthItems    []SynthesisEvidenceItem
 	audit         []AuditLogEntry
 	lastAuditHash string
 	idempotency   map[string]ToolExecution
 	circuits      map[string]CircuitState
+	l1Cache       map[string]string
+	l2Cache       map[string]string
+	l3Cache       map[string]string
 	nowFunc       func() time.Time
 }
 
@@ -79,9 +97,14 @@ func NewService() *Service {
 		executions:    []ToolExecution{},
 		receipts:      []TrustReceipt{},
 		receiptByExec: map[uuid.UUID]TrustReceipt{},
+		synthesis:     []SynthesisEvidenceReceipt{},
+		synthItems:    []SynthesisEvidenceItem{},
 		audit:         []AuditLogEntry{},
 		idempotency:   map[string]ToolExecution{},
 		circuits:      map[string]CircuitState{},
+		l1Cache:       map[string]string{},
+		l2Cache:       map[string]string{},
+		l3Cache:       map[string]string{},
 		nowFunc:       func() time.Time { return time.Now().UTC() },
 	}
 }
@@ -180,6 +203,7 @@ func (s *Service) recordExecution(req ExecutionRequest, phase ExecutionPhase) (T
 func (s *Service) emitAudit(eventType, payload string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	payload = minimizeAuditPayload(payload)
 	entryID := uuid.Must(uuid.NewV7())
 	entryHash := hashAudit(entryID.String() + eventType + payload + s.lastAuditHash)
 	entry := AuditLogEntry{
@@ -217,6 +241,9 @@ func validateSSRF(target string) error {
 		if strings.HasPrefix(host, prefix) {
 			return fmt.Errorf("blocked host: %s", host)
 		}
+	}
+	if strings.EqualFold(host, "localhost") {
+		return fmt.Errorf("blocked host: %s", host)
 	}
 	ip := net.ParseIP(host)
 	if ip == nil {
@@ -279,6 +306,80 @@ func (s *Service) SideEffectCount(workspaceID, toolKey string) int {
 	return s.sideEffects[workspaceID+"::"+toolKey]
 }
 
+func (s *Service) EmitSynthesisEvidence(workspaceID, ingressTurnID string, evidenceItems []string) (SynthesisEvidenceReceipt, []SynthesisEvidenceItem, error) {
+	if workspaceID == "" {
+		return SynthesisEvidenceReceipt{}, nil, fmt.Errorf("workspace_id is required")
+	}
+	if ingressTurnID == "" {
+		return SynthesisEvidenceReceipt{}, nil, fmt.Errorf("ingress_turn_id is required")
+	}
+	if len(evidenceItems) == 0 {
+		return SynthesisEvidenceReceipt{}, nil, fmt.Errorf("at least one evidence item is required")
+	}
+	receipt := SynthesisEvidenceReceipt{
+		ID:            uuid.Must(uuid.NewV7()),
+		WorkspaceID:   workspaceID,
+		IngressTurnID: ingressTurnID,
+		CreatedAt:     s.nowFunc(),
+	}
+	items := make([]SynthesisEvidenceItem, 0, len(evidenceItems))
+	for _, evidence := range evidenceItems {
+		items = append(items, SynthesisEvidenceItem{
+			ReceiptID: receipt.ID,
+			Evidence:  strings.TrimSpace(evidence),
+		})
+	}
+	s.mu.Lock()
+	s.synthesis = append(s.synthesis, receipt)
+	s.synthItems = append(s.synthItems, items...)
+	s.mu.Unlock()
+	s.emitAudit("BREVIO.trust.synthesis_evidence.created.v1", receipt.ID.String())
+	return receipt, items, nil
+}
+
+func (s *Service) SynthesisReceiptCount() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return len(s.synthesis)
+}
+
+func (s *Service) CachePut(key, value string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.l1Cache[key] = value
+	s.l2Cache[key] = value
+	s.l3Cache[key] = value
+}
+
+func (s *Service) CacheGet(key string) (value string, hit bool, layer string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if value, ok := s.l1Cache[key]; ok {
+		return value, true, "L1"
+	}
+	if value, ok := s.l2Cache[key]; ok {
+		s.l1Cache[key] = value
+		return value, true, "L2"
+	}
+	if value, ok := s.l3Cache[key]; ok {
+		s.l2Cache[key] = value
+		s.l1Cache[key] = value
+		return value, true, "L3"
+	}
+	return "", false, ""
+}
+
+func (s *Service) ExecuteWithCircuitProtection(req ExecutionRequest) (string, error) {
+	if s.CircuitOpen(req.WorkspaceID, req.Provider) {
+		return "fallback_response", nil
+	}
+	if _, _, err := s.Commit(req); err != nil {
+		s.RecordProviderFailure(req.WorkspaceID, req.Provider)
+		return "", err
+	}
+	return "committed", nil
+}
+
 func (s *Service) TrustReceiptCount() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -297,4 +398,20 @@ func (s *Service) AuditEntries() []AuditLogEntry {
 	out := make([]AuditLogEntry, len(s.audit))
 	copy(out, s.audit)
 	return out
+}
+
+var emailPattern = regexp.MustCompile(`[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}`)
+var bearerPattern = regexp.MustCompile(`(?i)bearer\s+[a-z0-9._-]+`)
+
+func minimizeAuditPayload(payload string) string {
+	trimmed := strings.TrimSpace(payload)
+	if trimmed == "" {
+		return trimmed
+	}
+	trimmed = emailPattern.ReplaceAllString(trimmed, "[redacted_email]")
+	trimmed = bearerPattern.ReplaceAllString(trimmed, "Bearer [redacted_token]")
+	if len(trimmed) > 256 {
+		return trimmed[:256]
+	}
+	return trimmed
 }
