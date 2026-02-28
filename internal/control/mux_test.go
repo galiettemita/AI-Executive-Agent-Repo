@@ -1149,6 +1149,29 @@ func TestControlMuxSessionsFlow(t *testing.T) {
 	if sessionPayload["id"] != "session_1" {
 		t.Fatalf("unexpected session payload: %v", sessionPayload)
 	}
+	if sessionPayload["session_id"] != "session_1" {
+		t.Fatalf("missing session_id payload: %v", sessionPayload)
+	}
+	if _, ok := sessionPayload["conversation_id"].(string); !ok {
+		t.Fatalf("missing conversation_id payload: %v", sessionPayload)
+	}
+	if _, ok := sessionPayload["entities"].([]any); !ok {
+		t.Fatalf("expected session context entities payload: %v", sessionPayload)
+	}
+
+	updateIntentReq := httptest.NewRequest(http.MethodGet, "/v1/sessions/session_1?workspace_id=ws_1&user_id=user_1&intent=schedule_followup", nil)
+	updateIntentResp := httptest.NewRecorder()
+	mux.ServeHTTP(updateIntentResp, updateIntentReq)
+	if updateIntentResp.Code != http.StatusOK {
+		t.Fatalf("unexpected intent update status: %d", updateIntentResp.Code)
+	}
+	var updatedIntentPayload map[string]any
+	if err := json.Unmarshal(updateIntentResp.Body.Bytes(), &updatedIntentPayload); err != nil {
+		t.Fatalf("decode updated intent session payload: %v", err)
+	}
+	if updatedIntentPayload["active_intent"] != "schedule_followup" {
+		t.Fatalf("unexpected active_intent payload after update: %v", updatedIntentPayload)
+	}
 
 	getActiveReq := httptest.NewRequest(http.MethodGet, "/v1/sessions/active?workspace_id=ws_1", nil)
 	getActiveResp := httptest.NewRecorder()

@@ -1019,8 +1019,17 @@ func handleSessions(w http.ResponseWriter, r *http.Request, svc *sessions.Servic
 		if workspaceID == "" {
 			workspaceID = "default"
 		}
+		activeSessions := svc.ListActive(workspaceID)
+		sessionContexts := make([]map[string]any, 0, len(activeSessions))
+		for _, activeSession := range activeSessions {
+			context, ok := svc.SessionContext(activeSession.ID)
+			if !ok {
+				continue
+			}
+			sessionContexts = append(sessionContexts, context)
+		}
 		writeJSON(w, http.StatusOK, map[string]any{
-			"sessions": svc.ListActive(workspaceID),
+			"sessions": sessionContexts,
 		})
 		return
 	}
@@ -1043,6 +1052,15 @@ func handleSessions(w http.ResponseWriter, r *http.Request, svc *sessions.Servic
 				userID = "unknown"
 			}
 			session = svc.EnsureSession(sessionID, workspaceID, userID)
+		}
+		if intent := strings.TrimSpace(r.URL.Query().Get("intent")); intent != "" {
+			session = svc.UpsertIntent(sessionID, intent, 0.8)
+			_ = session
+		}
+		context, ok := svc.SessionContext(sessionID)
+		if ok {
+			writeJSON(w, http.StatusOK, context)
+			return
 		}
 		writeJSON(w, http.StatusOK, session)
 		return
