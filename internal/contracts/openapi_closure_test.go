@@ -495,6 +495,55 @@ func TestOpenAPIV9EndpointSchemaSpecializationClosure(t *testing.T) {
 			ResponseRef: "#/components/schemas/mission_control_layout_v1_json",
 		},
 		{
+			Method:      "GET",
+			Path:        "/v1/mission-control/widgets",
+			ResponseRef: "#/components/schemas/mission_control_layout_v1_json",
+		},
+		{
+			Method:      "GET",
+			Path:        "/v1/autonomy/trust-scores",
+			ResponseRef: "#/components/schemas/trust_score_report_v1_json",
+		},
+		{
+			Method:      "POST",
+			Path:        "/v1/autonomy/promotions/{id}/decide",
+			RequestRef:  "#/components/schemas/promotion_proposal_v1_json",
+			ResponseRef: "#/components/schemas/promotion_proposal_v1_json",
+		},
+		{
+			Method:      "POST",
+			Path:        "/v1/learning/feedback",
+			RequestRef:  "#/components/schemas/feedback_submission_v1_json",
+			ResponseRef: "#/components/schemas/feedback_submission_v1_json",
+		},
+		{
+			Method:      "GET",
+			Path:        "/v1/learning/lessons",
+			ResponseRef: "#/components/schemas/lesson_proposal_v1_json",
+		},
+		{
+			Method:      "GET",
+			Path:        "/v1/captures/daily",
+			ResponseRef: "#/components/schemas/daily_capture_output_v1_json",
+		},
+		{
+			Method:      "POST",
+			Path:        "/v1/codebase/context-export",
+			RequestRef:  "#/components/schemas/code_context_export_request_v1_json",
+			ResponseRef: "#/components/schemas/code_context_export_request_v1_json",
+		},
+		{
+			Method:      "GET",
+			Path:        "/v1/capabilities/recommendations",
+			ResponseRef: "#/components/schemas/capability_recommendation_v1_json",
+		},
+		{
+			Method:      "POST",
+			Path:        "/v1/capabilities/recommendations/{id}/decide",
+			RequestRef:  "#/components/schemas/capability_recommendation_v1_json",
+			ResponseRef: "#/components/schemas/capability_recommendation_v1_json",
+		},
+		{
 			Method:      "PUT",
 			Path:        "/v1/context/budget",
 			RequestRef:  "#/components/schemas/context_budget_config_v1_json",
@@ -504,6 +553,17 @@ func TestOpenAPIV9EndpointSchemaSpecializationClosure(t *testing.T) {
 			Method:      "GET",
 			Path:        "/v1/context/allocations",
 			ResponseRef: "#/components/schemas/context_allocation_report_v1_json",
+		},
+		{
+			Method:      "GET",
+			Path:        "/v1/rag/collections",
+			ResponseRef: "#/components/schemas/rag_collection_config_v1_json",
+		},
+		{
+			Method:      "POST",
+			Path:        "/v1/rag/collections",
+			RequestRef:  "#/components/schemas/rag_collection_config_v1_json",
+			ResponseRef: "#/components/schemas/rag_collection_config_v1_json",
 		},
 		{
 			Method:      "POST",
@@ -518,14 +578,41 @@ func TestOpenAPIV9EndpointSchemaSpecializationClosure(t *testing.T) {
 		},
 		{
 			Method:      "GET",
+			Path:        "/v1/sessions/active",
+			ResponseRef: "#/components/schemas/session_context_v1_json",
+		},
+		{
+			Method:      "GET",
 			Path:        "/v1/tools/health/{tool_key}",
 			ResponseRef: "#/components/schemas/tool_health_report_v1_json",
+		},
+		{
+			Method:      "POST",
+			Path:        "/v1/temporal/conflicts",
+			RequestRef:  "#/components/schemas/temporal_expression_v1_json",
+			ResponseRef: "#/components/schemas/scheduling_conflict_report_v1_json",
+		},
+		{
+			Method:      "GET",
+			Path:        "/v1/guardrails/events",
+			ResponseRef: "#/components/schemas/guardrail_event_v1_json",
 		},
 		{
 			Method:      "POST",
 			Path:        "/v1/flags/{key}/evaluate",
 			RequestRef:  "#/components/schemas/feature_flag_evaluation_v1_json",
 			ResponseRef: "#/components/schemas/feature_flag_evaluation_v1_json",
+		},
+		{
+			Method:      "GET",
+			Path:        "/v1/model-tiers/overrides",
+			ResponseRef: "#/components/schemas/model_tier_override_request_v1_json",
+		},
+		{
+			Method:      "POST",
+			Path:        "/v1/admin/alerts/rules",
+			RequestRef:  "#/components/schemas/admin_alert_v1_json",
+			ResponseRef: "#/components/schemas/admin_alert_v1_json",
 		},
 		{
 			Method:      "POST",

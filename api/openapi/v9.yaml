@@ -243,7 +243,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/generic_response_v1'
+                $ref: '#/components/schemas/mission_control_layout_v1_json'
     put:
       summary: PUT /v1/mission-control/widgets
       operationId: put_v1_mission_control_widgets
@@ -253,12 +253,12 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/generic_response_v1'
+                $ref: '#/components/schemas/mission_control_layout_v1_json'
       requestBody:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/generic_request_v1'
+              $ref: '#/components/schemas/mission_control_layout_v1_json'
   /v1/mission-control/snapshot:
     get:
       summary: GET /v1/mission-control/snapshot
@@ -269,7 +269,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/generic_response_v1'
+                $ref: '#/components/schemas/mission_control_layout_v1_json'
   /v1/autonomy/trust-scores:
     get:
       summary: GET /v1/autonomy/trust-scores
@@ -280,7 +280,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/generic_response_v1'
+                $ref: '#/components/schemas/trust_score_report_v1_json'
   /v1/autonomy/promotions:
     get:
       summary: GET /v1/autonomy/promotions
@@ -291,7 +291,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/generic_response_v1'
+                $ref: '#/components/schemas/promotion_proposal_v1_json'
   /v1/autonomy/promotions/{id}/decide:
     post:
       summary: POST /v1/autonomy/promotions/{id}/decide
@@ -302,12 +302,12 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/generic_response_v1'
+                $ref: '#/components/schemas/promotion_proposal_v1_json'
       requestBody:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/generic_request_v1'
+              $ref: '#/components/schemas/promotion_proposal_v1_json'
   /v1/learning/config:
     get:
       summary: GET /v1/learning/config
@@ -344,12 +344,12 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/generic_response_v1'
+                $ref: '#/components/schemas/feedback_submission_v1_json'
       requestBody:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/generic_request_v1'
+              $ref: '#/components/schemas/feedback_submission_v1_json'
   /v1/learning/lessons:
     get:
       summary: GET /v1/learning/lessons
@@ -360,7 +360,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/generic_response_v1'
+                $ref: '#/components/schemas/lesson_proposal_v1_json'
   /v1/learning/lessons/{id}/confirm:
     post:
       summary: POST /v1/learning/lessons/{id}/confirm
@@ -371,12 +371,12 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/generic_response_v1'
+                $ref: '#/components/schemas/lesson_proposal_v1_json'
       requestBody:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/generic_request_v1'
+              $ref: '#/components/schemas/lesson_proposal_v1_json'
   /v1/learning/lessons/{id}/retire:
     post:
       summary: POST /v1/learning/lessons/{id}/retire
@@ -387,12 +387,12 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/generic_response_v1'
+                $ref: '#/components/schemas/lesson_proposal_v1_json'
       requestBody:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/generic_request_v1'
+              $ref: '#/components/schemas/lesson_proposal_v1_json'
   /v1/captures/daily:
     get:
       summary: GET /v1/captures/daily
@@ -403,7 +403,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/generic_response_v1'
+                $ref: '#/components/schemas/daily_capture_output_v1_json'
   /v1/captures/daily/{date}:
     get:
       summary: GET /v1/captures/daily/{date}
@@ -414,7 +414,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/generic_response_v1'
+                $ref: '#/components/schemas/daily_capture_output_v1_json'
   /v1/codebase/dependencies:
     get:
       summary: GET /v1/codebase/dependencies
@@ -474,7 +474,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/generic_response_v1'
+                $ref: '#/components/schemas/debt_resolution_task_v1_json'
     post:
       summary: POST /v1/codebase/debt/{id}/tasks
       operationId: post_v1_codebase_debt_id_tasks
@@ -484,12 +484,12 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/generic_response_v1'
+                $ref: '#/components/schemas/debt_resolution_task_v1_json'
       requestBody:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/generic_request_v1'
+              $ref: '#/components/schemas/debt_resolution_task_v1_json'
   /v1/codebase/debt/{id}/tasks/{task_id}:
     get:
       summary: GET /v1/codebase/debt/{id}/tasks/{task_id}
@@ -500,7 +500,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/generic_response_v1'
+                $ref: '#/components/schemas/debt_resolution_task_v1_json'
     put:
       summary: PUT /v1/codebase/debt/{id}/tasks/{task_id}
       operationId: put_v1_codebase_debt_id_tasks_task_id
@@ -510,12 +510,12 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/generic_response_v1'
+                $ref: '#/components/schemas/debt_resolution_task_v1_json'
       requestBody:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/generic_request_v1'
+              $ref: '#/components/schemas/debt_resolution_task_v1_json'
   /v1/codebase/templates:
     get:
       summary: GET /v1/codebase/templates
@@ -552,12 +552,12 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/generic_response_v1'
+                $ref: '#/components/schemas/code_context_export_request_v1_json'
       requestBody:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/generic_request_v1'
+              $ref: '#/components/schemas/code_context_export_request_v1_json'
   /v1/codebase/context-export/{id}:
     get:
       summary: GET /v1/codebase/context-export/{id}
@@ -568,7 +568,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/generic_response_v1'
+                $ref: '#/components/schemas/code_context_export_request_v1_json'
   /v1/capabilities/recommendations:
     get:
       summary: GET /v1/capabilities/recommendations
@@ -579,7 +579,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/generic_response_v1'
+                $ref: '#/components/schemas/capability_recommendation_v1_json'
   /v1/capabilities/recommendations/{id}/decide:
     post:
       summary: POST /v1/capabilities/recommendations/{id}/decide
@@ -590,12 +590,12 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/generic_response_v1'
+                $ref: '#/components/schemas/capability_recommendation_v1_json'
       requestBody:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/generic_request_v1'
+              $ref: '#/components/schemas/capability_recommendation_v1_json'
   /v1/self-modification/policy:
     get:
       summary: GET /v1/self-modification/policy
@@ -705,7 +705,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/generic_response_v1'
+                $ref: '#/components/schemas/rag_collection_config_v1_json'
     post:
       summary: POST /v1/rag/collections
       operationId: post_v1_rag_collections
@@ -715,12 +715,12 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/generic_response_v1'
+                $ref: '#/components/schemas/rag_collection_config_v1_json'
       requestBody:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/generic_request_v1'
+              $ref: '#/components/schemas/rag_collection_config_v1_json'
   /v1/rag/collections/{id}:
     get:
       summary: GET /v1/rag/collections/{id}
@@ -731,7 +731,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/generic_response_v1'
+                $ref: '#/components/schemas/rag_collection_config_v1_json'
     put:
       summary: PUT /v1/rag/collections/{id}
       operationId: put_v1_rag_collections_id
@@ -741,12 +741,12 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/generic_response_v1'
+                $ref: '#/components/schemas/rag_collection_config_v1_json'
       requestBody:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/generic_request_v1'
+              $ref: '#/components/schemas/rag_collection_config_v1_json'
     delete:
       summary: DELETE /v1/rag/collections/{id}
       operationId: delete_v1_rag_collections_id
@@ -770,9 +770,9 @@ paths:
                 $ref: '#/components/schemas/generic_response_v1'
       requestBody:
         content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/generic_request_v1'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/rag_collection_config_v1_json'
   /v1/rag/search:
     post:
       summary: POST /v1/rag/search
@@ -823,7 +823,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/generic_response_v1'
+                $ref: '#/components/schemas/session_context_v1_json'
       security:
       - mTLS: []
   /v1/sessions/{id}:
@@ -836,7 +836,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/generic_response_v1'
+                $ref: '#/components/schemas/session_context_v1_json'
   /v1/sessions/{id}/entities:
     get:
       summary: GET /v1/sessions/{id}/entities
@@ -847,7 +847,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/generic_response_v1'
+                $ref: '#/components/schemas/session_context_v1_json'
   /v1/temporal/config:
     get:
       summary: GET /v1/temporal/config
@@ -884,7 +884,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/generic_response_v1'
+                $ref: '#/components/schemas/temporal_expression_v1_json'
     post:
       summary: POST /v1/temporal/constraints
       operationId: post_v1_temporal_constraints
@@ -894,12 +894,12 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/generic_response_v1'
+                $ref: '#/components/schemas/temporal_expression_v1_json'
       requestBody:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/generic_request_v1'
+              $ref: '#/components/schemas/temporal_expression_v1_json'
   /v1/temporal/constraints/{id}:
     put:
       summary: PUT /v1/temporal/constraints/{id}
@@ -910,12 +910,12 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/generic_response_v1'
+                $ref: '#/components/schemas/temporal_expression_v1_json'
       requestBody:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/generic_request_v1'
+              $ref: '#/components/schemas/temporal_expression_v1_json'
     delete:
       summary: DELETE /v1/temporal/constraints/{id}
       operationId: delete_v1_temporal_constraints_id
@@ -936,12 +936,12 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/generic_response_v1'
+                $ref: '#/components/schemas/temporal_expression_v1_json'
       requestBody:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/generic_request_v1'
+              $ref: '#/components/schemas/temporal_expression_v1_json'
       security:
       - mTLS: []
   /v1/temporal/conflicts:
@@ -954,12 +954,12 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/generic_response_v1'
+                $ref: '#/components/schemas/scheduling_conflict_report_v1_json'
       requestBody:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/generic_request_v1'
+              $ref: '#/components/schemas/temporal_expression_v1_json'
       security:
       - mTLS: []
   /v1/temporal/travel-time:
@@ -972,12 +972,12 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/generic_response_v1'
+                $ref: '#/components/schemas/temporal_expression_v1_json'
       requestBody:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/generic_request_v1'
+              $ref: '#/components/schemas/temporal_expression_v1_json'
       security:
       - mTLS: []
   /v1/guardrails/config:
@@ -1020,7 +1020,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/generic_response_v1'
+                $ref: '#/components/schemas/guardrail_event_v1_json'
       security:
       - AdminJWT: []
     post:
@@ -1032,12 +1032,12 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/generic_response_v1'
+                $ref: '#/components/schemas/guardrail_event_v1_json'
       requestBody:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/generic_request_v1'
+              $ref: '#/components/schemas/guardrail_event_v1_json'
       security:
       - AdminJWT: []
   /v1/guardrails/rule-sets/{id}:
@@ -1050,12 +1050,12 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/generic_response_v1'
+                $ref: '#/components/schemas/guardrail_event_v1_json'
       requestBody:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/generic_request_v1'
+              $ref: '#/components/schemas/guardrail_event_v1_json'
       security:
       - AdminJWT: []
     delete:
@@ -1080,7 +1080,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/generic_response_v1'
+                $ref: '#/components/schemas/guardrail_event_v1_json'
       security:
       - AdminJWT: []
   /v1/tools/health:
@@ -1546,7 +1546,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/generic_response_v1'
+                $ref: '#/components/schemas/model_tier_override_request_v1_json'
       security:
       - AdminJWT: []
   /v1/event-schemas:
@@ -1771,7 +1771,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/generic_response_v1'
+                $ref: '#/components/schemas/admin_alert_v1_json'
       security:
       - AdminJWT: []
     post:
@@ -1783,12 +1783,12 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/generic_response_v1'
+                $ref: '#/components/schemas/admin_alert_v1_json'
       requestBody:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/generic_request_v1'
+              $ref: '#/components/schemas/admin_alert_v1_json'
       security:
       - AdminJWT: []
   /v1/admin/alerts/rules/{id}:
@@ -1801,12 +1801,12 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/generic_response_v1'
+                $ref: '#/components/schemas/admin_alert_v1_json'
       requestBody:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/generic_request_v1'
+              $ref: '#/components/schemas/admin_alert_v1_json'
       security:
       - AdminJWT: []
     delete:
@@ -1831,7 +1831,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/generic_response_v1'
+                $ref: '#/components/schemas/admin_alert_v1_json'
       security:
       - AdminJWT: []
     post:
@@ -1843,12 +1843,12 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/generic_response_v1'
+                $ref: '#/components/schemas/admin_alert_v1_json'
       requestBody:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/generic_request_v1'
+              $ref: '#/components/schemas/admin_alert_v1_json'
       security:
       - AdminJWT: []
   /v1/admin/kpi/report:
