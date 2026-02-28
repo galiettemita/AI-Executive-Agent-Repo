@@ -1672,7 +1672,12 @@ func handleSelfModification(w http.ResponseWriter, r *http.Request, svc *self_mo
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		writeJSON(w, http.StatusOK, svc.UpsertPolicy(workspaceID, payload))
+		stored, err := svc.UpsertPolicyStrict(workspaceID, payload)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		writeJSON(w, http.StatusOK, stored)
 		return
 	}
 	http.Error(w, "method not allowed", http.StatusMethodNotAllowed)

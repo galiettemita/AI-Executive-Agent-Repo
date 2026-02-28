@@ -828,6 +828,14 @@ func TestControlMuxV91CodebaseFlow(t *testing.T) {
 	if getPolicyResp.Code != http.StatusOK {
 		t.Fatalf("unexpected self-mod policy get status: %d", getPolicyResp.Code)
 	}
+
+	invalidPolicyBody := []byte(`{"enabled":true,"require_approval":false,"max_allowed_risk":"unknown"}`)
+	invalidPolicyReq := httptest.NewRequest(http.MethodPut, "/v1/self-modification/policy?workspace_id=ws_1", bytes.NewReader(invalidPolicyBody))
+	invalidPolicyResp := httptest.NewRecorder()
+	mux.ServeHTTP(invalidPolicyResp, invalidPolicyReq)
+	if invalidPolicyResp.Code != http.StatusBadRequest {
+		t.Fatalf("expected invalid risk rejection, got status: %d", invalidPolicyResp.Code)
+	}
 }
 
 func TestControlMuxContextBudgetFlow(t *testing.T) {
