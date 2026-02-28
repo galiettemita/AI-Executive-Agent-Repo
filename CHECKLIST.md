@@ -104,6 +104,7 @@ Legend
 - [x] Strict closure hardening: added module contract gate (`internal/contracts/module_closure_test.go`) to enforce canonical module path `github.com/brevio/brevio` and Go toolchain pin `go 1.22`
 - [x] Strict closure hardening: implemented V9 domain autonomy default seeding at workspace creation (`calendar=A2,email=A1,messaging=A1,tasks=A2,documents=A1,crm=A1,travel=A2,financial=A1,health=A0,environment=A1,web=A3`) with validation tests
 - [x] Strict closure hardening: implemented proactive silent-execution rule enforcement (`autonomy >= A2` AND `proactive_enabled=true`) via `EvaluateProactiveSilentExecution` with explicit control-plane tests
+- [x] Strict closure hardening: implemented reasoning-loop deterministic constraints (`planner/critic retry_limit=1`, `executor loop_limit T1=2/T2=5/T3=10`, `plan candidates T1=1/T2=2/T3=3`), deterministic lexical ordering helpers, and idempotency key format `idem_<base32hex...>` in `internal/workflows`
 
 Migration rules (must follow)
 - Preserve already-working preserved components unchanged unless v4.0 explicitly requires changes (per user instructions).

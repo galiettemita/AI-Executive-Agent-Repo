@@ -3,9 +3,12 @@ package workflows
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/base32"
 	"encoding/hex"
 	"fmt"
 	"math"
+	"sort"
+	"strings"
 	"sync"
 	"time"
 )
@@ -46,6 +49,15 @@ type TrustEvalResult struct {
 	Trailing14dFailure int
 }
 
+type ReasoningConstraints struct {
+	PlannerRetryLimit int
+	CriticRetryLimit  int
+	ExecutorLoopLimit int
+	MaxPlanCandidates int
+	RequestedTier     string
+	ResolvedTier      string
+}
+
 type Service struct {
 	mu               sync.Mutex
 	idempotencyStore map[string]ToolExecutionResult
@@ -65,12 +77,15 @@ func NewService() *Service {
 }
 
 func (s *Service) InteractiveTurnV1(_ context.Context, message string) InteractiveResult {
+	constraints := ReasoningConstraintsForTier("T2")
 	steps := []WorkflowStep{{StepKey: "planner", Status: "completed"}}
 	if message == "" {
 		return InteractiveResult{FinalState: "TERMINAL", Steps: append(steps, WorkflowStep{StepKey: "terminal", Status: "completed"})}
 	}
+	for i := 0; i < minInt(1, constraints.ExecutorLoopLimit); i++ {
+		steps = append(steps, WorkflowStep{StepKey: "executor", Status: "completed"})
+	}
 	steps = append(steps,
-		WorkflowStep{StepKey: "executor", Status: "completed"},
 		WorkflowStep{StepKey: "critic", Status: "completed"},
 		WorkflowStep{StepKey: "reflector", Status: "completed"},
 		WorkflowStep{StepKey: "terminal", Status: "completed"},
@@ -281,30 +296,88 @@ func payloadHash(workspaceID, toolKey, logicalAction string) string {
 	return hex.EncodeToString(sum[:])
 }
 
+func formatIdempotencyKey(scopeHash string) string {
+	sum := sha256.Sum256([]byte(scopeHash))
+	encoded := strings.ToLower(base32.HexEncoding.WithPadding(base32.NoPadding).EncodeToString(sum[:]))
+	if len(encoded) < 16 {
+		return "idem_" + encoded
+	}
+	return "idem_" + encoded[:26]
+}
+
 func (s *Service) ExecuteToolWithIdempotency(workspaceID, toolKey, logicalAction string) (ToolExecutionResult, error) {
 	if workspaceID == "" || toolKey == "" || logicalAction == "" {
 		return ToolExecutionResult{}, fmt.Errorf("workspace_id, tool_key, and logical_action are required")
 	}
 	payload := payloadHash(workspaceID, toolKey, logicalAction)
-	key := workspaceID + "::" + toolKey + "::" + payload
+	scopeKey := workspaceID + "::" + toolKey + "::" + payload
+	idempotencyKey := formatIdempotencyKey(scopeKey)
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if existing, ok := s.idempotencyStore[key]; ok {
+	if existing, ok := s.idempotencyStore[scopeKey]; ok {
 		return existing, nil
 	}
 
 	result := ToolExecutionResult{
-		IdempotencyKey: key,
+		IdempotencyKey: idempotencyKey,
 		PayloadHash:    payload,
 		CreatedAt:      time.Now().UTC(),
 	}
-	s.idempotencyStore[key] = result
+	s.idempotencyStore[scopeKey] = result
 	return result, nil
+}
+
+func ReasoningConstraintsForTier(requestedTier string) ReasoningConstraints {
+	normalized := strings.ToUpper(strings.TrimSpace(requestedTier))
+	resolvedTier := normalized
+	constraints := ReasoningConstraints{
+		PlannerRetryLimit: 1,
+		CriticRetryLimit:  1,
+		RequestedTier:     requestedTier,
+		ResolvedTier:      normalized,
+	}
+
+	switch normalized {
+	case "T1":
+		constraints.ExecutorLoopLimit = 2
+		constraints.MaxPlanCandidates = 1
+	case "T2":
+		constraints.ExecutorLoopLimit = 5
+		constraints.MaxPlanCandidates = 2
+	case "T3":
+		constraints.ExecutorLoopLimit = 10
+		constraints.MaxPlanCandidates = 3
+	default:
+		resolvedTier = "T1"
+		constraints.ExecutorLoopLimit = 2
+		constraints.MaxPlanCandidates = 1
+		constraints.ResolvedTier = resolvedTier
+	}
+	return constraints
+}
+
+func DeterministicToolSchemaOrder(toolKeys []string) []string {
+	out := append([]string(nil), toolKeys...)
+	sort.Strings(out)
+	return out
+}
+
+func DeterministicContextItemOrder(items []string) []string {
+	out := append([]string(nil), items...)
+	sort.Strings(out)
+	return out
 }
 
 func maxInt(a, b int) int {
 	if a > b {
+		return a
+	}
+	return b
+}
+
+func minInt(a, b int) int {
+	if a < b {
 		return a
 	}
 	return b

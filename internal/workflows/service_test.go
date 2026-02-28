@@ -2,6 +2,8 @@ package workflows
 
 import (
 	"context"
+	"regexp"
+	"slices"
 	"testing"
 )
 
@@ -68,8 +70,63 @@ func TestIdempotencyDoubleSubmitReturnsSameResult(t *testing.T) {
 	if first.IdempotencyKey != second.IdempotencyKey {
 		t.Fatalf("idempotency mismatch: %s vs %s", first.IdempotencyKey, second.IdempotencyKey)
 	}
+	match, err := regexp.MatchString(`^idem_[0-9a-v]{16,}$`, first.IdempotencyKey)
+	if err != nil {
+		t.Fatalf("compile idempotency regex: %v", err)
+	}
+	if !match {
+		t.Fatalf("idempotency key format mismatch: %s", first.IdempotencyKey)
+	}
 	if !first.CreatedAt.Equal(second.CreatedAt) {
 		t.Fatalf("expected same execution timestamp for idempotent replay")
+	}
+}
+
+func TestReasoningConstraintsForTier(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		tier         string
+		resolvedTier string
+		loopLimit    int
+		candidates   int
+	}{
+		{tier: "T1", resolvedTier: "T1", loopLimit: 2, candidates: 1},
+		{tier: "T2", resolvedTier: "T2", loopLimit: 5, candidates: 2},
+		{tier: "T3", resolvedTier: "T3", loopLimit: 10, candidates: 3},
+		{tier: "unknown", resolvedTier: "T1", loopLimit: 2, candidates: 1},
+	}
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.tier, func(t *testing.T) {
+			got := ReasoningConstraintsForTier(tc.tier)
+			if got.PlannerRetryLimit != 1 || got.CriticRetryLimit != 1 {
+				t.Fatalf("retry limit mismatch: %+v", got)
+			}
+			if got.ResolvedTier != tc.resolvedTier {
+				t.Fatalf("resolved tier mismatch: got=%s want=%s", got.ResolvedTier, tc.resolvedTier)
+			}
+			if got.ExecutorLoopLimit != tc.loopLimit {
+				t.Fatalf("loop limit mismatch: got=%d want=%d", got.ExecutorLoopLimit, tc.loopLimit)
+			}
+			if got.MaxPlanCandidates != tc.candidates {
+				t.Fatalf("candidate limit mismatch: got=%d want=%d", got.MaxPlanCandidates, tc.candidates)
+			}
+		})
+	}
+}
+
+func TestDeterministicOrderingHelpers(t *testing.T) {
+	t.Parallel()
+
+	toolOrder := DeterministicToolSchemaOrder([]string{"zeta.run", "alpha.call", "beta.exec"})
+	if !slices.Equal(toolOrder, []string{"alpha.call", "beta.exec", "zeta.run"}) {
+		t.Fatalf("unexpected tool order: %v", toolOrder)
+	}
+
+	contextOrder := DeterministicContextItemOrder([]string{"memory:z", "history:a", "tool:b"})
+	if !slices.Equal(contextOrder, []string{"history:a", "memory:z", "tool:b"}) {
+		t.Fatalf("unexpected context order: %v", contextOrder)
 	}
 }
 
