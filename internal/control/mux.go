@@ -1421,7 +1421,12 @@ func handleLearning(w http.ResponseWriter, r *http.Request, svc *learning.Servic
 			return
 		}
 		payload.WorkspaceID = workspaceID
-		writeJSON(w, http.StatusCreated, svc.AddFeedback(payload))
+		feedback, err := svc.SubmitFeedback(payload)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusTooManyRequests)
+			return
+		}
+		writeJSON(w, http.StatusCreated, feedback)
 		return
 
 	case "lessons":

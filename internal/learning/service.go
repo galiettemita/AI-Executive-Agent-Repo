@@ -3,7 +3,9 @@ package learning
 import (
 	"fmt"
 	"sort"
+	"strings"
 	"sync"
+	"time"
 )
 
 type Config struct {
@@ -13,17 +15,20 @@ type Config struct {
 }
 
 type Feedback struct {
-	ID           string `json:"id"`
-	WorkspaceID  string `json:"workspace_id"`
-	FeedbackType string `json:"feedback_type"`
-	Content      string `json:"content"`
+	ID           string    `json:"id"`
+	WorkspaceID  string    `json:"workspace_id"`
+	FeedbackType string    `json:"feedback_type"`
+	Content      string    `json:"content"`
+	CreatedAt    time.Time `json:"created_at"`
 }
 
 type Lesson struct {
-	ID          string `json:"id"`
-	WorkspaceID string `json:"workspace_id"`
-	Title       string `json:"title"`
-	Status      string `json:"status"`
+	ID          string    `json:"id"`
+	WorkspaceID string    `json:"workspace_id"`
+	Title       string    `json:"title"`
+	Status      string    `json:"status"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
 }
 
 type Service struct {
@@ -57,7 +62,7 @@ func (s *Service) UpsertConfig(workspaceID string, cfg Config) Config {
 		workspaceID = "default"
 	}
 	cfg.WorkspaceID = workspaceID
-	if cfg.MaxActiveLessons == 0 {
+	if cfg.MaxActiveLessons <= 0 {
 		cfg.MaxActiveLessons = 20
 	}
 	s.configs[workspaceID] = cfg
@@ -65,24 +70,59 @@ func (s *Service) UpsertConfig(workspaceID string, cfg Config) Config {
 }
 
 func (s *Service) AddFeedback(feedback Feedback) Feedback {
+	stored, _ := s.SubmitFeedback(feedback)
+	return stored
+}
+
+func (s *Service) SubmitFeedback(feedback Feedback) (Feedback, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	feedback.ID = fmt.Sprintf("feedback_%06d", s.nextID)
-	s.nextID++
+
 	if feedback.WorkspaceID == "" {
 		feedback.WorkspaceID = "default"
+	}
+	if strings.TrimSpace(feedback.Content) == "" {
+		return Feedback{}, fmt.Errorf("feedback content is required")
+	}
+
+	cfg := s.configs[feedback.WorkspaceID]
+	if cfg.WorkspaceID == "" {
+		cfg = Config{WorkspaceID: feedback.WorkspaceID, MaxActiveLessons: 20}
+		s.configs[feedback.WorkspaceID] = cfg
+	}
+	if s.activeLessonCountLocked(feedback.WorkspaceID) >= cfg.MaxActiveLessons {
+		return Feedback{}, fmt.Errorf("LESSON_CAP_REACHED")
+	}
+
+	feedback.ID = fmt.Sprintf("feedback_%06d", s.nextID)
+	s.nextID++
+	if feedback.CreatedAt.IsZero() {
+		feedback.CreatedAt = time.Now().UTC()
 	}
 	s.feedbacks = append(s.feedbacks, feedback)
 
 	lesson := Lesson{
 		ID:          fmt.Sprintf("lesson_%06d", s.nextID),
 		WorkspaceID: feedback.WorkspaceID,
-		Title:       "Lesson from feedback",
+		Title:       lessonTitleFromFeedback(feedback.Content),
 		Status:      "proposed",
+		CreatedAt:   time.Now().UTC(),
+		UpdatedAt:   time.Now().UTC(),
 	}
 	s.nextID++
 	s.lessons[lesson.ID] = lesson
-	return feedback
+	return feedback, nil
+}
+
+func lessonTitleFromFeedback(content string) string {
+	trimmed := strings.TrimSpace(content)
+	if len(trimmed) > 40 {
+		trimmed = trimmed[:40]
+	}
+	if trimmed == "" {
+		return "Lesson from feedback"
+	}
+	return "Lesson: " + trimmed
 }
 
 func (s *Service) ListLessons(workspaceID string) []Lesson {
@@ -101,6 +141,19 @@ func (s *Service) ListLessons(workspaceID string) []Lesson {
 	return out
 }
 
+func (s *Service) activeLessonCountLocked(workspaceID string) int {
+	count := 0
+	for _, lesson := range s.lessons {
+		if lesson.WorkspaceID != workspaceID {
+			continue
+		}
+		if lesson.Status == "proposed" || lesson.Status == "confirmed" {
+			count++
+		}
+	}
+	return count
+}
+
 func (s *Service) ConfirmLesson(id string) (Lesson, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -109,6 +162,7 @@ func (s *Service) ConfirmLesson(id string) (Lesson, bool) {
 		return Lesson{}, false
 	}
 	lesson.Status = "confirmed"
+	lesson.UpdatedAt = time.Now().UTC()
 	s.lessons[id] = lesson
 	return lesson, true
 }
@@ -121,6 +175,26 @@ func (s *Service) RetireLesson(id string) (Lesson, bool) {
 		return Lesson{}, false
 	}
 	lesson.Status = "retired"
+	lesson.UpdatedAt = time.Now().UTC()
 	s.lessons[id] = lesson
 	return lesson, true
+}
+
+func (s *Service) BulkRetire(workspaceID string) int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	count := 0
+	for id, lesson := range s.lessons {
+		if workspaceID != "" && lesson.WorkspaceID != workspaceID {
+			continue
+		}
+		if lesson.Status == "retired" {
+			continue
+		}
+		lesson.Status = "retired"
+		lesson.UpdatedAt = time.Now().UTC()
+		s.lessons[id] = lesson
+		count++
+	}
+	return count
 }
