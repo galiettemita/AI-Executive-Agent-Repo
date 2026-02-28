@@ -366,6 +366,17 @@ func TestAcceptanceGateRuntimeCoverageV91(t *testing.T) {
 		if profile.VersionInt < 1 || persona.VersionInt < 1 || policy.VersionInt < 1 {
 			t.Fatalf("expected versioned discovery artifacts, got profile=%d persona=%d policy=%d", profile.VersionInt, persona.VersionInt, policy.VersionInt)
 		}
+		followups := svc.ListAdaptiveQuestions(workspaceID)
+		if len(followups) == 0 {
+			t.Fatal("expected adaptive discovery followup questions")
+		}
+		answered, ok, err := svc.AnswerAdaptiveQuestion(workspaceID, followups[0].FollowupID, "Prioritize onboarding automation for reporting.")
+		if err != nil {
+			t.Fatalf("answer adaptive followup: %v", err)
+		}
+		if !ok || answered.Status != "answered" {
+			t.Fatalf("expected answered adaptive followup state, got ok=%v state=%+v", ok, answered)
+		}
 	})
 }
 

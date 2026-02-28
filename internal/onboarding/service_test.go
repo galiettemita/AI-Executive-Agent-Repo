@@ -77,6 +77,10 @@ func TestCompleteAllStagesWithFixtureAnswers(t *testing.T) {
 	if policy.Policy["write_actions"] != "confirm_before_send" {
 		t.Fatalf("unexpected behavior policy write_actions: %s", policy.Policy["write_actions"])
 	}
+	followups := svc.ListAdaptiveQuestions(workspaceID)
+	if len(followups) == 0 {
+		t.Fatal("expected adaptive followup questions after onboarding completion")
+	}
 }
 
 func TestRunStageReplayLockedExtraction(t *testing.T) {
@@ -114,5 +118,43 @@ func TestQuestionSetHasFixedRequiredQuestions(t *testing.T) {
 	}
 	if len(questions) < 8 {
 		t.Fatalf("expected fixed operator question set, got %d", len(questions))
+	}
+}
+
+func TestAdaptiveDiscoveryFollowupLifecycle(t *testing.T) {
+	t.Parallel()
+
+	svc := NewService()
+	workspaceID := NewWorkspaceID()
+	rule := svc.UpsertFollowupRule(workspaceID, FollowupRule{
+		Trigger:  "onboarding_completed",
+		Question: "What recurring report should be fully automated first?",
+		Status:   "active",
+	})
+	if rule.RuleID == "" {
+		t.Fatal("expected persisted followup rule id")
+	}
+
+	answers := fixtureAnswers()
+	answers["behavior_policy_calibration_v1"]["autonomy_preference"] = "A1"
+	answers["codebase_map_ingestion_v1"]["meeting_load"] = "high"
+	if err := svc.CompleteOnboarding(workspaceID, answers); err != nil {
+		t.Fatalf("complete onboarding with adaptive trigger answers: %v", err)
+	}
+
+	followups := svc.ListAdaptiveQuestions(workspaceID)
+	if len(followups) < 2 {
+		t.Fatalf("expected multiple adaptive questions, got %+v", followups)
+	}
+
+	answered, ok, err := svc.AnswerAdaptiveQuestion(workspaceID, followups[0].FollowupID, "Automate morning KPI summary first.")
+	if err != nil {
+		t.Fatalf("answer followup: %v", err)
+	}
+	if !ok {
+		t.Fatalf("expected followup answer acceptance")
+	}
+	if answered.Status != "answered" {
+		t.Fatalf("unexpected answered followup status: %+v", answered)
 	}
 }

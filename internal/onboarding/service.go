@@ -37,13 +37,33 @@ type WorkspaceBehaviorPolicy struct {
 	Policy      map[string]string
 }
 
+type FollowupRule struct {
+	RuleID      string
+	WorkspaceID string
+	Trigger     string
+	Question    string
+	Status      string
+}
+
+type AdaptiveQuestion struct {
+	FollowupID  string
+	WorkspaceID string
+	Question    string
+	Trigger     string
+	Status      string
+	Answer      string
+}
+
 type Service struct {
-	mu               sync.Mutex
-	questionSets     map[string][]Question
-	replay           map[string]map[string]string
-	profiles         map[string]WorkspaceProfile
-	personas         map[string]WorkspacePersona
-	behaviorPolicies map[string]WorkspaceBehaviorPolicy
+	mu                sync.Mutex
+	questionSets      map[string][]Question
+	replay            map[string]map[string]string
+	profiles          map[string]WorkspaceProfile
+	personas          map[string]WorkspacePersona
+	behaviorPolicies  map[string]WorkspaceBehaviorPolicy
+	followupRules     map[string]map[string]FollowupRule
+	adaptiveQuestions map[string]map[string]AdaptiveQuestion
+	nextFollowupID    int
 }
 
 func NewService() *Service {
@@ -87,10 +107,13 @@ func NewService() *Service {
 				{Key: "language", Prompt: "Preferred language?"},
 			},
 		},
-		replay:           map[string]map[string]string{},
-		profiles:         map[string]WorkspaceProfile{},
-		personas:         map[string]WorkspacePersona{},
-		behaviorPolicies: map[string]WorkspaceBehaviorPolicy{},
+		replay:            map[string]map[string]string{},
+		profiles:          map[string]WorkspaceProfile{},
+		personas:          map[string]WorkspacePersona{},
+		behaviorPolicies:  map[string]WorkspaceBehaviorPolicy{},
+		followupRules:     map[string]map[string]FollowupRule{},
+		adaptiveQuestions: map[string]map[string]AdaptiveQuestion{},
+		nextFollowupID:    1,
 	}
 }
 
@@ -234,6 +257,8 @@ func (s *Service) CompleteOnboarding(workspaceID string, stageAnswers map[string
 			"sla":                 sy["sla"],
 		},
 	}
+	s.ensureWorkspaceFollowupRulesLocked(workspaceID)
+	s.generateAdaptiveQuestionsLocked(workspaceID, op, bp, cb, sy)
 	return nil
 }
 
@@ -251,4 +276,175 @@ func (s *Service) WorkspaceState(workspaceID string) (WorkspaceProfile, Workspac
 
 func NewWorkspaceID() string {
 	return uuid.Must(uuid.NewV7()).String()
+}
+
+func (s *Service) UpsertFollowupRule(workspaceID string, rule FollowupRule) FollowupRule {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if strings.TrimSpace(workspaceID) == "" {
+		workspaceID = "default"
+	}
+	s.ensureWorkspaceFollowupRulesLocked(workspaceID)
+	if strings.TrimSpace(rule.RuleID) == "" {
+		rule.RuleID = fmt.Sprintf("followup_rule_%06d", s.nextFollowupID)
+		s.nextFollowupID++
+	}
+	rule.WorkspaceID = workspaceID
+	if strings.TrimSpace(rule.Trigger) == "" {
+		rule.Trigger = "onboarding_completed"
+	}
+	if strings.TrimSpace(rule.Question) == "" {
+		rule.Question = "What is your highest-priority follow-up after onboarding?"
+	}
+	if strings.TrimSpace(rule.Status) == "" {
+		rule.Status = "active"
+	}
+	s.followupRules[workspaceID][rule.RuleID] = rule
+	return rule
+}
+
+func (s *Service) ListFollowupRules(workspaceID string) []FollowupRule {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if strings.TrimSpace(workspaceID) == "" {
+		workspaceID = "default"
+	}
+	s.ensureWorkspaceFollowupRulesLocked(workspaceID)
+	out := make([]FollowupRule, 0, len(s.followupRules[workspaceID]))
+	for _, rule := range s.followupRules[workspaceID] {
+		out = append(out, rule)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].RuleID < out[j].RuleID
+	})
+	return out
+}
+
+func (s *Service) ListAdaptiveQuestions(workspaceID string) []AdaptiveQuestion {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if strings.TrimSpace(workspaceID) == "" {
+		workspaceID = "default"
+	}
+	out := make([]AdaptiveQuestion, 0, len(s.adaptiveQuestions[workspaceID]))
+	for _, question := range s.adaptiveQuestions[workspaceID] {
+		out = append(out, question)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].FollowupID < out[j].FollowupID
+	})
+	return out
+}
+
+func (s *Service) AnswerAdaptiveQuestion(workspaceID, followupID, answer string) (AdaptiveQuestion, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if strings.TrimSpace(workspaceID) == "" {
+		workspaceID = "default"
+	}
+	question, ok := s.adaptiveQuestions[workspaceID][followupID]
+	if !ok {
+		return AdaptiveQuestion{}, false, nil
+	}
+	if strings.TrimSpace(answer) == "" {
+		return AdaptiveQuestion{}, false, fmt.Errorf("adaptive answer cannot be empty")
+	}
+	question.Answer = strings.TrimSpace(answer)
+	question.Status = "answered"
+	s.adaptiveQuestions[workspaceID][followupID] = question
+	return question, true, nil
+}
+
+func (s *Service) ensureWorkspaceFollowupRulesLocked(workspaceID string) {
+	if _, ok := s.followupRules[workspaceID]; !ok {
+		s.followupRules[workspaceID] = map[string]FollowupRule{
+			"default_rule_onboarding_completed": {
+				RuleID:      "default_rule_onboarding_completed",
+				WorkspaceID: workspaceID,
+				Trigger:     "onboarding_completed",
+				Question:    "What should the assistant prioritize in your first week?",
+				Status:      "active",
+			},
+			"default_rule_meeting_load_high": {
+				RuleID:      "default_rule_meeting_load_high",
+				WorkspaceID: workspaceID,
+				Trigger:     "meeting_load_high",
+				Question:    "Should the assistant proactively prepare meeting briefs?",
+				Status:      "active",
+			},
+			"default_rule_low_autonomy": {
+				RuleID:      "default_rule_low_autonomy",
+				WorkspaceID: workspaceID,
+				Trigger:     "low_autonomy_preference",
+				Question:    "Which actions should remain approval-gated at all times?",
+				Status:      "active",
+			},
+		}
+	}
+	if _, ok := s.adaptiveQuestions[workspaceID]; !ok {
+		s.adaptiveQuestions[workspaceID] = map[string]AdaptiveQuestion{}
+	}
+}
+
+func (s *Service) generateAdaptiveQuestionsLocked(workspaceID string, operator, behavior, codebase, system map[string]string) {
+	s.ensureWorkspaceFollowupRulesLocked(workspaceID)
+
+	activeRules := []FollowupRule{}
+	for _, rule := range s.followupRules[workspaceID] {
+		if strings.ToLower(strings.TrimSpace(rule.Status)) != "active" {
+			continue
+		}
+		if ruleApplies(rule.Trigger, operator, behavior, codebase, system) {
+			activeRules = append(activeRules, rule)
+		}
+	}
+	sort.Slice(activeRules, func(i, j int) bool {
+		return activeRules[i].RuleID < activeRules[j].RuleID
+	})
+
+	for _, rule := range activeRules {
+		if s.hasAdaptiveQuestionLocked(workspaceID, rule.Trigger) {
+			continue
+		}
+		followupID := fmt.Sprintf("followup_%06d", s.nextFollowupID)
+		s.nextFollowupID++
+		s.adaptiveQuestions[workspaceID][followupID] = AdaptiveQuestion{
+			FollowupID:  followupID,
+			WorkspaceID: workspaceID,
+			Question:    rule.Question,
+			Trigger:     rule.Trigger,
+			Status:      "pending",
+			Answer:      "",
+		}
+	}
+}
+
+func (s *Service) hasAdaptiveQuestionLocked(workspaceID, trigger string) bool {
+	for _, question := range s.adaptiveQuestions[workspaceID] {
+		if question.Trigger == trigger {
+			return true
+		}
+	}
+	return false
+}
+
+func ruleApplies(trigger string, operator, behavior, codebase, system map[string]string) bool {
+	switch trigger {
+	case "onboarding_completed":
+		return true
+	case "meeting_load_high":
+		meetingLoad := strings.ToLower(strings.TrimSpace(codebase["meeting_load"]))
+		return meetingLoad == "high" || meetingLoad == "very_high"
+	case "low_autonomy_preference":
+		autonomy := strings.ToUpper(strings.TrimSpace(behavior["autonomy_preference"]))
+		return autonomy == "A0" || autonomy == "A1"
+	default:
+		_ = operator
+		_ = system
+		return false
+	}
 }
