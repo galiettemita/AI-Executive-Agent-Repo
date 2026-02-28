@@ -116,6 +116,16 @@ func NewService() *Service {
 	}
 }
 
+func (s *Service) SetNowFunc(nowFunc func() time.Time) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if nowFunc == nil {
+		s.nowFunc = func() time.Time { return time.Now().UTC() }
+		return
+	}
+	s.nowFunc = nowFunc
+}
+
 func logicalActionHash(workspaceID, toolKey, action string) string {
 	sum := sha256.Sum256([]byte(workspaceID + "::" + toolKey + "::" + action))
 	return hex.EncodeToString(sum[:])

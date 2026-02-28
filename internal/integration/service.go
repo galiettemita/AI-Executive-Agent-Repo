@@ -19,6 +19,7 @@ import (
 	"github.com/brevio/brevio/internal/executor"
 	"github.com/brevio/brevio/internal/gateway"
 	"github.com/brevio/brevio/internal/llm"
+	"github.com/brevio/brevio/internal/security/pii"
 	"github.com/brevio/brevio/internal/workflows"
 )
 
@@ -61,6 +62,7 @@ type Service struct {
 	llm         *llm.Service
 	workflows   *workflows.Service
 	executor    *executor.Service
+	pii         *pii.Service
 	defaultRisk string
 }
 
@@ -75,6 +77,7 @@ func NewService(secret string) *Service {
 		llm:         llm.NewService(),
 		workflows:   workflows.NewService(),
 		executor:    executor.NewService(),
+		pii:         pii.NewService(),
 		defaultRisk: "LOW",
 	}
 }
@@ -283,6 +286,57 @@ func (s *Service) ExecutorAuditEventTypes() []string {
 
 func (s *Service) GatewayAuditEventTypes() []string {
 	return s.gateway.AuditEntries()
+}
+
+func (s *Service) ValidateExecutorSSRFBlock(targetURL string) error {
+	_, err := s.executor.Simulate(executor.ExecutionRequest{
+		WorkspaceID: "ws_security",
+		ToolKey:     "web.fetch",
+		Action:      "fetch",
+		Provider:    "native",
+		TargetURL:   targetURL,
+	})
+	return err
+}
+
+func (s *Service) EvaluateCircuitBreakerTransition(workspaceID, provider string, base time.Time) (opened bool, closedAfterCooldown bool) {
+	now := base.UTC()
+	s.executor.SetNowFunc(func() time.Time { return now })
+	for idx := 0; idx < 5; idx++ {
+		s.executor.RecordProviderFailure(workspaceID, provider)
+	}
+	opened = s.executor.CircuitOpen(workspaceID, provider)
+	now = now.Add(301 * time.Second)
+	closedAfterCooldown = !s.executor.CircuitOpen(workspaceID, provider)
+	return opened, closedAfterCooldown
+}
+
+func (s *Service) VerifyPIIRotationDualKeyWindow(base time.Time) (beforeRotation bool, duringWindow bool, expiredAfterWindow bool, err error) {
+	now := base.UTC()
+	s.pii.SetRotationWindow(10 * time.Minute)
+	s.pii.SetNowFunc(func() time.Time { return now })
+
+	record, err := s.pii.EncryptField("email", "ceo@example.com")
+	if err != nil {
+		return false, false, false, err
+	}
+	if _, err := s.pii.DecryptField(record); err == nil {
+		beforeRotation = true
+	}
+	if err := s.pii.RotateKey("v2", []byte("abcdef0123456789abcdef0123456789")); err != nil {
+		return beforeRotation, false, false, err
+	}
+
+	now = base.UTC().Add(9 * time.Minute)
+	if _, err := s.pii.DecryptField(record); err == nil {
+		duringWindow = true
+	}
+
+	now = base.UTC().Add(11 * time.Minute)
+	if _, err := s.pii.DecryptField(record); err != nil {
+		expiredAfterWindow = true
+	}
+	return beforeRotation, duringWindow, expiredAfterWindow, nil
 }
 
 func signPayload(secret, payload []byte) string {

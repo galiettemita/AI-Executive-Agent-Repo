@@ -393,6 +393,50 @@ func TestWorkflowIntegrationV91AndV92Executions(t *testing.T) {
 	}
 }
 
+func TestCrossCuttingKeyRotationDualWindow(t *testing.T) {
+	t.Parallel()
+
+	svc := NewService("integration-secret")
+	before, during, expired, err := svc.VerifyPIIRotationDualKeyWindow(time.Date(2026, time.February, 28, 10, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatalf("verify pii rotation window: %v", err)
+	}
+	if !before || !during || !expired {
+		t.Fatalf("expected key-rotation lifecycle coverage true/true/true, got before=%t during=%t expired=%t", before, during, expired)
+	}
+}
+
+func TestCrossCuttingCircuitBreakerTransitions(t *testing.T) {
+	t.Parallel()
+
+	svc := NewService("integration-secret")
+	opened, closed := svc.EvaluateCircuitBreakerTransition("ws_cb", "providerA", time.Date(2026, time.February, 28, 12, 0, 0, 0, time.UTC))
+	if !opened {
+		t.Fatal("expected circuit to open after failure threshold")
+	}
+	if !closed {
+		t.Fatal("expected circuit to close after cooldown")
+	}
+}
+
+func TestCrossCuttingSSRFBlockedCIDRs(t *testing.T) {
+	t.Parallel()
+
+	svc := NewService("integration-secret")
+	blockedTargets := []string{
+		"http://169.254.169.254/latest/meta-data",
+		"http://127.0.0.1:8080/admin",
+		"http://10.0.0.1/internal",
+		"http://172.16.9.9/private",
+		"http://192.168.1.44/private",
+	}
+	for _, target := range blockedTargets {
+		if err := svc.ValidateExecutorSSRFBlock(target); err == nil {
+			t.Fatalf("expected blocked ssrf target: %s", target)
+		}
+	}
+}
+
 func containsString(items []string, needle string) bool {
 	for _, item := range items {
 		if item == needle {

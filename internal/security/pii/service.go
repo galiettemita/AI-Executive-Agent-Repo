@@ -51,6 +51,25 @@ func NewService() *Service {
 	}
 }
 
+func (s *Service) SetNowFunc(now func() time.Time) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if now == nil {
+		s.now = func() time.Time { return time.Now().UTC() }
+		return
+	}
+	s.now = now
+}
+
+func (s *Service) SetRotationWindow(window time.Duration) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if window <= 0 {
+		return
+	}
+	s.rotationWindow = window
+}
+
 func (s *Service) SetFieldPolicy(policy FieldPolicy) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
