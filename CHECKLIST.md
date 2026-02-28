@@ -140,6 +140,7 @@ Legend
 - [x] Strict closure hardening: removed control-plane generic API fallback and enforced endpoint ownership in mux tests so only control-owned OpenAPI paths resolve in `internal/control` while gateway/canvas paths 404 on control (`internal/control/mux.go`, `internal/control/mux_test.go`)
 - [x] Strict closure hardening: hardened infra validation script to enforce exact Terraform module/environment and Helm chart sets, validate both module+environment Terraform roots, and fail in CI/strict mode when Terraform/Helm tooling is missing (`scripts/infra/validate.sh`, `internal/contracts/phase4_artifacts_test.go`)
 - [x] Strict closure hardening: added OpenAPI service-ownership contract tests to enforce endpoint routing boundaries across gateway/control/canvas muxes and fail on cross-service endpoint leakage (`internal/contracts/openapi_service_ownership_closure_test.go`)
+- [x] Strict closure hardening: upgraded CI/security gates to install and require Trivy/TruffleHog/Syft (no skip-paths), added CI closure assertions for security-toolchain enforcement, and made security validation script fail in CI/strict mode when scanners are unavailable (`.github/workflows/ci.yaml`, `internal/contracts/ci_closure_test.go`, `scripts/security/run_security_validation.sh`, `internal/contracts/phase4_artifacts_test.go`)
 
 Migration rules (must follow)
 - Preserve already-working preserved components unchanged unless v4.0 explicitly requires changes (per user instructions).

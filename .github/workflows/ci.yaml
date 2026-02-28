@@ -39,6 +39,27 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: '1.22'
+      - name: install security tooling
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y wget tar
+
+          TRIVY_VERSION=0.53.0
+          wget -q "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz"
+          tar -xzf "trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz" trivy
+          sudo mv trivy /usr/local/bin/trivy
+
+          go install github.com/trufflesecurity/trufflehog/v3@v3.90.4
+          sudo ln -sf "$(go env GOPATH)/bin/trufflehog" /usr/local/bin/trufflehog
+
+          SYFT_VERSION=1.20.0
+          wget -q "https://github.com/anchore/syft/releases/download/v${SYFT_VERSION}/syft_${SYFT_VERSION}_linux_amd64.tar.gz"
+          tar -xzf "syft_${SYFT_VERSION}_linux_amd64.tar.gz" syft
+          sudo mv syft /usr/local/bin/syft
+
+          trivy --version
+          trufflehog --version
+          syft version
       - name: migration lint
         run: |
           test -f db/migrations/001_BREVIO_v9_init.sql
@@ -56,26 +77,11 @@ jobs:
       - name: determinism suite
         run: go test ./internal/llm ./internal/workflows -count=1
       - name: dependency cve scan (trivy)
-        run: |
-          if command -v trivy >/dev/null 2>&1; then
-            trivy fs --scanners vuln --severity CRITICAL,HIGH --exit-code 1 .
-          else
-            echo "trivy not installed on runner; skip"
-          fi
+        run: trivy fs --scanners vuln --severity CRITICAL,HIGH --exit-code 1 .
       - name: docker image scan (trivy)
-        run: |
-          if command -v trivy >/dev/null 2>&1; then
-            trivy fs --scanners vuln --severity CRITICAL,HIGH --exit-code 1 .
-          else
-            echo "trivy not installed on runner; skip"
-          fi
+        run: trivy fs --scanners vuln --severity CRITICAL,HIGH --exit-code 1 .
       - name: secrets scan (trufflehog)
-        run: |
-          if command -v trufflehog >/dev/null 2>&1; then
-            trufflehog filesystem . --fail
-          else
-            echo "trufflehog not installed on runner; skip"
-          fi
+        run: trufflehog filesystem . --fail
       - name: govulncheck baseline
         run: bash scripts/security/run_govulncheck.sh
       - name: contract tests
@@ -92,12 +98,8 @@ jobs:
         run: go test ./internal/onboarding -count=1
       - name: sbom generation (syft)
         run: |
-          if command -v syft >/dev/null 2>&1; then
-            syft dir:. -o spdx-json > sbom.spdx.json
-            test -s sbom.spdx.json
-          else
-            echo "syft not installed on runner; skip"
-          fi
+          syft dir:. -o spdx-json > sbom.spdx.json
+          test -s sbom.spdx.json
       - name: migration closure gates
         run: go test ./internal/database -run TestMigration -count=1
       - name: prompt/compliance closure gates

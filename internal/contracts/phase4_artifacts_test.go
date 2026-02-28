@@ -31,6 +31,8 @@ func TestPhase4ReadinessArtifactsExist(t *testing.T) {
 		"webhook signature tests",
 		"ssrf protection tests",
 		"govulncheck baseline",
+		"REQUIRE_SECURITY_TOOLS",
+		"CI/strict mode",
 	})
 	assertFileContainsTokens(t, filepath.Join(root, "scripts", "infra", "validate.sh"), []string{
 		"required_terraform_modules=(",

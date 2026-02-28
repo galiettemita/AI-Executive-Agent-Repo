@@ -1,7 +1,9 @@
 package contracts
 
 import (
+	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -12,6 +14,10 @@ func TestCIWorkflowClosure(t *testing.T) {
 
 	assertFileContainsTokens(t, ciPath, []string{
 		"go install honnef.co/go/tools/cmd/staticcheck@v0.5.1",
+		"install security tooling",
+		"github.com/trufflesecurity/trufflehog/v3@v3.90.4",
+		"trivy --version",
+		"syft version",
 		"gofmt check",
 		"go test ./... -count=1",
 		"migration lint",
@@ -49,4 +55,26 @@ func TestCIWorkflowClosure(t *testing.T) {
 		"go test ./internal/caching -count=1",
 		"go test ./internal/model_tiers -count=1",
 	})
+}
+
+func TestCIWorkflowNoSecuritySkipPaths(t *testing.T) {
+	t.Parallel()
+	root := repositoryRoot(t)
+	ciPath := filepath.Join(root, ".github", "workflows", "ci.yaml")
+	body, err := os.ReadFile(ciPath)
+	if err != nil {
+		t.Fatalf("read ci workflow: %v", err)
+	}
+	content := string(body)
+
+	disallowed := []string{
+		"trivy not installed on runner; skip",
+		"trufflehog not installed on runner; skip",
+		"syft not installed on runner; skip",
+	}
+	for _, token := range disallowed {
+		if strings.Contains(content, token) {
+			t.Fatalf("ci workflow contains disallowed security skip token: %q", token)
+		}
+	}
 }
