@@ -117,6 +117,36 @@ func TestReasoningConstraintsForTier(t *testing.T) {
 	}
 }
 
+func TestExecuteReActEarlyExitByMaxSteps(t *testing.T) {
+	t.Parallel()
+
+	result := ExecuteReActEarlyExit("T2", 5, nil, nil)
+	if !result.EarlyExit {
+		t.Fatalf("expected early exit when max steps reached: %#v", result)
+	}
+	if result.ExitReason != "MAX_STEPS_REACHED" {
+		t.Fatalf("unexpected early exit reason: %#v", result)
+	}
+	if len(result.PartialResults) == 0 {
+		t.Fatalf("expected partial results on early exit: %#v", result)
+	}
+}
+
+func TestExecuteReActEarlyExitBySignal(t *testing.T) {
+	t.Parallel()
+
+	result := ExecuteReActEarlyExit("T3", 2, []string{"tool_result_sufficient"}, []string{"partial_1", "partial_2"})
+	if !result.EarlyExit {
+		t.Fatalf("expected signal-triggered early exit: %#v", result)
+	}
+	if result.ExitReason != "EARLY_EXIT_SIGNAL_TOOL_RESULT_SUFFICIENT" {
+		t.Fatalf("unexpected signal early exit reason: %#v", result)
+	}
+	if len(result.PartialResults) != 2 {
+		t.Fatalf("expected provided partial results to be preserved: %#v", result)
+	}
+}
+
 func TestDeterministicOrderingHelpers(t *testing.T) {
 	t.Parallel()
 

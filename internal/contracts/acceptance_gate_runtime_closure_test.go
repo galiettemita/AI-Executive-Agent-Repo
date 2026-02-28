@@ -584,6 +584,16 @@ func TestAcceptanceGateRuntimeCoverageV92(t *testing.T) {
 		if constraints.MaxPlanCandidates != 3 {
 			t.Fatalf("unexpected T3 plan candidate limit: %d", constraints.MaxPlanCandidates)
 		}
+		reactResult := workflows.ExecuteReActEarlyExit("T3", 10, nil, nil)
+		if !reactResult.EarlyExit {
+			t.Fatalf("expected ReAct early exit on max steps: %+v", reactResult)
+		}
+		if reactResult.ExitReason != "MAX_STEPS_REACHED" {
+			t.Fatalf("unexpected ReAct exit reason: %+v", reactResult)
+		}
+		if len(reactResult.PartialResults) == 0 {
+			t.Fatalf("expected partial results on early exit: %+v", reactResult)
+		}
 	})
 
 	t.Run("security_hardening", func(t *testing.T) {

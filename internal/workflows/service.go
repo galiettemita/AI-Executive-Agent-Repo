@@ -58,6 +58,16 @@ type ReasoningConstraints struct {
 	ResolvedTier      string
 }
 
+type ReActExecutionResult struct {
+	RequestedTier  string   `json:"requested_tier"`
+	ResolvedTier   string   `json:"resolved_tier"`
+	MaxSteps       int      `json:"max_steps"`
+	StepsExecuted  int      `json:"steps_executed"`
+	EarlyExit      bool     `json:"early_exit"`
+	ExitReason     string   `json:"exit_reason"`
+	PartialResults []string `json:"partial_results"`
+}
+
 type TriggerSpec struct {
 	WorkflowID string
 	Trigger    string
@@ -567,6 +577,55 @@ func ReasoningConstraintsForTier(requestedTier string) ReasoningConstraints {
 		constraints.ResolvedTier = resolvedTier
 	}
 	return constraints
+}
+
+func ExecuteReActEarlyExit(tier string, stepsExecuted int, signals, partialResults []string) ReActExecutionResult {
+	constraints := ReasoningConstraintsForTier(tier)
+	result := ReActExecutionResult{
+		RequestedTier:  tier,
+		ResolvedTier:   constraints.ResolvedTier,
+		MaxSteps:       constraints.ExecutorLoopLimit,
+		StepsExecuted:  stepsExecuted,
+		EarlyExit:      false,
+		ExitReason:     "CONTINUE",
+		PartialResults: append([]string(nil), partialResults...),
+	}
+	if result.MaxSteps <= 0 {
+		result.MaxSteps = 2
+	}
+
+	if stepsExecuted >= result.MaxSteps {
+		result.EarlyExit = true
+		result.ExitReason = "MAX_STEPS_REACHED"
+		return normalizePartialResults(result)
+	}
+
+	normalizedSignals := append([]string(nil), signals...)
+	sort.Strings(normalizedSignals)
+	for _, signal := range normalizedSignals {
+		normalizedSignal := strings.ToUpper(strings.TrimSpace(signal))
+		switch normalizedSignal {
+		case "USER_STOP", "TOOL_RESULT_SUFFICIENT", "BUDGET_LIMIT_REACHED", "POLICY_BLOCKED":
+			result.EarlyExit = true
+			result.ExitReason = "EARLY_EXIT_SIGNAL_" + normalizedSignal
+			return normalizePartialResults(result)
+		}
+	}
+
+	return normalizePartialResults(result)
+}
+
+func normalizePartialResults(result ReActExecutionResult) ReActExecutionResult {
+	if len(result.PartialResults) == 0 {
+		if result.EarlyExit {
+			result.PartialResults = []string{"partial_result_available"}
+		}
+		return result
+	}
+	if len(result.PartialResults) > 3 {
+		result.PartialResults = result.PartialResults[:3]
+	}
+	return result
 }
 
 func DeterministicToolSchemaOrder(toolKeys []string) []string {
