@@ -15,7 +15,7 @@ locals {
     retention_days  = 30
     helm_chart_name = "temporal"
     workers = {
-      task_queue = "BREVIO-tasks"
+      task_queue   = "BREVIO-tasks"
       min_replicas = 2
       max_replicas = 8
     }

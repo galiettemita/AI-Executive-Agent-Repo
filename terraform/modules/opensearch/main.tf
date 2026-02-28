@@ -11,10 +11,10 @@ terraform {
 locals {
   module_name = "opensearch"
   opensearch_config = {
-    mode              = "hybrid_rag"
-    data_nodes        = 3
+    mode               = "hybrid_rag"
+    data_nodes         = 3
     ultra_warm_enabled = true
-    enforce_https     = true
+    enforce_https      = true
     encryption_at_rest = true
   }
 }

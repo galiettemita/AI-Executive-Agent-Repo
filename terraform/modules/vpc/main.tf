@@ -22,10 +22,10 @@ locals {
     private_subnet_cidrs = ["10.42.128.0/20", "10.42.144.0/20", "10.42.160.0/20"]
     nat_gateway_enabled  = true
     security_groups = {
-      gateway      = "ingress from alb to gateway only"
-      control      = "allow service mesh control-plane traffic"
-      executor     = "allow controlled egress for connectors"
-      data_plane   = "rds/redis restricted access"
+      gateway       = "ingress from alb to gateway only"
+      control       = "allow service mesh control-plane traffic"
+      executor      = "allow controlled egress for connectors"
+      data_plane    = "rds/redis restricted access"
       observability = "metrics/log scraping"
     }
   }

@@ -29,6 +29,9 @@ func TestSourceCommentHygieneClosure(t *testing.T) {
 				return walkErr
 			}
 			if d.IsDir() {
+				if d.Name() == ".terraform" {
+					return filepath.SkipDir
+				}
 				return nil
 			}
 			if strings.Contains(path, string(filepath.Separator)+"internal"+string(filepath.Separator)+"contracts"+string(filepath.Separator)) {

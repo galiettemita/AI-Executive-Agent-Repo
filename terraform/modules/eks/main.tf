@@ -17,9 +17,9 @@ locals {
     irsa_enabled       = true
     managed_node_groups = {
       general = {
-        desired_size = 3
-        min_size     = 2
-        max_size     = 10
+        desired_size   = 3
+        min_size       = 2
+        max_size       = 10
         instance_types = ["m6i.large"]
       }
       workers = {

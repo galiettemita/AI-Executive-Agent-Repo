@@ -162,6 +162,10 @@ Legend
 - [x] Strict closure hardening: added `scripts/dev/go_exec.sh` and switched Make targets to Dockerized Go fallback (`build`, `test`, `lint`, `migrate`, `contracts`, `acceptance`) so local validation works without host Go installation
 - [x] Strict closure hardening: resolved `staticcheck` failure in contracts suite by removing dead helper `containsLine` from policy/event/metric closure tests (`internal/contracts/policy_event_metric_closure_test.go`)
 - [x] Strict closure hardening: fixed Makefile lint formatting gate by adding `scripts/dev/gofmt_exec.sh` (Dockerized gofmt fallback) and wiring `GOFMT_EXEC` into `lint` target with closure coverage (`Makefile`, `scripts/dev/gofmt_exec.sh`, `internal/contracts/makefile_closure_test.go`)
+- [x] Strict closure hardening: enabled Docker fallback execution for infra tooling so `scripts/infra/validate.sh` runs Terraform/Helm validation without host installs (`hashicorp/terraform:1.9.8`, `alpine/helm:3.16.4`) and enforced fallback tokens in script closure tests
+- [x] Strict closure hardening: prevented false-positive comment hygiene failures from Terraform provider artifacts by skipping `.terraform` directories in source scans and ignoring Terraform working dirs in `.gitignore` (`internal/contracts/comment_hygiene_closure_test.go`, `.gitignore`)
+- [x] Strict closure hardening: fixed Terraform formatting drift detected by Dockerized `infra-validate` (applied `terraform fmt -recursive`) and resolved Helm template parsing errors for `taskQueue` default rendering in all task-queue services
+- [x] Strict closure hardening: normalized all Helm template resource names/labels to lowercase (`{{ .Chart.Name | lower }}`) to satisfy Kubernetes naming requirements and eliminate lint warnings
 
 Migration rules (must follow)
 - Preserve already-working preserved components unchanged unless v4.0 explicitly requires changes (per user instructions).

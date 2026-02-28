@@ -104,6 +104,10 @@ func TestScriptPortabilityAndFallbackClosure(t *testing.T) {
 	assertFileContainsTokens(t, infraScriptPath, []string{
 		"array_contains()",
 		"assert_exact_dir_set()",
+		"using dockerized terraform:1.9.8",
+		"using dockerized alpine/helm:3.16.4",
+		"hashicorp/terraform:1.9.8",
+		"alpine/helm:3.16.4",
 	})
 
 	govulnScriptPath := filepath.Join(root, "scripts", "security", "run_govulncheck.sh")

@@ -12,8 +12,8 @@ locals {
   module_name = "admin-frontend"
   admin_frontend_config = {
     hosting = {
-      bucket     = "brevio-admin-frontend"
-      cdn        = "cloudfront"
+      bucket      = "brevio-admin-frontend"
+      cdn         = "cloudfront"
       waf_enabled = true
     }
     admin_ip_allowlist_enabled = true
