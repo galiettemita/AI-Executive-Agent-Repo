@@ -373,9 +373,15 @@ func (s *Service) LearningConsolidationV1(_ context.Context, pendingFeedback int
 }
 
 func (s *Service) CapabilityExplorationV1(_ context.Context, capabilityGapEventsLast7d int) string {
+	s.recordWorkflowInstance("capability_exploration_v1", "running")
 	if capabilityGapEventsLast7d >= 3 {
+		s.appendWorkflowStep("capability_exploration_v1", "analyze_capability_gaps", "completed", formatIdempotencyKey("capability_exploration_v1::analyze_capability_gaps"))
+		s.appendWorkflowStep("capability_exploration_v1", "emit_recommendations", "completed", formatIdempotencyKey("capability_exploration_v1::emit_recommendations"))
+		s.recordWorkflowInstance("capability_exploration_v1", "completed")
 		return "recommendations_created"
 	}
+	s.appendWorkflowStep("capability_exploration_v1", "analyze_capability_gaps", "completed", formatIdempotencyKey("capability_exploration_v1::analyze_capability_gaps"))
+	s.recordWorkflowInstance("capability_exploration_v1", "no_action")
 	return "no_action"
 }
 

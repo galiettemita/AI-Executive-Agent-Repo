@@ -171,6 +171,13 @@ func TestV91WorkflowStubs(t *testing.T) {
 	if got := svc.CapabilityExplorationV1(context.Background(), 3); got != "recommendations_created" {
 		t.Fatalf("unexpected capability exploration status: %s", got)
 	}
+	capabilityExplorationInstance, ok := svc.WorkflowInstance("capability_exploration_v1")
+	if !ok {
+		t.Fatal("expected capability_exploration_v1 workflow mirror instance")
+	}
+	if capabilityExplorationInstance.Status != "completed" {
+		t.Fatalf("unexpected capability_exploration_v1 workflow status: %s", capabilityExplorationInstance.Status)
+	}
 	if got := svc.CrossRepoAnalysisV1(context.Background(), 2); got != "patterns_detected" {
 		t.Fatalf("unexpected cross repo status: %s", got)
 	}

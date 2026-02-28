@@ -804,7 +804,10 @@ func TestControlMuxV91CodebaseFlow(t *testing.T) {
 	if !ok {
 		t.Fatalf("unexpected recommendation payload: %v", recs[0])
 	}
-	recID, _ := firstRec["id"].(string)
+	recID, _ := firstRec["recommendation_id"].(string)
+	if recID == "" {
+		t.Fatalf("missing recommendation_id payload: %v", firstRec)
+	}
 
 	postRecDecisionBody := []byte(`{"decision":"accept"}`)
 	postRecDecisionReq := httptest.NewRequest(http.MethodPost, "/v1/capabilities/recommendations/"+recID+"/decide", bytes.NewReader(postRecDecisionBody))

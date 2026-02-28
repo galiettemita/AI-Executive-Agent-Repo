@@ -1646,7 +1646,11 @@ func handleExploration(w http.ResponseWriter, r *http.Request, svc *exploration.
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		updated, ok := svc.DecideRecommendation(parts[3], payload.Decision)
+		updated, ok, err := svc.DecideRecommendation(parts[3], payload.Decision)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
 		if !ok {
 			writeJSON(w, http.StatusOK, map[string]any{"id": parts[3], "status": "not_found"})
 			return
