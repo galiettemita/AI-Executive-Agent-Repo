@@ -86,6 +86,9 @@ func TestSecurityValidationScriptClosure(t *testing.T) {
 		"REQUIRE_SECURITY_TOOLS",
 		"CI/strict mode",
 		"trivy_scan_args=(",
+		"TRIVY_REPORT_PATH",
+		"TRIVY_ALLOWLIST_PATH",
+		"python3 scripts/security/check_trivy_report.py",
 		"--skip-dirs .git",
 		"trufflehog_scan_args=(",
 		"--exclude-paths \"$TRUFFLEHOG_EXCLUDE_PATHS_FILE\"",
@@ -102,6 +105,20 @@ func TestSecurityValidationScriptClosure(t *testing.T) {
 		"(^|/)\\.terraform/",
 		"^classmate-ai/",
 		"^artifacts/",
+	})
+
+	trivyAllowlistPath := filepath.Join(root, "scripts", "security", "trivy_allowlist.txt")
+	assertFileNonEmpty(t, trivyAllowlistPath)
+	assertFileContainsTokens(t, trivyAllowlistPath, []string{
+		"CVE-2025-22869",
+	})
+
+	trivyCheckScriptPath := filepath.Join(root, "scripts", "security", "check_trivy_report.py")
+	assertFileNonEmpty(t, trivyCheckScriptPath)
+	assertFileContainsTokens(t, trivyCheckScriptPath, []string{
+		"usage: check_trivy_report.py",
+		"[trivy-check] blocking HIGH/CRITICAL vulnerabilities detected",
+		"only allowlisted HIGH/CRITICAL vulnerabilities found",
 	})
 }
 

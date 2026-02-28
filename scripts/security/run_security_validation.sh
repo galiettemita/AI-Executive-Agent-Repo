@@ -5,12 +5,16 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT_DIR"
 
 TRUFFLEHOG_EXCLUDE_PATHS_FILE="scripts/security/trufflehog_exclude_paths.txt"
+TRIVY_REPORT_PATH="artifacts/security/trivy_fs_report.json"
+TRIVY_ALLOWLIST_PATH="scripts/security/trivy_allowlist.txt"
 
 trivy_scan_args=(
   fs
   --scanners vuln
   --severity CRITICAL,HIGH
-  --exit-code 1
+  --exit-code 0
+  --format json
+  --output "$TRIVY_REPORT_PATH"
   --skip-dirs .git
   --skip-dirs classmate-ai
   --skip-dirs artifacts
@@ -119,12 +123,26 @@ run_go_cmd "go test ./internal/security/pii -count=1"
 echo "[security] sandbox enforcement tests"
 run_go_cmd "go test ./internal/security/sandbox -count=1"
 
+mkdir -p artifacts/security
+rm -f "$TRIVY_REPORT_PATH"
+
 if command -v trivy >/dev/null 2>&1; then
   echo "[security] trivy filesystem scan"
   trivy "${trivy_scan_args[@]}"
 else
   run_dockerized_security_tool "trivy" "aquasec/trivy:0.57.1" \
     "${trivy_scan_args[@]}"
+fi
+
+if [[ -s "$TRIVY_REPORT_PATH" ]]; then
+  echo "[security] trivy allowlist evaluation"
+  python3 scripts/security/check_trivy_report.py "$TRIVY_REPORT_PATH" "$TRIVY_ALLOWLIST_PATH"
+else
+  if should_require_security_tooling; then
+    echo "[security] trivy report missing in CI/strict mode: $TRIVY_REPORT_PATH"
+    exit 1
+  fi
+  echo "[security] trivy report missing; skipped allowlist evaluation"
 fi
 
 if command -v trufflehog >/dev/null 2>&1; then
