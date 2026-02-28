@@ -3,6 +3,8 @@ package temporal_reasoning
 import "testing"
 
 func TestTemporalReasoningLifecycle(t *testing.T) {
+	t.Parallel()
+
 	s := NewService()
 
 	cfg := s.UpsertConfig("ws_1", Config{
@@ -37,6 +39,16 @@ func TestTemporalReasoningLifecycle(t *testing.T) {
 	if conflicts[0].Reason != "TEMPORAL_CONSTRAINT_VIOLATION" {
 		t.Fatalf("unexpected conflict reason: %#v", conflicts[0])
 	}
+	if conflicts[0].Title != "focus_block" {
+		t.Fatalf("expected conflict title propagation, got %#v", conflicts[0])
+	}
+	report := s.BuildConflictReport("ws_1", "2026-02-27T10:30:00Z", "2026-02-27T10:45:00Z")
+	if !report.HasConflict || len(report.Conflicts) != 1 {
+		t.Fatalf("expected scheduling conflict report payload, got %#v", report)
+	}
+	if report.ResolutionHint == "" {
+		t.Fatalf("expected resolution hint in conflict report")
+	}
 
 	resolution := s.ResolveExpression("ws_1", "tomorrow morning", "2026-02-27", "")
 	if resolution.ResolvedDate != "2026-02-28" {
@@ -44,6 +56,10 @@ func TestTemporalReasoningLifecycle(t *testing.T) {
 	}
 	if resolution.Timezone != "America/New_York" {
 		t.Fatalf("expected timezone from config, got %#v", resolution)
+	}
+	nextWeekday := s.ResolveExpression("ws_1", "next monday", "2026-02-27", "")
+	if nextWeekday.ResolvedDate != "2026-03-02" {
+		t.Fatalf("expected next monday resolution, got %#v", nextWeekday)
 	}
 
 	minutes := s.EstimateTravelMinutes("ws_1", "HQ", "Airport", 30)

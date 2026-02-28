@@ -39,8 +39,17 @@ type Resolution struct {
 
 type Conflict struct {
 	ConstraintID string `json:"constraint_id"`
+	Title        string `json:"title"`
+	StartTS      string `json:"start_ts"`
+	EndTS        string `json:"end_ts"`
 	Reason       string `json:"reason"`
 	Priority     int    `json:"priority"`
+}
+
+type ConflictReport struct {
+	HasConflict    bool       `json:"has_conflict"`
+	ResolutionHint string     `json:"resolution_hint"`
+	Conflicts      []Conflict `json:"conflicts"`
 }
 
 type Service struct {
@@ -173,6 +182,18 @@ func (s *Service) ResolveExpression(workspaceID, expression, referenceDate, time
 	case strings.Contains(lower, "next week"):
 		resolvedDate = plusDays(referenceDate, 7)
 		confidence = 0.90
+	case strings.HasPrefix(lower, "next "):
+		if resolved, ok := resolveNextWeekday(referenceDate, strings.TrimPrefix(lower, "next ")); ok {
+			resolvedDate = resolved
+			confidence = 0.88
+		}
+	case strings.HasPrefix(lower, "in ") && strings.HasSuffix(lower, " weeks"):
+		countRaw := strings.TrimSuffix(strings.TrimPrefix(lower, "in "), " weeks")
+		count, err := strconv.Atoi(strings.TrimSpace(countRaw))
+		if err == nil && count >= 0 {
+			resolvedDate = plusDays(referenceDate, count*7)
+			confidence = 0.87
+		}
 	case strings.HasPrefix(lower, "in ") && strings.HasSuffix(lower, " days"):
 		countRaw := strings.TrimSuffix(strings.TrimPrefix(lower, "in "), " days")
 		count, err := strconv.Atoi(strings.TrimSpace(countRaw))
@@ -187,6 +208,11 @@ func (s *Service) ResolveExpression(workspaceID, expression, referenceDate, time
 			timezone = cfg.DefaultTimezone
 		} else {
 			timezone = "UTC"
+		}
+	}
+	if cfg, ok := s.GetConfig(workspaceID); ok {
+		if horizonExceeded(referenceDate, resolvedDate, cfg.MaxHorizonDays) {
+			confidence = 0.10
 		}
 	}
 
@@ -221,6 +247,9 @@ func (s *Service) DetectConflicts(workspaceID, proposedStart, proposedEnd string
 		if overlaps(proposedStart, proposedEnd, constraint.StartsAt, constraint.EndsAt) {
 			out = append(out, Conflict{
 				ConstraintID: constraint.ID,
+				Title:        constraint.Subject,
+				StartTS:      constraint.StartsAt,
+				EndTS:        constraint.EndsAt,
 				Reason:       "TEMPORAL_CONSTRAINT_VIOLATION",
 				Priority:     constraint.Priority,
 			})
@@ -230,6 +259,19 @@ func (s *Service) DetectConflicts(workspaceID, proposedStart, proposedEnd string
 		return out[i].ConstraintID < out[j].ConstraintID
 	})
 	return out
+}
+
+func (s *Service) BuildConflictReport(workspaceID, proposedStart, proposedEnd string) ConflictReport {
+	conflicts := s.DetectConflicts(workspaceID, proposedStart, proposedEnd)
+	report := ConflictReport{
+		HasConflict:    len(conflicts) > 0,
+		ResolutionHint: "No temporal conflicts detected",
+		Conflicts:      conflicts,
+	}
+	if report.HasConflict {
+		report.ResolutionHint = "Shift schedule window or request manual override for high-priority constraints"
+	}
+	return report
 }
 
 func (s *Service) EstimateTravelMinutes(workspaceID, origin, destination string, distanceKM float64) int {
@@ -275,4 +317,45 @@ func overlaps(startA, endA, startB, endB string) bool {
 		return false
 	}
 	return startA < endB && endA > startB
+}
+
+func resolveNextWeekday(referenceDate, weekdayRaw string) (string, bool) {
+	const layout = "2006-01-02"
+	parsed, err := time.Parse(layout, referenceDate)
+	if err != nil {
+		return "", false
+	}
+	targetWeekday := strings.ToLower(strings.TrimSpace(weekdayRaw))
+	weekdayIndex := map[string]time.Weekday{
+		"sunday":    time.Sunday,
+		"monday":    time.Monday,
+		"tuesday":   time.Tuesday,
+		"wednesday": time.Wednesday,
+		"thursday":  time.Thursday,
+		"friday":    time.Friday,
+		"saturday":  time.Saturday,
+	}
+	target, ok := weekdayIndex[targetWeekday]
+	if !ok {
+		return "", false
+	}
+	offset := int(target-parsed.Weekday()) % 7
+	if offset <= 0 {
+		offset += 7
+	}
+	return parsed.Add(time.Duration(offset) * 24 * time.Hour).Format(layout), true
+}
+
+func horizonExceeded(referenceDate, resolvedDate string, maxHorizonDays int) bool {
+	if maxHorizonDays <= 0 {
+		return false
+	}
+	const layout = "2006-01-02"
+	ref, errRef := time.Parse(layout, referenceDate)
+	resolved, errResolved := time.Parse(layout, resolvedDate)
+	if errRef != nil || errResolved != nil {
+		return false
+	}
+	delta := resolved.Sub(ref).Hours() / 24
+	return delta > float64(maxHorizonDays)
 }

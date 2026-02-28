@@ -1187,11 +1187,17 @@ func handleTemporalReasoning(w http.ResponseWriter, r *http.Request, svc *tempor
 			WorkspaceID   string `json:"workspace_id"`
 			Expression    string `json:"expression"`
 			ReferenceDate string `json:"reference_date"`
+			ReferenceTS   string `json:"reference_ts"`
 			Timezone      string `json:"timezone"`
 		}
 		if err := decodeJSON(r, &payload); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
+		}
+		if strings.TrimSpace(payload.ReferenceDate) == "" && strings.TrimSpace(payload.ReferenceTS) != "" {
+			if parsed, err := time.Parse(time.RFC3339, payload.ReferenceTS); err == nil {
+				payload.ReferenceDate = parsed.UTC().Format("2006-01-02")
+			}
 		}
 		resolution := svc.ResolveExpression(payload.WorkspaceID, payload.Expression, payload.ReferenceDate, payload.Timezone)
 		writeJSON(w, http.StatusOK, resolution)
@@ -1211,9 +1217,7 @@ func handleTemporalReasoning(w http.ResponseWriter, r *http.Request, svc *tempor
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]any{
-			"conflicts": svc.DetectConflicts(payload.WorkspaceID, payload.ProposedStart, payload.ProposedEnd),
-		})
+		writeJSON(w, http.StatusOK, svc.BuildConflictReport(payload.WorkspaceID, payload.ProposedStart, payload.ProposedEnd))
 		return
 
 	case "travel-time":

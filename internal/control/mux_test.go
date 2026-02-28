@@ -1254,8 +1254,14 @@ func TestControlMuxTemporalReasoningFlow(t *testing.T) {
 	if !ok || len(conflicts) != 1 {
 		t.Fatalf("unexpected conflicts payload: %v", conflictsPayload)
 	}
+	if hasConflict, ok := conflictsPayload["has_conflict"].(bool); !ok || !hasConflict {
+		t.Fatalf("expected has_conflict=true payload: %v", conflictsPayload)
+	}
+	if _, ok := conflictsPayload["resolution_hint"].(string); !ok {
+		t.Fatalf("expected resolution_hint payload: %v", conflictsPayload)
+	}
 
-	postResolveBody := []byte(`{"workspace_id":"ws_1","expression":"tomorrow morning","reference_date":"2026-02-27"}`)
+	postResolveBody := []byte(`{"workspace_id":"ws_1","expression":"tomorrow morning","reference_ts":"2026-02-27T00:00:00Z","timezone":"America/New_York"}`)
 	postResolveReq := httptest.NewRequest(http.MethodPost, "/v1/temporal/resolve", bytes.NewReader(postResolveBody))
 	postResolveResp := httptest.NewRecorder()
 	mux.ServeHTTP(postResolveResp, postResolveReq)
