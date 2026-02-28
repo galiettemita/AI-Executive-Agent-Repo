@@ -196,6 +196,7 @@ Legend
 - [x] Phase 3 continuation (Step 28 rag_retrieval_and_eval): added deterministic reranker configuration (dense/BM25 normalized weights), retrieval-level RAG eval scoring (`faithfulness`, `relevance`, pass/fail thresholding), and expanded `/v1/rag/eval/scores` output to include collection scores, retrieval scores, and active reranker config
 - [x] Phase 3 continuation (Step 29 session_management): upgraded session runtime with schema-aligned context payload (`session_id`, `conversation_id`, `active_intent`, `entities`), deterministic intent tracking/coreference state, recency-ordered active sessions, and control-route intent-continuation handling with regression coverage
 - [x] Phase 3 continuation (Step 30 temporal_reasoning): expanded temporal resolver coverage (`next <weekday>`, `in X weeks`, horizon-aware confidence), added schema-aligned scheduling conflict reports (`has_conflict`, `resolution_hint`, conflict windows), and updated control temporal routes to accept `reference_ts` while preserving existing request compatibility
+- [x] Phase 3 continuation (Step 31 guardrails_runtime): replaced passive guardrail stubs with runtime input evaluation (pattern/jailbreak scoring + PII redaction), schema-aligned guardrail event payloads, and middleware enforcement on RAG search path with `403 GUARDRAIL_BLOCK_ACTIVE` blocking behavior under configured thresholds
 
 Migration rules (must follow)
 - Preserve already-working preserved components unchanged unless v4.0 explicitly requires changes (per user instructions).

@@ -126,7 +126,7 @@ func NewMux(service *Service) *http.ServeMux {
 			return
 		}
 		if strings.HasPrefix(r.URL.Path, "/v1/rag") {
-			handleRAG(w, r, ragSvc)
+			handleRAG(w, r, ragSvc, guardrailsSvc)
 			return
 		}
 		if strings.HasPrefix(r.URL.Path, "/v1/tools") {
@@ -630,7 +630,7 @@ func handleModelTiers(w http.ResponseWriter, r *http.Request, svc *model_tiers.S
 	}
 }
 
-func handleRAG(w http.ResponseWriter, r *http.Request, svc *raglayer.Service) {
+func handleRAG(w http.ResponseWriter, r *http.Request, svc *raglayer.Service, guardrailsSvc *guardrails.Service) {
 	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
 	if len(parts) < 3 {
 		http.NotFound(w, r)
@@ -753,6 +753,12 @@ func handleRAG(w http.ResponseWriter, r *http.Request, svc *raglayer.Service) {
 		if maxResults == 0 {
 			maxResults = payload.TopK
 		}
+		decision := guardrailsSvc.EvaluateInput(payload.WorkspaceID, queryText)
+		if decision.Blocked {
+			http.Error(w, decision.Reason, http.StatusForbidden)
+			return
+		}
+		queryText = decision.RedactedText
 		retrieval := svc.Search(payload.WorkspaceID, payload.TurnID, queryText, collectionIDs, maxResults)
 		writeJSON(w, http.StatusOK, retrieval)
 		return

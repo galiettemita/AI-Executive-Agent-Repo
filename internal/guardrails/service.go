@@ -2,9 +2,15 @@ package guardrails
 
 import (
 	"fmt"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
+)
+
+var (
+	emailPattern = regexp.MustCompile(`(?i)[a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,}`)
+	phonePattern = regexp.MustCompile(`\+?\d[\d\-\s]{7,}\d`)
 )
 
 type Config struct {
@@ -27,12 +33,25 @@ type RuleSet struct {
 }
 
 type Event struct {
+	EventID     string `json:"event_id"`
+	RuleKey     string `json:"rule_key"`
+	EventType   string `json:"event_type"`
+	Severity    string `json:"severity"`
+	Blocked     bool   `json:"blocked"`
+	Reason      string `json:"reason"`
 	ID          string `json:"id"`
 	WorkspaceID string `json:"workspace_id"`
 	RuleSetID   string `json:"rule_set_id"`
-	EventType   string `json:"event_type"`
 	Action      string `json:"action"`
 	InputHash   string `json:"input_hash"`
+}
+
+type GuardDecision struct {
+	Blocked      bool   `json:"blocked"`
+	RedactedText string `json:"redacted_text"`
+	Severity     string `json:"severity"`
+	Reason       string `json:"reason"`
+	RuleKey      string `json:"rule_key"`
 }
 
 type Service struct {
@@ -132,6 +151,72 @@ func (s *Service) ListRuleSets(workspaceID string) []RuleSet {
 	return out
 }
 
+func (s *Service) EvaluateInput(workspaceID, input string) GuardDecision {
+	if workspaceID == "" {
+		workspaceID = "default"
+	}
+	cfg, ok := s.GetConfig(workspaceID)
+	if !ok {
+		cfg = s.DefaultConfig(workspaceID)
+	}
+
+	decision := GuardDecision{
+		Blocked:      false,
+		RedactedText: input,
+		Severity:     "low",
+		Reason:       "allow",
+		RuleKey:      "",
+	}
+
+	if cfg.EnablePIIRedaction {
+		redacted := input
+		redacted = emailPattern.ReplaceAllString(redacted, "[REDACTED_EMAIL]")
+		redacted = phonePattern.ReplaceAllString(redacted, "[REDACTED_PHONE]")
+		if redacted != input {
+			decision.RedactedText = redacted
+			s.RecordEvent(workspaceID, "", "BREVIO.guardrail.triggered.v1", "redact", input)
+			s.RecordEvent(workspaceID, "", "BREVIO.pii.encrypted.v1", "allow", input)
+		}
+	}
+
+	if cfg.EnableJailbreakDetection {
+		lower := strings.ToLower(input)
+		matchedRule := ""
+		matchedCount := 0
+		for _, ruleSet := range s.ListRuleSets(workspaceID) {
+			if !ruleSet.Enabled {
+				continue
+			}
+			for _, pattern := range ruleSet.Patterns {
+				if strings.Contains(lower, strings.ToLower(pattern)) {
+					matchedCount++
+					if matchedRule == "" {
+						matchedRule = ruleSet.ID
+					}
+				}
+			}
+		}
+		if strings.Contains(lower, "ignore previous instructions") || strings.Contains(lower, "system prompt") {
+			matchedCount += 2
+		}
+		if matchedCount > 0 {
+			decision.RuleKey = matchedRule
+			decision.Severity = "medium"
+			decision.Reason = "guardrail_triggered"
+			s.RecordEvent(workspaceID, matchedRule, "BREVIO.guardrail.triggered.v1", "warn", input)
+		}
+		risk := matchedCount * 35
+		if risk >= cfg.BlockThreshold {
+			decision.Blocked = true
+			decision.Severity = "high"
+			decision.Reason = "GUARDRAIL_BLOCK_ACTIVE"
+			s.RecordEvent(workspaceID, matchedRule, "BREVIO.guardrail.blocked.v1", "block", input)
+		}
+	}
+
+	return decision
+}
+
 func (s *Service) RecordEvent(workspaceID, ruleSetID, eventType, action, input string) Event {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -139,11 +224,23 @@ func (s *Service) RecordEvent(workspaceID, ruleSetID, eventType, action, input s
 	if workspaceID == "" {
 		workspaceID = "default"
 	}
+	blocked := strings.EqualFold(action, "block")
+	severity := "low"
+	if blocked {
+		severity = "high"
+	} else if strings.EqualFold(action, "warn") {
+		severity = "medium"
+	}
 	event := Event{
+		EventID:     fmt.Sprintf("guardrail_event_%06d", len(s.events)+1),
+		RuleKey:     ruleSetID,
+		EventType:   eventType,
+		Severity:    severity,
+		Blocked:     blocked,
+		Reason:      action,
 		ID:          fmt.Sprintf("guardrail_event_%06d", len(s.events)+1),
 		WorkspaceID: workspaceID,
 		RuleSetID:   ruleSetID,
-		EventType:   eventType,
 		Action:      action,
 		InputHash:   simpleHash(input),
 	}
