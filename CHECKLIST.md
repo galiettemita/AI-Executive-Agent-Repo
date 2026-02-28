@@ -117,6 +117,7 @@ Legend
 - [x] Strict closure hardening: encoded V9.1 workflow trigger semantics from Addendum §P in `internal/workflows.V91WorkflowTriggerSpecs()` and added exact trigger mapping tests (`TestV91WorkflowTriggerSpecs`)
 - [x] Strict closure hardening: upgraded Go dependency floor within Go 1.22 constraints (`pgx/v5 v5.7.4`, `x/crypto v0.33.0`, `x/sync v0.11.0`, `x/text v0.22.0`) and added `internal/contracts/dependency_closure_test.go` to lock minimum versions
 - [x] Strict closure hardening: added reproducible `govulncheck` baseline control (`scripts/security/run_govulncheck.sh` + `govuln_allowlist.txt`), wired into security validation and CI, and documented residual Go 1.22-constrained advisories in `docs/SECURITY_VULNERABILITY_BASELINE.md`
+- [x] Strict closure hardening: extended CI closure contract (`internal/contracts/ci_closure_test.go`) to require `govulncheck baseline` execution tokens in `.github/workflows/ci.yaml`
 
 Migration rules (must follow)
 - Preserve already-working preserved components unchanged unless v4.0 explicitly requires changes (per user instructions).

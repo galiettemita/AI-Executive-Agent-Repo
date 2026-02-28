@@ -21,6 +21,8 @@ func TestCIWorkflowClosure(t *testing.T) {
 		"dependency cve scan (trivy)",
 		"docker image scan (trivy)",
 		"secrets scan (trufflehog)",
+		"govulncheck baseline",
+		"bash scripts/security/run_govulncheck.sh",
 		"contract tests",
 		"integration tests",
 		"prompt injection tests",
