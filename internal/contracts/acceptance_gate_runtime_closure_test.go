@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/brevio/brevio/internal/control"
 	"github.com/brevio/brevio/internal/crdt"
@@ -150,6 +151,30 @@ func TestAcceptanceGateRuntimeCoverageV9(t *testing.T) {
 		gatewayEvents := svc.GatewayAuditEventTypes()
 		if !containsString(gatewayEvents, "BREVIO.ingress.received.v1") {
 			t.Fatalf("missing gateway canonical ingress event in %v", gatewayEvents)
+		}
+
+		before, during, expired, err := svc.VerifyPIIRotationDualKeyWindow(time.Date(2026, time.February, 28, 7, 0, 0, 0, time.UTC))
+		if err != nil {
+			t.Fatalf("pii key rotation probe failed: %v", err)
+		}
+		if !before || !during || !expired {
+			t.Fatalf("unexpected pii key rotation probe flags: before=%t during=%t expired=%t", before, during, expired)
+		}
+
+		opened, closed := svc.EvaluateCircuitBreakerTransition("ws_runtime_cb", "providerA", time.Date(2026, time.February, 28, 7, 30, 0, 0, time.UTC))
+		if !opened || !closed {
+			t.Fatalf("unexpected circuit transition flags: opened=%t closed=%t", opened, closed)
+		}
+
+		blockedTargets := []string{
+			"http://169.254.169.254/latest/meta-data",
+			"http://127.0.0.1:8080/private",
+			"http://10.0.0.1/internal",
+		}
+		for _, target := range blockedTargets {
+			if err := svc.ValidateExecutorSSRFBlock(target); err == nil {
+				t.Fatalf("expected blocked ssrf target in acceptance suite: %s", target)
+			}
 		}
 	})
 
