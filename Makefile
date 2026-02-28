@@ -1,4 +1,4 @@
-.PHONY: build test lint migrate db-verify docker-build contracts acceptance ci load-test security-validate infra-validate api-docs api-docs-check
+.PHONY: build test lint migrate db-verify docker-build contracts acceptance ci ci-full load-test security-validate infra-validate api-docs api-docs-check
 
 GO_EXEC := ./scripts/dev/go_exec.sh
 GOFMT_EXEC := ./scripts/dev/gofmt_exec.sh
@@ -36,6 +36,8 @@ docker-build:
 	done
 
 ci: lint build test migrate api-docs-check contracts acceptance
+
+ci-full: ci security-validate infra-validate db-verify
 
 load-test:
 	@echo "Run: k6 run evals/load/k6_interactive_turn.js"

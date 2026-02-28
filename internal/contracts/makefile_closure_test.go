@@ -33,6 +33,7 @@ func TestMakefileGoFallbackClosure(t *testing.T) {
 		"api-docs-check:",
 		"git diff --exit-code docs/API_REFERENCE.md",
 		"$(GO_EXEC) test ./internal/contracts -count=1",
+		"ci-full: ci security-validate infra-validate db-verify",
 		"load-test:",
 		"k6 run evals/load/k6_interactive_turn.js",
 		"k6 run evals/load/k6_load_shedding.js",
