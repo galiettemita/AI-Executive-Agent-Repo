@@ -150,6 +150,7 @@ Legend
 - [x] Strict closure hardening: added script-level exactness gates for canonical infra/security automation arrays and required command paths (`internal/contracts/script_closure_test.go`), enforcing exact Terraform module/environment/chart sets and strict scanner/go-test command coverage in validation scripts
 - [x] Strict closure hardening: replaced Helm `busybox:latest` placeholders with service-specific immutable image coordinates and added infra closure checks to forbid placeholder repositories/tags across all canonical charts (`helm/*/values.yaml`, `internal/contracts/infrastructure_closure_test.go`)
 - [x] Strict closure hardening: added `terraform fmt -check -recursive` as a mandatory infra validation gate and enforced it via Phase 4/script closure contracts (`scripts/infra/validate.sh`, `internal/contracts/phase4_artifacts_test.go`, `internal/contracts/script_closure_test.go`)
+- [x] Strict closure hardening: upgraded deployment documentation to explicitly include the canonical `terraform apply` + `helm install` sequence and enforced required deployment tokens/section in docs closure tests (`docs/DEPLOYMENT.md`, `internal/contracts/documentation_closure_test.go`)
 
 Migration rules (must follow)
 - Preserve already-working preserved components unchanged unless v4.0 explicitly requires changes (per user instructions).

@@ -37,8 +37,11 @@ func TestDocumentationClosure(t *testing.T) {
 			"# DEPLOYMENT",
 			"## Infrastructure",
 			"## Workload Deployment",
+			"## Canonical Sequence",
 			"terraform plan",
+			"terraform apply",
 			"helm lint",
+			"helm install",
 		},
 	}
 
