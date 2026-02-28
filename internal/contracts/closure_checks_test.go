@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"testing"
 
@@ -53,6 +54,7 @@ func TestClosureChecksV9Section172(t *testing.T) {
 		workflowMapPath := filepath.Join(root, "spec", "traceability", "workflow_state_map.csv")
 		assertFileNonEmpty(t, promptMapPath)
 		assertFileNonEmpty(t, workflowMapPath)
+		assertCSVExactRows(t, promptMapPath, 28)
 
 		rows := readCSVRows(t, promptMapPath)
 		if len(rows) < 2 {
@@ -78,22 +80,17 @@ func TestClosureChecksV9Section172(t *testing.T) {
 			assertFileNonEmpty(t, filepath.Join(root, "schemas", schemaID))
 		}
 
+		expectedPrompts := map[string]struct{}{}
 		for _, promptSeed := range []string{"seed_prompts_v9.txt", "seed_prompts_v91.txt", "seed_prompts_v92.txt"} {
 			seedPath := filepath.Join(root, "prompts", promptSeed)
-			body, err := os.ReadFile(seedPath)
-			if err != nil {
-				t.Fatalf("read prompt seed: %v", err)
-			}
-			for _, line := range strings.Split(string(body), "\n") {
-				promptID := strings.TrimSpace(line)
-				if promptID == "" {
-					continue
-				}
+			for _, promptID := range readPromptIDs(t, seedPath) {
+				expectedPrompts[promptID] = struct{}{}
 				if _, ok := seenPrompt[promptID]; !ok {
 					t.Fatalf("prompt missing validator mapping: %s", promptID)
 				}
 			}
 		}
+		assertStringSetEqual(t, keys(seenPrompt), keys(expectedPrompts), "prompt validator map prompt ids")
 	})
 
 	t.Run("workflows_to_state_machines", func(t *testing.T) {
@@ -205,4 +202,42 @@ func readFileString(t *testing.T, path string) string {
 		t.Fatalf("read file %s: %v", path, err)
 	}
 	return string(body)
+}
+
+func readPromptIDs(t *testing.T, path string) []string {
+	t.Helper()
+	body, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read prompt seed %s: %v", path, err)
+	}
+	out := make([]string, 0)
+	for _, line := range strings.Split(string(body), "\n") {
+		promptID := strings.TrimSpace(line)
+		if promptID == "" {
+			continue
+		}
+		out = append(out, promptID)
+	}
+	return out
+}
+
+func keys(set map[string]struct{}) []string {
+	out := make([]string, 0, len(set))
+	for key := range set {
+		out = append(out, key)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func assertStringSetEqual(t *testing.T, got []string, want []string, label string) {
+	t.Helper()
+	if len(got) != len(want) {
+		t.Fatalf("%s size mismatch: got=%d want=%d got_values=%v want_values=%v", label, len(got), len(want), got, want)
+	}
+	for i := range got {
+		if got[i] != want[i] {
+			t.Fatalf("%s mismatch at index %d: got=%s want=%s got_values=%v want_values=%v", label, i, got[i], want[i], got, want)
+		}
+	}
 }
