@@ -6,11 +6,11 @@ self_modification_gate_deny := {"result": "deny", "reason": "SELF_MODIFICATION_D
   input.self_modification_action == "deny"
 }
 
-self_modification_approval_require := {"result": "require_approval", "reason": "SELF_MODIFICATION_REQUIRES_APPROVAL"} if {
+self_modification_approval_require := {"result": "require_approval", "reason": "REQUIRE_APPROVAL"} if {
   input.self_modification_action == "require_approval"
 }
 
-self_modification_audit_allow := {"result": "allow", "reason": "SELF_MODIFICATION_ALLOW_WITH_AUDIT"} if {
+self_modification_audit_allow := {"result": "allow", "reason": "ALLOW_WITH_AUDIT"} if {
   input.self_modification_action == "allow_with_audit"
 }
 

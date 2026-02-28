@@ -67,7 +67,7 @@ streaming_first_byte_sla_warn := {"result": "warn", "reason": "FIRST_BYTE_SLA_BR
   input.streaming_first_byte_ms > 500
 }
 
-admin_action_audit_allow := {"result": "allow", "reason": "ADMIN_ACTION_AUDITED"} if {
+admin_action_audit_allow := {"result": "allow", "reason": "ADMIN_ACTION_AUDIT"} if {
   input.admin_action
 }
 
