@@ -1,0 +1,111 @@
+package contracts
+
+import (
+	"os"
+	"path/filepath"
+	"regexp"
+	"strings"
+	"testing"
+)
+
+func TestInfraValidationScriptCanonicalSets(t *testing.T) {
+	t.Parallel()
+	root := repositoryRoot(t)
+	path := filepath.Join(root, "scripts", "infra", "validate.sh")
+	body, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read infra validation script: %v", err)
+	}
+	content := string(body)
+
+	assertScriptArraySetEquals(t, content, "required_terraform_modules", []string{
+		"vpc",
+		"eks",
+		"rds",
+		"elasticache",
+		"sqs",
+		"s3",
+		"secrets",
+		"temporal",
+		"observability",
+		"opensearch",
+		"admin-frontend",
+		"feature-flags-cache",
+	})
+	assertScriptArraySetEquals(t, content, "required_terraform_environments", []string{
+		"staging",
+		"production",
+	})
+	assertScriptArraySetEquals(t, content, "required_helm_charts", []string{
+		"BREVIO-gateway",
+		"BREVIO-brain",
+		"BREVIO-control",
+		"BREVIO-executor",
+		"BREVIO-canvas",
+		"BREVIO-temporal-worker",
+		"BREVIO-admin-api",
+		"BREVIO-admin-frontend",
+		"BREVIO-rag-worker",
+		"BREVIO-guardrails",
+		"BREVIO-health-checker",
+	})
+
+	assertFileContainsTokens(t, path, []string{
+		"REQUIRE_INFRA_TOOLS",
+		"CI/strict mode",
+		"terraform validate modules",
+		"terraform validate environments",
+		"helm lint charts",
+		"helm template",
+	})
+}
+
+func TestSecurityValidationScriptClosure(t *testing.T) {
+	t.Parallel()
+	root := repositoryRoot(t)
+	path := filepath.Join(root, "scripts", "security", "run_security_validation.sh")
+	body, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read security validation script: %v", err)
+	}
+	content := string(body)
+
+	requiredGoTestTargets := []string{
+		"go test ./internal/control -count=1",
+		"go test ./internal/gateway -count=1",
+		"go test ./internal/executor -count=1",
+	}
+	for _, token := range requiredGoTestTargets {
+		if !strings.Contains(content, token) {
+			t.Fatalf("security validation script missing go test target: %q", token)
+		}
+	}
+
+	assertFileContainsTokens(t, path, []string{
+		"REQUIRE_SECURITY_TOOLS",
+		"CI/strict mode",
+		"trivy fs --scanners vuln --severity CRITICAL,HIGH --exit-code 1 .",
+		"trufflehog filesystem . --fail",
+		"syft dir:. -o spdx-json > sbom.spdx.json",
+		"bash scripts/security/run_govulncheck.sh",
+	})
+}
+
+func assertScriptArraySetEquals(t *testing.T, content, variable string, expected []string) {
+	t.Helper()
+	pattern := regexp.MustCompile(`(?s)` + regexp.QuoteMeta(variable) + `=\((.*?)\)`)
+	match := pattern.FindStringSubmatch(content)
+	if len(match) < 2 {
+		t.Fatalf("script array variable not found: %s", variable)
+	}
+	valueBlock := match[1]
+	itemPattern := regexp.MustCompile(`"([^"]+)"`)
+	actual := make([]string, 0)
+	for _, hit := range itemPattern.FindAllStringSubmatch(valueBlock, -1) {
+		if len(hit) < 2 {
+			continue
+		}
+		actual = append(actual, hit[1])
+	}
+	assertStringSliceSetEquals(t, actual, expected, "script_array:"+variable)
+}
