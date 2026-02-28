@@ -209,6 +209,35 @@ func TestControlMuxErrorsFlow(t *testing.T) {
 	if getTemplatesResp.Code != http.StatusOK {
 		t.Fatalf("unexpected list templates status: %d", getTemplatesResp.Code)
 	}
+
+	getRenderedReq := httptest.NewRequest(http.MethodGet, "/v1/errors/templates?workspace_id=ws_1&persona=executive&error_code=BUDGET_CALLS_EXHAUSTED&detail=trace_abcd1234", nil)
+	getRenderedResp := httptest.NewRecorder()
+	mux.ServeHTTP(getRenderedResp, getRenderedReq)
+	if getRenderedResp.Code != http.StatusOK {
+		t.Fatalf("unexpected rendered message status: %d", getRenderedResp.Code)
+	}
+	var renderedPayload map[string]any
+	if err := json.Unmarshal(getRenderedResp.Body.Bytes(), &renderedPayload); err != nil {
+		t.Fatalf("decode rendered payload: %v", err)
+	}
+	if renderedPayload["error_code"] != "BUDGET_CALLS_EXHAUSTED" {
+		t.Fatalf("unexpected rendered payload code: %v", renderedPayload)
+	}
+	userMessage, ok := renderedPayload["user_message"].(string)
+	if !ok || userMessage == "" {
+		t.Fatalf("missing rendered user_message: %v", renderedPayload)
+	}
+	if strings.Contains(userMessage, "trace_abcd1234") {
+		t.Fatalf("expected sanitized message without internal refs: %v", renderedPayload)
+	}
+
+	postErrorMessageBody := []byte(`{"workspace_id":"ws_1","persona":"executive","error_code":"FEATURE_DISABLED","user_message":"Feature blocked for this workspace.","retryable":false,"next_action":"Request admin enablement."}`)
+	postErrorMessageReq := httptest.NewRequest(http.MethodPost, "/v1/errors/templates", bytes.NewReader(postErrorMessageBody))
+	postErrorMessageResp := httptest.NewRecorder()
+	mux.ServeHTTP(postErrorMessageResp, postErrorMessageReq)
+	if postErrorMessageResp.Code != http.StatusCreated {
+		t.Fatalf("unexpected create error-message status: %d body=%s", postErrorMessageResp.Code, postErrorMessageResp.Body.String())
+	}
 }
 
 func TestControlMuxCachingFlow(t *testing.T) {

@@ -420,17 +420,78 @@ func handleErrors(w http.ResponseWriter, r *http.Request, svc *errorlayer.Servic
 			if workspaceID == "" {
 				workspaceID = "default"
 			}
+			persona := r.URL.Query().Get("persona")
+			if persona == "" {
+				persona = "default"
+			}
+			errorCode := r.URL.Query().Get("error_code")
+			if errorCode != "" {
+				writeJSON(w, http.StatusOK, svc.RenderMessage(workspaceID, persona, errorCode, r.URL.Query().Get("detail")))
+				return
+			}
 			writeJSON(w, http.StatusOK, map[string]any{
 				"templates": svc.ListTemplates(workspaceID),
 			})
 			return
 		case http.MethodPost:
-			var payload errorlayer.Template
+			var payload struct {
+				ID          string `json:"id"`
+				WorkspaceID string `json:"workspace_id"`
+				Persona     string `json:"persona"`
+				CodePattern string `json:"code_pattern"`
+				Template    string `json:"template"`
+				Status      string `json:"status"`
+
+				ErrorCode   string `json:"error_code"`
+				UserMessage string `json:"user_message"`
+				Retryable   *bool  `json:"retryable"`
+				NextAction  string `json:"next_action"`
+			}
 			if err := decodeJSON(r, &payload); err != nil {
 				http.Error(w, err.Error(), http.StatusBadRequest)
 				return
 			}
-			writeJSON(w, http.StatusCreated, svc.UpsertTemplate(payload))
+
+			if payload.Template != "" || payload.CodePattern != "" {
+				writeJSON(w, http.StatusCreated, svc.UpsertTemplate(errorlayer.Template{
+					ID:          payload.ID,
+					WorkspaceID: payload.WorkspaceID,
+					Persona:     payload.Persona,
+					CodePattern: payload.CodePattern,
+					Template:    payload.Template,
+					Status:      payload.Status,
+				}))
+				return
+			}
+
+			if payload.ErrorCode == "" || payload.UserMessage == "" {
+				http.Error(w, "template or error_message payload required", http.StatusBadRequest)
+				return
+			}
+			workspaceID := payload.WorkspaceID
+			if workspaceID == "" {
+				workspaceID = "default"
+			}
+			persona := payload.Persona
+			if persona == "" {
+				persona = "default"
+			}
+			svc.UpsertTemplate(errorlayer.Template{
+				WorkspaceID: workspaceID,
+				Persona:     persona,
+				CodePattern: payload.ErrorCode,
+				Template:    payload.UserMessage,
+				Status:      "active",
+			})
+
+			message := svc.RenderMessage(workspaceID, persona, payload.ErrorCode, "")
+			if payload.Retryable != nil {
+				message.Retryable = *payload.Retryable
+			}
+			if payload.NextAction != "" {
+				message.NextAction = payload.NextAction
+			}
+			writeJSON(w, http.StatusCreated, message)
 			return
 		default:
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
