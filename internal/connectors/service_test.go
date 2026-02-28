@@ -2,6 +2,8 @@ package connectors
 
 import (
 	"context"
+	"encoding/json"
+	"os"
 	"path/filepath"
 	"regexp"
 	"testing"
@@ -10,14 +12,56 @@ import (
 func TestSeedLoaderPopulatesAtLeast40Connectors(t *testing.T) {
 	t.Parallel()
 
-	keyProvider := NewInMemoryKeyProvider("v1", []byte("0123456789abcdef0123456789abcdef"))
-	svc := NewService(keyProvider)
-	seedPath := filepath.Join("seeds", "connectors.yaml")
-	if err := svc.LoadSeedFile(seedPath); err != nil {
-		t.Fatalf("load seed file: %v", err)
-	}
+	svc := newSeededService(t)
 	if svc.ConnectorCount() < 40 {
 		t.Fatalf("expected at least 40 connectors, got %d", svc.ConnectorCount())
+	}
+	if svc.ToolCount() == 0 {
+		t.Fatal("expected tools to be loaded")
+	}
+}
+
+func TestSeedLoaderSupportsJSONFile(t *testing.T) {
+	t.Parallel()
+
+	keyProvider := NewInMemoryKeyProvider("v1", []byte("0123456789abcdef0123456789abcdef"))
+	svc := NewService(keyProvider)
+
+	jsonSeed := seedFile{
+		Connectors: []Connector{{
+			Key:          "json_connector",
+			Domain:       "documents",
+			RiskLevel:    "LOW",
+			DataClass:    "internal",
+			MCPServerURL: "https://mcp.example/json_connector",
+		}},
+		Tools: []ConnectorTool{{
+			ConnectorKey:  "json_connector",
+			ToolKey:       "json_connector.parse",
+			Write:         false,
+			Reversible:    false,
+			AutonomyFloor: "A1",
+		}},
+	}
+	content, err := json.Marshal(jsonSeed)
+	if err != nil {
+		t.Fatalf("marshal json seed: %v", err)
+	}
+
+	seedPath := filepath.Join(t.TempDir(), "connectors.json")
+	if err := os.WriteFile(seedPath, content, 0o600); err != nil {
+		t.Fatalf("write json seed: %v", err)
+	}
+	if err := svc.LoadSeedFile(seedPath); err != nil {
+		t.Fatalf("load json seed file: %v", err)
+	}
+
+	if svc.ConnectorCount() != 1 {
+		t.Fatalf("expected exactly one connector from json seed, got %d", svc.ConnectorCount())
+	}
+	tools := svc.ListToolsByConnector("json_connector")
+	if len(tools) != 1 || tools[0].ToolKey != "json_connector.parse" {
+		t.Fatalf("unexpected tools from json seed: %+v", tools)
 	}
 }
 
@@ -26,9 +70,12 @@ func TestOAuthEncryptDecryptRoundTripAndKeyVersion(t *testing.T) {
 
 	provider := NewInMemoryKeyProvider("v1", []byte("0123456789abcdef0123456789abcdef"))
 	svc := NewService(provider)
+	if err := svc.LoadSeedFile(filepath.Join("seeds", "connectors.yaml")); err != nil {
+		t.Fatalf("load seed file: %v", err)
+	}
 	ctx := context.Background()
 
-	envelope, err := svc.EncryptOAuthToken(ctx, "ws_1", "user_1", "gmail", "secret-token")
+	envelope, err := svc.EncryptOAuthToken(ctx, "ws_1", "user_1", "google_gmail", "secret-token")
 	if err != nil {
 		t.Fatalf("encrypt token: %v", err)
 	}
@@ -36,7 +83,7 @@ func TestOAuthEncryptDecryptRoundTripAndKeyVersion(t *testing.T) {
 		t.Fatalf("unexpected key version: %s", envelope.KeyVersion)
 	}
 
-	plaintext, restoredEnvelope, err := svc.DecryptOAuthToken(ctx, "ws_1", "user_1", "gmail")
+	plaintext, restoredEnvelope, err := svc.DecryptOAuthToken(ctx, "ws_1", "user_1", "google_gmail")
 	if err != nil {
 		t.Fatalf("decrypt token: %v", err)
 	}
@@ -48,7 +95,7 @@ func TestOAuthEncryptDecryptRoundTripAndKeyVersion(t *testing.T) {
 	}
 
 	provider.(*inMemoryKeyProvider).Rotate("v2", []byte("abcdef0123456789abcdef0123456789"))
-	plaintextAfterRotate, restoredEnvelopeAfterRotate, err := svc.DecryptOAuthToken(ctx, "ws_1", "user_1", "gmail")
+	plaintextAfterRotate, restoredEnvelopeAfterRotate, err := svc.DecryptOAuthToken(ctx, "ws_1", "user_1", "google_gmail")
 	if err != nil {
 		t.Fatalf("decrypt token after rotation: %v", err)
 	}
@@ -60,25 +107,58 @@ func TestOAuthEncryptDecryptRoundTripAndKeyVersion(t *testing.T) {
 	}
 }
 
+func TestUserConnectorSettingsLifecycle(t *testing.T) {
+	t.Parallel()
+
+	svc := newSeededService(t)
+	rateLimit := 120
+	stored, err := svc.UpsertUserConnectorSetting("ws_100", "user_100", "google_gmail", true, &rateLimit)
+	if err != nil {
+		t.Fatalf("upsert user connector setting: %v", err)
+	}
+	if stored.CustomRateLimit == nil || *stored.CustomRateLimit != 120 {
+		t.Fatalf("unexpected custom rate limit: %+v", stored)
+	}
+
+	fetched, err := svc.GetUserConnectorSetting("ws_100", "user_100", "google_gmail")
+	if err != nil {
+		t.Fatalf("get user connector setting: %v", err)
+	}
+	if !fetched.Enabled {
+		t.Fatal("expected connector setting to remain enabled")
+	}
+
+	stored, err = svc.UpsertUserConnectorSetting("ws_100", "user_100", "google_gmail", false, nil)
+	if err != nil {
+		t.Fatalf("upsert setting disabled: %v", err)
+	}
+	if stored.Enabled {
+		t.Fatal("expected connector setting to be disabled")
+	}
+}
+
+func TestConnectorHealthTrackingLifecycle(t *testing.T) {
+	t.Parallel()
+
+	svc := newSeededService(t)
+	if err := svc.SetConnectorHealth("ws_200", "slack", 250, 0.02); err != nil {
+		t.Fatalf("set connector health: %v", err)
+	}
+	health, err := svc.GetConnectorHealth("ws_200", "slack")
+	if err != nil {
+		t.Fatalf("get connector health: %v", err)
+	}
+	if health.P95LatencyMS != 250 || health.ErrorRate != 0.02 {
+		t.Fatalf("unexpected connector health: %+v", health)
+	}
+}
+
 func TestConnectorSeedIntegrityAndToolKeyFormat(t *testing.T) {
 	t.Parallel()
 
-	keyProvider := NewInMemoryKeyProvider("v1", []byte("0123456789abcdef0123456789abcdef"))
-	svc := NewService(keyProvider)
-	seedPath := filepath.Join("seeds", "connectors.yaml")
-	if err := svc.LoadSeedFile(seedPath); err != nil {
-		t.Fatalf("load seed file: %v", err)
-	}
-
+	svc := newSeededService(t)
 	connectorKeyPattern := regexp.MustCompile(`^[a-z0-9_]+$`)
 	toolKeyPattern := regexp.MustCompile(`^[a-z0-9_]+\.[a-z0-9_]+$`)
-	allowedAutonomyFloors := map[string]struct{}{
-		"A0": {},
-		"A1": {},
-		"A2": {},
-		"A3": {},
-		"A4": {},
-	}
 
 	if len(svc.connectors) < 40 {
 		t.Fatalf("expected at least 40 connectors, got %d", len(svc.connectors))
@@ -110,8 +190,21 @@ func TestConnectorSeedIntegrityAndToolKeyFormat(t *testing.T) {
 		if prefix != tool.ConnectorKey || toolKey[len(tool.ConnectorKey)] != '.' {
 			t.Fatalf("tool key prefix must match connector key: tool=%s connector=%s", toolKey, tool.ConnectorKey)
 		}
-		if _, ok := allowedAutonomyFloors[tool.AutonomyFloor]; !ok {
+		if _, ok := validAutonomyFloors[tool.AutonomyFloor]; !ok {
 			t.Fatalf("invalid autonomy floor for tool %s: %s", toolKey, tool.AutonomyFloor)
 		}
+		if tool.InputSchema == nil || tool.OutputSchema == nil {
+			t.Fatalf("tool schema payloads must be non-nil maps: %s", toolKey)
+		}
 	}
+}
+
+func newSeededService(t *testing.T) *Service {
+	t.Helper()
+	keyProvider := NewInMemoryKeyProvider("v1", []byte("0123456789abcdef0123456789abcdef"))
+	svc := NewService(keyProvider)
+	if err := svc.LoadSeedFile(filepath.Join("seeds", "connectors.yaml")); err != nil {
+		t.Fatalf("load seed file: %v", err)
+	}
+	return svc
 }
