@@ -23,6 +23,7 @@ import (
 	rageval "github.com/brevio/brevio/internal/rag/eval"
 	"github.com/brevio/brevio/internal/security/pii"
 	"github.com/brevio/brevio/internal/security/sandbox"
+	"github.com/brevio/brevio/internal/structured_generation"
 	"github.com/brevio/brevio/internal/workflows"
 	"github.com/google/uuid"
 )
@@ -628,6 +629,33 @@ func TestAcceptanceGateRuntimeCoverageV92(t *testing.T) {
 		props := getObject(t, actionProposal, "properties")
 		assertHasProperties(t, props, "intent", "actions", "risk", "requires_approval")
 		assertRequiredIncludes(t, actionProposal, "intent", "actions", "risk", "requires_approval")
+
+		svc := structured_generation.NewService()
+		canonicalJSON, err := svc.CanonicalJSON(structured_generation.ActionProposal{
+			Intent: "prepare executive update",
+			Actions: []structured_generation.Action{
+				{
+					Tool:           "tasks.create_task",
+					Operation:      "create",
+					Params:         map[string]any{"title": "Draft status memo"},
+					IdempotencyKey: "idem_abcdefghijklmnop",
+				},
+				{
+					Tool:           "calendar.create_event",
+					Operation:      "create",
+					Params:         map[string]any{"title": "Ops review"},
+					IdempotencyKey: "idem_abcdefghijklmnpp",
+				},
+			},
+			Risk:             structured_generation.Risk{Impact: "low", RollbackPlan: "delete created objects"},
+			RequiresApproval: false,
+		})
+		if err != nil {
+			t.Fatalf("structured generation canonicalization failed: %v", err)
+		}
+		if !strings.Contains(canonicalJSON, "\"tool\":\"calendar.create_event\"") {
+			t.Fatalf("expected lexical canonical ordering in output json: %s", canonicalJSON)
+		}
 	})
 }
 
