@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -11,6 +12,10 @@ import (
 
 type Pool struct {
 	pool *pgxpool.Pool
+}
+
+type workspaceSessionSetter interface {
+	Exec(ctx context.Context, sql string, arguments ...any) (pgconn.CommandTag, error)
 }
 
 func NewPool(ctx context.Context, cfg Config) (*Pool, error) {
@@ -52,9 +57,16 @@ func (p *Pool) Exec(ctx context.Context, sql string, args ...any) (pgconn.Comman
 	}
 	defer conn.Release()
 
-	if _, err := conn.Exec(ctx, "SET app.workspace_id = $1", workspaceID.String()); err != nil {
+	if err := setWorkspaceIDOnSession(ctx, conn, workspaceID); err != nil {
 		return pgconn.CommandTag{}, err
 	}
 
 	return conn.Exec(ctx, sql, args...)
+}
+
+func setWorkspaceIDOnSession(ctx context.Context, setter workspaceSessionSetter, workspaceID uuid.UUID) error {
+	if _, err := setter.Exec(ctx, "SET app.workspace_id = $1", workspaceID.String()); err != nil {
+		return err
+	}
+	return nil
 }
