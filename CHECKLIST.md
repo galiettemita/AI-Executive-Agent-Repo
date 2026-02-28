@@ -181,6 +181,7 @@ Legend
 - [x] Phase 1 continuation (Step 12 onboarding_discovery): expanded fixed discovery question sets across all four onboarding stages, enforced replay-locked extraction on schema-required keys, and persisted versioned workspace state with `workspace_profiles` (13 dimensions), `workspace_personas`, and `workspace_behavior_policies` (10 dimensions), including acceptance-fixture parity updates
 - [x] Phase 1 continuation (Step 13 a2ui_canvas): expanded canvas runtime with explicit A2UI mission-control surface rendering endpoint, SSRF-protected fetch-preview endpoint, persistent interaction logging, and websocket injection regression coverage while retaining tool-call forwarding semantics
 - [x] Phase 1 continuation (Step 14 observability_and_gates): added executable observability runtime primitives (`internal/observability`) for required structured log fields (`ts,service,env,workspace_id,user_id,ingress_turn_id,trace_id,span_id,event,severity,attrs`) and canonical-metric registry validation/recording against metric catalogs, with full test coverage and CI-green verification
+- [x] Phase 2 continuation (Step 15 goal_system): added explicit daily goal-creation cap enforcement (20/workspace/day), goal-review stalled detection with deterministic status transition, and wired goal-create API path (`POST /v1/goals`) to strict rate-limit handling with regression coverage
 
 Migration rules (must follow)
 - Preserve already-working preserved components unchanged unless v4.0 explicitly requires changes (per user instructions).

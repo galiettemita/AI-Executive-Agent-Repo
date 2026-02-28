@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/brevio/brevio/internal/admin"
 	"github.com/brevio/brevio/internal/caching"
@@ -1182,7 +1183,11 @@ func handleGoals(w http.ResponseWriter, r *http.Request, svc *goals.Service) {
 				http.Error(w, err.Error(), http.StatusBadRequest)
 				return
 			}
-			goal := svc.UpsertGoal(payload)
+			goal, err := svc.CreateGoal(payload, time.Now().UTC())
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusTooManyRequests)
+				return
+			}
 			svc.AddProgress(goal.ID, goals.ProgressLog{Summary: "goal created"})
 			writeJSON(w, http.StatusCreated, goal)
 			return
