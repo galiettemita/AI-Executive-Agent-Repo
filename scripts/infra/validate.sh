@@ -48,6 +48,18 @@ should_require_tooling() {
   return 1
 }
 
+array_contains() {
+  local needle="$1"
+  shift
+  local item
+  for item in "$@"; do
+    if [[ "$item" == "$needle" ]]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
 assert_exact_dir_set() {
   local base_dir="$1"
   shift
@@ -57,25 +69,17 @@ assert_exact_dir_set() {
     actual+=("$(basename "$dir")")
   done < <(find "$base_dir" -mindepth 1 -maxdepth 1 -type d | sort)
 
-  local -A expected_map=()
-  local -A actual_map=()
   local name
-  for name in "${expected[@]}"; do
-    expected_map["$name"]=1
-  done
-  for name in "${actual[@]}"; do
-    actual_map["$name"]=1
-  done
 
   local missing=()
   local extra=()
   for name in "${expected[@]}"; do
-    if [[ -z "${actual_map[$name]:-}" ]]; then
+    if ! array_contains "$name" "${actual[@]}"; then
       missing+=("$name")
     fi
   done
   for name in "${actual[@]}"; do
-    if [[ -z "${expected_map[$name]:-}" ]]; then
+    if ! array_contains "$name" "${expected[@]}"; then
       extra+=("$name")
     fi
   done
