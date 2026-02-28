@@ -380,9 +380,15 @@ func (s *Service) CapabilityExplorationV1(_ context.Context, capabilityGapEvents
 }
 
 func (s *Service) CrossRepoAnalysisV1(_ context.Context, repositoryCount int) string {
+	s.recordWorkflowInstance("cross_repo_analysis_v1", "running")
 	if repositoryCount <= 1 {
+		s.appendWorkflowStep("cross_repo_analysis_v1", "validate_repository_count", "skipped", "")
+		s.recordWorkflowInstance("cross_repo_analysis_v1", "insufficient_repositories")
 		return "insufficient_repositories"
 	}
+	s.appendWorkflowStep("cross_repo_analysis_v1", "collect_dependency_graph", "completed", formatIdempotencyKey("cross_repo_analysis_v1::collect_dependency_graph"))
+	s.appendWorkflowStep("cross_repo_analysis_v1", "detect_shared_patterns", "completed", formatIdempotencyKey("cross_repo_analysis_v1::detect_shared_patterns"))
+	s.recordWorkflowInstance("cross_repo_analysis_v1", "completed")
 	return "patterns_detected"
 }
 

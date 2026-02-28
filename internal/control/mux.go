@@ -1501,7 +1501,14 @@ func handleCodebaseIntel(w http.ResponseWriter, r *http.Request, svc *codebase_i
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"dependencies": svc.ListDependencies(workspaceID)})
+		if r.URL.Query().Get("recompute") == "true" {
+			svc.AnalyzeCrossRepo(workspaceID)
+		}
+		report := svc.GetCrossRepoReport(workspaceID)
+		writeJSON(w, http.StatusOK, map[string]any{
+			"dependencies":        svc.ListDependencies(workspaceID),
+			"shared_dependencies": report.SharedDependencies,
+		})
 		return
 
 	case "patterns":
@@ -1509,7 +1516,14 @@ func handleCodebaseIntel(w http.ResponseWriter, r *http.Request, svc *codebase_i
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"patterns": svc.ListPatterns(workspaceID)})
+		if r.URL.Query().Get("recompute") == "true" {
+			svc.AnalyzeCrossRepo(workspaceID)
+		}
+		report := svc.GetCrossRepoReport(workspaceID)
+		writeJSON(w, http.StatusOK, map[string]any{
+			"patterns":        svc.ListPatterns(workspaceID),
+			"shared_patterns": report.SharedPatterns,
+		})
 		return
 
 	case "debt":
