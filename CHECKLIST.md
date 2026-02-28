@@ -98,6 +98,7 @@ Legend
 - [x] Strict closure hardening: added connector registry seed integrity tests (`internal/connectors/service_test.go`) for `connector_key.tool_key` naming, connector-prefix consistency, connector existence, and autonomy-floor validity
 - [x] Strict closure hardening: added UUID generation guard (`internal/contracts/id_generation_closure_test.go`) to prevent non-test runtime usage of `uuid.New`/`uuid.NewString` and enforce `determinism.NewUUIDv7()` usage in entity-creator services
 - [x] Strict closure hardening: expanded OpenAPI component catalog closure to require references for all V9/V9.1/V9.2 schema files and wired `components.schemas` refs in `api/openapi/v9.yaml`
+- [x] Strict closure hardening: expanded V9.2 runbooks (`RB-V92-001..009`) into full operational format and tightened `internal/contracts/runbook_closure_test.go` to enforce complete runbook sections
 
 Migration rules (must follow)
 - Preserve already-working preserved components unchanged unless v4.0 explicitly requires changes (per user instructions).

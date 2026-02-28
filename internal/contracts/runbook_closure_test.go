@@ -34,9 +34,17 @@ func TestRunbookClosure(t *testing.T) {
 		path := filepath.Join(root, "runbooks", fmt.Sprintf("RB-V92-%03d.md", i))
 		assertFileNonEmpty(t, path)
 		content := readRunbook(t, path)
+		if strings.Contains(content, "Placeholder runbook") {
+			t.Fatalf("runbook still placeholder: %s", path)
+		}
 		requireRunbookTokens(t, path, content, []string{
-			"Trigger:",
-			"Actions:",
+			"## Trigger",
+			"## Detection",
+			"## Immediate Actions",
+			"## Mitigation",
+			"## Recovery",
+			"## Verification",
+			"## Escalation",
 		})
 	}
 }
