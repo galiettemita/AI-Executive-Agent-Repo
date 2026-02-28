@@ -1,6 +1,7 @@
 package identity
 
 import (
+	"encoding/json"
 	"fmt"
 	"sync"
 	"time"
@@ -56,6 +57,20 @@ type Service struct {
 	users                map[uuid.UUID]User
 	workspaces           map[uuid.UUID]Workspace
 	channelBindingLookup map[string]uuid.UUID
+}
+
+var defaultDomainAutonomy = map[string]string{
+	"calendar":    "A2",
+	"email":       "A1",
+	"messaging":   "A1",
+	"tasks":       "A2",
+	"documents":   "A1",
+	"crm":         "A1",
+	"travel":      "A2",
+	"financial":   "A1",
+	"health":      "A0",
+	"environment": "A1",
+	"web":         "A3",
 }
 
 func NewService() *Service {
@@ -140,6 +155,14 @@ func (s *Service) CreateWorkspace(accountID, ownerUserID uuid.UUID, memoryNamesp
 	if memoryNamespace == "" {
 		return Workspace{}, fmt.Errorf("memory_namespace is required")
 	}
+	if domainAutonomyJSON == "" {
+		encodedDefaults, err := json.Marshal(defaultDomainAutonomy)
+		if err != nil {
+			return Workspace{}, fmt.Errorf("encode default domain autonomy: %w", err)
+		}
+		domainAutonomyJSON = string(encodedDefaults)
+	}
+
 	id, err := determinism.NewUUIDv7()
 	if err != nil {
 		return Workspace{}, err

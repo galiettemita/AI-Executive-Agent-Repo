@@ -41,6 +41,11 @@ type DecisionOutput struct {
 	ReasonCode string
 }
 
+type ProactiveDecision struct {
+	AllowSilent bool
+	ReasonCode  string
+}
+
 type approvalPayload struct {
 	Action     string    `json:"action"`
 	RiskLevel  string    `json:"risk_level"`
@@ -209,5 +214,22 @@ func (s *Service) EvaluateGate(input DecisionInput) DecisionOutput {
 		return DecisionOutput{Decision: "allow", ReasonCode: "AUTONOMY_A4_FULL_AUTO"}
 	default:
 		return DecisionOutput{Decision: "deny", ReasonCode: fmt.Sprintf("UNKNOWN_AUTONOMY_%s", autonomy)}
+	}
+}
+
+// EvaluateProactiveSilentExecution enforces V9 proactive action rules.
+// Silent execution requires BOTH domain autonomy >= A2 and explicit proactive opt-in.
+func (s *Service) EvaluateProactiveSilentExecution(domainAutonomy string, proactiveEnabled bool) ProactiveDecision {
+	normalized := strings.ToUpper(strings.TrimSpace(domainAutonomy))
+	switch normalized {
+	case "A2", "A3", "A4":
+		if proactiveEnabled {
+			return ProactiveDecision{AllowSilent: true, ReasonCode: "PROACTIVE_SILENT_ALLOWED"}
+		}
+		return ProactiveDecision{AllowSilent: false, ReasonCode: "PROACTIVE_USER_CONSENT_REQUIRED"}
+	case "A0", "A1":
+		return ProactiveDecision{AllowSilent: false, ReasonCode: "PROACTIVE_AUTONOMY_TOO_LOW"}
+	default:
+		return ProactiveDecision{AllowSilent: false, ReasonCode: "PROACTIVE_UNKNOWN_AUTONOMY"}
 	}
 }

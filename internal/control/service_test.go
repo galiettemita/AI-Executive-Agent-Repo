@@ -82,3 +82,34 @@ func TestApprovalTokenTTL(t *testing.T) {
 		t.Fatal("expected token to be expired")
 	}
 }
+
+func TestEvaluateProactiveSilentExecutionRules(t *testing.T) {
+	t.Parallel()
+
+	svc := NewService("secret")
+	cases := []struct {
+		name             string
+		autonomy         string
+		proactiveEnabled bool
+		allowSilent      bool
+		reason           string
+	}{
+		{name: "a1_even_with_opt_in_denied", autonomy: "A1", proactiveEnabled: true, allowSilent: false, reason: "PROACTIVE_AUTONOMY_TOO_LOW"},
+		{name: "a2_without_opt_in_denied", autonomy: "A2", proactiveEnabled: false, allowSilent: false, reason: "PROACTIVE_USER_CONSENT_REQUIRED"},
+		{name: "a2_with_opt_in_allowed", autonomy: "A2", proactiveEnabled: true, allowSilent: true, reason: "PROACTIVE_SILENT_ALLOWED"},
+		{name: "a3_with_opt_in_allowed", autonomy: "A3", proactiveEnabled: true, allowSilent: true, reason: "PROACTIVE_SILENT_ALLOWED"},
+		{name: "unknown_autonomy_denied", autonomy: "X1", proactiveEnabled: true, allowSilent: false, reason: "PROACTIVE_UNKNOWN_AUTONOMY"},
+	}
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			got := svc.EvaluateProactiveSilentExecution(tc.autonomy, tc.proactiveEnabled)
+			if got.AllowSilent != tc.allowSilent {
+				t.Fatalf("allow silent mismatch: got=%v want=%v", got.AllowSilent, tc.allowSilent)
+			}
+			if got.ReasonCode != tc.reason {
+				t.Fatalf("reason mismatch: got=%s want=%s", got.ReasonCode, tc.reason)
+			}
+		})
+	}
+}
