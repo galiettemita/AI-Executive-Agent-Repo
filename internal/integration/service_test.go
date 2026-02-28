@@ -3,6 +3,7 @@ package integration
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -87,8 +88,176 @@ func TestPipelineBudgetExhaustionStopsBeforeCommit(t *testing.T) {
 	if result.GateDecision != "deny" {
 		t.Fatalf("expected deny gate decision, got %s", result.GateDecision)
 	}
+	if result.ReasonCode != "BUDGET_CALLS_EXHAUSTED" {
+		t.Fatalf("expected budget reason code, got %s", result.ReasonCode)
+	}
 	if result.Committed || result.Simulated {
 		t.Fatalf("expected no tool execution when budget exhausted: %+v", result)
+	}
+}
+
+func TestPipelineApprovalFlowRequiresThenAllowsWithToken(t *testing.T) {
+	s := NewService("integration-secret")
+	workspaceID := uuid.MustParse("018f3f6a-9a0f-7cc6-8f2f-1f0f2d2f2d2f")
+	s.BindWorkspace("whatsapp", "+15550003333", workspaceID)
+
+	status, err := s.IngestWebhook(WebhookPayload{
+		Channel:           "whatsapp",
+		ChannelIdentifier: "+15550003333",
+		UserChannelID:     "u3",
+		Nonce:             "integration_nonce_3a",
+		Message:           "wire payment",
+	})
+	if err != nil {
+		t.Fatalf("ingest webhook: %v", err)
+	}
+	if status != 202 {
+		t.Fatalf("unexpected webhook status: %d", status)
+	}
+
+	blocked, err := s.ProcessNextQueuedTurnWithOptions(context.Background(), ProcessOptions{
+		ToolRiskLevel: "CRITICAL",
+		AutonomyLevel: "A3",
+	})
+	if err != nil {
+		t.Fatalf("process turn without approval: %v", err)
+	}
+	if blocked.GateDecision != "require_approval" || !blocked.ApprovalChallenged {
+		t.Fatalf("expected approval challenge, got %+v", blocked)
+	}
+	if blocked.Committed || blocked.Simulated {
+		t.Fatalf("expected no execution without approval, got %+v", blocked)
+	}
+
+	status, err = s.IngestWebhook(WebhookPayload{
+		Channel:           "whatsapp",
+		ChannelIdentifier: "+15550003333",
+		UserChannelID:     "u3",
+		Nonce:             "integration_nonce_3b",
+		Message:           "wire payment",
+	})
+	if err != nil {
+		t.Fatalf("ingest webhook second request: %v", err)
+	}
+	if status != 202 {
+		t.Fatalf("unexpected webhook status: %d", status)
+	}
+
+	allowed, err := s.ProcessNextQueuedTurnWithOptions(context.Background(), ProcessOptions{
+		ToolRiskLevel: "CRITICAL",
+		AutonomyLevel: "A3",
+		AutoApprove:   true,
+		Now:           time.Date(2026, time.February, 28, 12, 0, 0, 0, time.UTC),
+	})
+	if err != nil {
+		t.Fatalf("process turn with approval: %v", err)
+	}
+	if allowed.GateDecision != "allow" || !allowed.ApprovalAccepted {
+		t.Fatalf("expected approved execution path, got %+v", allowed)
+	}
+	if !allowed.Committed || allowed.ToolsCommitted != 1 {
+		t.Fatalf("expected single committed tool after approval, got %+v", allowed)
+	}
+}
+
+func TestPipelineMultiToolPlanCommitsAllTools(t *testing.T) {
+	s := NewService("integration-secret")
+	workspaceID := uuid.MustParse("018f3f6a-9a0f-7cc6-8f2f-1f0f2d2f2d2f")
+	s.BindWorkspace("whatsapp", "+15550004444", workspaceID)
+
+	status, err := s.IngestWebhook(WebhookPayload{
+		Channel:           "whatsapp",
+		ChannelIdentifier: "+15550004444",
+		UserChannelID:     "u4",
+		Nonce:             "integration_nonce_4",
+		Message:           "schedule and send follow-up",
+	})
+	if err != nil {
+		t.Fatalf("ingest webhook: %v", err)
+	}
+	if status != 202 {
+		t.Fatalf("unexpected webhook status: %d", status)
+	}
+
+	result, err := s.ProcessNextQueuedTurnWithOptions(context.Background(), ProcessOptions{
+		ToolKeys: []string{"calendar.create_event", "tasks.create_task"},
+	})
+	if err != nil {
+		t.Fatalf("process multi-tool turn: %v", err)
+	}
+	if result.GateDecision != "allow" || !result.Committed {
+		t.Fatalf("expected allowed committed path, got %+v", result)
+	}
+	if result.ToolsCommitted != 2 || result.ToolsSimulated != 2 {
+		t.Fatalf("expected 2 simulate + 2 commit executions, got %+v", result)
+	}
+	if result.OutboundCode != 202 {
+		t.Fatalf("unexpected outbound code: %d", result.OutboundCode)
+	}
+
+	events := s.ExecutorAuditEventTypes()
+	if countString(events, "BREVIO.hands.tool.simulated.v1") < 2 {
+		t.Fatalf("expected >=2 simulated events, got %v", events)
+	}
+	if countString(events, "BREVIO.hands.tool.committed.v1") < 2 {
+		t.Fatalf("expected >=2 committed events, got %v", events)
+	}
+}
+
+func TestPipelineRateCapAndBudgetCapEnforcedAcrossTurns(t *testing.T) {
+	s := NewService("integration-secret")
+	workspaceID := uuid.MustParse("018f3f6a-9a0f-7cc6-8f2f-1f0f2d2f2d2f")
+	s.BindWorkspace("whatsapp", "+15550005555", workspaceID)
+
+	if err := s.SetToolRateCap(workspaceID.String(), "calendar.create_event", 1); err != nil {
+		t.Fatalf("set tool rate cap: %v", err)
+	}
+	if err := s.SetMonthlyBudgetCap(workspaceID.String(), 1); err != nil {
+		t.Fatalf("set monthly budget cap: %v", err)
+	}
+
+	firstStatus, err := s.IngestWebhook(WebhookPayload{
+		Channel:           "whatsapp",
+		ChannelIdentifier: "+15550005555",
+		UserChannelID:     "u5",
+		Nonce:             "integration_nonce_5a",
+		Message:           "create meeting",
+	})
+	if err != nil || firstStatus != 202 {
+		t.Fatalf("ingest first webhook: status=%d err=%v", firstStatus, err)
+	}
+
+	first, err := s.ProcessNextQueuedTurn(context.Background(), false)
+	if err != nil {
+		t.Fatalf("process first turn: %v", err)
+	}
+	if first.GateDecision != "allow" || !first.Committed {
+		t.Fatalf("expected first turn allowed/committed, got %+v", first)
+	}
+
+	secondStatus, err := s.IngestWebhook(WebhookPayload{
+		Channel:           "whatsapp",
+		ChannelIdentifier: "+15550005555",
+		UserChannelID:     "u5",
+		Nonce:             "integration_nonce_5b",
+		Message:           "create another meeting",
+	})
+	if err != nil || secondStatus != 202 {
+		t.Fatalf("ingest second webhook: status=%d err=%v", secondStatus, err)
+	}
+
+	second, err := s.ProcessNextQueuedTurn(context.Background(), false)
+	if err != nil {
+		t.Fatalf("process second turn: %v", err)
+	}
+	if second.GateDecision != "deny" {
+		t.Fatalf("expected second turn denied by caps, got %+v", second)
+	}
+	if second.ReasonCode != "TOOL_RATE_CAP_EXCEEDED" {
+		t.Fatalf("expected tool rate cap reason code, got %+v", second)
+	}
+	if second.Committed || second.Simulated {
+		t.Fatalf("expected no execution when cap exceeded, got %+v", second)
 	}
 }
 
@@ -105,6 +274,22 @@ func TestWorkflowIntegrationProvisioningCompensation(t *testing.T) {
 	}
 	if result.CompensatedSteps[0] != "DeployServer" {
 		t.Fatalf("expected failed step compensation first, got %v", result.CompensatedSteps)
+	}
+}
+
+func TestWorkflowIntegrationProvisioningArtifactVerificationFailure(t *testing.T) {
+	t.Parallel()
+
+	svc := NewService("integration-secret")
+	result := svc.RunProvisioningWorkflow(context.Background(), "VerifyArtifact")
+	if result.Status != "failed" {
+		t.Fatalf("expected failed provisioning status, got %s", result.Status)
+	}
+	if len(result.CompensatedSteps) == 0 {
+		t.Fatalf("expected compensation steps, got %+v", result)
+	}
+	if result.CompensatedSteps[0] != "VerifyArtifact" {
+		t.Fatalf("expected failed VerifyArtifact to compensate first, got %v", result.CompensatedSteps)
 	}
 }
 
@@ -147,4 +332,14 @@ func containsString(items []string, needle string) bool {
 		}
 	}
 	return false
+}
+
+func countString(items []string, needle string) int {
+	count := 0
+	for _, item := range items {
+		if item == needle {
+			count++
+		}
+	}
+	return count
 }

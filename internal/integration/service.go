@@ -10,6 +10,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -29,11 +31,26 @@ type WebhookPayload struct {
 }
 
 type PipelineResult struct {
-	GateDecision  string
-	WorkflowState string
-	Simulated     bool
-	Committed     bool
-	OutboundCode  int
+	GateDecision       string
+	ReasonCode         string
+	WorkflowState      string
+	Simulated          bool
+	Committed          bool
+	ToolsSimulated     int
+	ToolsCommitted     int
+	ApprovalChallenged bool
+	ApprovalAccepted   bool
+	OutboundCode       int
+}
+
+type ProcessOptions struct {
+	BudgetExhausted bool
+	RateLimited     bool
+	AutonomyLevel   string
+	ToolRiskLevel   string
+	ToolKeys        []string
+	AutoApprove     bool
+	Now             time.Time
 }
 
 type Service struct {
@@ -85,6 +102,10 @@ func (s *Service) IngestWebhook(payload WebhookPayload) (int, error) {
 }
 
 func (s *Service) ProcessNextQueuedTurn(ctx context.Context, budgetExhausted bool) (PipelineResult, error) {
+	return s.ProcessNextQueuedTurnWithOptions(ctx, ProcessOptions{BudgetExhausted: budgetExhausted})
+}
+
+func (s *Service) ProcessNextQueuedTurnWithOptions(ctx context.Context, options ProcessOptions) (PipelineResult, error) {
 	msg, ok := s.gateway.PopQueueMessage()
 	if !ok {
 		return PipelineResult{}, fmt.Errorf("no queued turn")
@@ -96,18 +117,64 @@ func (s *Service) ProcessNextQueuedTurn(ctx context.Context, budgetExhausted boo
 	}
 
 	firewall := s.control.FirewallCheck(inbound.Message)
+	autonomyLevel := strings.ToUpper(strings.TrimSpace(options.AutonomyLevel))
+	if autonomyLevel == "" {
+		autonomyLevel = "A3"
+	}
+	toolRiskLevel := strings.ToUpper(strings.TrimSpace(options.ToolRiskLevel))
+	if toolRiskLevel == "" {
+		toolRiskLevel = s.defaultRisk
+	}
+	toolKeys := append([]string(nil), options.ToolKeys...)
+	if len(toolKeys) == 0 {
+		toolKeys = []string{"calendar.create_event"}
+	}
+
 	decision := s.control.EvaluateGate(control.DecisionInput{
-		AutonomyLevel:          "A3",
-		ToolRiskLevel:          s.defaultRisk,
+		AutonomyLevel:          autonomyLevel,
+		ToolRiskLevel:          toolRiskLevel,
 		IsWrite:                true,
-		RateLimited:            false,
-		BudgetExhausted:        budgetExhausted,
+		RateLimited:            options.RateLimited,
+		BudgetExhausted:        options.BudgetExhausted,
 		FirewallAllowed:        firewall.Allowed,
 		SemanticVerifierPassed: true,
 		BlockedTool:            false,
 	})
-	result := PipelineResult{GateDecision: decision.Decision}
+	result := PipelineResult{
+		GateDecision: decision.Decision,
+		ReasonCode:   decision.ReasonCode,
+	}
+
+	if decision.Decision == "require_approval" {
+		result.ApprovalChallenged = true
+		if options.AutoApprove {
+			now := options.Now.UTC()
+			if now.IsZero() {
+				now = time.Now().UTC()
+			}
+			token, err := s.control.Approval().GenerateToken(
+				"tool_commit",
+				toolRiskLevel,
+				"integration_"+inbound.Nonce,
+				now,
+			)
+			if err != nil {
+				return result, err
+			}
+			if err := s.control.Approval().ValidateToken(token, now.Add(time.Second)); err != nil {
+				return result, err
+			}
+			result.ApprovalAccepted = true
+			result.GateDecision = "allow"
+			result.ReasonCode = "APPROVAL_TOKEN_VALID"
+		}
+	}
 	if decision.Decision != "allow" {
+		if !result.ApprovalAccepted {
+			return result, nil
+		}
+	}
+	if result.GateDecision != "allow" {
 		return result, nil
 	}
 
@@ -123,27 +190,42 @@ func (s *Service) ProcessNextQueuedTurn(ctx context.Context, budgetExhausted boo
 	workflowResult := s.workflows.InteractiveTurnV1(ctx, inbound.Message)
 	result.WorkflowState = workflowResult.FinalState
 
-	if _, err := s.executor.Simulate(executor.ExecutionRequest{
-		WorkspaceID: msg.WorkspaceID.String(),
-		ToolKey:     "calendar.create_event",
-		Action:      inbound.Message,
-		Provider:    "native",
-		TargetURL:   "https://api.example.com/action",
-	}); err != nil {
-		return result, err
-	}
-	result.Simulated = true
+	workspaceID := msg.WorkspaceID.String()
+	for _, toolKey := range toolKeys {
+		if err := s.control.ConsumeToolCall(workspaceID, toolKey); err != nil {
+			result.GateDecision = "deny"
+			result.ReasonCode = "TOOL_RATE_CAP_EXCEEDED"
+			return result, nil
+		}
+		if err := s.control.ConsumeBudget(workspaceID, 1); err != nil {
+			result.GateDecision = "deny"
+			result.ReasonCode = "BUDGET_CALLS_EXHAUSTED"
+			return result, nil
+		}
+		if _, err := s.executor.Simulate(executor.ExecutionRequest{
+			WorkspaceID: workspaceID,
+			ToolKey:     toolKey,
+			Action:      inbound.Message,
+			Provider:    "native",
+			TargetURL:   "https://api.example.com/action",
+		}); err != nil {
+			return result, err
+		}
+		result.ToolsSimulated++
 
-	if _, _, err := s.executor.Commit(executor.ExecutionRequest{
-		WorkspaceID: msg.WorkspaceID.String(),
-		ToolKey:     "calendar.create_event",
-		Action:      inbound.Message,
-		Provider:    "native",
-		TargetURL:   "https://api.example.com/action",
-	}); err != nil {
-		return result, err
+		if _, _, err := s.executor.Commit(executor.ExecutionRequest{
+			WorkspaceID: workspaceID,
+			ToolKey:     toolKey,
+			Action:      inbound.Message,
+			Provider:    "native",
+			TargetURL:   "https://api.example.com/action",
+		}); err != nil {
+			return result, err
+		}
+		result.ToolsCommitted++
 	}
-	result.Committed = true
+	result.Simulated = result.ToolsSimulated > 0
+	result.Committed = result.ToolsCommitted > 0
 
 	outboundPayload := []byte(fmt.Sprintf(`{"workspace_id":"%s","channel":"%s","channel_identifier":"%s","body":"ok"}`,
 		msg.WorkspaceID.String(),
@@ -156,6 +238,14 @@ func (s *Service) ProcessNextQueuedTurn(ctx context.Context, budgetExhausted boo
 	result.OutboundCode = outboundResp.Code
 
 	return result, nil
+}
+
+func (s *Service) SetToolRateCap(workspaceID, toolKey string, maxCalls int) error {
+	return s.control.SetToolRateCap(workspaceID, toolKey, maxCalls)
+}
+
+func (s *Service) SetMonthlyBudgetCap(workspaceID string, maxUnits int) error {
+	return s.control.SetMonthlyBudgetCap(workspaceID, maxUnits)
 }
 
 func (s *Service) RunProvisioningWorkflow(ctx context.Context, failAt string) workflows.ProvisioningResult {
