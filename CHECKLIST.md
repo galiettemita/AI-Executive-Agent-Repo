@@ -126,6 +126,7 @@ Legend
 - [x] Strict closure hardening: added exact OpenAPI `components.schemas` key-set parity gate (49 canonical component schema keys, including generic/error wrappers) in `internal/contracts/openapi_closure_test.go`
 - [x] Strict closure hardening: added workflow runtime exercise closure test to execute all 22 mapped V9/V9.1/V9.2 workflow IDs through `internal/workflows.Service` (`internal/contracts/workflow_closure_test.go`)
 - [x] Strict closure hardening: removed compliance evidence hash placeholders by computing/normalizing real SHA-256 digests in `internal/compliance.Service`, wired framework evidence creation through computed digests (`internal/control/mux.go`), and added runtime/test enforcement of valid `sha256:<64hex>` evidence hashes
+- [x] Strict closure hardening: strengthened govuln baseline closure by enforcing allowlist ID format/uniqueness/non-empty rules and requiring baseline documentation linkage in `internal/contracts/security_vuln_baseline_closure_test.go`
 
 Migration rules (must follow)
 - Preserve already-working preserved components unchanged unless v4.0 explicitly requires changes (per user instructions).
