@@ -65,6 +65,7 @@ type Service struct {
 	sideEffects   map[string]int
 	executions    []ToolExecution
 	receipts      []TrustReceipt
+	receiptByExec map[uuid.UUID]TrustReceipt
 	audit         []AuditLogEntry
 	lastAuditHash string
 	idempotency   map[string]ToolExecution
@@ -74,13 +75,14 @@ type Service struct {
 
 func NewService() *Service {
 	return &Service{
-		sideEffects: map[string]int{},
-		executions:  []ToolExecution{},
-		receipts:    []TrustReceipt{},
-		audit:       []AuditLogEntry{},
-		idempotency: map[string]ToolExecution{},
-		circuits:    map[string]CircuitState{},
-		nowFunc:     func() time.Time { return time.Now().UTC() },
+		sideEffects:   map[string]int{},
+		executions:    []ToolExecution{},
+		receipts:      []TrustReceipt{},
+		receiptByExec: map[uuid.UUID]TrustReceipt{},
+		audit:         []AuditLogEntry{},
+		idempotency:   map[string]ToolExecution{},
+		circuits:      map[string]CircuitState{},
+		nowFunc:       func() time.Time { return time.Now().UTC() },
 	}
 }
 
@@ -94,7 +96,14 @@ func (s *Service) Simulate(req ExecutionRequest) (ToolExecution, error) {
 		s.emitAudit("BREVIO.security.ssrf.blocked.v1", err.Error())
 		return ToolExecution{}, err
 	}
-	return s.recordExecution(req, PhaseSimulate)
+	exec, created, err := s.recordExecution(req, PhaseSimulate)
+	if err != nil {
+		return ToolExecution{}, err
+	}
+	if created {
+		s.emitAudit("BREVIO.hands.tool.simulated.v1", exec.ID.String())
+	}
+	return exec, nil
 }
 
 func (s *Service) Commit(req ExecutionRequest) (ToolExecution, TrustReceipt, error) {
@@ -103,10 +112,22 @@ func (s *Service) Commit(req ExecutionRequest) (ToolExecution, TrustReceipt, err
 		return ToolExecution{}, TrustReceipt{}, err
 	}
 
-	exec, err := s.recordExecution(req, PhaseCommit)
+	exec, created, err := s.recordExecution(req, PhaseCommit)
 	if err != nil {
 		return ToolExecution{}, TrustReceipt{}, err
 	}
+
+	if !created {
+		s.mu.Lock()
+		receipt, ok := s.receiptByExec[exec.ID]
+		s.mu.Unlock()
+		if ok {
+			return exec, receipt, nil
+		}
+		return exec, TrustReceipt{}, nil
+	}
+
+	s.emitAudit("BREVIO.hands.tool.committed.v1", exec.ID.String())
 
 	s.mu.Lock()
 	s.sideEffects[req.WorkspaceID+"::"+req.ToolKey]++
@@ -121,15 +142,17 @@ func (s *Service) Commit(req ExecutionRequest) (ToolExecution, TrustReceipt, err
 
 	s.mu.Lock()
 	s.receipts = append(s.receipts, receipt)
+	s.receiptByExec[exec.ID] = receipt
 	s.mu.Unlock()
 	s.emitAudit("BREVIO.trust.receipt.created.v1", receipt.ID.String())
+	s.emitAudit("BREVIO.trust.evidence.attached.v1", receipt.ID.String())
 
 	return exec, receipt, nil
 }
 
-func (s *Service) recordExecution(req ExecutionRequest, phase ExecutionPhase) (ToolExecution, error) {
+func (s *Service) recordExecution(req ExecutionRequest, phase ExecutionPhase) (ToolExecution, bool, error) {
 	if req.WorkspaceID == "" || req.ToolKey == "" {
-		return ToolExecution{}, fmt.Errorf("workspace_id and tool_key are required")
+		return ToolExecution{}, false, fmt.Errorf("workspace_id and tool_key are required")
 	}
 	logicalHash := logicalActionHash(req.WorkspaceID, req.ToolKey, req.Action)
 	idempotencyKey := req.WorkspaceID + "::" + req.ToolKey + "::" + logicalHash + "::" + string(phase)
@@ -137,7 +160,7 @@ func (s *Service) recordExecution(req ExecutionRequest, phase ExecutionPhase) (T
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if existing, ok := s.idempotency[idempotencyKey]; ok {
-		return existing, nil
+		return existing, false, nil
 	}
 
 	exec := ToolExecution{
@@ -151,7 +174,7 @@ func (s *Service) recordExecution(req ExecutionRequest, phase ExecutionPhase) (T
 	}
 	s.executions = append(s.executions, exec)
 	s.idempotency[idempotencyKey] = exec
-	return exec, nil
+	return exec, true, nil
 }
 
 func (s *Service) emitAudit(eventType, payload string) {
@@ -266,4 +289,12 @@ func (s *Service) AuditCount() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return len(s.audit)
+}
+
+func (s *Service) AuditEntries() []AuditLogEntry {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]AuditLogEntry, len(s.audit))
+	copy(out, s.audit)
+	return out
 }
