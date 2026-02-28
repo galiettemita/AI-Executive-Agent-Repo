@@ -63,9 +63,32 @@ type TriggerSpec struct {
 	Trigger    string
 }
 
+type WorkflowInstanceMirror struct {
+	WorkflowKey string
+	Status      string
+	UpdatedAt   time.Time
+}
+
+type WorkflowStepMirror struct {
+	StepKey        string
+	Status         string
+	IdempotencyKey string
+	UpdatedAt      time.Time
+}
+
+type TwoPhaseExecutionResult struct {
+	Simulate ToolExecutionResult
+	Commit   ToolExecutionResult
+	Replayed bool
+}
+
 type Service struct {
-	mu               sync.Mutex
-	idempotencyStore map[string]ToolExecutionResult
+	mu                sync.Mutex
+	idempotencyStore  map[string]ToolExecutionResult
+	workflowInstances map[string]WorkflowInstanceMirror
+	workflowSteps     map[string][]WorkflowStepMirror
+	twoPhaseStore     map[string]TwoPhaseExecutionResult
+	idempotencyTTL    time.Duration
 }
 
 // Supported workflow IDs for closure mapping:
@@ -78,7 +101,13 @@ type Service struct {
 // compliance_evidence_v1, admin_kpi_report_v1, admin_alert_eval_v1,
 // cache_maintenance_v1.
 func NewService() *Service {
-	return &Service{idempotencyStore: map[string]ToolExecutionResult{}}
+	return &Service{
+		idempotencyStore:  map[string]ToolExecutionResult{},
+		workflowInstances: map[string]WorkflowInstanceMirror{},
+		workflowSteps:     map[string][]WorkflowStepMirror{},
+		twoPhaseStore:     map[string]TwoPhaseExecutionResult{},
+		idempotencyTTL:    30 * 24 * time.Hour,
+	}
 }
 
 func V91WorkflowTriggerSpecs() map[string]TriggerSpec {
@@ -118,24 +147,71 @@ func V91WorkflowTriggerSpecs() map[string]TriggerSpec {
 	}
 }
 
+func (s *Service) recordWorkflowInstance(workflowKey, status string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.workflowInstances[workflowKey] = WorkflowInstanceMirror{
+		WorkflowKey: workflowKey,
+		Status:      status,
+		UpdatedAt:   time.Now().UTC(),
+	}
+}
+
+func (s *Service) appendWorkflowStep(workflowKey, stepKey, status, idempotencyKey string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.workflowSteps[workflowKey] = append(s.workflowSteps[workflowKey], WorkflowStepMirror{
+		StepKey:        stepKey,
+		Status:         status,
+		IdempotencyKey: idempotencyKey,
+		UpdatedAt:      time.Now().UTC(),
+	})
+}
+
+func (s *Service) WorkflowInstance(workflowKey string) (WorkflowInstanceMirror, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	instance, ok := s.workflowInstances[workflowKey]
+	return instance, ok
+}
+
+func (s *Service) WorkflowSteps(workflowKey string) []WorkflowStepMirror {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	steps := s.workflowSteps[workflowKey]
+	out := make([]WorkflowStepMirror, len(steps))
+	copy(out, steps)
+	return out
+}
+
 func (s *Service) InteractiveTurnV1(_ context.Context, message string) InteractiveResult {
+	s.recordWorkflowInstance("interactive_turn_v1", "running")
 	constraints := ReasoningConstraintsForTier("T2")
 	steps := []WorkflowStep{{StepKey: "planner", Status: "completed"}}
+	s.appendWorkflowStep("interactive_turn_v1", "planner", "completed", "")
 	if message == "" {
+		s.appendWorkflowStep("interactive_turn_v1", "terminal", "completed", "")
+		s.recordWorkflowInstance("interactive_turn_v1", "completed")
 		return InteractiveResult{FinalState: "TERMINAL", Steps: append(steps, WorkflowStep{StepKey: "terminal", Status: "completed"})}
 	}
 	for i := 0; i < minInt(1, constraints.ExecutorLoopLimit); i++ {
 		steps = append(steps, WorkflowStep{StepKey: "executor", Status: "completed"})
+		s.appendWorkflowStep("interactive_turn_v1", "executor", "completed", "")
 	}
 	steps = append(steps,
 		WorkflowStep{StepKey: "critic", Status: "completed"},
 		WorkflowStep{StepKey: "reflector", Status: "completed"},
 		WorkflowStep{StepKey: "terminal", Status: "completed"},
 	)
+	s.appendWorkflowStep("interactive_turn_v1", "critic", "completed", "")
+	s.appendWorkflowStep("interactive_turn_v1", "reflector", "completed", "")
+	s.appendWorkflowStep("interactive_turn_v1", "terminal", "completed", "")
+	s.recordWorkflowInstance("interactive_turn_v1", "completed")
 	return InteractiveResult{FinalState: "TERMINAL", Steps: steps}
 }
 
 func (s *Service) ProvisioningV9(_ context.Context, failAt string) ProvisioningResult {
+	s.recordWorkflowInstance("provisioning_v9", "running")
 	steps := []string{
 		"Preflight",
 		"CreateRequest",
@@ -152,18 +228,26 @@ func (s *Service) ProvisioningV9(_ context.Context, failAt string) ProvisioningR
 	executed := []string{}
 	compensated := []string{}
 	for _, step := range steps {
+		stepID := formatIdempotencyKey("provisioning_v9::" + step)
+		s.appendWorkflowStep("provisioning_v9", step, "running", stepID)
 		executed = append(executed, step)
 		if failAt != "" && step == failAt {
+			s.appendWorkflowStep("provisioning_v9", step, "failed", stepID)
 			for i := len(executed) - 1; i >= 0; i-- {
 				compensated = append(compensated, executed[i])
+				s.appendWorkflowStep("provisioning_v9", "compensate_"+executed[i], "completed", formatIdempotencyKey("provisioning_v9::compensate::"+executed[i]))
 			}
+			s.recordWorkflowInstance("provisioning_v9", "failed")
 			return ProvisioningResult{Status: "failed", ExecutedSteps: executed, CompensatedSteps: compensated}
 		}
+		s.appendWorkflowStep("provisioning_v9", step, "completed", stepID)
 	}
+	s.recordWorkflowInstance("provisioning_v9", "active")
 	return ProvisioningResult{Status: "active", ExecutedSteps: executed}
 }
 
 func (s *Service) OnboardingV1(_ context.Context, answers map[string]string) OnboardingResult {
+	s.recordWorkflowInstance("onboarding_v1", "running")
 	stages := []string{
 		"operator_profile_intake_v1",
 		"behavior_policy_calibration_v1",
@@ -172,9 +256,13 @@ func (s *Service) OnboardingV1(_ context.Context, answers map[string]string) Onb
 	}
 	for _, stage := range stages {
 		if answers[stage] == "" {
+			s.appendWorkflowStep("onboarding_v1", stage, "failed", "")
+			s.recordWorkflowInstance("onboarding_v1", "incomplete")
 			return OnboardingResult{CompletedStages: []string{}, Status: "incomplete"}
 		}
+		s.appendWorkflowStep("onboarding_v1", stage, "completed", formatIdempotencyKey("onboarding_v1::"+stage))
 	}
+	s.recordWorkflowInstance("onboarding_v1", "completed")
 	return OnboardingResult{CompletedStages: stages, Status: "completed"}
 }
 
@@ -367,6 +455,48 @@ func (s *Service) ExecuteToolWithIdempotency(workspaceID, toolKey, logicalAction
 		CreatedAt:      time.Now().UTC(),
 	}
 	s.idempotencyStore[scopeKey] = result
+	return result, nil
+}
+
+func (s *Service) ExecuteTwoPhaseTool(workspaceID, toolKey, logicalAction string, now time.Time) (TwoPhaseExecutionResult, error) {
+	if workspaceID == "" || toolKey == "" || logicalAction == "" {
+		return TwoPhaseExecutionResult{}, fmt.Errorf("workspace_id, tool_key, and logical_action are required")
+	}
+	payload := payloadHash(workspaceID, toolKey, logicalAction)
+	scopeKey := workspaceID + "::" + toolKey + "::" + payload
+	if now.IsZero() {
+		now = time.Now().UTC()
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if existing, ok := s.twoPhaseStore[scopeKey]; ok {
+		latest := existing.Commit.CreatedAt
+		if latest.IsZero() {
+			latest = existing.Simulate.CreatedAt
+		}
+		if now.Sub(latest) <= s.idempotencyTTL {
+			existing.Replayed = true
+			return existing, nil
+		}
+	}
+
+	simulate := ToolExecutionResult{
+		IdempotencyKey: formatIdempotencyKey(scopeKey + "::simulate"),
+		PayloadHash:    payload,
+		CreatedAt:      now.UTC(),
+	}
+	commit := ToolExecutionResult{
+		IdempotencyKey: formatIdempotencyKey(scopeKey + "::commit"),
+		PayloadHash:    payload,
+		CreatedAt:      now.UTC(),
+	}
+	result := TwoPhaseExecutionResult{
+		Simulate: simulate,
+		Commit:   commit,
+		Replayed: false,
+	}
+	s.twoPhaseStore[scopeKey] = result
 	return result, nil
 }
 

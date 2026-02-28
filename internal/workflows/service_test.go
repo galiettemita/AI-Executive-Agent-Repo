@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"slices"
 	"testing"
+	"time"
 )
 
 func TestInteractiveTurnV1EndToEnd(t *testing.T) {
@@ -235,5 +236,111 @@ func TestV91WorkflowTriggerSpecs(t *testing.T) {
 		if spec.Trigger != trigger {
 			t.Fatalf("trigger mismatch for %s: got=%s want=%s", workflowID, spec.Trigger, trigger)
 		}
+	}
+}
+
+func TestWorkflowStateMirrorInteractiveTurn(t *testing.T) {
+	t.Parallel()
+
+	svc := NewService()
+	_ = svc.InteractiveTurnV1(context.Background(), "plan and execute")
+
+	instance, ok := svc.WorkflowInstance("interactive_turn_v1")
+	if !ok {
+		t.Fatal("expected workflow instance mirror for interactive_turn_v1")
+	}
+	if instance.Status != "completed" {
+		t.Fatalf("unexpected workflow status: %s", instance.Status)
+	}
+
+	steps := svc.WorkflowSteps("interactive_turn_v1")
+	if len(steps) == 0 {
+		t.Fatal("expected workflow step mirror entries")
+	}
+	if steps[0].StepKey != "planner" {
+		t.Fatalf("unexpected first mirrored step: %s", steps[0].StepKey)
+	}
+}
+
+func TestWorkflowStateMirrorProvisioningFailure(t *testing.T) {
+	t.Parallel()
+
+	svc := NewService()
+	result := svc.ProvisioningV9(context.Background(), "DeployServer")
+	if result.Status != "failed" {
+		t.Fatalf("expected failed status, got %s", result.Status)
+	}
+	instance, ok := svc.WorkflowInstance("provisioning_v9")
+	if !ok {
+		t.Fatal("expected provisioning workflow mirror")
+	}
+	if instance.Status != "failed" {
+		t.Fatalf("unexpected provisioning mirror status: %s", instance.Status)
+	}
+
+	steps := svc.WorkflowSteps("provisioning_v9")
+	if len(steps) == 0 {
+		t.Fatal("expected mirrored provisioning steps")
+	}
+	foundCompensation := false
+	for _, step := range steps {
+		if len(step.StepKey) > len("compensate_") && step.StepKey[:len("compensate_")] == "compensate_" {
+			foundCompensation = true
+			break
+		}
+	}
+	if !foundCompensation {
+		t.Fatalf("expected compensation mirror steps, got %+v", steps)
+	}
+}
+
+func TestExecuteTwoPhaseToolIdempotency(t *testing.T) {
+	t.Parallel()
+
+	svc := NewService()
+	now := time.Date(2026, 2, 28, 0, 0, 0, 0, time.UTC)
+	first, err := svc.ExecuteTwoPhaseTool("ws1", "gmail.send", "send invoice", now)
+	if err != nil {
+		t.Fatalf("first two-phase execution: %v", err)
+	}
+	if first.Replayed {
+		t.Fatal("first execution should not be replay")
+	}
+
+	second, err := svc.ExecuteTwoPhaseTool("ws1", "gmail.send", "send invoice", now.Add(10*time.Minute))
+	if err != nil {
+		t.Fatalf("second two-phase execution: %v", err)
+	}
+	if !second.Replayed {
+		t.Fatal("expected second execution to replay within idempotency ttl")
+	}
+	if second.Simulate.IdempotencyKey != first.Simulate.IdempotencyKey {
+		t.Fatalf("simulate idempotency key mismatch: %s vs %s", second.Simulate.IdempotencyKey, first.Simulate.IdempotencyKey)
+	}
+	if second.Commit.IdempotencyKey != first.Commit.IdempotencyKey {
+		t.Fatalf("commit idempotency key mismatch: %s vs %s", second.Commit.IdempotencyKey, first.Commit.IdempotencyKey)
+	}
+}
+
+func TestExecuteTwoPhaseToolIdempotencyTTLExpiry(t *testing.T) {
+	t.Parallel()
+
+	svc := NewService()
+	svc.idempotencyTTL = time.Second
+	base := time.Date(2026, 2, 28, 0, 0, 0, 0, time.UTC)
+
+	first, err := svc.ExecuteTwoPhaseTool("ws2", "calendar.create_event", "book meeting", base)
+	if err != nil {
+		t.Fatalf("first two-phase execution: %v", err)
+	}
+	second, err := svc.ExecuteTwoPhaseTool("ws2", "calendar.create_event", "book meeting", base.Add(2*time.Second))
+	if err != nil {
+		t.Fatalf("second two-phase execution after ttl expiry: %v", err)
+	}
+	if second.Replayed {
+		t.Fatal("expected execution after ttl expiry to be a fresh run")
+	}
+	if !second.Commit.CreatedAt.After(first.Commit.CreatedAt) {
+		t.Fatalf("expected refreshed commit timestamp after ttl expiry: first=%s second=%s", first.Commit.CreatedAt, second.Commit.CreatedAt)
 	}
 }
