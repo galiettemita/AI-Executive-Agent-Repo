@@ -75,6 +75,8 @@ func TestComplianceMatrixClosure(t *testing.T) {
 			"V91-GATE-001", "V91-GATE-002", "V91-GATE-003", "V91-GATE-004", "V91-GATE-005",
 			"V91-GATE-006", "V91-GATE-007", "V91-GATE-008", "V91-GATE-009", "V91-GATE-010",
 			"V91-GATE-011",
+			"NNR-V91-001", "NNR-V91-002", "NNR-V91-003", "NNR-V91-004",
+			"NNR-V91-005", "NNR-V91-006", "NNR-V91-007", "NNR-V91-008",
 		},
 	)
 	assertMatrixCoverage(
@@ -86,6 +88,9 @@ func TestComplianceMatrixClosure(t *testing.T) {
 			"V92-GATE-001", "V92-GATE-002", "V92-GATE-003", "V92-GATE-004", "V92-GATE-005", "V92-GATE-006",
 			"V92-GATE-007", "V92-GATE-008", "V92-GATE-009", "V92-GATE-010", "V92-GATE-011", "V92-GATE-012",
 			"V92-GATE-013", "V92-GATE-014", "V92-GATE-015", "V92-GATE-016", "V92-GATE-017", "V92-GATE-018",
+			"NNR-V92-001", "NNR-V92-002", "NNR-V92-003", "NNR-V92-004",
+			"NNR-V92-005", "NNR-V92-006", "NNR-V92-007", "NNR-V92-008",
+			"NNR-V92-009", "NNR-V92-010", "NNR-V92-011", "NNR-V92-012",
 		},
 	)
 }

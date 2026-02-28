@@ -94,6 +94,7 @@ Legend
 - [x] Strict closure hardening: added workflow ID exact-set gate (`internal/contracts/workflow_closure_test.go`) to enforce the full 22-workflow parity set across V9/V9.1/V9.2 in `spec/traceability/workflow_state_map.csv`
 - [x] Strict closure hardening: aligned V9.1/V9.2 OPA reason codes to prompt semantics (`REQUIRE_APPROVAL`, `ALLOW_WITH_AUDIT`, `ADMIN_ACTION_AUDIT`) and upgraded policy closure tests to enforce exact `rule -> result/reason` bindings
 - [x] Strict closure hardening: added service-plane health closure gate (`internal/contracts/service_health_closure_test.go`) to enforce `/healthz/ready` and `/healthz/live` handler coverage across all runtime planes
+- [x] Strict closure hardening: expanded compliance matrix gates to enforce NNR coverage IDs (`NNR-V91-001..008`, `NNR-V92-001..012`) and updated `spec/traceability/compliance_matrix_v91.csv` + `compliance_matrix_v92.csv` with implemented trace rows
 
 Migration rules (must follow)
 - Preserve already-working preserved components unchanged unless v4.0 explicitly requires changes (per user instructions).
