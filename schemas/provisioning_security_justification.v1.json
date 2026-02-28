@@ -2,5 +2,13 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "object",
   "additionalProperties": false,
-  "properties": {}
+  "properties": {
+    "summary": {
+      "type": "string",
+      "maxLength": 700
+    }
+  },
+  "required": [
+    "summary"
+  ]
 }

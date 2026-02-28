@@ -2,5 +2,28 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "object",
   "additionalProperties": false,
-  "properties": {}
+  "properties": {
+    "title": {
+      "type": "string",
+      "maxLength": 80
+    },
+    "body": {
+      "type": "string",
+      "maxLength": 700
+    },
+    "cta_approve": {
+      "type": "string",
+      "maxLength": 40
+    },
+    "cta_deny": {
+      "type": "string",
+      "maxLength": 40
+    }
+  },
+  "required": [
+    "title",
+    "body",
+    "cta_approve",
+    "cta_deny"
+  ]
 }

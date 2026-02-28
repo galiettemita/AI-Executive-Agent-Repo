@@ -2,5 +2,17 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "object",
   "additionalProperties": false,
-  "properties": {}
+  "properties": {
+    "message": {
+      "type": "string",
+      "maxLength": 600
+    },
+    "show_auth_link": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "message",
+    "show_auth_link"
+  ]
 }

@@ -2,5 +2,32 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "object",
   "additionalProperties": false,
-  "properties": {}
+  "properties": {
+    "error_code": {
+      "type": "string",
+      "minLength": 1
+    },
+    "message": {
+      "type": "string",
+      "minLength": 1
+    },
+    "retryable": {
+      "type": "boolean"
+    },
+    "retry_after_ms": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "user_message": {
+      "type": "string",
+      "minLength": 1
+    }
+  },
+  "required": [
+    "error_code",
+    "message",
+    "retryable",
+    "retry_after_ms",
+    "user_message"
+  ]
 }

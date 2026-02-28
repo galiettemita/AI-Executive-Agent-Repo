@@ -2,5 +2,30 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "object",
   "additionalProperties": false,
-  "properties": {}
+  "properties": {
+    "normalized_query": {
+      "type": "string",
+      "minLength": 1
+    },
+    "tokens": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "maxItems": 256
+    },
+    "matched_rules": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  },
+  "required": [
+    "normalized_query",
+    "tokens",
+    "matched_rules"
+  ]
 }

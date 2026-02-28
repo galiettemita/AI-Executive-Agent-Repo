@@ -2,5 +2,32 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "object",
   "additionalProperties": false,
-  "properties": {}
+  "properties": {
+    "server_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "requested_capability_keys": {
+      "type": "array",
+      "maxItems": 50,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true
+    },
+    "trigger": {
+      "type": "string",
+      "enum": [
+        "capability_gap",
+        "user_request",
+        "operator_action"
+      ]
+    }
+  },
+  "required": [
+    "server_id",
+    "requested_capability_keys",
+    "trigger"
+  ]
 }
