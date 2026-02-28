@@ -117,7 +117,13 @@ fi
 if command -v helm >/dev/null 2>&1; then
   echo "[infra] helm lint charts"
   for chart in "${required_helm_charts[@]}"; do
-    helm lint "helm/${chart}"
+    chart_dir="helm/${chart}"
+    helm lint "$chart_dir"
+    rendered="$(helm template "$chart_dir")"
+    if [[ -z "${rendered}" ]]; then
+      echo "[infra] helm template produced empty output for ${chart_dir}"
+      exit 1
+    fi
   done
 else
   if should_require_tooling; then

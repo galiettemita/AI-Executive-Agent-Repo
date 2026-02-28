@@ -146,6 +146,7 @@ Legend
 - [x] Strict closure hardening: strengthened IaC closure from token checks to exact-list/module-set assertions (SQS FIFO/standard/DLQ lists, S3 bucket set, observability stack, managed secrets, and exact staging/production Terraform module block sets) in `internal/contracts/infrastructure_closure_test.go`
 - [x] Strict closure hardening: added canonical SLO catalogs for V9/V9.2 with exact-set contract enforcement (`spec/slos/v9_slos.txt`, `spec/slos/v92_slos.txt`, `internal/contracts/slo_closure_test.go`) and expanded k6 load profile thresholds/scenarios to cover T1/T2/T3 latency and availability/error gates (`evals/load/k6_interactive_turn.js`, `internal/contracts/phase4_artifacts_test.go`)
 - [x] Strict closure hardening: upgraded V9.2 runbook validation to assert trigger-specific semantics for `RB-V92-001..009` (degradation/quarantine/overflow/streaming/flag/conflict/dsr/guardrail/admin incident triggers) in `internal/contracts/runbook_closure_test.go`
+- [x] Strict closure hardening: expanded infra validation to require successful `helm template` rendering for every canonical chart (in addition to `helm lint`) and locked this behavior in Phase 4 artifact closure checks (`scripts/infra/validate.sh`, `internal/contracts/phase4_artifacts_test.go`)
 
 Migration rules (must follow)
 - Preserve already-working preserved components unchanged unless v4.0 explicitly requires changes (per user instructions).

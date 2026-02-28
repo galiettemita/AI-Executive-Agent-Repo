@@ -53,6 +53,7 @@ func TestPhase4ReadinessArtifactsExist(t *testing.T) {
 		"terraform validate modules",
 		"terraform validate environments",
 		"helm lint charts",
+		"helm template",
 		"REQUIRE_INFRA_TOOLS",
 		"CI/strict mode",
 	})
