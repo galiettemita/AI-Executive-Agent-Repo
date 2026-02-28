@@ -327,6 +327,40 @@ func TestWorkflowIntegrationProvisioningArtifactVerificationFailure(t *testing.T
 	}
 }
 
+func TestWorkflowIntegrationProvisioningFailureInjectionAllSteps(t *testing.T) {
+	t.Parallel()
+
+	steps := []string{
+		"Preflight",
+		"CreateRequest",
+		"PolicyGate",
+		"AllocateOrReuseServer",
+		"VerifyArtifact",
+		"DeployServer",
+		"FetchToolSchemas",
+		"HealthCheck",
+		"CommitRegistry",
+		"Active",
+	}
+
+	svc := NewService("integration-secret")
+	for idx, step := range steps {
+		result := svc.RunProvisioningWorkflow(context.Background(), step)
+		if result.Status != "failed" {
+			t.Fatalf("expected failed provisioning status at step=%s, got %s", step, result.Status)
+		}
+		if len(result.ExecutedSteps) != idx+1 {
+			t.Fatalf("unexpected executed step count at step=%s: got=%d want=%d", step, len(result.ExecutedSteps), idx+1)
+		}
+		if len(result.CompensatedSteps) != len(result.ExecutedSteps) {
+			t.Fatalf("expected full reverse compensation at step=%s, executed=%v compensated=%v", step, result.ExecutedSteps, result.CompensatedSteps)
+		}
+		if result.CompensatedSteps[0] != step {
+			t.Fatalf("expected first compensation to be failed step at step=%s, got=%s", step, result.CompensatedSteps[0])
+		}
+	}
+}
+
 func TestWorkflowIntegrationOnboardingAndDrift(t *testing.T) {
 	t.Parallel()
 
