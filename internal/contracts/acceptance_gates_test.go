@@ -59,6 +59,7 @@ func TestAcceptanceGatesV9(t *testing.T) {
 func TestAcceptanceGatesV91(t *testing.T) {
 	t.Parallel()
 	root := repositoryRoot(t)
+	runtimeGatePath := filepath.Join(root, "internal", "contracts", "acceptance_gate_runtime_closure_test.go")
 
 	requiredGates := []string{
 		"goal_lifecycle",
@@ -79,6 +80,9 @@ func TestAcceptanceGatesV91(t *testing.T) {
 			assertFileNonEmpty(t, filepath.Join(root, "db", "migrations", "002_BREVIO_v91_soft_intelligence.sql"))
 			assertFileNonEmpty(t, filepath.Join(root, "prompts", "seed_prompts_v91.txt"))
 			assertFileNonEmpty(t, filepath.Join(root, "spec", "traceability", "compliance_matrix_v91.csv"))
+			assertFileContainsTokens(t, runtimeGatePath, []string{
+				`t.Run("` + gate + `",`,
+			})
 		})
 	}
 }
@@ -86,6 +90,7 @@ func TestAcceptanceGatesV91(t *testing.T) {
 func TestAcceptanceGatesV92(t *testing.T) {
 	t.Parallel()
 	root := repositoryRoot(t)
+	runtimeGatePath := filepath.Join(root, "internal", "contracts", "acceptance_gate_runtime_closure_test.go")
 
 	requiredGates := []string{
 		"context_budget_enforcement",
@@ -116,6 +121,9 @@ func TestAcceptanceGatesV92(t *testing.T) {
 			assertFileNonEmpty(t, filepath.Join(root, "spec", "traceability", "compliance_matrix_v92.csv"))
 			assertFileContainsTokens(t, filepath.Join(root, "db", "migrations", "003_BREVIO_v92_production_hardening.sql"), []string{
 				"constrained_decoding_config",
+			})
+			assertFileContainsTokens(t, runtimeGatePath, []string{
+				`t.Run("` + gate + `",`,
 			})
 		})
 	}

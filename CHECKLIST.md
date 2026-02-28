@@ -118,6 +118,7 @@ Legend
 - [x] Strict closure hardening: upgraded Go dependency floor within Go 1.22 constraints (`pgx/v5 v5.7.4`, `x/crypto v0.33.0`, `x/sync v0.11.0`, `x/text v0.22.0`) and added `internal/contracts/dependency_closure_test.go` to lock minimum versions
 - [x] Strict closure hardening: added reproducible `govulncheck` baseline control (`scripts/security/run_govulncheck.sh` + `govuln_allowlist.txt`), wired into security validation and CI, and documented residual Go 1.22-constrained advisories in `docs/SECURITY_VULNERABILITY_BASELINE.md`
 - [x] Strict closure hardening: extended CI closure contract (`internal/contracts/ci_closure_test.go`) to require `govulncheck baseline` execution tokens in `.github/workflows/ci.yaml`
+- [x] Strict closure hardening: strengthened acceptance gate contracts (`internal/contracts/acceptance_gates_test.go`) to require explicit runtime subtest presence for every named V9.1 and V9.2 gate in `acceptance_gate_runtime_closure_test.go`
 
 Migration rules (must follow)
 - Preserve already-working preserved components unchanged unless v4.0 explicitly requires changes (per user instructions).
