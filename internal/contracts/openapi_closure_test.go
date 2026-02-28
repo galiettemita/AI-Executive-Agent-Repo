@@ -383,6 +383,95 @@ func TestOpenAPIV9ComponentSchemaCatalogClosure(t *testing.T) {
 	}
 }
 
+func TestOpenAPIV9SecurityBindingsClosure(t *testing.T) {
+	t.Parallel()
+
+	root := repositoryRoot(t)
+	path := filepath.Join(root, "api", "openapi", "v9.yaml")
+	body, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read openapi file: %v", err)
+	}
+
+	var doc map[string]any
+	if err := yaml.Unmarshal(body, &doc); err != nil {
+		t.Fatalf("parse openapi yaml: %v", err)
+	}
+
+	components, ok := doc["components"].(map[string]any)
+	if !ok {
+		t.Fatal("openapi components missing")
+	}
+	securitySchemes, ok := components["securitySchemes"].(map[string]any)
+	if !ok {
+		t.Fatal("openapi components.securitySchemes missing")
+	}
+	for _, scheme := range []string{"AdminJWT", "UserJWT", "mTLS"} {
+		if _, ok := securitySchemes[scheme]; !ok {
+			t.Fatalf("missing security scheme %s", scheme)
+		}
+	}
+
+	paths, ok := doc["paths"].(map[string]any)
+	if !ok {
+		t.Fatal("openapi paths missing")
+	}
+
+	required := []struct {
+		Method string
+		Path   string
+		Scheme string
+	}{
+		{Method: "POST", Path: "/v1/rag/search", Scheme: "mTLS"},
+		{Method: "GET", Path: "/v1/sessions/active", Scheme: "mTLS"},
+		{Method: "POST", Path: "/v1/temporal/resolve", Scheme: "mTLS"},
+		{Method: "POST", Path: "/v1/temporal/conflicts", Scheme: "mTLS"},
+		{Method: "POST", Path: "/v1/temporal/travel-time", Scheme: "mTLS"},
+		{Method: "POST", Path: "/v1/flags/{key}/evaluate", Scheme: "mTLS"},
+		{Method: "POST", Path: "/v1/event-schemas/{type}/validate", Scheme: "mTLS"},
+		{Method: "GET", Path: "/v1/compliance/dsr", Scheme: "UserJWT"},
+		{Method: "POST", Path: "/v1/compliance/dsr", Scheme: "UserJWT"},
+		{Method: "POST", Path: "/v1/admin/trust-scores/recalculate", Scheme: "AdminJWT"},
+		{Method: "POST", Path: "/v1/admin/learning/lessons/bulk-retire", Scheme: "AdminJWT"},
+		{Method: "GET", Path: "/v1/guardrails/events", Scheme: "AdminJWT"},
+		{Method: "GET", Path: "/v1/errors/taxonomy", Scheme: "AdminJWT"},
+		{Method: "POST", Path: "/v1/cache/invalidate", Scheme: "AdminJWT"},
+		{Method: "GET", Path: "/v1/event-schemas", Scheme: "AdminJWT"},
+		{Method: "GET", Path: "/v1/admin/kpi/report", Scheme: "AdminJWT"},
+	}
+
+	for _, item := range required {
+		pathValue, ok := paths[item.Path].(map[string]any)
+		if !ok {
+			t.Fatalf("missing required path for security binding: %s", item.Path)
+		}
+		op, ok := pathValue[strings.ToLower(item.Method)].(map[string]any)
+		if !ok {
+			t.Fatalf("missing required method for security binding: %s %s", item.Method, item.Path)
+		}
+		if !operationHasSecurityScheme(op, item.Scheme) {
+			t.Fatalf("missing %s binding for %s %s", item.Scheme, item.Method, item.Path)
+		}
+	}
+}
+
+func operationHasSecurityScheme(operation map[string]any, scheme string) bool {
+	securityRaw, ok := operation["security"].([]any)
+	if !ok {
+		return false
+	}
+	for _, requirementRaw := range securityRaw {
+		requirement, ok := requirementRaw.(map[string]any)
+		if !ok {
+			continue
+		}
+		if _, exists := requirement[scheme]; exists {
+			return true
+		}
+	}
+	return false
+}
+
 func loadOpenAPIDoc(t *testing.T) openapiDocument {
 	t.Helper()
 

@@ -638,6 +638,8 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/generic_request_v1'
+      security:
+      - AdminJWT: []
   /v1/admin/learning/lessons/bulk-retire:
     post:
       summary: POST /v1/admin/learning/lessons/bulk-retire
@@ -654,6 +656,8 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/generic_request_v1'
+      security:
+      - AdminJWT: []
   /v1/context/budget:
     get:
       summary: GET /v1/context/budget
@@ -785,6 +789,8 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/generic_request_v1'
+      security:
+      - mTLS: []
   /v1/rag/retrievals/{turn_id}:
     get:
       summary: GET /v1/rag/retrievals/{turn_id}
@@ -818,6 +824,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/generic_response_v1'
+      security:
+      - mTLS: []
   /v1/sessions/{id}:
     get:
       summary: GET /v1/sessions/{id}
@@ -934,6 +942,8 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/generic_request_v1'
+      security:
+      - mTLS: []
   /v1/temporal/conflicts:
     post:
       summary: POST /v1/temporal/conflicts
@@ -950,6 +960,8 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/generic_request_v1'
+      security:
+      - mTLS: []
   /v1/temporal/travel-time:
     post:
       summary: POST /v1/temporal/travel-time
@@ -966,6 +978,8 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/generic_request_v1'
+      security:
+      - mTLS: []
   /v1/guardrails/config:
     get:
       summary: GET /v1/guardrails/config
@@ -977,6 +991,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/generic_response_v1'
+      security:
+      - AdminJWT: []
     put:
       summary: PUT /v1/guardrails/config
       operationId: put_v1_guardrails_config
@@ -992,6 +1008,8 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/generic_request_v1'
+      security:
+      - AdminJWT: []
   /v1/guardrails/rule-sets:
     get:
       summary: GET /v1/guardrails/rule-sets
@@ -1003,6 +1021,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/generic_response_v1'
+      security:
+      - AdminJWT: []
     post:
       summary: POST /v1/guardrails/rule-sets
       operationId: post_v1_guardrails_rule_sets
@@ -1018,6 +1038,8 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/generic_request_v1'
+      security:
+      - AdminJWT: []
   /v1/guardrails/rule-sets/{id}:
     put:
       summary: PUT /v1/guardrails/rule-sets/{id}
@@ -1034,6 +1056,8 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/generic_request_v1'
+      security:
+      - AdminJWT: []
     delete:
       summary: DELETE /v1/guardrails/rule-sets/{id}
       operationId: delete_v1_guardrails_rule_sets_id
@@ -1044,6 +1068,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/generic_response_v1'
+      security:
+      - AdminJWT: []
   /v1/guardrails/events:
     get:
       summary: GET /v1/guardrails/events
@@ -1055,6 +1081,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/generic_response_v1'
+      security:
+      - AdminJWT: []
   /v1/tools/health:
     get:
       summary: GET /v1/tools/health
@@ -1093,6 +1121,8 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/generic_request_v1'
+      security:
+      - AdminJWT: []
   /v1/tools/quarantine/rules:
     get:
       summary: GET /v1/tools/quarantine/rules
@@ -1104,6 +1134,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/generic_response_v1'
+      security:
+      - AdminJWT: []
     post:
       summary: POST /v1/tools/quarantine/rules
       operationId: post_v1_tools_quarantine_rules
@@ -1119,6 +1151,8 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/generic_request_v1'
+      security:
+      - AdminJWT: []
   /v1/flags:
     get:
       summary: GET /v1/flags
@@ -1130,6 +1164,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/generic_response_v1'
+      security:
+      - AdminJWT: []
     post:
       summary: POST /v1/flags
       operationId: post_v1_flags
@@ -1145,6 +1181,8 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/generic_request_v1'
+      security:
+      - AdminJWT: []
   /v1/flags/{key}:
     get:
       summary: GET /v1/flags/{key}
@@ -1156,6 +1194,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/generic_response_v1'
+      security:
+      - AdminJWT: []
     put:
       summary: PUT /v1/flags/{key}
       operationId: put_v1_flags_key
@@ -1171,6 +1211,8 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/generic_request_v1'
+      security:
+      - AdminJWT: []
     delete:
       summary: DELETE /v1/flags/{key}
       operationId: delete_v1_flags_key
@@ -1181,6 +1223,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/generic_response_v1'
+      security:
+      - AdminJWT: []
   /v1/flags/{key}/evaluate:
     post:
       summary: POST /v1/flags/{key}/evaluate
@@ -1197,6 +1241,8 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/generic_request_v1'
+      security:
+      - mTLS: []
   /v1/flags/{key}/rules:
     get:
       summary: GET /v1/flags/{key}/rules
@@ -1208,6 +1254,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/generic_response_v1'
+      security:
+      - AdminJWT: []
     post:
       summary: POST /v1/flags/{key}/rules
       operationId: post_v1_flags_key_rules
@@ -1223,6 +1271,8 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/generic_request_v1'
+      security:
+      - AdminJWT: []
   /v1/streaming/config:
     get:
       summary: GET /v1/streaming/config
@@ -1260,6 +1310,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/generic_response_v1'
+      security:
+      - AdminJWT: []
   /v1/errors/templates:
     get:
       summary: GET /v1/errors/templates
@@ -1271,6 +1323,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/generic_response_v1'
+      security:
+      - AdminJWT: []
     post:
       summary: POST /v1/errors/templates
       operationId: post_v1_errors_templates
@@ -1286,6 +1340,8 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/generic_request_v1'
+      security:
+      - AdminJWT: []
   /v1/compliance/frameworks:
     get:
       summary: GET /v1/compliance/frameworks
@@ -1297,6 +1353,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/generic_response_v1'
+      security:
+      - AdminJWT: []
     post:
       summary: POST /v1/compliance/frameworks
       operationId: post_v1_compliance_frameworks
@@ -1312,6 +1370,8 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/generic_request_v1'
+      security:
+      - AdminJWT: []
   /v1/compliance/evidence:
     get:
       summary: GET /v1/compliance/evidence
@@ -1323,6 +1383,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/generic_response_v1'
+      security:
+      - AdminJWT: []
   /v1/compliance/dsr:
     get:
       summary: GET /v1/compliance/dsr
@@ -1334,6 +1396,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/generic_response_v1'
+      security:
+      - UserJWT: []
     post:
       summary: POST /v1/compliance/dsr
       operationId: post_v1_compliance_dsr
@@ -1349,6 +1413,8 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/generic_request_v1'
+      security:
+      - UserJWT: []
   /v1/compliance/dsr/{id}:
     get:
       summary: GET /v1/compliance/dsr/{id}
@@ -1360,6 +1426,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/generic_response_v1'
+      security:
+      - AdminJWT: []
     put:
       summary: PUT /v1/compliance/dsr/{id}
       operationId: put_v1_compliance_dsr_id
@@ -1375,6 +1443,8 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/generic_request_v1'
+      security:
+      - AdminJWT: []
   /v1/cache/policies:
     get:
       summary: GET /v1/cache/policies
@@ -1386,6 +1456,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/generic_response_v1'
+      security:
+      - AdminJWT: []
     post:
       summary: POST /v1/cache/policies
       operationId: post_v1_cache_policies
@@ -1401,6 +1473,8 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/generic_request_v1'
+      security:
+      - AdminJWT: []
   /v1/cache/stats:
     get:
       summary: GET /v1/cache/stats
@@ -1412,6 +1486,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/generic_response_v1'
+      security:
+      - AdminJWT: []
   /v1/cache/invalidate:
     post:
       summary: POST /v1/cache/invalidate
@@ -1428,6 +1504,8 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/generic_request_v1'
+      security:
+      - AdminJWT: []
   /v1/model-tiers/policies:
     get:
       summary: GET /v1/model-tiers/policies
@@ -1439,6 +1517,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/generic_response_v1'
+      security:
+      - AdminJWT: []
     post:
       summary: POST /v1/model-tiers/policies
       operationId: post_v1_model_tiers_policies
@@ -1454,6 +1534,8 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/generic_request_v1'
+      security:
+      - AdminJWT: []
   /v1/model-tiers/overrides:
     get:
       summary: GET /v1/model-tiers/overrides
@@ -1465,6 +1547,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/generic_response_v1'
+      security:
+      - AdminJWT: []
   /v1/event-schemas:
     get:
       summary: GET /v1/event-schemas
@@ -1476,6 +1560,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/generic_response_v1'
+      security:
+      - AdminJWT: []
   /v1/event-schemas/{type}/versions:
     get:
       summary: GET /v1/event-schemas/{type}/versions
@@ -1487,6 +1573,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/generic_response_v1'
+      security:
+      - AdminJWT: []
     post:
       summary: POST /v1/event-schemas/{type}/versions
       operationId: post_v1_event_schemas_type_versions
@@ -1502,6 +1590,8 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/generic_request_v1'
+      security:
+      - AdminJWT: []
   /v1/event-schemas/{type}/validate:
     post:
       summary: POST /v1/event-schemas/{type}/validate
@@ -1518,6 +1608,8 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/generic_request_v1'
+      security:
+      - mTLS: []
   /v1/admin/users:
     get:
       summary: GET /v1/admin/users
@@ -1529,6 +1621,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/generic_response_v1'
+      security:
+      - AdminJWT: []
   /v1/admin/users/{id}:
     get:
       summary: GET /v1/admin/users/{id}
@@ -1540,6 +1634,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/generic_response_v1'
+      security:
+      - AdminJWT: []
     put:
       summary: PUT /v1/admin/users/{id}
       operationId: put_v1_admin_users_id
@@ -1555,6 +1651,8 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/generic_request_v1'
+      security:
+      - AdminJWT: []
   /v1/admin/users/{id}/sessions:
     get:
       summary: GET /v1/admin/users/{id}/sessions
@@ -1566,6 +1664,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/generic_response_v1'
+      security:
+      - AdminJWT: []
   /v1/admin/operations/dashboard:
     get:
       summary: GET /v1/admin/operations/dashboard
@@ -1577,6 +1677,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/generic_response_v1'
+      security:
+      - AdminJWT: []
   /v1/admin/operations/workflows:
     get:
       summary: GET /v1/admin/operations/workflows
@@ -1588,6 +1690,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/generic_response_v1'
+      security:
+      - AdminJWT: []
   /v1/admin/operations/queues:
     get:
       summary: GET /v1/admin/operations/queues
@@ -1599,6 +1703,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/generic_response_v1'
+      security:
+      - AdminJWT: []
   /v1/admin/costs/summary:
     get:
       summary: GET /v1/admin/costs/summary
@@ -1610,6 +1716,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/generic_response_v1'
+      security:
+      - AdminJWT: []
   /v1/admin/costs/anomalies:
     get:
       summary: GET /v1/admin/costs/anomalies
@@ -1621,6 +1729,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/generic_response_v1'
+      security:
+      - AdminJWT: []
   /v1/admin/costs/budgets:
     get:
       summary: GET /v1/admin/costs/budgets
@@ -1632,6 +1742,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/generic_response_v1'
+      security:
+      - AdminJWT: []
     put:
       summary: PUT /v1/admin/costs/budgets
       operationId: put_v1_admin_costs_budgets
@@ -1647,6 +1759,8 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/generic_request_v1'
+      security:
+      - AdminJWT: []
   /v1/admin/alerts/rules:
     get:
       summary: GET /v1/admin/alerts/rules
@@ -1658,6 +1772,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/generic_response_v1'
+      security:
+      - AdminJWT: []
     post:
       summary: POST /v1/admin/alerts/rules
       operationId: post_v1_admin_alerts_rules
@@ -1673,6 +1789,8 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/generic_request_v1'
+      security:
+      - AdminJWT: []
   /v1/admin/alerts/rules/{id}:
     put:
       summary: PUT /v1/admin/alerts/rules/{id}
@@ -1689,6 +1807,8 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/generic_request_v1'
+      security:
+      - AdminJWT: []
     delete:
       summary: DELETE /v1/admin/alerts/rules/{id}
       operationId: delete_v1_admin_alerts_rules_id
@@ -1699,6 +1819,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/generic_response_v1'
+      security:
+      - AdminJWT: []
   /v1/admin/alerts/channels:
     get:
       summary: GET /v1/admin/alerts/channels
@@ -1710,6 +1832,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/generic_response_v1'
+      security:
+      - AdminJWT: []
     post:
       summary: POST /v1/admin/alerts/channels
       operationId: post_v1_admin_alerts_channels
@@ -1725,6 +1849,8 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/generic_request_v1'
+      security:
+      - AdminJWT: []
   /v1/admin/kpi/report:
     get:
       summary: GET /v1/admin/kpi/report
@@ -1736,6 +1862,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/generic_response_v1'
+      security:
+      - AdminJWT: []
 components:
   schemas:
     Error:
@@ -1859,3 +1987,14 @@ components:
       $ref: ../../schemas/memory_conflict_report.v1.json
     model_tier_override_request_v1_json:
       $ref: ../../schemas/model_tier_override_request.v1.json
+  securitySchemes:
+    AdminJWT:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+    UserJWT:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+    mTLS:
+      type: mutualTLS
