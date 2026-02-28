@@ -96,6 +96,7 @@ Legend
 - [x] Strict closure hardening: added service-plane health closure gate (`internal/contracts/service_health_closure_test.go`) to enforce `/healthz/ready` and `/healthz/live` handler coverage across all runtime planes
 - [x] Strict closure hardening: expanded compliance matrix gates to enforce NNR coverage IDs (`NNR-V91-001..008`, `NNR-V92-001..012`) and updated `spec/traceability/compliance_matrix_v91.csv` + `compliance_matrix_v92.csv` with implemented trace rows
 - [x] Strict closure hardening: added connector registry seed integrity tests (`internal/connectors/service_test.go`) for `connector_key.tool_key` naming, connector-prefix consistency, connector existence, and autonomy-floor validity
+- [x] Strict closure hardening: added UUID generation guard (`internal/contracts/id_generation_closure_test.go`) to prevent non-test runtime usage of `uuid.New`/`uuid.NewString` and enforce `determinism.NewUUIDv7()` usage in entity-creator services
 
 Migration rules (must follow)
 - Preserve already-working preserved components unchanged unless v4.0 explicitly requires changes (per user instructions).
