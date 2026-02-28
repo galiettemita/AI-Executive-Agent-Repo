@@ -1,4 +1,4 @@
-.PHONY: build test lint migrate db-verify docker-build contracts acceptance ci load-test security-validate infra-validate
+.PHONY: build test lint migrate db-verify docker-build contracts acceptance ci load-test security-validate infra-validate api-docs
 
 GO_EXEC := ./scripts/dev/go_exec.sh
 GOFMT_EXEC := ./scripts/dev/gofmt_exec.sh
@@ -47,3 +47,6 @@ security-validate:
 
 infra-validate:
 	bash scripts/infra/validate.sh
+
+api-docs:
+	$(GO_EXEC) run ./scripts/docs/generate_api_reference.go

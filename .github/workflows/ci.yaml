@@ -82,6 +82,10 @@ jobs:
           rg -n "CREATE TYPE" db/migrations/003_BREVIO_v92_production_hardening.sql
       - name: openapi lint
         run: go test ./internal/contracts -run TestOpenAPIV9EndpointParityClosure -count=1
+      - name: api docs sync
+        run: |
+          go run ./scripts/docs/generate_api_reference.go
+          git diff --exit-code docs/API_REFERENCE.md
       - name: json schema lint
         run: go test ./internal/contracts -run TestJSONSchemaClosure -count=1
       - name: infrastructure validate
