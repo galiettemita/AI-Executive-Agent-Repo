@@ -28,6 +28,7 @@ Legend
 - [x] Post-deploy validation: reran `make ci-full` (lint, unit/integration/contracts/acceptance, security, infra validation, DB migration runtime verification) with all gates passing.
 - [x] Endpoint verification: confirmed HTTPS `/healthz/live` returns `200 ok` on both ALBs using host-header routing (`api.testing-orbit.com`, `admin.testing-orbit.com`).
 - [x] External DNS cutover complete: external DNS provider now routes `api.testing-orbit.com` and `admin.testing-orbit.com` to ALB targets; public `/healthz/live` checks return `200 ok`.
+- [x] Post-cutover regression: reran `make ci-full` at HEAD after DNS and deployment doc updates; all closure/security/infra/db gates still pass.
 - [x] Phase 0.2: dead-code/duplicate cleanup and naming normalization
 - [x] Phase 0.3: clean baseline (`go build`, `go vet`, `gofmt`) + commit/tag
 - [x] Phase 0.3 validation complete via Docker Go 1.22 (`go mod tidy`, `go build`, `go vet`, `gofmt`, `go test`, `staticcheck`)
