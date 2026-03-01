@@ -1,4 +1,4 @@
-.PHONY: build test lint migrate db-verify docker-build contracts acceptance ci ci-full load-test security-validate infra-validate api-docs api-docs-check tools-md tools-md-check mcp-wave1-checklist mcp-wave56-checklist mcp-fleet-validate mcp-runtime-rollout deploy-helm external-closeout-check
+.PHONY: build test lint migrate db-verify docker-build contracts acceptance ci ci-full load-test security-validate infra-validate api-docs api-docs-check tools-md tools-md-check generate-remote-catalog-keys mcp-wave1-checklist mcp-wave56-checklist mcp-fleet-validate mcp-runtime-rollout deploy-helm external-closeout-check
 
 GO_EXEC := ./scripts/dev/go_exec.sh
 GOFMT_EXEC := ./scripts/dev/gofmt_exec.sh
@@ -71,6 +71,9 @@ tools-md:
 tools-md-check:
 	$(GO_EXEC) run ./scripts/tools/generate_tools_md.go
 	git diff --exit-code TOOLS.md
+
+generate-remote-catalog-keys:
+	$(GO_EXEC) run ./scripts/tools/generate_remote_catalog_keys.go
 
 mcp-wave1-checklist:
 	$(GO_EXEC) run ./scripts/mcp/wave1_checklist/main.go

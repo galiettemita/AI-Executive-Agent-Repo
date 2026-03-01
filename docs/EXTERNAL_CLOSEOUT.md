@@ -101,11 +101,41 @@ This runbook covers the only checklist items that remain outside repository auto
 9. Redeploy services that emit analytics events.
 
 ## 7) Remote Catalog Signing Keys
-1. Create key pair for catalog signing (Ed25519 recommended).
-2. Store private key in Secrets Manager (restricted access).
-3. Store public key in app configuration for verification.
-4. Configure remote catalog API base URL in env.
-5. Enable signature verification in provisioning path before enabling remote import in production.
+### Step A — Generate keys (copy/paste safe)
+1. Open Terminal.
+2. Run:
+```bash
+cd /Users/galiettemita/Downloads/Executive AI Agent/backend
+make generate-remote-catalog-keys
+```
+3. You will get JSON output with:
+   - `REMOTE_CATALOG_PRIVATE_KEY`
+   - `REMOTE_CATALOG_PUBLIC_KEY`
+4. Keep this terminal window open. You will paste those two values into AWS in Step B.
+
+### Step B — Put keys in AWS Secrets Manager (button-by-button)
+1. Open AWS Console.
+2. In the top search bar, type `Secrets Manager` and click it.
+3. Click `Secrets` (left sidebar).
+4. Find and click your secret (default in this repo is `executive-os/prod/oauth_client_secrets`).
+5. Click `Retrieve secret value`.
+6. Click `Edit`.
+7. If you see key/value rows, switch to `Plaintext` tab for easier paste.
+8. Add these JSON fields (or update if they already exist):
+   - `"REMOTE_CATALOG_PRIVATE_KEY": "<paste private key from terminal>"`
+   - `"REMOTE_CATALOG_PUBLIC_KEY": "<paste public key from terminal>"`
+9. Click `Save`.
+10. Click `Retrieve secret value` again and verify both keys are present.
+
+### Step C — Verify it passed
+1. In Terminal, run:
+```bash
+cd /Users/galiettemita/Downloads/Executive AI Agent/backend
+ANALYTICS_EVENT_BUS=brevio-analytics-bus make external-closeout-check
+```
+2. Open:
+   - `artifacts/deploy/external_closeout_status.json`
+3. Confirm `remote_catalog_signing_keys` is `pass`.
 
 ## 8) Optional Keys (vLLM / ElevenLabs)
 ### local vLLM

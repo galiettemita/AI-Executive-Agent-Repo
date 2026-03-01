@@ -28,14 +28,25 @@ func TestExternalCloseoutAutomationClosure(t *testing.T) {
 	assertFileContainsTokens(t, filepath.Join(root, "Makefile"), []string{
 		"external-closeout-check:",
 		"bash scripts/deploy/external_closeout_check.sh",
+		"generate-remote-catalog-keys:",
+		"./scripts/tools/generate_remote_catalog_keys.go",
 	})
 
 	docPath := filepath.Join(root, "docs", "EXTERNAL_CLOSEOUT.md")
 	assertFileNonEmpty(t, docPath)
 	assertFileContainsTokens(t, docPath, []string{
 		"make external-closeout-check",
+		"make generate-remote-catalog-keys",
 		"PARTNER_APPS_CONFIRMED",
 		"ANALYTICS_EVENT_BUS",
 		"artifacts/deploy/external_closeout_status.json",
+	})
+
+	keysGeneratorPath := filepath.Join(root, "scripts", "tools", "generate_remote_catalog_keys.go")
+	assertFileNonEmpty(t, keysGeneratorPath)
+	assertFileContainsTokens(t, keysGeneratorPath, []string{
+		"ed25519.GenerateKey",
+		"REMOTE_CATALOG_PRIVATE_KEY",
+		"REMOTE_CATALOG_PUBLIC_KEY",
 	})
 }
