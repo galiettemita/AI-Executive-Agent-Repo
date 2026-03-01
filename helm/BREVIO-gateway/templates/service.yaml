@@ -3,6 +3,7 @@ kind: Service
 metadata:
   name: {{ .Chart.Name | lower }}
 spec:
+  type: {{ .Values.service.type }}
   selector:
     app: {{ .Chart.Name | lower }}
   ports:

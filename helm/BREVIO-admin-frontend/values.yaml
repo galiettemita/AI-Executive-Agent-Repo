@@ -3,6 +3,7 @@ image:
   repository: ghcr.io/brevio/admin-frontend
   tag: v9.2.0
 service:
+  type: ClusterIP
   port: 8080
 autoscaling:
   enabled: false
@@ -12,3 +13,13 @@ resources:
   requests:
     cpu: "500m"
     memory: "256Mi"
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts:
+    - host: admin.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
