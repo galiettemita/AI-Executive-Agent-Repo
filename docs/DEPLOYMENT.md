@@ -86,6 +86,14 @@ cat artifacts/deploy/wave1_deployment_checklist_report.json
 The report must show `failed_servers = 0` across:
 - `google_calendar`, `google_drive`, `google_gmail`, `notion`, `todoist`, `brave_search`, `github`, `apple_reminders`.
 
+### MCP Fleet Validation (Waves 1–6)
+Run fleet validation gates for 40-server health, mixed concurrency, and failover recovery:
+
+```bash
+make mcp-fleet-validate
+cat artifacts/deploy/mcp_fleet_validation_report.json
+```
+
 Optional image/port overrides for production ECR rollout:
 
 ```bash

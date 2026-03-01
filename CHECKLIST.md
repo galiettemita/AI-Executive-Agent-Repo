@@ -745,9 +745,9 @@ You must prove it.
 - [x] Abuse prevention: add transaction-specific abuse detection (booking spikes, cart manipulation) + strict rate limits on checkout operations (Ops Blueprint Component 9; Wave 5–6)
 
 ## M15: Full Fleet Validation (Waves 1–6, 40 Servers)
-- [ ] Verify all 40 servers pass health checks simultaneously
-- [ ] Run 100-concurrent MCP-call load test across mixed servers
-- [ ] Run failover simulation by killing 5 random servers and verifying reconnect/degradation behavior
+- [x] Verify all 40 servers pass health checks simultaneously
+- [x] Run 100-concurrent MCP-call load test across mixed servers
+- [x] Run failover simulation by killing 5 random servers and verifying reconnect/degradation behavior
 - [x] Confirm TOOLS.md regeneration pipeline reflects all connected/disconnected servers
 
 ## MCP Deployment Checklist (Apply to Every Server, Waves 1–6)

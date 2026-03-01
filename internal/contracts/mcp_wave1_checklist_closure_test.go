@@ -9,7 +9,7 @@ func TestMCPWave1ChecklistAutomationClosure(t *testing.T) {
 	t.Parallel()
 
 	root := repositoryRoot(t)
-	scriptPath := filepath.Join(root, "scripts", "mcp", "run_wave1_deployment_checklist.go")
+	scriptPath := filepath.Join(root, "scripts", "mcp", "wave1_checklist", "main.go")
 	assertFileNonEmpty(t, scriptPath)
 	assertFileContainsTokens(t, scriptPath, []string{
 		"wave1_12_step_deployment_v1",
@@ -69,7 +69,34 @@ func TestMCPWave1ChecklistAutomationClosure(t *testing.T) {
 	makefilePath := filepath.Join(root, "Makefile")
 	assertFileContainsTokens(t, makefilePath, []string{
 		"mcp-wave1-checklist:",
-		"./scripts/mcp/run_wave1_deployment_checklist.go",
-		"ci: lint build test migrate api-docs-check tools-md-check mcp-wave1-checklist contracts acceptance",
+		"./scripts/mcp/wave1_checklist/main.go",
+		"mcp-fleet-validate:",
+		"./scripts/mcp/fleet_validation/main.go",
+		"ci: lint build test migrate api-docs-check tools-md-check mcp-wave1-checklist mcp-fleet-validate contracts acceptance",
+	})
+
+	fleetSpecPath := filepath.Join(root, "spec", "mcp", "fleet_servers_v1.txt")
+	assertFileNonEmpty(t, fleetSpecPath)
+	assertFileContainsTokens(t, fleetSpecPath, []string{
+		"google_calendar",
+		"google_drive",
+		"google_gmail",
+		"notion",
+		"todoist",
+		"brave_search",
+		"github",
+		"apple_reminders",
+		"duffel",
+		"tesla",
+	})
+
+	fleetScriptPath := filepath.Join(root, "scripts", "mcp", "fleet_validation", "main.go")
+	assertFileNonEmpty(t, fleetScriptPath)
+	assertFileContainsTokens(t, fleetScriptPath, []string{
+		"mcp_fleet_validation_v1",
+		"Concurrent100CallsPassed",
+		"FailoverKillFivePassed",
+		"mcp_fleet_validation_report.json",
+		"pickDeterministicServers",
 	})
 }
