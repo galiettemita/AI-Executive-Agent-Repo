@@ -17,15 +17,17 @@ fi
 REGION="${AWS_REGION:-${REGION:-us-east-1}}"
 OUTPUT_PATH="${OUTPUT_PATH:-artifacts/deploy/external_closeout_status.json}"
 
+APP_SECRET_NAME="${APP_SECRET_NAME:-executive-os/prod/app}"
 PLAID_OAUTH_SECRET_NAME="${PLAID_OAUTH_SECRET_NAME:-executive-os/prod/oauth_client_secrets}"
 GATEWAY_WEBHOOK_SECRET_NAME="${GATEWAY_WEBHOOK_SECRET_NAME:-executive-os/prod/gateway_webhook_secret}"
-BILLING_SECRET_NAME="${BILLING_SECRET_NAME:-executive-os/prod/oauth_client_secrets}"
-DOC_PARSING_SECRET_NAME="${DOC_PARSING_SECRET_NAME:-executive-os/prod/oauth_client_secrets}"
-ALERTING_SECRET_NAME="${ALERTING_SECRET_NAME:-executive-os/prod/oauth_client_secrets}"
+BILLING_SECRET_NAME="${BILLING_SECRET_NAME:-executive-os/prod/app}"
+DOC_PARSING_SECRET_NAME="${DOC_PARSING_SECRET_NAME:-executive-os/prod/app}"
+ALERTING_SECRET_NAME="${ALERTING_SECRET_NAME:-executive-os/prod/app}"
 REMOTE_CATALOG_SECRET_NAME="${REMOTE_CATALOG_SECRET_NAME:-executive-os/prod/oauth_client_secrets}"
 ANALYTICS_EVENT_BUS="${ANALYTICS_EVENT_BUS:-}"
 LOCAL_LLM_ENDPOINT="${LOCAL_LLM_ENDPOINT:-}"
 ELEVENLABS_API_KEY="${ELEVENLABS_API_KEY:-}"
+PLAID_WEBHOOK_REQUIRED="${PLAID_WEBHOOK_REQUIRED:-1}"
 
 PARTNER_APPS_CONFIRMED="${PARTNER_APPS_CONFIRMED:-0}"
 
@@ -98,6 +100,22 @@ sys.exit(1)
 PY
 }
 
+locate_key_in_secrets() {
+  local key_name="$1"
+  shift
+  local secret_name
+  for secret_name in "$@"; do
+    if [[ -z "$secret_name" ]]; then
+      continue
+    fi
+    if secret_exists "$secret_name" && secret_has_nonempty_key "$secret_name" "$key_name"; then
+      echo "$secret_name"
+      return 0
+    fi
+  done
+  return 1
+}
+
 event_bus_exists() {
   local bus="$1"
   if [[ -z "$bus" ]]; then
@@ -117,34 +135,42 @@ else
   append_result "partner_applications_submitted" "true" "manual" "Set PARTNER_APPS_CONFIRMED=1 after submitting Zoom/Instacart/Canva/Booking.com apps."
 fi
 
-if secret_exists "$PLAID_OAUTH_SECRET_NAME" && secret_has_nonempty_key "$PLAID_OAUTH_SECRET_NAME" "PLAID_SECRET_PROD"; then
-  append_result "plaid_secret_prod" "true" "pass" "Found PLAID_SECRET_PROD in ${PLAID_OAUTH_SECRET_NAME}"
+if plaid_secret_location="$(locate_key_in_secrets "PLAID_SECRET_PROD" "$PLAID_OAUTH_SECRET_NAME" "$APP_SECRET_NAME" "$BILLING_SECRET_NAME" 2>/dev/null)"; then
+  append_result "plaid_secret_prod" "true" "pass" "Found PLAID_SECRET_PROD in ${plaid_secret_location}"
 else
-  append_result "plaid_secret_prod" "true" "fail" "Missing PLAID_SECRET_PROD in ${PLAID_OAUTH_SECRET_NAME}"
+  append_result "plaid_secret_prod" "true" "fail" "Missing PLAID_SECRET_PROD in checked secrets (${PLAID_OAUTH_SECRET_NAME}, ${APP_SECRET_NAME}, ${BILLING_SECRET_NAME})"
 fi
 
-if secret_exists "$GATEWAY_WEBHOOK_SECRET_NAME" && secret_has_nonempty_key "$GATEWAY_WEBHOOK_SECRET_NAME" "PLAID_WEBHOOK_SECRET"; then
-  append_result "plaid_webhook_secret" "true" "pass" "Found PLAID_WEBHOOK_SECRET in ${GATEWAY_WEBHOOK_SECRET_NAME}"
+if plaid_webhook_location="$(locate_key_in_secrets "PLAID_WEBHOOK_SECRET" "$GATEWAY_WEBHOOK_SECRET_NAME" "$APP_SECRET_NAME" "$PLAID_OAUTH_SECRET_NAME" 2>/dev/null)"; then
+  append_result "plaid_webhook_secret" "true" "pass" "Found PLAID_WEBHOOK_SECRET in ${plaid_webhook_location}"
+elif [[ "$PLAID_WEBHOOK_REQUIRED" == "0" ]]; then
+  append_result "plaid_webhook_secret" "true" "manual" "PLAID_WEBHOOK_REQUIRED=0 override set; webhook validation is waived pending Plaid production access."
 else
-  append_result "plaid_webhook_secret" "true" "fail" "Missing PLAID_WEBHOOK_SECRET in ${GATEWAY_WEBHOOK_SECRET_NAME}"
+  append_result "plaid_webhook_secret" "true" "fail" "Missing PLAID_WEBHOOK_SECRET in checked secrets (${GATEWAY_WEBHOOK_SECRET_NAME}, ${APP_SECRET_NAME}, ${PLAID_OAUTH_SECRET_NAME})"
 fi
 
-if secret_exists "$BILLING_SECRET_NAME" && secret_has_nonempty_key "$BILLING_SECRET_NAME" "STRIPE_SECRET_KEY" && secret_has_nonempty_key "$BILLING_SECRET_NAME" "STRIPE_WEBHOOK_SECRET"; then
-  append_result "stripe_billing_keys" "true" "pass" "Found STRIPE_SECRET_KEY + STRIPE_WEBHOOK_SECRET in ${BILLING_SECRET_NAME}"
+stripe_secret_location="$(locate_key_in_secrets "STRIPE_SECRET_KEY" "$BILLING_SECRET_NAME" "$APP_SECRET_NAME" "$PLAID_OAUTH_SECRET_NAME" 2>/dev/null || true)"
+stripe_webhook_location="$(locate_key_in_secrets "STRIPE_WEBHOOK_SECRET" "$BILLING_SECRET_NAME" "$APP_SECRET_NAME" "$PLAID_OAUTH_SECRET_NAME" 2>/dev/null || true)"
+if [[ -n "$stripe_secret_location" && -n "$stripe_webhook_location" ]]; then
+  append_result "stripe_billing_keys" "true" "pass" "Found STRIPE_SECRET_KEY in ${stripe_secret_location}; STRIPE_WEBHOOK_SECRET in ${stripe_webhook_location}"
 else
-  append_result "stripe_billing_keys" "true" "fail" "Missing STRIPE_SECRET_KEY and/or STRIPE_WEBHOOK_SECRET in ${BILLING_SECRET_NAME}"
+  append_result "stripe_billing_keys" "true" "fail" "Missing STRIPE_SECRET_KEY and/or STRIPE_WEBHOOK_SECRET in checked secrets (${BILLING_SECRET_NAME}, ${APP_SECRET_NAME}, ${PLAID_OAUTH_SECRET_NAME})"
 fi
 
-if secret_exists "$DOC_PARSING_SECRET_NAME" && secret_has_nonempty_key "$DOC_PARSING_SECRET_NAME" "UNSTRUCTURED_API_KEY"; then
-  append_result "unstructured_api_key" "true" "pass" "Found UNSTRUCTURED_API_KEY in ${DOC_PARSING_SECRET_NAME}"
+if unstructured_key_location="$(locate_key_in_secrets "UNSTRUCTURED_API_KEY" "$DOC_PARSING_SECRET_NAME" "$APP_SECRET_NAME" "$PLAID_OAUTH_SECRET_NAME" 2>/dev/null)"; then
+  append_result "unstructured_api_key" "true" "pass" "Found UNSTRUCTURED_API_KEY in ${unstructured_key_location}"
 else
-  append_result "unstructured_api_key" "true" "fail" "Missing UNSTRUCTURED_API_KEY in ${DOC_PARSING_SECRET_NAME}"
+  append_result "unstructured_api_key" "true" "fail" "Missing UNSTRUCTURED_API_KEY in checked secrets (${DOC_PARSING_SECRET_NAME}, ${APP_SECRET_NAME}, ${PLAID_OAUTH_SECRET_NAME})"
 fi
 
-if secret_exists "$ALERTING_SECRET_NAME" && secret_has_nonempty_key "$ALERTING_SECRET_NAME" "PAGERDUTY_ROUTING_KEY"; then
-  append_result "pagerduty_routing_key" "true" "pass" "Found PAGERDUTY_ROUTING_KEY in ${ALERTING_SECRET_NAME}"
+pagerduty_location="$(locate_key_in_secrets "PAGERDUTY_ROUTING_KEY" "$ALERTING_SECRET_NAME" "$APP_SECRET_NAME" "$PLAID_OAUTH_SECRET_NAME" 2>/dev/null || true)"
+if [[ -z "$pagerduty_location" ]]; then
+  pagerduty_location="$(locate_key_in_secrets "PAGERDUTY_INTEGRATION_KEY" "$ALERTING_SECRET_NAME" "$APP_SECRET_NAME" "$PLAID_OAUTH_SECRET_NAME" 2>/dev/null || true)"
+fi
+if [[ -n "$pagerduty_location" ]]; then
+  append_result "pagerduty_routing_key" "true" "pass" "Found PagerDuty key in ${pagerduty_location}"
 else
-  append_result "pagerduty_routing_key" "true" "fail" "Missing PAGERDUTY_ROUTING_KEY in ${ALERTING_SECRET_NAME}"
+  append_result "pagerduty_routing_key" "true" "fail" "Missing PAGERDUTY_ROUTING_KEY/PAGERDUTY_INTEGRATION_KEY in checked secrets (${ALERTING_SECRET_NAME}, ${APP_SECRET_NAME}, ${PLAID_OAUTH_SECRET_NAME})"
 fi
 
 if event_bus_exists "$ANALYTICS_EVENT_BUS"; then
@@ -153,20 +179,26 @@ else
   append_result "analytics_event_bus" "true" "fail" "Missing/invalid ANALYTICS_EVENT_BUS (${ANALYTICS_EVENT_BUS:-unset})"
 fi
 
-if secret_exists "$REMOTE_CATALOG_SECRET_NAME" && secret_has_nonempty_key "$REMOTE_CATALOG_SECRET_NAME" "REMOTE_CATALOG_PRIVATE_KEY" && secret_has_nonempty_key "$REMOTE_CATALOG_SECRET_NAME" "REMOTE_CATALOG_PUBLIC_KEY"; then
-  append_result "remote_catalog_signing_keys" "true" "pass" "Found REMOTE_CATALOG_PRIVATE_KEY + REMOTE_CATALOG_PUBLIC_KEY in ${REMOTE_CATALOG_SECRET_NAME}"
+remote_catalog_private_location="$(locate_key_in_secrets "REMOTE_CATALOG_PRIVATE_KEY" "$REMOTE_CATALOG_SECRET_NAME" "$PLAID_OAUTH_SECRET_NAME" "$APP_SECRET_NAME" 2>/dev/null || true)"
+remote_catalog_public_location="$(locate_key_in_secrets "REMOTE_CATALOG_PUBLIC_KEY" "$REMOTE_CATALOG_SECRET_NAME" "$PLAID_OAUTH_SECRET_NAME" "$APP_SECRET_NAME" 2>/dev/null || true)"
+if [[ -n "$remote_catalog_private_location" && -n "$remote_catalog_public_location" ]]; then
+  append_result "remote_catalog_signing_keys" "true" "pass" "Found REMOTE_CATALOG_PRIVATE_KEY in ${remote_catalog_private_location}; REMOTE_CATALOG_PUBLIC_KEY in ${remote_catalog_public_location}"
 else
-  append_result "remote_catalog_signing_keys" "true" "fail" "Missing REMOTE_CATALOG_PRIVATE_KEY and/or REMOTE_CATALOG_PUBLIC_KEY in ${REMOTE_CATALOG_SECRET_NAME}"
+  append_result "remote_catalog_signing_keys" "true" "fail" "Missing REMOTE_CATALOG_PRIVATE_KEY and/or REMOTE_CATALOG_PUBLIC_KEY in checked secrets (${REMOTE_CATALOG_SECRET_NAME}, ${PLAID_OAUTH_SECRET_NAME}, ${APP_SECRET_NAME})"
 fi
 
 if [[ -n "$LOCAL_LLM_ENDPOINT" ]]; then
-  append_result "local_llm_endpoint" "false" "pass" "LOCAL_LLM_ENDPOINT set"
+  append_result "local_llm_endpoint" "false" "pass" "LOCAL_LLM_ENDPOINT set in environment"
+elif local_llm_location="$(locate_key_in_secrets "LOCAL_LLM_ENDPOINT" "$APP_SECRET_NAME" "$PLAID_OAUTH_SECRET_NAME" 2>/dev/null || true)"; [[ -n "$local_llm_location" ]]; then
+  append_result "local_llm_endpoint" "false" "pass" "LOCAL_LLM_ENDPOINT found in ${local_llm_location}"
 else
   append_result "local_llm_endpoint" "false" "skip" "Optional item unset"
 fi
 
 if [[ -n "$ELEVENLABS_API_KEY" ]]; then
-  append_result "elevenlabs_api_key" "false" "pass" "ELEVENLABS_API_KEY set"
+  append_result "elevenlabs_api_key" "false" "pass" "ELEVENLABS_API_KEY set in environment"
+elif elevenlabs_location="$(locate_key_in_secrets "ELEVENLABS_API_KEY" "$APP_SECRET_NAME" "$PLAID_OAUTH_SECRET_NAME" 2>/dev/null || true)"; [[ -n "$elevenlabs_location" ]]; then
+  append_result "elevenlabs_api_key" "false" "pass" "ELEVENLABS_API_KEY found in ${elevenlabs_location}"
 else
   append_result "elevenlabs_api_key" "false" "skip" "Optional item unset"
 fi
