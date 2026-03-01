@@ -69,6 +69,25 @@ helm upgrade --install brevio-guardrails helm/BREVIO-guardrails
 helm upgrade --install brevio-health-checker helm/BREVIO-health-checker
 ```
 
+Or run one-command rollout:
+
+```bash
+make deploy-helm
+```
+
+Optional image/port overrides for production ECR rollout:
+
+```bash
+GATEWAY_IMAGE_REPOSITORY=105914556507.dkr.ecr.us-east-1.amazonaws.com/brevio-gateway \
+GATEWAY_IMAGE_TAG=v9.2.0 \
+GATEWAY_SERVICE_PORT=18080 \
+ADMIN_FRONTEND_IMAGE_REPOSITORY=105914556507.dkr.ecr.us-east-1.amazonaws.com/brevio-admin-frontend \
+ADMIN_FRONTEND_IMAGE_TAG=v9.2.0 \
+ADMIN_FRONTEND_SERVICE_PORT=18082 \
+WAIT_FOR_ROLLOUT=true \
+make deploy-helm
+```
+
 ### 3) Public DNS (Route53 or External Provider)
 Create records pointing to ALB targets created by AWS Load Balancer Controller:
 - `api.testing-orbit.com` -> gateway ingress ALB DNS name

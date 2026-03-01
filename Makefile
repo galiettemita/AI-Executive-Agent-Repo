@@ -1,4 +1,4 @@
-.PHONY: build test lint migrate db-verify docker-build contracts acceptance ci ci-full load-test security-validate infra-validate api-docs api-docs-check
+.PHONY: build test lint migrate db-verify docker-build contracts acceptance ci ci-full load-test security-validate infra-validate api-docs api-docs-check deploy-helm
 
 GO_EXEC := ./scripts/dev/go_exec.sh
 GOFMT_EXEC := ./scripts/dev/gofmt_exec.sh
@@ -49,6 +49,9 @@ security-validate:
 
 infra-validate:
 	bash scripts/infra/validate.sh
+
+deploy-helm:
+	bash scripts/deploy/helm_rollout.sh
 
 api-docs:
 	$(GO_EXEC) run ./scripts/docs/generate_api_reference.go
