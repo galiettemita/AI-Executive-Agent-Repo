@@ -129,3 +129,46 @@ func TestDSRSLAAtRiskDetection(t *testing.T) {
 		t.Fatal("expected no SLA-at-risk requests after completion")
 	}
 }
+
+func TestDeletionRequestProducesIrreversibleDeletionReport(t *testing.T) {
+	t.Parallel()
+
+	s := NewService()
+	base := time.Date(2026, 2, 28, 12, 0, 0, 0, time.UTC)
+	s.now = func() time.Time { return base }
+
+	request := s.CreateDSR(DSRRequest{
+		WorkspaceID: "ws_delete",
+		UserID:      "user_delete",
+		RequestType: "deletion",
+		Status:      "received",
+	})
+	if request.RequestID == "" {
+		t.Fatalf("expected request_id for deletion dsr: %#v", request)
+	}
+
+	updated, ok := s.UpdateDSR(request.ID, DSRRequest{Status: "completed", RequestType: "deletion"})
+	if !ok {
+		t.Fatal("expected deletion dsr update to succeed")
+	}
+	if updated.Status != "completed" {
+		t.Fatalf("expected completed deletion status, got: %#v", updated)
+	}
+
+	report, ok := s.GetDeletionReport(request.RequestID)
+	if !ok {
+		t.Fatalf("expected deletion report for request %s", request.RequestID)
+	}
+	if !report.Irreversible || !report.DatabasePurged || !report.CachePurged {
+		t.Fatalf("expected irreversible DB/cache purge report, got: %#v", report)
+	}
+	if !report.ConnectorRevoked || !report.MCPOAuthRevoked {
+		t.Fatalf("expected connector and mcp oauth revocations, got: %#v", report)
+	}
+	if report.BackupRotationDays > 30 {
+		t.Fatalf("expected backup rotation <= 30 days, got: %#v", report)
+	}
+	if len(s.ListDeletionReports("ws_delete")) != 1 {
+		t.Fatalf("expected one workspace deletion report")
+	}
+}

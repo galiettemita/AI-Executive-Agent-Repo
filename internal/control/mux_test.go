@@ -583,6 +583,16 @@ func TestControlMuxComplianceFlow(t *testing.T) {
 	if getDSRResp.Code != http.StatusOK {
 		t.Fatalf("unexpected compliance dsr get status: %d", getDSRResp.Code)
 	}
+	var getDSRPayload map[string]any
+	if err := json.Unmarshal(getDSRResp.Body.Bytes(), &getDSRPayload); err != nil {
+		t.Fatalf("decode dsr get payload: %v", err)
+	}
+	if _, ok := getDSRPayload["request"].(map[string]any); !ok {
+		t.Fatalf("expected request wrapper in dsr get payload: %v", getDSRPayload)
+	}
+	if hasReport, _ := getDSRPayload["has_report"].(bool); hasReport {
+		t.Fatalf("did not expect deletion report before completion: %v", getDSRPayload)
+	}
 
 	putDSRBody := []byte(`{"status":"in_progress"}`)
 	putDSRReq := httptest.NewRequest(http.MethodPut, "/v1/compliance/dsr/"+dsrID, bytes.NewReader(putDSRBody))
@@ -590,6 +600,31 @@ func TestControlMuxComplianceFlow(t *testing.T) {
 	mux.ServeHTTP(putDSRResp, putDSRReq)
 	if putDSRResp.Code != http.StatusOK {
 		t.Fatalf("unexpected compliance dsr update status: %d", putDSRResp.Code)
+	}
+
+	putCompletedBody := []byte(`{"status":"completed","request_type":"deletion"}`)
+	putCompletedReq := httptest.NewRequest(http.MethodPut, "/v1/compliance/dsr/"+dsrID, bytes.NewReader(putCompletedBody))
+	putCompletedResp := httptest.NewRecorder()
+	mux.ServeHTTP(putCompletedResp, putCompletedReq)
+	if putCompletedResp.Code != http.StatusOK {
+		t.Fatalf("unexpected compliance dsr completion status: %d", putCompletedResp.Code)
+	}
+	var putCompletedPayload map[string]any
+	if err := json.Unmarshal(putCompletedResp.Body.Bytes(), &putCompletedPayload); err != nil {
+		t.Fatalf("decode dsr completion payload: %v", err)
+	}
+	if hasReport, _ := putCompletedPayload["has_report"].(bool); !hasReport {
+		t.Fatalf("expected deletion report after completion: %v", putCompletedPayload)
+	}
+	report, ok := putCompletedPayload["deletion_report"].(map[string]any)
+	if !ok {
+		t.Fatalf("missing deletion_report payload: %v", putCompletedPayload)
+	}
+	if irreversible, _ := report["irreversible"].(bool); !irreversible {
+		t.Fatalf("expected irreversible deletion report: %v", report)
+	}
+	if int(report["backup_rotation_days"].(float64)) != 30 {
+		t.Fatalf("expected backup rotation <= 30 days report: %v", report)
 	}
 
 	getDSRListReq := httptest.NewRequest(http.MethodGet, "/v1/compliance/dsr?workspace_id=ws_1", nil)
@@ -604,6 +639,9 @@ func TestControlMuxComplianceFlow(t *testing.T) {
 	}
 	if _, ok := dsrListPayload["sla_at_risk"].([]any); !ok {
 		t.Fatalf("expected sla_at_risk list in dsr payload: %v", dsrListPayload)
+	}
+	if reports, ok := dsrListPayload["deletion_reports"].([]any); !ok || len(reports) == 0 {
+		t.Fatalf("expected deletion_reports in dsr payload: %v", dsrListPayload)
 	}
 }
 

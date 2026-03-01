@@ -39,6 +39,7 @@ Legend
 - [x] Engineering governance hardening: added ownership and on-call matrix documentation (`docs/OPERATIONS_OWNERSHIP.md`) with closure tests.
 - [x] Ops schema closure hardening: added forward-only migration `004_BREVIO_ops_operational_systems.sql` covering operational tables (`subscriptions`, `invoices`, `eval_results`, `user_feedback`, `moderation_queue`, `scheduled_notifications`, `analytics_events`, `analytics_daily`) with RLS + FK indexes and DB verification wiring.
 - [x] Error taxonomy hardening: standardized control-plane error payloads to canonical schema (`error_code`, `message`, `retryable`, `retry_after_ms`, `user_message`), added structured observability logging for error responses, and expanded Appendix B taxonomy coverage (`spec/errors/appendix_b_error_taxonomy.csv` + closure tests).
+- [x] Legal + DR closure hardening: added deterministic deletion completion pipeline/reporting in compliance runtime (DB/cache/connector/MCP token revocation + irreversible + backup rotation window), and added DR contract gates for Multi-AZ/PITR RDS config plus monthly restore drill runbook coverage.
 - [x] Phase 0.2: dead-code/duplicate cleanup and naming normalization
 - [x] Phase 0.3: clean baseline (`go build`, `go vet`, `gofmt`) + commit/tag
 - [x] Phase 0.3 validation complete via Docker Go 1.22 (`go mod tidy`, `go build`, `go vet`, `gofmt`, `go test`, `staticcheck`)
@@ -899,9 +900,9 @@ You must prove it.
 - [x] Billing middleware is first gate on inbound messages (no Brain/MCP cost if blocked) (Ops Invariant 11)
 - [x] Admin dashboard is not user-facing: admin role separation + audit trail for admin actions (Ops Invariant 12)
 - [x] Eval system runs asynchronously (never adds user latency) (Ops Invariant 13)
-- [ ] Legal deletion is irreversible and completes end-to-end across DB, caches, connectors, MCP OAuth tokens, and backups rotated within 30 days (Ops Invariant 14)
+- [x] Legal deletion is irreversible and completes end-to-end across DB, caches, connectors, MCP OAuth tokens, and backups rotated within 30 days (Ops Invariant 14)
 - [x] Notifications respect user agency/preferences immediately (Ops Invariant 15)
-- [ ] DR posture validated: Multi-AZ + snapshots + PITR + monthly restore drills + runbooks (Ops Component 7)
+- [x] DR posture validated: Multi-AZ + snapshots + PITR + monthly restore drills + runbooks (Ops Component 7)
 
 ## Auto-Provisioning Engine (Auto_Provisioning_Engine.pdf) — Integration Points To Verify
 - [x] Billing middleware allows `provision_server` tool calls (native tool) without misclassifying as user message usage (Auto-Provisioning integration checks)

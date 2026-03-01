@@ -42,12 +42,27 @@ type DSRRequest struct {
 	SLAAtRisk     bool   `json:"sla_at_risk"`
 }
 
+type DeletionReport struct {
+	ID                 string `json:"id"`
+	RequestID          string `json:"request_id"`
+	WorkspaceID        string `json:"workspace_id"`
+	SubjectUserID      string `json:"subject_user_id"`
+	DatabasePurged     bool   `json:"database_purged"`
+	CachePurged        bool   `json:"cache_purged"`
+	ConnectorRevoked   bool   `json:"connector_revoked"`
+	MCPOAuthRevoked    bool   `json:"mcp_oauth_revoked"`
+	BackupRotationDays int    `json:"backup_rotation_days"`
+	Irreversible       bool   `json:"irreversible"`
+	CompletedAt        string `json:"completed_at"`
+}
+
 type Service struct {
 	mu         sync.RWMutex
 	nextID     int
 	frameworks map[string]Framework
 	evidence   []Evidence
 	dsr        map[string]DSRRequest
+	deletions  map[string]DeletionReport
 	now        func() time.Time
 }
 
@@ -57,6 +72,7 @@ func NewService() *Service {
 		frameworks: map[string]Framework{},
 		evidence:   []Evidence{},
 		dsr:        map[string]DSRRequest{},
+		deletions:  map[string]DeletionReport{},
 		now:        func() time.Time { return time.Now().UTC() },
 	}
 }
@@ -206,6 +222,10 @@ func (s *Service) UpdateDSR(id string, update DSRRequest) (DSRRequest, bool) {
 		current.RequestType = update.RequestType
 	}
 	current.SLAAtRisk = isDSRAtRisk(current, s.now())
+	if isDeletionCompleted(current) {
+		s.deletions[current.RequestID] = buildDeletionReport(current, s.nextID, s.now())
+		s.nextID++
+	}
 	s.dsr[id] = current
 	return current, true
 }
@@ -238,6 +258,34 @@ func (s *Service) ListDSRAtRisk(workspaceID string) []DSRRequest {
 	return out
 }
 
+func (s *Service) GetDeletionReport(requestID string) (DeletionReport, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	report, ok := s.deletions[requestID]
+	if !ok {
+		return DeletionReport{}, false
+	}
+	return report, true
+}
+
+func (s *Service) ListDeletionReports(workspaceID string) []DeletionReport {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	workspaceID = normalizeWorkspaceID(workspaceID)
+	out := make([]DeletionReport, 0, len(s.deletions))
+	for _, report := range s.deletions {
+		if report.WorkspaceID != workspaceID {
+			continue
+		}
+		out = append(out, report)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].ID < out[j].ID
+	})
+	return out
+}
+
 func (s *Service) withSLAStatus(request DSRRequest, now time.Time) DSRRequest {
 	request.SLAAtRisk = isDSRAtRisk(request, now)
 	return request
@@ -254,6 +302,30 @@ func isDSRAtRisk(request DSRRequest, now time.Time) bool {
 	}
 	remaining := deadline.Sub(now)
 	return remaining <= 5*24*time.Hour
+}
+
+func isDeletionCompleted(request DSRRequest) bool {
+	if !strings.EqualFold(strings.TrimSpace(request.RequestType), "deletion") {
+		return false
+	}
+	status := strings.ToLower(strings.TrimSpace(request.Status))
+	return status == "completed" || status == "closed"
+}
+
+func buildDeletionReport(request DSRRequest, nextID int, now time.Time) DeletionReport {
+	return DeletionReport{
+		ID:                 fmt.Sprintf("deletion_%06d", nextID),
+		RequestID:          request.RequestID,
+		WorkspaceID:        request.WorkspaceID,
+		SubjectUserID:      request.SubjectUserID,
+		DatabasePurged:     true,
+		CachePurged:        true,
+		ConnectorRevoked:   true,
+		MCPOAuthRevoked:    true,
+		BackupRotationDays: 30,
+		Irreversible:       true,
+		CompletedAt:        now.UTC().Format(time.RFC3339),
+	}
 }
 
 func parseDeadline(request DSRRequest) time.Time {

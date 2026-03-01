@@ -2001,8 +2001,10 @@ func handleCompliance(w http.ResponseWriter, r *http.Request, svc *compliance.Se
 				workspaceID = "default"
 			}
 			writeJSON(w, http.StatusOK, map[string]any{
-				"dsr_requests": svc.ListDSR(workspaceID),
-				"sla_at_risk":  svc.ListDSRAtRisk(workspaceID),
+				"dsr_requests":      svc.ListDSR(workspaceID),
+				"sla_at_risk":       svc.ListDSRAtRisk(workspaceID),
+				"deletion_reports":  svc.ListDeletionReports(workspaceID),
+				"irreversible_only": true,
 			})
 			return
 		case len(parts) == 3 && r.Method == http.MethodPost:
@@ -2022,7 +2024,12 @@ func handleCompliance(w http.ResponseWriter, r *http.Request, svc *compliance.Se
 				})
 				return
 			}
-			writeJSON(w, http.StatusOK, request)
+			report, hasReport := svc.GetDeletionReport(request.RequestID)
+			writeJSON(w, http.StatusOK, map[string]any{
+				"request":         request,
+				"deletion_report": report,
+				"has_report":      hasReport,
+			})
 			return
 		case len(parts) == 4 && r.Method == http.MethodPut:
 			var payload compliance.DSRRequest
@@ -2038,7 +2045,12 @@ func handleCompliance(w http.ResponseWriter, r *http.Request, svc *compliance.Se
 				})
 				return
 			}
-			writeJSON(w, http.StatusOK, request)
+			report, hasReport := svc.GetDeletionReport(request.RequestID)
+			writeJSON(w, http.StatusOK, map[string]any{
+				"request":         request,
+				"deletion_report": report,
+				"has_report":      hasReport,
+			})
 			return
 		default:
 			writeError(w, "method not allowed", http.StatusMethodNotAllowed)
