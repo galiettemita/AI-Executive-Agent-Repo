@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -59,6 +60,13 @@ type OAuthEnvelope struct {
 	Nonce       string
 	KeyVersion  string
 	EncryptedAt time.Time
+}
+
+type OAuthTokenMetadata struct {
+	Provider        string
+	ExpiresAt       time.Time
+	UpdatedAt       time.Time
+	LastRefreshedAt time.Time
 }
 
 type seedFile struct {
@@ -127,9 +135,12 @@ type Service struct {
 	connectors            map[string]Connector
 	tools                 map[string]ConnectorTool
 	oauth                 map[string]OAuthEnvelope
+	oauthRefresh          map[string]OAuthEnvelope
+	oauthMeta             map[string]OAuthTokenMetadata
 	health                map[string]ConnectorHealth
 	userConnectorSettings map[string]UserConnectorSetting
 	keyProvider           KeyProvider
+	now                   func() time.Time
 }
 
 func NewService(keyProvider KeyProvider) *Service {
@@ -137,10 +148,23 @@ func NewService(keyProvider KeyProvider) *Service {
 		connectors:            map[string]Connector{},
 		tools:                 map[string]ConnectorTool{},
 		oauth:                 map[string]OAuthEnvelope{},
+		oauthRefresh:          map[string]OAuthEnvelope{},
+		oauthMeta:             map[string]OAuthTokenMetadata{},
 		health:                map[string]ConnectorHealth{},
 		userConnectorSettings: map[string]UserConnectorSetting{},
 		keyProvider:           keyProvider,
+		now:                   func() time.Time { return time.Now().UTC() },
 	}
+}
+
+func (s *Service) SetNow(now func() time.Time) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if now == nil {
+		s.now = func() time.Time { return time.Now().UTC() }
+		return
+	}
+	s.now = now
 }
 
 func (s *Service) LoadSeedFile(path string) error {
@@ -419,47 +443,164 @@ func (s *Service) EncryptOAuthToken(ctx context.Context, workspaceID, userID, co
 		return OAuthEnvelope{}, fmt.Errorf("key provider is required")
 	}
 
-	s.mu.RLock()
-	_, connectorExists := s.connectors[connectorKey]
-	s.mu.RUnlock()
-	if !connectorExists {
-		return OAuthEnvelope{}, fmt.Errorf("connector not found: %s", connectorKey)
+	if err := s.ensureConnectorExists(connectorKey); err != nil {
+		return OAuthEnvelope{}, err
 	}
 
-	version, key, err := s.keyProvider.CurrentKey(ctx)
+	envelope, err := s.encryptWithCurrentKey(ctx, token)
 	if err != nil {
 		return OAuthEnvelope{}, err
-	}
-	if len(key) != 32 {
-		return OAuthEnvelope{}, fmt.Errorf("aes-256-gcm requires 32-byte key")
-	}
-
-	block, err := aes.NewCipher(key)
-	if err != nil {
-		return OAuthEnvelope{}, err
-	}
-	gcm, err := cipher.NewGCM(block)
-	if err != nil {
-		return OAuthEnvelope{}, err
-	}
-
-	nonce := make([]byte, gcm.NonceSize())
-	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
-		return OAuthEnvelope{}, err
-	}
-
-	ciphertext := gcm.Seal(nil, nonce, []byte(token), nil)
-	envelope := OAuthEnvelope{
-		Ciphertext:  base64.StdEncoding.EncodeToString(ciphertext),
-		Nonce:       base64.StdEncoding.EncodeToString(nonce),
-		KeyVersion:  version,
-		EncryptedAt: time.Now().UTC(),
 	}
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.oauth[oauthStorageKey(workspaceID, userID, connectorKey)] = envelope
+	key := oauthStorageKey(workspaceID, userID, connectorKey)
+	s.oauth[key] = envelope
+	if _, ok := s.oauthMeta[key]; !ok {
+		s.oauthMeta[key] = OAuthTokenMetadata{
+			Provider:  connectorKey,
+			UpdatedAt: s.now(),
+		}
+	}
 	return envelope, nil
+}
+
+func (s *Service) StoreOAuthTokenSet(
+	ctx context.Context,
+	workspaceID, userID, connectorKey, provider, accessToken, refreshToken string,
+	expiresAt time.Time,
+) (OAuthEnvelope, OAuthTokenMetadata, error) {
+	if workspaceID == "" {
+		return OAuthEnvelope{}, OAuthTokenMetadata{}, fmt.Errorf("workspace_id is required")
+	}
+	if userID == "" {
+		return OAuthEnvelope{}, OAuthTokenMetadata{}, fmt.Errorf("user_id is required")
+	}
+	if connectorKey == "" {
+		return OAuthEnvelope{}, OAuthTokenMetadata{}, fmt.Errorf("connector_key is required")
+	}
+	if strings.TrimSpace(provider) == "" {
+		return OAuthEnvelope{}, OAuthTokenMetadata{}, fmt.Errorf("provider is required")
+	}
+	if strings.TrimSpace(accessToken) == "" {
+		return OAuthEnvelope{}, OAuthTokenMetadata{}, fmt.Errorf("access_token is required")
+	}
+	if err := s.ensureConnectorExists(connectorKey); err != nil {
+		return OAuthEnvelope{}, OAuthTokenMetadata{}, err
+	}
+
+	accessEnvelope, err := s.encryptWithCurrentKey(ctx, accessToken)
+	if err != nil {
+		return OAuthEnvelope{}, OAuthTokenMetadata{}, err
+	}
+	var refreshEnvelope OAuthEnvelope
+	if refreshToken != "" {
+		refreshEnvelope, err = s.encryptWithCurrentKey(ctx, refreshToken)
+		if err != nil {
+			return OAuthEnvelope{}, OAuthTokenMetadata{}, err
+		}
+	}
+
+	metadata := OAuthTokenMetadata{
+		Provider:  provider,
+		UpdatedAt: s.now(),
+	}
+	if !expiresAt.IsZero() {
+		metadata.ExpiresAt = expiresAt.UTC()
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	key := oauthStorageKey(workspaceID, userID, connectorKey)
+	s.oauth[key] = accessEnvelope
+	if refreshToken != "" {
+		s.oauthRefresh[key] = refreshEnvelope
+	} else {
+		delete(s.oauthRefresh, key)
+	}
+	s.oauthMeta[key] = metadata
+	return accessEnvelope, metadata, nil
+}
+
+func (s *Service) GetOAuthTokenMetadata(workspaceID, userID, connectorKey string) (OAuthTokenMetadata, error) {
+	key := oauthStorageKey(workspaceID, userID, connectorKey)
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	metadata, ok := s.oauthMeta[key]
+	if !ok {
+		return OAuthTokenMetadata{}, fmt.Errorf("oauth token metadata not found")
+	}
+	return metadata, nil
+}
+
+func (s *Service) GetOAuthTokenForUse(
+	ctx context.Context,
+	workspaceID, userID, connectorKey string,
+	refreshWindow time.Duration,
+	refresher func(refreshToken string) (newAccessToken string, newExpiresAt time.Time, err error),
+) (string, OAuthTokenMetadata, error) {
+	key := oauthStorageKey(workspaceID, userID, connectorKey)
+	s.mu.RLock()
+	accessEnvelope, accessOK := s.oauth[key]
+	metadata, metaOK := s.oauthMeta[key]
+	refreshEnvelope, refreshOK := s.oauthRefresh[key]
+	now := s.now()
+	s.mu.RUnlock()
+	if !accessOK {
+		return "", OAuthTokenMetadata{}, fmt.Errorf("oauth token not found")
+	}
+	if !metaOK {
+		metadata = OAuthTokenMetadata{
+			Provider:  connectorKey,
+			UpdatedAt: now,
+		}
+	}
+
+	accessToken, err := s.decryptEnvelope(ctx, accessEnvelope)
+	if err != nil {
+		return "", OAuthTokenMetadata{}, err
+	}
+	if refreshWindow <= 0 || metadata.ExpiresAt.IsZero() || metadata.ExpiresAt.After(now.Add(refreshWindow)) {
+		return accessToken, metadata, nil
+	}
+	if !refreshOK {
+		return "", metadata, fmt.Errorf("refresh token not found")
+	}
+	if refresher == nil {
+		return "", metadata, fmt.Errorf("refresher is required when token is expiring")
+	}
+
+	refreshToken, err := s.decryptEnvelope(ctx, refreshEnvelope)
+	if err != nil {
+		return "", metadata, err
+	}
+	newAccessToken, newExpiresAt, err := refresher(refreshToken)
+	if err != nil {
+		return "", metadata, err
+	}
+	if strings.TrimSpace(newAccessToken) == "" {
+		return "", metadata, fmt.Errorf("refreshed access token is empty")
+	}
+	if newExpiresAt.IsZero() || !newExpiresAt.After(now) {
+		return "", metadata, fmt.Errorf("refreshed token expiry must be in the future")
+	}
+
+	newAccessEnvelope, err := s.encryptWithCurrentKey(ctx, newAccessToken)
+	if err != nil {
+		return "", metadata, err
+	}
+	metadata.ExpiresAt = newExpiresAt.UTC()
+	metadata.UpdatedAt = now
+	metadata.LastRefreshedAt = now
+	if strings.TrimSpace(metadata.Provider) == "" {
+		metadata.Provider = connectorKey
+	}
+
+	s.mu.Lock()
+	s.oauth[key] = newAccessEnvelope
+	s.oauthMeta[key] = metadata
+	s.mu.Unlock()
+	return newAccessToken, metadata, nil
 }
 
 func (s *Service) DecryptOAuthToken(ctx context.Context, workspaceID, userID, connectorKey string) (string, OAuthEnvelope, error) {
@@ -470,33 +611,79 @@ func (s *Service) DecryptOAuthToken(ctx context.Context, workspaceID, userID, co
 		return "", OAuthEnvelope{}, fmt.Errorf("oauth token not found")
 	}
 
-	key, err := s.keyProvider.KeyByVersion(ctx, envelope.KeyVersion)
+	plaintext, err := s.decryptEnvelope(ctx, envelope)
 	if err != nil {
 		return "", OAuthEnvelope{}, err
+	}
+	return plaintext, envelope, nil
+}
+
+func (s *Service) ensureConnectorExists(connectorKey string) error {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if _, ok := s.connectors[connectorKey]; !ok {
+		return fmt.Errorf("connector not found: %s", connectorKey)
+	}
+	return nil
+}
+
+func (s *Service) encryptWithCurrentKey(ctx context.Context, token string) (OAuthEnvelope, error) {
+	version, key, err := s.keyProvider.CurrentKey(ctx)
+	if err != nil {
+		return OAuthEnvelope{}, err
+	}
+	if len(key) != 32 {
+		return OAuthEnvelope{}, fmt.Errorf("aes-256-gcm requires 32-byte key")
+	}
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return OAuthEnvelope{}, err
+	}
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return OAuthEnvelope{}, err
+	}
+	nonce := make([]byte, gcm.NonceSize())
+	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
+		return OAuthEnvelope{}, err
+	}
+	ciphertext := gcm.Seal(nil, nonce, []byte(token), nil)
+	return OAuthEnvelope{
+		Ciphertext:  base64.StdEncoding.EncodeToString(ciphertext),
+		Nonce:       base64.StdEncoding.EncodeToString(nonce),
+		KeyVersion:  version,
+		EncryptedAt: s.now(),
+	}, nil
+}
+
+func (s *Service) decryptEnvelope(ctx context.Context, envelope OAuthEnvelope) (string, error) {
+	key, err := s.keyProvider.KeyByVersion(ctx, envelope.KeyVersion)
+	if err != nil {
+		return "", err
 	}
 
 	block, err := aes.NewCipher(key)
 	if err != nil {
-		return "", OAuthEnvelope{}, err
+		return "", err
 	}
 	gcm, err := cipher.NewGCM(block)
 	if err != nil {
-		return "", OAuthEnvelope{}, err
+		return "", err
 	}
 
 	nonce, err := base64.StdEncoding.DecodeString(envelope.Nonce)
 	if err != nil {
-		return "", OAuthEnvelope{}, err
+		return "", err
 	}
 	ciphertext, err := base64.StdEncoding.DecodeString(envelope.Ciphertext)
 	if err != nil {
-		return "", OAuthEnvelope{}, err
+		return "", err
 	}
 
 	plaintext, err := gcm.Open(nil, nonce, ciphertext, nil)
 	if err != nil {
-		return "", OAuthEnvelope{}, err
+		return "", err
 	}
 
-	return string(plaintext), envelope, nil
+	return string(plaintext), nil
 }

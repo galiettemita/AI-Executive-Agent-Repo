@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"testing"
+	"time"
 )
 
 func TestSeedLoaderPopulatesAtLeast40Connectors(t *testing.T) {
@@ -104,6 +105,104 @@ func TestOAuthEncryptDecryptRoundTripAndKeyVersion(t *testing.T) {
 	}
 	if restoredEnvelopeAfterRotate.KeyVersion != "v1" {
 		t.Fatalf("expected stored envelope to keep original key version, got %s", restoredEnvelopeAfterRotate.KeyVersion)
+	}
+}
+
+func TestOAuthTokenSetSafeRefreshWithinWindow(t *testing.T) {
+	t.Parallel()
+
+	provider := NewInMemoryKeyProvider("v1", []byte("0123456789abcdef0123456789abcdef"))
+	svc := NewService(provider)
+	if err := svc.LoadSeedFile(filepath.Join("seeds", "connectors.yaml")); err != nil {
+		t.Fatalf("load seed file: %v", err)
+	}
+	base := time.Date(2026, time.March, 1, 13, 0, 0, 0, time.UTC)
+	svc.SetNow(func() time.Time { return base })
+
+	_, storedMeta, err := svc.StoreOAuthTokenSet(
+		context.Background(),
+		"ws_refresh",
+		"user_refresh",
+		"google_gmail",
+		"google_gmail_mcp",
+		"access_old",
+		"refresh_secret",
+		base.Add(5*time.Minute),
+	)
+	if err != nil {
+		t.Fatalf("store oauth token set: %v", err)
+	}
+	if storedMeta.Provider != "google_gmail_mcp" {
+		t.Fatalf("unexpected provider in stored metadata: %+v", storedMeta)
+	}
+
+	refreshedToken, refreshedMeta, err := svc.GetOAuthTokenForUse(
+		context.Background(),
+		"ws_refresh",
+		"user_refresh",
+		"google_gmail",
+		10*time.Minute,
+		func(refreshToken string) (string, time.Time, error) {
+			if refreshToken != "refresh_secret" {
+				t.Fatalf("unexpected refresh token value: %s", refreshToken)
+			}
+			return "access_new", base.Add(2 * time.Hour), nil
+		},
+	)
+	if err != nil {
+		t.Fatalf("get oauth token for use with refresh: %v", err)
+	}
+	if refreshedToken != "access_new" {
+		t.Fatalf("unexpected refreshed token: %s", refreshedToken)
+	}
+	if refreshedMeta.LastRefreshedAt.IsZero() {
+		t.Fatalf("expected non-zero last_refreshed_at after refresh: %+v", refreshedMeta)
+	}
+}
+
+func TestOAuthTokenSetNoRefreshOutsideWindow(t *testing.T) {
+	t.Parallel()
+
+	provider := NewInMemoryKeyProvider("v1", []byte("0123456789abcdef0123456789abcdef"))
+	svc := NewService(provider)
+	if err := svc.LoadSeedFile(filepath.Join("seeds", "connectors.yaml")); err != nil {
+		t.Fatalf("load seed file: %v", err)
+	}
+	base := time.Date(2026, time.March, 1, 13, 0, 0, 0, time.UTC)
+	svc.SetNow(func() time.Time { return base })
+
+	if _, _, err := svc.StoreOAuthTokenSet(
+		context.Background(),
+		"ws_no_refresh",
+		"user_no_refresh",
+		"google_gmail",
+		"google_gmail_mcp",
+		"access_current",
+		"refresh_current",
+		base.Add(2*time.Hour),
+	); err != nil {
+		t.Fatalf("store oauth token set: %v", err)
+	}
+
+	token, meta, err := svc.GetOAuthTokenForUse(
+		context.Background(),
+		"ws_no_refresh",
+		"user_no_refresh",
+		"google_gmail",
+		10*time.Minute,
+		func(refreshToken string) (string, time.Time, error) {
+			t.Fatalf("refresher must not run outside refresh window")
+			return "", time.Time{}, nil
+		},
+	)
+	if err != nil {
+		t.Fatalf("get oauth token for use outside refresh window: %v", err)
+	}
+	if token != "access_current" {
+		t.Fatalf("unexpected access token without refresh: %s", token)
+	}
+	if !meta.LastRefreshedAt.IsZero() {
+		t.Fatalf("did not expect refresh metadata update: %+v", meta)
 	}
 }
 

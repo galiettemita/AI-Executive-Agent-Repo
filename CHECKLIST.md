@@ -775,7 +775,7 @@ You must prove it.
 
 ## MCP Deployment Plan Platform Requirements (MCP_Server_Deployment_Plan.docx)
 - [x] Hosting strategy implemented per-server (sidecar vs internal microservice vs external) and encoded in `server_catalog.hosting_model` (Deployment Plan Section 8; Auto-Provisioning Section 12)
-- [ ] OAuth/auth matrix supported across servers (OAuth2, API key, PAT, integration tokens); tokens stored encrypted in `oauth_tokens` and refreshed safely (Deployment Plan Section 9)
+- [x] OAuth/auth matrix supported across servers (OAuth2, API key, PAT, integration tokens); tokens stored encrypted in `oauth_tokens` and refreshed safely (Deployment Plan Section 9)
 - [ ] Onboarding UX templates + buttons exist for ecosystem detection and connection flows (Deployment Plan Section 10; Auto-Provisioning Appendix B)
 - [x] TOOLS.md auto-generation includes connected apps details (tools list, auth status, budgets/usage) and not-connected guidance (Deployment Plan Section 11)
 - [x] Conversational discovery triggers (mentions + repeated failures + profile evolution) are implemented and wired to ProvisioningPipeline (Deployment Plan Section 12)

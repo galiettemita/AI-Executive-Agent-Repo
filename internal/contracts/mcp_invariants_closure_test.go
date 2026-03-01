@@ -81,4 +81,13 @@ func TestMCPAndOAuthMigrationHardeningClosure(t *testing.T) {
 		"idx_tool_executions_is_mcp",
 		"idx_user_oauth_tokens_provider",
 	})
+
+	connectorsPath := filepath.Join(root, "internal", "connectors", "service.go")
+	assertFileContainsTokens(t, connectorsPath, []string{
+		"StoreOAuthTokenSet(",
+		"GetOAuthTokenForUse(",
+		"oauthRefresh",
+		"oauthMeta",
+		"refresher is required when token is expiring",
+	})
 }
