@@ -31,6 +31,7 @@ Legend
 - [x] Post-cutover regression: reran `make ci-full` at HEAD after DNS and deployment doc updates; all closure/security/infra/db gates still pass.
 - [x] Deployment automation hardening: added `scripts/deploy/helm_rollout.sh` and `make deploy-helm` to run deterministic multi-chart rollout with optional ECR image/port overrides and rollout waiting.
 - [x] Deployment closure guard: added contract test coverage ensuring rollout script and `Makefile` deploy target tokens remain present (`internal/contracts/script_closure_test.go`).
+- [x] Post-automation regression: reran `make ci` after rollout automation additions; lint/build/tests/migration/contracts/acceptance gates remain PASS.
 - [x] Phase 0.2: dead-code/duplicate cleanup and naming normalization
 - [x] Phase 0.3: clean baseline (`go build`, `go vet`, `gofmt`) + commit/tag
 - [x] Phase 0.3 validation complete via Docker Go 1.22 (`go mod tidy`, `go build`, `go vet`, `gofmt`, `go test`, `staticcheck`)
