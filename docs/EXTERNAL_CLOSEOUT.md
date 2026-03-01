@@ -119,11 +119,28 @@ This runbook covers the only checklist items that remain outside repository auto
 3. Store as `ELEVENLABS_API_KEY` in Secrets Manager.
 
 ## 9) Final Verify Commands
-After all above are configured, run:
+Run external readiness verification (required items fail-fast):
+
+```bash
+cd /Users/galiettemita/Downloads/Executive AI Agent/backend
+PARTNER_APPS_CONFIRMED=0 \
+ANALYTICS_EVENT_BUS=brevio-analytics-bus \
+make external-closeout-check
+```
+
+Output report:
+- `artifacts/deploy/external_closeout_status.json`
+
+When all required checks pass and partner apps are submitted, rerun with:
+
+```bash
+PARTNER_APPS_CONFIRMED=1 ANALYTICS_EVENT_BUS=brevio-analytics-bus make external-closeout-check
+```
+
+Then run:
 
 ```bash
 cd /Users/galiettemita/Downloads/Executive AI Agent/backend
 make ci
 make security-validate
 ```
-

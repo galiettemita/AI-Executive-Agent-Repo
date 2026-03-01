@@ -932,6 +932,7 @@ You must prove it.
 
 # External Accounts / Services Needed (Section 2, Appendix A)
 - [x] Add button-by-button external closeout runbook for remaining provider tasks (`docs/EXTERNAL_CLOSEOUT.md`)
+- [x] Add deterministic external-readiness verification script + artifact report (`make external-closeout-check` → `artifacts/deploy/external_closeout_status.json`)
 - [x] Clerk (auth) account + keys (`CLERK_SECRET_KEY`)
 - [ ] Stripe (billing) account + keys (`STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, Price IDs) (Operational Blueprint Component 1)
 - [x] Anthropic account + `ANTHROPIC_API_KEY`
