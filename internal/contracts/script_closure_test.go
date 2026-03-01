@@ -179,6 +179,36 @@ func TestDatabaseVerificationScriptClosure(t *testing.T) {
 	})
 }
 
+func TestDeploymentRolloutScriptClosure(t *testing.T) {
+	t.Parallel()
+	root := repositoryRoot(t)
+	path := filepath.Join(root, "scripts", "deploy", "helm_rollout.sh")
+	assertFileNonEmpty(t, path)
+	assertFileContainsTokens(t, path, []string{
+		"WAIT_FOR_ROLLOUT",
+		"GATEWAY_IMAGE_REPOSITORY",
+		"ADMIN_FRONTEND_IMAGE_REPOSITORY",
+		"deploy_chart \"brevio-gateway\"",
+		"deploy_chart \"brevio-brain\"",
+		"deploy_chart \"brevio-control\"",
+		"deploy_chart \"brevio-executor\"",
+		"deploy_chart \"brevio-canvas\"",
+		"deploy_chart \"brevio-temporal-worker\"",
+		"deploy_chart \"brevio-admin-api\"",
+		"deploy_chart \"brevio-admin-frontend\"",
+		"deploy_chart \"brevio-rag-worker\"",
+		"deploy_chart \"brevio-guardrails\"",
+		"deploy_chart \"brevio-health-checker\"",
+		"kubectl get ingress",
+	})
+
+	makefilePath := filepath.Join(root, "Makefile")
+	assertFileContainsTokens(t, makefilePath, []string{
+		"deploy-helm:",
+		"bash scripts/deploy/helm_rollout.sh",
+	})
+}
+
 func assertScriptArraySetEquals(t *testing.T, content, variable string, expected []string) {
 	t.Helper()
 	pattern := regexp.MustCompile(`(?s)` + regexp.QuoteMeta(variable) + `=\((.*?)\)`)
