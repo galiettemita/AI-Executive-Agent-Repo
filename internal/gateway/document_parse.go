@@ -3,6 +3,7 @@ package gateway
 import "strings"
 
 const maxExtractedDocumentChars = 100000
+const ocrConfidenceThreshold = 0.7
 
 func SupportedDocumentFormats() []string {
 	return []string{"pdf", "docx", "xlsx", "csv", "txt", "html", "md"}
@@ -28,6 +29,14 @@ func ParseMethodForDocument(mime string, hasExtractableText bool) string {
 		return "ocr"
 	}
 	return "text_extraction"
+}
+
+func OCRConfidenceThreshold() float64 {
+	return ocrConfidenceThreshold
+}
+
+func ShouldAcceptOCRExtraction(confidence float64) bool {
+	return confidence >= ocrConfidenceThreshold
 }
 
 func TruncateExtractedDocumentText(text string) string {

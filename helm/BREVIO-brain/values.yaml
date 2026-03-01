@@ -8,3 +8,9 @@ autoscaling:
   enabled: true
   minReplicas: 2
   maxReplicas: 8
+mtls:
+  enabled: false
+  issuerName: brevio-internal-ca-issuer
+  issuerKind: ClusterIssuer
+  duration: 2160h
+  renewBefore: 720h

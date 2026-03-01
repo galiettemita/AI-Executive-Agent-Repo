@@ -2,16 +2,19 @@ package canvas
 
 import "testing"
 
-func TestCanvasProtocolEnumerations(t *testing.T) {
+func TestCanvasProtocolConstants(t *testing.T) {
 	t.Parallel()
 
-	msgTypes := SupportedMessageTypes()
-	if len(msgTypes) != 8 {
-		t.Fatalf("unexpected message type count: %d", len(msgTypes))
+	if len(AllowedMessageTypes()) != 8 {
+		t.Fatalf("unexpected message type count: %d", len(AllowedMessageTypes()))
 	}
-
-	surfaces := SupportedSurfaceTypes()
-	if len(surfaces) != 6 {
-		t.Fatalf("unexpected surface type count: %d", len(surfaces))
+	if len(CanvasSurfaceTypes()) != 6 {
+		t.Fatalf("unexpected surface type count: %d", len(CanvasSurfaceTypes()))
+	}
+	if CanvasInteractionRateLimitPerMinute() != 60 {
+		t.Fatalf("unexpected canvas interaction rate limit: %d", CanvasInteractionRateLimitPerMinute())
+	}
+	if !IsValidCanvasMessageType("canvas.interaction") || IsValidCanvasMessageType("bad.message") {
+		t.Fatal("unexpected canvas message-type validation result")
 	}
 }

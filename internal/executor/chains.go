@@ -35,3 +35,61 @@ func ComputeAutoCommitProofHash(key []byte, previousProofHash, proofID, toolExec
 	mac.Write([]byte(strings.Join(parts, "||")))
 	return hex.EncodeToString(mac.Sum(nil))
 }
+
+type AuditChainEntry struct {
+	PreviousChainHash string
+	EntryID           string
+	Event             string
+	WorkspaceID       string
+	UserID            string
+	TimestampRFC3339  string
+	ActionSummary     string
+	ChainHash         string
+}
+
+type AutoCommitProofEntry struct {
+	PreviousProofHash string
+	ProofID           string
+	ToolExecutionID   string
+	EffectiveAutonomy string
+	ConsentID         string
+	TimestampRFC3339  string
+	ProofHash         string
+}
+
+func VerifyAuditChain(key []byte, entries []AuditChainEntry) bool {
+	for _, entry := range entries {
+		expected := ComputeAuditChainHash(
+			key,
+			entry.PreviousChainHash,
+			entry.EntryID,
+			entry.Event,
+			entry.WorkspaceID,
+			entry.UserID,
+			entry.TimestampRFC3339,
+			entry.ActionSummary,
+		)
+		if entry.ChainHash != expected {
+			return false
+		}
+	}
+	return true
+}
+
+func VerifyAutoCommitProofChain(key []byte, entries []AutoCommitProofEntry) bool {
+	for _, entry := range entries {
+		expected := ComputeAutoCommitProofHash(
+			key,
+			entry.PreviousProofHash,
+			entry.ProofID,
+			entry.ToolExecutionID,
+			entry.EffectiveAutonomy,
+			entry.ConsentID,
+			entry.TimestampRFC3339,
+		)
+		if entry.ProofHash != expected {
+			return false
+		}
+	}
+	return true
+}

@@ -1,0 +1,21 @@
+{{- if .Values.mtls.enabled }}
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: brevio-executor-mtls
+  namespace: {{ .Release.Namespace }}
+spec:
+  secretName: brevio-executor-mtls-tls
+  duration: {{ .Values.mtls.duration | quote }}
+  renewBefore: {{ .Values.mtls.renewBefore | quote }}
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  issuerRef:
+    name: {{ .Values.mtls.issuerName }}
+    kind: {{ .Values.mtls.issuerKind }}
+  commonName: executor.brevio.internal
+  dnsNames:
+    - executor.brevio.internal
+{{- end }}
+

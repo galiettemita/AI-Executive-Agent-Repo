@@ -155,3 +155,68 @@ Date: 2026-03-01
   - `./scripts/dev/go_exec.sh test ./internal/control ./internal/memory ./internal/connectors ./internal/llm ./internal/identity ./internal/workflows ./internal/executor -count=1`
 - Full repository pass:
   - `./scripts/dev/go_exec.sh test ./... -count=1`
+
+## Additional addendum closures (fifth pass)
+
+- Added executor connector architecture helpers and tests:
+  - addendum `ConnectorClient` contract (`Simulate`, `Commit`, `HealthCheck`)
+  - connector registry/factory with typed policy defaults (retry/circuit/timeout)
+  - MCP schema firewall helper (registered-field stripping + response-size guard)
+- Added LLM provider runtime helpers and tests:
+  - Anthropic/OpenAI provider registry and per-provider rate-limit metadata
+  - model-catalog seed cost table helpers and token-cost estimation
+  - provider failover trigger helper behavior (5xx/429 timeout policy semantics)
+- Added A2UI canvas protocol helpers and tests:
+  - message type and surface type canonical constants
+  - keepalive interval and interaction-rate limit constants
+- Added voice-pipeline runtime helpers and tests:
+  - STT format validation, max audio duration, TTS trigger gating
+  - low-confidence/fallback transcription synthesis behavior
+- Added retention enforcement helpers and tests:
+  - policy-based expiry evaluation and `BREVIO.retention.expired.v1` event mapping
+- Extended security chain helpers and tests:
+  - audit-chain verification helper
+  - auto-commit proof-chain verification helper
+- Hardened attachment/document pipeline helpers and tests:
+  - magic-byte validation for allowed attachment MIME families
+  - OCR confidence threshold and extraction acceptance helper
+- Added delegation pairing helper module and tests:
+  - deterministic 6-char pairing code generation
+  - 15-minute pairing TTL validation and delegation autonomy cap normalization
+- Added memory exclusion semantic-rule helper and tests:
+  - exact + semantic + regex exclusion matching primitives
+- Added executor cache manager and tests:
+  - L1/L2/L3 read-path, write-through, TTL promotion, and invalidation lifecycle
+- Added mTLS cert-manager Helm templates across core service charts:
+  - gateway, brain, control, executor, canvas `Certificate` manifests (`mtls-certificate.yaml`)
+  - chart value toggles for issuer/duration/renew-before controls
+
+## Validation (fifth pass)
+
+- Targeted package pass:
+  - `./scripts/dev/go_exec.sh test ./internal/executor/... ./internal/llm ./internal/canvas ./internal/gateway ./internal/compliance ./internal/delegation ./internal/memory -count=1`
+- Full repository pass:
+  - `./scripts/dev/go_exec.sh test ./... -count=1`
+
+## Additional addendum closures (sixth pass)
+
+- Closed remaining external-system/runtime partials:
+  - WhatsApp runtime client helper (`internal/gateway/whatsapp_client.go`) with signature validation, template gating, delivery-status updates, and retry semantics.
+  - iMessage runtime client helper (`internal/gateway/imessage_client.go`) with MSP signature validation, retry semantics, and delivery-status updates.
+  - OAuth runtime state store + provider revocation endpoint helper set (`internal/connectors/oauth_runtime.go`).
+  - Git ingestion pipeline helpers (`internal/executor/git_ingestion.go`) including shallow clone command policy, size guard, retry policy, and deterministic repo profiling.
+  - Airport knowledge seed parser + seed scaffold (`internal/provisioning/airport_seed.go`, `db/seeds/airport_knowledge_seed.csv`).
+- Added cert-manager mTLS certificate manifests to existing core service Helm charts:
+  - `helm/BREVIO-gateway/templates/mtls-certificate.yaml`
+  - `helm/BREVIO-brain/templates/mtls-certificate.yaml`
+  - `helm/BREVIO-control/templates/mtls-certificate.yaml`
+  - `helm/BREVIO-executor/templates/mtls-certificate.yaml`
+  - `helm/BREVIO-canvas/templates/mtls-certificate.yaml`
+- Refreshed `docs/addendum_gap_audit.md` so all sections A..BD are marked complete at implementation-helper/runtime-contract level.
+
+## Validation (sixth pass)
+
+- Targeted package pass:
+  - `./scripts/dev/go_exec.sh test ./internal/gateway ./internal/connectors ./internal/executor ./internal/provisioning -count=1`
+- Full repository pass:
+  - `./scripts/dev/go_exec.sh test ./... -count=1`

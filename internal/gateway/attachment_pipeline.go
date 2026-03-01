@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/google/uuid"
@@ -47,6 +48,37 @@ func ValidateAttachmentInput(attachment AttachmentInput) error {
 		return fmt.Errorf("I can't process that file type/size.")
 	}
 	return nil
+}
+
+func ValidateAttachmentMagic(mimeType string, leadingBytes []byte) bool {
+	allowed := map[string][][]byte{
+		"image/jpeg":      {{0xFF, 0xD8, 0xFF}},
+		"image/png":       {{0x89, 0x50, 0x4E, 0x47}},
+		"image/webp":      {{0x52, 0x49, 0x46, 0x46}},
+		"application/pdf": {{0x25, 0x50, 0x44, 0x46}},
+		"audio/ogg":       {{0x4F, 0x67, 0x67, 0x53}},
+		"audio/mpeg":      {{0x49, 0x44, 0x33}, {0xFF, 0xFB}},
+		"video/mp4":       {{0x00, 0x00, 0x00}},
+		"text/plain":      {},
+		"text/csv":        {},
+		"application/vnd.openxmlformats-officedocument.wordprocessingml.document": {},
+		"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet":       {},
+	}
+
+	mime := strings.ToLower(strings.TrimSpace(mimeType))
+	prefixes, ok := allowed[mime]
+	if !ok {
+		return false
+	}
+	if len(prefixes) == 0 {
+		return true
+	}
+	for _, prefix := range prefixes {
+		if len(leadingBytes) >= len(prefix) && slices.Equal(leadingBytes[:len(prefix)], prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 func AttachmentSHA256(content []byte) string {
