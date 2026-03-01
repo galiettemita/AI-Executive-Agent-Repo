@@ -12,6 +12,7 @@ _No connectors marked as connected. Set `CONNECTED_CONNECTOR_KEYS` (comma-separa
 
 | connector_key | domain | risk_level | data_class | mcp_server_url |
 |---|---|---|---|---|
+| airtable | data | MEDIUM | confidential | https://mcp.example/airtable |
 | amadeus | travel | ELEVATED | internal | https://mcp.example/amadeus |
 | apple_health | health | ELEVATED | restricted | https://mcp.example/apple_health |
 | apple_reminders | tasks | MEDIUM | internal | https://mcp.example/apple_reminders |
@@ -19,9 +20,15 @@ _No connectors marked as connected. Set `CONNECTED_CONNECTOR_KEYS` (comma-separa
 | booking | travel | ELEVATED | internal | https://mcp.example/booking |
 | box | documents | LOW | internal | https://mcp.example/box |
 | brave_search | web | LOW | public | https://mcp.example/brave_search |
+| calendly | calendar | MEDIUM | internal | https://mcp.example/calendly |
+| canva | documents | MEDIUM | internal | https://mcp.example/canva |
 | clickup | tasks | MEDIUM | internal | https://mcp.example/clickup |
 | confluence | documents | LOW | internal | https://mcp.example/confluence |
+| crunchbase | web | LOW | public | https://mcp.example/crunchbase |
+| docusign | documents | CRITICAL | restricted | https://mcp.example/docusign |
 | dropbox | documents | LOW | internal | https://mcp.example/dropbox |
+| duffel | travel | CRITICAL | restricted | https://mcp.example/duffel |
+| evernote | documents | LOW | internal | https://mcp.example/evernote |
 | expedia | travel | ELEVATED | internal | https://mcp.example/expedia |
 | fitbit | health | ELEVATED | restricted | https://mcp.example/fitbit |
 | github | code | ELEVATED | internal | https://mcp.example/github |
@@ -30,30 +37,39 @@ _No connectors marked as connected. Set `CONNECTED_CONNECTOR_KEYS` (comma-separa
 | google_drive | documents | LOW | internal | https://mcp.example/google_drive |
 | google_gmail | email | MEDIUM | internal | https://mcp.example/google_gmail |
 | google_meet | meetings | MEDIUM | internal | https://mcp.example/google_meet |
+| google_sheets | documents | LOW | internal | https://mcp.example/google_sheets |
 | home_assistant | environment | MEDIUM | internal | https://mcp.example/home_assistant |
 | hubspot | crm | MEDIUM | confidential | https://mcp.example/hubspot |
 | imessage_bridge | messaging | MEDIUM | internal | https://mcp.example/imessage_bridge |
+| instacart | financial | CRITICAL | restricted | https://mcp.example/instacart |
 | jira | tasks | MEDIUM | internal | https://mcp.example/jira |
 | linear | tasks | MEDIUM | internal | https://mcp.example/linear |
 | maps | travel | LOW | public | https://mcp.example/maps |
 | microsoft_teams | meetings | MEDIUM | internal | https://mcp.example/microsoft_teams |
 | notion | documents | LOW | internal | https://mcp.example/notion |
+| opentable_resy | travel | MEDIUM | internal | https://mcp.example/opentable_resy |
 | outlook_calendar | calendar | MEDIUM | internal | https://mcp.example/outlook_calendar |
 | outlook_mail | email | MEDIUM | internal | https://mcp.example/outlook_mail |
 | pipedrive | crm | MEDIUM | confidential | https://mcp.example/pipedrive |
 | plaid | financial | CRITICAL | restricted | https://mcp.example/plaid |
 | postgres | data | ELEVATED | confidential | https://mcp.example/postgres |
+| quickbooks | financial | CRITICAL | restricted | https://mcp.example/quickbooks |
 | resend | email | MEDIUM | internal | https://mcp.example/resend |
 | salesforce | crm | ELEVATED | confidential | https://mcp.example/salesforce |
 | sendgrid | email | MEDIUM | internal | https://mcp.example/sendgrid |
+| sentry | code | MEDIUM | internal | https://mcp.example/sentry |
 | slack | messaging | LOW | internal | https://mcp.example/slack |
 | snowflake | data | ELEVATED | confidential | https://mcp.example/snowflake |
+| spotify | web | LOW | public | https://mcp.example/spotify |
 | stripe | financial | CRITICAL | restricted | https://mcp.example/stripe |
+| tesla | environment | CRITICAL | restricted | https://mcp.example/tesla |
 | todoist | tasks | MEDIUM | internal | https://mcp.example/todoist |
 | trello | tasks | LOW | internal | https://mcp.example/trello |
 | twilio | messaging | MEDIUM | internal | https://mcp.example/twilio |
+| uber_lyft | travel | ELEVATED | internal | https://mcp.example/uber_lyft |
 | weather | environment | LOW | public | https://mcp.example/weather |
 | web_search | web | LOW | public | https://mcp.example/web_search |
+| whatsapp_business | messaging | MEDIUM | internal | https://mcp.example/whatsapp_business |
 | whatsapp_cloud | messaging | MEDIUM | internal | https://mcp.example/whatsapp_cloud |
 | wise | financial | CRITICAL | restricted | https://mcp.example/wise |
 | zoom | meetings | MEDIUM | internal | https://mcp.example/zoom |
@@ -62,6 +78,7 @@ _No connectors marked as connected. Set `CONNECTED_CONNECTOR_KEYS` (comma-separa
 
 | connector_key | risk_level | monthly_call_cap | monthly_cost_cap_usd | rate_limit_per_minute | metering_source |
 |---|---|---:|---:|---:|---|
+| airtable | MEDIUM | 2000 | 80.00 | 90 | `tool_executions` + mcp invocation ledger |
 | amadeus | ELEVATED | 1500 | 120.00 | 60 | `tool_executions` + mcp invocation ledger |
 | apple_health | ELEVATED | 1500 | 120.00 | 60 | `tool_executions` + mcp invocation ledger |
 | apple_reminders | MEDIUM | 2000 | 80.00 | 90 | `tool_executions` + mcp invocation ledger |
@@ -69,9 +86,15 @@ _No connectors marked as connected. Set `CONNECTED_CONNECTOR_KEYS` (comma-separa
 | booking | ELEVATED | 1500 | 120.00 | 60 | `tool_executions` + mcp invocation ledger |
 | box | LOW | 5000 | 40.00 | 120 | `tool_executions` + mcp invocation ledger |
 | brave_search | LOW | 5000 | 40.00 | 120 | `tool_executions` + mcp invocation ledger |
+| calendly | MEDIUM | 2000 | 80.00 | 90 | `tool_executions` + mcp invocation ledger |
+| canva | MEDIUM | 2000 | 80.00 | 90 | `tool_executions` + mcp invocation ledger |
 | clickup | MEDIUM | 2000 | 80.00 | 90 | `tool_executions` + mcp invocation ledger |
 | confluence | LOW | 5000 | 40.00 | 120 | `tool_executions` + mcp invocation ledger |
+| crunchbase | LOW | 5000 | 40.00 | 120 | `tool_executions` + mcp invocation ledger |
+| docusign | CRITICAL | 1000 | 200.00 | 30 | `tool_executions` + mcp invocation ledger |
 | dropbox | LOW | 5000 | 40.00 | 120 | `tool_executions` + mcp invocation ledger |
+| duffel | CRITICAL | 1000 | 200.00 | 30 | `tool_executions` + mcp invocation ledger |
+| evernote | LOW | 5000 | 40.00 | 120 | `tool_executions` + mcp invocation ledger |
 | expedia | ELEVATED | 1500 | 120.00 | 60 | `tool_executions` + mcp invocation ledger |
 | fitbit | ELEVATED | 1500 | 120.00 | 60 | `tool_executions` + mcp invocation ledger |
 | github | ELEVATED | 1500 | 120.00 | 60 | `tool_executions` + mcp invocation ledger |
@@ -80,30 +103,39 @@ _No connectors marked as connected. Set `CONNECTED_CONNECTOR_KEYS` (comma-separa
 | google_drive | LOW | 5000 | 40.00 | 120 | `tool_executions` + mcp invocation ledger |
 | google_gmail | MEDIUM | 2000 | 80.00 | 90 | `tool_executions` + mcp invocation ledger |
 | google_meet | MEDIUM | 2000 | 80.00 | 90 | `tool_executions` + mcp invocation ledger |
+| google_sheets | LOW | 5000 | 40.00 | 120 | `tool_executions` + mcp invocation ledger |
 | home_assistant | MEDIUM | 2000 | 80.00 | 90 | `tool_executions` + mcp invocation ledger |
 | hubspot | MEDIUM | 2000 | 80.00 | 90 | `tool_executions` + mcp invocation ledger |
 | imessage_bridge | MEDIUM | 2000 | 80.00 | 90 | `tool_executions` + mcp invocation ledger |
+| instacart | CRITICAL | 1000 | 200.00 | 30 | `tool_executions` + mcp invocation ledger |
 | jira | MEDIUM | 2000 | 80.00 | 90 | `tool_executions` + mcp invocation ledger |
 | linear | MEDIUM | 2000 | 80.00 | 90 | `tool_executions` + mcp invocation ledger |
 | maps | LOW | 5000 | 40.00 | 120 | `tool_executions` + mcp invocation ledger |
 | microsoft_teams | MEDIUM | 2000 | 80.00 | 90 | `tool_executions` + mcp invocation ledger |
 | notion | LOW | 5000 | 40.00 | 120 | `tool_executions` + mcp invocation ledger |
+| opentable_resy | MEDIUM | 2000 | 80.00 | 90 | `tool_executions` + mcp invocation ledger |
 | outlook_calendar | MEDIUM | 2000 | 80.00 | 90 | `tool_executions` + mcp invocation ledger |
 | outlook_mail | MEDIUM | 2000 | 80.00 | 90 | `tool_executions` + mcp invocation ledger |
 | pipedrive | MEDIUM | 2000 | 80.00 | 90 | `tool_executions` + mcp invocation ledger |
 | plaid | CRITICAL | 1000 | 200.00 | 30 | `tool_executions` + mcp invocation ledger |
 | postgres | ELEVATED | 1500 | 120.00 | 60 | `tool_executions` + mcp invocation ledger |
+| quickbooks | CRITICAL | 1000 | 200.00 | 30 | `tool_executions` + mcp invocation ledger |
 | resend | MEDIUM | 2000 | 80.00 | 90 | `tool_executions` + mcp invocation ledger |
 | salesforce | ELEVATED | 1500 | 120.00 | 60 | `tool_executions` + mcp invocation ledger |
 | sendgrid | MEDIUM | 2000 | 80.00 | 90 | `tool_executions` + mcp invocation ledger |
+| sentry | MEDIUM | 2000 | 80.00 | 90 | `tool_executions` + mcp invocation ledger |
 | slack | LOW | 5000 | 40.00 | 120 | `tool_executions` + mcp invocation ledger |
 | snowflake | ELEVATED | 1500 | 120.00 | 60 | `tool_executions` + mcp invocation ledger |
+| spotify | LOW | 5000 | 40.00 | 120 | `tool_executions` + mcp invocation ledger |
 | stripe | CRITICAL | 1000 | 200.00 | 30 | `tool_executions` + mcp invocation ledger |
+| tesla | CRITICAL | 1000 | 200.00 | 30 | `tool_executions` + mcp invocation ledger |
 | todoist | MEDIUM | 2000 | 80.00 | 90 | `tool_executions` + mcp invocation ledger |
 | trello | LOW | 5000 | 40.00 | 120 | `tool_executions` + mcp invocation ledger |
 | twilio | MEDIUM | 2000 | 80.00 | 90 | `tool_executions` + mcp invocation ledger |
+| uber_lyft | ELEVATED | 1500 | 120.00 | 60 | `tool_executions` + mcp invocation ledger |
 | weather | LOW | 5000 | 40.00 | 120 | `tool_executions` + mcp invocation ledger |
 | web_search | LOW | 5000 | 40.00 | 120 | `tool_executions` + mcp invocation ledger |
+| whatsapp_business | MEDIUM | 2000 | 80.00 | 90 | `tool_executions` + mcp invocation ledger |
 | whatsapp_cloud | MEDIUM | 2000 | 80.00 | 90 | `tool_executions` + mcp invocation ledger |
 | wise | CRITICAL | 1000 | 200.00 | 30 | `tool_executions` + mcp invocation ledger |
 | zoom | MEDIUM | 2000 | 80.00 | 90 | `tool_executions` + mcp invocation ledger |

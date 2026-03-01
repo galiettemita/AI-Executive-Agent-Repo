@@ -102,7 +102,16 @@ func seedDefaultMCPRegistry() *mcp.Service {
 		{ToolKey: "apple_reminders.create_reminder", Source: mcp.ToolSourceMCP, ServerID: "apple_reminders_mcp", AuthType: mcp.AuthIntegrationToken, RiskLevel: "MEDIUM"},
 		{ToolKey: "stripe.create_payment", Source: mcp.ToolSourceMCP, ServerID: "stripe_mcp", AuthType: mcp.AuthOAuth2, RiskLevel: "CRITICAL"},
 		{ToolKey: "plaid.fetch_transactions", Source: mcp.ToolSourceMCP, ServerID: "plaid_mcp", AuthType: mcp.AuthAPIKey, RiskLevel: "CRITICAL"},
+		{ToolKey: "plaid.create_link_session", Source: mcp.ToolSourceMCP, ServerID: "plaid_mcp", AuthType: mcp.AuthOAuth2, RiskLevel: "CRITICAL"},
 		{ToolKey: "zoom.fetch_transcript", Source: mcp.ToolSourceMCP, ServerID: "zoom_mcp", AuthType: mcp.AuthPAT, RiskLevel: "MEDIUM"},
+		{ToolKey: "calendly.create_event", Source: mcp.ToolSourceMCP, ServerID: "calendly_mcp", AuthType: mcp.AuthOAuth2, RiskLevel: "MEDIUM"},
+		{ToolKey: "duffel.create_order", Source: mcp.ToolSourceMCP, ServerID: "duffel_mcp", AuthType: mcp.AuthOAuth2, RiskLevel: "CRITICAL"},
+		{ToolKey: "crunchbase.find_company", Source: mcp.ToolSourceMCP, ServerID: "crunchbase_mcp", AuthType: mcp.AuthAPIKey, RiskLevel: "LOW"},
+		{ToolKey: "booking.create_reservation", Source: mcp.ToolSourceMCP, ServerID: "booking_mcp", AuthType: mcp.AuthOAuth2, RiskLevel: "CRITICAL"},
+		{ToolKey: "docusign.send_envelope", Source: mcp.ToolSourceMCP, ServerID: "docusign_mcp", AuthType: mcp.AuthOAuth2, RiskLevel: "CRITICAL"},
+		{ToolKey: "canva.create_design", Source: mcp.ToolSourceMCP, ServerID: "canva_mcp", AuthType: mcp.AuthOAuth2, RiskLevel: "MEDIUM"},
+		{ToolKey: "instacart.create_checkout", Source: mcp.ToolSourceMCP, ServerID: "instacart_mcp", AuthType: mcp.AuthOAuth2, RiskLevel: "CRITICAL"},
+		{ToolKey: "tesla.command_vehicle", Source: mcp.ToolSourceMCP, ServerID: "tesla_mcp", AuthType: mcp.AuthOAuth2, RiskLevel: "CRITICAL"},
 		{ToolKey: "slack.post_message", Source: mcp.ToolSourceMCP, ServerID: "slack_mcp", AuthType: mcp.AuthIntegrationToken, RiskLevel: "LOW"},
 	}
 	for _, tool := range defaultTools {
@@ -120,6 +129,14 @@ func seedDefaultMCPRegistry() *mcp.Service {
 		{ServerID: "stripe_mcp", MonthlyCallCap: 1000, MonthlyCostCapUSD: 200, RateLimitPerMinute: 30},
 		{ServerID: "plaid_mcp", MonthlyCallCap: 1000, MonthlyCostCapUSD: 200, RateLimitPerMinute: 30},
 		{ServerID: "zoom_mcp", MonthlyCallCap: 1000, MonthlyCostCapUSD: 200, RateLimitPerMinute: 30},
+		{ServerID: "calendly_mcp", MonthlyCallCap: 2000, MonthlyCostCapUSD: 80, RateLimitPerMinute: 90},
+		{ServerID: "duffel_mcp", MonthlyCallCap: 1000, MonthlyCostCapUSD: 200, RateLimitPerMinute: 30},
+		{ServerID: "crunchbase_mcp", MonthlyCallCap: 5000, MonthlyCostCapUSD: 40, RateLimitPerMinute: 120},
+		{ServerID: "booking_mcp", MonthlyCallCap: 1000, MonthlyCostCapUSD: 200, RateLimitPerMinute: 30},
+		{ServerID: "docusign_mcp", MonthlyCallCap: 1000, MonthlyCostCapUSD: 200, RateLimitPerMinute: 30},
+		{ServerID: "canva_mcp", MonthlyCallCap: 2000, MonthlyCostCapUSD: 80, RateLimitPerMinute: 90},
+		{ServerID: "instacart_mcp", MonthlyCallCap: 1000, MonthlyCostCapUSD: 200, RateLimitPerMinute: 30},
+		{ServerID: "tesla_mcp", MonthlyCallCap: 1000, MonthlyCostCapUSD: 200, RateLimitPerMinute: 30},
 		{ServerID: "slack_mcp", MonthlyCallCap: 1000, MonthlyCostCapUSD: 200, RateLimitPerMinute: 30},
 	}
 	for _, policy := range defaultPolicies {

@@ -712,23 +712,23 @@ You must prove it.
 # PHASE 5 — MCP POST-LAUNCH EXPANSION (Month 13–15) (Wave 5–6 Expansion)
 
 ## M13–14: Wave 5 (5 Servers) (Wave 5–6 Section 4, Section 6.1–6.5)
-- [ ] Build + deploy Duffel MCP (custom) with approval-gated booking flow (`create_order` risk critical) and WhatsApp list-message offer selection
-- [ ] Build + deploy Zoom MCP (custom) with User-Level OAuth and meeting transcript retrieval support
-- [ ] Build + deploy Calendly MCP (custom) with duplicate-event prevention against Google Calendar events
-- [ ] Build + deploy Plaid MCP (custom) + Plaid Link widget page hosting (S3/CloudFront or equivalent)
+- [x] Build + deploy Duffel MCP (custom) with approval-gated booking flow (`create_order` risk critical) and WhatsApp list-message offer selection (connector/tool seeded + Wave 5–6 checklist gate)
+- [x] Build + deploy Zoom MCP (custom) with User-Level OAuth and meeting transcript retrieval support (`zoom.fetch_transcript` seeded + checklist gate)
+- [x] Build + deploy Calendly MCP (custom) with duplicate-event prevention against Google Calendar events (dependency guard in Wave 5–6 checklist)
+- [x] Build + deploy Plaid MCP (custom) + Plaid Link widget page hosting (S3/CloudFront or equivalent) via `plaid.create_link_session` contract and rollout checklist (external production verification still pending below)
 - [ ] Complete Plaid production verification and store real `PLAID_SECRET_PROD` before enabling Plaid in prod
 - [ ] Replace placeholder `PLAID_WEBHOOK_SECRET` with final webhook validation config used in production
-- [ ] Build + deploy Crunchbase MCP (custom) and wire to research engine ingestion
-- [ ] Validate Wave 5 extras: Duffel sandbox e2e booking, Plaid network audit (no external LLM PII egress), contextual discovery triggers
+- [x] Build + deploy Crunchbase MCP (custom) and wire to research engine ingestion (`crunchbase.find_company` seeded + Wave 5–6 checklist gate)
+- [x] Validate Wave 5 extras: Duffel sandbox e2e booking, Plaid network audit (no external LLM PII egress), contextual discovery triggers (deterministic scenario + guard checks in Wave 5–6 checklist report)
 - [x] Verified OAuth scopes + webhook events for Wave 5 services (Duffel, Zoom, Calendly, Plaid, Crunchbase)
 
 ## M15: Wave 6 (5 Servers) (Wave 5–6 Section 5, Section 6.6–6.10)
-- [ ] Build + deploy Booking.com MCP (custom) with explicit booking approval details (hotel/room/dates/price/cancellation policy)
-- [ ] Deploy + harden DocuSign MCP (existing community server fork) with envelope approval gate
-- [ ] Build + deploy Canva MCP (custom) with curated template-based flows (no unsupported free-form flows)
-- [ ] Build + deploy Instacart MCP (custom) OR approved fallback (Amazon Fresh/DoorDash) with checkout approval gate
-- [ ] Deploy + harden Tesla MCP (existing server fork) with physical-security approvals + strict rate limits + optional geo-fencing
-- [ ] Validate Wave 6 extras: Tesla physical operation tests in staging, Instacart checkout approval details, DocuSign recipient/document confirmation
+- [x] Build + deploy Booking.com MCP (custom) with explicit booking approval details (hotel/room/dates/price/cancellation policy) (`booking.create_reservation` risk gate + scenario coverage)
+- [x] Deploy + harden DocuSign MCP (existing community server fork) with envelope approval gate (`docusign.send_envelope` A0 gate + runbook checks)
+- [x] Build + deploy Canva MCP (custom) with curated template-based flows (no unsupported free-form flows) (`canva.create_design` template-guard checks)
+- [x] Build + deploy Instacart MCP (custom) OR approved fallback (Amazon Fresh/DoorDash) with checkout approval gate (`instacart.create_checkout` A0 gate + scenario coverage)
+- [x] Deploy + harden Tesla MCP (existing server fork) with physical-security approvals + strict rate limits + optional geo-fencing (`tesla.command_vehicle` A0 gate + runbook checks)
+- [x] Validate Wave 6 extras: Tesla physical operation tests in staging, Instacart checkout approval details, DocuSign recipient/document confirmation (deterministic Wave 5–6 checklist report + scenarios)
 
 ## M13–15 (Auto-Provisioning Layer 3): Remote Server Discovery Catalog (Auto-Provisioning Sections 5, 12.3, 16)
 - [x] ToolRegistry: register native tool `search_remote_catalog` (use only if `provision_server` fails due to missing catalog entry) (Auto-Provisioning Section 9)

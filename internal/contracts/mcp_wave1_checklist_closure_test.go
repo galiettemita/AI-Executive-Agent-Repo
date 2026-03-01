@@ -70,11 +70,13 @@ func TestMCPWave1ChecklistAutomationClosure(t *testing.T) {
 	assertFileContainsTokens(t, makefilePath, []string{
 		"mcp-wave1-checklist:",
 		"./scripts/mcp/wave1_checklist/main.go",
+		"mcp-wave56-checklist:",
+		"./scripts/mcp/wave56_checklist/main.go",
 		"mcp-fleet-validate:",
 		"./scripts/mcp/fleet_validation/main.go",
 		"mcp-runtime-rollout:",
 		"./scripts/mcp/runtime_rollout/main.go",
-		"ci: lint build test migrate api-docs-check tools-md-check mcp-wave1-checklist mcp-fleet-validate mcp-runtime-rollout contracts acceptance",
+		"ci: lint build test migrate api-docs-check tools-md-check mcp-wave1-checklist mcp-wave56-checklist mcp-fleet-validate mcp-runtime-rollout contracts acceptance",
 	})
 
 	fleetSpecPath := filepath.Join(root, "spec", "mcp", "fleet_servers_v1.txt")
@@ -92,6 +94,21 @@ func TestMCPWave1ChecklistAutomationClosure(t *testing.T) {
 		"tesla",
 	})
 
+	wave56ScenariosPath := filepath.Join(root, "evals", "mcp", "wave56_golden_scenarios.json")
+	assertFileNonEmpty(t, wave56ScenariosPath)
+	assertFileContainsTokens(t, wave56ScenariosPath, []string{
+		"duffel",
+		"zoom",
+		"calendly",
+		"plaid",
+		"crunchbase",
+		"booking",
+		"docusign",
+		"canva",
+		"instacart",
+		"tesla",
+	})
+
 	fleetScriptPath := filepath.Join(root, "scripts", "mcp", "fleet_validation", "main.go")
 	assertFileNonEmpty(t, fleetScriptPath)
 	assertFileContainsTokens(t, fleetScriptPath, []string{
@@ -100,6 +117,24 @@ func TestMCPWave1ChecklistAutomationClosure(t *testing.T) {
 		"FailoverKillFivePassed",
 		"mcp_fleet_validation_report.json",
 		"pickDeterministicServers",
+	})
+
+	wave56ScriptPath := filepath.Join(root, "scripts", "mcp", "wave56_checklist", "main.go")
+	assertFileNonEmpty(t, wave56ScriptPath)
+	assertFileContainsTokens(t, wave56ScriptPath, []string{
+		"wave56_10_server_deployment_v1",
+		"duffel",
+		"zoom",
+		"calendly",
+		"plaid",
+		"crunchbase",
+		"booking",
+		"docusign",
+		"canva",
+		"instacart",
+		"tesla",
+		"wave56_deployment_checklist_report.json",
+		"critical_write_gate_enforced",
 	})
 
 	runtimeRolloutScript := filepath.Join(root, "scripts", "mcp", "runtime_rollout", "main.go")

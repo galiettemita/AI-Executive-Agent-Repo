@@ -86,6 +86,17 @@ cat artifacts/deploy/wave1_deployment_checklist_report.json
 The report must show `failed_servers = 0` across:
 - `google_calendar`, `google_drive`, `google_gmail`, `notion`, `todoist`, `brave_search`, `github`, `apple_reminders`.
 
+### Wave 5–6 MCP Deployment Checklist (10-server gate)
+Run the deterministic Wave 5–6 MCP checklist for post-launch expansion connectors:
+
+```bash
+make mcp-wave56-checklist
+cat artifacts/deploy/wave56_deployment_checklist_report.json
+```
+
+The report must show `failed_servers = 0` across:
+- `duffel`, `zoom`, `calendly`, `plaid`, `crunchbase`, `booking`, `docusign`, `canva`, `instacart`, `tesla`.
+
 ### MCP Fleet Validation (Waves 1–6)
 Run fleet validation gates for 40-server health, mixed concurrency, and failover recovery:
 
