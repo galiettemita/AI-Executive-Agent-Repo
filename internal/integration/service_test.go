@@ -6,6 +6,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/brevio/brevio/internal/mcp"
 )
 
 func TestPipelineEndToEndHappyPath(t *testing.T) {
@@ -292,6 +294,178 @@ func TestPipelineRateCapAndBudgetCapEnforcedAcrossTurns(t *testing.T) {
 	}
 	if second.Committed || second.Simulated {
 		t.Fatalf("expected no execution when cap exceeded, got %+v", second)
+	}
+}
+
+func TestMCPArchitectureInvariantsRegistryAndAuthMatrix(t *testing.T) {
+	t.Parallel()
+
+	svc := NewService("integration-secret")
+	registry := svc.MCPToolRegistry()
+	if len(registry) == 0 {
+		t.Fatal("expected non-empty shared mcp/native tool registry")
+	}
+	coverage := svc.MCPAuthMatrixCoverage()
+	for _, authType := range []mcp.AuthType{
+		mcp.AuthOAuth2,
+		mcp.AuthAPIKey,
+		mcp.AuthPAT,
+		mcp.AuthIntegrationToken,
+	} {
+		if !coverage[authType] {
+			t.Fatalf("expected auth matrix coverage for %s", authType)
+		}
+	}
+}
+
+func TestMCPInvocationRecordedWithSharedToolExecutionPath(t *testing.T) {
+	t.Parallel()
+
+	svc := NewService("integration-secret")
+	workspaceID := uuid.MustParse("018f3f6a-9a0f-7cc6-8f2f-1f0f2d2f2d3f")
+	svc.BindWorkspace("whatsapp", "+15550006666", workspaceID)
+
+	status, err := svc.IngestWebhook(WebhookPayload{
+		Channel:           "whatsapp",
+		ChannelIdentifier: "+15550006666",
+		UserChannelID:     "u6",
+		Nonce:             "integration_nonce_6",
+		Message:           "run card charge",
+	})
+	if err != nil || status != 202 {
+		t.Fatalf("ingest webhook: status=%d err=%v", status, err)
+	}
+
+	result, err := svc.ProcessNextQueuedTurnWithOptions(context.Background(), ProcessOptions{
+		ToolKeys: []string{"stripe.create_payment"},
+		Now:      time.Date(2026, time.March, 1, 12, 0, 0, 0, time.UTC),
+	})
+	if err != nil {
+		t.Fatalf("process mcp turn: %v", err)
+	}
+	if result.GateDecision != "allow" || !result.Committed {
+		t.Fatalf("expected committed mcp turn: %+v", result)
+	}
+
+	executions := svc.ExecutorExecutions()
+	foundMCP := false
+	for _, execution := range executions {
+		if execution.ToolKey != "stripe.create_payment" || execution.Phase != "commit" {
+			continue
+		}
+		if !execution.IsMCP {
+			t.Fatalf("expected mcp execution record, got %+v", execution)
+		}
+		if execution.MCPServerID == "" {
+			t.Fatalf("expected non-empty mcp_server_id, got %+v", execution)
+		}
+		if execution.ContentProvenance != "mcp_result" {
+			t.Fatalf("expected mcp_result provenance, got %+v", execution)
+		}
+		foundMCP = true
+	}
+	if !foundMCP {
+		t.Fatalf("expected mcp commit execution in %+v", executions)
+	}
+}
+
+func TestSensitiveFinancialPIIRoutesToLocalModel(t *testing.T) {
+	t.Parallel()
+
+	svc := NewService("integration-secret")
+	workspaceID := uuid.MustParse("018f3f6a-9a0f-7cc6-8f2f-1f0f2d2f2d4f")
+	svc.BindWorkspace("whatsapp", "+15550007777", workspaceID)
+
+	status, err := svc.IngestWebhook(WebhookPayload{
+		Channel:           "whatsapp",
+		ChannelIdentifier: "+15550007777",
+		UserChannelID:     "u7",
+		Nonce:             "integration_nonce_7",
+		Message:           "analyze sensitive account transactions",
+	})
+	if err != nil || status != 202 {
+		t.Fatalf("ingest webhook: status=%d err=%v", status, err)
+	}
+
+	result, err := svc.ProcessNextQueuedTurnWithOptions(context.Background(), ProcessOptions{
+		ToolKeys:      []string{"plaid.fetch_transactions"},
+		PIIContent:    true,
+		Now:           time.Date(2026, time.March, 1, 12, 0, 0, 0, time.UTC),
+		ToolRiskLevel: "CRITICAL",
+		AutoApprove:   true,
+	})
+	if err != nil {
+		t.Fatalf("process pii financial turn: %v", err)
+	}
+	if result.GateDecision != "allow" {
+		t.Fatalf("expected allowed pii financial turn, got %+v", result)
+	}
+
+	executions := svc.ExecutorExecutions()
+	for _, execution := range executions {
+		if execution.ToolKey != "plaid.fetch_transactions" || execution.Phase != "commit" {
+			continue
+		}
+		if execution.Provider != "local-model" {
+			t.Fatalf("expected local-model provider for pii financial path, got %+v", execution)
+		}
+		if !execution.PIIContent {
+			t.Fatalf("expected pii_content flag for financial path, got %+v", execution)
+		}
+		return
+	}
+	t.Fatalf("expected commit execution for plaid.fetch_transactions in %+v", executions)
+}
+
+func TestMCPPerServerBudgetGate(t *testing.T) {
+	t.Parallel()
+
+	svc := NewService("integration-secret")
+	if err := svc.ConfigureMCPServerPolicy(mcp.ServerPolicy{
+		ServerID:           "stripe_mcp",
+		MonthlyCallCap:     1,
+		MonthlyCostCapUSD:  0.02,
+		RateLimitPerMinute: 10,
+	}); err != nil {
+		t.Fatalf("configure stripe policy: %v", err)
+	}
+
+	workspaceID := uuid.MustParse("018f3f6a-9a0f-7cc6-8f2f-1f0f2d2f2d5f")
+	svc.BindWorkspace("whatsapp", "+15550008888", workspaceID)
+
+	for _, nonce := range []string{"integration_nonce_8a", "integration_nonce_8b"} {
+		status, err := svc.IngestWebhook(WebhookPayload{
+			Channel:           "whatsapp",
+			ChannelIdentifier: "+15550008888",
+			UserChannelID:     "u8",
+			Nonce:             nonce,
+			Message:           "attempt charge",
+		})
+		if err != nil || status != 202 {
+			t.Fatalf("ingest webhook: status=%d err=%v", status, err)
+		}
+	}
+
+	first, err := svc.ProcessNextQueuedTurnWithOptions(context.Background(), ProcessOptions{
+		ToolKeys: []string{"stripe.create_payment"},
+		Now:      time.Date(2026, time.March, 1, 12, 0, 0, 0, time.UTC),
+	})
+	if err != nil {
+		t.Fatalf("process first mcp billing turn: %v", err)
+	}
+	if first.GateDecision != "allow" {
+		t.Fatalf("expected first mcp call allow, got %+v", first)
+	}
+
+	second, err := svc.ProcessNextQueuedTurnWithOptions(context.Background(), ProcessOptions{
+		ToolKeys: []string{"stripe.create_payment"},
+		Now:      time.Date(2026, time.March, 1, 12, 1, 0, 0, time.UTC),
+	})
+	if err != nil {
+		t.Fatalf("process second mcp billing turn: %v", err)
+	}
+	if second.GateDecision != "deny" || second.ReasonCode != "MCP_SERVER_BUDGET_EXCEEDED" {
+		t.Fatalf("expected mcp budget deny, got %+v", second)
 	}
 }
 

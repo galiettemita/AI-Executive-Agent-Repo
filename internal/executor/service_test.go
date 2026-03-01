@@ -261,6 +261,69 @@ func TestAuditPayloadMinimization(t *testing.T) {
 	}
 }
 
+func TestMCPExecutionRecordsProvenanceAndServerID(t *testing.T) {
+	t.Parallel()
+
+	svc := NewService()
+	_, _, err := svc.Commit(ExecutionRequest{
+		WorkspaceID: "ws_mcp",
+		ToolKey:     "stripe.create_payment",
+		Action:      "pay",
+		Provider:    "stripe_mcp",
+		TargetURL:   "https://api.example.com",
+		IsMCP:       true,
+		MCPServerID: "stripe_mcp",
+	})
+	if err != nil {
+		t.Fatalf("mcp commit failed: %v", err)
+	}
+	executions := svc.Executions()
+	if len(executions) == 0 {
+		t.Fatal("expected executions to be recorded")
+	}
+	last := executions[len(executions)-1]
+	if !last.IsMCP {
+		t.Fatalf("expected mcp execution record: %+v", last)
+	}
+	if last.MCPServerID != "stripe_mcp" {
+		t.Fatalf("expected mcp_server_id=stripe_mcp, got %+v", last)
+	}
+	if last.ContentProvenance != "mcp_result" {
+		t.Fatalf("expected mcp_result provenance, got %+v", last)
+	}
+}
+
+func TestMCPExecutionRequiresServerID(t *testing.T) {
+	t.Parallel()
+
+	svc := NewService()
+	if _, _, err := svc.Commit(ExecutionRequest{
+		WorkspaceID: "ws_mcp",
+		ToolKey:     "stripe.create_payment",
+		Action:      "pay",
+		Provider:    "stripe_mcp",
+		TargetURL:   "https://api.example.com",
+		IsMCP:       true,
+	}); err == nil {
+		t.Fatal("expected mcp commit without mcp_server_id to fail")
+	}
+}
+
+func TestInvalidContentProvenanceRejected(t *testing.T) {
+	t.Parallel()
+
+	svc := NewService()
+	if _, err := svc.Simulate(ExecutionRequest{
+		WorkspaceID:       "ws_prov",
+		ToolKey:           "calendar.create_event",
+		Action:            "create",
+		TargetURL:         "https://api.example.com",
+		ContentProvenance: "unknown_source",
+	}); err == nil {
+		t.Fatal("expected invalid provenance rejection")
+	}
+}
+
 func contains(s, sub string) bool {
 	return strings.Contains(s, sub)
 }

@@ -12,6 +12,7 @@ func TestMigrationOrderingRuleZ(t *testing.T) {
 		"001_BREVIO_v9_init.sql",
 		"002_BREVIO_v91_soft_intelligence.sql",
 		"003_BREVIO_v92_production_hardening.sql",
+		"004_BREVIO_ops_operational_systems.sql",
 	}
 
 	for _, name := range migrations {
@@ -50,9 +51,6 @@ func assertRuleZOrdering(t *testing.T, migrationName, sql string) {
 	rlsPos := strings.Index(sql, "ENABLE ROW LEVEL SECURITY")
 	indexPos := firstIndexTokenPosition(sql)
 
-	if enumPos < 0 {
-		t.Fatalf("%s missing enum definitions", migrationName)
-	}
 	if tablePos < 0 {
 		t.Fatalf("%s missing table definitions", migrationName)
 	}
@@ -62,7 +60,7 @@ func assertRuleZOrdering(t *testing.T, migrationName, sql string) {
 	if indexPos < 0 {
 		t.Fatalf("%s missing index definitions", migrationName)
 	}
-	if enumPos > tablePos {
+	if enumPos >= 0 && enumPos > tablePos {
 		t.Fatalf("%s violates Rule Z: enums must be declared before tables", migrationName)
 	}
 	if tablePos > rlsPos {

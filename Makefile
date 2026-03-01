@@ -18,6 +18,8 @@ migrate:
 	test -f db/migrations/001_BREVIO_v9_init.sql
 	test -f db/migrations/002_BREVIO_v91_soft_intelligence.sql
 	test -f db/migrations/003_BREVIO_v92_production_hardening.sql
+	test -f db/migrations/004_BREVIO_ops_operational_systems.sql
+	test -f db/migrations/005_BREVIO_mcp_execution_oauth_hardening.sql
 	$(GO_EXEC) test ./internal/database -run TestMigration -count=1
 
 db-verify:

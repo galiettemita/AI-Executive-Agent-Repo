@@ -67,6 +67,17 @@ type AlertEvent struct {
 	FiredAt   string  `json:"fired_at"`
 }
 
+type MCPServerHealth struct {
+	ServerID          string  `json:"server_id"`
+	Status            string  `json:"status"`
+	P95LatencyMS      int     `json:"p95_latency_ms"`
+	ErrorRate         float64 `json:"error_rate"`
+	MonthlyCalls      int     `json:"monthly_calls"`
+	MonthlyCostUSD    float64 `json:"monthly_cost_usd"`
+	MonthlyCallCap    int     `json:"monthly_call_cap"`
+	MonthlyCostCapUSD float64 `json:"monthly_cost_cap_usd"`
+}
+
 type Service struct {
 	mu               sync.RWMutex
 	nextID           int
@@ -78,6 +89,7 @@ type Service struct {
 	dashboardConfigs map[string]DashboardConfig
 	savedViews       map[string][]SavedView
 	alertEvents      []AlertEvent
+	mcpServerHealth  map[string]MCPServerHealth
 	now              func() time.Time
 }
 
@@ -98,7 +110,29 @@ func NewService() *Service {
 		},
 		savedViews:  map[string][]SavedView{},
 		alertEvents: []AlertEvent{},
-		now:         func() time.Time { return time.Now().UTC() },
+		mcpServerHealth: map[string]MCPServerHealth{
+			"stripe_mcp": {
+				ServerID:          "stripe_mcp",
+				Status:            "healthy",
+				P95LatencyMS:      130,
+				ErrorRate:         0.01,
+				MonthlyCalls:      14,
+				MonthlyCostUSD:    0.14,
+				MonthlyCallCap:    1000,
+				MonthlyCostCapUSD: 200,
+			},
+			"plaid_mcp": {
+				ServerID:          "plaid_mcp",
+				Status:            "healthy",
+				P95LatencyMS:      145,
+				ErrorRate:         0.02,
+				MonthlyCalls:      9,
+				MonthlyCostUSD:    0.09,
+				MonthlyCallCap:    1000,
+				MonthlyCostCapUSD: 200,
+			},
+		},
+		now: func() time.Time { return time.Now().UTC() },
 	}
 }
 
@@ -185,6 +219,7 @@ func (s *Service) Dashboard() map[string]any {
 		"error_rate_pct":         0.2,
 		"dashboard_config":       config,
 		"alerts_fired_last_eval": len(fired),
+		"mcp_server_health":      s.ListMCPServerHealth(),
 	}
 }
 
@@ -210,11 +245,48 @@ func (s *Service) CostSummary() map[string]any {
 		burnPct = (s.budget.CurrentCost / s.budget.MonthlyCap) * 100
 	}
 	return map[string]any{
-		"monthly_cap":  s.budget.MonthlyCap,
-		"current_cost": s.budget.CurrentCost,
-		"currency":     s.budget.Currency,
-		"burn_pct":     burnPct,
+		"monthly_cap":        s.budget.MonthlyCap,
+		"current_cost":       s.budget.CurrentCost,
+		"currency":           s.budget.Currency,
+		"burn_pct":           burnPct,
+		"mcp_server_health":  s.ListMCPServerHealth(),
+		"mcp_total_cost_usd": s.totalMCPCostUSD(),
 	}
+}
+
+func (s *Service) UpsertMCPServerHealth(health MCPServerHealth) MCPServerHealth {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if strings.TrimSpace(health.ServerID) == "" {
+		health.ServerID = fmt.Sprintf("mcp_server_%06d", s.nextID)
+		s.nextID++
+	}
+	if strings.TrimSpace(health.Status) == "" {
+		health.Status = "healthy"
+	}
+	s.mcpServerHealth[health.ServerID] = health
+	return health
+}
+
+func (s *Service) ListMCPServerHealth() []MCPServerHealth {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]MCPServerHealth, 0, len(s.mcpServerHealth))
+	for _, health := range s.mcpServerHealth {
+		out = append(out, health)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].ServerID < out[j].ServerID
+	})
+	return out
+}
+
+func (s *Service) totalMCPCostUSD() float64 {
+	total := 0.0
+	for _, health := range s.mcpServerHealth {
+		total += health.MonthlyCostUSD
+	}
+	return total
 }
 
 func (s *Service) CostAnomalies() []map[string]any {

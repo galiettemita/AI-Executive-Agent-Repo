@@ -56,11 +56,12 @@ run_psql() {
   "$docker_bin" exec -i "$container_name" psql -v ON_ERROR_STOP=1 -U postgres -d brevio "$@"
 }
 
-echo "[db-verify] applying migrations 001 -> 004"
+echo "[db-verify] applying migrations 001 -> 005"
 run_psql -f /src/db/migrations/001_BREVIO_v9_init.sql >/dev/null
 run_psql -f /src/db/migrations/002_BREVIO_v91_soft_intelligence.sql >/dev/null
 run_psql -f /src/db/migrations/003_BREVIO_v92_production_hardening.sql >/dev/null
 run_psql -f /src/db/migrations/004_BREVIO_ops_operational_systems.sql >/dev/null
+run_psql -f /src/db/migrations/005_BREVIO_mcp_execution_oauth_hardening.sql >/dev/null
 
 echo "[db-verify] creating non-superuser validation role"
 run_psql <<SQL >/dev/null
@@ -110,6 +111,30 @@ fi
 echo "[db-verify] checking app.workspace_id unset guard"
 if run_psql -c "SET ROLE brevio_app; SELECT current_setting('app.workspace_id')::uuid;" >/dev/null 2>&1; then
   echo "[db-verify] expected current_setting('app.workspace_id') to fail when unset"
+  exit 1
+fi
+
+echo "[db-verify] checking MCP execution and oauth provider columns"
+missing_columns="$(
+  run_psql -t -A -c \
+    "SELECT count(*)
+       FROM (
+         SELECT 'tool_executions.is_mcp' AS expected
+         UNION ALL SELECT 'tool_executions.mcp_server_id'
+         UNION ALL SELECT 'tool_executions.content_provenance'
+         UNION ALL SELECT 'user_oauth_tokens.provider'
+       ) expected
+       WHERE NOT EXISTS (
+         SELECT 1
+           FROM information_schema.columns c
+          WHERE c.table_schema='public'
+            AND c.table_name = split_part(expected.expected, '.', 1)
+            AND c.column_name = split_part(expected.expected, '.', 2)
+       );" \
+    | tr -d '[:space:]'
+)"
+if [[ "$missing_columns" != "0" ]]; then
+  echo "[db-verify] missing MCP/oauth hardening columns: count=${missing_columns}"
   exit 1
 fi
 

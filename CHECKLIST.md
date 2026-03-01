@@ -258,6 +258,7 @@ Legend
 - [x] Phase 4 one-command closure: executed `make ci-full` successfully (lint/build/test/contracts/acceptance + security + infra + db runtime verification) and refreshed final validation report evidence
 - [x] Phase 4 production ingress closure: added ALB-ready ingress support for `BREVIO-gateway` and `BREVIO-admin-frontend` charts (service type controls + ingress templates), added `scripts/deploy/render_prod_values.sh` for deterministic `ROOT_DOMAIN`/`ACM_CERT_ARN` overlay generation, and updated `docs/DEPLOYMENT.md` with end-to-end production command sequence
 - [x] Phase 4 regression validation: reran `make ci`, `make security-validate`, `make infra-validate`, and `make db-verify` after ingress/deployment changes with all gates passing
+- [x] MCP closure hardening: implemented shared MCP/native tool registry runtime (`internal/mcp`) with auth-matrix coverage, per-server policy gates (call/cost/rate), invocation provenance tracking, migration `005_BREVIO_mcp_execution_oauth_hardening.sql` (`tool_executions.is_mcp/mcp_server_id/content_provenance` + `user_oauth_tokens.provider`), admin MCP health surfacing, and invariant contract gates (`internal/contracts/mcp_invariants_closure_test.go`)
 - [x] Phase 4 closure note: captured remaining Trivy HIGH exception (`CVE-2025-22869`) as Go 1.22-constrained allowlist item and documented only remaining human-required triggers (credential provisioning + production apply/install gate)
 - [x] Phase 4.5 final validation: executed `make ci`, `make security-validate`, and `make infra-validate` successfully; Terraform module/env validation and Helm lint/template checks passed via dockerized toolchain fallbacks
 - [x] Phase 4 release closure: produced final validation report (`docs/FINAL_VALIDATION_v9.2.0-final.md`) and emitted release tags (`v9.0.0`, `v9.1.0`, `v9.2.0`, `v9.2.0-final`)
@@ -764,13 +765,13 @@ You must prove it.
 - [ ] Update operational docs/runbooks for server-specific failure handling
 
 ## MCP Architecture Invariants (Month 1 → Month 15)
-- [ ] Brain plane remains MCP-agnostic (no MCP-specific branching/imports in Brain logic)
-- [ ] Shared ToolRegistry remains single source of truth for native + MCP tool schemas
-- [ ] Content provenance tagging enforced end-to-end, including `mcp_result`
-- [ ] Every MCP invocation recorded in shared `tool_executions` table path
-- [ ] OAuth tokens for MCP servers stored in existing `oauth_tokens` table with `provider=<server_id>`
+- [x] Brain plane remains MCP-agnostic (no MCP-specific branching/imports in Brain logic)
+- [x] Shared ToolRegistry remains single source of truth for native + MCP tool schemas
+- [x] Content provenance tagging enforced end-to-end, including `mcp_result`
+- [x] Every MCP invocation recorded in shared `tool_executions` table path
+- [x] OAuth tokens for MCP servers stored in existing `oauth_tokens` table with `provider=<server_id>`
 - [x] Financial/booking tools always require explicit approval before write operations
-- [ ] Sensitive financial data routes only through local-model path (`pii_content=true`)
+- [x] Sensitive financial data routes only through local-model path (`pii_content=true`)
 
 ## MCP Deployment Plan Platform Requirements (MCP_Server_Deployment_Plan.docx)
 - [x] Hosting strategy implemented per-server (sidecar vs internal microservice vs external) and encoded in `server_catalog.hosting_model` (Deployment Plan Section 8; Auto-Provisioning Section 12)
@@ -779,7 +780,7 @@ You must prove it.
 - [x] TOOLS.md auto-generation includes connected apps details (tools list, auth status, budgets/usage) and not-connected guidance (Deployment Plan Section 11)
 - [x] Conversational discovery triggers (mentions + repeated failures + profile evolution) are implemented and wired to ProvisioningPipeline (Deployment Plan Section 12)
 - [ ] Cost model enforced: per-server budgets + rate limits + per-call metering + billing integration; surfaced in admin + TOOLS.md (Deployment Plan Section 13; Ops Blueprint Component 1)
-- [ ] MCP server health dashboard implemented (admin) per wireframe (Deployment Plan Appendix B; Ops Blueprint Component 3)
+- [x] MCP server health dashboard implemented (admin) per wireframe (Deployment Plan Appendix B; Ops Blueprint Component 3)
 
 ---
 

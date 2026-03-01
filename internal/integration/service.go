@@ -19,6 +19,7 @@ import (
 	"github.com/brevio/brevio/internal/executor"
 	"github.com/brevio/brevio/internal/gateway"
 	"github.com/brevio/brevio/internal/llm"
+	"github.com/brevio/brevio/internal/mcp"
 	"github.com/brevio/brevio/internal/security/pii"
 	"github.com/brevio/brevio/internal/workflows"
 )
@@ -51,6 +52,7 @@ type ProcessOptions struct {
 	ToolRiskLevel   string
 	ToolKeys        []string
 	AutoApprove     bool
+	PIIContent      bool
 	Now             time.Time
 }
 
@@ -62,6 +64,7 @@ type Service struct {
 	llm         *llm.Service
 	workflows   *workflows.Service
 	executor    *executor.Service
+	mcp         *mcp.Service
 	pii         *pii.Service
 	defaultRisk string
 }
@@ -77,9 +80,35 @@ func NewService(secret string) *Service {
 		llm:         llm.NewService(),
 		workflows:   workflows.NewService(),
 		executor:    executor.NewService(),
+		mcp:         seedDefaultMCPRegistry(),
 		pii:         pii.NewService(),
 		defaultRisk: "LOW",
 	}
+}
+
+func seedDefaultMCPRegistry() *mcp.Service {
+	registry := mcp.NewService()
+	defaultTools := []mcp.ToolSpec{
+		{ToolKey: "calendar.create_event", Source: mcp.ToolSourceNative, RiskLevel: "MEDIUM"},
+		{ToolKey: "email.send", Source: mcp.ToolSourceNative, RiskLevel: "MEDIUM"},
+		{ToolKey: "stripe.create_payment", Source: mcp.ToolSourceMCP, ServerID: "stripe_mcp", AuthType: mcp.AuthOAuth2, RiskLevel: "CRITICAL"},
+		{ToolKey: "plaid.fetch_transactions", Source: mcp.ToolSourceMCP, ServerID: "plaid_mcp", AuthType: mcp.AuthAPIKey, RiskLevel: "CRITICAL"},
+		{ToolKey: "zoom.fetch_transcript", Source: mcp.ToolSourceMCP, ServerID: "zoom_mcp", AuthType: mcp.AuthPAT, RiskLevel: "MEDIUM"},
+		{ToolKey: "slack.post_message", Source: mcp.ToolSourceMCP, ServerID: "slack_mcp", AuthType: mcp.AuthIntegrationToken, RiskLevel: "LOW"},
+	}
+	for _, tool := range defaultTools {
+		_ = registry.RegisterTool(tool)
+	}
+	defaultPolicies := []mcp.ServerPolicy{
+		{ServerID: "stripe_mcp", MonthlyCallCap: 1000, MonthlyCostCapUSD: 200, RateLimitPerMinute: 30},
+		{ServerID: "plaid_mcp", MonthlyCallCap: 1000, MonthlyCostCapUSD: 200, RateLimitPerMinute: 30},
+		{ServerID: "zoom_mcp", MonthlyCallCap: 1000, MonthlyCostCapUSD: 200, RateLimitPerMinute: 30},
+		{ServerID: "slack_mcp", MonthlyCallCap: 1000, MonthlyCostCapUSD: 200, RateLimitPerMinute: 30},
+	}
+	for _, policy := range defaultPolicies {
+		_ = registry.ConfigureServerPolicy(policy)
+	}
+	return registry
 }
 
 func (s *Service) BindWorkspace(channel, identifier string, workspaceID uuid.UUID) {
@@ -198,7 +227,38 @@ func (s *Service) ProcessNextQueuedTurnWithOptions(ctx context.Context, options 
 	result.WorkflowState = workflowResult.FinalState
 
 	workspaceID := msg.WorkspaceID.String()
+	now := options.Now.UTC()
+	if now.IsZero() {
+		now = time.Now().UTC()
+	}
+	s.mcp.SetNowFunc(func() time.Time { return now })
 	for _, toolKey := range toolKeys {
+		toolSpec, hasToolSpec := s.mcp.ResolveTool(toolKey)
+		if !hasToolSpec {
+			toolSpec = mcp.ToolSpec{ToolKey: toolKey, Source: mcp.ToolSourceNative, RiskLevel: "MEDIUM"}
+		}
+		isMCPInvocation := toolSpec.Source == mcp.ToolSourceMCP
+		mcpServerID := ""
+		if isMCPInvocation {
+			mcpServerID = toolSpec.ServerID
+		}
+		executionProvider := "native"
+		if isMCPInvocation {
+			executionProvider = mcpServerID
+			if err := s.mcp.EnforceServerPolicy(mcpServerID, 0.01, now); err != nil {
+				result.GateDecision = "deny"
+				result.ReasonCode = err.Error()
+				return result, nil
+			}
+		}
+		if options.PIIContent && isSensitiveFinancialTool(toolKey) {
+			executionProvider = "local-model"
+		}
+		provenance := "native_result"
+		if isMCPInvocation {
+			provenance = "mcp_result"
+		}
+
 		if err := s.control.ConsumeToolCall(workspaceID, toolKey); err != nil {
 			result.GateDecision = "deny"
 			result.ReasonCode = "TOOL_RATE_CAP_EXCEEDED"
@@ -210,24 +270,47 @@ func (s *Service) ProcessNextQueuedTurnWithOptions(ctx context.Context, options 
 			return result, nil
 		}
 		if _, err := s.executor.Simulate(executor.ExecutionRequest{
-			WorkspaceID: workspaceID,
-			ToolKey:     toolKey,
-			Action:      inbound.Message,
-			Provider:    "native",
-			TargetURL:   "https://api.example.com/action",
+			WorkspaceID:       workspaceID,
+			ToolKey:           toolKey,
+			Action:            inbound.Message,
+			Provider:          executionProvider,
+			TargetURL:         "https://api.example.com/action",
+			IsMCP:             isMCPInvocation,
+			MCPServerID:       mcpServerID,
+			ContentProvenance: provenance,
+			PIIContent:        options.PIIContent,
 		}); err != nil {
 			return result, err
 		}
 		result.ToolsSimulated++
 
 		if _, _, err := s.executor.Commit(executor.ExecutionRequest{
-			WorkspaceID: workspaceID,
-			ToolKey:     toolKey,
-			Action:      inbound.Message,
-			Provider:    "native",
-			TargetURL:   "https://api.example.com/action",
+			WorkspaceID:       workspaceID,
+			ToolKey:           toolKey,
+			Action:            inbound.Message,
+			Provider:          executionProvider,
+			TargetURL:         "https://api.example.com/action",
+			IsMCP:             isMCPInvocation,
+			MCPServerID:       mcpServerID,
+			ContentProvenance: provenance,
+			PIIContent:        options.PIIContent,
 		}); err != nil {
 			return result, err
+		}
+		if isMCPInvocation {
+			if err := s.mcp.RecordInvocation(mcp.Invocation{
+				WorkspaceID:       workspaceID,
+				ToolKey:           toolKey,
+				ServerID:          mcpServerID,
+				IsMCP:             true,
+				Provider:          executionProvider,
+				ContentProvenance: provenance,
+				PIIContent:        options.PIIContent,
+				CostUSD:           0.01,
+				CalledAt:          now,
+			}); err != nil {
+				return result, err
+			}
 		}
 		result.ToolsCommitted++
 	}
@@ -337,6 +420,46 @@ func (s *Service) VerifyPIIRotationDualKeyWindow(base time.Time) (beforeRotation
 		expiredAfterWindow = true
 	}
 	return beforeRotation, duringWindow, expiredAfterWindow, nil
+}
+
+func (s *Service) ExecutorExecutions() []executor.ToolExecution {
+	return s.executor.Executions()
+}
+
+func (s *Service) MCPToolRegistry() []mcp.ToolSpec {
+	return s.mcp.ListTools()
+}
+
+func (s *Service) MCPHealthDashboard() []mcp.HealthSnapshot {
+	return s.mcp.HealthDashboard()
+}
+
+func (s *Service) MCPAuthMatrixCoverage() map[mcp.AuthType]bool {
+	return s.mcp.AuthMatrixCoverage()
+}
+
+func (s *Service) ConfigureMCPServerPolicy(policy mcp.ServerPolicy) error {
+	return s.mcp.ConfigureServerPolicy(policy)
+}
+
+func isSensitiveFinancialTool(toolKey string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(toolKey))
+	if normalized == "" {
+		return false
+	}
+	financialPrefixes := []string{
+		"plaid.",
+		"stripe.",
+		"wise.",
+		"quickbooks.",
+		"financial.",
+	}
+	for _, prefix := range financialPrefixes {
+		if strings.HasPrefix(normalized, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 func signPayload(secret, payload []byte) string {

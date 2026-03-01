@@ -24,21 +24,30 @@ const (
 )
 
 type ExecutionRequest struct {
-	WorkspaceID string
-	ToolKey     string
-	Action      string
-	Provider    string
-	TargetURL   string
+	WorkspaceID       string
+	ToolKey           string
+	Action            string
+	Provider          string
+	TargetURL         string
+	IsMCP             bool
+	MCPServerID       string
+	ContentProvenance string
+	PIIContent        bool
 }
 
 type ToolExecution struct {
-	ID             uuid.UUID
-	Phase          ExecutionPhase
-	WorkspaceID    string
-	ToolKey        string
-	LogicalAction  string
-	IdempotencyKey string
-	CreatedAt      time.Time
+	ID                uuid.UUID
+	Phase             ExecutionPhase
+	WorkspaceID       string
+	ToolKey           string
+	LogicalAction     string
+	IdempotencyKey    string
+	Provider          string
+	IsMCP             bool
+	MCPServerID       string
+	ContentProvenance string
+	PIIContent        bool
+	CreatedAt         time.Time
 }
 
 type TrustReceipt struct {
@@ -194,6 +203,20 @@ func (s *Service) recordExecution(req ExecutionRequest, phase ExecutionPhase) (T
 	if req.WorkspaceID == "" || req.ToolKey == "" {
 		return ToolExecution{}, false, fmt.Errorf("workspace_id and tool_key are required")
 	}
+	if req.IsMCP && strings.TrimSpace(req.MCPServerID) == "" {
+		return ToolExecution{}, false, fmt.Errorf("mcp_server_id is required for mcp execution")
+	}
+	provenance := strings.TrimSpace(req.ContentProvenance)
+	if provenance == "" {
+		if req.IsMCP {
+			provenance = "mcp_result"
+		} else {
+			provenance = "native_result"
+		}
+	}
+	if provenance != "native_result" && provenance != "mcp_result" {
+		return ToolExecution{}, false, fmt.Errorf("invalid content_provenance: %s", provenance)
+	}
 	logicalHash := logicalActionHash(req.WorkspaceID, req.ToolKey, req.Action)
 	idempotencyKey := req.WorkspaceID + "::" + req.ToolKey + "::" + logicalHash + "::" + string(phase)
 
@@ -204,13 +227,18 @@ func (s *Service) recordExecution(req ExecutionRequest, phase ExecutionPhase) (T
 	}
 
 	exec := ToolExecution{
-		ID:             uuid.Must(uuid.NewV7()),
-		Phase:          phase,
-		WorkspaceID:    req.WorkspaceID,
-		ToolKey:        req.ToolKey,
-		LogicalAction:  req.Action,
-		IdempotencyKey: idempotencyKey,
-		CreatedAt:      s.nowFunc(),
+		ID:                uuid.Must(uuid.NewV7()),
+		Phase:             phase,
+		WorkspaceID:       req.WorkspaceID,
+		ToolKey:           req.ToolKey,
+		LogicalAction:     req.Action,
+		IdempotencyKey:    idempotencyKey,
+		Provider:          req.Provider,
+		IsMCP:             req.IsMCP,
+		MCPServerID:       req.MCPServerID,
+		ContentProvenance: provenance,
+		PIIContent:        req.PIIContent,
+		CreatedAt:         s.nowFunc(),
 	}
 	s.executions = append(s.executions, exec)
 	s.idempotency[idempotencyKey] = exec
@@ -439,6 +467,14 @@ func (s *Service) AuditEntries() []AuditLogEntry {
 	defer s.mu.Unlock()
 	out := make([]AuditLogEntry, len(s.audit))
 	copy(out, s.audit)
+	return out
+}
+
+func (s *Service) Executions() []ToolExecution {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]ToolExecution, len(s.executions))
+	copy(out, s.executions)
 	return out
 }
 
