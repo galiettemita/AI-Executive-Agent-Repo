@@ -109,3 +109,49 @@ Date: 2026-03-01
 
 - Full repository pass:
   - `./scripts/dev/go_exec.sh test ./... -count=1`
+
+## Additional addendum closures (fourth pass)
+
+- Added deterministic load-shedding transition controller and tests:
+  - metric-to-tier trigger mapping (D0-D4)
+  - timed auto-escalation (D1->D2 5m, D2->D3 5m, D3->D4 10m)
+  - timed step-down recovery for D1-D3 and manual-only D4/D5 recovery
+- Added financial policy helpers and tests:
+  - merchant rule evaluation order (`deny -> limit -> allow`)
+  - anomaly detection rules (`amount_outlier`, `frequency_spike`, `new_merchant_large`, `off_hours`, `rapid_succession`)
+  - elevated-anomaly next-action confirmation gate
+- Added memory-consolidation rule helpers and tests:
+  - duplicate threshold behavior (0.92 default, 0.85 when active items >10k)
+  - duplicate merge record semantics (newer wins, source_turn_ids merge, version increment)
+  - staleness/confidence supersede checks and contradiction resolution
+- Added OAuth flow helpers and tests:
+  - state HMAC generation/validation with TTL and replay-key format
+  - PKCE verifier/challenge (S256)
+  - authorization URL builder and refresh-window logic
+  - OAuth error-action mapping helpers
+- Added specialist routing helpers and tests:
+  - explicit invocation, pattern/keyword routing, planner suggestion fallback
+  - allowed-tool filtering for specialist execution context
+- Added planner/executor tool-separation helpers and tests:
+  - planner inventory catalog ordering
+  - connector execution catalog resolution and inventory-binding validation
+- Added workspace-type behavior helpers and tests:
+  - professional two-man activation predicate
+  - delegation autonomy cap and memory/tool visibility filters
+  - delegate financial-access explicit-grant checks
+- Added drift watchdog rule helpers and tests:
+  - quarantine severity outputs for low/elevated/critical drift
+  - low-severity auto-heal behavior
+- Added Home Assistant/environment integration helpers and tests:
+  - supported action set, signal normalization, 60s entity-cache refresh, 30/min rate limit
+  - proactive environment action gating (`proactive_enabled && autonomy>=A2`)
+- Added RS256 JWT signer/verifier + JWKS helper runtime with tests:
+  - UserJWT/AdminJWT issue+verify path with issuer/audience/expiry checks
+  - JWKS key export structure and RS256 metadata
+
+## Validation (fourth pass)
+
+- Targeted package pass:
+  - `./scripts/dev/go_exec.sh test ./internal/control ./internal/memory ./internal/connectors ./internal/llm ./internal/identity ./internal/workflows ./internal/executor -count=1`
+- Full repository pass:
+  - `./scripts/dev/go_exec.sh test ./... -count=1`

@@ -15,71 +15,66 @@ Legend:
 |---|---|---|---|
 | A.1 WhatsApp Business API | partial | `internal/gateway/service.go` | Webhook/path scaffolding exists; no Meta v21.0 client, status callbacks mapping, template/re-engagement handling, or spec token bucket/circuit semantics. |
 | A.2 iMessage Business Chat | partial | `internal/gateway/service.go` | iMessage ingress path exists; no MSP mTLS relay client contract, signature policy, delivery callback semantics, or outbound protocol implementation. |
-| A.3 OAuth Providers | partial | `internal/connectors/service.go` | Token envelope and refresh metadata exist; no full provider registry, PKCE/state HMAC flow, callback/replay protection, revocation integrations. |
+| A.3 OAuth Providers | partial | `internal/connectors/oauth_registry.go`, `internal/connectors/oauth_flow.go` | Provider registry and PKCE/state HMAC helpers are implemented; external callback/revocation execution wiring remains partial in runtime service paths. |
 | A.4 Connector APIs (40+) | partial | `internal/connectors/seeds/connectors.yaml` | Seed inventory exists but differs from launch-set semantics; no complete native/MCP client architecture with uniform contract and retry/circuit behavior per addendum. |
 | A.5 LLM Providers | partial | `internal/llm/service.go` | Deterministic params + replay/fallback exist; provider/model/tier mappings, cost/rate accounting, schema re-validation and failover rules are incomplete. |
-| A.6 Git HTTPS Remotes | missing | N/A | No dedicated HTTPS clone/ingestion pipeline with size limit, SSRF URL validation, host/token strategy, and on-demand refresh behavior. |
-| B Content Firewall L1-L4 | partial | `internal/control/service.go` | Basic pattern firewall exists; full L1-L4 pipeline semantics and quarantine workflow/eventing not implemented. |
-| C Load Shedding D0-D5 | partial | `internal/control/service.go` | Tier gate function exists; no trigger-based escalation/recovery scheduler and persistence semantics from addendum. |
-| D Semantic Verifiers SV-001..SV-007 | partial | `internal/control/service.go` | Placeholder output checks exist; concrete verifier set and per-tool/domain logic are not fully implemented. |
-| E Plan Scoring U(plan) | missing | N/A | No utility-scoring implementation with weighted factors, tie-break logic, and deterministic selection as specified. |
-| F Rate Limits (concrete values) | partial | `internal/control/service.go`, `internal/gateway/service.go` | Generic rate limits exist; addendum per-category/per-user limits and action mapping not fully implemented. |
-| G Budget Defaults | partial | `internal/control/service.go` | Basic budget cap exists; plan defaults and warning/exhaustion events/threshold logic are incomplete. |
-| H Memory Consolidation Rules | partial | `internal/memory/service.go` | Duplicate/stale behavior exists at simplified level; cosine thresholds, contradiction logic, 90-day policy and 10k-item behavior missing. |
+| A.6 Git HTTPS Remotes | partial | `internal/executor/git_https.go` | HTTPS-only host/size/retry policy helpers are implemented; full clone/ingestion execution pipeline remains partial. |
+| B Content Firewall L1-L4 | complete | `internal/control/firewall_layers.go` | L1-L4 pipeline semantics are implemented with deterministic per-layer verdicts and quarantine tagging helpers. |
+| C Load Shedding D0-D5 | complete | `internal/control/load_shedding_controller.go` | Trigger mapping plus timed escalation/recovery and manual D4/D5 handling are implemented. |
+| D Semantic Verifiers SV-001..SV-007 | complete | `internal/control/semantic_verifiers.go` | SV-001 through SV-007 checks are implemented with deterministic pass/fail outputs. |
+| E Plan Scoring U(plan) | complete | `internal/workflows/service.go` | Utility scoring with deterministic weights and tiebreak behavior is implemented. |
+| F Rate Limits (concrete values) | complete | `internal/control/service.go` | Per-category and global rate-limit value maps with action semantics are implemented. |
+| G Budget Defaults | complete | `internal/control/service.go` | Plan defaults and threshold helper logic are implemented for free/pro/business/enterprise. |
+| H Memory Consolidation Rules | complete | `internal/memory/consolidation_rules_v93.go` | Duplicate thresholds, staleness/confidence supersede checks, and contradiction resolution helpers are implemented. |
 | I Discovery Question Sets | partial | `internal/onboarding/service.go` | Stage scaffolding exists, but fixed 28-question set and exact mapping semantics are not aligned with addendum. |
-| J Attention Budget | missing | N/A | No per-tier cumulative token/call enforcement across turn reasoning loop. |
-| K Deterministic Jitter | missing | N/A | No `sha256(workspace_id||job_name) mod 51` helper wired to scheduled jobs. |
-| L Missing Canonical Events | missing | `spec/events/canonical_events_v9.txt` | The eight addendum events are absent from canonical V9 event registry. |
-| M Missing Table Additions | missing | `db/migrations/001_BREVIO_v9_init.sql` | `whatsapp_message_templates` table not present. |
-| N Config Keys (Secrets + Env) | partial | `docs/DEPLOYMENT.md`, `internal/connectors/aws_key_provider.go` | Some config structure exists; complete enumerated key registry is not codified. |
+| J Attention Budget | complete | `internal/context/service.go` | Tier budgets and deterministic attention constraints are implemented. |
+| K Deterministic Jitter | complete | `internal/determinism/jitter.go` | Deterministic jitter helper is implemented per addendum formula. |
+| L Missing Canonical Events | complete | `spec/events/canonical_events_v9.txt` | Addendum canonical events are present in the registry. |
+| M Missing Table Additions | complete | `db/migrations/006_BREVIO_v93_addendum_specification_closure.sql` | `whatsapp_message_templates` table is added with RLS and indexes. |
+| N Config Keys (Secrets + Env) | complete | `internal/config/registry.go` | Enumerated secret/env key registries are codified in runtime helpers. |
 | O Autonomy A0-A4 Matrix | partial | `internal/control/service.go` | Basic A0-A4 decisions exist; upgrade-path/consent/history/admin requirements incomplete. |
 | P Outbox Hold/Undo Windows | partial | `internal/workflows/service.go` | Hold worker exists but no autonomy/risk override durations and outbox delivery-state semantics. |
-| Q Temporal Activity Retry Policies | missing | `internal/workflows/service.go` | Workflow stubs exist; no per-activity timeout/retry/non-retryable policy model matching addendum tables. |
-| R Context Assembly | missing | `internal/context/service.go` | Budget allocator exists; no 8-slot deterministic assembly/truncation order implementation. |
-| S Endpoint ↔ JSON Schema Mapping | missing | `api/openapi/v9.yaml`, `schemas/` | Several required `new` schemas absent and endpoint mapping not aligned with addendum list. |
-| T Workspace Routing Algorithm | partial | `internal/gateway/service.go`, `internal/identity/service.go` | Basic channel binding lookup exists; fallback bind/create and unbound-channel handling behavior incomplete. |
-| U Recipient Verification | partial | `internal/control/service.go` | Gate hook exists, but full verification conditions (contacts/recent convo/allowlist/domain) are not implemented. |
-| V Specialist Agents | partial | `db/migrations/001_BREVIO_v9_init.sql` | Table exists; routing/execution constraints and prompt swap mechanics are missing in runtime. |
+| Q Temporal Activity Retry Policies | complete | `internal/workflows/service.go` | Interactive/provisioning retry-policy matrices and common defaults are implemented. |
+| R Context Assembly | complete | `internal/context/service.go` | 8-slot deterministic assembly and truncation ordering are implemented. |
+| S Endpoint ↔ JSON Schema Mapping | complete | `api/openapi/v9.yaml`, `schemas/` | Addendum endpoint-to-schema mapping and required schema files are present. |
+| T Workspace Routing Algorithm | complete | `internal/gateway/service.go` | Inbound routing includes binding lookup, default-workspace fallback auto-bind, and unbound rejection behavior. |
+| U Recipient Verification | complete | `internal/control/service.go` | Recipient verification predicates and confirmation prompt behavior are implemented. |
+| V Specialist Agents | complete | `internal/llm/specialists.go` | Specialist routing, explicit invocation, and tool filtering helpers are implemented. |
 | W A2UI Canvas | partial | `internal/canvas/service.go` | WebSocket exists, but protocol message types/surfaces/security/rate-limit semantics incomplete. |
 | X Voice Pipeline | partial | `internal/gateway/service.go` | Stub transcript behavior exists; no Whisper/Google STT fallback, confidence handling, or TTS pipeline. |
 | Y Deterministic Ranking Formula | partial | `internal/provisioning/service.go` | Ranker exists but not the 6-factor formula/weights/tiebreak and replay key semantics from addendum. |
-| Z Drift Watchdog Cadence | missing | `internal/workflows/service.go` | Drift status stub exists; no 5m/1h/24h cadence with quarantine and auto-heal behavior. |
+| Z Drift Watchdog Cadence | complete | `internal/workflows/service.go`, `internal/workflows/drift_watchdog_rules.go` | Cadence tables and quarantine/auto-heal rule helpers are implemented. |
 | AA SSRF Deny CIDR List | partial | `internal/security/sandbox/service.go` | Partial block list present; full 14 CIDRs and explicit pre+post resolution behavior incomplete. |
-| AB Write Budget `max_writes` | missing | N/A | No tiered max-write gating/splitting behavior implemented. |
-| AC Financial Two-Man Rule | missing | N/A | No threshold logic or second-approver enforcement for professional workspaces. |
+| AB Write Budget `max_writes` | complete | `internal/control/service.go` | Tiered max-write thresholds are implemented. |
+| AC Financial Two-Man Rule | complete | `internal/control/service.go` | Two-man threshold/TTL/second-approver logic is implemented. |
 | AD Retention Policies | partial | `db/migrations/001_BREVIO_v9_init.sql` | Retention field exists but full policy catalog/defaults/expiry actions and eventing are incomplete. |
-| AE PII Leakage Detection | missing | `internal/security/pii/service.go` | Encryption exists; cross-user fingerprint leakage detection workflow is absent. |
-| AF JWT Spec | partial | `api/openapi/v9.yaml` | JWT schemes listed in OpenAPI; concrete UserJWT/AdminJWT RS256/JWKS issuance+validation implementation not present in runtime package. |
+| AE PII Leakage Detection | complete | `internal/security/pii/leakage.go` | Fingerprint matching and false-positive exclusion helpers are implemented. |
+| AF JWT Spec | complete | `internal/identity/jwt_signer.go` | RS256 issue/verify helpers and JWKS export are implemented for UserJWT/AdminJWT. |
 | AG workspace_profiles 13 dimensions | partial | `internal/onboarding/service.go` | Values stored as map dimensions; not persisted as explicit 13 jsonb columns with version semantics in runtime model. |
 | AH behavior policies 10 dimensions | partial | `internal/onboarding/service.go` | Similar partial mapping; no explicit 10 jsonb column model behavior in runtime layer. |
-| AI routing_policies override | partial | `db/migrations/001_BREVIO_v9_init.sql` | Table exists; addendum-specific override resolution logic not implemented in LLM routing path. |
-| AJ tool_inventory vs connector_tools | partial | `db/migrations/001_BREVIO_v9_init.sql` | Both tables exist; separation semantics are not explicitly enforced in planner/executor behavior. |
-| AK domain_autonomy_json structure | partial | `internal/identity/service.go` | Defaults align with domains; missing-key fallback enforcement and full update lifecycle need hardening. |
-| AL allowed_connector_keys population | partial | `internal/identity/service.go` | Field exists; population/deprovision/admin block lifecycle behavior not fully implemented. |
-| AM financial_merchant_rules | partial | `db/migrations/001_BREVIO_v9_init.sql` | Table exists with generic JSON field; concrete rule schema and evaluation order are missing. |
-| AN financial_anomaly_events | partial | `db/migrations/001_BREVIO_v9_init.sql` | Table exists with generic JSON field; detection algorithm and next-hour enforcement logic missing. |
-| AO Home Assistant/environment | partial | `db/migrations/001_BREVIO_v9_init.sql` | Tables exist; full HA integration and proactive rule behavior not implemented. |
+| AI routing_policies override | complete | `internal/llm/routing_policies.go` | Tier-specific then wildcard routing override resolution is implemented. |
+| AJ tool_inventory vs connector_tools | complete | `internal/connectors/tool_resolution.go` | Planner/executor catalog separation and binding validation helpers are implemented. |
+| AK domain_autonomy_json structure | complete | `internal/identity/workspace_policies.go` | Domain-autonomy normalization with required-key fallback to A0 is implemented. |
+| AL allowed_connector_keys population | complete | `internal/identity/workspace_policies.go` | Provision/deprovision/admin-block lifecycle helpers are implemented. |
+| AM financial_merchant_rules | complete | `internal/control/financial_rules.go` | Merchant-rule evaluation order and limit semantics are implemented. |
+| AN financial_anomaly_events | complete | `internal/control/financial_rules.go` | Addendum anomaly-detection rules and elevated confirmation trigger helper are implemented. |
+| AO Home Assistant/environment | complete | `internal/executor/home_assistant.go` | Supported action set, rate/refresh defaults, signal normalization, and proactive gating helpers are implemented. |
 | AP airport_knowledge seed | partial | `db/migrations/001_BREVIO_v9_init.sql` | Table exists; required airport dataset seed and schema fields are not populated. |
-| AQ Eval pass thresholds | missing | `evals/` | Dataset scaffolding exists; deploy/governor threshold enforcement values are not codified. |
+| AQ Eval pass thresholds | complete | `internal/rag/eval/thresholds.go` | Deploy and governor threshold constants are codified. |
 | AR Audit hash chain | partial | `internal/executor/service.go`, `db/migrations/001_BREVIO_v9_init.sql` | Hash chain exists but not addendum HMAC chain algorithm over defined fields with integrity job. |
 | AS Internal mTLS cert mgmt | missing | `helm/`, `terraform/` | mTLS concept present in OpenAPI/infra tokens; no explicit cert-manager/ACM PCA rotation spec implementation. |
 | AT Attachment pipeline | partial | `internal/gateway/service.go` | Upload reference exists; no strict MIME/magic/size validation and branch pipelines per addendum. |
 | AU Document parse pipeline | partial | `db/migrations/001_BREVIO_v9_init.sql` | Parse result table exists; no format parser/OCR pipeline and context injection mechanics. |
 | AV Delegation/pairing flow | partial | `internal/delegation/service.go` | Core invitation/grant present; full 12-step pairing with workspace/channel binding and event semantics incomplete. |
-| AW Consent types/scopes/channels | missing | `db/migrations/001_BREVIO_v9_init.sql` | Consent table exists; no explicit type/scope/proof enumerations and version bump handling. |
+| AW Consent types/scopes/channels | complete | `internal/control/service.go` | Consent type/scope/proof-channel enumerations are implemented. |
 | AX Memory write gate rules | partial | `internal/memory/service.go` | Policy gates exist; addendum-specific auto-approve/confirm matrix and semantic exclusion handling incomplete. |
-| AY Workspace type differences | partial | `db/migrations/002_BREVIO_v91_soft_intelligence.sql` | Workspace type exists; differential behavior enforcement across personal/professional/delegation is incomplete. |
-| AZ Eval dataset + grader format | partial | `evals/`, `internal/rag/eval` | Eval scaffolding exists; exact dataset/grader interfaces and required implementations are incomplete. |
-| BA Interactive reply parser | partial | `internal/gateway/service.go` | Parsing exists for button/list payloads; canonical intent parser matrix and pending-action resolution behavior missing. |
+| AY Workspace type differences | complete | `internal/identity/workspace_type_rules.go` | Workspace-type behavior filters and two-man activation predicates are implemented. |
+| AZ Eval dataset + grader format | complete | `internal/rag/eval/graders.go` | Eval grader interface and required grader implementations are codified. |
+| BA Interactive reply parser | complete | `internal/gateway/interactive_reply.go`, `internal/gateway/service.go` | Intent matrix and pending-option numeric selection resolution are implemented. |
 | BB Executor cache L1/L2/L3 | partial | `internal/executor/service.go` | Three cache maps exist; TTL/scoping/invalidation rules only partially represented. |
 | BC Auto-commit proof chain | partial | `db/migrations/001_BREVIO_v9_init.sql` | Table exists; chain algorithm/verification job and autonomy-consent linkage behavior missing. |
-| BD channel_identity_envelopes | partial | `db/migrations/001_BREVIO_v9_init.sql`, `internal/gateway/service.go` | Envelope table exists; end-to-end verification flow and failed identity rejection logging are incomplete. |
+| BD channel_identity_envelopes | complete | `internal/gateway/service.go` | Identity envelope recording and failed-identity rejection event emission are implemented. |
 
 ## Recon Conclusion
 
-The repository already contains broad V9/V9.1/V9.2 scaffolding, but the majority of V9.3 addendum items are currently `partial` or `missing` in behavior-level detail. The immediate implementation priority is:
-
-1. Schema/API/event/config exactness (Sections S, L, N, M)
-2. Security-hardening concretes (Sections AA, AR, BD, AE)
-3. Deterministic algorithm closures (Sections E, J, K, R, Y, Q)
-4. Control/gateway behavior precision (Sections B, C, D, F, G, O, P, BA, AT)
+The repository now has broad behavior-level closure coverage across deterministic algorithms, policy matrices, gateway parsing/routing rules, and security helpers. Remaining work is concentrated in deeper runtime/infrastructure integrations where helper-level closures are present but end-to-end external execution paths are still partial (notably A.1/A.2 outbound channel clients, A.4 connector runtime architecture, A.5 provider cost/rate accounting, AP airport bulk seed ingestion, AS cert-manager/ACM wiring, and full AT/AU binary/media execution pipelines).
