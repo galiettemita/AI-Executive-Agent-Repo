@@ -1,0 +1,29 @@
+.git
+.github
+.DS_Store
+
+# Local and generated artifacts
+artifacts/
+sbom.spdx.json
+coverage.out
+*.log
+
+# Non-runtime repo content
+docs/
+evals/
+runbooks/
+spec/
+terraform/
+helm/
+scripts/
+admin/
+
+# Large blueprint inputs not needed for binary builds
+*.docx
+CHECKLIST.md
+README.md
+classmate-ai
+
+# Tooling caches
+node_modules/
+.cache/

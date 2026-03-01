@@ -22,6 +22,9 @@ Legend
   - `Brevio_V9_Consolidated_Master_Blueprint.docx`
   - `Brevio_V91_Addendum_Soft_Intelligence_Layer.docx`
   - `Brevio_V92_Addendum_Production_Hardening.docx`
+- [x] Production deploy unblock: added `.dockerignore` to prevent oversized Docker build context and rebuilt release images deterministically.
+- [x] Production deploy unblock: pushed `v9.2.0` service images to ECR (`brevio-gateway`, `brevio-admin-frontend`) for EKS pullability.
+- [x] Production deploy unblock: upgraded `brevio-gateway` and `brevio-admin-frontend` Helm releases to ECR image repos with runtime ports (`18080`, `18082`) and verified running pods + healthy ALB target groups.
 - [x] Phase 0.2: dead-code/duplicate cleanup and naming normalization
 - [x] Phase 0.3: clean baseline (`go build`, `go vet`, `gofmt`) + commit/tag
 - [x] Phase 0.3 validation complete via Docker Go 1.22 (`go mod tidy`, `go build`, `go vet`, `gofmt`, `go test`, `staticcheck`)
