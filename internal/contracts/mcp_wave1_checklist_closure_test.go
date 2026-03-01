@@ -72,7 +72,9 @@ func TestMCPWave1ChecklistAutomationClosure(t *testing.T) {
 		"./scripts/mcp/wave1_checklist/main.go",
 		"mcp-fleet-validate:",
 		"./scripts/mcp/fleet_validation/main.go",
-		"ci: lint build test migrate api-docs-check tools-md-check mcp-wave1-checklist mcp-fleet-validate contracts acceptance",
+		"mcp-runtime-rollout:",
+		"./scripts/mcp/runtime_rollout/main.go",
+		"ci: lint build test migrate api-docs-check tools-md-check mcp-wave1-checklist mcp-fleet-validate mcp-runtime-rollout contracts acceptance",
 	})
 
 	fleetSpecPath := filepath.Join(root, "spec", "mcp", "fleet_servers_v1.txt")
@@ -98,5 +100,21 @@ func TestMCPWave1ChecklistAutomationClosure(t *testing.T) {
 		"FailoverKillFivePassed",
 		"mcp_fleet_validation_report.json",
 		"pickDeterministicServers",
+	})
+
+	runtimeRolloutScript := filepath.Join(root, "scripts", "mcp", "runtime_rollout", "main.go")
+	assertFileNonEmpty(t, runtimeRolloutScript)
+	assertFileContainsTokens(t, runtimeRolloutScript, []string{
+		"mcp_runtime_rollout_v1",
+		"EXECUTOR_IMAGE_REPOSITORY",
+		"EXECUTOR_IMAGE_TAG",
+		"mcp_runtime_rollout_plan.json",
+		"flag.Bool(\"execute\"",
+	})
+	assertFileContainsTokens(t, filepath.Join(root, "internal", "mcp", "runtime_rollout.go"), []string{
+		"MCP_SERVER_ALLOWLIST",
+		"MCP_RUNTIME_MODE",
+		"MCP_SERVER_COUNT",
+		"executor-mcp-runtime-values.yaml",
 	})
 }

@@ -46,6 +46,10 @@ spec:
           env:
             - name: BREVIO_TASK_QUEUE
               value: '{{ .Values.taskQueue | default "" }}'
+            {{- range .Values.extraEnv }}
+            - name: {{ .name | quote }}
+              value: {{ .value | quote }}
+            {{- end }}
 
       volumes:
         - name: tmp

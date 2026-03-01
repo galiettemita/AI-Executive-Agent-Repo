@@ -8,3 +8,4 @@ autoscaling:
   enabled: true
   minReplicas: 3
   maxReplicas: 12
+extraEnv: []

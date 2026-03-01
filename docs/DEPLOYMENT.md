@@ -94,6 +94,26 @@ make mcp-fleet-validate
 cat artifacts/deploy/mcp_fleet_validation_report.json
 ```
 
+### MCP Runtime Build/Push/Deploy (Executor Path)
+Generate deterministic MCP runtime rollout artifacts for the 40-server fleet:
+
+```bash
+make mcp-runtime-rollout
+cat artifacts/deploy/mcp_runtime_rollout_plan.json
+cat artifacts/deploy/executor-mcp-runtime-values.yaml
+```
+
+Execute build/push/deploy when credentials and cluster access are ready:
+
+```bash
+EXECUTOR_IMAGE_REPOSITORY=105914556507.dkr.ecr.us-east-1.amazonaws.com/brevio-executor \
+EXECUTOR_IMAGE_TAG=v9.2.0 \
+KUBE_NAMESPACE=default \
+HELM_RELEASE=brevio-executor \
+HELM_CHART_PATH=./helm/BREVIO-executor \
+./scripts/dev/go_exec.sh run ./scripts/mcp/runtime_rollout/main.go --execute
+```
+
 Optional image/port overrides for production ECR rollout:
 
 ```bash

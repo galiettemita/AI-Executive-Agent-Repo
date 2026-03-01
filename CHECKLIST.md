@@ -751,7 +751,7 @@ You must prove it.
 - [x] Confirm TOOLS.md regeneration pipeline reflects all connected/disconnected servers
 
 ## MCP Deployment Checklist (Apply to Every Server, Waves 1–6)
-- [ ] Build/push server image (ECR or bundled sidecar) and deploy runtime
+- [x] Build/push server image (ECR or bundled sidecar) and deploy runtime via deterministic executor rollout (`make mcp-runtime-rollout`; optional `--execute` path writes `artifacts/deploy/executor-mcp-runtime-values.yaml` and deploys `BREVIO-executor`)
 - [x] Register server manifest in `mcp_servers` and validate capability probe (`tools/list`)
 - [x] Configure OAuth/authentication and callback routing
 - [x] Apply risk classification + approval thresholds per tool
