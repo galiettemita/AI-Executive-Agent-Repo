@@ -26,6 +26,8 @@ Legend
 - [x] Production deploy unblock: pushed `v9.2.0` service images to ECR (`brevio-gateway`, `brevio-admin-frontend`) for EKS pullability.
 - [x] Production deploy unblock: upgraded `brevio-gateway` and `brevio-admin-frontend` Helm releases to ECR image repos with runtime ports (`18080`, `18082`) and verified running pods + healthy ALB target groups.
 - [x] Post-deploy validation: reran `make ci-full` (lint, unit/integration/contracts/acceptance, security, infra validation, DB migration runtime verification) with all gates passing.
+- [x] Endpoint verification: confirmed HTTPS `/healthz/live` returns `200 ok` on both ALBs using host-header routing (`api.testing-orbit.com`, `admin.testing-orbit.com`).
+- [ ] External DNS cutover pending: account `105914556507` has no public Route53 hosted zone for `testing-orbit.com`; CNAME/ALIAS must be updated in the external DNS provider to point both hosts at current ALB DNS names.
 - [x] Phase 0.2: dead-code/duplicate cleanup and naming normalization
 - [x] Phase 0.3: clean baseline (`go build`, `go vet`, `gofmt`) + commit/tag
 - [x] Phase 0.3 validation complete via Docker Go 1.22 (`go mod tidy`, `go build`, `go vet`, `gofmt`, `go test`, `staticcheck`)
