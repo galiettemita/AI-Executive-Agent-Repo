@@ -108,6 +108,7 @@ func TestToolsCatalogPipelineClosure(t *testing.T) {
 		"internal/connectors/seeds/connectors.yaml",
 		"## Connected Apps",
 		"## Available But Not Connected",
+		"## MCP Budget And Rate-Limit Matrix",
 		"TOOLS.md",
 	})
 

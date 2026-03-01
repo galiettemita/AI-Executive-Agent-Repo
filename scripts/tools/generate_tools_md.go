@@ -23,6 +23,12 @@ type connectorSeed struct {
 	MCPServerURL string `yaml:"mcp_server_url"`
 }
 
+type mcpBudgetPolicy struct {
+	MonthlyCallCap     int
+	MonthlyCostCapUSD  float64
+	RateLimitPerMinute int
+}
+
 func main() {
 	root, err := repoRoot()
 	if err != nil {
@@ -73,9 +79,14 @@ func main() {
 	buffer.WriteString("## Available But Not Connected\n\n")
 	writeConnectorTable(&buffer, available)
 
+	buffer.WriteString("## MCP Budget And Rate-Limit Matrix\n\n")
+	writeMCPBudgetTable(&buffer, seeds.Connectors)
+
 	buffer.WriteString("## Budget And Usage Signals\n\n")
 	buffer.WriteString("- Enforce per-workspace rate limits and monthly budgets before write operations.\n")
 	buffer.WriteString("- Track per-call usage in `tool_executions` and aggregate metrics in observability pipelines.\n")
+	buffer.WriteString("- Meter MCP server usage via `internal/mcp` invocation ledger and enforce server policy gates before execution.\n")
+	buffer.WriteString("- Surface MCP usage/cost in admin (`/v1/admin/operations/dashboard`, `/v1/admin/costs/summary`) and TOOLS catalog.\n")
 	buffer.WriteString("- Review high-risk connectors (`risk_level=CRITICAL`) for explicit approval requirements.\n")
 
 	if err := os.WriteFile(outPath, buffer.Bytes(), 0o644); err != nil {
@@ -98,6 +109,42 @@ func writeConnectorTable(buffer *bytes.Buffer, connectors []connectorSeed) {
 		))
 	}
 	buffer.WriteString("\n")
+}
+
+func writeMCPBudgetTable(buffer *bytes.Buffer, connectors []connectorSeed) {
+	sorted := make([]connectorSeed, len(connectors))
+	copy(sorted, connectors)
+	sort.Slice(sorted, func(i, j int) bool {
+		return sorted[i].Key < sorted[j].Key
+	})
+
+	buffer.WriteString("| connector_key | risk_level | monthly_call_cap | monthly_cost_cap_usd | rate_limit_per_minute | metering_source |\n")
+	buffer.WriteString("|---|---|---:|---:|---:|---|\n")
+	for _, connector := range sorted {
+		policy := budgetPolicyForRisk(connector.RiskLevel)
+		buffer.WriteString(fmt.Sprintf("| %s | %s | %d | %.2f | %d | %s |\n",
+			connector.Key,
+			connector.RiskLevel,
+			policy.MonthlyCallCap,
+			policy.MonthlyCostCapUSD,
+			policy.RateLimitPerMinute,
+			"`tool_executions` + mcp invocation ledger",
+		))
+	}
+	buffer.WriteString("\n")
+}
+
+func budgetPolicyForRisk(riskLevel string) mcpBudgetPolicy {
+	switch strings.ToUpper(strings.TrimSpace(riskLevel)) {
+	case "CRITICAL":
+		return mcpBudgetPolicy{MonthlyCallCap: 1000, MonthlyCostCapUSD: 200.00, RateLimitPerMinute: 30}
+	case "ELEVATED":
+		return mcpBudgetPolicy{MonthlyCallCap: 1500, MonthlyCostCapUSD: 120.00, RateLimitPerMinute: 60}
+	case "MEDIUM":
+		return mcpBudgetPolicy{MonthlyCallCap: 2000, MonthlyCostCapUSD: 80.00, RateLimitPerMinute: 90}
+	default:
+		return mcpBudgetPolicy{MonthlyCallCap: 5000, MonthlyCostCapUSD: 40.00, RateLimitPerMinute: 120}
+	}
 }
 
 func parseConnectedSet(value string) map[string]struct{} {

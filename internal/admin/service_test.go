@@ -111,3 +111,44 @@ func TestAdminDashboardConfigAndSavedViews(t *testing.T) {
 		t.Fatalf("expected saved views to be empty after delete")
 	}
 }
+
+func TestAdminMCPHealthAndCostSummarySurfacing(t *testing.T) {
+	t.Parallel()
+
+	s := NewService()
+	s.UpsertMCPServerHealth(MCPServerHealth{
+		ServerID:          "zoom_mcp",
+		Status:            "healthy",
+		P95LatencyMS:      150,
+		ErrorRate:         0.01,
+		MonthlyCalls:      7,
+		MonthlyCostUSD:    0.07,
+		MonthlyCallCap:    1000,
+		MonthlyCostCapUSD: 200,
+	})
+
+	dashboard := s.Dashboard()
+	healthRaw, ok := dashboard["mcp_server_health"]
+	if !ok {
+		t.Fatalf("expected mcp_server_health in dashboard payload: %#v", dashboard)
+	}
+	health, ok := healthRaw.([]MCPServerHealth)
+	if !ok {
+		t.Fatalf("expected typed mcp server health payload, got %T", healthRaw)
+	}
+	if len(health) < 3 {
+		t.Fatalf("expected mcp health records including upserted server, got %d", len(health))
+	}
+
+	summary := s.CostSummary()
+	if _, ok := summary["mcp_server_health"]; !ok {
+		t.Fatalf("expected mcp_server_health in cost summary payload: %#v", summary)
+	}
+	totalCost, ok := summary["mcp_total_cost_usd"].(float64)
+	if !ok {
+		t.Fatalf("expected numeric mcp_total_cost_usd in summary: %#v", summary)
+	}
+	if totalCost <= 0 {
+		t.Fatalf("expected positive mcp_total_cost_usd after seeded/upserted health: %#v", summary)
+	}
+}

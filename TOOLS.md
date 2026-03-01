@@ -55,8 +55,57 @@ _No connectors marked as connected. Set `CONNECTED_CONNECTOR_KEYS` (comma-separa
 | wise | financial | CRITICAL | restricted | https://mcp.example/wise |
 | zoom | meetings | MEDIUM | internal | https://mcp.example/zoom |
 
+## MCP Budget And Rate-Limit Matrix
+
+| connector_key | risk_level | monthly_call_cap | monthly_cost_cap_usd | rate_limit_per_minute | metering_source |
+|---|---|---:|---:|---:|---|
+| amadeus | ELEVATED | 1500 | 120.00 | 60 | `tool_executions` + mcp invocation ledger |
+| apple_health | ELEVATED | 1500 | 120.00 | 60 | `tool_executions` + mcp invocation ledger |
+| asana | MEDIUM | 2000 | 80.00 | 90 | `tool_executions` + mcp invocation ledger |
+| booking | ELEVATED | 1500 | 120.00 | 60 | `tool_executions` + mcp invocation ledger |
+| box | LOW | 5000 | 40.00 | 120 | `tool_executions` + mcp invocation ledger |
+| clickup | MEDIUM | 2000 | 80.00 | 90 | `tool_executions` + mcp invocation ledger |
+| confluence | LOW | 5000 | 40.00 | 120 | `tool_executions` + mcp invocation ledger |
+| dropbox | LOW | 5000 | 40.00 | 120 | `tool_executions` + mcp invocation ledger |
+| expedia | ELEVATED | 1500 | 120.00 | 60 | `tool_executions` + mcp invocation ledger |
+| fitbit | ELEVATED | 1500 | 120.00 | 60 | `tool_executions` + mcp invocation ledger |
+| github | ELEVATED | 1500 | 120.00 | 60 | `tool_executions` + mcp invocation ledger |
+| gitlab | ELEVATED | 1500 | 120.00 | 60 | `tool_executions` + mcp invocation ledger |
+| google_calendar | MEDIUM | 2000 | 80.00 | 90 | `tool_executions` + mcp invocation ledger |
+| google_drive | LOW | 5000 | 40.00 | 120 | `tool_executions` + mcp invocation ledger |
+| google_gmail | MEDIUM | 2000 | 80.00 | 90 | `tool_executions` + mcp invocation ledger |
+| google_meet | MEDIUM | 2000 | 80.00 | 90 | `tool_executions` + mcp invocation ledger |
+| home_assistant | MEDIUM | 2000 | 80.00 | 90 | `tool_executions` + mcp invocation ledger |
+| hubspot | MEDIUM | 2000 | 80.00 | 90 | `tool_executions` + mcp invocation ledger |
+| imessage_bridge | MEDIUM | 2000 | 80.00 | 90 | `tool_executions` + mcp invocation ledger |
+| jira | MEDIUM | 2000 | 80.00 | 90 | `tool_executions` + mcp invocation ledger |
+| linear | MEDIUM | 2000 | 80.00 | 90 | `tool_executions` + mcp invocation ledger |
+| maps | LOW | 5000 | 40.00 | 120 | `tool_executions` + mcp invocation ledger |
+| microsoft_teams | MEDIUM | 2000 | 80.00 | 90 | `tool_executions` + mcp invocation ledger |
+| notion | LOW | 5000 | 40.00 | 120 | `tool_executions` + mcp invocation ledger |
+| outlook_calendar | MEDIUM | 2000 | 80.00 | 90 | `tool_executions` + mcp invocation ledger |
+| outlook_mail | MEDIUM | 2000 | 80.00 | 90 | `tool_executions` + mcp invocation ledger |
+| pipedrive | MEDIUM | 2000 | 80.00 | 90 | `tool_executions` + mcp invocation ledger |
+| plaid | CRITICAL | 1000 | 200.00 | 30 | `tool_executions` + mcp invocation ledger |
+| postgres | ELEVATED | 1500 | 120.00 | 60 | `tool_executions` + mcp invocation ledger |
+| resend | MEDIUM | 2000 | 80.00 | 90 | `tool_executions` + mcp invocation ledger |
+| salesforce | ELEVATED | 1500 | 120.00 | 60 | `tool_executions` + mcp invocation ledger |
+| sendgrid | MEDIUM | 2000 | 80.00 | 90 | `tool_executions` + mcp invocation ledger |
+| slack | LOW | 5000 | 40.00 | 120 | `tool_executions` + mcp invocation ledger |
+| snowflake | ELEVATED | 1500 | 120.00 | 60 | `tool_executions` + mcp invocation ledger |
+| stripe | CRITICAL | 1000 | 200.00 | 30 | `tool_executions` + mcp invocation ledger |
+| trello | LOW | 5000 | 40.00 | 120 | `tool_executions` + mcp invocation ledger |
+| twilio | MEDIUM | 2000 | 80.00 | 90 | `tool_executions` + mcp invocation ledger |
+| weather | LOW | 5000 | 40.00 | 120 | `tool_executions` + mcp invocation ledger |
+| web_search | LOW | 5000 | 40.00 | 120 | `tool_executions` + mcp invocation ledger |
+| whatsapp_cloud | MEDIUM | 2000 | 80.00 | 90 | `tool_executions` + mcp invocation ledger |
+| wise | CRITICAL | 1000 | 200.00 | 30 | `tool_executions` + mcp invocation ledger |
+| zoom | MEDIUM | 2000 | 80.00 | 90 | `tool_executions` + mcp invocation ledger |
+
 ## Budget And Usage Signals
 
 - Enforce per-workspace rate limits and monthly budgets before write operations.
 - Track per-call usage in `tool_executions` and aggregate metrics in observability pipelines.
+- Meter MCP server usage via `internal/mcp` invocation ledger and enforce server policy gates before execution.
+- Surface MCP usage/cost in admin (`/v1/admin/operations/dashboard`, `/v1/admin/costs/summary`) and TOOLS catalog.
 - Review high-risk connectors (`risk_level=CRITICAL`) for explicit approval requirements.

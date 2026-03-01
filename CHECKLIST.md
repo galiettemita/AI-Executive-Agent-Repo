@@ -779,7 +779,7 @@ You must prove it.
 - [ ] Onboarding UX templates + buttons exist for ecosystem detection and connection flows (Deployment Plan Section 10; Auto-Provisioning Appendix B)
 - [x] TOOLS.md auto-generation includes connected apps details (tools list, auth status, budgets/usage) and not-connected guidance (Deployment Plan Section 11)
 - [x] Conversational discovery triggers (mentions + repeated failures + profile evolution) are implemented and wired to ProvisioningPipeline (Deployment Plan Section 12)
-- [ ] Cost model enforced: per-server budgets + rate limits + per-call metering + billing integration; surfaced in admin + TOOLS.md (Deployment Plan Section 13; Ops Blueprint Component 1)
+- [x] Cost model enforced: per-server budgets + rate limits + per-call metering + billing integration; surfaced in admin + TOOLS.md (Deployment Plan Section 13; Ops Blueprint Component 1)
 - [x] MCP server health dashboard implemented (admin) per wireframe (Deployment Plan Appendix B; Ops Blueprint Component 3)
 
 ---
