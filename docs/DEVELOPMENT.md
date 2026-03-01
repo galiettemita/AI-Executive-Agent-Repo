@@ -21,9 +21,17 @@ Run full CI-parity checks:
 make ci
 ```
 
+Regenerate documentation artifacts:
+
+```bash
+make api-docs
+make tools-md
+```
+
 ## Project Conventions
 - IDs: UUIDv7 for all new writes
 - Naming: snake_case
 - Migrations: forward-only (no down migrations)
 - OPA policies under `policies/`
 - Schemas under `schemas/` with `additionalProperties: false`
+- Operational ownership and on-call policy in `docs/OPERATIONS_OWNERSHIP.md`

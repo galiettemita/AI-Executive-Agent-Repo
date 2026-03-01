@@ -3,7 +3,9 @@ package control
 import (
 	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -22,6 +24,7 @@ import (
 	"github.com/brevio/brevio/internal/guardrails"
 	"github.com/brevio/brevio/internal/learning"
 	"github.com/brevio/brevio/internal/model_tiers"
+	"github.com/brevio/brevio/internal/observability"
 	raglayer "github.com/brevio/brevio/internal/rag"
 	"github.com/brevio/brevio/internal/self_modification"
 	"github.com/brevio/brevio/internal/sessions"
@@ -211,7 +214,7 @@ func handleContextBudget(w http.ResponseWriter, r *http.Request, svc *contextlay
 				Allocations            map[string]int `json:"allocations"`
 			}
 			if err := decodeJSON(r, &payload); err != nil {
-				http.Error(w, err.Error(), http.StatusBadRequest)
+				writeError(w, err.Error(), http.StatusBadRequest)
 				return
 			}
 			if payload.WorkspaceID == "" {
@@ -236,19 +239,19 @@ func handleContextBudget(w http.ResponseWriter, r *http.Request, svc *contextlay
 			}
 			if payload.PromptRequestedTokens > 0 || payload.RAGRequestedTokens > 0 || payload.HistoryRequestedTokens > 0 {
 				if _, err := svc.AllocateContext(payload.WorkspaceID, payload.IngressTurnID, payload.PromptRequestedTokens, payload.RAGRequestedTokens, payload.HistoryRequestedTokens); err != nil {
-					http.Error(w, err.Error(), http.StatusTooManyRequests)
+					writeError(w, err.Error(), http.StatusTooManyRequests)
 					return
 				}
 			}
 			writeJSON(w, http.StatusOK, budget)
 			return
 		default:
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			writeError(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
 	case "allocations":
 		if r.Method != http.MethodGet {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			writeError(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
 		workspaceID := r.URL.Query().Get("workspace_id")
@@ -293,18 +296,18 @@ func handleFeatureFlags(w http.ResponseWriter, r *http.Request, flags *feature_f
 		case http.MethodPost:
 			var payload feature_flags.Flag
 			if err := decodeJSON(r, &payload); err != nil {
-				http.Error(w, err.Error(), http.StatusBadRequest)
+				writeError(w, err.Error(), http.StatusBadRequest)
 				return
 			}
 			if payload.Key == "" {
-				http.Error(w, "key is required", http.StatusBadRequest)
+				writeError(w, "key is required", http.StatusBadRequest)
 				return
 			}
 			flags.UpsertFlag(payload)
 			writeJSON(w, http.StatusAccepted, map[string]any{"status": "accepted"})
 			return
 		default:
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			writeError(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
 	}
@@ -334,7 +337,7 @@ func handleFeatureFlags(w http.ResponseWriter, r *http.Request, flags *feature_f
 		case http.MethodPut:
 			var payload feature_flags.Flag
 			if err := decodeJSON(r, &payload); err != nil {
-				http.Error(w, err.Error(), http.StatusBadRequest)
+				writeError(w, err.Error(), http.StatusBadRequest)
 				return
 			}
 			payload.Key = key
@@ -346,7 +349,7 @@ func handleFeatureFlags(w http.ResponseWriter, r *http.Request, flags *feature_f
 			writeJSON(w, http.StatusOK, map[string]any{"status": "deleted"})
 			return
 		default:
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			writeError(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
 	}
@@ -354,7 +357,7 @@ func handleFeatureFlags(w http.ResponseWriter, r *http.Request, flags *feature_f
 	// /v1/flags/{key}/evaluate
 	if len(parts) == 4 && parts[3] == "evaluate" {
 		if r.Method != http.MethodPost {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			writeError(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
 		var payload struct {
@@ -362,7 +365,7 @@ func handleFeatureFlags(w http.ResponseWriter, r *http.Request, flags *feature_f
 			Attributes  map[string]string `json:"attributes"`
 		}
 		if err := decodeJSON(r, &payload); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			writeError(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 		evaluation := flags.EvaluateForWorkspace(key, payload.WorkspaceID, payload.Attributes)
@@ -381,14 +384,14 @@ func handleFeatureFlags(w http.ResponseWriter, r *http.Request, flags *feature_f
 				Rules []feature_flags.Rule `json:"rules"`
 			}
 			if err := decodeJSON(r, &payload); err != nil {
-				http.Error(w, err.Error(), http.StatusBadRequest)
+				writeError(w, err.Error(), http.StatusBadRequest)
 				return
 			}
 			flags.SetRules(key, payload.Rules)
 			writeJSON(w, http.StatusAccepted, map[string]any{"status": "accepted"})
 			return
 		default:
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			writeError(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
 	}
@@ -406,7 +409,7 @@ func handleErrors(w http.ResponseWriter, r *http.Request, svc *errorlayer.Servic
 	switch parts[2] {
 	case "taxonomy":
 		if r.Method != http.MethodGet {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			writeError(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]any{
@@ -449,7 +452,7 @@ func handleErrors(w http.ResponseWriter, r *http.Request, svc *errorlayer.Servic
 				NextAction  string `json:"next_action"`
 			}
 			if err := decodeJSON(r, &payload); err != nil {
-				http.Error(w, err.Error(), http.StatusBadRequest)
+				writeError(w, err.Error(), http.StatusBadRequest)
 				return
 			}
 
@@ -466,7 +469,7 @@ func handleErrors(w http.ResponseWriter, r *http.Request, svc *errorlayer.Servic
 			}
 
 			if payload.ErrorCode == "" || payload.UserMessage == "" {
-				http.Error(w, "template or error_message payload required", http.StatusBadRequest)
+				writeError(w, "template or error_message payload required", http.StatusBadRequest)
 				return
 			}
 			workspaceID := payload.WorkspaceID
@@ -495,7 +498,7 @@ func handleErrors(w http.ResponseWriter, r *http.Request, svc *errorlayer.Servic
 			writeJSON(w, http.StatusCreated, message)
 			return
 		default:
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			writeError(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
 
@@ -527,7 +530,7 @@ func handleCaching(w http.ResponseWriter, r *http.Request, svc *caching.Service)
 		case http.MethodPost:
 			var payload caching.Policy
 			if err := decodeJSON(r, &payload); err != nil {
-				http.Error(w, err.Error(), http.StatusBadRequest)
+				writeError(w, err.Error(), http.StatusBadRequest)
 				return
 			}
 			policy := svc.UpsertPolicy(payload)
@@ -535,13 +538,13 @@ func handleCaching(w http.ResponseWriter, r *http.Request, svc *caching.Service)
 			writeJSON(w, http.StatusCreated, policy)
 			return
 		default:
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			writeError(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
 
 	case "stats":
 		if r.Method != http.MethodGet {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			writeError(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
 		workspaceID := r.URL.Query().Get("workspace_id")
@@ -553,7 +556,7 @@ func handleCaching(w http.ResponseWriter, r *http.Request, svc *caching.Service)
 
 	case "invalidate":
 		if r.Method != http.MethodPost {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			writeError(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
 		var payload struct {
@@ -561,7 +564,7 @@ func handleCaching(w http.ResponseWriter, r *http.Request, svc *caching.Service)
 			CacheKey    string `json:"cache_key"`
 		}
 		if err := decodeJSON(r, &payload); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			writeError(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 		if payload.WorkspaceID == "" {
@@ -587,7 +590,7 @@ func handleEventSchemas(w http.ResponseWriter, r *http.Request, svc *event_schem
 
 	if len(parts) == 2 {
 		if r.Method != http.MethodGet {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			writeError(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]any{
@@ -614,32 +617,32 @@ func handleEventSchemas(w http.ResponseWriter, r *http.Request, svc *event_schem
 				Status string `json:"status"`
 			}
 			if err := decodeJSON(r, &payload); err != nil {
-				http.Error(w, err.Error(), http.StatusBadRequest)
+				writeError(w, err.Error(), http.StatusBadRequest)
 				return
 			}
 			version, err := svc.RegisterVersionStrict(eventType, payload.Schema, payload.Status)
 			if err != nil {
-				http.Error(w, err.Error(), http.StatusBadRequest)
+				writeError(w, err.Error(), http.StatusBadRequest)
 				return
 			}
 			writeJSON(w, http.StatusCreated, version)
 			return
 		default:
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			writeError(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
 	}
 
 	if len(parts) == 4 && parts[3] == "validate" {
 		if r.Method != http.MethodPost {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			writeError(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
 		var payload struct {
 			Event map[string]any `json:"event"`
 		}
 		if err := decodeJSON(r, &payload); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			writeError(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 		writeJSON(w, http.StatusOK, svc.Validate(eventType, payload.Event))
@@ -671,7 +674,7 @@ func handleModelTiers(w http.ResponseWriter, r *http.Request, svc *model_tiers.S
 		case http.MethodPost:
 			var payload model_tiers.Policy
 			if err := decodeJSON(r, &payload); err != nil {
-				http.Error(w, err.Error(), http.StatusBadRequest)
+				writeError(w, err.Error(), http.StatusBadRequest)
 				return
 			}
 			if payload.WorkspaceID == "" {
@@ -680,12 +683,12 @@ func handleModelTiers(w http.ResponseWriter, r *http.Request, svc *model_tiers.S
 			writeJSON(w, http.StatusCreated, svc.UpsertPolicy(payload))
 			return
 		default:
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			writeError(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
 	case "overrides":
 		if r.Method != http.MethodGet {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			writeError(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
 		if requestedTier := strings.TrimSpace(r.URL.Query().Get("requested_tier")); requestedTier != "" {
@@ -693,7 +696,7 @@ func handleModelTiers(w http.ResponseWriter, r *http.Request, svc *model_tiers.S
 			if rawComplexity := strings.TrimSpace(r.URL.Query().Get("complexity_score")); rawComplexity != "" {
 				parsedComplexity, err := strconv.Atoi(rawComplexity)
 				if err != nil {
-					http.Error(w, "invalid complexity_score", http.StatusBadRequest)
+					writeError(w, "invalid complexity_score", http.StatusBadRequest)
 					return
 				}
 				complexityScore = parsedComplexity
@@ -738,7 +741,7 @@ func handleRAG(w http.ResponseWriter, r *http.Request, svc *raglayer.Service, gu
 		case len(parts) == 3 && r.Method == http.MethodPost:
 			var payload raglayer.Collection
 			if err := decodeJSON(r, &payload); err != nil {
-				http.Error(w, err.Error(), http.StatusBadRequest)
+				writeError(w, err.Error(), http.StatusBadRequest)
 				return
 			}
 			writeJSON(w, http.StatusCreated, svc.UpsertCollection(payload))
@@ -762,7 +765,7 @@ func handleRAG(w http.ResponseWriter, r *http.Request, svc *raglayer.Service, gu
 		case len(parts) == 4 && r.Method == http.MethodPut:
 			var payload raglayer.Collection
 			if err := decodeJSON(r, &payload); err != nil {
-				http.Error(w, err.Error(), http.StatusBadRequest)
+				writeError(w, err.Error(), http.StatusBadRequest)
 				return
 			}
 			payload.ID = parts[3]
@@ -782,7 +785,7 @@ func handleRAG(w http.ResponseWriter, r *http.Request, svc *raglayer.Service, gu
 				Documents []string `json:"documents"`
 			}
 			if err := decodeJSON(r, &payload); err != nil {
-				http.Error(w, err.Error(), http.StatusBadRequest)
+				writeError(w, err.Error(), http.StatusBadRequest)
 				return
 			}
 			collection, ingested, ok := svc.Ingest(parts[3], payload.Documents)
@@ -802,13 +805,13 @@ func handleRAG(w http.ResponseWriter, r *http.Request, svc *raglayer.Service, gu
 			return
 
 		default:
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			writeError(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
 
 	case "search":
 		if r.Method != http.MethodPost {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			writeError(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
 		var payload struct {
@@ -823,7 +826,7 @@ func handleRAG(w http.ResponseWriter, r *http.Request, svc *raglayer.Service, gu
 			IncludeProvenance bool     `json:"include_provenance"`
 		}
 		if err := decodeJSON(r, &payload); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			writeError(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 		queryText := payload.QueryText
@@ -840,7 +843,7 @@ func handleRAG(w http.ResponseWriter, r *http.Request, svc *raglayer.Service, gu
 		}
 		decision := guardrailsSvc.EvaluateInput(payload.WorkspaceID, queryText)
 		if decision.Blocked {
-			http.Error(w, decision.Reason, http.StatusForbidden)
+			writeError(w, decision.Reason, http.StatusForbidden)
 			return
 		}
 		queryText = decision.RedactedText
@@ -850,7 +853,7 @@ func handleRAG(w http.ResponseWriter, r *http.Request, svc *raglayer.Service, gu
 
 	case "retrievals":
 		if len(parts) != 4 || r.Method != http.MethodGet {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			writeError(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
 		retrieval, ok := svc.GetRetrieval(parts[3])
@@ -867,7 +870,7 @@ func handleRAG(w http.ResponseWriter, r *http.Request, svc *raglayer.Service, gu
 
 	case "eval":
 		if len(parts) != 4 || parts[3] != "scores" || r.Method != http.MethodGet {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			writeError(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
 		workspaceID := r.URL.Query().Get("workspace_id")
@@ -910,7 +913,7 @@ func handleGuardrails(w http.ResponseWriter, r *http.Request, svc *guardrails.Se
 		case http.MethodPut:
 			var payload guardrails.Config
 			if err := decodeJSON(r, &payload); err != nil {
-				http.Error(w, err.Error(), http.StatusBadRequest)
+				writeError(w, err.Error(), http.StatusBadRequest)
 				return
 			}
 			workspaceID := payload.WorkspaceID
@@ -922,7 +925,7 @@ func handleGuardrails(w http.ResponseWriter, r *http.Request, svc *guardrails.Se
 			writeJSON(w, http.StatusOK, cfg)
 			return
 		default:
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			writeError(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
 
@@ -941,7 +944,7 @@ func handleGuardrails(w http.ResponseWriter, r *http.Request, svc *guardrails.Se
 		case len(parts) == 3 && r.Method == http.MethodPost:
 			var payload guardrails.RuleSet
 			if err := decodeJSON(r, &payload); err != nil {
-				http.Error(w, err.Error(), http.StatusBadRequest)
+				writeError(w, err.Error(), http.StatusBadRequest)
 				return
 			}
 			ruleSet := svc.UpsertRuleSet(payload)
@@ -952,7 +955,7 @@ func handleGuardrails(w http.ResponseWriter, r *http.Request, svc *guardrails.Se
 		case len(parts) == 4 && r.Method == http.MethodPut:
 			var payload guardrails.RuleSet
 			if err := decodeJSON(r, &payload); err != nil {
-				http.Error(w, err.Error(), http.StatusBadRequest)
+				writeError(w, err.Error(), http.StatusBadRequest)
 				return
 			}
 			payload.ID = parts[3]
@@ -970,13 +973,13 @@ func handleGuardrails(w http.ResponseWriter, r *http.Request, svc *guardrails.Se
 			return
 
 		default:
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			writeError(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
 
 	case "events":
 		if r.Method != http.MethodGet {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			writeError(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
 		workspaceID := r.URL.Query().Get("workspace_id")
@@ -1009,7 +1012,7 @@ func handleToolHealth(w http.ResponseWriter, r *http.Request, svc *tool_health.S
 	case "health":
 		if len(parts) == 3 {
 			if r.Method != http.MethodGet {
-				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+				writeError(w, "method not allowed", http.StatusMethodNotAllowed)
 				return
 			}
 			writeJSON(w, http.StatusOK, map[string]any{
@@ -1019,7 +1022,7 @@ func handleToolHealth(w http.ResponseWriter, r *http.Request, svc *tool_health.S
 		}
 		if len(parts) == 4 {
 			if r.Method != http.MethodGet {
-				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+				writeError(w, "method not allowed", http.StatusMethodNotAllowed)
 				return
 			}
 			toolKey := parts[3]
@@ -1049,7 +1052,7 @@ func handleToolHealth(w http.ResponseWriter, r *http.Request, svc *tool_health.S
 			case http.MethodPost:
 				var payload tool_health.QuarantineRule
 				if err := decodeJSON(r, &payload); err != nil {
-					http.Error(w, err.Error(), http.StatusBadRequest)
+					writeError(w, err.Error(), http.StatusBadRequest)
 					return
 				}
 				if payload.WorkspaceID == "" {
@@ -1058,14 +1061,14 @@ func handleToolHealth(w http.ResponseWriter, r *http.Request, svc *tool_health.S
 				writeJSON(w, http.StatusCreated, svc.UpsertRule(payload))
 				return
 			default:
-				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+				writeError(w, "method not allowed", http.StatusMethodNotAllowed)
 				return
 			}
 		}
 
 		if len(parts) == 5 && parts[4] == "override" {
 			if r.Method != http.MethodPost {
-				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+				writeError(w, "method not allowed", http.StatusMethodNotAllowed)
 				return
 			}
 			toolKey := parts[3]
@@ -1074,7 +1077,7 @@ func handleToolHealth(w http.ResponseWriter, r *http.Request, svc *tool_health.S
 				Status      string `json:"status"`
 			}
 			if err := decodeJSON(r, &payload); err != nil {
-				http.Error(w, err.Error(), http.StatusBadRequest)
+				writeError(w, err.Error(), http.StatusBadRequest)
 				return
 			}
 			if payload.WorkspaceID == "" {
@@ -1103,7 +1106,7 @@ func handleSessions(w http.ResponseWriter, r *http.Request, svc *sessions.Servic
 
 	if len(parts) == 3 && parts[2] == "active" {
 		if r.Method != http.MethodGet {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			writeError(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
 		workspaceID := r.URL.Query().Get("workspace_id")
@@ -1128,7 +1131,7 @@ func handleSessions(w http.ResponseWriter, r *http.Request, svc *sessions.Servic
 	sessionID := parts[2]
 	if len(parts) == 3 {
 		if r.Method != http.MethodGet {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			writeError(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
 
@@ -1159,7 +1162,7 @@ func handleSessions(w http.ResponseWriter, r *http.Request, svc *sessions.Servic
 
 	if len(parts) == 4 && parts[3] == "entities" {
 		if r.Method != http.MethodGet {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			writeError(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]any{
@@ -1196,7 +1199,7 @@ func handleTemporalReasoning(w http.ResponseWriter, r *http.Request, svc *tempor
 		case http.MethodPut:
 			var payload temporal_reasoning.Config
 			if err := decodeJSON(r, &payload); err != nil {
-				http.Error(w, err.Error(), http.StatusBadRequest)
+				writeError(w, err.Error(), http.StatusBadRequest)
 				return
 			}
 			workspaceID := payload.WorkspaceID
@@ -1206,7 +1209,7 @@ func handleTemporalReasoning(w http.ResponseWriter, r *http.Request, svc *tempor
 			writeJSON(w, http.StatusOK, svc.UpsertConfig(workspaceID, payload))
 			return
 		default:
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			writeError(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
 
@@ -1226,7 +1229,7 @@ func handleTemporalReasoning(w http.ResponseWriter, r *http.Request, svc *tempor
 		case len(parts) == 3 && r.Method == http.MethodPost:
 			var payload temporal_reasoning.Constraint
 			if err := decodeJSON(r, &payload); err != nil {
-				http.Error(w, err.Error(), http.StatusBadRequest)
+				writeError(w, err.Error(), http.StatusBadRequest)
 				return
 			}
 			workspaceID := payload.WorkspaceID
@@ -1240,7 +1243,7 @@ func handleTemporalReasoning(w http.ResponseWriter, r *http.Request, svc *tempor
 		case len(parts) == 4 && r.Method == http.MethodPut:
 			var payload temporal_reasoning.Constraint
 			if err := decodeJSON(r, &payload); err != nil {
-				http.Error(w, err.Error(), http.StatusBadRequest)
+				writeError(w, err.Error(), http.StatusBadRequest)
 				return
 			}
 			workspaceID := payload.WorkspaceID
@@ -1265,13 +1268,13 @@ func handleTemporalReasoning(w http.ResponseWriter, r *http.Request, svc *tempor
 			return
 
 		default:
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			writeError(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
 
 	case "resolve":
 		if r.Method != http.MethodPost {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			writeError(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
 		var payload struct {
@@ -1282,7 +1285,7 @@ func handleTemporalReasoning(w http.ResponseWriter, r *http.Request, svc *tempor
 			Timezone      string `json:"timezone"`
 		}
 		if err := decodeJSON(r, &payload); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			writeError(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 		if strings.TrimSpace(payload.ReferenceDate) == "" && strings.TrimSpace(payload.ReferenceTS) != "" {
@@ -1296,7 +1299,7 @@ func handleTemporalReasoning(w http.ResponseWriter, r *http.Request, svc *tempor
 
 	case "conflicts":
 		if r.Method != http.MethodPost {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			writeError(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
 		var payload struct {
@@ -1305,7 +1308,7 @@ func handleTemporalReasoning(w http.ResponseWriter, r *http.Request, svc *tempor
 			ProposedEnd   string `json:"proposed_end"`
 		}
 		if err := decodeJSON(r, &payload); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			writeError(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 		writeJSON(w, http.StatusOK, svc.BuildConflictReport(payload.WorkspaceID, payload.ProposedStart, payload.ProposedEnd))
@@ -1313,7 +1316,7 @@ func handleTemporalReasoning(w http.ResponseWriter, r *http.Request, svc *tempor
 
 	case "travel-time":
 		if r.Method != http.MethodPost {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			writeError(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
 		var payload struct {
@@ -1323,7 +1326,7 @@ func handleTemporalReasoning(w http.ResponseWriter, r *http.Request, svc *tempor
 			DistanceKM  float64 `json:"distance_km"`
 		}
 		if err := decodeJSON(r, &payload); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			writeError(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]any{
@@ -1358,19 +1361,19 @@ func handleGoals(w http.ResponseWriter, r *http.Request, svc *goals.Service) {
 		case http.MethodPost:
 			var payload goals.Goal
 			if err := decodeJSON(r, &payload); err != nil {
-				http.Error(w, err.Error(), http.StatusBadRequest)
+				writeError(w, err.Error(), http.StatusBadRequest)
 				return
 			}
 			goal, err := svc.CreateGoal(payload, time.Now().UTC())
 			if err != nil {
-				http.Error(w, err.Error(), http.StatusTooManyRequests)
+				writeError(w, err.Error(), http.StatusTooManyRequests)
 				return
 			}
 			svc.AddProgress(goal.ID, goals.ProgressLog{Summary: "goal created"})
 			writeJSON(w, http.StatusCreated, goal)
 			return
 		default:
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			writeError(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
 
@@ -1388,7 +1391,7 @@ func handleGoals(w http.ResponseWriter, r *http.Request, svc *goals.Service) {
 		case http.MethodPut:
 			var payload goals.Goal
 			if err := decodeJSON(r, &payload); err != nil {
-				http.Error(w, err.Error(), http.StatusBadRequest)
+				writeError(w, err.Error(), http.StatusBadRequest)
 				return
 			}
 			payload.ID = goalID
@@ -1400,7 +1403,7 @@ func handleGoals(w http.ResponseWriter, r *http.Request, svc *goals.Service) {
 			writeJSON(w, http.StatusOK, map[string]any{"deleted": svc.DeleteGoal(goalID)})
 			return
 		default:
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			writeError(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
 
@@ -1413,7 +1416,7 @@ func handleGoals(w http.ResponseWriter, r *http.Request, svc *goals.Service) {
 		case http.MethodPost:
 			var payload goals.Milestone
 			if err := decodeJSON(r, &payload); err != nil {
-				http.Error(w, err.Error(), http.StatusBadRequest)
+				writeError(w, err.Error(), http.StatusBadRequest)
 				return
 			}
 			milestone := svc.AddMilestone(goalID, payload)
@@ -1421,13 +1424,13 @@ func handleGoals(w http.ResponseWriter, r *http.Request, svc *goals.Service) {
 			writeJSON(w, http.StatusCreated, milestone)
 			return
 		default:
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			writeError(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
 
 	case len(parts) == 4 && parts[3] == "progress":
 		if r.Method != http.MethodGet {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			writeError(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]any{"progress": svc.ListProgress(parts[2])})
@@ -1463,13 +1466,13 @@ func handleMissionControl(w http.ResponseWriter, r *http.Request, svc *goals.Ser
 		if r.Method == http.MethodPut {
 			var payload goals.MissionControlConfig
 			if err := decodeJSON(r, &payload); err != nil {
-				http.Error(w, err.Error(), http.StatusBadRequest)
+				writeError(w, err.Error(), http.StatusBadRequest)
 				return
 			}
 			writeJSON(w, http.StatusOK, svc.UpsertMissionControlConfig(workspaceID, payload))
 			return
 		}
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		writeError(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 
 	case "widgets":
@@ -1482,18 +1485,18 @@ func handleMissionControl(w http.ResponseWriter, r *http.Request, svc *goals.Ser
 				Widgets []goals.MissionControlWidget `json:"widgets"`
 			}
 			if err := decodeJSON(r, &payload); err != nil {
-				http.Error(w, err.Error(), http.StatusBadRequest)
+				writeError(w, err.Error(), http.StatusBadRequest)
 				return
 			}
 			writeJSON(w, http.StatusOK, map[string]any{"widgets": svc.SetMissionControlWidgets(workspaceID, payload.Widgets)})
 			return
 		}
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		writeError(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 
 	case "snapshot":
 		if r.Method != http.MethodGet {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			writeError(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
 		writeJSON(w, http.StatusOK, svc.MissionControlSnapshot(workspaceID))
@@ -1514,7 +1517,7 @@ func handleTrust(w http.ResponseWriter, r *http.Request, svc *trust.Service) {
 	switch parts[2] {
 	case "trust-scores":
 		if r.Method != http.MethodGet {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			writeError(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
 		if len(svc.ListScores()) == 0 {
@@ -1535,7 +1538,7 @@ func handleTrust(w http.ResponseWriter, r *http.Request, svc *trust.Service) {
 				Decision string `json:"decision"`
 			}
 			if err := decodeJSON(r, &payload); err != nil {
-				http.Error(w, err.Error(), http.StatusBadRequest)
+				writeError(w, err.Error(), http.StatusBadRequest)
 				return
 			}
 			updated, ok := svc.DecidePromotion(parts[3], payload.Decision)
@@ -1546,7 +1549,7 @@ func handleTrust(w http.ResponseWriter, r *http.Request, svc *trust.Service) {
 			writeJSON(w, http.StatusOK, updated)
 			return
 		default:
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			writeError(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
 	default:
@@ -1579,29 +1582,29 @@ func handleLearning(w http.ResponseWriter, r *http.Request, svc *learning.Servic
 		if r.Method == http.MethodPut {
 			var payload learning.Config
 			if err := decodeJSON(r, &payload); err != nil {
-				http.Error(w, err.Error(), http.StatusBadRequest)
+				writeError(w, err.Error(), http.StatusBadRequest)
 				return
 			}
 			writeJSON(w, http.StatusOK, svc.UpsertConfig(workspaceID, payload))
 			return
 		}
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		writeError(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 
 	case "feedback":
 		if r.Method != http.MethodPost {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			writeError(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
 		var payload learning.Feedback
 		if err := decodeJSON(r, &payload); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			writeError(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 		payload.WorkspaceID = workspaceID
 		feedback, err := svc.SubmitFeedback(payload)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusTooManyRequests)
+			writeError(w, err.Error(), http.StatusTooManyRequests)
 			return
 		}
 		writeJSON(w, http.StatusCreated, feedback)
@@ -1629,7 +1632,7 @@ func handleLearning(w http.ResponseWriter, r *http.Request, svc *learning.Servic
 			writeJSON(w, http.StatusOK, lesson)
 			return
 		default:
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			writeError(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
 
@@ -1659,7 +1662,7 @@ func handleCaptures(w http.ResponseWriter, r *http.Request, svc *capture.Service
 		writeJSON(w, http.StatusOK, entry)
 		return
 	}
-	http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	writeError(w, "method not allowed", http.StatusMethodNotAllowed)
 }
 
 func handleCodebaseIntel(w http.ResponseWriter, r *http.Request, svc *codebase_intel.Service) {
@@ -1676,7 +1679,7 @@ func handleCodebaseIntel(w http.ResponseWriter, r *http.Request, svc *codebase_i
 	switch parts[2] {
 	case "dependencies":
 		if r.Method != http.MethodGet {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			writeError(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
 		if r.URL.Query().Get("recompute") == "true" {
@@ -1691,7 +1694,7 @@ func handleCodebaseIntel(w http.ResponseWriter, r *http.Request, svc *codebase_i
 
 	case "patterns":
 		if r.Method != http.MethodGet {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			writeError(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
 		if r.URL.Query().Get("recompute") == "true" {
@@ -1712,7 +1715,7 @@ func handleCodebaseIntel(w http.ResponseWriter, r *http.Request, svc *codebase_i
 		case len(parts) == 4 && r.Method == http.MethodPut:
 			var payload codebase_intel.DebtItem
 			if err := decodeJSON(r, &payload); err != nil {
-				http.Error(w, err.Error(), http.StatusBadRequest)
+				writeError(w, err.Error(), http.StatusBadRequest)
 				return
 			}
 			payload.WorkspaceID = workspaceID
@@ -1724,7 +1727,7 @@ func handleCodebaseIntel(w http.ResponseWriter, r *http.Request, svc *codebase_i
 		case len(parts) == 5 && parts[4] == "tasks" && r.Method == http.MethodPost:
 			var payload codebase_intel.DebtTask
 			if err := decodeJSON(r, &payload); err != nil {
-				http.Error(w, err.Error(), http.StatusBadRequest)
+				writeError(w, err.Error(), http.StatusBadRequest)
 				return
 			}
 			payload.WorkspaceID = workspaceID
@@ -1741,14 +1744,14 @@ func handleCodebaseIntel(w http.ResponseWriter, r *http.Request, svc *codebase_i
 		case len(parts) == 6 && parts[4] == "tasks" && r.Method == http.MethodPut:
 			var payload codebase_intel.DebtTask
 			if err := decodeJSON(r, &payload); err != nil {
-				http.Error(w, err.Error(), http.StatusBadRequest)
+				writeError(w, err.Error(), http.StatusBadRequest)
 				return
 			}
 			payload.WorkspaceID = workspaceID
 			writeJSON(w, http.StatusOK, svc.UpsertDebtTask(parts[3], parts[5], payload))
 			return
 		default:
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			writeError(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
 
@@ -1760,14 +1763,14 @@ func handleCodebaseIntel(w http.ResponseWriter, r *http.Request, svc *codebase_i
 		case http.MethodPost:
 			var payload codebase_intel.ProjectTemplate
 			if err := decodeJSON(r, &payload); err != nil {
-				http.Error(w, err.Error(), http.StatusBadRequest)
+				writeError(w, err.Error(), http.StatusBadRequest)
 				return
 			}
 			payload.WorkspaceID = workspaceID
 			writeJSON(w, http.StatusCreated, svc.AddTemplate(payload))
 			return
 		default:
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			writeError(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
 
@@ -1776,7 +1779,7 @@ func handleCodebaseIntel(w http.ResponseWriter, r *http.Request, svc *codebase_i
 		case len(parts) == 3 && r.Method == http.MethodPost:
 			var payload codebase_intel.ContextExport
 			if err := decodeJSON(r, &payload); err != nil {
-				http.Error(w, err.Error(), http.StatusBadRequest)
+				writeError(w, err.Error(), http.StatusBadRequest)
 				return
 			}
 			payload.WorkspaceID = workspaceID
@@ -1786,7 +1789,7 @@ func handleCodebaseIntel(w http.ResponseWriter, r *http.Request, svc *codebase_i
 				if err.Error() == "EXPORT_RATE_LIMIT" {
 					status = http.StatusTooManyRequests
 				}
-				http.Error(w, err.Error(), status)
+				writeError(w, err.Error(), status)
 				return
 			}
 			writeJSON(w, http.StatusCreated, created)
@@ -1800,7 +1803,7 @@ func handleCodebaseIntel(w http.ResponseWriter, r *http.Request, svc *codebase_i
 			writeJSON(w, http.StatusOK, export)
 			return
 		default:
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			writeError(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
 
@@ -1830,12 +1833,12 @@ func handleExploration(w http.ResponseWriter, r *http.Request, svc *exploration.
 			Decision string `json:"decision"`
 		}
 		if err := decodeJSON(r, &payload); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			writeError(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 		updated, ok, err := svc.DecideRecommendation(parts[3], payload.Decision)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			writeError(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 		if !ok {
@@ -1845,7 +1848,7 @@ func handleExploration(w http.ResponseWriter, r *http.Request, svc *exploration.
 		writeJSON(w, http.StatusOK, updated)
 		return
 	}
-	http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	writeError(w, "method not allowed", http.StatusMethodNotAllowed)
 }
 
 func handleSelfModification(w http.ResponseWriter, r *http.Request, svc *self_modification.Service) {
@@ -1874,18 +1877,18 @@ func handleSelfModification(w http.ResponseWriter, r *http.Request, svc *self_mo
 	if r.Method == http.MethodPut {
 		var payload self_modification.Policy
 		if err := decodeJSON(r, &payload); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			writeError(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 		stored, err := svc.UpsertPolicyStrict(workspaceID, payload)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			writeError(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 		writeJSON(w, http.StatusOK, stored)
 		return
 	}
-	http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	writeError(w, "method not allowed", http.StatusMethodNotAllowed)
 }
 
 func handleStreaming(w http.ResponseWriter, r *http.Request, svc *streaming.Service) {
@@ -1910,19 +1913,19 @@ func handleStreaming(w http.ResponseWriter, r *http.Request, svc *streaming.Serv
 	case http.MethodPut:
 		var payload streaming.Config
 		if err := decodeJSON(r, &payload); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			writeError(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 		if payload.FirstByteSLAMillis > 500 {
-			http.Error(w, "first_byte_sla_ms must be <= 500", http.StatusBadRequest)
+			writeError(w, "first_byte_sla_ms must be <= 500", http.StatusBadRequest)
 			return
 		}
 		if payload.FirstByteSLAMillis < 0 {
-			http.Error(w, "first_byte_sla_ms must be >= 0", http.StatusBadRequest)
+			writeError(w, "first_byte_sla_ms must be >= 0", http.StatusBadRequest)
 			return
 		}
 		if payload.ChunkSizeBytes < 0 {
-			http.Error(w, "chunk_size_bytes must be >= 0", http.StatusBadRequest)
+			writeError(w, "chunk_size_bytes must be >= 0", http.StatusBadRequest)
 			return
 		}
 		workspaceID := payload.WorkspaceID
@@ -1932,7 +1935,7 @@ func handleStreaming(w http.ResponseWriter, r *http.Request, svc *streaming.Serv
 		writeJSON(w, http.StatusOK, svc.UpsertConfig(workspaceID, payload))
 		return
 	default:
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		writeError(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 }
@@ -1959,7 +1962,7 @@ func handleCompliance(w http.ResponseWriter, r *http.Request, svc *compliance.Se
 		case http.MethodPost:
 			var payload compliance.Framework
 			if err := decodeJSON(r, &payload); err != nil {
-				http.Error(w, err.Error(), http.StatusBadRequest)
+				writeError(w, err.Error(), http.StatusBadRequest)
 				return
 			}
 			framework := svc.UpsertFramework(payload)
@@ -1972,13 +1975,13 @@ func handleCompliance(w http.ResponseWriter, r *http.Request, svc *compliance.Se
 			writeJSON(w, http.StatusCreated, framework)
 			return
 		default:
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			writeError(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
 
 	case "evidence":
 		if r.Method != http.MethodGet {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			writeError(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
 		workspaceID := r.URL.Query().Get("workspace_id")
@@ -2005,7 +2008,7 @@ func handleCompliance(w http.ResponseWriter, r *http.Request, svc *compliance.Se
 		case len(parts) == 3 && r.Method == http.MethodPost:
 			var payload compliance.DSRRequest
 			if err := decodeJSON(r, &payload); err != nil {
-				http.Error(w, err.Error(), http.StatusBadRequest)
+				writeError(w, err.Error(), http.StatusBadRequest)
 				return
 			}
 			writeJSON(w, http.StatusCreated, svc.CreateDSR(payload))
@@ -2024,7 +2027,7 @@ func handleCompliance(w http.ResponseWriter, r *http.Request, svc *compliance.Se
 		case len(parts) == 4 && r.Method == http.MethodPut:
 			var payload compliance.DSRRequest
 			if err := decodeJSON(r, &payload); err != nil {
-				http.Error(w, err.Error(), http.StatusBadRequest)
+				writeError(w, err.Error(), http.StatusBadRequest)
 				return
 			}
 			request, ok := svc.UpdateDSR(parts[3], payload)
@@ -2038,7 +2041,7 @@ func handleCompliance(w http.ResponseWriter, r *http.Request, svc *compliance.Se
 			writeJSON(w, http.StatusOK, request)
 			return
 		default:
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			writeError(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
 	default:
@@ -2060,7 +2063,7 @@ func handleAdmin(w http.ResponseWriter, r *http.Request, svc *admin.Service) {
 			writeJSON(w, http.StatusAccepted, svc.RecalculateTrustScores())
 			return
 		}
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		writeError(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 
 	case "learning":
@@ -2068,7 +2071,7 @@ func handleAdmin(w http.ResponseWriter, r *http.Request, svc *admin.Service) {
 			writeJSON(w, http.StatusAccepted, svc.BulkRetireLessons())
 			return
 		}
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		writeError(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 
 	case "users":
@@ -2087,7 +2090,7 @@ func handleAdmin(w http.ResponseWriter, r *http.Request, svc *admin.Service) {
 		case len(parts) == 4 && r.Method == http.MethodPut:
 			var payload admin.User
 			if err := decodeJSON(r, &payload); err != nil {
-				http.Error(w, err.Error(), http.StatusBadRequest)
+				writeError(w, err.Error(), http.StatusBadRequest)
 				return
 			}
 			payload.ID = parts[3]
@@ -2097,13 +2100,13 @@ func handleAdmin(w http.ResponseWriter, r *http.Request, svc *admin.Service) {
 			writeJSON(w, http.StatusOK, map[string]any{"sessions": svc.ListUserSessions(parts[3])})
 			return
 		default:
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			writeError(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
 
 	case "operations":
 		if len(parts) != 4 || r.Method != http.MethodGet {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			writeError(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
 		switch parts[3] {
@@ -2129,14 +2132,14 @@ func handleAdmin(w http.ResponseWriter, r *http.Request, svc *admin.Service) {
 		switch parts[3] {
 		case "summary":
 			if r.Method != http.MethodGet {
-				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+				writeError(w, "method not allowed", http.StatusMethodNotAllowed)
 				return
 			}
 			writeJSON(w, http.StatusOK, svc.CostSummary())
 			return
 		case "anomalies":
 			if r.Method != http.MethodGet {
-				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+				writeError(w, "method not allowed", http.StatusMethodNotAllowed)
 				return
 			}
 			writeJSON(w, http.StatusOK, map[string]any{"anomalies": svc.CostAnomalies()})
@@ -2149,13 +2152,13 @@ func handleAdmin(w http.ResponseWriter, r *http.Request, svc *admin.Service) {
 			if r.Method == http.MethodPut {
 				var payload admin.CostBudget
 				if err := decodeJSON(r, &payload); err != nil {
-					http.Error(w, err.Error(), http.StatusBadRequest)
+					writeError(w, err.Error(), http.StatusBadRequest)
 					return
 				}
 				writeJSON(w, http.StatusOK, svc.SetBudget(payload))
 				return
 			}
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			writeError(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		default:
 			http.NotFound(w, r)
@@ -2177,13 +2180,13 @@ func handleAdmin(w http.ResponseWriter, r *http.Request, svc *admin.Service) {
 				case http.MethodPost:
 					var payload admin.AlertRule
 					if err := decodeJSON(r, &payload); err != nil {
-						http.Error(w, err.Error(), http.StatusBadRequest)
+						writeError(w, err.Error(), http.StatusBadRequest)
 						return
 					}
 					writeJSON(w, http.StatusCreated, svc.UpsertAlertRule(payload))
 					return
 				default:
-					http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+					writeError(w, "method not allowed", http.StatusMethodNotAllowed)
 					return
 				}
 			}
@@ -2192,7 +2195,7 @@ func handleAdmin(w http.ResponseWriter, r *http.Request, svc *admin.Service) {
 				case http.MethodPut:
 					var payload admin.AlertRule
 					if err := decodeJSON(r, &payload); err != nil {
-						http.Error(w, err.Error(), http.StatusBadRequest)
+						writeError(w, err.Error(), http.StatusBadRequest)
 						return
 					}
 					payload.ID = parts[4]
@@ -2202,7 +2205,7 @@ func handleAdmin(w http.ResponseWriter, r *http.Request, svc *admin.Service) {
 					writeJSON(w, http.StatusOK, map[string]any{"deleted": svc.DeleteAlertRule(parts[4])})
 					return
 				default:
-					http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+					writeError(w, "method not allowed", http.StatusMethodNotAllowed)
 					return
 				}
 			}
@@ -2221,13 +2224,13 @@ func handleAdmin(w http.ResponseWriter, r *http.Request, svc *admin.Service) {
 			case http.MethodPost:
 				var payload admin.AlertChannel
 				if err := decodeJSON(r, &payload); err != nil {
-					http.Error(w, err.Error(), http.StatusBadRequest)
+					writeError(w, err.Error(), http.StatusBadRequest)
 					return
 				}
 				writeJSON(w, http.StatusCreated, svc.UpsertAlertChannel(payload))
 				return
 			default:
-				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+				writeError(w, "method not allowed", http.StatusMethodNotAllowed)
 				return
 			}
 
@@ -2241,7 +2244,7 @@ func handleAdmin(w http.ResponseWriter, r *http.Request, svc *admin.Service) {
 			writeJSON(w, http.StatusOK, svc.KPIReport())
 			return
 		}
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		writeError(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 
 	default:
@@ -2266,4 +2269,151 @@ func writeJSON(w http.ResponseWriter, status int, payload any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(payload)
+}
+
+func writeError(w http.ResponseWriter, message string, status int) {
+	errorCode := mapErrorCode(message, status)
+	retryable := status == http.StatusTooManyRequests || errorCode == "TOOL_QUARANTINED" || errorCode == "CONTEXT_BUDGET_EXCEEDED"
+	retryAfterMS := 0
+	if retryable {
+		retryAfterMS = 1000
+	}
+	payload := map[string]any{
+		"error_code":     errorCode,
+		"message":        strings.TrimSpace(message),
+		"retryable":      retryable,
+		"retry_after_ms": retryAfterMS,
+		"user_message":   userMessageForCode(errorCode),
+	}
+	logControlError(errorCode, status, message, retryable, retryAfterMS)
+	writeJSON(w, status, payload)
+}
+
+func mapErrorCode(message string, status int) string {
+	trimmed := strings.TrimSpace(message)
+	if isCanonicalErrorCode(trimmed) {
+		return trimmed
+	}
+
+	lower := strings.ToLower(trimmed)
+	switch {
+	case strings.Contains(lower, "context budget"):
+		return "CONTEXT_BUDGET_EXCEEDED"
+	case strings.Contains(lower, "budget"):
+		return "BUDGET_CALLS_EXHAUSTED"
+	case strings.Contains(lower, "guardrail"):
+		return "GUARDRAIL_BLOCK_ACTIVE"
+	case strings.Contains(lower, "feature") && strings.Contains(lower, "disabled"):
+		return "FEATURE_DISABLED"
+	case strings.Contains(lower, "tool") && strings.Contains(lower, "quarant"):
+		return "TOOL_QUARANTINED"
+	case strings.Contains(lower, "rate limit"):
+		return "RATE_LIMIT_EXCEEDED"
+	case strings.Contains(lower, "method not allowed"):
+		return "METHOD_NOT_ALLOWED"
+	case strings.Contains(lower, "json"):
+		return "INVALID_REQUEST_JSON"
+	}
+
+	switch status {
+	case http.StatusBadRequest:
+		return "INVALID_REQUEST"
+	case http.StatusUnauthorized:
+		return "UNAUTHORIZED"
+	case http.StatusForbidden:
+		return "ACCESS_DENIED"
+	case http.StatusNotFound:
+		return "RESOURCE_NOT_FOUND"
+	case http.StatusMethodNotAllowed:
+		return "METHOD_NOT_ALLOWED"
+	case http.StatusTooManyRequests:
+		return "RATE_LIMIT_EXCEEDED"
+	default:
+		return "INTERNAL_ERROR"
+	}
+}
+
+func isCanonicalErrorCode(value string) bool {
+	if value == "" || !strings.Contains(value, "_") {
+		return false
+	}
+	for _, ch := range value {
+		if ch == '_' {
+			continue
+		}
+		if ch >= 'A' && ch <= 'Z' {
+			continue
+		}
+		if ch >= '0' && ch <= '9' {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
+func userMessageForCode(errorCode string) string {
+	switch errorCode {
+	case "BUDGET_CALLS_EXHAUSTED":
+		return "Monthly budget limit reached."
+	case "CONTEXT_BUDGET_EXCEEDED":
+		return "Request context exceeded current budget."
+	case "FEATURE_DISABLED":
+		return "Feature is disabled for this workspace."
+	case "GUARDRAIL_BLOCK_ACTIVE":
+		return "Request blocked for safety reasons."
+	case "TOOL_QUARANTINED":
+		return "Tool is temporarily unavailable."
+	case "METHOD_NOT_ALLOWED":
+		return "This action is not allowed on the requested endpoint."
+	case "INVALID_REQUEST", "INVALID_REQUEST_JSON":
+		return "The request payload is invalid."
+	case "RATE_LIMIT_EXCEEDED":
+		return "Rate limit exceeded. Retry shortly."
+	case "UNAUTHORIZED":
+		return "Authentication is required."
+	case "ACCESS_DENIED":
+		return "You do not have permission for this action."
+	default:
+		return "An unexpected issue occurred."
+	}
+}
+
+func logControlError(errorCode string, status int, message string, retryable bool, retryAfterMS int) {
+	entry := observability.NewLogEntry(
+		"control",
+		controlEnv(),
+		"default",
+		"",
+		"",
+		"trace_unset",
+		"span_unset",
+		"BREVIO.control.error.response.v1",
+		"error",
+		map[string]any{
+			"error_code":     errorCode,
+			"http_status":    status,
+			"message":        strings.TrimSpace(message),
+			"retryable":      retryable,
+			"retry_after_ms": retryAfterMS,
+		},
+	)
+	if err := entry.Validate(); err != nil {
+		log.Printf("control_error_log_validation_failed error=%v code=%s status=%d", err, errorCode, status)
+		return
+	}
+	body, err := entry.JSON()
+	if err != nil {
+		log.Printf("control_error_log_json_failed error=%v code=%s status=%d", err, errorCode, status)
+		return
+	}
+	log.Print(string(body))
+}
+
+func controlEnv() string {
+	value := strings.TrimSpace(os.Getenv("APP_ENV"))
+	if value == "" {
+		return "dev"
+	}
+	return value
 }

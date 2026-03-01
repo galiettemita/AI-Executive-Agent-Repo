@@ -1,0 +1,32 @@
+error_code,category,severity,retryable,user_message
+ACCESS_DENIED,authz,medium,false,You do not have permission for this action.
+ADMIN_ACTION_AUDIT,admin,low,false,Admin action is allowed and has been audited.
+BUDGET_CALLS_EXHAUSTED,budget,high,false,Monthly budget limit reached.
+CACHE_ENTRY_TOO_LARGE,cache,medium,false,Cache entry exceeds the size limit.
+CONFLICT_REQUIRES_MANUAL_REVIEW,crdt,medium,false,Conflict needs operator review before continuing.
+CONTEXT_BUDGET_EXCEEDED,context,medium,true,Request context exceeded current budget.
+DSR_SLA_AT_RISK,compliance,high,false,DSR processing is at risk of missing SLA.
+EVENT_SCHEMA_INVALID,events,medium,false,Event payload failed schema validation.
+EVIDENCE_HASH_MISSING,compliance,high,false,Compliance evidence is missing a required hash.
+EXPORT_RATE_LIMIT,codebase,medium,true,Code context export limit reached for this workspace.
+FEATURE_DISABLED,feature_flag,low,false,Feature is disabled for this workspace.
+FIRST_BYTE_SLA_BREACH,streaming,low,true,Streaming first-byte latency exceeded SLA.
+GOAL_RATE_LIMIT,goals,medium,true,Goal creation limit reached for today.
+GUARDRAIL_BLOCK_ACTIVE,guardrails,high,false,Request was blocked for safety reasons.
+INVALID_REQUEST,request,low,false,Request payload is invalid.
+INVALID_REQUEST_JSON,request,low,false,Request JSON body is invalid.
+LESSON_CAP_REACHED,learning,medium,false,Learning lesson cap reached for this workspace.
+MAX_STEPS_REACHED,react,low,true,Execution reached max ReAct steps and returned partial results.
+METHOD_NOT_ALLOWED,request,low,false,Method is not allowed for this endpoint.
+MODEL_TIER_EXCEEDED,model_tier,medium,false,Requested model tier exceeds workspace policy.
+PII_ENCRYPTION_REQUIRED,security,high,false,PII encryption policy requires encrypted handling.
+PROMOTION_EXCEEDS_SYSTEM_CAP,trust,medium,false,Autonomy promotion exceeds system-wide cap.
+RAG_BUDGET_EXCEEDED,rag,medium,true,RAG token budget exceeded.
+RATE_LIMIT_EXCEEDED,rate_limit,medium,true,Request rate limit exceeded.
+RESOURCE_NOT_FOUND,request,low,false,Requested resource was not found.
+SANDBOX_VIOLATION,security,high,false,Sandbox policy blocked the operation.
+SELF_MODIFICATION_DENIED,self_modification,medium,false,Self-modification action was denied by policy.
+SESSION_EXPIRED,session,low,true,Session expired. Start a new session and retry.
+TEMPORAL_CONSTRAINT_VIOLATION,temporal,medium,false,Temporal constraints prevent this schedule.
+TOOL_QUARANTINED,tool_health,high,true,Tool is temporarily quarantined.
+UNAUTHORIZED,authn,medium,false,Authentication is required.

@@ -53,11 +53,37 @@ func NewService() *Service {
 
 func (s *Service) ListTaxonomy() []TaxonomyItem {
 	items := []TaxonomyItem{
+		{Code: "ACCESS_DENIED", Category: "authz", Severity: "medium", Retryable: false, UserMessage: "You do not have permission for this action."},
+		{Code: "ADMIN_ACTION_AUDIT", Category: "admin", Severity: "low", Retryable: false, UserMessage: "Admin action is allowed and has been audited."},
 		{Code: "BUDGET_CALLS_EXHAUSTED", Category: "budget", Severity: "high", Retryable: false, UserMessage: "Monthly budget limit reached."},
+		{Code: "CACHE_ENTRY_TOO_LARGE", Category: "cache", Severity: "medium", Retryable: false, UserMessage: "Cache entry exceeds the size limit."},
+		{Code: "CONFLICT_REQUIRES_MANUAL_REVIEW", Category: "crdt", Severity: "medium", Retryable: false, UserMessage: "Conflict needs operator review before continuing."},
 		{Code: "CONTEXT_BUDGET_EXCEEDED", Category: "context", Severity: "medium", Retryable: true, UserMessage: "Request context exceeded current budget."},
+		{Code: "DSR_SLA_AT_RISK", Category: "compliance", Severity: "high", Retryable: false, UserMessage: "DSR processing is at risk of missing SLA."},
+		{Code: "EVENT_SCHEMA_INVALID", Category: "events", Severity: "medium", Retryable: false, UserMessage: "Event payload failed schema validation."},
+		{Code: "EVIDENCE_HASH_MISSING", Category: "compliance", Severity: "high", Retryable: false, UserMessage: "Compliance evidence is missing a required hash."},
+		{Code: "EXPORT_RATE_LIMIT", Category: "codebase", Severity: "medium", Retryable: true, UserMessage: "Code context export limit reached for this workspace."},
 		{Code: "FEATURE_DISABLED", Category: "feature_flag", Severity: "low", Retryable: false, UserMessage: "Feature is disabled for this workspace."},
-		{Code: "GUARDRAIL_BLOCK_ACTIVE", Category: "guardrails", Severity: "high", Retryable: false, UserMessage: "Blocked for safety reasons."},
-		{Code: "TOOL_QUARANTINED", Category: "tool_health", Severity: "high", Retryable: true, UserMessage: "Tool is temporarily unavailable."},
+		{Code: "FIRST_BYTE_SLA_BREACH", Category: "streaming", Severity: "low", Retryable: true, UserMessage: "Streaming first-byte latency exceeded SLA."},
+		{Code: "GOAL_RATE_LIMIT", Category: "goals", Severity: "medium", Retryable: true, UserMessage: "Goal creation limit reached for today."},
+		{Code: "GUARDRAIL_BLOCK_ACTIVE", Category: "guardrails", Severity: "high", Retryable: false, UserMessage: "Request was blocked for safety reasons."},
+		{Code: "INVALID_REQUEST", Category: "request", Severity: "low", Retryable: false, UserMessage: "Request payload is invalid."},
+		{Code: "INVALID_REQUEST_JSON", Category: "request", Severity: "low", Retryable: false, UserMessage: "Request JSON body is invalid."},
+		{Code: "LESSON_CAP_REACHED", Category: "learning", Severity: "medium", Retryable: false, UserMessage: "Learning lesson cap reached for this workspace."},
+		{Code: "MAX_STEPS_REACHED", Category: "react", Severity: "low", Retryable: true, UserMessage: "Execution reached max ReAct steps and returned partial results."},
+		{Code: "METHOD_NOT_ALLOWED", Category: "request", Severity: "low", Retryable: false, UserMessage: "Method is not allowed for this endpoint."},
+		{Code: "MODEL_TIER_EXCEEDED", Category: "model_tier", Severity: "medium", Retryable: false, UserMessage: "Requested model tier exceeds workspace policy."},
+		{Code: "PII_ENCRYPTION_REQUIRED", Category: "security", Severity: "high", Retryable: false, UserMessage: "PII encryption policy requires encrypted handling."},
+		{Code: "PROMOTION_EXCEEDS_SYSTEM_CAP", Category: "trust", Severity: "medium", Retryable: false, UserMessage: "Autonomy promotion exceeds system-wide cap."},
+		{Code: "RAG_BUDGET_EXCEEDED", Category: "rag", Severity: "medium", Retryable: true, UserMessage: "RAG token budget exceeded."},
+		{Code: "RATE_LIMIT_EXCEEDED", Category: "rate_limit", Severity: "medium", Retryable: true, UserMessage: "Request rate limit exceeded."},
+		{Code: "RESOURCE_NOT_FOUND", Category: "request", Severity: "low", Retryable: false, UserMessage: "Requested resource was not found."},
+		{Code: "SANDBOX_VIOLATION", Category: "security", Severity: "high", Retryable: false, UserMessage: "Sandbox policy blocked the operation."},
+		{Code: "SELF_MODIFICATION_DENIED", Category: "self_modification", Severity: "medium", Retryable: false, UserMessage: "Self-modification action was denied by policy."},
+		{Code: "SESSION_EXPIRED", Category: "session", Severity: "low", Retryable: true, UserMessage: "Session expired. Start a new session and retry."},
+		{Code: "TEMPORAL_CONSTRAINT_VIOLATION", Category: "temporal", Severity: "medium", Retryable: false, UserMessage: "Temporal constraints prevent this schedule."},
+		{Code: "TOOL_QUARANTINED", Category: "tool_health", Severity: "high", Retryable: true, UserMessage: "Tool is temporarily quarantined."},
+		{Code: "UNAUTHORIZED", Category: "authn", Severity: "medium", Retryable: false, UserMessage: "Authentication is required."},
 	}
 	sort.Slice(items, func(i, j int) bool {
 		return items[i].Code < items[j].Code
@@ -230,12 +256,30 @@ func nextActionFor(errorCode string, retryable bool) string {
 	switch errorCode {
 	case "BUDGET_CALLS_EXHAUSTED":
 		return "Review budget settings or request a limit increase approval."
+	case "CONTEXT_BUDGET_EXCEEDED", "RAG_BUDGET_EXCEEDED":
+		return "Reduce requested context or retry with a narrower scope."
 	case "FEATURE_DISABLED":
 		return "Ask a workspace admin to enable this feature."
 	case "GUARDRAIL_BLOCK_ACTIVE":
 		return "Revise the request to comply with safety policies."
 	case "TOOL_QUARANTINED":
 		return "Retry shortly while the tool recovers or use a fallback tool."
+	case "GOAL_RATE_LIMIT", "EXPORT_RATE_LIMIT", "RATE_LIMIT_EXCEEDED":
+		return "Retry later after the current rate-limit window resets."
+	case "METHOD_NOT_ALLOWED", "INVALID_REQUEST", "INVALID_REQUEST_JSON":
+		return "Update the request method/payload and try again."
+	case "SESSION_EXPIRED":
+		return "Start a new session and retry the request."
+	case "PROMOTION_EXCEEDS_SYSTEM_CAP", "SELF_MODIFICATION_DENIED":
+		return "Request operator/admin review to proceed."
+	case "PII_ENCRYPTION_REQUIRED", "SANDBOX_VIOLATION":
+		return "Adjust the request to satisfy security controls."
+	case "EVENT_SCHEMA_INVALID":
+		return "Fix event payload schema before retry."
+	case "CACHE_ENTRY_TOO_LARGE":
+		return "Reduce cache payload size and retry."
+	case "MAX_STEPS_REACHED":
+		return "Refine the task and rerun with a narrower objective."
 	}
 	if retryable {
 		return "Retry in a few moments."

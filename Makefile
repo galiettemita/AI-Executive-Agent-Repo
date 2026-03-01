@@ -1,4 +1,4 @@
-.PHONY: build test lint migrate db-verify docker-build contracts acceptance ci ci-full load-test security-validate infra-validate api-docs api-docs-check deploy-helm
+.PHONY: build test lint migrate db-verify docker-build contracts acceptance ci ci-full load-test security-validate infra-validate api-docs api-docs-check tools-md tools-md-check deploy-helm
 
 GO_EXEC := ./scripts/dev/go_exec.sh
 GOFMT_EXEC := ./scripts/dev/gofmt_exec.sh
@@ -35,7 +35,7 @@ docker-build:
 		docker build --build-arg SERVICE=$$svc -t brevio-$$svc:local .; \
 	done
 
-ci: lint build test migrate api-docs-check contracts acceptance
+ci: lint build test migrate api-docs-check tools-md-check contracts acceptance
 
 ci-full: ci security-validate infra-validate db-verify
 
@@ -59,3 +59,10 @@ api-docs:
 api-docs-check:
 	$(GO_EXEC) run ./scripts/docs/generate_api_reference.go
 	git diff --exit-code docs/API_REFERENCE.md
+
+tools-md:
+	$(GO_EXEC) run ./scripts/tools/generate_tools_md.go
+
+tools-md-check:
+	$(GO_EXEC) run ./scripts/tools/generate_tools_md.go
+	git diff --exit-code TOOLS.md

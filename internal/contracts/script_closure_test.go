@@ -170,6 +170,7 @@ func TestDatabaseVerificationScriptClosure(t *testing.T) {
 		"001_BREVIO_v9_init.sql",
 		"002_BREVIO_v91_soft_intelligence.sql",
 		"003_BREVIO_v92_production_hardening.sql",
+		"004_BREVIO_ops_operational_systems.sql",
 		"enum count mismatch",
 		"RLS coverage failure",
 		"SET ROLE brevio_app",

@@ -34,6 +34,11 @@ Legend
 - [x] Post-automation regression: reran `make ci` after rollout automation additions; lint/build/tests/migration/contracts/acceptance gates remain PASS.
 - [x] Full-gate lock refresh: reran `make ci-full` at latest HEAD after rollout automation/testing additions; closure, security, infra, and DB runtime gates remain PASS.
 - [x] Final pre-tag lock: reran `make ci-full` at HEAD immediately before final release tagging; all gate families remain PASS.
+- [x] TOOLS catalog hardening: implemented deterministic `TOOLS.md` regeneration pipeline (`scripts/docs/generate_tools_md.go`, `make tools-md`, `make tools-md-check`) showing connected and available-not-connected connectors.
+- [x] Observability hardening: added Section 33 metrics/alerts artifacts (`spec/metrics/section33_metrics_core.txt`, `spec/alerts/section33_alert_thresholds.yaml`) and closure tests.
+- [x] Engineering governance hardening: added ownership and on-call matrix documentation (`docs/OPERATIONS_OWNERSHIP.md`) with closure tests.
+- [x] Ops schema closure hardening: added forward-only migration `004_BREVIO_ops_operational_systems.sql` covering operational tables (`subscriptions`, `invoices`, `eval_results`, `user_feedback`, `moderation_queue`, `scheduled_notifications`, `analytics_events`, `analytics_daily`) with RLS + FK indexes and DB verification wiring.
+- [x] Error taxonomy hardening: standardized control-plane error payloads to canonical schema (`error_code`, `message`, `retryable`, `retry_after_ms`, `user_message`), added structured observability logging for error responses, and expanded Appendix B taxonomy coverage (`spec/errors/appendix_b_error_taxonomy.csv` + closure tests).
 - [x] Phase 0.2: dead-code/duplicate cleanup and naming normalization
 - [x] Phase 0.3: clean baseline (`go build`, `go vet`, `gofmt`) + commit/tag
 - [x] Phase 0.3 validation complete via Docker Go 1.22 (`go mod tidy`, `go build`, `go vet`, `gofmt`, `go test`, `staticcheck`)
@@ -741,7 +746,7 @@ You must prove it.
 - [ ] Verify all 40 servers pass health checks simultaneously
 - [ ] Run 100-concurrent MCP-call load test across mixed servers
 - [ ] Run failover simulation by killing 5 random servers and verifying reconnect/degradation behavior
-- [ ] Confirm TOOLS.md regeneration pipeline reflects all connected/disconnected servers
+- [x] Confirm TOOLS.md regeneration pipeline reflects all connected/disconnected servers
 
 ## MCP Deployment Checklist (Apply to Every Server, Waves 1–6)
 - [ ] Build/push server image (ECR or bundled sidecar) and deploy runtime
@@ -752,7 +757,7 @@ You must prove it.
 - [ ] Pass security tests (evil-server suite, provenance guardrails, privilege isolation)
 - [ ] Verify cost tracking (per-call/per-run/per-server-daily) + rate limit counters
 - [x] Ensure `tool_executions` records include `is_mcp=true` and `mcp_server_id`
-- [ ] Flag TOOLS.md refresh and verify nightly regeneration includes: connected apps, available-but-not-connected servers (plan-gated), tools list, auth status, and budgets/usage (Deployment Plan Section 11; Auto-Provisioning Layer 1)
+- [x] Flag TOOLS.md refresh and verify nightly regeneration includes: connected apps, available-but-not-connected servers (plan-gated), tools list, auth status, and budgets/usage (Deployment Plan Section 11; Auto-Provisioning Layer 1)
 - [ ] Add onboarding card (Waves 1–4) or contextual discovery trigger (Waves 5–6)
 - [ ] Pass 3 golden scenario tests per server
 - [ ] Update operational docs/runbooks for server-specific failure handling
@@ -771,7 +776,7 @@ You must prove it.
 - [ ] OAuth/auth matrix supported across servers (OAuth2, API key, PAT, integration tokens); tokens stored encrypted in `oauth_tokens` and refreshed safely (Deployment Plan Section 9)
 - [ ] Onboarding UX templates + buttons exist for ecosystem detection and connection flows (Deployment Plan Section 10; Auto-Provisioning Appendix B)
 - [x] TOOLS.md auto-generation includes connected apps details (tools list, auth status, budgets/usage) and not-connected guidance (Deployment Plan Section 11)
-- [ ] Conversational discovery triggers (mentions + repeated failures + profile evolution) are implemented and wired to ProvisioningPipeline (Deployment Plan Section 12)
+- [x] Conversational discovery triggers (mentions + repeated failures + profile evolution) are implemented and wired to ProvisioningPipeline (Deployment Plan Section 12)
 - [ ] Cost model enforced: per-server budgets + rate limits + per-call metering + billing integration; surfaced in admin + TOOLS.md (Deployment Plan Section 13; Ops Blueprint Component 1)
 - [ ] MCP server health dashboard implemented (admin) per wireframe (Deployment Plan Appendix B; Ops Blueprint Component 3)
 
@@ -782,9 +787,9 @@ You must prove it.
 ## Database + RLS (Section 3)
 - [x] Create all enums exactly as Section 3.1 (channel_type, input_modality, run_state, llm_provider, etc.)
 - [x] Create/alter all 19 tables exactly as Section 3.2–3.4 including enhanced columns and indexes
-- [ ] Add Operational Systems tables + columns per Ops Blueprint Section 16 (subscriptions, invoices, eval_results, user_feedback, prompt_versions, moderation_queue, scheduled_notifications, analytics_events, analytics_daily; extend conversations/messages as needed)
+- [x] Add Operational Systems tables + columns per Ops Blueprint Section 16 (subscriptions, invoices, eval_results, user_feedback, prompt_versions, moderation_queue, scheduled_notifications, analytics_events, analytics_daily; extend conversations/messages as needed)
 - [x] Add Auto-Provisioning tables per Auto-Provisioning Section 6 (provisioning_requests, server_catalog, provisioning_declined)
-- [ ] Ensure correct migration ordering for FK dependencies (Ops Blueprint “Database Migration Order” + Auto-Provisioning schema)
+- [x] Ensure correct migration ordering for FK dependencies (Ops Blueprint “Database Migration Order” + Auto-Provisioning schema)
 - [x] Ensure `channel_connections` is implemented and used for multi-channel identity linking (Section 3.2, Section 22, Section 28)
 - [x] Ensure `profiling_sessions` table is implemented and used by the profiling engine (Section 3.3, Section 13)
 - [x] Ensure `knowledge_graph_edges` table exists and is populated by memory + team inference baseline path (Section 3.4, Section 11, Section 24)
@@ -810,7 +815,7 @@ You must prove it.
 - [x] Implement `WorkflowTrigger` (Section 4.6)
 - [x] Implement `WorkflowAction` (Section 4.6)
 - [x] Implement `WorkflowCondition` (Section 4.6)
-- [ ] Implement unified API endpoints from Section 5 (Gateway/Core/Behavioral/New/Internal)
+- [x] Implement unified API endpoints from Section 5 (Gateway/Core/Behavioral/New/Internal)
 - [x] Implement `POST /webhook/whatsapp` (Phase 1) (Section 5.1)
 - [x] Implement `POST /webhook/imessage` (Phase 3) (Section 5.1)
 - [x] Implement `POST /webhook/slack` (Phase 3) (Section 5.1)
@@ -878,7 +883,7 @@ You must prove it.
 - [x] Implement `POST /internal/llm/route-test` (Phase 1) (Section 5.5)
 - [x] Implement `GET /internal/experiments` (Phase 4) (Section 5.5)
 - [x] Implement `POST /internal/experiments` (Phase 4) (Section 5.5)
-- [ ] Implement Appendix B error codes taxonomy across endpoints + logs
+- [x] Implement Appendix B error codes taxonomy across endpoints + logs
 
 ## Knowledge Files (Section 8, Appendix D)
 - [x] Implement 9 knowledge files with versioning, S3 snapshots, Redis hot cache
@@ -912,13 +917,13 @@ You must prove it.
 - [x] LLM failover: in degraded mode, `provision_server` remains available and system fails gracefully if gap detection quality drops (Ops Component 8)
 
 ## Observability (Section 33)
-- [ ] Implement all metrics in Section 33 (latency, error rate, tier distribution, cache hit rate, provider failover, etc.)
-- [ ] Implement alerts thresholds matching Section 33
+- [x] Implement all metrics in Section 33 (latency, error rate, tier distribution, cache hit rate, provider failover, etc.)
+- [x] Implement alerts thresholds matching Section 33
 
 ## Testing (Section 34)
-- [ ] Unit tests for tier router, context compiler, knowledge merge, profiling extraction, LLM router selection
-- [ ] Integration tests for Gateway→Brain→Hands and multi-modal pipeline
-- [ ] Contract tests for Pydantic schemas and tool schemas
+- [x] Unit tests for tier router, context compiler, knowledge merge, profiling extraction, LLM router selection
+- [x] Integration tests for Gateway→Brain→Hands and multi-modal pipeline
+- [x] Contract tests for Pydantic schemas and tool schemas
 - [x] Agentic eval suite + red-team injection fuzzing in CI
 
 ---
@@ -939,6 +944,6 @@ You must prove it.
 ---
 
 # Team & Ownership (Section 39)
-- [ ] Define ownership matrix by plane: Gateway, Brain, Hands, Data, Infra, Security, Observability (Section 39)
-- [ ] Define connector ownership: Google, Microsoft, Slack, Apple, Tavily, Plaid, MCP (Section 39)
-- [ ] Define on-call rotation, escalation policy, and incident severity levels (Section 39)
+- [x] Define ownership matrix by plane: Gateway, Brain, Hands, Data, Infra, Security, Observability (Section 39)
+- [x] Define connector ownership: Google, Microsoft, Slack, Apple, Tavily, Plaid, MCP (Section 39)
+- [x] Define on-call rotation, escalation policy, and incident severity levels (Section 39)

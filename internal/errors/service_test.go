@@ -5,6 +5,41 @@ import (
 	"testing"
 )
 
+func TestTaxonomyIncludesAppendixBPolicyCodes(t *testing.T) {
+	t.Parallel()
+
+	s := NewService()
+	taxonomy := s.ListTaxonomy()
+	codes := map[string]struct{}{}
+	for _, item := range taxonomy {
+		codes[item.Code] = struct{}{}
+	}
+
+	required := []string{
+		"BUDGET_CALLS_EXHAUSTED",
+		"CONTEXT_BUDGET_EXCEEDED",
+		"RAG_BUDGET_EXCEEDED",
+		"GUARDRAIL_BLOCK_ACTIVE",
+		"TOOL_QUARANTINED",
+		"FEATURE_DISABLED",
+		"MODEL_TIER_EXCEEDED",
+		"PII_ENCRYPTION_REQUIRED",
+		"SANDBOX_VIOLATION",
+		"EVENT_SCHEMA_INVALID",
+		"EVIDENCE_HASH_MISSING",
+		"GOAL_RATE_LIMIT",
+		"LESSON_CAP_REACHED",
+		"EXPORT_RATE_LIMIT",
+		"SELF_MODIFICATION_DENIED",
+		"PROMOTION_EXCEEDS_SYSTEM_CAP",
+	}
+	for _, code := range required {
+		if _, ok := codes[code]; !ok {
+			t.Fatalf("missing required taxonomy code: %s", code)
+		}
+	}
+}
+
 func TestErrorServiceLifecycle(t *testing.T) {
 	t.Parallel()
 
