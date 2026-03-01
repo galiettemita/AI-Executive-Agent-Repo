@@ -14,9 +14,11 @@ _No connectors marked as connected. Set `CONNECTED_CONNECTOR_KEYS` (comma-separa
 |---|---|---|---|---|
 | amadeus | travel | ELEVATED | internal | https://mcp.example/amadeus |
 | apple_health | health | ELEVATED | restricted | https://mcp.example/apple_health |
+| apple_reminders | tasks | MEDIUM | internal | https://mcp.example/apple_reminders |
 | asana | tasks | MEDIUM | internal | https://mcp.example/asana |
 | booking | travel | ELEVATED | internal | https://mcp.example/booking |
 | box | documents | LOW | internal | https://mcp.example/box |
+| brave_search | web | LOW | public | https://mcp.example/brave_search |
 | clickup | tasks | MEDIUM | internal | https://mcp.example/clickup |
 | confluence | documents | LOW | internal | https://mcp.example/confluence |
 | dropbox | documents | LOW | internal | https://mcp.example/dropbox |
@@ -47,6 +49,7 @@ _No connectors marked as connected. Set `CONNECTED_CONNECTOR_KEYS` (comma-separa
 | slack | messaging | LOW | internal | https://mcp.example/slack |
 | snowflake | data | ELEVATED | confidential | https://mcp.example/snowflake |
 | stripe | financial | CRITICAL | restricted | https://mcp.example/stripe |
+| todoist | tasks | MEDIUM | internal | https://mcp.example/todoist |
 | trello | tasks | LOW | internal | https://mcp.example/trello |
 | twilio | messaging | MEDIUM | internal | https://mcp.example/twilio |
 | weather | environment | LOW | public | https://mcp.example/weather |
@@ -61,9 +64,11 @@ _No connectors marked as connected. Set `CONNECTED_CONNECTOR_KEYS` (comma-separa
 |---|---|---:|---:|---:|---|
 | amadeus | ELEVATED | 1500 | 120.00 | 60 | `tool_executions` + mcp invocation ledger |
 | apple_health | ELEVATED | 1500 | 120.00 | 60 | `tool_executions` + mcp invocation ledger |
+| apple_reminders | MEDIUM | 2000 | 80.00 | 90 | `tool_executions` + mcp invocation ledger |
 | asana | MEDIUM | 2000 | 80.00 | 90 | `tool_executions` + mcp invocation ledger |
 | booking | ELEVATED | 1500 | 120.00 | 60 | `tool_executions` + mcp invocation ledger |
 | box | LOW | 5000 | 40.00 | 120 | `tool_executions` + mcp invocation ledger |
+| brave_search | LOW | 5000 | 40.00 | 120 | `tool_executions` + mcp invocation ledger |
 | clickup | MEDIUM | 2000 | 80.00 | 90 | `tool_executions` + mcp invocation ledger |
 | confluence | LOW | 5000 | 40.00 | 120 | `tool_executions` + mcp invocation ledger |
 | dropbox | LOW | 5000 | 40.00 | 120 | `tool_executions` + mcp invocation ledger |
@@ -94,6 +99,7 @@ _No connectors marked as connected. Set `CONNECTED_CONNECTOR_KEYS` (comma-separa
 | slack | LOW | 5000 | 40.00 | 120 | `tool_executions` + mcp invocation ledger |
 | snowflake | ELEVATED | 1500 | 120.00 | 60 | `tool_executions` + mcp invocation ledger |
 | stripe | CRITICAL | 1000 | 200.00 | 30 | `tool_executions` + mcp invocation ledger |
+| todoist | MEDIUM | 2000 | 80.00 | 90 | `tool_executions` + mcp invocation ledger |
 | trello | LOW | 5000 | 40.00 | 120 | `tool_executions` + mcp invocation ledger |
 | twilio | MEDIUM | 2000 | 80.00 | 90 | `tool_executions` + mcp invocation ledger |
 | weather | LOW | 5000 | 40.00 | 120 | `tool_executions` + mcp invocation ledger |

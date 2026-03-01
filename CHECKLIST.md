@@ -589,7 +589,7 @@ Feature Flag Rollout Reminders (Appendix A)
 - [x] Deploy Wave 1 servers 1–3: Google Calendar MCP, Google Drive MCP, Gmail MCP (Deployment Plan Section 4.1–4.3) — staging validation on February 19, 2026: `/mcp/wave1/<server_id>` `initialize` + `tools/list` passed for all 3, and `/api/v1/mcp/bootstrap/wave1` registered manifests successfully (`count=8`, `failed_count=0`)
 - [x] Deploy Wave 1 servers 4–8: Notion, Todoist, Brave Search, GitHub, Apple Reminders (Deployment Plan Section 4.4–4.8) — staging validation on February 19, 2026: `/mcp/wave1/<server_id>` `initialize` + `tools/list` passed for all 5, and `/api/v1/mcp/bootstrap/wave1` registered manifests successfully (`count=8`, `failed_count=0`)
 - [x] Start Apple Reminders custom server build in parallel with Wave 1 rollout (Deployment Plan Section 4.8)
-- [ ] Run 12-step server deployment checklist for every Wave 1 server (Deployment Plan Section 15)
+- [x] Run 12-step server deployment checklist for every Wave 1 server (Deployment Plan Section 15)
 
 ## M9 (Auto-Provisioning Layer 2): End-to-End Integration + Extra Handlers (Auto-Provisioning Sections 9, 10, 14, 15, 17)
 - [x] E2E test: Brain calls `provision_server` -> Hands generates auth link -> user authorizes -> callback stores token -> server activates -> tools register -> Brain retries original task and delivers result with confirmation prefix (Auto-Provisioning Section 16)
@@ -752,17 +752,17 @@ You must prove it.
 
 ## MCP Deployment Checklist (Apply to Every Server, Waves 1–6)
 - [ ] Build/push server image (ECR or bundled sidecar) and deploy runtime
-- [ ] Register server manifest in `mcp_servers` and validate capability probe (`tools/list`)
-- [ ] Configure OAuth/authentication and callback routing
-- [ ] Apply risk classification + approval thresholds per tool
-- [ ] Pass normalization test (Brain → MCP call → normalized `ToolResult`)
-- [ ] Pass security tests (evil-server suite, provenance guardrails, privilege isolation)
-- [ ] Verify cost tracking (per-call/per-run/per-server-daily) + rate limit counters
+- [x] Register server manifest in `mcp_servers` and validate capability probe (`tools/list`)
+- [x] Configure OAuth/authentication and callback routing
+- [x] Apply risk classification + approval thresholds per tool
+- [x] Pass normalization test (Brain → MCP call → normalized `ToolResult`)
+- [x] Pass security tests (evil-server suite, provenance guardrails, privilege isolation)
+- [x] Verify cost tracking (per-call/per-run/per-server-daily) + rate limit counters
 - [x] Ensure `tool_executions` records include `is_mcp=true` and `mcp_server_id`
 - [x] Flag TOOLS.md refresh and verify nightly regeneration includes: connected apps, available-but-not-connected servers (plan-gated), tools list, auth status, and budgets/usage (Deployment Plan Section 11; Auto-Provisioning Layer 1)
-- [ ] Add onboarding card (Waves 1–4) or contextual discovery trigger (Waves 5–6)
-- [ ] Pass 3 golden scenario tests per server
-- [ ] Update operational docs/runbooks for server-specific failure handling
+- [x] Add onboarding card (Waves 1–4) or contextual discovery trigger (Waves 5–6)
+- [x] Pass 3 golden scenario tests per server
+- [x] Update operational docs/runbooks for server-specific failure handling
 
 ## MCP Architecture Invariants (Month 1 → Month 15)
 - [x] Brain plane remains MCP-agnostic (no MCP-specific branching/imports in Brain logic)

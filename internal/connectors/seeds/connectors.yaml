@@ -5,7 +5,10 @@ connectors:
   - { key: outlook_mail, domain: email, risk_level: MEDIUM, data_class: internal, mcp_server_url: https://mcp.example/outlook_mail }
   - { key: slack, domain: messaging, risk_level: LOW, data_class: internal, mcp_server_url: https://mcp.example/slack }
   - { key: notion, domain: documents, risk_level: LOW, data_class: internal, mcp_server_url: https://mcp.example/notion }
+  - { key: todoist, domain: tasks, risk_level: MEDIUM, data_class: internal, mcp_server_url: https://mcp.example/todoist }
+  - { key: brave_search, domain: web, risk_level: LOW, data_class: public, mcp_server_url: https://mcp.example/brave_search }
   - { key: github, domain: code, risk_level: ELEVATED, data_class: internal, mcp_server_url: https://mcp.example/github }
+  - { key: apple_reminders, domain: tasks, risk_level: MEDIUM, data_class: internal, mcp_server_url: https://mcp.example/apple_reminders }
   - { key: gitlab, domain: code, risk_level: ELEVATED, data_class: internal, mcp_server_url: https://mcp.example/gitlab }
   - { key: linear, domain: tasks, risk_level: MEDIUM, data_class: internal, mcp_server_url: https://mcp.example/linear }
   - { key: jira, domain: tasks, risk_level: MEDIUM, data_class: internal, mcp_server_url: https://mcp.example/jira }
@@ -48,7 +51,10 @@ tools:
   - { connector_key: outlook_mail, tool_key: outlook_mail.send_email, write: true, reversible: false, autonomy_floor: A1 }
   - { connector_key: slack, tool_key: slack.send_message, write: true, reversible: true, autonomy_floor: A1 }
   - { connector_key: notion, tool_key: notion.create_page, write: true, reversible: true, autonomy_floor: A1 }
+  - { connector_key: todoist, tool_key: todoist.create_task, write: true, reversible: true, autonomy_floor: A2 }
+  - { connector_key: brave_search, tool_key: brave_search.query, write: false, reversible: false, autonomy_floor: A3 }
   - { connector_key: github, tool_key: github.create_issue, write: true, reversible: true, autonomy_floor: A2 }
+  - { connector_key: apple_reminders, tool_key: apple_reminders.create_reminder, write: true, reversible: true, autonomy_floor: A1 }
   - { connector_key: gitlab, tool_key: gitlab.create_issue, write: true, reversible: true, autonomy_floor: A2 }
   - { connector_key: linear, tool_key: linear.create_issue, write: true, reversible: true, autonomy_floor: A2 }
   - { connector_key: jira, tool_key: jira.create_issue, write: true, reversible: true, autonomy_floor: A2 }

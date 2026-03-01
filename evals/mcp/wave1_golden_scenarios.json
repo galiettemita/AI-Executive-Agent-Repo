@@ -1,0 +1,76 @@
+{
+  "servers": [
+    {
+      "connector_key": "google_calendar",
+      "tool_key": "google_calendar.create_event",
+      "scenarios": [
+        "Schedule a leadership sync for next Tuesday at 10am.",
+        "Move tomorrow's standup by 30 minutes and notify attendees.",
+        "Create a recurring weekly planning block every Monday morning."
+      ]
+    },
+    {
+      "connector_key": "google_drive",
+      "tool_key": "google_drive.upload_file",
+      "scenarios": [
+        "Upload the Q1 board deck to the executive folder.",
+        "Store this meeting transcript in shared drive under Operations.",
+        "Attach and upload the latest roadmap PDF to the project workspace."
+      ]
+    },
+    {
+      "connector_key": "google_gmail",
+      "tool_key": "google_gmail.send_email",
+      "scenarios": [
+        "Draft and send a follow-up email to the product team.",
+        "Email the investor update summary to the finance alias.",
+        "Send a reminder email to all hiring panel interviewers."
+      ]
+    },
+    {
+      "connector_key": "notion",
+      "tool_key": "notion.create_page",
+      "scenarios": [
+        "Create a new project kickoff page in the strategy workspace.",
+        "Add a weekly status page template for engineering updates.",
+        "Create a notes page for the next customer advisory call."
+      ]
+    },
+    {
+      "connector_key": "todoist",
+      "tool_key": "todoist.create_task",
+      "scenarios": [
+        "Create a high-priority task to review monthly KPI trends.",
+        "Add a task to prepare next week's executive briefing.",
+        "Create a due-today reminder to approve vendor invoices."
+      ]
+    },
+    {
+      "connector_key": "brave_search",
+      "tool_key": "brave_search.query",
+      "scenarios": [
+        "Search for the latest competitor pricing announcement.",
+        "Find recent reports on AI governance best practices.",
+        "Look up regional regulations for enterprise data residency."
+      ]
+    },
+    {
+      "connector_key": "github",
+      "tool_key": "github.create_issue",
+      "scenarios": [
+        "Open an issue for flaky CI integration tests.",
+        "Create a security issue to rotate expiring webhook keys.",
+        "File a bug for onboarding workflow timeout on slow networks."
+      ]
+    },
+    {
+      "connector_key": "apple_reminders",
+      "tool_key": "apple_reminders.create_reminder",
+      "scenarios": [
+        "Create a reminder to submit board materials by Friday.",
+        "Add a reminder for tomorrow's customer escalation review.",
+        "Set a reminder to finalize quarterly planning notes."
+      ]
+    }
+  ]
+}

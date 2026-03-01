@@ -2,6 +2,10 @@ package integration
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -9,6 +13,16 @@ import (
 
 	"github.com/brevio/brevio/internal/mcp"
 )
+
+type wave1GoldenScenarioFile struct {
+	Servers []wave1GoldenServerScenarios `json:"servers"`
+}
+
+type wave1GoldenServerScenarios struct {
+	ConnectorKey string   `json:"connector_key"`
+	ToolKey      string   `json:"tool_key"`
+	Scenarios    []string `json:"scenarios"`
+}
 
 func TestPipelineEndToEndHappyPath(t *testing.T) {
 	s := NewService("")
@@ -466,6 +480,86 @@ func TestMCPPerServerBudgetGate(t *testing.T) {
 	}
 	if second.GateDecision != "deny" || second.ReasonCode != "MCP_SERVER_BUDGET_EXCEEDED" {
 		t.Fatalf("expected mcp budget deny, got %+v", second)
+	}
+}
+
+func TestWave1GoldenScenariosThreePerServer(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join("..", "..", "evals", "mcp", "wave1_golden_scenarios.json")
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read wave1 golden scenarios: %v", err)
+	}
+	var scenarios wave1GoldenScenarioFile
+	if err := json.Unmarshal(raw, &scenarios); err != nil {
+		t.Fatalf("decode wave1 golden scenarios: %v", err)
+	}
+	if len(scenarios.Servers) == 0 {
+		t.Fatalf("expected non-empty wave1 scenarios from %s", path)
+	}
+
+	for serverIdx, server := range scenarios.Servers {
+		server := server
+		t.Run(server.ConnectorKey, func(t *testing.T) {
+			t.Parallel()
+
+			if len(server.Scenarios) < 3 {
+				t.Fatalf("expected at least 3 scenarios for %s, got %d", server.ConnectorKey, len(server.Scenarios))
+			}
+			if server.ToolKey == "" {
+				t.Fatalf("missing tool_key for %s", server.ConnectorKey)
+			}
+
+			svc := NewService("integration-secret")
+			workspaceID := uuid.MustParse(fmt.Sprintf("018f3f6a-9a0f-7cc6-8f2f-%012x", serverIdx+100))
+			channelIdentifier := fmt.Sprintf("wave1-%s", server.ConnectorKey)
+			svc.BindWorkspace("whatsapp", channelIdentifier, workspaceID)
+
+			for scenarioIdx, message := range server.Scenarios[:3] {
+				nonce := fmt.Sprintf("wave1_%s_%d", server.ConnectorKey, scenarioIdx)
+				status, err := svc.IngestWebhook(WebhookPayload{
+					Channel:           "whatsapp",
+					ChannelIdentifier: channelIdentifier,
+					UserChannelID:     fmt.Sprintf("wave1_u_%s", server.ConnectorKey),
+					Nonce:             nonce,
+					Message:           message,
+				})
+				if err != nil || status != 202 {
+					t.Fatalf("ingest wave1 scenario webhook: status=%d err=%v", status, err)
+				}
+
+				result, err := svc.ProcessNextQueuedTurnWithOptions(context.Background(), ProcessOptions{
+					ToolKeys:      []string{server.ToolKey},
+					AutoApprove:   true,
+					ToolRiskLevel: "CRITICAL",
+					Now:           time.Date(2026, time.March, 1, 14, scenarioIdx, 0, 0, time.UTC),
+				})
+				if err != nil {
+					t.Fatalf("process wave1 scenario turn: %v", err)
+				}
+				if result.GateDecision != "allow" || !result.Committed || result.ToolsCommitted != 1 {
+					t.Fatalf("expected committed allow result for %s scenario %d: %+v", server.ConnectorKey, scenarioIdx, result)
+				}
+			}
+
+			foundCommit := false
+			for _, execution := range svc.ExecutorExecutions() {
+				if execution.ToolKey != server.ToolKey || execution.Phase != "commit" {
+					continue
+				}
+				foundCommit = true
+				if !execution.IsMCP {
+					t.Fatalf("expected mcp commit execution for %s: %+v", server.ToolKey, execution)
+				}
+				if execution.ContentProvenance != "mcp_result" {
+					t.Fatalf("expected mcp_result provenance for %s: %+v", server.ToolKey, execution)
+				}
+			}
+			if !foundCommit {
+				t.Fatalf("expected at least one commit execution for %s", server.ToolKey)
+			}
+		})
 	}
 }
 

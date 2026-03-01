@@ -75,6 +75,17 @@ Or run one-command rollout:
 make deploy-helm
 ```
 
+### Wave 1 MCP Deployment Checklist (12-step gate)
+Run the deterministic Wave 1 MCP checklist before production promotion:
+
+```bash
+make mcp-wave1-checklist
+cat artifacts/deploy/wave1_deployment_checklist_report.json
+```
+
+The report must show `failed_servers = 0` across:
+- `google_calendar`, `google_drive`, `google_gmail`, `notion`, `todoist`, `brave_search`, `github`, `apple_reminders`.
+
 Optional image/port overrides for production ECR rollout:
 
 ```bash

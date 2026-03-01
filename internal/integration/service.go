@@ -91,6 +91,15 @@ func seedDefaultMCPRegistry() *mcp.Service {
 	defaultTools := []mcp.ToolSpec{
 		{ToolKey: "calendar.create_event", Source: mcp.ToolSourceNative, RiskLevel: "MEDIUM"},
 		{ToolKey: "email.send", Source: mcp.ToolSourceNative, RiskLevel: "MEDIUM"},
+		// Wave 1 MCP server set.
+		{ToolKey: "google_calendar.create_event", Source: mcp.ToolSourceMCP, ServerID: "google_calendar_mcp", AuthType: mcp.AuthOAuth2, RiskLevel: "MEDIUM"},
+		{ToolKey: "google_drive.upload_file", Source: mcp.ToolSourceMCP, ServerID: "google_drive_mcp", AuthType: mcp.AuthOAuth2, RiskLevel: "LOW"},
+		{ToolKey: "google_gmail.send_email", Source: mcp.ToolSourceMCP, ServerID: "google_gmail_mcp", AuthType: mcp.AuthOAuth2, RiskLevel: "MEDIUM"},
+		{ToolKey: "notion.create_page", Source: mcp.ToolSourceMCP, ServerID: "notion_mcp", AuthType: mcp.AuthIntegrationToken, RiskLevel: "LOW"},
+		{ToolKey: "todoist.create_task", Source: mcp.ToolSourceMCP, ServerID: "todoist_mcp", AuthType: mcp.AuthOAuth2, RiskLevel: "MEDIUM"},
+		{ToolKey: "brave_search.query", Source: mcp.ToolSourceMCP, ServerID: "brave_search_mcp", AuthType: mcp.AuthAPIKey, RiskLevel: "LOW"},
+		{ToolKey: "github.create_issue", Source: mcp.ToolSourceMCP, ServerID: "github_mcp", AuthType: mcp.AuthPAT, RiskLevel: "ELEVATED"},
+		{ToolKey: "apple_reminders.create_reminder", Source: mcp.ToolSourceMCP, ServerID: "apple_reminders_mcp", AuthType: mcp.AuthIntegrationToken, RiskLevel: "MEDIUM"},
 		{ToolKey: "stripe.create_payment", Source: mcp.ToolSourceMCP, ServerID: "stripe_mcp", AuthType: mcp.AuthOAuth2, RiskLevel: "CRITICAL"},
 		{ToolKey: "plaid.fetch_transactions", Source: mcp.ToolSourceMCP, ServerID: "plaid_mcp", AuthType: mcp.AuthAPIKey, RiskLevel: "CRITICAL"},
 		{ToolKey: "zoom.fetch_transcript", Source: mcp.ToolSourceMCP, ServerID: "zoom_mcp", AuthType: mcp.AuthPAT, RiskLevel: "MEDIUM"},
@@ -100,6 +109,14 @@ func seedDefaultMCPRegistry() *mcp.Service {
 		_ = registry.RegisterTool(tool)
 	}
 	defaultPolicies := []mcp.ServerPolicy{
+		{ServerID: "google_calendar_mcp", MonthlyCallCap: 2000, MonthlyCostCapUSD: 80, RateLimitPerMinute: 90},
+		{ServerID: "google_drive_mcp", MonthlyCallCap: 5000, MonthlyCostCapUSD: 40, RateLimitPerMinute: 120},
+		{ServerID: "google_gmail_mcp", MonthlyCallCap: 2000, MonthlyCostCapUSD: 80, RateLimitPerMinute: 90},
+		{ServerID: "notion_mcp", MonthlyCallCap: 5000, MonthlyCostCapUSD: 40, RateLimitPerMinute: 120},
+		{ServerID: "todoist_mcp", MonthlyCallCap: 2000, MonthlyCostCapUSD: 80, RateLimitPerMinute: 90},
+		{ServerID: "brave_search_mcp", MonthlyCallCap: 5000, MonthlyCostCapUSD: 40, RateLimitPerMinute: 120},
+		{ServerID: "github_mcp", MonthlyCallCap: 1500, MonthlyCostCapUSD: 120, RateLimitPerMinute: 60},
+		{ServerID: "apple_reminders_mcp", MonthlyCallCap: 2000, MonthlyCostCapUSD: 80, RateLimitPerMinute: 90},
 		{ServerID: "stripe_mcp", MonthlyCallCap: 1000, MonthlyCostCapUSD: 200, RateLimitPerMinute: 30},
 		{ServerID: "plaid_mcp", MonthlyCallCap: 1000, MonthlyCostCapUSD: 200, RateLimitPerMinute: 30},
 		{ServerID: "zoom_mcp", MonthlyCallCap: 1000, MonthlyCostCapUSD: 200, RateLimitPerMinute: 30},
