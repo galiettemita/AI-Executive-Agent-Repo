@@ -73,7 +73,7 @@ tools-md-check:
 	git diff --exit-code TOOLS.md
 
 generate-remote-catalog-keys:
-	$(GO_EXEC) run ./scripts/tools/generate_remote_catalog_keys.go
+	$(GO_EXEC) run ./scripts/tools/remote_catalog_keys/main.go
 
 mcp-wave1-checklist:
 	$(GO_EXEC) run ./scripts/mcp/wave1_checklist/main.go

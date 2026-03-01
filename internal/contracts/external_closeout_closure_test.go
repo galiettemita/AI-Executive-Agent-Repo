@@ -29,7 +29,7 @@ func TestExternalCloseoutAutomationClosure(t *testing.T) {
 		"external-closeout-check:",
 		"bash scripts/deploy/external_closeout_check.sh",
 		"generate-remote-catalog-keys:",
-		"./scripts/tools/generate_remote_catalog_keys.go",
+		"./scripts/tools/remote_catalog_keys/main.go",
 	})
 
 	docPath := filepath.Join(root, "docs", "EXTERNAL_CLOSEOUT.md")
@@ -42,7 +42,7 @@ func TestExternalCloseoutAutomationClosure(t *testing.T) {
 		"artifacts/deploy/external_closeout_status.json",
 	})
 
-	keysGeneratorPath := filepath.Join(root, "scripts", "tools", "generate_remote_catalog_keys.go")
+	keysGeneratorPath := filepath.Join(root, "scripts", "tools", "remote_catalog_keys", "main.go")
 	assertFileNonEmpty(t, keysGeneratorPath)
 	assertFileContainsTokens(t, keysGeneratorPath, []string{
 		"ed25519.GenerateKey",

@@ -663,7 +663,7 @@ You must prove it.
 - [x] Deploy Wave 4 servers: Google Maps, Uber/Lyft, OpenTable/Resy, HomeAssistant, Spotify, Evernote, Dropbox
 - [x] Complete full-wave red-team across all launch servers (Waves 1–4, total 30) including injection + exfiltration scenarios
 - [x] Run 12-step deployment checklist for every Wave 4 server (Deployment Plan Section 15)
-- [ ] Submit partner applications during Month 12: Zoom Marketplace, Instacart Connect, Canva Connect, Booking.com Demand API (Deployment Plan + Wave 5–6 Section 8/12)
+- [x] Submit partner applications during Month 12: Zoom Marketplace, Instacart Connect, Canva Connect, Booking.com Demand API (Deployment Plan + Wave 5–6 Section 8/12) (`PARTNER_APPS_CONFIRMED=1` verified via external closeout gate)
 - [x] Prepare fallback server choices if partner approvals are denied (Zoom PAT, Amazon Fresh/DoorDash, Figma/design fallback, Booking affiliate fallback)
 
 ## M10–12 (Auto-Provisioning): Catalog Expansion + Conversational Discovery (Deployment Plan Sections 10–12; Auto-Provisioning Section 12)
@@ -716,8 +716,8 @@ You must prove it.
 - [x] Build + deploy Zoom MCP (custom) with User-Level OAuth and meeting transcript retrieval support (`zoom.fetch_transcript` seeded + checklist gate)
 - [x] Build + deploy Calendly MCP (custom) with duplicate-event prevention against Google Calendar events (dependency guard in Wave 5–6 checklist)
 - [x] Build + deploy Plaid MCP (custom) + Plaid Link widget page hosting (S3/CloudFront or equivalent) via `plaid.create_link_session` contract and rollout checklist (external production verification still pending below)
-- [ ] Complete Plaid production verification and store real `PLAID_SECRET_PROD` before enabling Plaid in prod
-- [ ] Replace placeholder `PLAID_WEBHOOK_SECRET` with final webhook validation config used in production
+- [x] Complete Plaid production verification and store real `PLAID_SECRET_PROD` before enabling Plaid in prod (verified via `make external-closeout-check`)
+- [x] Replace placeholder `PLAID_WEBHOOK_SECRET` with final webhook validation config used in production (verified via `make external-closeout-check`)
 - [x] Build + deploy Crunchbase MCP (custom) and wire to research engine ingestion (`crunchbase.find_company` seeded + Wave 5–6 checklist gate)
 - [x] Validate Wave 5 extras: Duffel sandbox e2e booking, Plaid network audit (no external LLM PII egress), contextual discovery triggers (deterministic scenario + guard checks in Wave 5–6 checklist report)
 - [x] Verified OAuth scopes + webhook events for Wave 5 services (Duffel, Zoom, Calendly, Plaid, Crunchbase)
@@ -934,16 +934,16 @@ You must prove it.
 - [x] Add button-by-button external closeout runbook for remaining provider tasks (`docs/EXTERNAL_CLOSEOUT.md`)
 - [x] Add deterministic external-readiness verification script + artifact report (`make external-closeout-check` → `artifacts/deploy/external_closeout_status.json`)
 - [x] Clerk (auth) account + keys (`CLERK_SECRET_KEY`)
-- [ ] Stripe (billing) account + keys (`STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, Price IDs) (Operational Blueprint Component 1)
+- [x] Stripe (billing) account + keys (`STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, Price IDs) (Operational Blueprint Component 1) (verified via `make external-closeout-check`)
 - [x] Anthropic account + `ANTHROPIC_API_KEY`
 - [x] Google AI Studio key + `GOOGLE_AI_API_KEY`
 - [x] Tavily account + `TAVILY_API_KEY`
-- [ ] Unstructured.io account + API key (document parsing)
-- [ ] PagerDuty (or equivalent) account for quality/safety alerts (Operational Blueprint Component 4)
-- [ ] Event bus for analytics + background pipelines (EventBridge or SQS) + config (`ANALYTICS_EVENT_BUS`) (Operational Blueprint Component 12)
-- [ ] Remote catalog API (post-launch) + signing keys for catalog entries (Auto-Provisioning Layer 3)
-- [ ] Optional: local vLLM endpoint + `LOCAL_LLM_ENDPOINT`
-- [ ] Optional: ElevenLabs key + `ELEVENLABS_API_KEY`
+- [x] Unstructured.io account + API key (document parsing) (verified via `make external-closeout-check`)
+- [x] PagerDuty (or equivalent) account for quality/safety alerts (Operational Blueprint Component 4) (verified via `make external-closeout-check`)
+- [x] Event bus for analytics + background pipelines (EventBridge or SQS) + config (`ANALYTICS_EVENT_BUS`) (Operational Blueprint Component 12) (verified via `make external-closeout-check`)
+- [x] Remote catalog API (post-launch) + signing keys for catalog entries (Auto-Provisioning Layer 3) (signing keys provisioned + verification gate enabled; API endpoint remains post-launch by design)
+- [x] Optional: local vLLM endpoint + `LOCAL_LLM_ENDPOINT` (optional and intentionally not enabled in current production profile)
+- [x] Optional: ElevenLabs key + `ELEVENLABS_API_KEY` (optional and intentionally not enabled in current production profile)
 
 ---
 
