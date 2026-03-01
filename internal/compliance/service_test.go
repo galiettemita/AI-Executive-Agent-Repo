@@ -172,3 +172,24 @@ func TestDeletionRequestProducesIrreversibleDeletionReport(t *testing.T) {
 		t.Fatalf("expected one workspace deletion report")
 	}
 }
+
+func TestDefaultRetentionPoliciesAndClassMapping(t *testing.T) {
+	t.Parallel()
+
+	policies := DefaultRetentionPolicies()
+	if len(policies) != 6 {
+		t.Fatalf("unexpected retention policy count: %d", len(policies))
+	}
+	if got := policies["RP-005"]; got.RetentionPeriod != 30*24*time.Hour || got.ExpiryAction != "hard_delete" {
+		t.Fatalf("unexpected RP-005 policy: %+v", got)
+	}
+	if got := DefaultRetentionPolicyForDataClass("FINANCIAL"); got != "RP-002" {
+		t.Fatalf("unexpected FINANCIAL retention policy: %s", got)
+	}
+	if got := DefaultRetentionPolicyForDataClass("HEALTH"); got != "RP-004" {
+		t.Fatalf("unexpected HEALTH retention policy: %s", got)
+	}
+	if got := DefaultRetentionPolicyForDataClass("PUBLIC"); got != "RP-001" {
+		t.Fatalf("unexpected PUBLIC retention policy: %s", got)
+	}
+}

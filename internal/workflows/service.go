@@ -89,6 +89,19 @@ type PlanScoreWeights struct {
 	CapabilityConfidenceScoreWeight float64
 }
 
+type ActivityRetryPolicy struct {
+	StartToCloseTimeout time.Duration
+	MaxAttempts         int
+	BackoffCoefficient  float64
+	NonRetryableErrors  []string
+}
+
+type RetryDefaults struct {
+	InitialInterval    time.Duration
+	BackoffCoefficient float64
+	MaximumInterval    time.Duration
+}
+
 func DefaultPlanScoreWeights() PlanScoreWeights {
 	return PlanScoreWeights{
 		ToolCountScoreWeight:            0.15,
@@ -96,6 +109,144 @@ func DefaultPlanScoreWeights() PlanScoreWeights {
 		CostScoreWeight:                 0.20,
 		LatencyScoreWeight:              0.15,
 		CapabilityConfidenceScoreWeight: 0.20,
+	}
+}
+
+func InteractiveTurnActivityPolicies(tier string) map[string]ActivityRetryPolicy {
+	planGenerationTimeout := 120 * time.Second
+	if strings.EqualFold(strings.TrimSpace(tier), "T1") {
+		planGenerationTimeout = 60 * time.Second
+	}
+
+	return map[string]ActivityRetryPolicy{
+		"context_assembly": {
+			StartToCloseTimeout: 10 * time.Second,
+			MaxAttempts:         2,
+			BackoffCoefficient:  2.0,
+			NonRetryableErrors:  []string{"WORKSPACE_NOT_FOUND", "USER_SUSPENDED"},
+		},
+		"plan_generation": {
+			StartToCloseTimeout: planGenerationTimeout,
+			MaxAttempts:         2,
+			BackoffCoefficient:  2.0,
+			NonRetryableErrors:  []string{"ATTENTION_BUDGET_EXHAUSTED", "SCHEMA_VALIDATION_FAILED"},
+		},
+		"policy_evaluation": {
+			StartToCloseTimeout: 5 * time.Second,
+			MaxAttempts:         3,
+			BackoffCoefficient:  2.0,
+			NonRetryableErrors:  []string{"POLICY_ENGINE_UNAVAILABLE"},
+		},
+		"tool_simulate": {
+			StartToCloseTimeout: 30 * time.Second,
+			MaxAttempts:         2,
+			BackoffCoefficient:  2.0,
+			NonRetryableErrors:  []string{"TOOL_NOT_FOUND", "AUTH_EXPIRED", "AUTONOMY_INSUFFICIENT"},
+		},
+		"tool_commit": {
+			StartToCloseTimeout: 30 * time.Second,
+			MaxAttempts:         3,
+			BackoffCoefficient:  2.0,
+			NonRetryableErrors:  []string{"IDEMPOTENCY_CONFLICT", "AUTH_EXPIRED", "BUDGET_EXHAUSTED"},
+		},
+		"trust_receipt_emit": {
+			StartToCloseTimeout: 5 * time.Second,
+			MaxAttempts:         3,
+			BackoffCoefficient:  2.0,
+			NonRetryableErrors:  []string{},
+		},
+		"response_synthesis": {
+			StartToCloseTimeout: 60 * time.Second,
+			MaxAttempts:         2,
+			BackoffCoefficient:  2.0,
+			NonRetryableErrors:  []string{"ATTENTION_BUDGET_EXHAUSTED"},
+		},
+	}
+}
+
+func ProvisioningActivityPolicies() map[string]ActivityRetryPolicy {
+	return map[string]ActivityRetryPolicy{
+		"preflight": {
+			StartToCloseTimeout: 10 * time.Second,
+			MaxAttempts:         3,
+			BackoffCoefficient:  2.0,
+			NonRetryableErrors:  []string{"DUPLICATE_REQUEST"},
+		},
+		"policy_gate": {
+			StartToCloseTimeout: 10 * time.Second,
+			MaxAttempts:         2,
+			BackoffCoefficient:  2.0,
+			NonRetryableErrors:  []string{"POLICY_DENY"},
+		},
+		"allocate_server": {
+			StartToCloseTimeout: 60 * time.Second,
+			MaxAttempts:         3,
+			BackoffCoefficient:  2.0,
+			NonRetryableErrors:  []string{"NO_CAPACITY"},
+		},
+		"oauth_flow": {
+			StartToCloseTimeout: 600 * time.Second,
+			MaxAttempts:         1,
+			BackoffCoefficient:  2.0,
+			NonRetryableErrors:  []string{"USER_DENIED", "OAUTH_TIMEOUT"},
+		},
+		"deploy_server": {
+			StartToCloseTimeout: 120 * time.Second,
+			MaxAttempts:         3,
+			BackoffCoefficient:  2.0,
+			NonRetryableErrors:  []string{"ARTIFACT_VERIFICATION_FAILED"},
+		},
+		"fetch_schemas": {
+			StartToCloseTimeout: 30 * time.Second,
+			MaxAttempts:         3,
+			BackoffCoefficient:  2.0,
+			NonRetryableErrors:  []string{},
+		},
+		"health_check": {
+			StartToCloseTimeout: 15 * time.Second,
+			MaxAttempts:         3,
+			BackoffCoefficient:  2.0,
+			NonRetryableErrors:  []string{},
+		},
+		"commit_registry": {
+			StartToCloseTimeout: 10 * time.Second,
+			MaxAttempts:         3,
+			BackoffCoefficient:  2.0,
+			NonRetryableErrors:  []string{},
+		},
+	}
+}
+
+func CommonRetryDefaults() RetryDefaults {
+	return RetryDefaults{
+		InitialInterval:    1 * time.Second,
+		BackoffCoefficient: 2.0,
+		MaximumInterval:    60 * time.Second,
+	}
+}
+
+func DriftWatchdogCadence() map[string]time.Duration {
+	return map[string]time.Duration{
+		"health_check":         5 * time.Minute,
+		"schema_snapshot_diff": 1 * time.Hour,
+		"deep_health_check":    24 * time.Hour,
+	}
+}
+
+func DelegationPairingFlowSteps() []string {
+	return []string{
+		"owner_requests_delegate_pairing",
+		"brain_proposes_delegation_permissions",
+		"owner_confirms_pairing_request",
+		"generate_pairing_code",
+		"create_pairing_invitation_record",
+		"deliver_code_to_owner",
+		"delegate_submits_code",
+		"validate_pairing_code_and_expiry",
+		"create_or_lookup_delegate_user",
+		"create_delegation_grant_record",
+		"create_delegate_channel_binding",
+		"emit_paired_event_and_mark_consumed",
 	}
 }
 

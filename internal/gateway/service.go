@@ -211,12 +211,16 @@ func (a *AuditLog) Entries() []string {
 }
 
 type WorkspaceRouter struct {
-	mu       sync.RWMutex
-	bindings map[string]uuid.UUID
+	mu                     sync.RWMutex
+	bindings               map[string]uuid.UUID
+	defaultWorkspaceByUser map[string]uuid.UUID
 }
 
 func NewWorkspaceRouter() *WorkspaceRouter {
-	return &WorkspaceRouter{bindings: map[string]uuid.UUID{}}
+	return &WorkspaceRouter{
+		bindings:               map[string]uuid.UUID{},
+		defaultWorkspaceByUser: map[string]uuid.UUID{},
+	}
 }
 
 func (r *WorkspaceRouter) Bind(channel, identifier string, workspaceID uuid.UUID) {
@@ -233,6 +237,36 @@ func (r *WorkspaceRouter) Resolve(channel, identifier string) (uuid.UUID, error)
 		return uuid.Nil, fmt.Errorf("workspace binding not found")
 	}
 	return workspaceID, nil
+}
+
+func (r *WorkspaceRouter) SetUserDefaultWorkspace(channel, identifier string, workspaceID uuid.UUID) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.defaultWorkspaceByUser[channel+"::"+identifier] = workspaceID
+}
+
+// ResolveForInbound implements addendum routing behavior with fallback auto-binding:
+// 1) existing channel binding
+// 2) fallback to user default workspace and auto-bind
+// 3) otherwise unbound error
+func (r *WorkspaceRouter) ResolveForInbound(channel, identifier string) (workspaceID uuid.UUID, autoBound bool, err error) {
+	key := channel + "::" + identifier
+	r.mu.RLock()
+	if boundWorkspace, ok := r.bindings[key]; ok {
+		r.mu.RUnlock()
+		return boundWorkspace, false, nil
+	}
+	defaultWorkspace, hasDefault := r.defaultWorkspaceByUser[key]
+	r.mu.RUnlock()
+
+	if !hasDefault {
+		return uuid.Nil, false, fmt.Errorf("workspace binding not found")
+	}
+
+	r.mu.Lock()
+	r.bindings[key] = defaultWorkspace
+	r.mu.Unlock()
+	return defaultWorkspace, true, nil
 }
 
 type AttachmentUploader interface {

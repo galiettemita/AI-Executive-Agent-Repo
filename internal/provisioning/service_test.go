@@ -237,3 +237,67 @@ func TestDriftWatchdogQuarantine(t *testing.T) {
 		t.Fatalf("expected quarantine, got %s", status)
 	}
 }
+
+func TestRankFormulaV1WeightsAndTiebreaker(t *testing.T) {
+	t.Parallel()
+
+	weights := DefaultRankerWeightsV1()
+	if weights["capability_match"] != 0.30 || weights["reliability"] != 0.25 || weights["workspace_preference"] != 0.05 {
+		t.Fatalf("unexpected default weights: %+v", weights)
+	}
+
+	ranked := RankServersByFormulaV1([]RankingInputV1{
+		{
+			ServerID:                  "server_b",
+			CapabilityMatchScore:      0.9,
+			ReliabilityScore:          0.9,
+			EstimatedMonthlyCost:      10,
+			BudgetRemaining:           100,
+			P95LatencyMS:              500,
+			ArtifactVerificationState: "verified",
+			InAllowedServerIDs:        true,
+		},
+		{
+			ServerID:                  "server_a",
+			CapabilityMatchScore:      0.9,
+			ReliabilityScore:          0.9,
+			EstimatedMonthlyCost:      10,
+			BudgetRemaining:           100,
+			P95LatencyMS:              500,
+			ArtifactVerificationState: "verified",
+			InAllowedServerIDs:        true,
+		},
+	}, weights)
+
+	if len(ranked) != 2 {
+		t.Fatalf("unexpected ranked length: %d", len(ranked))
+	}
+	// Scores are equal within tie threshold; lexical server id must win.
+	if ranked[0].ServerID != "server_a" {
+		t.Fatalf("expected lexical tiebreak on equal scores, got %+v", ranked)
+	}
+}
+
+func TestRankFactorsV1Mappings(t *testing.T) {
+	t.Parallel()
+
+	factors := RankFactorsV1(RankingInputV1{
+		ServerID:                  "server_x",
+		CapabilityMatchScore:      1.2,
+		ReliabilityScore:          0.8,
+		EstimatedMonthlyCost:      20,
+		BudgetRemaining:           100,
+		P95LatencyMS:              1000,
+		ArtifactVerificationState: "unverified",
+		PreviouslyDeclined:        true,
+	})
+	if factors.CapabilityMatch != 1.0 {
+		t.Fatalf("expected capability score to clamp at 1.0, got %f", factors.CapabilityMatch)
+	}
+	if factors.Security != 0.5 {
+		t.Fatalf("unexpected security score: %f", factors.Security)
+	}
+	if factors.WorkspacePreference != 0.0 {
+		t.Fatalf("expected declined server preference to be 0.0, got %f", factors.WorkspacePreference)
+	}
+}

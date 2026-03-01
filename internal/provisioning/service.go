@@ -68,6 +68,27 @@ type RankedCandidate struct {
 	Score    float64
 }
 
+type RankingInputV1 struct {
+	ServerID                  string
+	CapabilityMatchScore      float64
+	ReliabilityScore          float64
+	EstimatedMonthlyCost      float64
+	BudgetRemaining           float64
+	P95LatencyMS              float64
+	ArtifactVerificationState string
+	InAllowedServerIDs        bool
+	PreviouslyDeclined        bool
+}
+
+type RankingFactorsV1 struct {
+	CapabilityMatch     float64
+	Reliability         float64
+	Cost                float64
+	Latency             float64
+	Security            float64
+	WorkspacePreference float64
+}
+
 type RankerVersion struct {
 	Version int
 	Weights map[string]float64
@@ -305,4 +326,98 @@ func rankedCandidatesKey(candidates []RankedCandidate) string {
 		parts = append(parts, fmt.Sprintf("%s=%.6f", candidate.ServerID, candidate.Score))
 	}
 	return strings.Join(parts, ",")
+}
+
+func DefaultRankerWeightsV1() map[string]float64 {
+	return map[string]float64{
+		"capability_match":     0.30,
+		"reliability":          0.25,
+		"cost":                 0.15,
+		"latency":              0.10,
+		"security":             0.15,
+		"workspace_preference": 0.05,
+	}
+}
+
+func clamp01(value float64) float64 {
+	if value < 0 {
+		return 0
+	}
+	if value > 1 {
+		return 1
+	}
+	return value
+}
+
+func securityScoreForState(state string) float64 {
+	switch strings.ToLower(strings.TrimSpace(state)) {
+	case "verified":
+		return 1.0
+	case "unverified":
+		return 0.5
+	case "rejected":
+		return 0.0
+	default:
+		return 0.5
+	}
+}
+
+func workspacePreferenceScore(inAllowedServerIDs, previouslyDeclined bool) float64 {
+	if previouslyDeclined {
+		return 0.0
+	}
+	if inAllowedServerIDs {
+		return 1.0
+	}
+	return 0.5
+}
+
+func RankFactorsV1(input RankingInputV1) RankingFactorsV1 {
+	cost := 0.0
+	if input.BudgetRemaining > 0 {
+		cost = 1.0 - (input.EstimatedMonthlyCost / input.BudgetRemaining)
+	}
+	latency := 1.0 - (input.P95LatencyMS / 5000.0)
+	return RankingFactorsV1{
+		CapabilityMatch:     clamp01(input.CapabilityMatchScore),
+		Reliability:         clamp01(input.ReliabilityScore),
+		Cost:                clamp01(cost),
+		Latency:             clamp01(latency),
+		Security:            securityScoreForState(input.ArtifactVerificationState),
+		WorkspacePreference: workspacePreferenceScore(input.InAllowedServerIDs, input.PreviouslyDeclined),
+	}
+}
+
+func RankScoreV1(input RankingInputV1, weights map[string]float64) float64 {
+	f := RankFactorsV1(input)
+	return (weights["capability_match"] * f.CapabilityMatch) +
+		(weights["reliability"] * f.Reliability) +
+		(weights["cost"] * f.Cost) +
+		(weights["latency"] * f.Latency) +
+		(weights["security"] * f.Security) +
+		(weights["workspace_preference"] * f.WorkspacePreference)
+}
+
+func RankServersByFormulaV1(inputs []RankingInputV1, weights map[string]float64) []RankedCandidate {
+	out := make([]RankedCandidate, 0, len(inputs))
+	for _, input := range inputs {
+		out = append(out, RankedCandidate{
+			ServerID: input.ServerID,
+			Score:    RankScoreV1(input, weights),
+		})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if absDiff(out[i].Score, out[j].Score) <= 0.001 {
+			return out[i].ServerID < out[j].ServerID
+		}
+		return out[i].Score > out[j].Score
+	})
+	return out
+}
+
+func absDiff(a, b float64) float64 {
+	if a > b {
+		return a - b
+	}
+	return b - a
 }

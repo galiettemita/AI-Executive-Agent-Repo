@@ -46,3 +46,37 @@ Date: 2026-03-01
   - `./scripts/dev/go_exec.sh test ./internal/context ./internal/control ./internal/gateway ./internal/llm ./internal/security/sandbox ./internal/executor ./internal/onboarding ./internal/workflows ./internal/contracts ./internal/determinism ./internal/canvas -count=1`
 - Full repository pass:
   - `./scripts/dev/go_exec.sh test ./... -count=1`
+
+## Additional addendum closures (second pass)
+
+- Control-layer addendum policy helpers added and tested:
+  - effective autonomy MIN(global/domain/cap)
+  - autonomy upgrade path rules (A0->A4)
+  - outbox hold-window overrides (A2/A3/A4 + elevated/critical)
+  - write budgets per tier (T1/T2/T3)
+  - recipient verification prompt/logic
+  - financial approval + professional two-man requirement
+  - consent type/scope/proof-channel enumerations
+- Temporal/workflow addendum policy helpers added and tested:
+  - interactive/provisioning activity retry policies with exact timeout/attempt/non-retryable values
+  - common retry defaults
+  - drift watchdog cadences (5m/1h/24h)
+  - delegation pairing 12-step flow list
+- Provisioning ranking addendum formula added and tested:
+  - 6-factor scoring
+  - default weight set
+  - deterministic tie-break by lexical `server_id` within 0.001 score delta
+- Connector OAuth registry addendum values added and tested:
+  - 6 provider registry definitions
+  - per-connector additional scope map
+- Retention policy defaults added and tested:
+  - RP-001..RP-006 map
+  - data-class default mapping
+- Canvas/Voice addendum constants added and tested:
+  - Canvas protocol message/surface enumerations
+  - Voice STT/TTS defaults and thresholds
+- Gateway workspace routing helper added and tested:
+  - fallback default-workspace auto-binding behavior for inbound messages
+- Security chain helpers added and tested:
+  - HMAC-SHA256 audit chain computation
+  - HMAC-SHA256 auto-commit proof chain computation

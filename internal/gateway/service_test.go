@@ -301,6 +301,30 @@ func TestHealthEndpoints(t *testing.T) {
 	}
 }
 
+func TestWorkspaceRouterResolveForInboundFallbackAndAutobind(t *testing.T) {
+	t.Parallel()
+
+	router := NewWorkspaceRouter()
+	workspaceID := uuid.MustParse("018f3f6a-9a0f-7cc6-8f2f-1f0f2d2f2d2f")
+	router.SetUserDefaultWorkspace("whatsapp", "+15550002222", workspaceID)
+
+	resolved, autoBound, err := router.ResolveForInbound("whatsapp", "+15550002222")
+	if err != nil {
+		t.Fatalf("resolve for inbound fallback: %v", err)
+	}
+	if resolved != workspaceID || !autoBound {
+		t.Fatalf("unexpected fallback resolution: workspace=%s autoBound=%v", resolved, autoBound)
+	}
+
+	resolved, autoBound, err = router.ResolveForInbound("whatsapp", "+15550002222")
+	if err != nil {
+		t.Fatalf("resolve for inbound bound: %v", err)
+	}
+	if resolved != workspaceID || autoBound {
+		t.Fatalf("unexpected bound resolution: workspace=%s autoBound=%v", resolved, autoBound)
+	}
+}
+
 func containsString(items []string, needle string) bool {
 	for _, item := range items {
 		if item == needle {

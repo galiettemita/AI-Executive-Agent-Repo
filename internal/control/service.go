@@ -82,6 +82,20 @@ type LoadSheddingInput struct {
 	IsNonCriticalConnector bool
 }
 
+type FinancialApprovalDecision struct {
+	Decision               string
+	ApprovalRisk           string
+	TTL                    time.Duration
+	RequiresSecondApprover bool
+}
+
+type RecipientVerificationInput struct {
+	ContactMatch       bool
+	RecentConversation bool
+	ExplicitAllowlist  bool
+	SameDomain         bool
+}
+
 type approvalPayload struct {
 	Action     string    `json:"action"`
 	RiskLevel  string    `json:"risk_level"`
@@ -512,5 +526,169 @@ func (s *Service) EvaluateLoadShedding(input LoadSheddingInput) DecisionOutput {
 		return DecisionOutput{Decision: "allow", ReasonCode: "LOAD_SHEDDING_ALLOWED"}
 	default:
 		return DecisionOutput{Decision: "deny", ReasonCode: "LOAD_SHEDDING_UNKNOWN_TIER"}
+	}
+}
+
+var autonomyOrder = map[string]int{
+	"A0": 0,
+	"A1": 1,
+	"A2": 2,
+	"A3": 3,
+	"A4": 4,
+}
+
+func normalizeAutonomy(level string) string {
+	normalized := strings.ToUpper(strings.TrimSpace(level))
+	if _, ok := autonomyOrder[normalized]; ok {
+		return normalized
+	}
+	return "A0"
+}
+
+// EffectiveAutonomy returns MIN(global_autonomy, domain_autonomy, workspace_cap).
+func EffectiveAutonomy(globalAutonomy, domainAutonomy, workspaceCap string) string {
+	candidates := []string{
+		normalizeAutonomy(globalAutonomy),
+		normalizeAutonomy(domainAutonomy),
+		normalizeAutonomy(workspaceCap),
+	}
+	minLevel := candidates[0]
+	for _, level := range candidates[1:] {
+		if autonomyOrder[level] < autonomyOrder[minLevel] {
+			minLevel = level
+		}
+	}
+	return minLevel
+}
+
+// CanUpgradeAutonomy enforces the A0->A4 upgrade path guards.
+func CanUpgradeAutonomy(fromLevel, toLevel string, hasConsent bool, zeroOverrideDays int, adminApproved bool) bool {
+	from := normalizeAutonomy(fromLevel)
+	to := normalizeAutonomy(toLevel)
+	if autonomyOrder[to] <= autonomyOrder[from] {
+		return false
+	}
+
+	switch {
+	case from == "A0" && to == "A1":
+		return true
+	case from == "A1" && to == "A2":
+		return hasConsent
+	case from == "A2" && to == "A3":
+		return hasConsent && zeroOverrideDays >= 7
+	case from == "A3" && to == "A4":
+		return hasConsent && zeroOverrideDays >= 30 && adminApproved
+	default:
+		return false
+	}
+}
+
+// HoldWindowForAction returns the outbox hold window by autonomy with risk overrides.
+func HoldWindowForAction(autonomyLevel, riskLevel string) time.Duration {
+	var base time.Duration
+	switch normalizeAutonomy(autonomyLevel) {
+	case "A2":
+		base = 60 * time.Second
+	case "A3", "A4":
+		base = 0
+	default:
+		base = 0
+	}
+
+	switch strings.ToLower(strings.TrimSpace(riskLevel)) {
+	case "critical":
+		if base < 300*time.Second {
+			base = 300 * time.Second
+		}
+	case "elevated":
+		if base < 120*time.Second {
+			base = 120 * time.Second
+		}
+	}
+	return base
+}
+
+func WriteBudgetForTier(tier string) int {
+	switch strings.ToUpper(strings.TrimSpace(tier)) {
+	case "T1":
+		return 3
+	case "T2":
+		return 8
+	case "T3":
+		return 15
+	default:
+		return 3
+	}
+}
+
+func IsRecipientVerified(input RecipientVerificationInput) bool {
+	return input.ContactMatch || input.RecentConversation || input.ExplicitAllowlist || input.SameDomain
+}
+
+func RecipientVerificationPrompt(recipient string) string {
+	return fmt.Sprintf("I don't have %s in your contacts. Please confirm you'd like to send this.", recipient)
+}
+
+// EvaluateFinancialApproval determines whether financial action requires approval and whether two-man applies.
+func EvaluateFinancialApproval(amount, dailySpend, monthlyBudget, maxSingleTransaction float64, isNewPayee, modifiesRecurringPayment bool, workspaceType string, hasAdminUsers bool) FinancialApprovalDecision {
+	effectiveSingleThreshold := 1000.0
+	if maxSingleTransaction > 0 && maxSingleTransaction < effectiveSingleThreshold {
+		effectiveSingleThreshold = maxSingleTransaction
+	}
+	if amount > effectiveSingleThreshold {
+		return FinancialApprovalDecision{
+			Decision:               "REQUIRE_APPROVAL",
+			ApprovalRisk:           "critical",
+			TTL:                    30 * time.Second,
+			RequiresSecondApprover: strings.EqualFold(strings.TrimSpace(workspaceType), "professional") && hasAdminUsers,
+		}
+	}
+
+	effectiveDailyThreshold := 5000.0
+	if monthlyBudget > 0 {
+		halfMonthly := monthlyBudget * 0.50
+		if halfMonthly < effectiveDailyThreshold {
+			effectiveDailyThreshold = halfMonthly
+		}
+	}
+	if dailySpend > effectiveDailyThreshold || isNewPayee || modifiesRecurringPayment {
+		return FinancialApprovalDecision{
+			Decision:               "REQUIRE_APPROVAL",
+			ApprovalRisk:           "elevated",
+			TTL:                    5 * time.Minute,
+			RequiresSecondApprover: false,
+		}
+	}
+
+	return FinancialApprovalDecision{Decision: "ALLOW", ApprovalRisk: "none", TTL: 0}
+}
+
+func SupportedConsentTypes() []string {
+	return []string{
+		"autonomy_upgrade",
+		"proactive_behavior",
+		"data_sharing",
+		"memory_persistence",
+		"delegation_access",
+		"financial_access",
+		"health_access",
+	}
+}
+
+func SupportedConsentScopes() []string {
+	return []string{
+		"workspace:{workspace_id}",
+		"domain:{domain_name}",
+		"connector:{connector_key}",
+		"global",
+	}
+}
+
+func SupportedConsentProofChannels() []string {
+	return []string{
+		"interactive_reply",
+		"button_tap",
+		"sms_otp",
+		"email_link",
 	}
 }

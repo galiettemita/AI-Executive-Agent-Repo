@@ -348,3 +348,99 @@ func TestDefaultBudgetByPlanAndThresholds(t *testing.T) {
 		t.Fatalf("expected exhausted status at cap, got warn=%v exhausted=%v", warn, exhausted)
 	}
 }
+
+func TestEffectiveAutonomyAndUpgradeRules(t *testing.T) {
+	t.Parallel()
+
+	if got := EffectiveAutonomy("A3", "A2", "A4"); got != "A2" {
+		t.Fatalf("unexpected effective autonomy: %s", got)
+	}
+	if got := EffectiveAutonomy("A4", "A4", "A1"); got != "A1" {
+		t.Fatalf("unexpected workspace cap clamp: %s", got)
+	}
+
+	if !CanUpgradeAutonomy("A0", "A1", false, 0, false) {
+		t.Fatal("A0->A1 should always be allowed")
+	}
+	if CanUpgradeAutonomy("A1", "A2", false, 0, false) {
+		t.Fatal("A1->A2 should require consent")
+	}
+	if !CanUpgradeAutonomy("A2", "A3", true, 7, false) {
+		t.Fatal("A2->A3 should allow with consent + 7d zero overrides")
+	}
+	if !CanUpgradeAutonomy("A3", "A4", true, 30, true) {
+		t.Fatal("A3->A4 should allow with consent + 30d zero overrides + admin approval")
+	}
+}
+
+func TestHoldWindowAndWriteBudgetPolicies(t *testing.T) {
+	t.Parallel()
+
+	if got := HoldWindowForAction("A2", "low"); got != 60*time.Second {
+		t.Fatalf("unexpected A2 low-risk hold window: %s", got)
+	}
+	if got := HoldWindowForAction("A3", "critical"); got != 300*time.Second {
+		t.Fatalf("unexpected critical hold override: %s", got)
+	}
+	if got := WriteBudgetForTier("T1"); got != 3 {
+		t.Fatalf("unexpected T1 write budget: %d", got)
+	}
+	if got := WriteBudgetForTier("T3"); got != 15 {
+		t.Fatalf("unexpected T3 write budget: %d", got)
+	}
+}
+
+func TestRecipientVerificationAndPrompt(t *testing.T) {
+	t.Parallel()
+
+	if IsRecipientVerified(RecipientVerificationInput{}) {
+		t.Fatal("expected empty recipient verification input to be unverified")
+	}
+	if !IsRecipientVerified(RecipientVerificationInput{SameDomain: true}) {
+		t.Fatal("same-domain recipient should be verified")
+	}
+	prompt := RecipientVerificationPrompt("alice@example.com")
+	expected := "I don't have alice@example.com in your contacts. Please confirm you'd like to send this."
+	if prompt != expected {
+		t.Fatalf("unexpected recipient prompt: %q", prompt)
+	}
+}
+
+func TestFinancialApprovalAndTwoManRule(t *testing.T) {
+	t.Parallel()
+
+	critical := EvaluateFinancialApproval(1500, 0, 10000, 2000, false, false, "professional", true)
+	if critical.Decision != "REQUIRE_APPROVAL" || critical.ApprovalRisk != "critical" {
+		t.Fatalf("unexpected critical decision: %+v", critical)
+	}
+	if !critical.RequiresSecondApprover || critical.TTL != 30*time.Second {
+		t.Fatalf("unexpected critical approval envelope: %+v", critical)
+	}
+
+	elevated := EvaluateFinancialApproval(100, 6000, 10000, 2000, false, false, "professional", true)
+	if elevated.Decision != "REQUIRE_APPROVAL" || elevated.ApprovalRisk != "elevated" || elevated.TTL != 5*time.Minute {
+		t.Fatalf("unexpected elevated decision: %+v", elevated)
+	}
+
+	allow := EvaluateFinancialApproval(50, 100, 10000, 2000, false, false, "personal", false)
+	if allow.Decision != "ALLOW" {
+		t.Fatalf("expected allow decision, got %+v", allow)
+	}
+}
+
+func TestConsentEnumerations(t *testing.T) {
+	t.Parallel()
+
+	types := SupportedConsentTypes()
+	if len(types) != 7 {
+		t.Fatalf("unexpected consent types length: %d", len(types))
+	}
+	scopes := SupportedConsentScopes()
+	if len(scopes) != 4 {
+		t.Fatalf("unexpected consent scopes length: %d", len(scopes))
+	}
+	proofs := SupportedConsentProofChannels()
+	if len(proofs) != 4 {
+		t.Fatalf("unexpected consent proof channels length: %d", len(proofs))
+	}
+}

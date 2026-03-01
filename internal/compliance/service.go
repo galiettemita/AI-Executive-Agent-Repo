@@ -56,6 +56,14 @@ type DeletionReport struct {
 	CompletedAt        string `json:"completed_at"`
 }
 
+type RetentionPolicy struct {
+	PolicyID        string
+	Name            string
+	RetentionPeriod time.Duration
+	AppliesTo       []string
+	ExpiryAction    string
+}
+
 type Service struct {
 	mu         sync.RWMutex
 	nextID     int
@@ -64,6 +72,67 @@ type Service struct {
 	dsr        map[string]DSRRequest
 	deletions  map[string]DeletionReport
 	now        func() time.Time
+}
+
+func DefaultRetentionPolicies() map[string]RetentionPolicy {
+	year := 365 * 24 * time.Hour
+	return map[string]RetentionPolicy{
+		"RP-001": {
+			PolicyID:        "RP-001",
+			Name:            "Standard",
+			RetentionPeriod: 2 * year,
+			AppliesTo:       []string{"PUBLIC", "PRIVATE"},
+			ExpiryAction:    "soft_delete_then_hard_purge_30d",
+		},
+		"RP-002": {
+			PolicyID:        "RP-002",
+			Name:            "Extended",
+			RetentionPeriod: 7 * year,
+			AppliesTo:       []string{"FINANCIAL"},
+			ExpiryAction:    "soft_delete",
+		},
+		"RP-003": {
+			PolicyID:        "RP-003",
+			Name:            "Compliance",
+			RetentionPeriod: 7 * year,
+			AppliesTo:       []string{"AUDIT", "COMPLIANCE"},
+			ExpiryAction:    "archive_glacier_never_hard_delete",
+		},
+		"RP-004": {
+			PolicyID:        "RP-004",
+			Name:            "Sensitive Short",
+			RetentionPeriod: 1 * year,
+			AppliesTo:       []string{"SENSITIVE", "HEALTH", "SECRETS"},
+			ExpiryAction:    "secure_wipe_then_delete",
+		},
+		"RP-005": {
+			PolicyID:        "RP-005",
+			Name:            "Ephemeral",
+			RetentionPeriod: 30 * 24 * time.Hour,
+			AppliesTo:       []string{"TRANSCRIPTION", "CACHE"},
+			ExpiryAction:    "hard_delete",
+		},
+		"RP-006": {
+			PolicyID:        "RP-006",
+			Name:            "Indefinite",
+			RetentionPeriod: 0,
+			AppliesTo:       []string{"USER_ACCOUNT", "WORKSPACE_CONFIG"},
+			ExpiryAction:    "explicit_user_action_only",
+		},
+	}
+}
+
+func DefaultRetentionPolicyForDataClass(dataClass string) string {
+	switch strings.ToUpper(strings.TrimSpace(dataClass)) {
+	case "PUBLIC", "PRIVATE":
+		return "RP-001"
+	case "FINANCIAL":
+		return "RP-002"
+	case "SENSITIVE", "HEALTH", "SECRETS":
+		return "RP-004"
+	default:
+		return "RP-001"
+	}
 }
 
 func NewService() *Service {

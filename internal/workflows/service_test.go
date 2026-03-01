@@ -496,3 +496,57 @@ func TestExecuteTwoPhaseToolIdempotencyTTLExpiry(t *testing.T) {
 		t.Fatalf("expected refreshed commit timestamp after ttl expiry: first=%s second=%s", first.Commit.CreatedAt, second.Commit.CreatedAt)
 	}
 }
+
+func TestInteractiveTurnActivityPoliciesMatchAddendum(t *testing.T) {
+	t.Parallel()
+
+	t1 := InteractiveTurnActivityPolicies("T1")
+	if got := t1["plan_generation"]; got.StartToCloseTimeout != 60*time.Second || got.MaxAttempts != 2 {
+		t.Fatalf("unexpected T1 plan_generation policy: %+v", got)
+	}
+	if got := t1["tool_commit"]; got.MaxAttempts != 3 {
+		t.Fatalf("unexpected tool_commit attempts: %+v", got)
+	}
+	if got := t1["response_synthesis"]; got.NonRetryableErrors[0] != "ATTENTION_BUDGET_EXHAUSTED" {
+		t.Fatalf("unexpected response_synthesis non-retryables: %+v", got)
+	}
+
+	t3 := InteractiveTurnActivityPolicies("T3")
+	if got := t3["plan_generation"]; got.StartToCloseTimeout != 120*time.Second {
+		t.Fatalf("unexpected T3 plan_generation timeout: %+v", got)
+	}
+}
+
+func TestProvisioningActivityPoliciesAndDefaults(t *testing.T) {
+	t.Parallel()
+
+	policies := ProvisioningActivityPolicies()
+	if got := policies["oauth_flow"]; got.StartToCloseTimeout != 600*time.Second || got.MaxAttempts != 1 {
+		t.Fatalf("unexpected oauth_flow policy: %+v", got)
+	}
+	if got := policies["deploy_server"]; got.StartToCloseTimeout != 120*time.Second || got.MaxAttempts != 3 {
+		t.Fatalf("unexpected deploy_server policy: %+v", got)
+	}
+
+	defaults := CommonRetryDefaults()
+	if defaults.InitialInterval != time.Second || defaults.BackoffCoefficient != 2.0 || defaults.MaximumInterval != 60*time.Second {
+		t.Fatalf("unexpected retry defaults: %+v", defaults)
+	}
+}
+
+func TestDriftCadenceAndDelegationPairingSteps(t *testing.T) {
+	t.Parallel()
+
+	cadence := DriftWatchdogCadence()
+	if cadence["health_check"] != 5*time.Minute || cadence["schema_snapshot_diff"] != time.Hour || cadence["deep_health_check"] != 24*time.Hour {
+		t.Fatalf("unexpected drift cadence: %+v", cadence)
+	}
+
+	steps := DelegationPairingFlowSteps()
+	if len(steps) != 12 {
+		t.Fatalf("unexpected pairing flow length: %d", len(steps))
+	}
+	if steps[0] != "owner_requests_delegate_pairing" || steps[len(steps)-1] != "emit_paired_event_and_mark_consumed" {
+		t.Fatalf("unexpected pairing flow boundaries: %v", steps)
+	}
+}
