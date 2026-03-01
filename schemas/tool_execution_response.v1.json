@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ToolExecutionResponseV1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["execution_id", "phase", "status", "tool_key", "idempotency_key"],
+  "properties": {
+    "execution_id": { "type": "string", "format": "uuid" },
+    "phase": { "type": "string" },
+    "status": { "type": "string" },
+    "tool_key": { "type": "string" },
+    "idempotency_key": { "type": "string" },
+    "result": { "type": "object", "additionalProperties": true }
+  }
+}

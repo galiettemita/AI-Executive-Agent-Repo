@@ -27,3 +27,11 @@ BREVIO.provision.compensation_started.v1
 BREVIO.provision.compensation_completed.v1
 BREVIO.provision.server_quarantined.v1
 BREVIO.mcp.drift.quarantined.v1
+BREVIO.oauth.refresh_failed.v1
+BREVIO.security.oauth.state_invalid.v1
+BREVIO.security.content.quarantined.v1
+BREVIO.budget.warning.v1
+BREVIO.budget.exhausted.v1
+BREVIO.codebase.size_exceeded.v1
+BREVIO.memory.consolidated.v1
+BREVIO.loadshed.tier_changed.v1

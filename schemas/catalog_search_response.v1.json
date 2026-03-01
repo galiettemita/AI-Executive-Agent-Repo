@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "CatalogSearchResponseV1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["query", "page", "page_size", "total", "items"],
+  "properties": {
+    "query": { "type": "string" },
+    "capability_key": { "type": "string" },
+    "page": { "type": "integer", "minimum": 1 },
+    "page_size": { "type": "integer", "minimum": 1 },
+    "total": { "type": "integer", "minimum": 0 },
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["server_id", "name", "risk_level"],
+        "properties": {
+          "server_id": { "type": "string" },
+          "name": { "type": "string" },
+          "risk_level": { "type": "string" },
+          "capabilities": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        }
+      }
+    }
+  }
+}

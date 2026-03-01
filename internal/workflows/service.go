@@ -68,6 +68,37 @@ type ReActExecutionResult struct {
 	PartialResults []string `json:"partial_results"`
 }
 
+type PlanCandidate struct {
+	ID                  string
+	ToolKeys            []string
+	NumTools            int
+	MaxToolsForTier     int
+	MaxToolRisk         int
+	EstimatedCost       float64
+	BudgetRemaining     float64
+	EstimatedLatencyMS  int
+	TierSLOMS           int
+	CapabilityStrengths []int
+}
+
+type PlanScoreWeights struct {
+	ToolCountScoreWeight            float64
+	RiskScoreWeight                 float64
+	CostScoreWeight                 float64
+	LatencyScoreWeight              float64
+	CapabilityConfidenceScoreWeight float64
+}
+
+func DefaultPlanScoreWeights() PlanScoreWeights {
+	return PlanScoreWeights{
+		ToolCountScoreWeight:            0.15,
+		RiskScoreWeight:                 0.30,
+		CostScoreWeight:                 0.20,
+		LatencyScoreWeight:              0.15,
+		CapabilityConfidenceScoreWeight: 0.20,
+	}
+}
+
 type TriggerSpec struct {
 	WorkflowID string
 	Trigger    string
@@ -640,6 +671,83 @@ func DeterministicContextItemOrder(items []string) []string {
 	return out
 }
 
+// ScorePlan implements addendum utility U(plan).
+func ScorePlan(plan PlanCandidate, weights PlanScoreWeights) float64 {
+	maxTools := maxInt(plan.MaxToolsForTier, 1)
+	budgetRemaining := plan.BudgetRemaining
+	if budgetRemaining <= 0 {
+		budgetRemaining = 1
+	}
+	tierSLO := maxInt(plan.TierSLOMS, 1)
+
+	numTools := plan.NumTools
+	if numTools <= 0 {
+		numTools = len(plan.ToolKeys)
+	}
+
+	toolCountScore := 1.0 - (float64(numTools) / float64(maxTools))
+	riskScore := 1.0 - (float64(plan.MaxToolRisk) / 4.0)
+	costScore := 1.0 - (plan.EstimatedCost / budgetRemaining)
+	latencyScore := 1.0 - (float64(plan.EstimatedLatencyMS) / float64(tierSLO))
+
+	capabilityConfidence := 0.0
+	if len(plan.CapabilityStrengths) > 0 {
+		minStrength := plan.CapabilityStrengths[0]
+		for _, strength := range plan.CapabilityStrengths[1:] {
+			if strength < minStrength {
+				minStrength = strength
+			}
+		}
+		capabilityConfidence = float64(minStrength) / 100.0
+	}
+
+	score := 0.0
+	score += weights.ToolCountScoreWeight * clamp01(toolCountScore)
+	score += weights.RiskScoreWeight * clamp01(riskScore)
+	score += weights.CostScoreWeight * clamp01(costScore)
+	score += weights.LatencyScoreWeight * clamp01(latencyScore)
+	score += weights.CapabilityConfidenceScoreWeight * clamp01(capabilityConfidence)
+	return score
+}
+
+func SelectBestPlan(candidates []PlanCandidate, weights PlanScoreWeights) (PlanCandidate, float64, bool) {
+	if len(candidates) == 0 {
+		return PlanCandidate{}, 0, false
+	}
+	type scored struct {
+		candidate PlanCandidate
+		score     float64
+	}
+	scoredPlans := make([]scored, 0, len(candidates))
+	for _, candidate := range candidates {
+		scoredPlans = append(scoredPlans, scored{
+			candidate: candidate,
+			score:     ScorePlan(candidate, weights),
+		})
+	}
+	sort.Slice(scoredPlans, func(i, j int) bool {
+		if scoredPlans[i].score == scoredPlans[j].score {
+			leftTools := scoredPlans[i].candidate.NumTools
+			if leftTools <= 0 {
+				leftTools = len(scoredPlans[i].candidate.ToolKeys)
+			}
+			rightTools := scoredPlans[j].candidate.NumTools
+			if rightTools <= 0 {
+				rightTools = len(scoredPlans[j].candidate.ToolKeys)
+			}
+			if leftTools == rightTools {
+				leftSeq := strings.Join(scoredPlans[i].candidate.ToolKeys, ",")
+				rightSeq := strings.Join(scoredPlans[j].candidate.ToolKeys, ",")
+				return leftSeq < rightSeq
+			}
+			return leftTools < rightTools
+		}
+		return scoredPlans[i].score > scoredPlans[j].score
+	})
+	best := scoredPlans[0]
+	return best.candidate, best.score, true
+}
+
 func maxInt(a, b int) int {
 	if a > b {
 		return a
@@ -652,4 +760,14 @@ func minInt(a, b int) int {
 		return a
 	}
 	return b
+}
+
+func clamp01(v float64) float64 {
+	if v < 0 {
+		return 0
+	}
+	if v > 1 {
+		return 1
+	}
+	return v
 }

@@ -45,6 +45,29 @@ type DecisionOutput struct {
 	ReasonCode string
 }
 
+type RateLimitPolicy struct {
+	Category     string
+	CallsPerMin  int
+	CallsPerHour int
+	Action       string
+}
+
+type GlobalRateLimitPolicy struct {
+	Key          string
+	Limit        int
+	Window       string
+	Action       string
+	SoftEnforced bool
+}
+
+type BudgetDefault struct {
+	Plan                    string
+	MaxMonthlyLLMCostUSD    float64
+	MaxMonthlyAPICalls      int
+	MaxConcurrentMCPServers int
+	MaxSingleTransactionUSD float64
+}
+
 type ProactiveDecision struct {
 	AllowSilent bool
 	ReasonCode  string
@@ -161,6 +184,81 @@ func NewService(secret string) *Service {
 		monthlyBudgetCaps: map[string]int{},
 		monthlyBudgetUsed: map[string]int{},
 	}
+}
+
+func DefaultToolRateLimits() map[string]RateLimitPolicy {
+	return map[string]RateLimitPolicy{
+		"calendar_read":  {Category: "calendar_read", CallsPerMin: 60, CallsPerHour: 600, Action: "warn"},
+		"calendar_write": {Category: "calendar_write", CallsPerMin: 20, CallsPerHour: 100, Action: "require_confirm"},
+		"email_read":     {Category: "email_read", CallsPerMin: 30, CallsPerHour: 300, Action: "warn"},
+		"email_send":     {Category: "email_send", CallsPerMin: 10, CallsPerHour: 50, Action: "require_confirm"},
+		"message_send":   {Category: "message_send", CallsPerMin: 30, CallsPerHour: 200, Action: "require_confirm"},
+		"document_read":  {Category: "document_read", CallsPerMin: 30, CallsPerHour: 300, Action: "warn"},
+		"document_write": {Category: "document_write", CallsPerMin: 15, CallsPerHour: 100, Action: "require_confirm"},
+		"financial_read": {Category: "financial_read", CallsPerMin: 20, CallsPerHour: 100, Action: "warn"},
+		"financial_write": {
+			Category: "financial_write", CallsPerMin: 5, CallsPerHour: 20, Action: "deny",
+		},
+		"crm_read":   {Category: "crm_read", CallsPerMin: 30, CallsPerHour: 300, Action: "warn"},
+		"crm_write":  {Category: "crm_write", CallsPerMin: 10, CallsPerHour: 50, Action: "require_confirm"},
+		"web_search": {Category: "web_search", CallsPerMin: 30, CallsPerHour: 200, Action: "downgrade_tier"},
+		"web_fetch":  {Category: "web_fetch", CallsPerMin: 20, CallsPerHour: 100, Action: "downgrade_tier"},
+		"mcp_tool":   {Category: "mcp_tool", CallsPerMin: 20, CallsPerHour: 200, Action: "require_confirm"},
+	}
+}
+
+func DefaultGlobalRateLimits() map[string]GlobalRateLimitPolicy {
+	return map[string]GlobalRateLimitPolicy{
+		"tool_calls_per_min":  {Key: "tool_calls_per_min", Limit: 60, Window: "minute", Action: "deny"},
+		"tool_calls_per_hour": {Key: "tool_calls_per_hour", Limit: 500, Window: "hour", Action: "deny"},
+		"llm_calls_per_min":   {Key: "llm_calls_per_min", Limit: 30, Window: "minute", Action: "downgrade_tier"},
+		"inbound_msgs_per_min": {
+			Key: "inbound_msgs_per_min", Limit: 20, Window: "minute", Action: "warn", SoftEnforced: true,
+		},
+	}
+}
+
+func DefaultBudgetByPlan() map[string]BudgetDefault {
+	return map[string]BudgetDefault{
+		"free": {
+			Plan:                    "free",
+			MaxMonthlyLLMCostUSD:    5.00,
+			MaxMonthlyAPICalls:      5000,
+			MaxConcurrentMCPServers: 2,
+			MaxSingleTransactionUSD: 0,
+		},
+		"pro": {
+			Plan:                    "pro",
+			MaxMonthlyLLMCostUSD:    50.00,
+			MaxMonthlyAPICalls:      50000,
+			MaxConcurrentMCPServers: 10,
+			MaxSingleTransactionUSD: 500,
+		},
+		"business": {
+			Plan:                    "business",
+			MaxMonthlyLLMCostUSD:    200.00,
+			MaxMonthlyAPICalls:      200000,
+			MaxConcurrentMCPServers: 25,
+			MaxSingleTransactionUSD: 5000,
+		},
+		"enterprise": {
+			Plan:                    "enterprise",
+			MaxMonthlyLLMCostUSD:    -1,
+			MaxMonthlyAPICalls:      -1,
+			MaxConcurrentMCPServers: -1,
+			MaxSingleTransactionUSD: -1,
+		},
+	}
+}
+
+func BudgetStatus(usedUSD, capUSD float64) (warn bool, exhausted bool) {
+	if capUSD <= 0 {
+		return false, false
+	}
+	if usedUSD >= capUSD {
+		return true, true
+	}
+	return usedUSD >= (capUSD * 0.80), false
 }
 
 func (s *Service) Approval() *ApprovalService {

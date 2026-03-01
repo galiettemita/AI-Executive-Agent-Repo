@@ -304,3 +304,47 @@ func TestMonthlyBudgetEnforcement(t *testing.T) {
 		t.Fatalf("expected ErrBudgetExceeded, got %v", err)
 	}
 }
+
+func TestDefaultToolRateLimitsMatchAddendum(t *testing.T) {
+	t.Parallel()
+
+	policies := DefaultToolRateLimits()
+	if got := policies["financial_write"]; got.CallsPerMin != 5 || got.CallsPerHour != 20 || got.Action != "deny" {
+		t.Fatalf("unexpected financial_write policy: %+v", got)
+	}
+	if got := policies["web_search"]; got.Action != "downgrade_tier" {
+		t.Fatalf("unexpected web_search policy: %+v", got)
+	}
+}
+
+func TestDefaultGlobalRateLimitsMatchAddendum(t *testing.T) {
+	t.Parallel()
+
+	policies := DefaultGlobalRateLimits()
+	if got := policies["tool_calls_per_min"]; got.Limit != 60 || got.Action != "deny" {
+		t.Fatalf("unexpected tool_calls_per_min policy: %+v", got)
+	}
+	if got := policies["inbound_msgs_per_min"]; got.Limit != 20 || !got.SoftEnforced {
+		t.Fatalf("unexpected inbound_msgs_per_min policy: %+v", got)
+	}
+}
+
+func TestDefaultBudgetByPlanAndThresholds(t *testing.T) {
+	t.Parallel()
+
+	budgets := DefaultBudgetByPlan()
+	if got := budgets["free"]; got.MaxMonthlyLLMCostUSD != 5 || got.MaxConcurrentMCPServers != 2 {
+		t.Fatalf("unexpected free plan defaults: %+v", got)
+	}
+	if got := budgets["business"]; got.MaxSingleTransactionUSD != 5000 {
+		t.Fatalf("unexpected business plan defaults: %+v", got)
+	}
+	warn, exhausted := BudgetStatus(8.1, 10)
+	if !warn || exhausted {
+		t.Fatalf("expected warning-only status, got warn=%v exhausted=%v", warn, exhausted)
+	}
+	warn, exhausted = BudgetStatus(10, 10)
+	if !warn || !exhausted {
+		t.Fatalf("expected exhausted status at cap, got warn=%v exhausted=%v", warn, exhausted)
+	}
+}

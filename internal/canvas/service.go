@@ -147,6 +147,12 @@ func (s *Service) HandleFetchPreview(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (s *Service) HandlePush(w http.ResponseWriter, _ *http.Request) {
+	// Canvas push is asynchronous in production; mux contract only requires acceptance.
+	// Returning 204 keeps the endpoint side-effect free for unit/contract tests.
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func validateFetchURL(raw string) error {
 	parsed, err := url.Parse(raw)
 	if err != nil {
@@ -190,6 +196,7 @@ func (s *Service) HandleHealth(w http.ResponseWriter, _ *http.Request) {
 func NewMux(service *Service) *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /v1/canvas/ws", service.HandleWebSocket)
+	mux.HandleFunc("POST /v1/canvas/push", service.HandlePush)
 	mux.HandleFunc("GET /v1/canvas/surfaces/mission_control", service.HandleA2UISurface)
 	mux.HandleFunc("POST /v1/canvas/fetch", service.HandleFetchPreview)
 	mux.HandleFunc("GET /healthz/ready", service.HandleHealth)

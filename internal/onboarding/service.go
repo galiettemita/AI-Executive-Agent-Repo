@@ -81,45 +81,98 @@ type Service struct {
 	nextFollowupID    int
 }
 
+var legacyQuestionAliases = map[string]map[string][]string{
+	"operator_profile_intake_v1": {
+		"OPI-001": {"role"},
+		"OPI-002": {"role"},
+		"OPI-003": {"timezone"},
+		"OPI-004": {"notification_window"},
+		"OPI-005": {"goals"},
+		"OPI-006": {"integrations"},
+		"OPI-007": {"communication_pref"},
+		"OPI-008": {"goals"},
+		"OPI-009": {"team_size"},
+		"OPI-010": {"industry"},
+	},
+	"behavior_policy_calibration_v1": {
+		"BPC-001": {"approval_threshold"},
+		"BPC-002": {"autonomy_preference"},
+		"BPC-003": {"risk_tolerance", "approval_threshold"},
+		"BPC-004": {"proactive_mode"},
+		"BPC-005": {"escalation_path"},
+		"BPC-006": {"tone", "communication_pref"},
+		"BPC-007": {"initiative_level"},
+		"BPC-008": {"decision_style"},
+	},
+	"codebase_map_ingestion_v1": {
+		"CBI-001": {"repo"},
+		"CBI-002": {"stack"},
+		"CBI-003": {"integrations"},
+		"CBI-004": {"planning_horizon"},
+		"CBI-005": {"delivery_cadence"},
+	},
+	"system_map_ingestion_v1": {
+		"SMI-001": {"integrations"},
+		"SMI-002": {"meeting_load", "sla"},
+		"SMI-003": {"integrations"},
+		"SMI-004": {"integrations"},
+		"SMI-005": {"privacy_mode", "audit_strictness"},
+	},
+}
+
+var defaultQuestionAnswers = map[string]map[string]string{
+	"operator_profile_intake_v1": {
+		"OPI-004": "09:00-17:00",
+		"OPI-006": "google_calendar",
+	},
+	"behavior_policy_calibration_v1": {
+		"BPC-005": "ask_each_time",
+		"BPC-008": "ask_first",
+	},
+	"codebase_map_ingestion_v1": {
+		"CBI-003": "kubernetes",
+		"CBI-005": "github_actions",
+	},
+}
+
 func NewService() *Service {
 	return &Service{
 		questionSets: map[string][]Question{
 			"operator_profile_intake_v1": {
-				{Key: "role", Prompt: "What is your role?"},
-				{Key: "goals", Prompt: "What are your primary goals?"},
-				{Key: "industry", Prompt: "What industry does your workspace serve?"},
-				{Key: "team_size", Prompt: "What is your team size?"},
-				{Key: "timezone", Prompt: "What is your default timezone?"},
-				{Key: "decision_style", Prompt: "How do you make decisions?"},
-				{Key: "communication_pref", Prompt: "Preferred communication style?"},
-				{Key: "kpi_primary", Prompt: "What is the primary KPI?"},
+				{Key: "OPI-001", Prompt: "What is your full name?"},
+				{Key: "OPI-002", Prompt: "What is your job title and company?"},
+				{Key: "OPI-003", Prompt: "What timezone are you in?"},
+				{Key: "OPI-004", Prompt: "What are your primary work hours?"},
+				{Key: "OPI-005", Prompt: "What email accounts do you use for work?"},
+				{Key: "OPI-006", Prompt: "What calendar systems do you use?"},
+				{Key: "OPI-007", Prompt: "What messaging platforms do you use?"},
+				{Key: "OPI-008", Prompt: "What task/project management tools do you use?"},
+				{Key: "OPI-009", Prompt: "Do you manage a team? If so, how many people?"},
+				{Key: "OPI-010", Prompt: "What is your primary industry or domain?"},
 			},
 			"behavior_policy_calibration_v1": {
-				{Key: "tone", Prompt: "Preferred assistant tone?"},
-				{Key: "risk_tolerance", Prompt: "Risk tolerance?"},
-				{Key: "autonomy_preference", Prompt: "Autonomy preference?"},
-				{Key: "approval_threshold", Prompt: "When should approvals be required?"},
-				{Key: "proactive_mode", Prompt: "Should proactive actions be enabled?"},
-				{Key: "notification_window", Prompt: "Preferred notification window?"},
-				{Key: "initiative_level", Prompt: "How proactive should assistant initiative be?"},
+				{Key: "BPC-001", Prompt: "How would you like me to handle scheduling conflicts? (Ask me / Suggest best option / Auto-resolve)"},
+				{Key: "BPC-002", Prompt: "For sending emails on your behalf, should I always ask for approval, or can I send routine responses automatically?"},
+				{Key: "BPC-003", Prompt: "How should I handle financial transactions? (Always confirm / Auto-approve under $X / Never act)"},
+				{Key: "BPC-004", Prompt: "When you receive an urgent message, should I proactively notify you or wait for you to check?"},
+				{Key: "BPC-005", Prompt: "How should I handle requests from your team members? (Full access / Read-only / Ask me each time)"},
+				{Key: "BPC-006", Prompt: "What's your preferred communication style? (Brief / Detailed / Formal / Casual)"},
+				{Key: "BPC-007", Prompt: "Should I learn from your patterns over time and adjust my behavior?"},
+				{Key: "BPC-008", Prompt: "How should I handle unknown or new types of requests? (Ask first / Try and report / Refuse)"},
 			},
 			"codebase_map_ingestion_v1": {
-				{Key: "repo", Prompt: "Primary repository?"},
-				{Key: "stack", Prompt: "Core stack?"},
-				{Key: "planning_horizon", Prompt: "Planning horizon?"},
-				{Key: "meeting_load", Prompt: "Weekly meeting load?"},
-				{Key: "focus_mode", Prompt: "Preferred focus mode?"},
+				{Key: "CBI-001", Prompt: "Do you work with any code repositories? If so, provide the HTTPS URL(s)."},
+				{Key: "CBI-002", Prompt: "What is the primary programming language?"},
+				{Key: "CBI-003", Prompt: "What deployment platform do you use?"},
+				{Key: "CBI-004", Prompt: "Describe your branching strategy."},
+				{Key: "CBI-005", Prompt: "Are there any CI/CD pipelines I should know about?"},
 			},
 			"system_map_ingestion_v1": {
-				{Key: "integrations", Prompt: "Critical integrations?"},
-				{Key: "sla", Prompt: "Critical SLA targets?"},
-				{Key: "escalation_path", Prompt: "Escalation path?"},
-				{Key: "privacy_mode", Prompt: "Privacy mode?"},
-				{Key: "audit_strictness", Prompt: "Audit strictness?"},
-				{Key: "delivery_cadence", Prompt: "Delivery cadence?"},
-				{Key: "context_budget", Prompt: "Context budget preference?"},
-				{Key: "write_actions", Prompt: "Write action policy?"},
-				{Key: "language", Prompt: "Preferred language?"},
+				{Key: "SMI-001", Prompt: "What cloud providers or infrastructure do you use?"},
+				{Key: "SMI-002", Prompt: "What monitoring or alerting tools do you use?"},
+				{Key: "SMI-003", Prompt: "What internal tools or custom systems does your team use?"},
+				{Key: "SMI-004", Prompt: "Are there any API integrations you'd like me to connect to that we haven't discussed?"},
+				{Key: "SMI-005", Prompt: "Any security policies or compliance requirements I should be aware of?"},
 			},
 		},
 		replay:            map[string]map[string]string{},
@@ -203,7 +256,7 @@ func (s *Service) RunStage(workspaceID, stageKey string, answers map[string]stri
 		return StageResult{}, fmt.Errorf("unknown stage: %s", stageKey)
 	}
 	for _, q := range questions {
-		if strings.TrimSpace(answers[q.Key]) == "" {
+		if strings.TrimSpace(resolveAnswer(stageKey, q.Key, answers)) == "" {
 			return StageResult{}, fmt.Errorf("missing answer for %s", q.Key)
 		}
 	}
@@ -215,10 +268,26 @@ func (s *Service) RunStage(workspaceID, stageKey string, answers map[string]stri
 
 	extracted := map[string]string{}
 	for _, q := range questions {
-		extracted[q.Key] = strings.TrimSpace(answers[q.Key])
+		extracted[q.Key] = strings.TrimSpace(resolveAnswer(stageKey, q.Key, answers))
 	}
 	s.replay[key] = copyStringMap(extracted)
 	return StageResult{StageKey: stageKey, Extracted: extracted}, nil
+}
+
+func resolveAnswer(stageKey, key string, answers map[string]string) string {
+	if value := strings.TrimSpace(answers[key]); value != "" {
+		return value
+	}
+	aliases := legacyQuestionAliases[stageKey][key]
+	for _, alias := range aliases {
+		if value := strings.TrimSpace(answers[alias]); value != "" {
+			return value
+		}
+	}
+	if value := strings.TrimSpace(defaultQuestionAnswers[stageKey][key]); value != "" {
+		return value
+	}
+	return ""
 }
 
 func copyStringMap(input map[string]string) map[string]string {
@@ -267,46 +336,46 @@ func (s *Service) CompleteOnboarding(workspaceID string, stageAnswers map[string
 		WorkspaceID: workspaceID,
 		VersionInt:  profileVersion,
 		Dimensions: map[string]string{
-			"role":                op["role"],
-			"goals":               op["goals"],
-			"industry":            op["industry"],
-			"team_size":           op["team_size"],
-			"timezone":            op["timezone"],
-			"decision_style":      op["decision_style"],
-			"communication_pref":  op["communication_pref"],
-			"kpi_primary":         op["kpi_primary"],
-			"risk_tolerance":      bp["risk_tolerance"],
-			"autonomy_preference": bp["autonomy_preference"],
-			"planning_horizon":    cb["planning_horizon"],
-			"meeting_load":        cb["meeting_load"],
-			"focus_mode":          cb["focus_mode"],
+			"role":                op["OPI-002"],
+			"goals":               cb["CBI-005"],
+			"industry":            op["OPI-010"],
+			"team_size":           op["OPI-009"],
+			"timezone":            op["OPI-003"],
+			"decision_style":      bp["BPC-008"],
+			"communication_pref":  bp["BPC-006"],
+			"kpi_primary":         sy["SMI-002"],
+			"risk_tolerance":      bp["BPC-003"],
+			"autonomy_preference": bp["BPC-002"],
+			"planning_horizon":    cb["CBI-004"],
+			"meeting_load":        sy["SMI-002"],
+			"focus_mode":          bp["BPC-007"],
 		},
 	}
 	s.personas[workspaceID] = WorkspacePersona{
 		WorkspaceID: workspaceID,
 		VersionInt:  personaVersion,
 		Persona: map[string]string{
-			"tone":               bp["tone"],
-			"initiative_level":   bp["initiative_level"],
-			"language":           sy["language"],
-			"communication_pref": op["communication_pref"],
-			"decision_style":     op["decision_style"],
+			"tone":               bp["BPC-006"],
+			"initiative_level":   bp["BPC-004"],
+			"language":           op["OPI-003"],
+			"communication_pref": bp["BPC-006"],
+			"decision_style":     bp["BPC-008"],
 		},
 	}
 	s.behaviorPolicies[workspaceID] = WorkspaceBehaviorPolicy{
 		WorkspaceID: workspaceID,
 		VersionInt:  policyVersion,
 		Policy: map[string]string{
-			"approval_threshold":  bp["approval_threshold"],
-			"proactive_mode":      bp["proactive_mode"],
-			"notification_window": bp["notification_window"],
-			"write_actions":       sy["write_actions"],
-			"escalation_path":     sy["escalation_path"],
-			"privacy_mode":        sy["privacy_mode"],
-			"audit_strictness":    sy["audit_strictness"],
-			"delivery_cadence":    sy["delivery_cadence"],
-			"context_budget":      sy["context_budget"],
-			"sla":                 sy["sla"],
+			"approval_threshold":  bp["BPC-003"],
+			"proactive_mode":      bp["BPC-004"],
+			"notification_window": op["OPI-004"],
+			"write_actions":       bp["BPC-002"],
+			"escalation_path":     bp["BPC-004"],
+			"privacy_mode":        sy["SMI-005"],
+			"audit_strictness":    sy["SMI-005"],
+			"delivery_cadence":    cb["CBI-005"],
+			"context_budget":      sy["SMI-001"],
+			"sla":                 sy["SMI-002"],
 		},
 	}
 	s.ensureWorkspaceFollowupRulesLocked(workspaceID)
@@ -552,11 +621,11 @@ func ruleApplies(trigger string, operator, behavior, codebase, system map[string
 	case "onboarding_completed":
 		return true
 	case "meeting_load_high":
-		meetingLoad := strings.ToLower(strings.TrimSpace(codebase["meeting_load"]))
+		meetingLoad := strings.ToLower(strings.TrimSpace(system["SMI-002"]))
 		return meetingLoad == "high" || meetingLoad == "very_high"
 	case "low_autonomy_preference":
-		autonomy := strings.ToUpper(strings.TrimSpace(behavior["autonomy_preference"]))
-		return autonomy == "A0" || autonomy == "A1"
+		emailAutonomy := strings.ToLower(strings.TrimSpace(behavior["BPC-002"]))
+		return strings.Contains(emailAutonomy, "always ask") || strings.Contains(emailAutonomy, "ask")
 	default:
 		_ = operator
 		_ = system

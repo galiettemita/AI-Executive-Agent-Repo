@@ -56,12 +56,13 @@ run_psql() {
   "$docker_bin" exec -i "$container_name" psql -v ON_ERROR_STOP=1 -U postgres -d brevio "$@"
 }
 
-echo "[db-verify] applying migrations 001 -> 005"
+echo "[db-verify] applying migrations 001 -> 006"
 run_psql -f /src/db/migrations/001_BREVIO_v9_init.sql >/dev/null
 run_psql -f /src/db/migrations/002_BREVIO_v91_soft_intelligence.sql >/dev/null
 run_psql -f /src/db/migrations/003_BREVIO_v92_production_hardening.sql >/dev/null
 run_psql -f /src/db/migrations/004_BREVIO_ops_operational_systems.sql >/dev/null
 run_psql -f /src/db/migrations/005_BREVIO_mcp_execution_oauth_hardening.sql >/dev/null
+run_psql -f /src/db/migrations/006_BREVIO_v93_addendum_specification_closure.sql >/dev/null
 
 echo "[db-verify] creating non-superuser validation role"
 run_psql <<SQL >/dev/null

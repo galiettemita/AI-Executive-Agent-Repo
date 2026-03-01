@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "OutboundSendRequestV1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["workspace_id", "channel", "channel_identifier", "body"],
+  "properties": {
+    "workspace_id": { "type": "string", "format": "uuid" },
+    "channel": { "type": "string" },
+    "channel_identifier": { "type": "string" },
+    "body": { "type": "string" },
+    "type": { "type": "string" }
+  }
+}

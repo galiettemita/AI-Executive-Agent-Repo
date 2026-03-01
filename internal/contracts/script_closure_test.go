@@ -172,6 +172,7 @@ func TestDatabaseVerificationScriptClosure(t *testing.T) {
 		"003_BREVIO_v92_production_hardening.sql",
 		"004_BREVIO_ops_operational_systems.sql",
 		"005_BREVIO_mcp_execution_oauth_hardening.sql",
+		"006_BREVIO_v93_addendum_specification_closure.sql",
 		"enum count mismatch",
 		"RLS coverage failure",
 		"missing MCP/oauth hardening columns",

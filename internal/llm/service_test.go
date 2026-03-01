@@ -112,3 +112,15 @@ func TestFallbackOnlyWhenNoOutputCommitted(t *testing.T) {
 		t.Fatalf("expected no failover reason when output committed, got %s", noFallback.FailoverReason)
 	}
 }
+
+func TestDefaultTierModelMapping(t *testing.T) {
+	t.Parallel()
+
+	mapping := DefaultTierModelMapping()
+	if got := mapping["T0"]; got.PrimaryModel != "claude-haiku-4-5-20250929" || got.FallbackModel != "gpt-4o-mini" || got.MaxOutputTokens != 256 {
+		t.Fatalf("unexpected T0 mapping: %+v", got)
+	}
+	if got := mapping["T3"]; got.PrimaryModel != "claude-sonnet-4-20250514" || got.FallbackModel != "gpt-4o" || got.MaxOutputTokens != 2048 {
+		t.Fatalf("unexpected T3 mapping: %+v", got)
+	}
+}

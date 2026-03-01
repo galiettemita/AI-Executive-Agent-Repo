@@ -15,6 +15,9 @@ Legend
 - `[ ]` Not done / blocked
 
 ## BREVIO V9 Migration Tracker (Current Program)
+- [x] V9.3 addendum phase-0 reconnaissance completed with section-by-section audit output at `docs/addendum_gap_audit.md`.
+- [x] V9.3 addendum closure: added migration `006_BREVIO_v93_addendum_specification_closure.sql` (`whatsapp_message_templates` + RLS/indexes), expanded canonical V9 events with 8 addendum events, and aligned OpenAPI/schema mapping for newly specified endpoints.
+- [x] V9.3 addendum runtime closure: implemented control/canvas endpoint ownership coverage for addendum routes, refreshed API reference docs (`docs/API_REFERENCE.md`), and revalidated with `go test ./...` passing at HEAD.
 - [x] Phase 0.1: map current repository (`find` + depth-limited directory map) and compare against V9 canonical structure
 - [x] Phase 0.1: create gap report at `docs/codebase_audit_report.md` with required artifact status table
 - [x] Phase 0.1: identify non-V9/V9.1/V9.2 candidate removal areas in audit report

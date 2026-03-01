@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ActivityLedgerResponseV1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["page", "page_size", "total", "items"],
+  "properties": {
+    "page": { "type": "integer", "minimum": 1 },
+    "page_size": { "type": "integer", "minimum": 1 },
+    "total": { "type": "integer", "minimum": 0 },
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "timestamp", "description", "status"],
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "timestamp": { "type": "string", "format": "date-time" },
+          "description": { "type": "string" },
+          "status": { "type": "string" },
+          "undo_available": { "type": "boolean" }
+        }
+      }
+    }
+  }
+}

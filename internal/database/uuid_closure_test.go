@@ -16,6 +16,7 @@ func TestMigrationUUIDv7DefaultClosure(t *testing.T) {
 		"002_BREVIO_v91_soft_intelligence.sql",
 		"003_BREVIO_v92_production_hardening.sql",
 		"004_BREVIO_ops_operational_systems.sql",
+		"006_BREVIO_v93_addendum_specification_closure.sql",
 	}
 
 	for _, name := range migrations {

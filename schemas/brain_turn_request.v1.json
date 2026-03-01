@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "BrainTurnRequestV1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["workspace_id", "user_id", "ingress_turn_id", "message"],
+  "properties": {
+    "workspace_id": { "type": "string", "format": "uuid" },
+    "user_id": { "type": "string", "format": "uuid" },
+    "ingress_turn_id": { "type": "string", "format": "uuid" },
+    "message": { "type": "string" },
+    "attachments": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["s3_key", "mime_type"],
+        "properties": {
+          "s3_key": { "type": "string" },
+          "mime_type": { "type": "string" },
+          "size_bytes": { "type": "integer", "minimum": 0 }
+        }
+      }
+    }
+  }
+}

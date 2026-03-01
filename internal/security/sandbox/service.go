@@ -1,6 +1,7 @@
 package sandbox
 
 import (
+	"context"
 	"net"
 	"net/url"
 	"sort"
@@ -38,8 +39,15 @@ func NewService() *Service {
 		"172.16.0.0/12",
 		"192.168.0.0/16",
 		"169.254.0.0/16",
+		"100.64.0.0/10",
+		"198.18.0.0/15",
+		"0.0.0.0/8",
+		"224.0.0.0/4",
+		"240.0.0.0/4",
 		"::1/128",
 		"fc00::/7",
+		"fe80::/10",
+		"fd00::/8",
 	}
 	parsed := make([]*net.IPNet, 0, len(cidrs))
 	for _, cidr := range cidrs {
@@ -147,16 +155,20 @@ func (s *Service) IsAllowedURLWithProfile(profileName, rawURL string) (bool, str
 	}
 
 	if ip := net.ParseIP(host); ip != nil {
-		if ip.IsLoopback() {
-			s.recordViolation(rawURL, profile.Name, "LOOPBACK_BLOCKED")
-			return false, "LOOPBACK_BLOCKED"
+		if blocked, reason := blockedByCIDR(ip, blockedCIDRs); blocked {
+			s.recordViolation(rawURL, profile.Name, reason)
+			return false, reason
 		}
-		for _, blockedCIDR := range blockedCIDRs {
-			if blockedCIDR.Contains(ip) {
-				reason := "PRIVATE_IP_BLOCKED"
-				if ip.String() == "169.254.169.254" {
-					reason = "IMDS_BLOCKED"
-				}
+		return true, "ok"
+	}
+
+	// Resolve hostname and re-check against the deny-list to prevent DNS rebinding.
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	addrs, err := net.DefaultResolver.LookupIPAddr(ctx, host)
+	if err == nil {
+		for _, addr := range addrs {
+			if blocked, reason := blockedByCIDR(addr.IP, blockedCIDRs); blocked {
 				s.recordViolation(rawURL, profile.Name, reason)
 				return false, reason
 			}
@@ -189,4 +201,22 @@ func (s *Service) recordViolation(target, profile, reason string) {
 		Profile:   profile,
 		Timestamp: s.now(),
 	})
+}
+
+func blockedByCIDR(ip net.IP, blockedCIDRs []*net.IPNet) (bool, string) {
+	if ip == nil {
+		return false, ""
+	}
+	if ip.IsLoopback() {
+		return true, "LOOPBACK_BLOCKED"
+	}
+	for _, blockedCIDR := range blockedCIDRs {
+		if blockedCIDR.Contains(ip) {
+			if ip.String() == "169.254.169.254" {
+				return true, "IMDS_BLOCKED"
+			}
+			return true, "PRIVATE_IP_BLOCKED"
+		}
+	}
+	return false, ""
 }

@@ -47,6 +47,308 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/generic_request_v1'
+  /v1/webhooks/whatsapp:
+    post:
+      summary: POST /v1/webhooks/whatsapp
+      operationId: post_v1_webhooks_whatsapp
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/generic_response_v1'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/whatsapp_webhook_payload_v1_json'
+  /v1/webhooks/imessage:
+    post:
+      summary: POST /v1/webhooks/imessage
+      operationId: post_v1_webhooks_imessage
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/generic_response_v1'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/imessage_webhook_payload_v1_json'
+  /v1/user/activity-ledger:
+    get:
+      summary: GET /v1/user/activity-ledger
+      operationId: get_v1_user_activity_ledger
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/activity_ledger_response_v1_json'
+      security:
+      - UserJWT: []
+  /v1/user/trust-receipts/{id}/evidence:
+    get:
+      summary: GET /v1/user/trust-receipts/{id}/evidence
+      operationId: get_v1_user_trust_receipts_id_evidence
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/trust_receipt_evidence_response_v1_json'
+      security:
+      - UserJWT: []
+  /v1/capabilities/resolve:
+    post:
+      summary: POST /v1/capabilities/resolve
+      operationId: post_v1_capabilities_resolve
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/capability_resolve_response_v1_json'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/capability_resolve_request_v1_json'
+  /v1/provision/start:
+    post:
+      summary: POST /v1/provision/start
+      operationId: post_v1_provision_start
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/provision_start_response_v1_json'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/provision_start_request_v1_json'
+  /v1/provision/status/{id}:
+    get:
+      summary: GET /v1/provision/status/{id}
+      operationId: get_v1_provision_status_id
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/provision_status_response_v1_json'
+  /v1/provision/callback:
+    get:
+      summary: GET /v1/provision/callback
+      operationId: get_v1_provision_callback
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/generic_response_v1'
+        '302':
+          description: Redirect
+  /v1/catalog/search:
+    get:
+      summary: GET /v1/catalog/search
+      operationId: get_v1_catalog_search
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/catalog_search_response_v1_json'
+  /v1/workspaces/{id}/provisioning/policy:
+    get:
+      summary: GET /v1/workspaces/{id}/provisioning/policy
+      operationId: get_v1_workspaces_id_provisioning_policy
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/provisioning_policy_v1_json'
+      security:
+      - UserJWT: []
+    put:
+      summary: PUT /v1/workspaces/{id}/provisioning/policy
+      operationId: put_v1_workspaces_id_provisioning_policy
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/provisioning_policy_v1_json'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/provisioning_policy_v1_json'
+      security:
+      - UserJWT: []
+  /v1/workspaces/{id}/provisioning/budget:
+    put:
+      summary: PUT /v1/workspaces/{id}/provisioning/budget
+      operationId: put_v1_workspaces_id_provisioning_budget
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/provisioning_budget_response_v1_json'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/provisioning_budget_request_v1_json'
+      security:
+      - UserJWT: []
+  /v1/admin/forensics/replay/{turn_id}:
+    get:
+      summary: GET /v1/admin/forensics/replay/{turn_id}
+      operationId: get_v1_admin_forensics_replay_turn_id
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/forensic_replay_response_v1_json'
+      security:
+      - AdminJWT: []
+  /v1/admin/server-catalog/{id}/artifacts:
+    put:
+      summary: PUT /v1/admin/server-catalog/{id}/artifacts
+      operationId: put_v1_admin_server_catalog_id_artifacts
+      responses:
+        '204':
+          description: No Content
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/generic_response_v1'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/server_artifact_manifest_v1_json'
+      security:
+      - AdminJWT: []
+  /v1/admin/llm/replay/{hash}:
+    get:
+      summary: GET /v1/admin/llm/replay/{hash}
+      operationId: get_v1_admin_llm_replay_hash
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/llm_request_v1_json'
+      security:
+      - AdminJWT: []
+  /v1/admin/review-tasks:
+    get:
+      summary: GET /v1/admin/review-tasks
+      operationId: get_v1_admin_review_tasks
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/review_tasks_list_response_v1_json'
+      security:
+      - AdminJWT: []
+  /v1/admin/review-tasks/{id}/decide:
+    post:
+      summary: POST /v1/admin/review-tasks/{id}/decide
+      operationId: post_v1_admin_review_tasks_id_decide
+      responses:
+        '204':
+          description: No Content
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/generic_response_v1'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/review_task_decision_v1_json'
+      security:
+      - AdminJWT: []
+  /v1/brain/turn:
+    post:
+      summary: POST /v1/brain/turn
+      operationId: post_v1_brain_turn
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/brain_turn_response_v1_json'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/brain_turn_request_v1_json'
+      security:
+      - mTLS: []
+  /v1/control/plan/evaluate:
+    post:
+      summary: POST /v1/control/plan/evaluate
+      operationId: post_v1_control_plan_evaluate
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/plan_evaluate_response_v1_json'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/plan_evaluate_request_v1_json'
+      security:
+      - mTLS: []
+  /v1/hands/tool/execute:
+    post:
+      summary: POST /v1/hands/tool/execute
+      operationId: post_v1_hands_tool_execute
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/tool_execution_response_v1_json'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/tool_call_v9_json'
+      security:
+      - mTLS: []
   /v1/gateway/outbound/send:
     post:
       summary: POST /v1/gateway/outbound/send
@@ -62,7 +364,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/generic_request_v1'
+              $ref: '#/components/schemas/outbound_send_request_v1_json'
   /v1/gateway/inject/tool_call:
     post:
       summary: POST /v1/gateway/inject/tool_call
@@ -79,6 +381,24 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/tool_call_v9_json'
+  /v1/canvas/push:
+    post:
+      summary: POST /v1/canvas/push
+      operationId: post_v1_canvas_push
+      responses:
+        '204':
+          description: No Content
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/generic_response_v1'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/canvas_push_request_v1_json'
+      security:
+      - mTLS: []
   /v1/canvas/ws:
     get:
       summary: GET /v1/canvas/ws
@@ -1907,10 +2227,48 @@ components:
       $ref: ../../schemas/capability_resolve_request.v1.json
     capability_resolve_response_v1_json:
       $ref: ../../schemas/capability_resolve_response.v1.json
+    whatsapp_webhook_payload_v1_json:
+      $ref: ../../schemas/whatsapp_webhook_payload.v1.json
+    imessage_webhook_payload_v1_json:
+      $ref: ../../schemas/imessage_webhook_payload.v1.json
+    activity_ledger_response_v1_json:
+      $ref: ../../schemas/activity_ledger_response.v1.json
+    trust_receipt_evidence_response_v1_json:
+      $ref: ../../schemas/trust_receipt_evidence_response.v1.json
     provisioning_policy_v1_json:
       $ref: ../../schemas/provisioning_policy.v1.json
     provision_start_request_v1_json:
       $ref: ../../schemas/provision_start_request.v1.json
+    provision_start_response_v1_json:
+      $ref: ../../schemas/provision_start_response.v1.json
+    provision_status_response_v1_json:
+      $ref: ../../schemas/provision_status_response.v1.json
+    catalog_search_response_v1_json:
+      $ref: ../../schemas/catalog_search_response.v1.json
+    provisioning_budget_request_v1_json:
+      $ref: ../../schemas/provisioning_budget_request.v1.json
+    provisioning_budget_response_v1_json:
+      $ref: ../../schemas/provisioning_budget_response.v1.json
+    forensic_replay_response_v1_json:
+      $ref: ../../schemas/forensic_replay_response.v1.json
+    review_tasks_list_response_v1_json:
+      $ref: ../../schemas/review_tasks_list_response.v1.json
+    review_task_decision_v1_json:
+      $ref: ../../schemas/review_task_decision.v1.json
+    brain_turn_request_v1_json:
+      $ref: ../../schemas/brain_turn_request.v1.json
+    brain_turn_response_v1_json:
+      $ref: ../../schemas/brain_turn_response.v1.json
+    plan_evaluate_request_v1_json:
+      $ref: ../../schemas/plan_evaluate_request.v1.json
+    plan_evaluate_response_v1_json:
+      $ref: ../../schemas/plan_evaluate_response.v1.json
+    tool_execution_response_v1_json:
+      $ref: ../../schemas/tool_execution_response.v1.json
+    outbound_send_request_v1_json:
+      $ref: ../../schemas/outbound_send_request.v1.json
+    canvas_push_request_v1_json:
+      $ref: ../../schemas/canvas_push_request.v1.json
     server_artifact_manifest_v1_json:
       $ref: ../../schemas/server_artifact_manifest.v1.json
     llm_request_v1_json:

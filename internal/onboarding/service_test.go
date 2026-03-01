@@ -8,41 +8,40 @@ import (
 func fixtureAnswers() map[string]map[string]string {
 	return map[string]map[string]string{
 		"operator_profile_intake_v1": {
-			"role":               "CTO",
-			"goals":              "Ship features faster",
-			"industry":           "SaaS",
-			"team_size":          "42",
-			"timezone":           "America/New_York",
-			"decision_style":     "data-driven",
-			"communication_pref": "concise",
-			"kpi_primary":        "weekly active users",
+			"OPI-001": "Taylor Smith",
+			"OPI-002": "CTO at Brevio",
+			"OPI-003": "America/New_York",
+			"OPI-004": "09:00-18:00",
+			"OPI-005": "taylor@brevio.app",
+			"OPI-006": "Google Calendar",
+			"OPI-007": "Slack, WhatsApp",
+			"OPI-008": "Linear, Asana",
+			"OPI-009": "42",
+			"OPI-010": "SaaS",
 		},
 		"behavior_policy_calibration_v1": {
-			"tone":                "direct",
-			"risk_tolerance":      "moderate",
-			"autonomy_preference": "A2",
-			"approval_threshold":  "critical_only",
-			"proactive_mode":      "enabled",
-			"notification_window": "09:00-18:00",
-			"initiative_level":    "high",
+			"BPC-001": "Suggest best option",
+			"BPC-002": "Always ask for approval",
+			"BPC-003": "Always confirm",
+			"BPC-004": "Proactively notify me",
+			"BPC-005": "Ask me each time",
+			"BPC-006": "Brief",
+			"BPC-007": "Yes",
+			"BPC-008": "Ask first",
 		},
 		"codebase_map_ingestion_v1": {
-			"repo":             "github.com/brevio/brevio",
-			"stack":            "go",
-			"planning_horizon": "quarterly",
-			"meeting_load":     "medium",
-			"focus_mode":       "async_blocks",
+			"CBI-001": "https://github.com/brevio/brevio",
+			"CBI-002": "Go",
+			"CBI-003": "EKS",
+			"CBI-004": "trunk-based",
+			"CBI-005": "GitHub Actions",
 		},
 		"system_map_ingestion_v1": {
-			"integrations":     "slack, github",
-			"sla":              "99.9",
-			"escalation_path":  "ops-oncall",
-			"privacy_mode":     "strict",
-			"audit_strictness": "high",
-			"delivery_cadence": "weekly",
-			"context_budget":   "balanced",
-			"write_actions":    "confirm_before_send",
-			"language":         "en-US",
+			"SMI-001": "AWS",
+			"SMI-002": "high",
+			"SMI-003": "Internal admin tools",
+			"SMI-004": "Salesforce",
+			"SMI-005": "SOC2",
 		},
 	}
 }
@@ -71,13 +70,13 @@ func TestCompleteAllStagesWithFixtureAnswers(t *testing.T) {
 	if len(policy.Policy) != 10 {
 		t.Fatalf("expected 10 behavior-policy dimensions, got %d", len(policy.Policy))
 	}
-	if profile.Dimensions["role"] != "CTO" {
+	if profile.Dimensions["role"] != "CTO at Brevio" {
 		t.Fatalf("unexpected profile role: %s", profile.Dimensions["role"])
 	}
-	if persona.Persona["tone"] != "direct" {
+	if persona.Persona["tone"] != "Brief" {
 		t.Fatalf("unexpected persona tone: %s", persona.Persona["tone"])
 	}
-	if policy.Policy["write_actions"] != "confirm_before_send" {
+	if policy.Policy["write_actions"] != "Always ask for approval" {
 		t.Fatalf("unexpected behavior policy write_actions: %s", policy.Policy["write_actions"])
 	}
 	followups := svc.ListAdaptiveQuestions(workspaceID)
@@ -139,8 +138,8 @@ func TestAdaptiveDiscoveryFollowupLifecycle(t *testing.T) {
 	}
 
 	answers := fixtureAnswers()
-	answers["behavior_policy_calibration_v1"]["autonomy_preference"] = "A1"
-	answers["codebase_map_ingestion_v1"]["meeting_load"] = "high"
+	answers["behavior_policy_calibration_v1"]["BPC-002"] = "Always ask for approval"
+	answers["system_map_ingestion_v1"]["SMI-002"] = "high"
 	if err := svc.CompleteOnboarding(workspaceID, answers); err != nil {
 		t.Fatalf("complete onboarding with adaptive trigger answers: %v", err)
 	}

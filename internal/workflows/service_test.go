@@ -205,6 +205,67 @@ func TestDeterministicOrderingHelpers(t *testing.T) {
 	}
 }
 
+func TestScorePlanUtilityFunction(t *testing.T) {
+	t.Parallel()
+
+	weights := DefaultPlanScoreWeights()
+	score := ScorePlan(PlanCandidate{
+		ToolKeys:            []string{"calendar.create_event", "email.send"},
+		NumTools:            2,
+		MaxToolsForTier:     8,
+		MaxToolRisk:         1,
+		EstimatedCost:       1.5,
+		BudgetRemaining:     50,
+		EstimatedLatencyMS:  700,
+		TierSLOMS:           5000,
+		CapabilityStrengths: []int{95, 90},
+	}, weights)
+	if score <= 0 {
+		t.Fatalf("expected positive utility score, got %f", score)
+	}
+	if score > 1 {
+		t.Fatalf("expected utility score <= 1, got %f", score)
+	}
+}
+
+func TestSelectBestPlanTieBreakers(t *testing.T) {
+	t.Parallel()
+
+	weights := DefaultPlanScoreWeights()
+	best, _, ok := SelectBestPlan([]PlanCandidate{
+		{
+			ID:                  "plan_b",
+			ToolKeys:            []string{"zeta.tool", "alpha.tool"},
+			NumTools:            2,
+			MaxToolsForTier:     8,
+			MaxToolRisk:         1,
+			EstimatedCost:       1,
+			BudgetRemaining:     20,
+			EstimatedLatencyMS:  500,
+			TierSLOMS:           5000,
+			CapabilityStrengths: []int{90, 90},
+		},
+		{
+			ID:                  "plan_a",
+			ToolKeys:            []string{"alpha.tool", "zeta.tool"},
+			NumTools:            2,
+			MaxToolsForTier:     8,
+			MaxToolRisk:         1,
+			EstimatedCost:       1,
+			BudgetRemaining:     20,
+			EstimatedLatencyMS:  500,
+			TierSLOMS:           5000,
+			CapabilityStrengths: []int{90, 90},
+		},
+	}, weights)
+	if !ok {
+		t.Fatal("expected best plan selection")
+	}
+	if best.ID != "plan_a" {
+		t.Fatalf("expected lexical tool-key tiebreaker to pick plan_a, got %s", best.ID)
+	}
+}
+
 func TestTrustEvalFormulaAndPromotionEligibility(t *testing.T) {
 	t.Parallel()
 

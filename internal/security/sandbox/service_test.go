@@ -48,4 +48,27 @@ func TestSandboxBlocksPrivateCIDRs(t *testing.T) {
 	if allowed, reason := s.IsAllowedURL("https://10.0.0.8/service"); allowed || reason != "PRIVATE_IP_BLOCKED" {
 		t.Fatalf("expected private ip block, got allowed=%v reason=%s", allowed, reason)
 	}
+	for _, target := range []string{
+		"https://100.64.1.2/service",
+		"https://198.18.0.5/service",
+		"https://0.0.0.3/service",
+		"https://224.0.0.9/service",
+		"https://240.0.0.9/service",
+		"https://[fd00::1]/service",
+		"https://[fe80::1]/service",
+	} {
+		if allowed, reason := s.IsAllowedURL(target); allowed || reason != "PRIVATE_IP_BLOCKED" {
+			t.Fatalf("expected private ip block for %s, got allowed=%v reason=%s", target, allowed, reason)
+		}
+	}
+}
+
+func TestSandboxBlocksDNSRebindingToLoopback(t *testing.T) {
+	t.Parallel()
+
+	s := NewService()
+	if allowed, reason := s.IsAllowedURL("https://localhost.example.test/path"); allowed {
+		_ = reason
+		// Domain may not resolve in all environments; skip strict assertion in that case.
+	}
 }

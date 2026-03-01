@@ -2,9 +2,9 @@
 
 Generated from `api/openapi/v9.yaml`.
 
-OpenAPI SHA-256: `9567b579bb805c8c5b734e74b606db429a8a83aece56d791d7496139a08faba3`
+OpenAPI SHA-256: `70a18adbe0153c42f5bc493ffe10fbe7ffe5d36144fa4240dfd944c9f12cfba9`
 
-Total endpoints: `135`
+Total endpoints: `156`
 
 | Method | Path | operation_id | Summary |
 |---|---|---|---|
@@ -20,11 +20,16 @@ Total endpoints: `135`
 | `GET` | `/v1/admin/costs/budgets` | `get_v1_admin_costs_budgets` | GET /v1/admin/costs/budgets |
 | `PUT` | `/v1/admin/costs/budgets` | `put_v1_admin_costs_budgets` | PUT /v1/admin/costs/budgets |
 | `GET` | `/v1/admin/costs/summary` | `get_v1_admin_costs_summary` | GET /v1/admin/costs/summary |
+| `GET` | `/v1/admin/forensics/replay/{turn_id}` | `get_v1_admin_forensics_replay_turn_id` | GET /v1/admin/forensics/replay/{turn_id} |
 | `GET` | `/v1/admin/kpi/report` | `get_v1_admin_kpi_report` | GET /v1/admin/kpi/report |
 | `POST` | `/v1/admin/learning/lessons/bulk-retire` | `post_v1_admin_learning_lessons_bulk_retire` | POST /v1/admin/learning/lessons/bulk-retire |
+| `GET` | `/v1/admin/llm/replay/{hash}` | `get_v1_admin_llm_replay_hash` | GET /v1/admin/llm/replay/{hash} |
 | `GET` | `/v1/admin/operations/dashboard` | `get_v1_admin_operations_dashboard` | GET /v1/admin/operations/dashboard |
 | `GET` | `/v1/admin/operations/queues` | `get_v1_admin_operations_queues` | GET /v1/admin/operations/queues |
 | `GET` | `/v1/admin/operations/workflows` | `get_v1_admin_operations_workflows` | GET /v1/admin/operations/workflows |
+| `GET` | `/v1/admin/review-tasks` | `get_v1_admin_review_tasks` | GET /v1/admin/review-tasks |
+| `POST` | `/v1/admin/review-tasks/{id}/decide` | `post_v1_admin_review_tasks_id_decide` | POST /v1/admin/review-tasks/{id}/decide |
+| `PUT` | `/v1/admin/server-catalog/{id}/artifacts` | `put_v1_admin_server_catalog_id_artifacts` | PUT /v1/admin/server-catalog/{id}/artifacts |
 | `POST` | `/v1/admin/trust-scores/recalculate` | `post_v1_admin_trust_scores_recalculate` | POST /v1/admin/trust-scores/recalculate |
 | `GET` | `/v1/admin/users` | `get_v1_admin_users` | GET /v1/admin/users |
 | `GET` | `/v1/admin/users/{id}` | `get_v1_admin_users_id` | GET /v1/admin/users/{id} |
@@ -33,15 +38,19 @@ Total endpoints: `135`
 | `GET` | `/v1/autonomy/promotions` | `get_v1_autonomy_promotions` | GET /v1/autonomy/promotions |
 | `POST` | `/v1/autonomy/promotions/{id}/decide` | `post_v1_autonomy_promotions_id_decide` | POST /v1/autonomy/promotions/{id}/decide |
 | `GET` | `/v1/autonomy/trust-scores` | `get_v1_autonomy_trust_scores` | GET /v1/autonomy/trust-scores |
+| `POST` | `/v1/brain/turn` | `post_v1_brain_turn` | POST /v1/brain/turn |
 | `POST` | `/v1/cache/invalidate` | `post_v1_cache_invalidate` | POST /v1/cache/invalidate |
 | `GET` | `/v1/cache/policies` | `get_v1_cache_policies` | GET /v1/cache/policies |
 | `POST` | `/v1/cache/policies` | `post_v1_cache_policies` | POST /v1/cache/policies |
 | `GET` | `/v1/cache/stats` | `get_v1_cache_stats` | GET /v1/cache/stats |
+| `POST` | `/v1/canvas/push` | `post_v1_canvas_push` | POST /v1/canvas/push |
 | `GET` | `/v1/canvas/ws` | `get_v1_canvas_ws` | GET /v1/canvas/ws |
 | `GET` | `/v1/capabilities/recommendations` | `get_v1_capabilities_recommendations` | GET /v1/capabilities/recommendations |
 | `POST` | `/v1/capabilities/recommendations/{id}/decide` | `post_v1_capabilities_recommendations_id_decide` | POST /v1/capabilities/recommendations/{id}/decide |
+| `POST` | `/v1/capabilities/resolve` | `post_v1_capabilities_resolve` | POST /v1/capabilities/resolve |
 | `GET` | `/v1/captures/daily` | `get_v1_captures_daily` | GET /v1/captures/daily |
 | `GET` | `/v1/captures/daily/{date}` | `get_v1_captures_daily_date` | GET /v1/captures/daily/{date} |
+| `GET` | `/v1/catalog/search` | `get_v1_catalog_search` | GET /v1/catalog/search |
 | `POST` | `/v1/codebase/context-export` | `post_v1_codebase_context_export` | POST /v1/codebase/context-export |
 | `GET` | `/v1/codebase/context-export/{id}` | `get_v1_codebase_context_export_id` | GET /v1/codebase/context-export/{id} |
 | `GET` | `/v1/codebase/debt` | `get_v1_codebase_debt` | GET /v1/codebase/debt |
@@ -64,6 +73,7 @@ Total endpoints: `135`
 | `GET` | `/v1/context/allocations` | `get_v1_context_allocations` | GET /v1/context/allocations |
 | `GET` | `/v1/context/budget` | `get_v1_context_budget` | GET /v1/context/budget |
 | `PUT` | `/v1/context/budget` | `put_v1_context_budget` | PUT /v1/context/budget |
+| `POST` | `/v1/control/plan/evaluate` | `post_v1_control_plan_evaluate` | POST /v1/control/plan/evaluate |
 | `GET` | `/v1/errors/taxonomy` | `get_v1_errors_taxonomy` | GET /v1/errors/taxonomy |
 | `GET` | `/v1/errors/templates` | `get_v1_errors_templates` | GET /v1/errors/templates |
 | `POST` | `/v1/errors/templates` | `post_v1_errors_templates` | POST /v1/errors/templates |
@@ -99,6 +109,7 @@ Total endpoints: `135`
 | `POST` | `/v1/guardrails/rule-sets` | `post_v1_guardrails_rule_sets` | POST /v1/guardrails/rule-sets |
 | `PUT` | `/v1/guardrails/rule-sets/{id}` | `put_v1_guardrails_rule_sets_id` | PUT /v1/guardrails/rule-sets/{id} |
 | `DELETE` | `/v1/guardrails/rule-sets/{id}` | `delete_v1_guardrails_rule_sets_id` | DELETE /v1/guardrails/rule-sets/{id} |
+| `POST` | `/v1/hands/tool/execute` | `post_v1_hands_tool_execute` | POST /v1/hands/tool/execute |
 | `GET` | `/v1/learning/config` | `get_v1_learning_config` | GET /v1/learning/config |
 | `PUT` | `/v1/learning/config` | `put_v1_learning_config` | PUT /v1/learning/config |
 | `POST` | `/v1/learning/feedback` | `post_v1_learning_feedback` | POST /v1/learning/feedback |
@@ -113,6 +124,9 @@ Total endpoints: `135`
 | `GET` | `/v1/model-tiers/overrides` | `get_v1_model_tiers_overrides` | GET /v1/model-tiers/overrides |
 | `GET` | `/v1/model-tiers/policies` | `get_v1_model_tiers_policies` | GET /v1/model-tiers/policies |
 | `POST` | `/v1/model-tiers/policies` | `post_v1_model_tiers_policies` | POST /v1/model-tiers/policies |
+| `GET` | `/v1/provision/callback` | `get_v1_provision_callback` | GET /v1/provision/callback |
+| `POST` | `/v1/provision/start` | `post_v1_provision_start` | POST /v1/provision/start |
+| `GET` | `/v1/provision/status/{id}` | `get_v1_provision_status_id` | GET /v1/provision/status/{id} |
 | `GET` | `/v1/rag/collections` | `get_v1_rag_collections` | GET /v1/rag/collections |
 | `POST` | `/v1/rag/collections` | `post_v1_rag_collections` | POST /v1/rag/collections |
 | `GET` | `/v1/rag/collections/{id}` | `get_v1_rag_collections_id` | GET /v1/rag/collections/{id} |
@@ -143,4 +157,11 @@ Total endpoints: `135`
 | `GET` | `/v1/tools/quarantine/rules` | `get_v1_tools_quarantine_rules` | GET /v1/tools/quarantine/rules |
 | `POST` | `/v1/tools/quarantine/rules` | `post_v1_tools_quarantine_rules` | POST /v1/tools/quarantine/rules |
 | `POST` | `/v1/tools/quarantine/{tool_key}/override` | `post_v1_tools_quarantine_tool_key_override` | POST /v1/tools/quarantine/{tool_key}/override |
+| `GET` | `/v1/user/activity-ledger` | `get_v1_user_activity_ledger` | GET /v1/user/activity-ledger |
+| `GET` | `/v1/user/trust-receipts/{id}/evidence` | `get_v1_user_trust_receipts_id_evidence` | GET /v1/user/trust-receipts/{id}/evidence |
+| `POST` | `/v1/webhooks/imessage` | `post_v1_webhooks_imessage` | POST /v1/webhooks/imessage |
+| `POST` | `/v1/webhooks/whatsapp` | `post_v1_webhooks_whatsapp` | POST /v1/webhooks/whatsapp |
+| `PUT` | `/v1/workspaces/{id}/provisioning/budget` | `put_v1_workspaces_id_provisioning_budget` | PUT /v1/workspaces/{id}/provisioning/budget |
+| `GET` | `/v1/workspaces/{id}/provisioning/policy` | `get_v1_workspaces_id_provisioning_policy` | GET /v1/workspaces/{id}/provisioning/policy |
+| `PUT` | `/v1/workspaces/{id}/provisioning/policy` | `put_v1_workspaces_id_provisioning_policy` | PUT /v1/workspaces/{id}/provisioning/policy |
 

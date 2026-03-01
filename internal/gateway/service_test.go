@@ -143,7 +143,7 @@ func TestAttachmentInteractiveDiscoveryAndVoicePreprocess(t *testing.T) {
 	if !ok {
 		t.Fatal("expected last ingress turn")
 	}
-	if turn.ParsedInteractiveReply != "button:approve:Approve" {
+	if turn.ParsedInteractiveReply != "APPROVE" {
 		t.Fatalf("unexpected interactive parse output: %s", turn.ParsedInteractiveReply)
 	}
 	if turn.ParsedDiscoveryAnswer != "question=team_size;answer=12" {
@@ -157,6 +157,28 @@ func TestAttachmentInteractiveDiscoveryAndVoicePreprocess(t *testing.T) {
 	}
 	if turn.Attachments[0].S3URI == "" {
 		t.Fatal("expected attachment to be uploaded and linked with s3 uri")
+	}
+}
+
+func TestInteractiveReplyParserTextIntents(t *testing.T) {
+	t.Parallel()
+
+	svc := NewService("test-secret")
+	cases := []struct {
+		raw  string
+		want string
+	}{
+		{raw: "yes", want: "APPROVE"},
+		{raw: "No", want: "DENY"},
+		{raw: "undo", want: "UNDO"},
+		{raw: "edit move it to 4pm", want: "EDIT:move it to 4pm"},
+		{raw: "2", want: "OPTION_INDEX:2"},
+	}
+	for _, tc := range cases {
+		got := svc.ParseInteractiveReply(tc.raw)
+		if got != tc.want {
+			t.Fatalf("unexpected parse for %q: got=%q want=%q", tc.raw, got, tc.want)
+		}
 	}
 }
 

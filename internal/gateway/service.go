@@ -11,6 +11,8 @@ import (
 	"io"
 	"net/http"
 	"path"
+	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -69,6 +71,17 @@ type OutboundDispatch struct {
 	Body              string
 	QueuedAt          time.Time
 }
+
+type InteractiveIntent string
+
+const (
+	IntentApprove InteractiveIntent = "APPROVE"
+	IntentDeny    InteractiveIntent = "DENY"
+	IntentUndo    InteractiveIntent = "UNDO"
+	IntentEdit    InteractiveIntent = "EDIT"
+	IntentOption  InteractiveIntent = "OPTION"
+	IntentNone    InteractiveIntent = ""
+)
 
 type InMemoryStore struct {
 	mu          sync.Mutex
@@ -325,8 +338,14 @@ func signatureFor(secret, payload []byte) string {
 	return hex.EncodeToString(mac.Sum(nil))
 }
 
-func (s *Service) validateSignature(payload []byte, signature string) error {
+func normalizeSignature(signature string) string {
 	signature = strings.TrimSpace(strings.ToLower(signature))
+	signature = strings.TrimPrefix(signature, "sha256=")
+	return signature
+}
+
+func (s *Service) validateSignature(payload []byte, signature string) error {
+	signature = normalizeSignature(signature)
 	expected := signatureFor(s.secret, payload)
 	if signature == "" || !hmac.Equal([]byte(expected), []byte(signature)) {
 		s.audit.Append("BREVIO.security.webhook.signature_invalid.v1")
@@ -348,6 +367,9 @@ func (s *Service) HandleInbound(w http.ResponseWriter, r *http.Request) {
 	}
 
 	signature := r.Header.Get("X-Signature")
+	if signature == "" {
+		signature = r.Header.Get("X-Hub-Signature-256")
+	}
 	if err := s.validateSignature(body, signature); err != nil {
 		http.Error(w, err.Error(), http.StatusUnauthorized)
 		return
@@ -560,6 +582,12 @@ func (s *Service) ParseInteractiveReply(raw string) string {
 	if trimmed == "" {
 		return ""
 	}
+
+	plain := parseIntentFromText(trimmed)
+	if plain != "" {
+		return plain
+	}
+
 	var payload map[string]any
 	if err := json.Unmarshal([]byte(trimmed), &payload); err != nil {
 		return trimmed
@@ -567,12 +595,36 @@ func (s *Service) ParseInteractiveReply(raw string) string {
 	if button, ok := payload["button_reply"].(map[string]any); ok {
 		id, _ := button["id"].(string)
 		title, _ := button["title"].(string)
-		return strings.TrimSpace("button:" + id + ":" + title)
+		switch strings.ToLower(strings.TrimSpace(id)) {
+		case "approve":
+			return string(IntentApprove)
+		case "deny":
+			return string(IntentDeny)
+		}
+		if intent := parseIntentFromText(id + " " + title); intent != "" {
+			return intent
+		}
+		if strings.TrimSpace(id) != "" {
+			return "OPTION:" + strings.TrimSpace(id)
+		}
+		return trimmed
 	}
 	if list, ok := payload["list_reply"].(map[string]any); ok {
 		id, _ := list["id"].(string)
 		title, _ := list["title"].(string)
-		return strings.TrimSpace("list:" + id + ":" + title)
+		switch strings.ToLower(strings.TrimSpace(id)) {
+		case "approve":
+			return string(IntentApprove)
+		case "deny":
+			return string(IntentDeny)
+		}
+		if intent := parseIntentFromText(id + " " + title); intent != "" {
+			return intent
+		}
+		if strings.TrimSpace(id) != "" {
+			return "OPTION:" + strings.TrimSpace(id)
+		}
+		return trimmed
 	}
 	return trimmed
 }
@@ -600,4 +652,32 @@ func (s *Service) PreprocessVoice(_ context.Context, audioURL string) string {
 		return ""
 	}
 	return "transcript:" + audioURL
+}
+
+func parseIntentFromText(raw string) string {
+	normalized := strings.ToLower(strings.TrimSpace(raw))
+	if normalized == "" {
+		return ""
+	}
+
+	if regexp.MustCompile(`^(yes|y|approve|confirm|ok|go ahead|do it)$`).MatchString(normalized) {
+		return string(IntentApprove)
+	}
+	if regexp.MustCompile(`^(no|n|deny|cancel|stop|don't|dont|reject)$`).MatchString(normalized) {
+		return string(IntentDeny)
+	}
+	if regexp.MustCompile(`^(undo|revert|take it back|rollback)$`).MatchString(normalized) {
+		return string(IntentUndo)
+	}
+	if strings.HasPrefix(normalized, "edit ") || strings.HasPrefix(normalized, "change ") || strings.HasPrefix(normalized, "modify ") {
+		parts := strings.SplitN(raw, " ", 2)
+		if len(parts) == 2 {
+			return string(IntentEdit) + ":" + strings.TrimSpace(parts[1])
+		}
+		return string(IntentEdit)
+	}
+	if index, err := strconv.Atoi(normalized); err == nil && index > 0 {
+		return "OPTION_INDEX:" + strconv.Itoa(index)
+	}
+	return ""
 }

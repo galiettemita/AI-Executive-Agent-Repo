@@ -52,6 +52,13 @@ type Service struct {
 	lastFailover    string
 }
 
+type TierModelSelection struct {
+	Tier            string
+	PrimaryModel    string
+	FallbackModel   string
+	MaxOutputTokens int
+}
+
 func NewService() *Service {
 	return &Service{
 		prompts:      map[string][]PromptVersion{},
@@ -64,6 +71,44 @@ func NewService() *Service {
 			"T3": 2048,
 		},
 	}
+}
+
+func DefaultTierModelMapping() map[string]TierModelSelection {
+	return map[string]TierModelSelection{
+		"T0": {
+			Tier:            "T0",
+			PrimaryModel:    "claude-haiku-4-5-20250929",
+			FallbackModel:   "gpt-4o-mini",
+			MaxOutputTokens: 256,
+		},
+		"T1": {
+			Tier:            "T1",
+			PrimaryModel:    "claude-haiku-4-5-20250929",
+			FallbackModel:   "gpt-4o-mini",
+			MaxOutputTokens: 512,
+		},
+		"T2": {
+			Tier:            "T2",
+			PrimaryModel:    "claude-sonnet-4-20250514",
+			FallbackModel:   "gpt-4o",
+			MaxOutputTokens: 1024,
+		},
+		"T3": {
+			Tier:            "T3",
+			PrimaryModel:    "claude-sonnet-4-20250514",
+			FallbackModel:   "gpt-4o",
+			MaxOutputTokens: 2048,
+		},
+	}
+}
+
+func ResolveTierModel(tier string) TierModelSelection {
+	mapping := DefaultTierModelMapping()
+	normalized := normalizeTier(tier)
+	if selected, ok := mapping[normalized]; ok {
+		return selected
+	}
+	return mapping["T1"]
 }
 
 func (s *Service) RegisterPrompt(prompt PromptVersion) {

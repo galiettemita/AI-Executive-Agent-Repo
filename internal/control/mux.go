@@ -1,6 +1,8 @@
 package control
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"log"
@@ -85,6 +87,26 @@ func NewMux(service *Service) *http.ServeMux {
 			handleMissionControl(w, r, goalsSvc)
 			return
 		}
+		if strings.HasPrefix(r.URL.Path, "/v1/webhooks") {
+			handleWebhookIngress(w, r)
+			return
+		}
+		if strings.HasPrefix(r.URL.Path, "/v1/user") {
+			handleUserReadEndpoints(w, r)
+			return
+		}
+		if strings.HasPrefix(r.URL.Path, "/v1/provision") {
+			handleProvisioningEndpoints(w, r)
+			return
+		}
+		if strings.HasPrefix(r.URL.Path, "/v1/catalog") {
+			handleCatalogEndpoints(w, r)
+			return
+		}
+		if strings.HasPrefix(r.URL.Path, "/v1/workspaces") {
+			handleWorkspaceProvisioningEndpoints(w, r)
+			return
+		}
 		if strings.HasPrefix(r.URL.Path, "/v1/admin") {
 			handleAdmin(w, r, adminSvc)
 			return
@@ -95,6 +117,18 @@ func NewMux(service *Service) *http.ServeMux {
 		}
 		if strings.HasPrefix(r.URL.Path, "/v1/capabilities") {
 			handleExploration(w, r, explorationSvc)
+			return
+		}
+		if strings.HasPrefix(r.URL.Path, "/v1/brain") {
+			handleBrainEndpoints(w, r)
+			return
+		}
+		if strings.HasPrefix(r.URL.Path, "/v1/control") {
+			handleControlInternalEndpoints(w, r)
+			return
+		}
+		if strings.HasPrefix(r.URL.Path, "/v1/hands") {
+			handleHandsEndpoints(w, r)
 			return
 		}
 		if strings.HasPrefix(r.URL.Path, "/v1/captures") {
@@ -167,6 +201,265 @@ func NewMux(service *Service) *http.ServeMux {
 
 	_ = service
 	return mux
+}
+
+func handleWebhookIngress(w http.ResponseWriter, r *http.Request) {
+	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
+	if len(parts) != 3 {
+		http.NotFound(w, r)
+		return
+	}
+	if r.Method != http.MethodPost {
+		writeError(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if parts[2] != "whatsapp" && parts[2] != "imessage" {
+		http.NotFound(w, r)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+}
+
+func handleUserReadEndpoints(w http.ResponseWriter, r *http.Request) {
+	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
+	if len(parts) == 3 && parts[2] == "activity-ledger" {
+		if r.Method != http.MethodGet {
+			writeError(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		now := time.Now().UTC().Format(time.RFC3339)
+		writeJSON(w, http.StatusOK, map[string]any{
+			"page":      1,
+			"page_size": 20,
+			"total":     1,
+			"items": []map[string]any{
+				{
+					"id":             "11111111-1111-1111-1111-111111111111",
+					"timestamp":      now,
+					"description":    "activity_ledger_seed_entry",
+					"status":         "completed",
+					"undo_available": false,
+				},
+			},
+		})
+		return
+	}
+
+	if len(parts) == 5 && parts[2] == "trust-receipts" && parts[4] == "evidence" {
+		if r.Method != http.MethodGet {
+			writeError(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"trust_receipt_id": parts[3],
+			"evidence_items": []map[string]any{
+				{
+					"type":       "tool_execution",
+					"content":    "evidence_not_available_in_dev",
+					"source_id":  "source_unset",
+					"confidence": 1.0,
+				},
+			},
+		})
+		return
+	}
+
+	http.NotFound(w, r)
+}
+
+func handleProvisioningEndpoints(w http.ResponseWriter, r *http.Request) {
+	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
+	if len(parts) < 3 {
+		http.NotFound(w, r)
+		return
+	}
+
+	switch parts[2] {
+	case "start":
+		if r.Method != http.MethodPost {
+			writeError(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"request_id": "11111111-1111-1111-1111-111111111111",
+			"state":      "queued",
+			"created_at": time.Now().UTC().Format(time.RFC3339),
+		})
+		return
+	case "status":
+		if len(parts) != 4 {
+			http.NotFound(w, r)
+			return
+		}
+		if r.Method != http.MethodGet {
+			writeError(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		now := time.Now().UTC().Format(time.RFC3339)
+		writeJSON(w, http.StatusOK, map[string]any{
+			"request_id": parts[3],
+			"state":      "active",
+			"steps": []map[string]any{
+				{
+					"name":        "preflight",
+					"state":       "completed",
+					"started_at":  now,
+					"finished_at": now,
+				},
+			},
+			"current_step": "oauth_flow",
+		})
+		return
+	case "callback":
+		if r.Method != http.MethodGet {
+			writeError(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		w.Header().Set("Location", "/v1/provision/status/11111111-1111-1111-1111-111111111111")
+		w.WriteHeader(http.StatusFound)
+		return
+	default:
+		http.NotFound(w, r)
+		return
+	}
+}
+
+func handleCatalogEndpoints(w http.ResponseWriter, r *http.Request) {
+	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
+	if len(parts) != 3 || parts[2] != "search" {
+		http.NotFound(w, r)
+		return
+	}
+	if r.Method != http.MethodGet {
+		writeError(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	query := strings.TrimSpace(r.URL.Query().Get("query"))
+	capabilityKey := strings.TrimSpace(r.URL.Query().Get("capability_key"))
+	page := 1
+	if raw := strings.TrimSpace(r.URL.Query().Get("page")); raw != "" {
+		if parsed, err := strconv.Atoi(raw); err == nil && parsed > 0 {
+			page = parsed
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"query":          query,
+		"capability_key": capabilityKey,
+		"page":           page,
+		"page_size":      20,
+		"total":          1,
+		"items": []map[string]any{
+			{
+				"server_id":    "server_default",
+				"name":         "Default Catalog Server",
+				"risk_level":   "low",
+				"capabilities": []string{"general.capability"},
+			},
+		},
+	})
+}
+
+func handleWorkspaceProvisioningEndpoints(w http.ResponseWriter, r *http.Request) {
+	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
+	if len(parts) != 5 || parts[1] != "workspaces" || parts[3] != "provisioning" {
+		http.NotFound(w, r)
+		return
+	}
+
+	workspaceID := parts[2]
+	switch parts[4] {
+	case "policy":
+		switch r.Method {
+		case http.MethodGet, http.MethodPut:
+			writeJSON(w, http.StatusOK, map[string]any{
+				"max_allowed_risk_level":              "elevated",
+				"require_operator_review_at_or_above": "critical",
+				"allowed_server_ids":                  []string{},
+				"denied_server_ids":                   []string{},
+				"oauth_owner_approval_required":       true,
+				"mcp_deploy_owner_approval_required":  true,
+			})
+			return
+		default:
+			writeError(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+	case "budget":
+		if r.Method != http.MethodPut {
+			writeError(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"workspace_id":               workspaceID,
+			"max_monthly_llm_cost":       50.0,
+			"max_monthly_api_calls":      50000,
+			"max_concurrent_mcp_servers": 10,
+			"max_single_transaction":     500.0,
+			"updated_at":                 time.Now().UTC().Format(time.RFC3339),
+		})
+		return
+	default:
+		http.NotFound(w, r)
+		return
+	}
+}
+
+func handleBrainEndpoints(w http.ResponseWriter, r *http.Request) {
+	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
+	if len(parts) != 3 || parts[2] != "turn" {
+		http.NotFound(w, r)
+		return
+	}
+	if r.Method != http.MethodPost {
+		writeError(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"turn_id":       "11111111-1111-1111-1111-111111111111",
+		"state":         "completed",
+		"response_text": "brain_turn_not_executed_in_mux_stub",
+		"plan_tier":     "T1",
+		"events":        []string{"BREVIO.workflow.step.completed.v1"},
+	})
+}
+
+func handleControlInternalEndpoints(w http.ResponseWriter, r *http.Request) {
+	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
+	if len(parts) != 4 || parts[2] != "plan" || parts[3] != "evaluate" {
+		http.NotFound(w, r)
+		return
+	}
+	if r.Method != http.MethodPost {
+		writeError(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"plan_id":               "plan_default",
+		"utility_score":         0.75,
+		"decision":              "allow",
+		"reason_code":           "PLAN_ACCEPTED",
+		"requires_confirmation": false,
+	})
+}
+
+func handleHandsEndpoints(w http.ResponseWriter, r *http.Request) {
+	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
+	if len(parts) != 4 || parts[2] != "tool" || parts[3] != "execute" {
+		http.NotFound(w, r)
+		return
+	}
+	if r.Method != http.MethodPost {
+		writeError(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"execution_id":    "11111111-1111-1111-1111-111111111111",
+		"phase":           "commit",
+		"status":          "completed",
+		"tool_key":        "tool.default",
+		"idempotency_key": "idempotency_default",
+		"result":          map[string]any{},
+	})
 }
 
 func handleContextBudget(w http.ResponseWriter, r *http.Request, svc *contextlayer.Service) {
@@ -1815,7 +2108,7 @@ func handleCodebaseIntel(w http.ResponseWriter, r *http.Request, svc *codebase_i
 
 func handleExploration(w http.ResponseWriter, r *http.Request, svc *exploration.Service) {
 	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
-	if len(parts) < 3 || parts[2] != "recommendations" {
+	if len(parts) < 3 {
 		http.NotFound(w, r)
 		return
 	}
@@ -1824,31 +2117,74 @@ func handleExploration(w http.ResponseWriter, r *http.Request, svc *exploration.
 		workspaceID = "default"
 	}
 
-	if len(parts) == 3 && r.Method == http.MethodGet {
-		writeJSON(w, http.StatusOK, map[string]any{"recommendations": svc.ListRecommendations(workspaceID)})
+	switch parts[2] {
+	case "recommendations":
+		if len(parts) == 3 && r.Method == http.MethodGet {
+			writeJSON(w, http.StatusOK, map[string]any{"recommendations": svc.ListRecommendations(workspaceID)})
+			return
+		}
+		if len(parts) == 5 && parts[4] == "decide" && r.Method == http.MethodPost {
+			var payload struct {
+				Decision string `json:"decision"`
+			}
+			if err := decodeJSON(r, &payload); err != nil {
+				writeError(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			updated, ok, err := svc.DecideRecommendation(parts[3], payload.Decision)
+			if err != nil {
+				writeError(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			if !ok {
+				writeJSON(w, http.StatusOK, map[string]any{"id": parts[3], "status": "not_found"})
+				return
+			}
+			writeJSON(w, http.StatusOK, updated)
+			return
+		}
+		writeError(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
-	}
-	if len(parts) == 5 && parts[4] == "decide" && r.Method == http.MethodPost {
+	case "resolve":
+		if r.Method != http.MethodPost {
+			writeError(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
 		var payload struct {
-			Decision string `json:"decision"`
+			QueryText        string `json:"query_text"`
+			AllowLLMFallback bool   `json:"allow_llm_fallback"`
+			MaxCandidates    int    `json:"max_candidates"`
 		}
 		if err := decodeJSON(r, &payload); err != nil {
 			writeError(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		updated, ok, err := svc.DecideRecommendation(parts[3], payload.Decision)
-		if err != nil {
-			writeError(w, err.Error(), http.StatusBadRequest)
-			return
+		normalized := strings.ToLower(strings.TrimSpace(payload.QueryText))
+		if normalized == "" {
+			normalized = "empty_query"
 		}
-		if !ok {
-			writeJSON(w, http.StatusOK, map[string]any{"id": parts[3], "status": "not_found"})
-			return
-		}
-		writeJSON(w, http.StatusOK, updated)
+		sum := sha256.Sum256([]byte(normalized))
+		writeJSON(w, http.StatusOK, map[string]any{
+			"normalized_query_hash": hex.EncodeToString(sum[:]),
+			"capabilities": []map[string]any{
+				{
+					"capability_key": "general.capability",
+					"confidence":     0.75,
+				},
+			},
+			"recommended_servers": []map[string]any{
+				{
+					"server_id": "server_default",
+					"reason":    "fallback_resolution",
+				},
+			},
+		})
+		return
+	default:
+		http.NotFound(w, r)
 		return
 	}
-	writeError(w, "method not allowed", http.StatusMethodNotAllowed)
 }
 
 func handleSelfModification(w http.ResponseWriter, r *http.Request, svc *self_modification.Service) {
@@ -2254,6 +2590,81 @@ func handleAdmin(w http.ResponseWriter, r *http.Request, svc *admin.Service) {
 	case "kpi":
 		if len(parts) == 4 && parts[3] == "report" && r.Method == http.MethodGet {
 			writeJSON(w, http.StatusOK, svc.KPIReport())
+			return
+		}
+		writeError(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	case "forensics":
+		if len(parts) == 5 && parts[3] == "replay" && r.Method == http.MethodGet {
+			now := time.Now().UTC().Format(time.RFC3339)
+			writeJSON(w, http.StatusOK, map[string]any{
+				"turn_id": parts[4],
+				"event_timeline": []map[string]any{
+					{
+						"event":     "BREVIO.ingress.received.v1",
+						"timestamp": now,
+						"attrs": map[string]any{
+							"source": "control_mux_stub",
+						},
+					},
+				},
+				"tool_executions": []map[string]any{
+					{
+						"tool_key":        "tool.default",
+						"phase":           "simulate",
+						"status":          "completed",
+						"idempotency_key": "idempotency_default",
+					},
+				},
+				"final_response": "forensic replay stub",
+			})
+			return
+		}
+		writeError(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	case "server-catalog":
+		if len(parts) == 5 && parts[4] == "artifacts" && r.Method == http.MethodPut {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		writeError(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	case "llm":
+		if len(parts) == 5 && parts[3] == "replay" && r.Method == http.MethodGet {
+			writeJSON(w, http.StatusOK, map[string]any{
+				"model_id":           "claude-sonnet-4-20250514",
+				"provider_id":        "anthropic",
+				"seed_int":           0,
+				"temperature":        0,
+				"top_p":              1,
+				"max_output_tokens":  1024,
+				"prompt_text":        "llm replay unavailable in mux stub",
+				"response_schema_id": "brain_turn_response.v1.json",
+			})
+			return
+		}
+		writeError(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	case "review-tasks":
+		if len(parts) == 3 && r.Method == http.MethodGet {
+			now := time.Now().UTC().Format(time.RFC3339)
+			writeJSON(w, http.StatusOK, map[string]any{
+				"page":      1,
+				"page_size": 20,
+				"total":     1,
+				"items": []map[string]any{
+					{
+						"id":         "11111111-1111-1111-1111-111111111111",
+						"state":      "open",
+						"task_key":   "content_quarantine_review",
+						"created_at": now,
+					},
+				},
+			})
+			return
+		}
+		if len(parts) == 5 && parts[4] == "decide" && r.Method == http.MethodPost {
+			w.WriteHeader(http.StatusNoContent)
 			return
 		}
 		writeError(w, "method not allowed", http.StatusMethodNotAllowed)

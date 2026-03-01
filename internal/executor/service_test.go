@@ -65,6 +65,13 @@ func TestSSRFBlockedPrivateCIDRs(t *testing.T) {
 		"http://172.16.4.5/health",
 		"http://192.168.1.42/meta",
 		"http://127.0.0.1:8080/admin",
+		"http://100.64.1.2/blocked",
+		"http://198.18.0.10/blocked",
+		"http://0.0.0.5/blocked",
+		"http://224.0.0.10/blocked",
+		"http://240.0.0.10/blocked",
+		"http://[fd00::1]/blocked",
+		"http://[fe80::1]/blocked",
 	}
 	for _, target := range targets {
 		_, err := svc.Simulate(ExecutionRequest{
