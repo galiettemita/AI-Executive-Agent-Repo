@@ -76,6 +76,7 @@ func TestSection34CoverageClosure(t *testing.T) {
 	})
 	assertFileContainsTokens(t, filepath.Join(root, "internal", "onboarding", "service_test.go"), []string{
 		"TestRunStageReplayLockedExtraction",
+		"TestConnectionTemplatesContainOnboardingButtons",
 	})
 	assertFileContainsTokens(t, filepath.Join(root, "internal", "llm", "service_test.go"), []string{
 		"TestDeterminismSameInput20Runs",

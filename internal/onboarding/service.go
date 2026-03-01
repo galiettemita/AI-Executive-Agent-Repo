@@ -54,6 +54,20 @@ type AdaptiveQuestion struct {
 	Answer      string
 }
 
+type OnboardingButton struct {
+	ButtonID string
+	Label    string
+	Action   string
+}
+
+type ConnectionTemplate struct {
+	TemplateKey string
+	Channel     string
+	Title       string
+	Body        string
+	Buttons     []OnboardingButton
+}
+
 type Service struct {
 	mu                sync.Mutex
 	questionSets      map[string][]Question
@@ -63,6 +77,7 @@ type Service struct {
 	behaviorPolicies  map[string]WorkspaceBehaviorPolicy
 	followupRules     map[string]map[string]FollowupRule
 	adaptiveQuestions map[string]map[string]AdaptiveQuestion
+	connectionCards   map[string]map[string]ConnectionTemplate
 	nextFollowupID    int
 }
 
@@ -113,7 +128,44 @@ func NewService() *Service {
 		behaviorPolicies:  map[string]WorkspaceBehaviorPolicy{},
 		followupRules:     map[string]map[string]FollowupRule{},
 		adaptiveQuestions: map[string]map[string]AdaptiveQuestion{},
-		nextFollowupID:    1,
+		connectionCards: map[string]map[string]ConnectionTemplate{
+			"whatsapp": {
+				"ecosystem_detect_v1": {
+					TemplateKey: "ecosystem_detect_v1",
+					Channel:     "whatsapp",
+					Title:       "Connect {{app_name}}",
+					Body:        "I noticed {{ecosystem_hint}}. Connect {{app_name}} to unlock automated workflows.",
+					Buttons: []OnboardingButton{
+						{ButtonID: "connect_now", Label: "Connect {{app_name}}", Action: "connect_app"},
+						{ButtonID: "learn_more", Label: "How it works", Action: "view_connection_guide"},
+						{ButtonID: "skip_now", Label: "Not now", Action: "skip_connection"},
+					},
+				},
+				"connection_success_v1": {
+					TemplateKey: "connection_success_v1",
+					Channel:     "whatsapp",
+					Title:       "{{app_name}} connected",
+					Body:        "{{app_name}} is ready. Would you like a quick setup checklist?",
+					Buttons: []OnboardingButton{
+						{ButtonID: "start_checklist", Label: "Start setup", Action: "start_setup_checklist"},
+						{ButtonID: "done", Label: "Done", Action: "dismiss"},
+					},
+				},
+			},
+			"imessage": {
+				"ecosystem_detect_v1": {
+					TemplateKey: "ecosystem_detect_v1",
+					Channel:     "imessage",
+					Title:       "Connect {{app_name}}",
+					Body:        "Detected {{ecosystem_hint}}. Link {{app_name}} so I can prep actions for your approval.",
+					Buttons: []OnboardingButton{
+						{ButtonID: "connect_now", Label: "Connect {{app_name}}", Action: "connect_app"},
+						{ButtonID: "later", Label: "Later", Action: "skip_connection"},
+					},
+				},
+			},
+		},
+		nextFollowupID: 1,
 	}
 }
 
@@ -278,6 +330,50 @@ func NewWorkspaceID() string {
 	return uuid.Must(uuid.NewV7()).String()
 }
 
+func (s *Service) ListConnectionTemplates(channel string) []ConnectionTemplate {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	normalizedChannel := strings.ToLower(strings.TrimSpace(channel))
+	templatesByKey, ok := s.connectionCards[normalizedChannel]
+	if !ok {
+		return nil
+	}
+	out := make([]ConnectionTemplate, 0, len(templatesByKey))
+	for _, template := range templatesByKey {
+		out = append(out, copyConnectionTemplate(template))
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].TemplateKey < out[j].TemplateKey
+	})
+	return out
+}
+
+func (s *Service) RenderConnectionTemplate(channel, templateKey string, params map[string]string) (ConnectionTemplate, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	normalizedChannel := strings.ToLower(strings.TrimSpace(channel))
+	normalizedTemplateKey := strings.TrimSpace(templateKey)
+	templatesByKey, ok := s.connectionCards[normalizedChannel]
+	if !ok {
+		return ConnectionTemplate{}, fmt.Errorf("connection template channel not found: %s", normalizedChannel)
+	}
+	template, ok := templatesByKey[normalizedTemplateKey]
+	if !ok {
+		return ConnectionTemplate{}, fmt.Errorf("connection template not found: %s", normalizedTemplateKey)
+	}
+
+	rendered := copyConnectionTemplate(template)
+	rendered.Title = applyTemplateParams(rendered.Title, params)
+	rendered.Body = applyTemplateParams(rendered.Body, params)
+	for i := range rendered.Buttons {
+		rendered.Buttons[i].Label = applyTemplateParams(rendered.Buttons[i].Label, params)
+		rendered.Buttons[i].Action = applyTemplateParams(rendered.Buttons[i].Action, params)
+	}
+	return rendered, nil
+}
+
 func (s *Service) UpsertFollowupRule(workspaceID string, rule FollowupRule) FollowupRule {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -430,6 +526,25 @@ func (s *Service) hasAdaptiveQuestionLocked(workspaceID, trigger string) bool {
 		}
 	}
 	return false
+}
+
+func copyConnectionTemplate(template ConnectionTemplate) ConnectionTemplate {
+	buttons := make([]OnboardingButton, len(template.Buttons))
+	copy(buttons, template.Buttons)
+	template.Buttons = buttons
+	return template
+}
+
+func applyTemplateParams(value string, params map[string]string) string {
+	if len(params) == 0 {
+		return value
+	}
+	out := value
+	for key, replacement := range params {
+		placeholder := "{{" + strings.TrimSpace(key) + "}}"
+		out = strings.ReplaceAll(out, placeholder, strings.TrimSpace(replacement))
+	}
+	return out
 }
 
 func ruleApplies(trigger string, operator, behavior, codebase, system map[string]string) bool {

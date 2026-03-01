@@ -1,6 +1,9 @@
 package onboarding
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func fixtureAnswers() map[string]map[string]string {
 	return map[string]map[string]string{
@@ -156,5 +159,46 @@ func TestAdaptiveDiscoveryFollowupLifecycle(t *testing.T) {
 	}
 	if answered.Status != "answered" {
 		t.Fatalf("unexpected answered followup status: %+v", answered)
+	}
+}
+
+func TestConnectionTemplatesContainOnboardingButtons(t *testing.T) {
+	t.Parallel()
+
+	svc := NewService()
+	templates := svc.ListConnectionTemplates("whatsapp")
+	if len(templates) == 0 {
+		t.Fatal("expected whatsapp onboarding templates")
+	}
+	template := templates[0]
+	if template.TemplateKey == "" || template.Channel != "whatsapp" {
+		t.Fatalf("unexpected template metadata: %+v", template)
+	}
+	if len(template.Buttons) < 2 {
+		t.Fatalf("expected onboarding template buttons, got %+v", template.Buttons)
+	}
+	for _, button := range template.Buttons {
+		if strings.TrimSpace(button.ButtonID) == "" || strings.TrimSpace(button.Label) == "" || strings.TrimSpace(button.Action) == "" {
+			t.Fatalf("expected non-empty onboarding button fields: %+v", button)
+		}
+	}
+}
+
+func TestRenderConnectionTemplateSubstitutesParams(t *testing.T) {
+	t.Parallel()
+
+	svc := NewService()
+	rendered, err := svc.RenderConnectionTemplate("whatsapp", "ecosystem_detect_v1", map[string]string{
+		"app_name":       "Google Calendar",
+		"ecosystem_hint": "your team schedules many recurring meetings",
+	})
+	if err != nil {
+		t.Fatalf("render connection template: %v", err)
+	}
+	if strings.Contains(rendered.Title, "{{") || strings.Contains(rendered.Body, "{{") {
+		t.Fatalf("expected rendered template placeholders to be replaced: %+v", rendered)
+	}
+	if !strings.Contains(rendered.Body, "Google Calendar") {
+		t.Fatalf("expected rendered body to include app_name substitution: %+v", rendered)
 	}
 }
