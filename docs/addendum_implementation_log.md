@@ -80,3 +80,32 @@ Date: 2026-03-01
 - Security chain helpers added and tested:
   - HMAC-SHA256 audit chain computation
   - HMAC-SHA256 auto-commit proof chain computation
+
+## Additional addendum closures (third pass)
+
+- Added gateway channel integration policy helpers with tests:
+  - WhatsApp Cloud API constants (v21.0 endpoint/auth/webhook/status mapping/retry/circuit/rate-limit keys)
+  - iMessage MSP constants (mTLS/API-key/signature/rate-limit/retry/circuit defaults)
+- Added gateway attachment + document pipeline helpers with tests:
+  - attachment MIME/size validation matrix and user-facing rejection constraints
+  - document parsing formats, OCR fallback thresholds, extraction cap marker
+- Added gateway interactive parser extension and ingress enforcement:
+  - numeric pending-option resolution (`"1"`, `"2"`) via parser helper
+  - ingress attachment pre-validation with `BREVIO.ingress.attachment_rejected.v1`
+  - inbound identity-failure event `BREVIO.security.identity.verification_failed.v1`
+- Added full content-firewall L1-L4 helper module and semantic verifier suite:
+  - deterministic per-layer outcomes and verdict logging structures
+  - SV-001..SV-007 evaluation matrix for recipient/financial/calendar/bulk/sensitive/delete/ungrounded checks
+- Added executor and security closure helpers with tests:
+  - Git HTTPS remote policy validation (host whitelist, HTTPS-only, size/retry limits)
+  - internal mTLS constants (service SANs, cert lifetime/rotation policy)
+  - cross-tenant fingerprint leakage matching + false-positive exclusion semantics
+- Added identity/LLM/eval utility closures with tests:
+  - workspace domain-autonomy normalization + allowed-connector lifecycle helpers
+  - routing-policy override resolution (tier exact then wildcard)
+  - eval grader interface implementations and deploy/governor threshold constants
+
+## Validation (third pass)
+
+- Full repository pass:
+  - `./scripts/dev/go_exec.sh test ./... -count=1`

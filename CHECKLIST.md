@@ -19,6 +19,7 @@ Legend
 - [x] V9.3 addendum closure: added migration `006_BREVIO_v93_addendum_specification_closure.sql` (`whatsapp_message_templates` + RLS/indexes), expanded canonical V9 events with 8 addendum events, and aligned OpenAPI/schema mapping for newly specified endpoints.
 - [x] V9.3 addendum runtime closure: implemented control/canvas endpoint ownership coverage for addendum routes, refreshed API reference docs (`docs/API_REFERENCE.md`), and revalidated with `go test ./...` passing at HEAD.
 - [x] V9.3 addendum policy closure pass: implemented and tested autonomy upgrade matrix, hold/undo overrides, write-budget caps, recipient verification, financial/two-man approval logic, Temporal activity retry matrices, drift cadence, deterministic ranking formula, retention defaults, OAuth provider/scope registry, and HMAC audit/proof chain helpers.
+- [x] V9.3 addendum closure pass 3: implemented and tested content firewall L1-L4 + semantic verifiers, gateway attachment/document/channel policy helpers, ingress identity envelope/event handling updates, Git HTTPS policy helpers, mTLS constants, PII leakage matcher utilities, routing policy resolver utilities, and eval grader/threshold helpers with `go test ./...` passing.
 - [x] Phase 0.1: map current repository (`find` + depth-limited directory map) and compare against V9 canonical structure
 - [x] Phase 0.1: create gap report at `docs/codebase_audit_report.md` with required artifact status table
 - [x] Phase 0.1: identify non-V9/V9.1/V9.2 candidate removal areas in audit report

@@ -55,6 +55,16 @@ type IngressTurn struct {
 	CreatedAt              time.Time
 }
 
+type ChannelIdentityEnvelope struct {
+	IngressTurnID      uuid.UUID
+	ChannelType        string
+	ClaimedIdentifier  string
+	VerificationMethod string
+	VerificationResult string
+	RawSignature       string
+	VerifiedAt         time.Time
+}
+
 type QueueMessage struct {
 	IngressTurnID uuid.UUID
 	WorkspaceID   uuid.UUID
@@ -316,6 +326,8 @@ type Service struct {
 	queue       *InMemoryQueue
 	rateLimiter *RateLimiter
 	audit       *AuditLog
+	identityMu  sync.Mutex
+	identityLog []ChannelIdentityEnvelope
 	router      *WorkspaceRouter
 	uploader    AttachmentUploader
 
@@ -334,6 +346,7 @@ func NewService(secret string) *Service {
 		queue:       &InMemoryQueue{},
 		rateLimiter: NewRateLimiter(5),
 		audit:       &AuditLog{},
+		identityLog: []ChannelIdentityEnvelope{},
 		router:      NewWorkspaceRouter(),
 		uploader:    NewInMemoryAttachmentUploader("attachments"),
 		outbox:      []OutboundDispatch{},
@@ -436,8 +449,9 @@ func (s *Service) HandleInbound(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	workspaceID, err := s.router.Resolve(msg.Channel, msg.ChannelIdentifier)
+	workspaceID, _, err := s.router.ResolveForInbound(msg.Channel, msg.ChannelIdentifier)
 	if err != nil {
+		s.audit.Append("BREVIO.security.identity.verification_failed.v1")
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -450,6 +464,11 @@ func (s *Service) HandleInbound(w http.ResponseWriter, r *http.Request) {
 
 	attachmentRefs := make([]AttachmentReference, 0, len(msg.Attachments))
 	for _, attachment := range msg.Attachments {
+		if err := ValidateAttachmentInput(attachment); err != nil {
+			s.audit.Append("BREVIO.ingress.attachment_rejected.v1")
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
 		ref, uploadErr := s.uploader.Upload(r.Context(), workspaceID, attachment)
 		if uploadErr != nil {
 			http.Error(w, uploadErr.Error(), http.StatusBadGateway)
@@ -470,6 +489,15 @@ func (s *Service) HandleInbound(w http.ResponseWriter, r *http.Request) {
 		Attachments:            attachmentRefs,
 		CreatedAt:              time.Now().UTC(),
 	}
+	s.recordIdentityEnvelope(ChannelIdentityEnvelope{
+		IngressTurnID:      turn.ID,
+		ChannelType:        msg.Channel,
+		ClaimedIdentifier:  msg.ChannelIdentifier,
+		VerificationMethod: "webhook_signature+sender_binding",
+		VerificationResult: "verified",
+		RawSignature:       signature,
+		VerifiedAt:         time.Now().UTC(),
+	})
 
 	if inserted := s.store.InsertIngressTurn(turn); !inserted {
 		s.audit.Append("BREVIO.ingress.duplicate_dropped.v1")
@@ -488,6 +516,18 @@ func (s *Service) HandleInbound(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusAccepted)
 	_, _ = w.Write([]byte(`{"status":"accepted"}`))
+}
+
+func (s *Service) recordIdentityEnvelope(envelope ChannelIdentityEnvelope) {
+	s.identityMu.Lock()
+	defer s.identityMu.Unlock()
+	s.identityLog = append(s.identityLog, envelope)
+}
+
+func (s *Service) ChannelIdentityEnvelopeCount() int {
+	s.identityMu.Lock()
+	defer s.identityMu.Unlock()
+	return len(s.identityLog)
 }
 
 func (s *Service) HandleInjectToolCall(w http.ResponseWriter, r *http.Request) {

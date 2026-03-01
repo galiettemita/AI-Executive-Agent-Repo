@@ -84,6 +84,9 @@ func TestValidMessageCreatesIngressAndQueue(t *testing.T) {
 	if !containsString(svc.AuditEntries(), "BREVIO.ingress.received.v1") {
 		t.Fatalf("expected ingress received event in audit log, got %v", svc.AuditEntries())
 	}
+	if svc.ChannelIdentityEnvelopeCount() != 1 {
+		t.Fatalf("expected one identity envelope, got %d", svc.ChannelIdentityEnvelopeCount())
+	}
 
 	msg, ok := svc.PopQueueMessage()
 	if !ok {
@@ -94,6 +97,22 @@ func TestValidMessageCreatesIngressAndQueue(t *testing.T) {
 	}
 	if msg.DedupKey != msg.IngressTurnID.String() {
 		t.Fatalf("unexpected fifo dedup key: got=%s want=%s", msg.DedupKey, msg.IngressTurnID.String())
+	}
+}
+
+func TestUnboundChannelRejectedWithIdentityFailureEvent(t *testing.T) {
+	t.Parallel()
+
+	svc := NewService("test-secret")
+	payload := []byte(`{"channel":"whatsapp","channel_identifier":"+15559998888","user_channel_id":"u_missing","nonce":"n_missing","message":"hello"}`)
+
+	resp := httptest.NewRecorder()
+	svc.HandleInbound(resp, signedRequestBody("test-secret", "/v1/gateway/webhook/whatsapp", payload))
+	if resp.Code != http.StatusBadRequest {
+		t.Fatalf("expected bad request for unbound channel, got %d", resp.Code)
+	}
+	if !containsString(svc.AuditEntries(), "BREVIO.security.identity.verification_failed.v1") {
+		t.Fatalf("expected identity verification failed event in audit log, got %v", svc.AuditEntries())
 	}
 }
 
@@ -157,6 +176,32 @@ func TestAttachmentInteractiveDiscoveryAndVoicePreprocess(t *testing.T) {
 	}
 	if turn.Attachments[0].S3URI == "" {
 		t.Fatal("expected attachment to be uploaded and linked with s3 uri")
+	}
+}
+
+func TestAttachmentRejectedWhenInvalidMimeOrSize(t *testing.T) {
+	t.Parallel()
+
+	svc := NewService("test-secret")
+	workspaceID := uuid.MustParse("018f3f6a-9a0f-7cc6-8f2f-1f0f2d2f2d2f")
+	svc.router.Bind("whatsapp", "+15550001111", workspaceID)
+
+	payload := []byte(`{
+		"channel":"whatsapp",
+		"channel_identifier":"+15550001111",
+		"user_channel_id":"u1",
+		"nonce":"n_invalid_attach",
+		"message":"please review",
+		"attachments":[{"url":"https://files.example.com/malware.exe","mime_type":"application/x-msdownload","filename":"malware.exe","size_bytes":1024}]
+	}`)
+
+	resp := httptest.NewRecorder()
+	svc.HandleInbound(resp, signedRequestBody("test-secret", "/v1/gateway/webhook/whatsapp", payload))
+	if resp.Code != http.StatusBadRequest {
+		t.Fatalf("expected bad request for invalid attachment, got %d", resp.Code)
+	}
+	if !containsString(svc.AuditEntries(), "BREVIO.ingress.attachment_rejected.v1") {
+		t.Fatalf("expected attachment_rejected audit event, got %v", svc.AuditEntries())
 	}
 }
 
