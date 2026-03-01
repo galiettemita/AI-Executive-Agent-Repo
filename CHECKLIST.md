@@ -33,6 +33,7 @@ Legend
 - [x] Deployment closure guard: added contract test coverage ensuring rollout script and `Makefile` deploy target tokens remain present (`internal/contracts/script_closure_test.go`).
 - [x] Post-automation regression: reran `make ci` after rollout automation additions; lint/build/tests/migration/contracts/acceptance gates remain PASS.
 - [x] Full-gate lock refresh: reran `make ci-full` at latest HEAD after rollout automation/testing additions; closure, security, infra, and DB runtime gates remain PASS.
+- [x] Final pre-tag lock: reran `make ci-full` at HEAD immediately before final release tagging; all gate families remain PASS.
 - [x] Phase 0.2: dead-code/duplicate cleanup and naming normalization
 - [x] Phase 0.3: clean baseline (`go build`, `go vet`, `gofmt`) + commit/tag
 - [x] Phase 0.3 validation complete via Docker Go 1.22 (`go mod tidy`, `go build`, `go vet`, `gofmt`, `go test`, `staticcheck`)
