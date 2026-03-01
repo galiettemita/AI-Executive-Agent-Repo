@@ -69,10 +69,12 @@ helm upgrade --install brevio-guardrails helm/BREVIO-guardrails
 helm upgrade --install brevio-health-checker helm/BREVIO-health-checker
 ```
 
-### 3) Route53 DNS
-Create alias records pointing to ALB targets created by AWS Load Balancer Controller:
-- `api.testing-orbit.com` -> gateway ingress ALB
-- `admin.testing-orbit.com` -> admin frontend ingress ALB
+### 3) Public DNS (Route53 or External Provider)
+Create records pointing to ALB targets created by AWS Load Balancer Controller:
+- `api.testing-orbit.com` -> gateway ingress ALB DNS name
+- `admin.testing-orbit.com` -> admin frontend ingress ALB DNS name
+
+If Route53 public hosted zone is not in this AWS account, configure records in the external DNS provider (for example, Cloudflare CNAME records).
 
 ## Canonical Sequence
 
@@ -104,4 +106,16 @@ kubectl get svc
 
 curl -i https://api.testing-orbit.com/healthz/live
 curl -i https://api.testing-orbit.com/healthz/ready
+curl -i https://admin.testing-orbit.com/healthz/live
+curl -i https://admin.testing-orbit.com/healthz/ready
 ```
+
+## Troubleshooting
+
+### Cloudflare: CNAME disabled because Load Balancer exists on same hostname
+If Cloudflare reports that a CNAME is disabled due to an active Cloudflare Load Balancer on the same hostname:
+- Disable or update the Cloudflare Load Balancer object for that hostname.
+- Keep only one DNS mapping path per hostname (either Cloudflare LB or direct CNAME/alias).
+- Re-run the health checks after propagation:
+  - `curl -i https://api.testing-orbit.com/healthz/live`
+  - `curl -i https://admin.testing-orbit.com/healthz/live`
