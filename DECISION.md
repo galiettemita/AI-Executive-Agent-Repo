@@ -487,3 +487,21 @@
 3. Gate with contract tests that assert required scripts/config tokens exist.  
 **Risk:** Environments without both `buf` and `docker` will fail proto lint/generation until one runtime is installed.  
 **Rollback:** Revert package scripts to previous placeholder state and remove proto workspace contract gate.
+
+## DECISION-028: Replace Remaining Eval Placeholder Fixtures with Verifiable Deterministic Artifacts
+
+**Date:** 2026-03-03  
+**Blueprint Section:** §11, §20.13  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/evals/determinism_fixtures.json`, `/Users/galiettemita/Downloads/Executive AI Agent/backend/evals/rag_eval_framework.md`  
+**Conflict:** Eval assets still contained placeholder content (`expected_hash: "placeholder"` and a placeholder RAG framework doc), which weakens deterministic validation and operational runbook clarity.  
+**Options Considered:**  
+1. Leave placeholders and rely on runtime tests only.  
+2. Replace fixture/doc content manually without any validation gate.  
+3. Replace placeholders with concrete artifacts and add contract enforcement for hash integrity and doc semantics.  
+**Decision:** Option 3. Added concrete SHA-256 determinism fixtures, rewrote RAG eval framework with explicit thresholds/procedure, and added `internal/contracts/eval_fixture_closure_test.go` to enforce both assets in CI.  
+**Migration Plan:**  
+1. Populate deterministic fixtures with reproducible SHA-256 outputs from fixture inputs.  
+2. Replace placeholder markdown with operational metric and failure-handling guidance.  
+3. Enforce integrity with contract tests that recompute hashes and assert required framework tokens.  
+**Risk:** Any future fixture text edits require synchronized hash updates; unsynchronized edits will fail CI until corrected.  
+**Rollback:** Remove fixture/doc closure tests and restore previous placeholder assets if deterministic eval assets are temporarily deprioritized.
