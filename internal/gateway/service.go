@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path"
 	"regexp"
@@ -1049,6 +1050,10 @@ func (s *Service) ParseDiscoveryAnswer(raw string) string {
 func (s *Service) PreprocessVoice(_ context.Context, audioURL string) string {
 	audioURL = strings.TrimSpace(audioURL)
 	if audioURL == "" {
+		return ""
+	}
+	parsed, err := url.Parse(audioURL)
+	if err != nil || !strings.EqualFold(parsed.Scheme, "https") || parsed.Host == "" {
 		return ""
 	}
 	return "transcript:" + audioURL

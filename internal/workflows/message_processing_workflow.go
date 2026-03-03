@@ -35,6 +35,7 @@ type MessageProcessingInput struct {
 	DeliveryFailures                 int
 	FormattingError                  bool
 	AggregateError                   bool
+	AllowPartialAggregation          bool
 	DeliveryFallbackQueueAllowed     bool
 	ForceDeadLetterOnEnvelopeFailure bool
 }
@@ -131,9 +132,13 @@ func (s *Service) MessageProcessingWorkflowV1(input MessageProcessingInput) Mess
 
 	result.States = append(result.States, MessageStateAggregating)
 	if input.AggregateError {
-		result.States = append(result.States, MessageStateFailed)
-		result.TerminalState = MessageStateFailed
-		return result
+		if input.AllowPartialAggregation {
+			result.Fallbacks = append(result.Fallbacks, "partial_results")
+		} else {
+			result.States = append(result.States, MessageStateFailed)
+			result.TerminalState = MessageStateFailed
+			return result
+		}
 	}
 
 	result.States = append(result.States, MessageStateFormatting)

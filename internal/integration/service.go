@@ -171,6 +171,25 @@ func (s *Service) IngestWebhook(payload WebhookPayload) (int, error) {
 	return resp.Code, nil
 }
 
+func (s *Service) IngestWebhookRaw(channel string, payload []byte, signatureOverride string) (int, error) {
+	if s.gatewayMux == nil {
+		s.gatewayMux = gateway.NewMux(s.gateway)
+	}
+	path := "/v1/gateway/webhook/whatsapp"
+	if strings.EqualFold(strings.TrimSpace(channel), "imessage") {
+		path = "/v1/gateway/webhook/imessage"
+	}
+	req := httptest.NewRequest(http.MethodPost, path, bytes.NewReader(payload))
+	signature := strings.TrimSpace(signatureOverride)
+	if signature == "" {
+		signature = signPayload([]byte(s.secret), payload)
+	}
+	req.Header.Set("X-Signature", signature)
+	resp := httptest.NewRecorder()
+	s.gatewayMux.ServeHTTP(resp, req)
+	return resp.Code, nil
+}
+
 func (s *Service) ProcessNextQueuedTurn(ctx context.Context, budgetExhausted bool) (PipelineResult, error) {
 	return s.ProcessNextQueuedTurnWithOptions(ctx, ProcessOptions{BudgetExhausted: budgetExhausted})
 }

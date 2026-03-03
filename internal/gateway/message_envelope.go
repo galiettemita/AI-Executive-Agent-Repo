@@ -161,13 +161,13 @@ func buildEnvelopeContent(input BuildMessageEnvelopeInput) (MessageEnvelopeConte
 	mediaURL := ""
 	contentType := "TEXT"
 
-	audioURL := strings.TrimSpace(input.AudioURL)
+	audioURL := normalizeHTTPSURL(input.AudioURL)
 	if audioURL != "" {
 		contentType = "VOICE"
 		mediaURL = audioURL
 	} else if len(input.Attachments) > 0 {
 		first := input.Attachments[0]
-		mediaURL = strings.TrimSpace(first.SourceURL)
+		mediaURL = normalizeHTTPSURL(first.SourceURL)
 		mime := strings.ToLower(strings.TrimSpace(first.MIMEType))
 		if strings.HasPrefix(mime, "image/") {
 			contentType = "IMAGE"
@@ -247,6 +247,18 @@ func validateMessageEnvelope(envelope MessageEnvelope) error {
 		return fmt.Errorf("context.active_skills exceeds max length 50")
 	}
 	return nil
+}
+
+func normalizeHTTPSURL(raw string) string {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return ""
+	}
+	parsed, err := url.Parse(trimmed)
+	if err != nil || !strings.EqualFold(parsed.Scheme, "https") || parsed.Host == "" {
+		return ""
+	}
+	return trimmed
 }
 
 func canonicalMessageChannel(raw string) (string, error) {
