@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"time"
 
@@ -161,11 +162,16 @@ func (s *Service) IngestWebhook(payload WebhookPayload) (int, error) {
 		return 0, err
 	}
 	path := "/v1/gateway/webhook/whatsapp"
+	imessage := false
 	if strings.EqualFold(strings.TrimSpace(payload.Channel), "imessage") {
 		path = "/v1/gateway/webhook/imessage"
+		imessage = true
 	}
 	req := httptest.NewRequest(http.MethodPost, path, bytes.NewReader(blob))
 	req.Header.Set("X-Signature", signPayload([]byte(s.secret), blob))
+	if imessage {
+		req.Header.Set("X-API-Key", integrationIMessageAPIKey())
+	}
 	resp := httptest.NewRecorder()
 	s.gatewayMux.ServeHTTP(resp, req)
 	return resp.Code, nil
@@ -176,8 +182,10 @@ func (s *Service) IngestWebhookRaw(channel string, payload []byte, signatureOver
 		s.gatewayMux = gateway.NewMux(s.gateway)
 	}
 	path := "/v1/gateway/webhook/whatsapp"
+	imessage := false
 	if strings.EqualFold(strings.TrimSpace(channel), "imessage") {
 		path = "/v1/gateway/webhook/imessage"
+		imessage = true
 	}
 	req := httptest.NewRequest(http.MethodPost, path, bytes.NewReader(payload))
 	signature := strings.TrimSpace(signatureOverride)
@@ -185,9 +193,20 @@ func (s *Service) IngestWebhookRaw(channel string, payload []byte, signatureOver
 		signature = signPayload([]byte(s.secret), payload)
 	}
 	req.Header.Set("X-Signature", signature)
+	if imessage {
+		req.Header.Set("X-API-Key", integrationIMessageAPIKey())
+	}
 	resp := httptest.NewRecorder()
 	s.gatewayMux.ServeHTTP(resp, req)
 	return resp.Code, nil
+}
+
+func integrationIMessageAPIKey() string {
+	apiKey := strings.TrimSpace(os.Getenv("IMESSAGE_WEBHOOK_API_KEY"))
+	if apiKey == "" {
+		return "dev-imessage-key"
+	}
+	return apiKey
 }
 
 func (s *Service) ProcessNextQueuedTurn(ctx context.Context, budgetExhausted bool) (PipelineResult, error) {

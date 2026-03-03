@@ -23,9 +23,10 @@ import (
 )
 
 var (
-	ErrInvalidSignature = errors.New("invalid signature")
-	ErrReplayDetected   = errors.New("replay detected")
-	ErrRateLimited      = errors.New("rate limited")
+	ErrInvalidSignature      = errors.New("invalid signature")
+	ErrReplayDetected        = errors.New("replay detected")
+	ErrRateLimited           = errors.New("rate limited")
+	ErrInvalidIMessageAPIKey = errors.New("invalid imessage api key")
 )
 
 type AttachmentInput struct {
@@ -463,20 +464,21 @@ func (u *InMemoryAttachmentUploader) Upload(_ context.Context, workspaceID uuid.
 }
 
 type Service struct {
-	secret      []byte
-	nonceTTL    time.Duration
-	idempTTL    time.Duration
-	startedAt   time.Time
-	nowFn       func() time.Time
-	store       *InMemoryStore
-	queue       *InMemoryQueue
-	rateLimiter *RateLimiter
-	idempotency *IdempotencyStore
-	audit       *AuditLog
-	identityMu  sync.Mutex
-	identityLog []ChannelIdentityEnvelope
-	router      *WorkspaceRouter
-	uploader    AttachmentUploader
+	secret         []byte
+	imessageAPIKey string
+	nonceTTL       time.Duration
+	idempTTL       time.Duration
+	startedAt      time.Time
+	nowFn          func() time.Time
+	store          *InMemoryStore
+	queue          *InMemoryQueue
+	rateLimiter    *RateLimiter
+	idempotency    *IdempotencyStore
+	audit          *AuditLog
+	identityMu     sync.Mutex
+	identityLog    []ChannelIdentityEnvelope
+	router         *WorkspaceRouter
+	uploader       AttachmentUploader
 
 	userMu   sync.Mutex
 	userIDs  map[string]uuid.UUID
@@ -496,23 +498,28 @@ type sessionState struct {
 
 func NewService(secret string) *Service {
 	idempotencyTTL := 24 * time.Hour
+	imessageAPIKey := strings.TrimSpace(os.Getenv("IMESSAGE_WEBHOOK_API_KEY"))
+	if imessageAPIKey == "" {
+		imessageAPIKey = "dev-imessage-key"
+	}
 	return &Service{
-		secret:      []byte(secret),
-		nonceTTL:    10 * time.Minute,
-		idempTTL:    idempotencyTTL,
-		startedAt:   time.Now().UTC(),
-		nowFn:       time.Now,
-		store:       NewInMemoryStore(),
-		queue:       &InMemoryQueue{},
-		rateLimiter: NewRateLimiter(),
-		idempotency: NewIdempotencyStore(idempotencyTTL),
-		audit:       &AuditLog{},
-		identityLog: []ChannelIdentityEnvelope{},
-		router:      NewWorkspaceRouter(),
-		uploader:    NewInMemoryAttachmentUploader("attachments"),
-		userIDs:     map[string]uuid.UUID{},
-		sessions:    map[string]sessionState{},
-		outbox:      []OutboundDispatch{},
+		secret:         []byte(secret),
+		imessageAPIKey: imessageAPIKey,
+		nonceTTL:       10 * time.Minute,
+		idempTTL:       idempotencyTTL,
+		startedAt:      time.Now().UTC(),
+		nowFn:          time.Now,
+		store:          NewInMemoryStore(),
+		queue:          &InMemoryQueue{},
+		rateLimiter:    NewRateLimiter(),
+		idempotency:    NewIdempotencyStore(idempotencyTTL),
+		audit:          &AuditLog{},
+		identityLog:    []ChannelIdentityEnvelope{},
+		router:         NewWorkspaceRouter(),
+		uploader:       NewInMemoryAttachmentUploader("attachments"),
+		userIDs:        map[string]uuid.UUID{},
+		sessions:       map[string]sessionState{},
+		outbox:         []OutboundDispatch{},
 	}
 }
 
@@ -589,6 +596,10 @@ func (s *Service) HandleInbound(w http.ResponseWriter, r *http.Request) {
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if err := s.validateIMessageAPIKey(r); err != nil {
+		http.Error(w, err.Error(), http.StatusUnauthorized)
 		return
 	}
 
@@ -757,6 +768,18 @@ func (s *Service) recordIdentityEnvelope(envelope ChannelIdentityEnvelope) {
 	s.identityMu.Lock()
 	defer s.identityMu.Unlock()
 	s.identityLog = append(s.identityLog, envelope)
+}
+
+func (s *Service) validateIMessageAPIKey(r *http.Request) error {
+	if !strings.Contains(strings.ToLower(strings.TrimSpace(r.URL.Path)), "/imessage") {
+		return nil
+	}
+	provided := strings.TrimSpace(r.Header.Get("X-API-Key"))
+	if provided == "" || provided != s.imessageAPIKey {
+		s.audit.Append("BREVIO.security.imessage.api_key_invalid.v1")
+		return ErrInvalidIMessageAPIKey
+	}
+	return nil
 }
 
 func (s *Service) ChannelIdentityEnvelopeCount() int {

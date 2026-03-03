@@ -141,12 +141,31 @@ func TestIMessageInboundUsesSamePipeline(t *testing.T) {
 	payload := []byte(`{"channel":"imessage","channel_identifier":"imsg:user-1","user_channel_id":"imsg_u1","nonce":"n_imsg","message":"hello from iMessage"}`)
 
 	resp := httptest.NewRecorder()
-	svc.HandleInbound(resp, signedRequestBody("test-secret", "/v1/gateway/webhook/imessage", payload))
+	req := signedRequestBody("test-secret", "/v1/gateway/webhook/imessage", payload)
+	req.Header.Set("X-API-Key", "dev-imessage-key")
+	svc.HandleInbound(resp, req)
 	if resp.Code != http.StatusAccepted {
 		t.Fatalf("expected imessage webhook to be accepted, got %d", resp.Code)
 	}
 	if svc.IngressTurnCount() != 1 {
 		t.Fatalf("expected ingress turn count 1, got %d", svc.IngressTurnCount())
+	}
+}
+
+func TestIMessageInboundMissingAPIKeyRejected(t *testing.T) {
+	t.Parallel()
+
+	svc := NewService("test-secret")
+	svc.router.Bind("imessage", "imsg:user-2", uuid.MustParse("018f3f6a-9a0f-7cc6-8f2f-1f0f2d2f2d2f"))
+	payload := []byte(`{"channel":"imessage","channel_identifier":"imsg:user-2","user_channel_id":"imsg_u2","nonce":"n_imsg_missing_key","message":"hello"}`)
+
+	resp := httptest.NewRecorder()
+	svc.HandleInbound(resp, signedRequestBody("test-secret", "/v1/gateway/webhook/imessage", payload))
+	if resp.Code != http.StatusUnauthorized {
+		t.Fatalf("expected unauthorized when imessage api key is missing, got %d", resp.Code)
+	}
+	if !containsString(svc.AuditEntries(), "BREVIO.security.imessage.api_key_invalid.v1") {
+		t.Fatalf("expected imessage api-key audit event, got %v", svc.AuditEntries())
 	}
 }
 
