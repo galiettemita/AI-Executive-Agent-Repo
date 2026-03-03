@@ -6,14 +6,14 @@ const root = process.cwd();
 const disambiguationPath = path.resolve(root, 'config', 'skill-disambiguation.yaml');
 const seedMigrationPath = path.resolve(root, 'migrations', '006_seed_skills.up.sql');
 
-function requireFile(filePath: string): void {
+function requireFile(filePath) {
   if (!fs.existsSync(filePath)) {
     console.error(`missing required file: ${filePath}`);
     process.exit(1);
   }
 }
 
-function parseSeedSkillIDs(sql: string): string[] {
+function parseSeedSkillIDs(sql) {
   const sectionSplit = sql.split('), normalized AS (');
   if (sectionSplit.length < 2) {
     throw new Error('unable to locate seed CTE section in 006_seed_skills.up.sql');
@@ -22,11 +22,11 @@ function parseSeedSkillIDs(sql: string): string[] {
   const seedSection = sectionSplit[0];
   const unnestPattern = /unnest\(ARRAY\[(.*?)\]\)\s+AS\s+id/gs;
   const idPattern = /'([a-z0-9-]+)'/g;
-  const ids = new Set<string>();
-  let blockMatch: RegExpExecArray | null;
+  const ids = new Set();
+  let blockMatch;
   while ((blockMatch = unnestPattern.exec(seedSection)) !== null) {
     const block = blockMatch[1];
-    let idMatch: RegExpExecArray | null;
+    let idMatch;
     while ((idMatch = idPattern.exec(block)) !== null) {
       ids.add(idMatch[1]);
     }
@@ -34,18 +34,19 @@ function parseSeedSkillIDs(sql: string): string[] {
   return Array.from(ids).sort();
 }
 
-function parseDisambiguationGroups(yaml: string): string[] {
-  const groups = new Set<string>();
+function parseDisambiguationGroups(yaml) {
+  const groups = new Set();
   for (const line of yaml.split('\n')) {
     const trimmed = line.trim();
-    if (trimmed.startsWith('group:')) {
-      groups.add(trimmed.replace('group:', '').trim());
+    if (trimmed.startsWith('group:') || trimmed.startsWith('- group:')) {
+      const normalized = trimmed.replace('- ', '');
+      groups.add(normalized.replace('group:', '').trim());
     }
   }
   return Array.from(groups).sort();
 }
 
-function run(): void {
+function run() {
   requireFile(disambiguationPath);
   requireFile(seedMigrationPath);
 
