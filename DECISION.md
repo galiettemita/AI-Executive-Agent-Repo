@@ -433,3 +433,21 @@
 3. Keep `_template` available for hand-authored adapter upgrades while runtime can dispatch all generated adapters immediately.  
 **Risk:** Generated adapters are baseline scaffolds and not full external API integrations; production behavior for each skill still requires iterative implementation of service-specific clients/auth/schemas.  
 **Rollback:** Revert generated skill directories and registry/index runtime dispatch changes; retain only `_template` and prior hands health-only service behavior.
+
+## DECISION-025: Add Contract Gate for Skill Scaffold and Registry Parity
+
+**Date:** 2026-03-03  
+**Blueprint Section:** §2.4, §18 (Phase 7 validation)  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/internal/contracts/openclaw_seed_migration_closure_test.go`  
+**Conflict:** After generating 153 skill scaffolds, no automated gate guaranteed that future edits preserve per-skill file layout or full registry coverage.  
+**Options Considered:**  
+1. Rely on manual checks when regenerating scaffolds.  
+2. Add a standalone script check outside existing CI contract suite.  
+3. Extend existing `openclaw_seed_migration_closure` contract tests to assert per-skill directory files and registry key parity for all seeded IDs.  
+**Decision:** Option 3. Added contract tests that verify full scaffold files exist for each seeded skill and that `services/brevio-hands/src/skills/index.ts` contains all seeded skill mappings.  
+**Migration Plan:**  
+1. Reuse seed-ID extraction from migration closure tests.  
+2. Assert required file set for each skill directory (`index/schema/client/types/tests/README/fixtures`).  
+3. Assert registry map contains every seeded `skill_id` token.  
+**Risk:** Regeneration strategy changes (or intentionally sparse scaffolds) will fail CI until contracts are updated in lockstep.  
+**Rollback:** Remove scaffold parity tests and rely on script/manual validation while retaining seed migration count/mode checks.
