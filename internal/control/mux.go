@@ -2427,10 +2427,11 @@ func handleCompliance(w http.ResponseWriter, r *http.Request, svc *compliance.Se
 				workspaceID = "default"
 			}
 			writeJSON(w, http.StatusOK, map[string]any{
-				"dsr_requests":      svc.ListDSR(workspaceID),
-				"sla_at_risk":       svc.ListDSRAtRisk(workspaceID),
-				"deletion_reports":  svc.ListDeletionReports(workspaceID),
-				"irreversible_only": true,
+				"dsr_requests":        svc.ListDSR(workspaceID),
+				"sla_at_risk":         svc.ListDSRAtRisk(workspaceID),
+				"deletion_reports":    svc.ListDeletionReports(workspaceID),
+				"portability_exports": svc.ListPortabilityExports(workspaceID),
+				"irreversible_only":   true,
 			})
 			return
 		case len(parts) == 3 && r.Method == http.MethodPost:
@@ -2476,6 +2477,26 @@ func handleCompliance(w http.ResponseWriter, r *http.Request, svc *compliance.Se
 				"request":         request,
 				"deletion_report": report,
 				"has_report":      hasReport,
+			})
+			return
+		case len(parts) == 5 && parts[4] == "export" && r.Method == http.MethodGet:
+			request, ok := svc.GetDSR(parts[3])
+			if !ok {
+				writeJSON(w, http.StatusOK, map[string]any{
+					"id":     parts[3],
+					"status": "not_found",
+				})
+				return
+			}
+			export, err := svc.GeneratePortabilityExport(parts[3])
+			if err != nil {
+				writeError(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			writeJSON(w, http.StatusOK, map[string]any{
+				"request":            request,
+				"portability_export": export,
+				"has_export":         true,
 			})
 			return
 		default:

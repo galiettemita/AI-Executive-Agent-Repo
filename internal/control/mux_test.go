@@ -680,6 +680,50 @@ func TestControlMuxComplianceFlow(t *testing.T) {
 	if reports, ok := dsrListPayload["deletion_reports"].([]any); !ok || len(reports) == 0 {
 		t.Fatalf("expected deletion_reports in dsr payload: %v", dsrListPayload)
 	}
+
+	postPortabilityBody := []byte(`{"workspace_id":"ws_1","user_id":"user_2","request_type":"portability","status":"in_progress"}`)
+	postPortabilityReq := httptest.NewRequest(http.MethodPost, "/v1/compliance/dsr", bytes.NewReader(postPortabilityBody))
+	postPortabilityResp := httptest.NewRecorder()
+	mux.ServeHTTP(postPortabilityResp, postPortabilityReq)
+	if postPortabilityResp.Code != http.StatusCreated {
+		t.Fatalf("unexpected portability dsr create status: %d", postPortabilityResp.Code)
+	}
+	var portabilityPayload map[string]any
+	if err := json.Unmarshal(postPortabilityResp.Body.Bytes(), &portabilityPayload); err != nil {
+		t.Fatalf("decode portability dsr payload: %v", err)
+	}
+	portabilityID, ok := portabilityPayload["id"].(string)
+	if !ok || portabilityID == "" {
+		t.Fatalf("missing portability dsr id: %v", portabilityPayload)
+	}
+
+	getPortabilityExportReq := httptest.NewRequest(http.MethodGet, "/v1/compliance/dsr/"+portabilityID+"/export", nil)
+	getPortabilityExportResp := httptest.NewRecorder()
+	mux.ServeHTTP(getPortabilityExportResp, getPortabilityExportReq)
+	if getPortabilityExportResp.Code != http.StatusOK {
+		t.Fatalf("unexpected portability export status: %d", getPortabilityExportResp.Code)
+	}
+	var portabilityExportPayload map[string]any
+	if err := json.Unmarshal(getPortabilityExportResp.Body.Bytes(), &portabilityExportPayload); err != nil {
+		t.Fatalf("decode portability export payload: %v", err)
+	}
+	if hasExport, _ := portabilityExportPayload["has_export"].(bool); !hasExport {
+		t.Fatalf("expected has_export=true payload: %v", portabilityExportPayload)
+	}
+	exportObj, ok := portabilityExportPayload["portability_export"].(map[string]any)
+	if !ok {
+		t.Fatalf("missing portability_export object: %v", portabilityExportPayload)
+	}
+	if _, ok := exportObj["download_uri"].(string); !ok {
+		t.Fatalf("missing portability export download_uri: %v", exportObj)
+	}
+
+	getDeletionExportReq := httptest.NewRequest(http.MethodGet, "/v1/compliance/dsr/"+dsrID+"/export", nil)
+	getDeletionExportResp := httptest.NewRecorder()
+	mux.ServeHTTP(getDeletionExportResp, getDeletionExportReq)
+	if getDeletionExportResp.Code != http.StatusBadRequest {
+		t.Fatalf("expected non-portability export rejection status, got: %d", getDeletionExportResp.Code)
+	}
 }
 
 func TestControlMuxAdminFlow(t *testing.T) {

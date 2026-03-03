@@ -325,3 +325,21 @@
 3. Reuse helpers in future auth integrations and onboarding flows to avoid hardcoded divergent paths.  
 **Risk:** Existing ad hoc naming patterns may fail validation when migrated to helper usage.  
 **Rollback:** Keep helpers optional and revert callers to previous string templates if compatibility issues arise.
+
+## DECISION-019: Add Runtime Portability Export Generation for GDPR Article 20 Requests
+
+**Date:** 2026-03-03  
+**Blueprint Section:** §20.9  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/internal/compliance/service.go`, `/Users/galiettemita/Downloads/Executive AI Agent/backend/internal/control/mux.go`  
+**Conflict:** DSR flows supported request lifecycle and deletion reporting, but no runtime export artifact generation existed for portability requests, leaving Article 20 behavior incomplete.  
+**Options Considered:**  
+1. Keep portability handling as status-only workflow with manual export fulfillment.  
+2. Emit placeholder export references without runtime artifact logic.  
+3. Add idempotent portability export generation in compliance service and expose it via control API.  
+**Decision:** Option 3. Implemented `GeneratePortabilityExport` with deterministic artifact metadata and added `/v1/compliance/dsr/{id}/export` endpoint behavior, including non-portability rejection and list exposure in DSR summaries.  
+**Migration Plan:**  
+1. Extend compliance service with export model/store and generation method.  
+2. Expose export retrieval path in control mux and include portability exports in list payloads.  
+3. Add service and mux tests for happy path, idempotency, and invalid request-type handling.  
+**Risk:** Export artifact currently uses deterministic metadata and URI conventions; downstream object storage fulfillment must match these conventions when integrated with real data extraction jobs.  
+**Rollback:** Disable export endpoint path and keep portability requests in lifecycle-only mode until extraction backend is finalized.
