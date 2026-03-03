@@ -5,25 +5,28 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"strings"
 	"time"
 
 	runtimeserver "github.com/brevio/brevio/internal/runtime"
 )
 
 func main() {
+	cfg, err := runtimeserver.LoadServiceEnvConfig(os.Getenv, runtimeserver.ServiceEnvOptions{
+		ServiceName:         "temporal-worker",
+		DefaultListenAddr:   ":18084",
+		RequiredNonLocalEnv: []string{"DATABASE_URL", "REDIS_URL", "TEMPORAL_HOST", "TEMPORAL_NAMESPACE"},
+	})
+	if err != nil {
+		log.Fatalf("temporal-worker config validation failed: %v", err)
+	}
 	mux := http.NewServeMux()
 	startedAt := time.Now().UTC()
-	version := strings.TrimSpace(os.Getenv("SERVICE_VERSION"))
-	if version == "" {
-		version = "0.1.0"
-	}
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"status":    "healthy",
-			"version":   version,
+			"version":   cfg.ServiceVersion,
 			"uptime_ms": time.Since(startedAt).Milliseconds(),
 			"checks": map[string]string{
 				"process": "ok",
@@ -35,13 +38,13 @@ func main() {
 		w.WriteHeader(http.StatusOK)
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"status":    "healthy",
-			"version":   version,
+			"version":   cfg.ServiceVersion,
 			"uptime_ms": time.Since(startedAt).Milliseconds(),
 			"checks": map[string]string{
 				"process":  "ok",
-				"db":       envStatus("DATABASE_URL"),
-				"redis":    envStatus("REDIS_URL"),
-				"temporal": envStatus("TEMPORAL_HOST"),
+				"db":       runtimeserver.EnvStatus("DATABASE_URL"),
+				"redis":    runtimeserver.EnvStatus("REDIS_URL"),
+				"temporal": runtimeserver.EnvStatus("TEMPORAL_HOST"),
 			},
 		})
 	})
@@ -54,16 +57,8 @@ func main() {
 		_, _ = w.Write([]byte("ok"))
 	})
 
-	addr := ":18084"
-	log.Printf("BREVIO temporal worker listening on %s", addr)
-	if err := runtimeserver.ServeWithGracefulShutdown("temporal-worker", addr, mux); err != nil {
+	log.Printf("BREVIO temporal worker listening on %s env=%s version=%s", cfg.ListenAddr, cfg.Environment, cfg.ServiceVersion)
+	if err := runtimeserver.ServeWithGracefulShutdown("temporal-worker", cfg.ListenAddr, mux); err != nil {
 		log.Fatalf("temporal worker failed: %v", err)
 	}
-}
-
-func envStatus(key string) string {
-	if strings.TrimSpace(os.Getenv(key)) == "" {
-		return "not_configured"
-	}
-	return "configured"
 }

@@ -163,3 +163,21 @@
 3. Extend same pattern to additional services in subsequent slices.  
 **Risk:** Misconfigured non-local deployments now fail early instead of starting with defaults.  
 **Rollback:** Revert to previous defaulting behavior in `cmd/gateway/main.go` if emergency startup compatibility is required.
+
+## DECISION-010: Shared Runtime Env Validation for Go Service Entrypoints
+
+**Date:** 2026-03-03  
+**Blueprint Section:** §20.4  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/cmd/*/main.go`  
+**Conflict:** Multiple service entrypoints used ad-hoc defaults and duplicate env-status helpers with no centralized non-local validation policy.  
+**Options Considered:**  
+1. Keep per-service ad-hoc env parsing.  
+2. Force a single global required-env set for every service immediately.  
+3. Introduce shared loader with per-service required env keys and environment-aware local defaults, then migrate entrypoints incrementally.  
+**Decision:** Option 3. Added shared runtime config loader and secret resolver utilities; updated brain/control/executor/canvas/temporal-worker startup paths to fail fast in non-local environments while preserving local/dev/test defaults.  
+**Migration Plan:**  
+1. Centralize normalization of `BREVIO_ENV`, listen address, and service version defaults.  
+2. Enforce per-service non-local required env keys (`DATABASE_URL`, `REDIS_URL`, `TEMPORAL_HOST`, etc.).  
+3. Continue migrating remaining startup paths and remove duplicate env helper logic.  
+**Risk:** Deployments with previously tolerated missing env vars now fail startup, requiring explicit config completion.  
+**Rollback:** Revert individual entrypoints to previous defaulting behavior while retaining helper package for staged reintroduction.
