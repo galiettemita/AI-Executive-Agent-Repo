@@ -68,8 +68,31 @@ WITH seed AS (
   SELECT
     id,
     category,
-    'hands'::text AS plane,
-    'HIGH'::text AS impact,
+    CASE
+      WHEN id = ANY(ARRAY[
+        'asr','openai-tts','gemini-stt','sag','voice-wake-say','whatsapp-styling-guide','vocal-chat','autoresponder'
+      ]::text[]) THEN 'gateway'::text
+      WHEN id = ANY(ARRAY[
+        'doing-tasks','plan-my-day','daily-rhythm','morning-manifesto','personal-shopper','clawringhouse',
+        'smart-expense-tracker','card-optimizer','refund-radar','contract-reviewer','meeting-autopilot',
+        'proactive-research','focus-mode','thinking-partner','relationship-skills','self-improvement'
+      ]::text[]) THEN 'brain'::text
+      ELSE 'hands'::text
+    END AS plane,
+    CASE
+      WHEN id = ANY(ARRAY['george','lastfm']::text[]) THEN 'LOW'::text
+      ELSE 'HIGH'::text
+    END AS impact,
+    CASE
+      WHEN id = ANY(ARRAY[
+        'apple-remind-me','calctl','healthkit-sync','healthkit-sync-apple','apple-mail','apple-mail-search',
+        'apple-media','apple-music','apple-contacts','apple-photos','apple-notes','apple-notes-skill',
+        'shortcuts-generator','get-focus-mode','mole-mac-cleanup','alter-actions','spotify','things-mac',
+        'omnifocus','voice-wake-say','bear-notes','obsidian','craft','gamma'
+      ]::text[]) THEN 'local_mac'::text
+      WHEN id = ANY(ARRAY['google-calendar','clickup-mcp']::text[]) THEN 'mcp'::text
+      ELSE 'cloud'::text
+    END AS deployment_mode,
     initcap(replace(id, '-', ' ')) AS description,
     format('Execute %s workflow', id) AS brevio_use_case
   FROM seed
@@ -108,13 +131,14 @@ SELECT
   0.0000,
   true,
   'free',
-  'cloud'
+  deployment_mode
 FROM normalized
 ON CONFLICT (id) DO UPDATE
 SET
   category = EXCLUDED.category,
   plane = EXCLUDED.plane,
   impact = EXCLUDED.impact,
+  deployment_mode = EXCLUDED.deployment_mode,
   description = EXCLUDED.description,
   brevio_use_case = EXCLUDED.brevio_use_case,
   updated_at = now();
