@@ -3,6 +3,8 @@ package identity
 import (
 	"encoding/json"
 	"testing"
+
+	"github.com/brevio/brevio/internal/audit"
 )
 
 func TestCreateUserWorkspaceAndChannelBinding(t *testing.T) {
@@ -88,6 +90,8 @@ func TestAccountAndUserCRUD(t *testing.T) {
 	t.Parallel()
 
 	svc := NewService()
+	mutationAudit := audit.NewService()
+	svc.SetMutationAudit(mutationAudit)
 	account, err := svc.CreateAccount("pro", "active", "cust_789")
 	if err != nil {
 		t.Fatalf("create account: %v", err)
@@ -132,6 +136,13 @@ func TestAccountAndUserCRUD(t *testing.T) {
 	}
 	if updatedUser.Email != email || updatedUser.PhoneE164 != phone || updatedUser.GlobalAutonomy != autonomy || updatedUser.Timezone != timezone || updatedUser.Status != userStatus {
 		t.Fatalf("unexpected updated user: %+v", updatedUser)
+	}
+	if mutationAudit.Count(account.ID.String()) != 1 {
+		t.Fatalf("expected profile update mutation audit entry, got=%d", mutationAudit.Count(account.ID.String()))
+	}
+	entries := mutationAudit.ListMutations(account.ID.String())
+	if len(entries) != 1 || entries[0].Action != "identity.user.profile.update" {
+		t.Fatalf("unexpected profile mutation entries: %+v", entries)
 	}
 	if err := svc.DeleteUser(user.ID); err != nil {
 		t.Fatalf("delete user: %v", err)

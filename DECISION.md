@@ -397,3 +397,21 @@
 3. Keep existing executor audit-event behavior unchanged for backward compatibility and forensic continuity.  
 **Risk:** If executor is wired with PostgreSQL-backed sink while workspace IDs are non-UUID placeholders, sink persistence may fail and fallback to in-memory mutation records.  
 **Rollback:** Remove executor mutation append call and dependency field while retaining existing executor audit events.
+
+## DECISION-023: Add Mutation-Audit Coverage for OAuth Refresh and User Profile Updates
+
+**Date:** 2026-03-03  
+**Blueprint Section:** §20.8  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/internal/connectors/service.go`, `/Users/galiettemita/Downloads/Executive AI Agent/backend/internal/identity/service.go`  
+**Conflict:** Mutation-audit examples required by blueprint include token refresh and profile updates, but only control-plane and executor commit paths were emitting mutation-ledger records.  
+**Options Considered:**  
+1. Keep token/profile flows outside mutation ledger and rely on existing service-specific tests/logs.  
+2. Emit full secret-bearing token payloads in mutation ledger for completeness.  
+3. Emit minimal, non-secret mutation-audit records for refresh/profile updates with selected before/after metadata only.  
+**Decision:** Option 3. Added optional mutation-audit hooks for connector OAuth refresh events (`oauth.token.refresh`) and identity profile updates (`identity.user.profile.update`) with constrained before/after metadata (expiry/provider and profile fields; no token plaintext/ciphertext).  
+**Migration Plan:**  
+1. Add optional audit-service dependency setters in connectors and identity services.  
+2. Emit mutation entries on successful refresh/profile-update state transitions.  
+3. Extend unit tests to enforce action names and workspace scoping for these new mutation paths.  
+**Risk:** Workspace scoping uses existing service identifiers (workspace ID in connectors, account ID for identity profile updates), which may not map 1:1 to every consumer’s expected namespace semantics.  
+**Rollback:** Remove newly added append calls and setter fields in connectors/identity while keeping existing mutation audit coverage elsewhere.

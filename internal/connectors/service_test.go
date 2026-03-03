@@ -8,6 +8,8 @@ import (
 	"regexp"
 	"testing"
 	"time"
+
+	"github.com/brevio/brevio/internal/audit"
 )
 
 func TestSeedLoaderPopulatesAtLeast40Connectors(t *testing.T) {
@@ -116,6 +118,8 @@ func TestOAuthTokenSetSafeRefreshWithinWindow(t *testing.T) {
 	if err := svc.LoadSeedFile(filepath.Join("seeds", "connectors.yaml")); err != nil {
 		t.Fatalf("load seed file: %v", err)
 	}
+	mutationAudit := audit.NewService()
+	svc.SetMutationAudit(mutationAudit)
 	base := time.Date(2026, time.March, 1, 13, 0, 0, 0, time.UTC)
 	svc.SetNow(func() time.Time { return base })
 
@@ -157,6 +161,13 @@ func TestOAuthTokenSetSafeRefreshWithinWindow(t *testing.T) {
 	}
 	if refreshedMeta.LastRefreshedAt.IsZero() {
 		t.Fatalf("expected non-zero last_refreshed_at after refresh: %+v", refreshedMeta)
+	}
+	if mutationAudit.Count("ws_refresh") != 1 {
+		t.Fatalf("expected one oauth mutation audit entry, got=%d", mutationAudit.Count("ws_refresh"))
+	}
+	entries := mutationAudit.ListMutations("ws_refresh")
+	if len(entries) != 1 || entries[0].Action != "oauth.token.refresh" {
+		t.Fatalf("unexpected oauth mutation audit entries: %+v", entries)
 	}
 }
 
