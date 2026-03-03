@@ -343,3 +343,21 @@
 3. Add service and mux tests for happy path, idempotency, and invalid request-type handling.  
 **Risk:** Export artifact currently uses deterministic metadata and URI conventions; downstream object storage fulfillment must match these conventions when integrated with real data extraction jobs.  
 **Rollback:** Disable export endpoint path and keep portability requests in lifecycle-only mode until extraction backend is finalized.
+
+## DECISION-020: Replace Activity Ledger Placeholder with Append-Only Mutation Audit Runtime
+
+**Date:** 2026-03-03  
+**Blueprint Section:** §20.8, §20.9  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/internal/control/mux.go`, `/Users/galiettemita/Downloads/Executive AI Agent/backend/internal/executor/service.go`  
+**Conflict:** User-facing `/v1/user/activity-ledger` returned a static seed payload and control-plane state mutations (feature-flag changes, compliance DSR actions) were not written to a dedicated append-only mutation ledger, leaving audit trail behavior incomplete.  
+**Options Considered:**  
+1. Keep placeholder activity ledger response and defer mutation-audit runtime wiring.  
+2. Log only coarse event names in existing per-service in-memory audit slices.  
+3. Introduce a dedicated append-only mutation audit service and wire control-plane mutating endpoints into it, then surface it via activity-ledger API.  
+**Decision:** Option 3. Implemented `internal/audit` append-only hash-chained mutation runtime (UUIDv7 IDs, per-workspace chains), integrated mutation logging in control feature-flag and compliance mutation flows, and replaced activity-ledger placeholder output with workspace-scoped paginated audit entries.  
+**Migration Plan:**  
+1. Introduce mutation-ledger service with deterministic timestamp/hash chain semantics and tests.  
+2. Wire control mutating handlers to append before/after snapshots with actor/workspace attribution from request context.  
+3. Serve `/v1/user/activity-ledger` from live mutation records while preserving schema fields (`id`, `timestamp`, `description`, `status`, `undo_available`).  
+**Risk:** Audit volume for high-frequency control mutations may increase in-memory footprint in long-lived processes before persistent backing is added.  
+**Rollback:** Revert activity-ledger response and control audit append calls to previous placeholder behavior while retaining the new `internal/audit` package for later staged reintroduction.

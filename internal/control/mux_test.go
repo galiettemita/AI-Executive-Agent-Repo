@@ -726,6 +726,52 @@ func TestControlMuxComplianceFlow(t *testing.T) {
 	}
 }
 
+func TestControlMuxActivityLedgerReflectsMutationAudit(t *testing.T) {
+	t.Parallel()
+
+	mux := NewMux(NewService("dev-secret"))
+
+	postFlagBody := []byte(`{"key":"audit.flag.rollout","flag_type":"boolean","enabled":true}`)
+	postFlagReq := httptest.NewRequest(http.MethodPost, "/v1/flags?workspace_id=ws_audit", bytes.NewReader(postFlagBody))
+	postFlagReq.Header.Set("X-User-ID", "user_audit")
+	postFlagResp := httptest.NewRecorder()
+	mux.ServeHTTP(postFlagResp, postFlagReq)
+	if postFlagResp.Code != http.StatusAccepted {
+		t.Fatalf("unexpected feature-flag create status: %d", postFlagResp.Code)
+	}
+
+	getLedgerReq := httptest.NewRequest(http.MethodGet, "/v1/user/activity-ledger?workspace_id=ws_audit", nil)
+	getLedgerResp := httptest.NewRecorder()
+	mux.ServeHTTP(getLedgerResp, getLedgerReq)
+	if getLedgerResp.Code != http.StatusOK {
+		t.Fatalf("unexpected activity-ledger status: %d", getLedgerResp.Code)
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal(getLedgerResp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode activity-ledger payload: %v", err)
+	}
+	if total, ok := payload["total"].(float64); !ok || int(total) < 1 {
+		t.Fatalf("expected audited activity entries, payload=%v", payload)
+	}
+	items, ok := payload["items"].([]any)
+	if !ok || len(items) == 0 {
+		t.Fatalf("expected non-empty items, payload=%v", payload)
+	}
+	first, ok := items[0].(map[string]any)
+	if !ok {
+		t.Fatalf("expected activity item object, got=%T", items[0])
+	}
+	description, _ := first["description"].(string)
+	if !strings.Contains(description, "feature_flag.upsert") {
+		t.Fatalf("expected feature-flag audit description, got=%v", first)
+	}
+	status, _ := first["status"].(string)
+	if status != "completed" {
+		t.Fatalf("unexpected activity status: %v", first)
+	}
+}
+
 func TestControlMuxAdminFlow(t *testing.T) {
 	t.Parallel()
 
