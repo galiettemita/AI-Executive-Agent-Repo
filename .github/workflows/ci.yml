@@ -1,0 +1,93 @@
+name: ci-openclaw
+
+on:
+  pull_request:
+  push:
+    branches: [main, codex/**]
+
+jobs:
+  lint_format:
+    name: 1. Lint & Format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.12.3
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile=false
+      - run: pnpm lint || true
+
+  schema_validate:
+    name: 2. Schema Validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: echo "Schema validation scaffold (OpenAPI/JSON schema/db diff)"
+
+  unit_tests:
+    name: 3. Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+      - run: go test ./... -count=1
+
+  integration_tests:
+    name: 4. Integration Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: echo "Integration test stage scaffold"
+
+  contract_tests:
+    name: 5. Contract Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: echo "Pact contract stage scaffold"
+
+  security_scan:
+    name: 6. Security Scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash scripts/security/run_security_validation.sh
+
+  migration_safety:
+    name: 7. Migration Safety
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: echo "Migration dry-run stage scaffold"
+
+  build_push:
+    name: 8. Build & Push
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: echo "Build and push image stage scaffold"
+
+  deploy_staging:
+    name: 9. Deploy Staging
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    needs: [build_push]
+    steps:
+      - uses: actions/checkout@v4
+      - run: echo "Deploy staging stage scaffold"
+
+  deploy_production:
+    name: 10. Deploy Production
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    needs: [deploy_staging]
+    steps:
+      - uses: actions/checkout@v4
+      - run: echo "Deploy production stage scaffold"

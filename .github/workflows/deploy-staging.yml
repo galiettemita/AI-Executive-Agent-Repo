@@ -1,9 +1,14 @@
 name: deploy-staging
 on:
   workflow_dispatch:
+  workflow_run:
+    workflows: [ci-openclaw]
+    types: [completed]
+
 jobs:
   deploy:
+    if: github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: echo "staging deploy scaffold"
+      - run: echo "helm upgrade --install staging scaffold"

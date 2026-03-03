@@ -1,9 +1,13 @@
 name: security-scan
 on:
   workflow_dispatch:
+  schedule:
+    - cron: '0 6 * * 1'
+
 jobs:
   scan:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: echo "security scan scaffold"
+      - run: bash scripts/security/run_security_validation.sh
+      - run: bash scripts/security/run_govulncheck.sh
