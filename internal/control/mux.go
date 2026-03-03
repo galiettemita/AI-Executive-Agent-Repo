@@ -40,10 +40,21 @@ import (
 	"github.com/brevio/brevio/internal/trust"
 )
 
+type MuxDependencies struct {
+	AuditService *audit.Service
+}
+
 func NewMux(service *Service) *http.ServeMux {
+	return NewMuxWithDependencies(service, MuxDependencies{})
+}
+
+func NewMuxWithDependencies(service *Service, deps MuxDependencies) *http.ServeMux {
 	mux := http.NewServeMux()
 	adminSvc := admin.NewService()
-	auditSvc := audit.NewService()
+	auditSvc := deps.AuditService
+	if auditSvc == nil {
+		auditSvc = audit.NewService()
+	}
 	cacheSvc := caching.NewService()
 	captureSvc := capture.NewService()
 	codebaseSvc := codebase_intel.NewService()

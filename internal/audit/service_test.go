@@ -1,9 +1,27 @@
 package audit
 
 import (
+	"context"
+	"errors"
 	"testing"
 	"time"
 )
+
+type fakeSink struct {
+	entries []MutationEntry
+	err     error
+	closed  bool
+}
+
+func (s *fakeSink) PersistMutation(_ context.Context, entry MutationEntry) error {
+	s.entries = append(s.entries, entry)
+	return s.err
+}
+
+func (s *fakeSink) Close() error {
+	s.closed = true
+	return nil
+}
 
 func TestAppendMutationUsesDefaultsAndHashChain(t *testing.T) {
 	t.Parallel()
@@ -65,5 +83,54 @@ func TestListMutationsIsWorkspaceScoped(t *testing.T) {
 	}
 	if len(ws2) != 1 || ws2[0].WorkspaceID != "ws_2" {
 		t.Fatalf("unexpected ws_2 entries: %+v", ws2)
+	}
+}
+
+func TestAppendMutationPersistsToSink(t *testing.T) {
+	t.Parallel()
+
+	sink := &fakeSink{}
+	svc := NewService(WithSink(sink))
+	entry := svc.AppendMutation(MutationInput{
+		WorkspaceID: "ws_1",
+		Actor:       "user_1",
+		Action:      "feature_flag.upsert",
+		Resource:    "feature_flag",
+	})
+
+	if len(sink.entries) != 1 {
+		t.Fatalf("expected sink entry count=1, got=%d", len(sink.entries))
+	}
+	if sink.entries[0].ID != entry.ID {
+		t.Fatalf("expected sink entry id=%s got=%s", entry.ID, sink.entries[0].ID)
+	}
+}
+
+func TestAppendMutationRetainsSinkErrors(t *testing.T) {
+	t.Parallel()
+
+	sink := &fakeSink{err: errors.New("sink failed")}
+	svc := NewService(WithSink(sink))
+	svc.AppendMutation(MutationInput{
+		Action:   "compliance.dsr.create",
+		Resource: "compliance.dsr",
+	})
+
+	errs := svc.PersistErrors()
+	if len(errs) != 1 {
+		t.Fatalf("expected one persist error, got=%d errs=%v", len(errs), errs)
+	}
+}
+
+func TestCloseClosesSink(t *testing.T) {
+	t.Parallel()
+
+	sink := &fakeSink{}
+	svc := NewService(WithSink(sink))
+	if err := svc.Close(); err != nil {
+		t.Fatalf("unexpected close error: %v", err)
+	}
+	if !sink.closed {
+		t.Fatal("expected sink to be closed")
 	}
 }

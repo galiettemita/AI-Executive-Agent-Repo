@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/brevio/brevio/internal/audit"
 	"github.com/brevio/brevio/internal/feature_flags"
 	"gopkg.in/yaml.v3"
 )
@@ -769,6 +770,36 @@ func TestControlMuxActivityLedgerReflectsMutationAudit(t *testing.T) {
 	status, _ := first["status"].(string)
 	if status != "completed" {
 		t.Fatalf("unexpected activity status: %v", first)
+	}
+}
+
+func TestControlMuxWithDependenciesUsesInjectedAuditService(t *testing.T) {
+	t.Parallel()
+
+	auditSvc := audit.NewService()
+	auditSvc.AppendMutation(audit.MutationInput{
+		WorkspaceID: "ws_injected",
+		Actor:       "user_1",
+		Action:      "seed.action",
+		Resource:    "seed.resource",
+	})
+
+	mux := NewMuxWithDependencies(NewService("dev-secret"), MuxDependencies{
+		AuditService: auditSvc,
+	})
+
+	getLedgerReq := httptest.NewRequest(http.MethodGet, "/v1/user/activity-ledger?workspace_id=ws_injected", nil)
+	getLedgerResp := httptest.NewRecorder()
+	mux.ServeHTTP(getLedgerResp, getLedgerReq)
+	if getLedgerResp.Code != http.StatusOK {
+		t.Fatalf("unexpected activity-ledger status: %d", getLedgerResp.Code)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(getLedgerResp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode activity-ledger payload: %v", err)
+	}
+	if total, ok := payload["total"].(float64); !ok || int(total) != 1 {
+		t.Fatalf("expected injected audit entry in ledger, payload=%v", payload)
 	}
 }
 

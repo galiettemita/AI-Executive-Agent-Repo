@@ -361,3 +361,21 @@
 3. Serve `/v1/user/activity-ledger` from live mutation records while preserving schema fields (`id`, `timestamp`, `description`, `status`, `undo_available`).  
 **Risk:** Audit volume for high-frequency control mutations may increase in-memory footprint in long-lived processes before persistent backing is added.  
 **Rollback:** Revert activity-ledger response and control audit append calls to previous placeholder behavior while retaining the new `internal/audit` package for later staged reintroduction.
+
+## DECISION-021: Add Optional PostgreSQL Audit Sink with Dependency Injection for Control Mux
+
+**Date:** 2026-03-03  
+**Blueprint Section:** §20.8  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/internal/control/mux.go`, `/Users/galiettemita/Downloads/Executive AI Agent/backend/cmd/control/main.go`  
+**Conflict:** Mutation auditing existed in-memory only; no runtime path attempted persistence into the existing append-only `audit_log_entries` table, and `NewMux` had no way to accept externally configured audit dependencies.  
+**Options Considered:**  
+1. Keep audit in-memory only and defer DB persistence indefinitely.  
+2. Hardwire DB connection logic directly inside `NewMux`.  
+3. Add an optional sink abstraction in `internal/audit`, inject configured audit service into control mux, and enable DB sink from control startup when `DATABASE_URL` is present.  
+**Decision:** Option 3. Added `MutationSink` support and `PGSink` implementation, introduced `control.NewMuxWithDependencies`, and wired `cmd/control` startup to conditionally enable PostgreSQL audit persistence with memory fallback and structured startup events.  
+**Migration Plan:**  
+1. Extend audit service to support pluggable sinks with bounded sink-error retention.  
+2. Implement PostgreSQL sink writer targeting `audit_log_entries` append-only schema.  
+3. Inject configured audit service into control mux from startup path while preserving `NewMux` default behavior for tests and local dev.  
+**Risk:** Sink writes can fail when workspace/actor identifiers are not UUID-compatible with existing table constraints, resulting in memory-only persistence for those events.  
+**Rollback:** Remove sink injection from `cmd/control/main.go` and revert to `NewMux` default construction while retaining in-memory mutation ledger behavior.
