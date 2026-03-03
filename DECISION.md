@@ -253,3 +253,21 @@
 3. Start scheduler from temporal-worker when `DATABASE_URL` is available; log disabled/started/stopped states.  
 **Risk:** Startup now attempts DB connectivity for scrub store initialization and may disable scrubber when DB is unreachable at boot.  
 **Rollback:** Remove scheduler startup from temporal-worker and retain standalone scrubber functions/store for manual or external orchestration.
+
+## DECISION-015: Expand Connector Auth Registries to Canonical Addendum-A Service Coverage
+
+**Date:** 2026-03-03  
+**Blueprint Section:** §15.1, §A.5  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/internal/connectors/oauth_registry.go`  
+**Conflict:** Existing OAuth registry only defined 6 providers and lacked canonical API-key/no-auth service maps from Addendum A.5, creating coverage drift for provider onboarding and policy enforcement.  
+**Options Considered:**  
+1. Keep limited registry and rely on docs for missing provider metadata.  
+2. Add a separate static YAML map but leave runtime registry unchanged.  
+3. Expand runtime connector registries to include full canonical provider/service sets with executable tests.  
+**Decision:** Option 3. Upgraded runtime registries to cover all 15 OAuth providers, added canonical 18 API-key service map and 6 no-auth/local-only service map, and enforced counts/required fields in connector tests.  
+**Migration Plan:**  
+1. Extend OAuth provider config schema with URL/token/refresh metadata fields.  
+2. Populate full Addendum-A provider set while preserving existing scope-resolution helper behavior.  
+3. Add separate API-key and no-auth registries for operational auth-source mapping and test them in CI.  
+**Risk:** Registry expansion may expose downstream assumptions about previous smaller provider set.  
+**Rollback:** Revert to previous OAuth registry version and disable new API-key/no-auth map usage in call sites until downstream components are updated.
