@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -388,12 +389,21 @@ func TestHealthEndpoints(t *testing.T) {
 	svc := NewService("test-secret")
 	mux := NewMux(svc)
 
-	for _, path := range []string{"/healthz/ready", "/healthz/live"} {
+	for _, path := range []string{"/healthz/ready", "/healthz/live", "/health", "/health/deep"} {
 		req := httptest.NewRequest(http.MethodGet, path, nil)
 		resp := httptest.NewRecorder()
 		mux.ServeHTTP(resp, req)
 		if resp.Code != http.StatusOK {
 			t.Fatalf("unexpected status for %s: %d", path, resp.Code)
+		}
+		if path == "/health" || path == "/health/deep" {
+			var payload map[string]any
+			if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+				t.Fatalf("expected json response for %s: %v", path, err)
+			}
+			if payload["status"] != "healthy" {
+				t.Fatalf("unexpected health payload for %s: %+v", path, payload)
+			}
 		}
 	}
 }

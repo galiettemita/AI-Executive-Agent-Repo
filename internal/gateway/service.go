@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"path"
 	"regexp"
 	"strconv"
@@ -461,6 +462,7 @@ type Service struct {
 	secret      []byte
 	nonceTTL    time.Duration
 	idempTTL    time.Duration
+	startedAt   time.Time
 	store       *InMemoryStore
 	queue       *InMemoryQueue
 	rateLimiter *RateLimiter
@@ -484,6 +486,7 @@ func NewService(secret string) *Service {
 		secret:      []byte(secret),
 		nonceTTL:    10 * time.Minute,
 		idempTTL:    idempotencyTTL,
+		startedAt:   time.Now().UTC(),
 		store:       NewInMemoryStore(),
 		queue:       &InMemoryQueue{},
 		rateLimiter: NewRateLimiter(),
@@ -820,9 +823,41 @@ func (s *Service) OutboundDispatchCount() int {
 	return len(s.outbox)
 }
 
-func (s *Service) HandleHealth(w http.ResponseWriter, _ *http.Request) {
+func (s *Service) HandleHealth(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path == "/health" || r.URL.Path == "/health/deep" {
+		checks := map[string]string{
+			"process": "ok",
+		}
+		if r.URL.Path == "/health/deep" {
+			checks["db"] = envCheck("DATABASE_URL")
+			checks["redis"] = envCheck("REDIS_URL")
+			checks["temporal"] = envCheck("TEMPORAL_HOST")
+		}
+		version := strings.TrimSpace(os.Getenv("SERVICE_VERSION"))
+		if version == "" {
+			version = "0.1.0"
+		}
+		payload := map[string]any{
+			"status":    "healthy",
+			"version":   version,
+			"uptime_ms": time.Since(s.startedAt).Milliseconds(),
+			"checks":    checks,
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(payload)
+		return
+	}
+
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte("ok"))
+}
+
+func envCheck(key string) string {
+	if strings.TrimSpace(os.Getenv(key)) == "" {
+		return "not_configured"
+	}
+	return "configured"
 }
 
 func (s *Service) ParseInteractiveReply(raw string) string {

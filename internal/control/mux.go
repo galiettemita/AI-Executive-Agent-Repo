@@ -59,6 +59,39 @@ func NewMux(service *Service) *http.ServeMux {
 	temporalSvc := temporal_reasoning.NewService()
 	toolHealthSvc := tool_health.NewService()
 	trustSvc := trust.NewService()
+	startedAt := time.Now().UTC()
+
+	mux.HandleFunc("GET /health", func(w http.ResponseWriter, _ *http.Request) {
+		version := strings.TrimSpace(os.Getenv("SERVICE_VERSION"))
+		if version == "" {
+			version = "0.1.0"
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"status":    "healthy",
+			"version":   version,
+			"uptime_ms": time.Since(startedAt).Milliseconds(),
+			"checks": map[string]string{
+				"process": "ok",
+			},
+		})
+	})
+	mux.HandleFunc("GET /health/deep", func(w http.ResponseWriter, _ *http.Request) {
+		version := strings.TrimSpace(os.Getenv("SERVICE_VERSION"))
+		if version == "" {
+			version = "0.1.0"
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"status":    "healthy",
+			"version":   version,
+			"uptime_ms": time.Since(startedAt).Milliseconds(),
+			"checks": map[string]string{
+				"process":  "ok",
+				"db":       healthEnvStatus("DATABASE_URL"),
+				"redis":    healthEnvStatus("REDIS_URL"),
+				"temporal": healthEnvStatus("TEMPORAL_HOST"),
+			},
+		})
+	})
 
 	mux.HandleFunc("GET /healthz/ready", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -201,6 +234,13 @@ func NewMux(service *Service) *http.ServeMux {
 
 	_ = service
 	return mux
+}
+
+func healthEnvStatus(key string) string {
+	if strings.TrimSpace(os.Getenv(key)) == "" {
+		return "not_configured"
+	}
+	return "configured"
 }
 
 func handleWebhookIngress(w http.ResponseWriter, r *http.Request) {

@@ -38,6 +38,7 @@ Legend
 - [x] BREVIO x OPENCLAW skill seed utility closure: implemented `scripts/seed-skills.ts` to validate `migrations/006_seed_skills.up.sql` contains exactly 153 seeded skill IDs and `config/skill-disambiguation.yaml` contains 11 routing groups, with optional JSON summary output.
 - [x] BREVIO x OPENCLAW policy execution gate: added `scripts/policies/run_opa_tests.sh` with local-OPA or Docker fallback and wired `make ci` through new `policy-validate` target for executable Rego policy checks.
 - [x] BREVIO x OPENCLAW policy gate validation: executed `bash scripts/policies/run_opa_tests.sh` with Docker fallback and verified `PASS: 30/30` policy tests.
+- [x] BREVIO x OPENCLAW health endpoint parity: added `GET /health` and `GET /health/deep` JSON responses (with uptime/version/checks) across Go runtime services/muxes while preserving existing `/healthz/ready` + `/healthz/live`, and expanded runtime health closure tests accordingly.
 - [x] V9.3 addendum phase-0 reconnaissance completed with section-by-section audit output at `docs/addendum_gap_audit.md`.
 - [x] V9.3 addendum closure: added migration `006_BREVIO_v93_addendum_specification_closure.sql` (`whatsapp_message_templates` + RLS/indexes), expanded canonical V9 events with 8 addendum events, and aligned OpenAPI/schema mapping for newly specified endpoints.
 - [x] V9.3 addendum runtime closure: implemented control/canvas endpoint ownership coverage for addendum routes, refreshed API reference docs (`docs/API_REFERENCE.md`), and revalidated with `go test ./...` passing at HEAD.
