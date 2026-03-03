@@ -451,3 +451,21 @@
 3. Assert registry map contains every seeded `skill_id` token.  
 **Risk:** Regeneration strategy changes (or intentionally sparse scaffolds) will fail CI until contracts are updated in lockstep.  
 **Rollback:** Remove scaffold parity tests and rely on script/manual validation while retaining seed migration count/mode checks.
+
+## DECISION-026: Replace Eval Metric Placeholders with Deterministic Dataset Scoring
+
+**Date:** 2026-03-03  
+**Blueprint Section:** §20.13  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/scripts/run-evals.sh`  
+**Conflict:** Eval harness emitted fixed placeholder values for intent/task/response metrics and fixed latency figures, which did not represent actual scoring from the gold datasets.  
+**Options Considered:**  
+1. Keep placeholder metrics and only validate disambiguation/cost gates.  
+2. Call live LLM providers during every eval run for full dynamic scoring.  
+3. Implement deterministic offline scoring logic per dataset with reproducible latency/token/cost reporting.  
+**Decision:** Option 3. Replaced placeholder scoring with deterministic evaluators for intent classification, task decomposition, response generation guardrails, and disambiguation routing; added real p50/p95 latency calculation and per-stage token/cost estimation in result artifacts.  
+**Migration Plan:**  
+1. Implement row-level evaluators for intent/decomposition/response datasets using existing JSONL expected fields.  
+2. Track failures and aggregate accuracy/pass metrics from actual row evaluations.  
+3. Compute latency percentiles from measured evaluation runtime and estimate model costs from token approximations aligned to configured model rates.  
+**Risk:** Deterministic evaluators may overestimate model quality compared to live-provider behavior if dataset formats change without corresponding evaluator updates.  
+**Rollback:** Revert to previous placeholder script while keeping disambiguation and budget regression gates active.

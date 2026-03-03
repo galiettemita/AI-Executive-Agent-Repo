@@ -11,6 +11,10 @@ Run:
 
 Outputs:
 - `tests/evals/results/eval-<timestamp>.json`
+- Includes dataset-level pass/fail details, latency (`p50`/`p95`), token usage, estimated run cost, and regression checks against baseline metrics.
 
 Baselines:
 - `tests/evals/baselines/baseline.json`
+
+Notes:
+- The harness is deterministic and offline-safe: it scores datasets with reproducible evaluators for intent classification, task decomposition, response guardrails, and disambiguation routing.

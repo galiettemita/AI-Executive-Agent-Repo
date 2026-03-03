@@ -12,3 +12,4 @@ terraform/**/.terraform/
 terraform/**/.terraform.lock.hcl
 artifacts/
 sbom.spdx.json
+tests/evals/results/eval-*.json
