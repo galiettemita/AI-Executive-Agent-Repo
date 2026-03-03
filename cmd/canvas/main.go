@@ -19,9 +19,15 @@ func main() {
 	injector := &canvas.InMemoryInjector{}
 	service := canvas.NewService(injector)
 	mux := canvas.NewMux(service)
+	logger := runtimeserver.NewJSONLogger("canvas", cfg.Environment)
+	logger.SetOutput(os.Stdout)
+	handler := logger.Middleware(mux)
 
-	log.Printf("BREVIO canvas listening on %s env=%s version=%s", cfg.ListenAddr, cfg.Environment, cfg.ServiceVersion)
-	if err := runtimeserver.ServeWithGracefulShutdown("canvas", cfg.ListenAddr, mux); err != nil {
+	logger.Info("service_start", map[string]any{
+		"listen_addr": cfg.ListenAddr,
+		"version":     cfg.ServiceVersion,
+	})
+	if err := runtimeserver.ServeWithGracefulShutdown("canvas", cfg.ListenAddr, handler); err != nil {
 		log.Fatalf("canvas server failed: %v", err)
 	}
 }

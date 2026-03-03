@@ -217,3 +217,21 @@
 3. Preserve idempotency by skipping bootstrap writes when keys already exist to avoid overriding operator-defined behavior.  
 **Risk:** Existing deployments that relied on an empty flag registry will now include three baseline flags.  
 **Rollback:** Remove bootstrap invocation from control-plane initialization and keep flag definitions available for manual provisioning.
+
+## DECISION-013: Standardize Go Service Request Logging with Shared JSON Middleware
+
+**Date:** 2026-03-03  
+**Blueprint Section:** §20.3  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/cmd/*/main.go`  
+**Conflict:** Service startup used plain text logs and request handling lacked consistent correlation fields (`trace_id`, `span_id`, `user_id`), conflicting with the structured logging requirement.  
+**Options Considered:**  
+1. Keep plain `log.Printf` startup logs and rely on downstream log processors for normalization.  
+2. Implement per-service custom logging wrappers independently.  
+3. Add shared runtime JSON logger + HTTP middleware and wire all entrypoints through it.  
+**Decision:** Option 3. Added shared JSON logger middleware in `internal/runtime` and wrapped all Go HTTP entrypoints (gateway, brain, control, executor, canvas, temporal-worker) so request logs include correlation fields and UUIDv7 request IDs.  
+**Migration Plan:**  
+1. Add common middleware to emit JSON log records with `ts`, `service`, `env`, `trace_id`, `span_id`, `user_id`, `event`, and request attributes.  
+2. Parse W3C `traceparent` when present and propagate/generated `X-Request-Id` response header.  
+3. Replace plain startup info logs with structured `service_start` events while keeping fatal startup errors unchanged for operational clarity.  
+**Risk:** Additional logging on every request can increase log volume.  
+**Rollback:** Remove middleware wrapping in service mains and revert to previous plain startup/request logging behavior.

@@ -21,9 +21,15 @@ func main() {
 		log.Fatalf("control secret validation failed: %v", err)
 	}
 	mux := control.NewMux(control.NewService(secret))
+	logger := runtimeserver.NewJSONLogger("control", cfg.Environment)
+	logger.SetOutput(os.Stdout)
+	handler := logger.Middleware(mux)
 
-	log.Printf("BREVIO control listening on %s env=%s version=%s", cfg.ListenAddr, cfg.Environment, cfg.ServiceVersion)
-	if err := runtimeserver.ServeWithGracefulShutdown("control", cfg.ListenAddr, mux); err != nil {
+	logger.Info("service_start", map[string]any{
+		"listen_addr": cfg.ListenAddr,
+		"version":     cfg.ServiceVersion,
+	})
+	if err := runtimeserver.ServeWithGracefulShutdown("control", cfg.ListenAddr, handler); err != nil {
 		log.Fatalf("control server failed: %v", err)
 	}
 }

@@ -18,9 +18,15 @@ func main() {
 		IMessageWebhookAPIKey: cfg.IMessageWebhookAPIKey,
 	})
 	mux := gateway.NewMux(service)
+	logger := runtimeserver.NewJSONLogger("gateway", cfg.Environment)
+	logger.SetOutput(os.Stdout)
+	handler := logger.Middleware(mux)
 
-	log.Printf("BREVIO gateway listening on %s env=%s version=%s", cfg.ListenAddr, cfg.Environment, cfg.ServiceVersion)
-	if err := runtimeserver.ServeWithGracefulShutdown("gateway", cfg.ListenAddr, mux); err != nil {
+	logger.Info("service_start", map[string]any{
+		"listen_addr": cfg.ListenAddr,
+		"version":     cfg.ServiceVersion,
+	})
+	if err := runtimeserver.ServeWithGracefulShutdown("gateway", cfg.ListenAddr, handler); err != nil {
 		log.Fatalf("gateway server failed: %v", err)
 	}
 }

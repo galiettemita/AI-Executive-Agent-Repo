@@ -57,9 +57,15 @@ func main() {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok"))
 	})
+	logger := runtimeserver.NewJSONLogger("temporal-worker", cfg.Environment)
+	logger.SetOutput(os.Stdout)
+	handler := logger.Middleware(mux)
 
-	log.Printf("BREVIO temporal worker listening on %s env=%s version=%s", cfg.ListenAddr, cfg.Environment, cfg.ServiceVersion)
-	if err := runtimeserver.ServeWithGracefulShutdown("temporal-worker", cfg.ListenAddr, mux); err != nil {
+	logger.Info("service_start", map[string]any{
+		"listen_addr": cfg.ListenAddr,
+		"version":     cfg.ServiceVersion,
+	})
+	if err := runtimeserver.ServeWithGracefulShutdown("temporal-worker", cfg.ListenAddr, handler); err != nil {
 		log.Fatalf("temporal worker failed: %v", err)
 	}
 }
