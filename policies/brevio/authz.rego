@@ -19,7 +19,8 @@ is_admin {
 
 allow_skill_execution {
   object.get(tier_rank, user_tier, -1) >= object.get(tier_rank, lower(object.get(input.skill, "min_tier", "enterprise")), 99)
-  input.skill.id in input.user.enabled_skills
+  some i
+  input.user.enabled_skills[i] == input.skill.id
   input.skill.enabled == true
 }
 

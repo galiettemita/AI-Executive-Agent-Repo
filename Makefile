@@ -1,4 +1,4 @@
-.PHONY: build test lint migrate db-verify docker-build contracts acceptance ci ci-full load-test security-validate infra-validate api-docs api-docs-check tools-md tools-md-check generate-remote-catalog-keys mcp-wave1-checklist mcp-wave56-checklist mcp-fleet-validate mcp-runtime-rollout deploy-helm external-closeout-check
+.PHONY: build test lint migrate db-verify docker-build contracts acceptance policy-validate ci ci-full load-test security-validate infra-validate api-docs api-docs-check tools-md tools-md-check generate-remote-catalog-keys mcp-wave1-checklist mcp-wave56-checklist mcp-fleet-validate mcp-runtime-rollout deploy-helm external-closeout-check
 
 GO_EXEC := ./scripts/dev/go_exec.sh
 GOFMT_EXEC := ./scripts/dev/gofmt_exec.sh
@@ -31,13 +31,16 @@ contracts:
 acceptance:
 	$(GO_EXEC) test ./internal/contracts -run "TestAcceptanceGatesV9|TestAcceptanceGatesV91|TestAcceptanceGatesV92" -count=1
 
+policy-validate:
+	bash scripts/policies/run_opa_tests.sh
+
 docker-build:
 	@for svc in gateway brain control executor canvas temporal-worker; do \
 		echo "building $$svc"; \
 		docker build --build-arg SERVICE=$$svc -t brevio-$$svc:local .; \
 	done
 
-ci: lint build test migrate api-docs-check tools-md-check mcp-wave1-checklist mcp-wave56-checklist mcp-fleet-validate mcp-runtime-rollout contracts acceptance
+ci: lint build test migrate api-docs-check tools-md-check mcp-wave1-checklist mcp-wave56-checklist mcp-fleet-validate mcp-runtime-rollout policy-validate contracts acceptance
 
 ci-full: ci security-validate infra-validate db-verify
 
