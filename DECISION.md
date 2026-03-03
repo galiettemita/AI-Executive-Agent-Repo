@@ -289,3 +289,21 @@
 3. Gate CI with closure test to prevent accidental drift.  
 **Risk:** Future provider additions now require synchronized updates in both runtime registry and config map to satisfy closure tests.  
 **Rollback:** Remove contract gate and use runtime registry as sole source of truth if dual-source maintenance becomes operationally expensive.
+
+## DECISION-017: Codify Gateway Skill Behavioral Matrix (Addendum A.6) as Executable Runtime Data
+
+**Date:** 2026-03-03  
+**Blueprint Section:** §A.6  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/internal/gateway`  
+**Conflict:** Gateway behavior corrections (including autoresponder hybrid delegation and strict per-skill latency budgets) were described in documentation but not represented as executable runtime data guarded by tests.  
+**Options Considered:**  
+1. Keep A.6 semantics as docs-only guidance.  
+2. Encode values in tests only.  
+3. Add canonical runtime profile map and enforce it with runtime + contract tests.  
+**Decision:** Option 3. Added `GatewaySkillProfiles()` with all 8 required gateway skills, latency budgets, external-call context, and explicit autoresponder `DelegatesToBrain=true`, plus closure tests enforcing exact budgets and set completeness.  
+**Migration Plan:**  
+1. Introduce profile map in gateway package for central usage.  
+2. Add gateway unit test for field completeness and hybrid flag semantics.  
+3. Add contract closure test to prevent drift in skill count and latency budgets.  
+**Risk:** Future budget/policy updates now require code/test updates to preserve closure.  
+**Rollback:** Revert profile map and tests, returning to documentation-only representation.
