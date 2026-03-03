@@ -199,3 +199,21 @@
 3. Keep `/health` and `/healthz/*` behavior unchanged for backward compatibility while enriching `/health/deep` detail.  
 **Risk:** Deep-health requests may incur short dial latency when dependencies are unreachable.  
 **Rollback:** Revert handlers to prior env-presence checks and remove shared deep-probe calls if operational impact is observed.
+
+## DECISION-012: Bootstrap Canonical System Feature Flags at Control-Plane Startup
+
+**Date:** 2026-03-03  
+**Blueprint Section:** §20.7  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/internal/feature_flags`, `/Users/galiettemita/Downloads/Executive AI Agent/backend/internal/control/mux.go`  
+**Conflict:** The feature-flag service existed but did not guarantee the blueprint-required baseline flags for skill rollout, LLM provider switching, and canary features were present in runtime state.  
+**Options Considered:**  
+1. Keep flags fully ad hoc and require operators to create required keys manually.  
+2. Hardcode flag checks throughout call sites without centralized defaults.  
+3. Define canonical system flag defaults and bootstrap them once at control-plane startup.  
+**Decision:** Option 3. Added canonical flag constants/defaults (`skills.rollout`, `llm.provider_switch`, `canary.features`) and bootstrap wiring in control mux initialization, with explicit tests verifying presence.  
+**Migration Plan:**  
+1. Add reusable `DefaultSystemFlags()` and `BootstrapSystemFlags()` in `internal/feature_flags`.  
+2. Invoke bootstrap during control-plane mux/service initialization.  
+3. Preserve idempotency by skipping bootstrap writes when keys already exist to avoid overriding operator-defined behavior.  
+**Risk:** Existing deployments that relied on an empty flag registry will now include three baseline flags.  
+**Rollback:** Remove bootstrap invocation from control-plane initialization and keep flag definitions available for manual provisioning.

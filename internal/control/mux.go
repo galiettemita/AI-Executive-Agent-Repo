@@ -49,6 +49,7 @@ func NewMux(service *Service) *http.ServeMux {
 	eventSchemaSvc := event_schemas.NewService()
 	explorationSvc := exploration.NewService()
 	flags := feature_flags.NewService()
+	flags.BootstrapSystemFlags()
 	goalsSvc := goals.NewService()
 	errorSvc := errorlayer.NewService()
 	contextBudgets := contextlayer.NewService()

@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/brevio/brevio/internal/feature_flags"
 	"gopkg.in/yaml.v3"
 )
 
@@ -172,6 +173,42 @@ func TestControlMuxFeatureFlagsFlow(t *testing.T) {
 	mux.ServeHTTP(deleteFlagResp, deleteFlagReq)
 	if deleteFlagResp.Code != http.StatusOK {
 		t.Fatalf("unexpected delete flag status: %d", deleteFlagResp.Code)
+	}
+}
+
+func TestControlMuxBootstrapsSystemFeatureFlags(t *testing.T) {
+	t.Parallel()
+
+	mux := NewMux(NewService("dev-secret"))
+	req := httptest.NewRequest(http.MethodGet, "/v1/flags", nil)
+	resp := httptest.NewRecorder()
+	mux.ServeHTTP(resp, req)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("unexpected list flags status: %d", resp.Code)
+	}
+
+	var payload struct {
+		Flags []map[string]any `json:"flags"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode flags payload: %v", err)
+	}
+
+	found := map[string]bool{
+		feature_flags.FlagSkillsRollout:     false,
+		feature_flags.FlagLLMProviderSwitch: false,
+		feature_flags.FlagCanaryFeatures:    false,
+	}
+	for _, flag := range payload.Flags {
+		key, _ := flag["key"].(string)
+		if _, ok := found[key]; ok {
+			found[key] = true
+		}
+	}
+	for key, ok := range found {
+		if !ok {
+			t.Fatalf("missing bootstrapped system flag: %s", key)
+		}
 	}
 }
 

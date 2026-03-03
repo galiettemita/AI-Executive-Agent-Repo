@@ -107,3 +107,34 @@ func TestEvaluateCacheInvalidatesOnPolicyChange(t *testing.T) {
 		t.Fatalf("unexpected reason after kill switch: %s", afterKillSwitch.Reason)
 	}
 }
+
+func TestBootstrapSystemFlags(t *testing.T) {
+	t.Parallel()
+
+	s := NewService()
+	s.BootstrapSystemFlags()
+
+	flags := s.ListFlags()
+	if len(flags) != 3 {
+		t.Fatalf("unexpected system flag count: got=%d want=3", len(flags))
+	}
+
+	check := map[string]bool{
+		FlagSkillsRollout:     false,
+		FlagLLMProviderSwitch: false,
+		FlagCanaryFeatures:    false,
+	}
+	for _, flag := range flags {
+		_, ok := check[flag.Key]
+		if !ok {
+			t.Fatalf("unexpected system flag key: %s", flag.Key)
+		}
+		check[flag.Key] = true
+	}
+
+	for key, seen := range check {
+		if !seen {
+			t.Fatalf("missing expected system flag key: %s", key)
+		}
+	}
+}
