@@ -1,110 +1,110 @@
-{"id": "disamb-001", "group": "apple-notes", "input": "disambiguation case 1 for apple-notes", "user_preferences": {"email_provider": "microsoft", "music_provider": "none"}, "expected_skill_id": "placeholder-route"}
-{"id": "disamb-002", "group": "apple-notes", "input": "disambiguation case 2 for apple-notes", "user_preferences": {"email_provider": "imap", "music_provider": "spotify"}, "expected_skill_id": "placeholder-route"}
-{"id": "disamb-003", "group": "apple-notes", "input": "disambiguation case 3 for apple-notes", "user_preferences": {"email_provider": "google", "music_provider": "apple_music"}, "expected_skill_id": "placeholder-route"}
-{"id": "disamb-004", "group": "apple-notes", "input": "disambiguation case 4 for apple-notes", "user_preferences": {"email_provider": "google", "music_provider": "spotify"}, "expected_skill_id": "placeholder-route"}
-{"id": "disamb-005", "group": "apple-notes", "input": "disambiguation case 5 for apple-notes", "user_preferences": {"email_provider": "imap", "music_provider": "none"}, "expected_skill_id": "placeholder-route"}
-{"id": "disamb-006", "group": "apple-notes", "input": "disambiguation case 6 for apple-notes", "user_preferences": {"email_provider": "imap", "music_provider": "spotify"}, "expected_skill_id": "placeholder-route"}
-{"id": "disamb-007", "group": "apple-notes", "input": "disambiguation case 7 for apple-notes", "user_preferences": {"email_provider": "apple", "music_provider": "youtube_music"}, "expected_skill_id": "placeholder-route"}
-{"id": "disamb-008", "group": "apple-notes", "input": "disambiguation case 8 for apple-notes", "user_preferences": {"email_provider": "microsoft", "music_provider": "none"}, "expected_skill_id": "placeholder-route"}
-{"id": "disamb-009", "group": "apple-notes", "input": "disambiguation case 9 for apple-notes", "user_preferences": {"email_provider": "google", "music_provider": "youtube_music"}, "expected_skill_id": "placeholder-route"}
-{"id": "disamb-010", "group": "apple-notes", "input": "disambiguation case 10 for apple-notes", "user_preferences": {"email_provider": "apple", "music_provider": "apple_music"}, "expected_skill_id": "placeholder-route"}
-{"id": "disamb-011", "group": "notion", "input": "disambiguation case 1 for notion", "user_preferences": {"email_provider": "google", "music_provider": "none"}, "expected_skill_id": "placeholder-route"}
-{"id": "disamb-012", "group": "notion", "input": "disambiguation case 2 for notion", "user_preferences": {"email_provider": "imap", "music_provider": "none"}, "expected_skill_id": "placeholder-route"}
-{"id": "disamb-013", "group": "notion", "input": "disambiguation case 3 for notion", "user_preferences": {"email_provider": "google", "music_provider": "none"}, "expected_skill_id": "placeholder-route"}
-{"id": "disamb-014", "group": "notion", "input": "disambiguation case 4 for notion", "user_preferences": {"email_provider": "imap", "music_provider": "none"}, "expected_skill_id": "placeholder-route"}
-{"id": "disamb-015", "group": "notion", "input": "disambiguation case 5 for notion", "user_preferences": {"email_provider": "google", "music_provider": "apple_music"}, "expected_skill_id": "placeholder-route"}
-{"id": "disamb-016", "group": "notion", "input": "disambiguation case 6 for notion", "user_preferences": {"email_provider": "microsoft", "music_provider": "apple_music"}, "expected_skill_id": "placeholder-route"}
-{"id": "disamb-017", "group": "notion", "input": "disambiguation case 7 for notion", "user_preferences": {"email_provider": "imap", "music_provider": "youtube_music"}, "expected_skill_id": "placeholder-route"}
-{"id": "disamb-018", "group": "notion", "input": "disambiguation case 8 for notion", "user_preferences": {"email_provider": "imap", "music_provider": "spotify"}, "expected_skill_id": "placeholder-route"}
-{"id": "disamb-019", "group": "notion", "input": "disambiguation case 9 for notion", "user_preferences": {"email_provider": "microsoft", "music_provider": "youtube_music"}, "expected_skill_id": "placeholder-route"}
-{"id": "disamb-020", "group": "notion", "input": "disambiguation case 10 for notion", "user_preferences": {"email_provider": "google", "music_provider": "spotify"}, "expected_skill_id": "placeholder-route"}
-{"id": "disamb-021", "group": "spotify", "input": "disambiguation case 1 for spotify", "user_preferences": {"email_provider": "google", "music_provider": "none"}, "expected_skill_id": "placeholder-route"}
-{"id": "disamb-022", "group": "spotify", "input": "disambiguation case 2 for spotify", "user_preferences": {"email_provider": "none", "music_provider": "spotify"}, "expected_skill_id": "placeholder-route"}
-{"id": "disamb-023", "group": "spotify", "input": "disambiguation case 3 for spotify", "user_preferences": {"email_provider": "imap", "music_provider": "youtube_music"}, "expected_skill_id": "placeholder-route"}
-{"id": "disamb-024", "group": "spotify", "input": "disambiguation case 4 for spotify", "user_preferences": {"email_provider": "imap", "music_provider": "youtube_music"}, "expected_skill_id": "placeholder-route"}
-{"id": "disamb-025", "group": "spotify", "input": "disambiguation case 5 for spotify", "user_preferences": {"email_provider": "google", "music_provider": "none"}, "expected_skill_id": "placeholder-route"}
-{"id": "disamb-026", "group": "spotify", "input": "disambiguation case 6 for spotify", "user_preferences": {"email_provider": "google", "music_provider": "youtube_music"}, "expected_skill_id": "placeholder-route"}
-{"id": "disamb-027", "group": "spotify", "input": "disambiguation case 7 for spotify", "user_preferences": {"email_provider": "apple", "music_provider": "apple_music"}, "expected_skill_id": "placeholder-route"}
-{"id": "disamb-028", "group": "spotify", "input": "disambiguation case 8 for spotify", "user_preferences": {"email_provider": "apple", "music_provider": "none"}, "expected_skill_id": "placeholder-route"}
-{"id": "disamb-029", "group": "spotify", "input": "disambiguation case 9 for spotify", "user_preferences": {"email_provider": "imap", "music_provider": "youtube_music"}, "expected_skill_id": "placeholder-route"}
-{"id": "disamb-030", "group": "spotify", "input": "disambiguation case 10 for spotify", "user_preferences": {"email_provider": "apple", "music_provider": "none"}, "expected_skill_id": "placeholder-route"}
-{"id": "disamb-031", "group": "flight-tracking", "input": "disambiguation case 1 for flight-tracking", "user_preferences": {"email_provider": "apple", "music_provider": "youtube_music"}, "expected_skill_id": "placeholder-route"}
-{"id": "disamb-032", "group": "flight-tracking", "input": "disambiguation case 2 for flight-tracking", "user_preferences": {"email_provider": "imap", "music_provider": "youtube_music"}, "expected_skill_id": "placeholder-route"}
-{"id": "disamb-033", "group": "flight-tracking", "input": "disambiguation case 3 for flight-tracking", "user_preferences": {"email_provider": "microsoft", "music_provider": "none"}, "expected_skill_id": "placeholder-route"}
-{"id": "disamb-034", "group": "flight-tracking", "input": "disambiguation case 4 for flight-tracking", "user_preferences": {"email_provider": "microsoft", "music_provider": "spotify"}, "expected_skill_id": "placeholder-route"}
-{"id": "disamb-035", "group": "flight-tracking", "input": "disambiguation case 5 for flight-tracking", "user_preferences": {"email_provider": "apple", "music_provider": "apple_music"}, "expected_skill_id": "placeholder-route"}
-{"id": "disamb-036", "group": "flight-tracking", "input": "disambiguation case 6 for flight-tracking", "user_preferences": {"email_provider": "imap", "music_provider": "spotify"}, "expected_skill_id": "placeholder-route"}
-{"id": "disamb-037", "group": "flight-tracking", "input": "disambiguation case 7 for flight-tracking", "user_preferences": {"email_provider": "google", "music_provider": "none"}, "expected_skill_id": "placeholder-route"}
-{"id": "disamb-038", "group": "flight-tracking", "input": "disambiguation case 8 for flight-tracking", "user_preferences": {"email_provider": "none", "music_provider": "apple_music"}, "expected_skill_id": "placeholder-route"}
-{"id": "disamb-039", "group": "flight-tracking", "input": "disambiguation case 9 for flight-tracking", "user_preferences": {"email_provider": "google", "music_provider": "spotify"}, "expected_skill_id": "placeholder-route"}
-{"id": "disamb-040", "group": "flight-tracking", "input": "disambiguation case 10 for flight-tracking", "user_preferences": {"email_provider": "imap", "music_provider": "none"}, "expected_skill_id": "placeholder-route"}
-{"id": "disamb-041", "group": "healthkit", "input": "disambiguation case 1 for healthkit", "user_preferences": {"email_provider": "apple", "music_provider": "youtube_music"}, "expected_skill_id": "placeholder-route"}
-{"id": "disamb-042", "group": "healthkit", "input": "disambiguation case 2 for healthkit", "user_preferences": {"email_provider": "google", "music_provider": "apple_music"}, "expected_skill_id": "placeholder-route"}
-{"id": "disamb-043", "group": "healthkit", "input": "disambiguation case 3 for healthkit", "user_preferences": {"email_provider": "microsoft", "music_provider": "apple_music"}, "expected_skill_id": "placeholder-route"}
-{"id": "disamb-044", "group": "healthkit", "input": "disambiguation case 4 for healthkit", "user_preferences": {"email_provider": "microsoft", "music_provider": "apple_music"}, "expected_skill_id": "placeholder-route"}
-{"id": "disamb-045", "group": "healthkit", "input": "disambiguation case 5 for healthkit", "user_preferences": {"email_provider": "none", "music_provider": "spotify"}, "expected_skill_id": "placeholder-route"}
-{"id": "disamb-046", "group": "healthkit", "input": "disambiguation case 6 for healthkit", "user_preferences": {"email_provider": "apple", "music_provider": "spotify"}, "expected_skill_id": "placeholder-route"}
-{"id": "disamb-047", "group": "healthkit", "input": "disambiguation case 7 for healthkit", "user_preferences": {"email_provider": "imap", "music_provider": "spotify"}, "expected_skill_id": "placeholder-route"}
-{"id": "disamb-048", "group": "healthkit", "input": "disambiguation case 8 for healthkit", "user_preferences": {"email_provider": "none", "music_provider": "spotify"}, "expected_skill_id": "placeholder-route"}
-{"id": "disamb-049", "group": "healthkit", "input": "disambiguation case 9 for healthkit", "user_preferences": {"email_provider": "none", "music_provider": "apple_music"}, "expected_skill_id": "placeholder-route"}
-{"id": "disamb-050", "group": "healthkit", "input": "disambiguation case 10 for healthkit", "user_preferences": {"email_provider": "microsoft", "music_provider": "spotify"}, "expected_skill_id": "placeholder-route"}
-{"id": "disamb-051", "group": "apple-mail", "input": "disambiguation case 1 for apple-mail", "user_preferences": {"email_provider": "apple", "music_provider": "apple_music"}, "expected_skill_id": "placeholder-route"}
-{"id": "disamb-052", "group": "apple-mail", "input": "disambiguation case 2 for apple-mail", "user_preferences": {"email_provider": "apple", "music_provider": "none"}, "expected_skill_id": "placeholder-route"}
-{"id": "disamb-053", "group": "apple-mail", "input": "disambiguation case 3 for apple-mail", "user_preferences": {"email_provider": "imap", "music_provider": "apple_music"}, "expected_skill_id": "placeholder-route"}
-{"id": "disamb-054", "group": "apple-mail", "input": "disambiguation case 4 for apple-mail", "user_preferences": {"email_provider": "google", "music_provider": "spotify"}, "expected_skill_id": "placeholder-route"}
-{"id": "disamb-055", "group": "apple-mail", "input": "disambiguation case 5 for apple-mail", "user_preferences": {"email_provider": "imap", "music_provider": "apple_music"}, "expected_skill_id": "placeholder-route"}
-{"id": "disamb-056", "group": "apple-mail", "input": "disambiguation case 6 for apple-mail", "user_preferences": {"email_provider": "microsoft", "music_provider": "spotify"}, "expected_skill_id": "placeholder-route"}
-{"id": "disamb-057", "group": "apple-mail", "input": "disambiguation case 7 for apple-mail", "user_preferences": {"email_provider": "google", "music_provider": "spotify"}, "expected_skill_id": "placeholder-route"}
-{"id": "disamb-058", "group": "apple-mail", "input": "disambiguation case 8 for apple-mail", "user_preferences": {"email_provider": "google", "music_provider": "apple_music"}, "expected_skill_id": "placeholder-route"}
-{"id": "disamb-059", "group": "apple-mail", "input": "disambiguation case 9 for apple-mail", "user_preferences": {"email_provider": "none", "music_provider": "spotify"}, "expected_skill_id": "placeholder-route"}
-{"id": "disamb-060", "group": "apple-mail", "input": "disambiguation case 10 for apple-mail", "user_preferences": {"email_provider": "apple", "music_provider": "apple_music"}, "expected_skill_id": "placeholder-route"}
-{"id": "disamb-061", "group": "email-send", "input": "disambiguation case 1 for email-send", "user_preferences": {"email_provider": "google", "music_provider": "apple_music"}, "expected_skill_id": "placeholder-route"}
-{"id": "disamb-062", "group": "email-send", "input": "disambiguation case 2 for email-send", "user_preferences": {"email_provider": "google", "music_provider": "apple_music"}, "expected_skill_id": "placeholder-route"}
-{"id": "disamb-063", "group": "email-send", "input": "disambiguation case 3 for email-send", "user_preferences": {"email_provider": "microsoft", "music_provider": "spotify"}, "expected_skill_id": "placeholder-route"}
-{"id": "disamb-064", "group": "email-send", "input": "disambiguation case 4 for email-send", "user_preferences": {"email_provider": "google", "music_provider": "spotify"}, "expected_skill_id": "placeholder-route"}
-{"id": "disamb-065", "group": "email-send", "input": "disambiguation case 5 for email-send", "user_preferences": {"email_provider": "microsoft", "music_provider": "apple_music"}, "expected_skill_id": "placeholder-route"}
-{"id": "disamb-066", "group": "email-send", "input": "disambiguation case 6 for email-send", "user_preferences": {"email_provider": "microsoft", "music_provider": "youtube_music"}, "expected_skill_id": "placeholder-route"}
-{"id": "disamb-067", "group": "email-send", "input": "disambiguation case 7 for email-send", "user_preferences": {"email_provider": "microsoft", "music_provider": "none"}, "expected_skill_id": "placeholder-route"}
-{"id": "disamb-068", "group": "email-send", "input": "disambiguation case 8 for email-send", "user_preferences": {"email_provider": "apple", "music_provider": "none"}, "expected_skill_id": "placeholder-route"}
-{"id": "disamb-069", "group": "email-send", "input": "disambiguation case 9 for email-send", "user_preferences": {"email_provider": "none", "music_provider": "youtube_music"}, "expected_skill_id": "placeholder-route"}
-{"id": "disamb-070", "group": "email-send", "input": "disambiguation case 10 for email-send", "user_preferences": {"email_provider": "apple", "music_provider": "none"}, "expected_skill_id": "placeholder-route"}
-{"id": "disamb-071", "group": "expense-tracking", "input": "disambiguation case 1 for expense-tracking", "user_preferences": {"email_provider": "none", "music_provider": "spotify"}, "expected_skill_id": "placeholder-route"}
-{"id": "disamb-072", "group": "expense-tracking", "input": "disambiguation case 2 for expense-tracking", "user_preferences": {"email_provider": "google", "music_provider": "spotify"}, "expected_skill_id": "placeholder-route"}
-{"id": "disamb-073", "group": "expense-tracking", "input": "disambiguation case 3 for expense-tracking", "user_preferences": {"email_provider": "microsoft", "music_provider": "none"}, "expected_skill_id": "placeholder-route"}
-{"id": "disamb-074", "group": "expense-tracking", "input": "disambiguation case 4 for expense-tracking", "user_preferences": {"email_provider": "none", "music_provider": "spotify"}, "expected_skill_id": "placeholder-route"}
-{"id": "disamb-075", "group": "expense-tracking", "input": "disambiguation case 5 for expense-tracking", "user_preferences": {"email_provider": "google", "music_provider": "apple_music"}, "expected_skill_id": "placeholder-route"}
-{"id": "disamb-076", "group": "expense-tracking", "input": "disambiguation case 6 for expense-tracking", "user_preferences": {"email_provider": "imap", "music_provider": "youtube_music"}, "expected_skill_id": "placeholder-route"}
-{"id": "disamb-077", "group": "expense-tracking", "input": "disambiguation case 7 for expense-tracking", "user_preferences": {"email_provider": "microsoft", "music_provider": "youtube_music"}, "expected_skill_id": "placeholder-route"}
-{"id": "disamb-078", "group": "expense-tracking", "input": "disambiguation case 8 for expense-tracking", "user_preferences": {"email_provider": "imap", "music_provider": "spotify"}, "expected_skill_id": "placeholder-route"}
-{"id": "disamb-079", "group": "expense-tracking", "input": "disambiguation case 9 for expense-tracking", "user_preferences": {"email_provider": "imap", "music_provider": "none"}, "expected_skill_id": "placeholder-route"}
-{"id": "disamb-080", "group": "expense-tracking", "input": "disambiguation case 10 for expense-tracking", "user_preferences": {"email_provider": "apple", "music_provider": "spotify"}, "expected_skill_id": "placeholder-route"}
-{"id": "disamb-081", "group": "package-tracking", "input": "disambiguation case 1 for package-tracking", "user_preferences": {"email_provider": "google", "music_provider": "apple_music"}, "expected_skill_id": "placeholder-route"}
-{"id": "disamb-082", "group": "package-tracking", "input": "disambiguation case 2 for package-tracking", "user_preferences": {"email_provider": "apple", "music_provider": "spotify"}, "expected_skill_id": "placeholder-route"}
-{"id": "disamb-083", "group": "package-tracking", "input": "disambiguation case 3 for package-tracking", "user_preferences": {"email_provider": "apple", "music_provider": "spotify"}, "expected_skill_id": "placeholder-route"}
-{"id": "disamb-084", "group": "package-tracking", "input": "disambiguation case 4 for package-tracking", "user_preferences": {"email_provider": "none", "music_provider": "apple_music"}, "expected_skill_id": "placeholder-route"}
-{"id": "disamb-085", "group": "package-tracking", "input": "disambiguation case 5 for package-tracking", "user_preferences": {"email_provider": "apple", "music_provider": "spotify"}, "expected_skill_id": "placeholder-route"}
-{"id": "disamb-086", "group": "package-tracking", "input": "disambiguation case 6 for package-tracking", "user_preferences": {"email_provider": "imap", "music_provider": "none"}, "expected_skill_id": "placeholder-route"}
-{"id": "disamb-087", "group": "package-tracking", "input": "disambiguation case 7 for package-tracking", "user_preferences": {"email_provider": "imap", "music_provider": "apple_music"}, "expected_skill_id": "placeholder-route"}
-{"id": "disamb-088", "group": "package-tracking", "input": "disambiguation case 8 for package-tracking", "user_preferences": {"email_provider": "imap", "music_provider": "none"}, "expected_skill_id": "placeholder-route"}
-{"id": "disamb-089", "group": "package-tracking", "input": "disambiguation case 9 for package-tracking", "user_preferences": {"email_provider": "apple", "music_provider": "apple_music"}, "expected_skill_id": "placeholder-route"}
-{"id": "disamb-090", "group": "package-tracking", "input": "disambiguation case 10 for package-tracking", "user_preferences": {"email_provider": "microsoft", "music_provider": "none"}, "expected_skill_id": "placeholder-route"}
-{"id": "disamb-091", "group": "places-location", "input": "disambiguation case 1 for places-location", "user_preferences": {"email_provider": "imap", "music_provider": "spotify"}, "expected_skill_id": "placeholder-route"}
-{"id": "disamb-092", "group": "places-location", "input": "disambiguation case 2 for places-location", "user_preferences": {"email_provider": "none", "music_provider": "apple_music"}, "expected_skill_id": "placeholder-route"}
-{"id": "disamb-093", "group": "places-location", "input": "disambiguation case 3 for places-location", "user_preferences": {"email_provider": "google", "music_provider": "youtube_music"}, "expected_skill_id": "placeholder-route"}
-{"id": "disamb-094", "group": "places-location", "input": "disambiguation case 4 for places-location", "user_preferences": {"email_provider": "apple", "music_provider": "spotify"}, "expected_skill_id": "placeholder-route"}
-{"id": "disamb-095", "group": "places-location", "input": "disambiguation case 5 for places-location", "user_preferences": {"email_provider": "imap", "music_provider": "none"}, "expected_skill_id": "placeholder-route"}
-{"id": "disamb-096", "group": "places-location", "input": "disambiguation case 6 for places-location", "user_preferences": {"email_provider": "microsoft", "music_provider": "spotify"}, "expected_skill_id": "placeholder-route"}
-{"id": "disamb-097", "group": "places-location", "input": "disambiguation case 7 for places-location", "user_preferences": {"email_provider": "google", "music_provider": "youtube_music"}, "expected_skill_id": "placeholder-route"}
-{"id": "disamb-098", "group": "places-location", "input": "disambiguation case 8 for places-location", "user_preferences": {"email_provider": "apple", "music_provider": "none"}, "expected_skill_id": "placeholder-route"}
-{"id": "disamb-099", "group": "places-location", "input": "disambiguation case 9 for places-location", "user_preferences": {"email_provider": "none", "music_provider": "none"}, "expected_skill_id": "placeholder-route"}
-{"id": "disamb-100", "group": "places-location", "input": "disambiguation case 10 for places-location", "user_preferences": {"email_provider": "apple", "music_provider": "none"}, "expected_skill_id": "placeholder-route"}
-{"id": "disamb-101", "group": "youtube", "input": "disambiguation case 1 for youtube", "user_preferences": {"email_provider": "google", "music_provider": "spotify"}, "expected_skill_id": "placeholder-route"}
-{"id": "disamb-102", "group": "youtube", "input": "disambiguation case 2 for youtube", "user_preferences": {"email_provider": "microsoft", "music_provider": "spotify"}, "expected_skill_id": "placeholder-route"}
-{"id": "disamb-103", "group": "youtube", "input": "disambiguation case 3 for youtube", "user_preferences": {"email_provider": "microsoft", "music_provider": "none"}, "expected_skill_id": "placeholder-route"}
-{"id": "disamb-104", "group": "youtube", "input": "disambiguation case 4 for youtube", "user_preferences": {"email_provider": "google", "music_provider": "none"}, "expected_skill_id": "placeholder-route"}
-{"id": "disamb-105", "group": "youtube", "input": "disambiguation case 5 for youtube", "user_preferences": {"email_provider": "apple", "music_provider": "spotify"}, "expected_skill_id": "placeholder-route"}
-{"id": "disamb-106", "group": "youtube", "input": "disambiguation case 6 for youtube", "user_preferences": {"email_provider": "google", "music_provider": "spotify"}, "expected_skill_id": "placeholder-route"}
-{"id": "disamb-107", "group": "youtube", "input": "disambiguation case 7 for youtube", "user_preferences": {"email_provider": "none", "music_provider": "spotify"}, "expected_skill_id": "placeholder-route"}
-{"id": "disamb-108", "group": "youtube", "input": "disambiguation case 8 for youtube", "user_preferences": {"email_provider": "google", "music_provider": "spotify"}, "expected_skill_id": "placeholder-route"}
-{"id": "disamb-109", "group": "youtube", "input": "disambiguation case 9 for youtube", "user_preferences": {"email_provider": "google", "music_provider": "apple_music"}, "expected_skill_id": "placeholder-route"}
-{"id": "disamb-110", "group": "youtube", "input": "disambiguation case 10 for youtube", "user_preferences": {"email_provider": "imap", "music_provider": "none"}, "expected_skill_id": "placeholder-route"}
+{"id": "disamb-apple-notes-001", "group": "apple-notes", "input": "save note case 1 in apple notes", "user_preferences": {"email_provider": "google", "music_provider": "spotify"}, "expected_skill_id": "apple-notes-skill"}
+{"id": "disamb-apple-notes-002", "group": "apple-notes", "input": "save note case 2 in apple notes", "user_preferences": {"email_provider": "google", "music_provider": "spotify"}, "expected_skill_id": "apple-notes-skill"}
+{"id": "disamb-apple-notes-003", "group": "apple-notes", "input": "save note case 3 in apple notes", "user_preferences": {"email_provider": "google", "music_provider": "spotify"}, "expected_skill_id": "apple-notes-skill"}
+{"id": "disamb-apple-notes-004", "group": "apple-notes", "input": "save note case 4 in apple notes", "user_preferences": {"email_provider": "google", "music_provider": "spotify"}, "expected_skill_id": "apple-notes-skill"}
+{"id": "disamb-apple-notes-005", "group": "apple-notes", "input": "save note case 5 in apple notes", "user_preferences": {"email_provider": "google", "music_provider": "spotify"}, "expected_skill_id": "apple-notes-skill"}
+{"id": "disamb-apple-notes-006", "group": "apple-notes", "input": "save note case 6 in apple notes", "user_preferences": {"email_provider": "google", "music_provider": "spotify"}, "expected_skill_id": "apple-notes-skill"}
+{"id": "disamb-apple-notes-007", "group": "apple-notes", "input": "save note case 7 in apple notes", "user_preferences": {"email_provider": "google", "music_provider": "spotify"}, "expected_skill_id": "apple-notes-skill"}
+{"id": "disamb-apple-notes-008", "group": "apple-notes", "input": "save note case 8 in apple notes", "user_preferences": {"email_provider": "google", "music_provider": "spotify"}, "expected_skill_id": "apple-notes-skill"}
+{"id": "disamb-apple-notes-009", "group": "apple-notes", "input": "save note case 9 in apple notes", "user_preferences": {"email_provider": "google", "music_provider": "spotify"}, "expected_skill_id": "apple-notes-skill"}
+{"id": "disamb-apple-notes-010", "group": "apple-notes", "input": "save note case 10 in apple notes", "user_preferences": {"email_provider": "google", "music_provider": "spotify"}, "expected_skill_id": "apple-notes-skill"}
+{"id": "disamb-notion-001", "group": "notion", "input": "update notion doc case 1", "prefer_fallback": false, "expected_skill_id": "better-notion"}
+{"id": "disamb-notion-002", "group": "notion", "input": "update notion doc case 2", "prefer_fallback": false, "expected_skill_id": "better-notion"}
+{"id": "disamb-notion-003", "group": "notion", "input": "update notion doc case 3", "prefer_fallback": false, "expected_skill_id": "better-notion"}
+{"id": "disamb-notion-004", "group": "notion", "input": "update notion doc case 4", "prefer_fallback": false, "expected_skill_id": "better-notion"}
+{"id": "disamb-notion-005", "group": "notion", "input": "update notion doc case 5", "prefer_fallback": false, "expected_skill_id": "better-notion"}
+{"id": "disamb-notion-006", "group": "notion", "input": "update notion doc case 6", "prefer_fallback": false, "expected_skill_id": "better-notion"}
+{"id": "disamb-notion-007", "group": "notion", "input": "update notion doc case 7", "prefer_fallback": false, "expected_skill_id": "better-notion"}
+{"id": "disamb-notion-008", "group": "notion", "input": "update notion doc case 8", "prefer_fallback": false, "expected_skill_id": "better-notion"}
+{"id": "disamb-notion-009", "group": "notion", "input": "use legacy notion flow case 9", "prefer_fallback": true, "expected_skill_id": "notion"}
+{"id": "disamb-notion-010", "group": "notion", "input": "use legacy notion flow case 10", "prefer_fallback": true, "expected_skill_id": "notion"}
+{"id": "disamb-spotify-001", "group": "spotify", "input": "play chill mix", "deployment_mode": "cloud", "expected_skill_id": "spotify-web-api"}
+{"id": "disamb-spotify-002", "group": "spotify", "input": "play workout playlist on my mac", "deployment_mode": "local_mac", "expected_skill_id": "spotify"}
+{"id": "disamb-spotify-003", "group": "spotify", "input": "queue this from terminal", "deployment_mode": "terminal", "expected_skill_id": "spotify-player"}
+{"id": "disamb-spotify-004", "group": "spotify", "input": "show my top artists this month", "deployment_mode": "cloud", "expected_skill_id": "spotify-history"}
+{"id": "disamb-spotify-005", "group": "spotify", "input": "spotify analytics for last year", "deployment_mode": "cloud", "expected_skill_id": "spotify-history"}
+{"id": "disamb-spotify-006", "group": "spotify", "input": "start playback", "deployment_mode": "cloud", "expected_skill_id": "spotify-web-api"}
+{"id": "disamb-spotify-007", "group": "spotify", "input": "skip current track", "deployment_mode": "local_mac", "expected_skill_id": "spotify"}
+{"id": "disamb-spotify-008", "group": "spotify", "input": "search and queue artist from cli", "deployment_mode": "terminal", "expected_skill_id": "spotify-player"}
+{"id": "disamb-spotify-009", "group": "spotify", "input": "show listening stats", "deployment_mode": "cloud", "expected_skill_id": "spotify-history"}
+{"id": "disamb-spotify-010", "group": "spotify", "input": "play focus playlist", "deployment_mode": "cloud", "expected_skill_id": "spotify-web-api"}
+{"id": "disamb-flight-001", "group": "flight-tracking", "input": "track AA100 gate status", "user_tier": "free", "expected_skill_id": "flight-tracker"}
+{"id": "disamb-flight-002", "group": "flight-tracking", "input": "track BA150", "user_tier": "free", "expected_skill_id": "flight-tracker"}
+{"id": "disamb-flight-003", "group": "flight-tracking", "input": "find flight from nyc to mia", "user_tier": "pro", "expected_skill_id": "aerobase-skill"}
+{"id": "disamb-flight-004", "group": "flight-tracking", "input": "search flight to sfo", "user_tier": "enterprise", "expected_skill_id": "aerobase-skill"}
+{"id": "disamb-flight-005", "group": "flight-tracking", "input": "track UA442 delay", "user_tier": "pro", "expected_skill_id": "aviationstack-flight-tracker"}
+{"id": "disamb-flight-006", "group": "flight-tracking", "input": "track LH401", "user_tier": "enterprise", "expected_skill_id": "aviationstack-flight-tracker"}
+{"id": "disamb-flight-007", "group": "flight-tracking", "input": "book flight options", "user_tier": "pro", "expected_skill_id": "aerobase-skill"}
+{"id": "disamb-flight-008", "group": "flight-tracking", "input": "track EK205", "user_tier": "pro", "expected_skill_id": "aviationstack-flight-tracker"}
+{"id": "disamb-flight-009", "group": "flight-tracking", "input": "track DL20", "user_tier": "free", "expected_skill_id": "flight-tracker"}
+{"id": "disamb-flight-010", "group": "flight-tracking", "input": "find a flight tomorrow morning", "user_tier": "enterprise", "expected_skill_id": "aerobase-skill"}
+{"id": "disamb-healthkit-001", "group": "healthkit", "input": "healthkit sync case 1", "expected_skill_id": "healthkit-sync-apple"}
+{"id": "disamb-healthkit-002", "group": "healthkit", "input": "healthkit sync case 2", "expected_skill_id": "healthkit-sync-apple"}
+{"id": "disamb-healthkit-003", "group": "healthkit", "input": "healthkit sync case 3", "expected_skill_id": "healthkit-sync-apple"}
+{"id": "disamb-healthkit-004", "group": "healthkit", "input": "healthkit sync case 4", "expected_skill_id": "healthkit-sync-apple"}
+{"id": "disamb-healthkit-005", "group": "healthkit", "input": "healthkit sync case 5", "expected_skill_id": "healthkit-sync-apple"}
+{"id": "disamb-healthkit-006", "group": "healthkit", "input": "healthkit sync case 6", "expected_skill_id": "healthkit-sync-apple"}
+{"id": "disamb-healthkit-007", "group": "healthkit", "input": "healthkit sync case 7", "expected_skill_id": "healthkit-sync-apple"}
+{"id": "disamb-healthkit-008", "group": "healthkit", "input": "healthkit sync case 8", "expected_skill_id": "healthkit-sync-apple"}
+{"id": "disamb-healthkit-009", "group": "healthkit", "input": "healthkit sync case 9", "expected_skill_id": "healthkit-sync-apple"}
+{"id": "disamb-healthkit-010", "group": "healthkit", "input": "healthkit sync case 10", "expected_skill_id": "healthkit-sync-apple"}
+{"id": "disamb-apple-mail-001", "group": "apple-mail", "input": "search email about invoices", "expected_skill_id": "apple-mail-search"}
+{"id": "disamb-apple-mail-002", "group": "apple-mail", "input": "find email from sarah", "expected_skill_id": "apple-mail-search"}
+{"id": "disamb-apple-mail-003", "group": "apple-mail", "input": "look up mail from payroll", "expected_skill_id": "apple-mail-search"}
+{"id": "disamb-apple-mail-004", "group": "apple-mail", "input": "reply to my latest email", "expected_skill_id": "apple-mail"}
+{"id": "disamb-apple-mail-005", "group": "apple-mail", "input": "draft new email to team", "expected_skill_id": "apple-mail"}
+{"id": "disamb-apple-mail-006", "group": "apple-mail", "input": "mark message unread", "expected_skill_id": "apple-mail"}
+{"id": "disamb-apple-mail-007", "group": "apple-mail", "input": "search attachment from legal", "expected_skill_id": "apple-mail-search"}
+{"id": "disamb-apple-mail-008", "group": "apple-mail", "input": "archive newsletter", "expected_skill_id": "apple-mail"}
+{"id": "disamb-apple-mail-009", "group": "apple-mail", "input": "find email with subject roadmap", "expected_skill_id": "apple-mail-search"}
+{"id": "disamb-apple-mail-010", "group": "apple-mail", "input": "send follow up to vendor", "expected_skill_id": "apple-mail"}
+{"id": "disamb-email-send-001", "group": "email-send", "input": "send email case 1", "user_preferences": {"email_provider": "google"}, "expected_skill_id": "google-workspace"}
+{"id": "disamb-email-send-002", "group": "email-send", "input": "send email case 2", "user_preferences": {"email_provider": "microsoft"}, "expected_skill_id": "outlook"}
+{"id": "disamb-email-send-003", "group": "email-send", "input": "send email case 3", "user_preferences": {"email_provider": "apple"}, "expected_skill_id": "apple-mail"}
+{"id": "disamb-email-send-004", "group": "email-send", "input": "send email case 4", "user_preferences": {"email_provider": "imap"}, "expected_skill_id": "imap-email"}
+{"id": "disamb-email-send-005", "group": "email-send", "input": "send email case 5", "user_preferences": {"email_provider": "send_only"}, "expected_skill_id": "smtp-send"}
+{"id": "disamb-email-send-006", "group": "email-send", "input": "send email case 6", "user_preferences": {"email_provider": "none"}, "expected_skill_id": "smtp-send"}
+{"id": "disamb-email-send-007", "group": "email-send", "input": "send email case 7", "user_preferences": {"email_provider": "google"}, "expected_skill_id": "google-workspace"}
+{"id": "disamb-email-send-008", "group": "email-send", "input": "send email case 8", "user_preferences": {"email_provider": "apple"}, "expected_skill_id": "apple-mail"}
+{"id": "disamb-email-send-009", "group": "email-send", "input": "send email case 9", "user_preferences": {"email_provider": "imap"}, "expected_skill_id": "imap-email"}
+{"id": "disamb-email-send-010", "group": "email-send", "input": "send email case 10", "user_preferences": {"email_provider": "microsoft"}, "expected_skill_id": "outlook"}
+{"id": "disamb-expense-001", "group": "expense-tracking", "input": "i spent $10 today", "expected_skill_id": "smart-expense-tracker"}
+{"id": "disamb-expense-002", "group": "expense-tracking", "input": "i spent $20 today", "expected_skill_id": "smart-expense-tracker"}
+{"id": "disamb-expense-003", "group": "expense-tracking", "input": "i spent $30 today", "expected_skill_id": "smart-expense-tracker"}
+{"id": "disamb-expense-004", "group": "expense-tracking", "input": "i spent $40 today", "expected_skill_id": "smart-expense-tracker"}
+{"id": "disamb-expense-005", "group": "expense-tracking", "input": "i spent $50 today", "expected_skill_id": "smart-expense-tracker"}
+{"id": "disamb-expense-006", "group": "expense-tracking", "input": "i spent $60 today", "expected_skill_id": "smart-expense-tracker"}
+{"id": "disamb-expense-007", "group": "expense-tracking", "input": "i spent $70 today", "expected_skill_id": "smart-expense-tracker"}
+{"id": "disamb-expense-008", "group": "expense-tracking", "input": "i spent $80 today", "expected_skill_id": "smart-expense-tracker"}
+{"id": "disamb-expense-009", "group": "expense-tracking", "input": "i spent $90 today", "expected_skill_id": "smart-expense-tracker"}
+{"id": "disamb-expense-010", "group": "expense-tracking", "input": "i spent $100 today", "expected_skill_id": "smart-expense-tracker"}
+{"id": "disamb-package-001", "group": "package-tracking", "input": "track package RR123456789AT", "tracking_number": "RR123456789AT", "carrier": "austrian post", "expected_skill_id": "post-at"}
+{"id": "disamb-package-002", "group": "package-tracking", "input": "track package LP123456789CN", "tracking_number": "LP123456789CN", "carrier": "yunexpress", "expected_skill_id": "track17"}
+{"id": "disamb-package-003", "group": "package-tracking", "input": "track package YT123456789SG", "tracking_number": "YT123456789SG", "carrier": "yanwen", "expected_skill_id": "track17"}
+{"id": "disamb-package-004", "group": "package-tracking", "input": "track package 1Z999AA10123456784", "tracking_number": "1Z999AA10123456784", "carrier": "ups", "expected_skill_id": "parcel-package-tracking"}
+{"id": "disamb-package-005", "group": "package-tracking", "input": "track package 9400110200881234567890", "tracking_number": "9400110200881234567890", "carrier": "usps", "expected_skill_id": "parcel-package-tracking"}
+{"id": "disamb-package-006", "group": "package-tracking", "input": "track package EE123456789AT", "tracking_number": "EE123456789AT", "carrier": "post.at", "expected_skill_id": "post-at"}
+{"id": "disamb-package-007", "group": "package-tracking", "input": "track package AB123456789NL", "tracking_number": "AB123456789NL", "carrier": "17track", "expected_skill_id": "track17"}
+{"id": "disamb-package-008", "group": "package-tracking", "input": "track package 123456789012", "tracking_number": "123456789012", "carrier": "dhl", "expected_skill_id": "parcel-package-tracking"}
+{"id": "disamb-package-009", "group": "package-tracking", "input": "track package CD123456789HK", "tracking_number": "CD123456789HK", "carrier": "cainiao", "expected_skill_id": "track17"}
+{"id": "disamb-package-010", "group": "package-tracking", "input": "track package ZZ123456789AT", "tracking_number": "ZZ123456789AT", "carrier": "austrian", "expected_skill_id": "post-at"}
+{"id": "disamb-places-001", "group": "places-location", "input": "navigate to jfk airport", "expected_skill_id": "google-maps"}
+{"id": "disamb-places-002", "group": "places-location", "input": "drive to union square", "expected_skill_id": "google-maps"}
+{"id": "disamb-places-003", "group": "places-location", "input": "find all coffee shops in soho", "expected_skill_id": "spots"}
+{"id": "disamb-places-004", "group": "places-location", "input": "all restaurants in chelsea", "expected_skill_id": "spots"}
+{"id": "disamb-places-005", "group": "places-location", "input": "best sushi near me", "expected_skill_id": "goplaces"}
+{"id": "disamb-places-006", "group": "places-location", "input": "cafes nearby open now", "expected_skill_id": "goplaces"}
+{"id": "disamb-places-007", "group": "places-location", "input": "quick nearby pharmacies", "expected_skill_id": "local-places"}
+{"id": "disamb-places-008", "group": "places-location", "input": "simple nearby gas stations", "expected_skill_id": "local-places"}
+{"id": "disamb-places-009", "group": "places-location", "input": "walk to central park", "expected_skill_id": "google-maps"}
+{"id": "disamb-places-010", "group": "places-location", "input": "closest gym near me", "expected_skill_id": "goplaces"}
+{"id": "disamb-youtube-001", "group": "youtube", "input": "summarize this youtube video", "expected_skill_id": "youtube-summarizer"}
+{"id": "disamb-youtube-002", "group": "youtube", "input": "give me a summary of this clip", "expected_skill_id": "youtube-summarizer"}
+{"id": "disamb-youtube-003", "group": "youtube", "input": "download transcript for this video", "expected_skill_id": "video-transcript-downloader"}
+{"id": "disamb-youtube-004", "group": "youtube", "input": "download subtitles from this link", "expected_skill_id": "video-transcript-downloader"}
+{"id": "disamb-youtube-005", "group": "youtube", "input": "search videos about startup fundraising", "expected_skill_id": "youtube-api"}
+{"id": "disamb-youtube-006", "group": "youtube", "input": "find channel interviews about ai", "expected_skill_id": "youtube-api"}
+{"id": "disamb-youtube-007", "group": "youtube", "input": "tl;dr this podcast video", "expected_skill_id": "youtube-summarizer"}
+{"id": "disamb-youtube-008", "group": "youtube", "input": "get full video captions download", "expected_skill_id": "video-transcript-downloader"}
+{"id": "disamb-youtube-009", "group": "youtube", "input": "youtube playlist search for coding music", "expected_skill_id": "youtube-api"}
+{"id": "disamb-youtube-010", "group": "youtube", "input": "search channel tutorials", "expected_skill_id": "youtube-api"}
