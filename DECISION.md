@@ -469,3 +469,21 @@
 3. Compute latency percentiles from measured evaluation runtime and estimate model costs from token approximations aligned to configured model rates.  
 **Risk:** Deterministic evaluators may overestimate model quality compared to live-provider behavior if dataset formats change without corresponding evaluator updates.  
 **Rollback:** Revert to previous placeholder script while keeping disambiguation and budget regression gates active.
+
+## DECISION-027: Replace Proto Workspace Placeholder Build with Buf Lint/Generate Runtime
+
+**Date:** 2026-03-03  
+**Blueprint Section:** §4, §16 (`packages/proto`)  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/packages/proto/package.json`  
+**Conflict:** The proto package had placeholder scripts (`echo`) for lint/build, so gRPC contract artifacts could not be validated or generated in a reproducible way.  
+**Options Considered:**  
+1. Keep placeholder scripts and rely on manual local commands.  
+2. Require a locally installed Buf binary only.  
+3. Use script wrappers that prefer local Buf but fall back to Dockerized Buf, and enforce this setup with contract tests.  
+**Decision:** Option 3. Added executable `packages/proto/scripts/lint.sh` and `generate.sh`, introduced `packages/proto/buf.gen.yaml` for TypeScript stub generation, updated package scripts, and added closure tests to prevent regressions to placeholder behavior.  
+**Migration Plan:**  
+1. Replace placeholder npm scripts with script wrappers.  
+2. Add Buf generation template targeting `gen/es`.  
+3. Gate with contract tests that assert required scripts/config tokens exist.  
+**Risk:** Environments without both `buf` and `docker` will fail proto lint/generation until one runtime is installed.  
+**Rollback:** Revert package scripts to previous placeholder state and remove proto workspace contract gate.

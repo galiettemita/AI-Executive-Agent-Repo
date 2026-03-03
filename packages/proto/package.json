@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "lint": "echo \"proto lint via buf\"",
-    "build": "echo \"proto generation placeholder\""
+    "lint": "bash ./scripts/lint.sh",
+    "build": "bash ./scripts/generate.sh",
+    "clean": "rm -rf gen"
   }
 }

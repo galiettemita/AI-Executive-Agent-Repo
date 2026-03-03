@@ -11,3 +11,9 @@ Protobuf contracts for Brevio inter-service gRPC communication.
 - `brevio/profile/v1` profile service contract
 - `brevio/scheduler/v1` scheduler service contract
 - `brevio/edge/v1` edge relay contract
+
+## Commands
+- `pnpm --filter @brevio/proto lint` runs Buf lint checks.
+- `pnpm --filter @brevio/proto build` generates TypeScript stubs into `gen/es`.
+
+The scripts use local `buf` when available, otherwise they fall back to a Dockerized Buf runtime.
