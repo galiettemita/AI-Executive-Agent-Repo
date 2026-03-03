@@ -11,3 +11,14 @@ services/brevio-hands/src/skills/{skill-id}/
 - __tests__/integration.test.ts
 - __tests__/fixtures/
 - README.md
+
+## Scaffold Generation
+
+Skill scaffolds are generated from `migrations/006_seed_skills.up.sql`:
+
+```bash
+./scripts/skills/generate_hands_skill_scaffolds.sh
+```
+
+This generates one adapter directory per seeded skill ID and refreshes
+`services/brevio-hands/src/skills/index.ts`.

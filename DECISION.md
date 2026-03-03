@@ -415,3 +415,21 @@
 3. Extend unit tests to enforce action names and workspace scoping for these new mutation paths.  
 **Risk:** Workspace scoping uses existing service identifiers (workspace ID in connectors, account ID for identity profile updates), which may not map 1:1 to every consumer’s expected namespace semantics.  
 **Rollback:** Remove newly added append calls and setter fields in connectors/identity while keeping existing mutation audit coverage elsewhere.
+
+## DECISION-024: Generate Full 153-Skill Hands Adapter Scaffold from Seed Migration
+
+**Date:** 2026-03-03  
+**Blueprint Section:** §2.4, §5.1, §A.7  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/services/brevio-hands/src/skills/_template`  
+**Conflict:** Hands service only contained a single template adapter directory, while seed migration and blueprint require complete per-skill adapter structure coverage for all seeded skills.  
+**Options Considered:**  
+1. Keep manual template-only approach and add adapters incrementally over time.  
+2. Generate only a runtime map of skill IDs without per-skill directory structure.  
+3. Introduce deterministic scaffold generator sourced from `migrations/006_seed_skills.up.sql`, generate all 153 skill directories with required files, and generate a registry index for runtime dispatch.  
+**Decision:** Option 3. Added `scripts/skills/generate_hands_skill_scaffolds.sh`, generated 153 skill adapter directories with canonical file layout, generated `services/brevio-hands/src/skills/index.ts` registry, and extended Hands HTTP service with adapter-backed list/execute routes.  
+**Migration Plan:**  
+1. Use seed migration as source-of-truth for skill IDs and gateway/brain plane assignments.  
+2. Generate missing skill directory scaffolds idempotently and regenerate registry file from same source.  
+3. Keep `_template` available for hand-authored adapter upgrades while runtime can dispatch all generated adapters immediately.  
+**Risk:** Generated adapters are baseline scaffolds and not full external API integrations; production behavior for each skill still requires iterative implementation of service-specific clients/auth/schemas.  
+**Rollback:** Revert generated skill directories and registry/index runtime dispatch changes; retain only `_template` and prior hands health-only service behavior.

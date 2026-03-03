@@ -8,5 +8,8 @@
     "dev": "node dist/index.js",
     "lint": "eslint src --ext .ts",
     "test": "echo \"no tests yet\""
+  },
+  "dependencies": {
+    "@brevio/shared": "workspace:*"
   }
 }
