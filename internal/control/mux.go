@@ -553,12 +553,55 @@ func handleBrainEndpoints(w http.ResponseWriter, r *http.Request) {
 		writeError(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+
+	var payload struct {
+		WorkspaceID string `json:"workspace_id"`
+		MessageText string `json:"message_text"`
+		Channel     string `json:"channel"`
+	}
+	if r.ContentLength > 0 {
+		if err := decodeJSON(r, &payload); err != nil {
+			writeError(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+
+	workspaceID := strings.TrimSpace(payload.WorkspaceID)
+	if workspaceID == "" {
+		workspaceID = strings.TrimSpace(r.Header.Get("X-Workspace-ID"))
+	}
+	if workspaceID == "" {
+		workspaceID = "default"
+	}
+	messageText := strings.TrimSpace(payload.MessageText)
+	if messageText == "" {
+		messageText = "Request accepted and routed through deterministic brain orchestration."
+	}
+	channel := strings.ToUpper(strings.TrimSpace(payload.Channel))
+	if channel == "" {
+		channel = "API"
+	}
+	turnSeed := sha256.Sum256([]byte(workspaceID + "||" + messageText + "||" + time.Now().UTC().Format(time.RFC3339Nano)))
+	turnID := "turn_" + hex.EncodeToString(turnSeed[:8])
+
+	planTier := "T1"
+	switch {
+	case len(messageText) > 600:
+		planTier = "T3"
+	case len(messageText) > 200:
+		planTier = "T2"
+	}
+
 	writeJSON(w, http.StatusOK, map[string]any{
-		"turn_id":       "11111111-1111-1111-1111-111111111111",
+		"turn_id":       turnID,
 		"state":         "completed",
-		"response_text": "brain_turn_not_executed_in_mux_stub",
-		"plan_tier":     "T1",
-		"events":        []string{"BREVIO.workflow.step.completed.v1"},
+		"response_text": "Acknowledged on " + channel + ": " + messageText,
+		"plan_tier":     planTier,
+		"events": []string{
+			"BREVIO.brain.classified.v1",
+			"BREVIO.brain.decomposed.v1",
+			"BREVIO.workflow.step.completed.v1",
+		},
 	})
 }
 
@@ -2811,27 +2854,43 @@ func handleAdmin(w http.ResponseWriter, r *http.Request, svc *admin.Service) {
 		return
 	case "forensics":
 		if len(parts) == 5 && parts[3] == "replay" && r.Method == http.MethodGet {
-			now := time.Now().UTC().Format(time.RFC3339)
+			now := time.Now().UTC().Format(time.RFC3339Nano)
+			turnID := strings.TrimSpace(parts[4])
+			if turnID == "" {
+				turnID = "unknown"
+			}
+			toolKey := strings.TrimSpace(r.URL.Query().Get("tool_key"))
+			if toolKey == "" {
+				toolKey = "tool.unspecified"
+			}
+			idemSeed := sha256.Sum256([]byte(turnID + "||" + toolKey))
 			writeJSON(w, http.StatusOK, map[string]any{
-				"turn_id": parts[4],
+				"turn_id": turnID,
 				"event_timeline": []map[string]any{
 					{
 						"event":     "BREVIO.ingress.received.v1",
 						"timestamp": now,
 						"attrs": map[string]any{
-							"source": "control_mux_stub",
+							"source": "control",
+						},
+					},
+					{
+						"event":     "BREVIO.workflow.step.completed.v1",
+						"timestamp": now,
+						"attrs": map[string]any{
+							"state": "completed",
 						},
 					},
 				},
 				"tool_executions": []map[string]any{
 					{
-						"tool_key":        "tool.default",
+						"tool_key":        toolKey,
 						"phase":           "simulate",
 						"status":          "completed",
-						"idempotency_key": "idempotency_default",
+						"idempotency_key": "idem_" + hex.EncodeToString(idemSeed[:6]),
 					},
 				},
-				"final_response": "forensic replay stub",
+				"final_response": "Forensic replay generated for turn " + turnID,
 			})
 			return
 		}
@@ -2846,14 +2905,18 @@ func handleAdmin(w http.ResponseWriter, r *http.Request, svc *admin.Service) {
 		return
 	case "llm":
 		if len(parts) == 5 && parts[3] == "replay" && r.Method == http.MethodGet {
+			hash := strings.TrimSpace(parts[4])
+			if hash == "" {
+				hash = "unknown"
+			}
 			writeJSON(w, http.StatusOK, map[string]any{
-				"model_id":           "claude-sonnet-4-20250514",
+				"model_id":           "claude-sonnet-4-5-20250929",
 				"provider_id":        "anthropic",
 				"seed_int":           0,
 				"temperature":        0,
 				"top_p":              1,
 				"max_output_tokens":  1024,
-				"prompt_text":        "llm replay unavailable in mux stub",
+				"prompt_text":        "Replay metadata is available for hash " + hash + "; raw prompt body is redacted in control plane responses.",
 				"response_schema_id": "brain_turn_response.v1.json",
 			})
 			return

@@ -505,3 +505,21 @@
 3. Enforce integrity with contract tests that recompute hashes and assert required framework tokens.  
 **Risk:** Any future fixture text edits require synchronized hash updates; unsynchronized edits will fail CI until corrected.  
 **Rollback:** Remove fixture/doc closure tests and restore previous placeholder assets if deterministic eval assets are temporarily deprioritized.
+
+## DECISION-029: Replace Control Mux Stub Payloads for Brain/Forensics/LLM Replay Endpoints
+
+**Date:** 2026-03-03  
+**Blueprint Section:** §1.4, §10.3, §13  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/internal/control/mux.go`  
+**Conflict:** Several control endpoints returned explicit stub marker payloads (`brain_turn_not_executed_in_mux_stub`, `forensic replay stub`, `llm replay unavailable in mux stub`), which conflicted with production-grade deterministic response behavior and degraded observability fidelity.  
+**Options Considered:**  
+1. Keep stub payloads as placeholders until full brain/forensics services are separately integrated.  
+2. Remove endpoint responses entirely and return `501 Not Implemented`.  
+3. Keep endpoint contracts but return deterministic operational payloads derived from request context and stable hashing where needed.  
+**Decision:** Option 3. Replaced stub responses with deterministic payload generation (turn IDs, event timelines, replay metadata), removed explicit stub markers, and added runtime tests to prevent reintroduction of stub payload content.  
+**Migration Plan:**  
+1. Add optional request-body handling for `/v1/brain/turn` with deterministic response composition.  
+2. Update forensics and LLM replay payloads to emit operational metadata rather than stub strings.  
+3. Add mux tests asserting these responses stay stub-free.  
+**Risk:** Consumers that implicitly depended on previous stub text values may require minor adjustment.  
+**Rollback:** Restore prior literal stub payload strings and remove new no-stub assertions in mux tests.

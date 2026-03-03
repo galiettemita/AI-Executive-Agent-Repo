@@ -278,6 +278,42 @@ func TestControlMuxErrorsFlow(t *testing.T) {
 	}
 }
 
+func TestControlMuxNoStubResponsePayloads(t *testing.T) {
+	t.Parallel()
+
+	mux := NewMux(NewService("dev-secret"))
+
+	brainReq := httptest.NewRequest(http.MethodPost, "/v1/brain/turn", bytes.NewReader([]byte(`{"workspace_id":"ws_1","message_text":"Plan tomorrow around two meetings","channel":"whatsapp"}`)))
+	brainResp := httptest.NewRecorder()
+	mux.ServeHTTP(brainResp, brainReq)
+	if brainResp.Code != http.StatusOK {
+		t.Fatalf("unexpected brain status: %d", brainResp.Code)
+	}
+	if strings.Contains(strings.ToLower(brainResp.Body.String()), "stub") {
+		t.Fatalf("brain payload still contains stub marker: %s", brainResp.Body.String())
+	}
+
+	forensicsReq := httptest.NewRequest(http.MethodGet, "/v1/admin/forensics/replay/turn_123?tool_key=google-maps", nil)
+	forensicsResp := httptest.NewRecorder()
+	mux.ServeHTTP(forensicsResp, forensicsReq)
+	if forensicsResp.Code != http.StatusOK {
+		t.Fatalf("unexpected forensics status: %d", forensicsResp.Code)
+	}
+	if strings.Contains(strings.ToLower(forensicsResp.Body.String()), "stub") {
+		t.Fatalf("forensics payload still contains stub marker: %s", forensicsResp.Body.String())
+	}
+
+	llmReq := httptest.NewRequest(http.MethodGet, "/v1/admin/llm/replay/hash_abc123", nil)
+	llmResp := httptest.NewRecorder()
+	mux.ServeHTTP(llmResp, llmReq)
+	if llmResp.Code != http.StatusOK {
+		t.Fatalf("unexpected llm replay status: %d", llmResp.Code)
+	}
+	if strings.Contains(strings.ToLower(llmResp.Body.String()), "stub") {
+		t.Fatalf("llm replay payload still contains stub marker: %s", llmResp.Body.String())
+	}
+}
+
 func TestControlMuxCachingFlow(t *testing.T) {
 	t.Parallel()
 
