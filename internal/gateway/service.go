@@ -546,6 +546,12 @@ type outboundSendRequest struct {
 	Body              string `json:"body"`
 }
 
+type temporalWebhookRequest struct {
+	WorkflowRunID string `json:"workflow_run_id"`
+	WorkflowID    string `json:"workflow_id"`
+	Event         string `json:"event"`
+}
+
 type injectedToolCall struct {
 	WorkspaceID   string         `json:"workspace_id"`
 	IngressTurnID string         `json:"ingress_turn_id"`
@@ -590,6 +596,14 @@ func gatewayIdempotencyKey(channel, channelMessageID string) string {
 		channel = "unknown"
 	}
 	return channel + "::" + channelMessageID
+}
+
+func temporalIdempotencyKey(workflowRunID string) string {
+	workflowRunID = strings.TrimSpace(workflowRunID)
+	if workflowRunID == "" {
+		return ""
+	}
+	return "temporal::" + workflowRunID
 }
 
 func (s *Service) HandleInbound(w http.ResponseWriter, r *http.Request) {
@@ -811,6 +825,37 @@ func (s *Service) HandleInjectToolCall(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusAccepted)
 	_, _ = w.Write([]byte(`{"status":"accepted"}`))
+}
+
+func (s *Service) HandleTemporalWebhook(w http.ResponseWriter, r *http.Request) {
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	var payload temporalWebhookRequest
+	if err := json.Unmarshal(body, &payload); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if strings.TrimSpace(payload.WorkflowRunID) == "" {
+		http.Error(w, "workflow_run_id is required", http.StatusBadRequest)
+		return
+	}
+	idempotencyKey := temporalIdempotencyKey(payload.WorkflowRunID)
+	if statusCode, cachedBody, ok := s.idempotency.Get(idempotencyKey); ok {
+		s.audit.Append("BREVIO.temporal.webhook.idempotent_replay.v1")
+		w.WriteHeader(statusCode)
+		_, _ = w.Write(cachedBody)
+		return
+	}
+
+	acceptedBody := []byte(`{"status":"accepted"}`)
+	s.idempotency.Set(idempotencyKey, http.StatusAccepted, acceptedBody)
+	s.audit.Append("BREVIO.temporal.webhook.received.v1")
+	w.WriteHeader(http.StatusAccepted)
+	_, _ = w.Write(acceptedBody)
 }
 
 func (s *Service) InjectedToolCallCount() int {

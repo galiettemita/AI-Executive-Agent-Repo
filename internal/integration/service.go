@@ -164,7 +164,7 @@ func (s *Service) IngestWebhook(payload WebhookPayload) (int, error) {
 	path := "/v1/gateway/webhook/whatsapp"
 	imessage := false
 	if strings.EqualFold(strings.TrimSpace(payload.Channel), "imessage") {
-		path = "/v1/gateway/webhook/imessage"
+		path = "/webhooks/imessage"
 		imessage = true
 	}
 	req := httptest.NewRequest(http.MethodPost, path, bytes.NewReader(blob))
@@ -184,7 +184,7 @@ func (s *Service) IngestWebhookRaw(channel string, payload []byte, signatureOver
 	path := "/v1/gateway/webhook/whatsapp"
 	imessage := false
 	if strings.EqualFold(strings.TrimSpace(channel), "imessage") {
-		path = "/v1/gateway/webhook/imessage"
+		path = "/webhooks/imessage"
 		imessage = true
 	}
 	req := httptest.NewRequest(http.MethodPost, path, bytes.NewReader(payload))

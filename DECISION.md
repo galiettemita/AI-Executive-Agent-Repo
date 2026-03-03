@@ -127,3 +127,21 @@
 4. Update integration pipeline consumer to decode envelope-first and continue existing gate/workflow/execution behavior.  
 **Risk:** Internal consumers that still assume raw webhook payload format may fail to decode queued messages.  
 **Rollback:** Revert queue payload assignment to raw webhook body and keep envelope generation behind non-disruptive helper functions for later staged reintroduction.
+
+## DECISION-008: Preserve Legacy Gateway Webhook Routes While Adding Canonical `/webhooks/*` Contracts
+
+**Date:** 2026-03-03  
+**Blueprint Section:** §1.2.1, §2.5, §2.6  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/internal/gateway/server.go`  
+**Conflict:** Existing ingress used `/v1/gateway/webhook/*` routes, while blueprint requires canonical webhook contracts under `/webhooks/*` (and service base path expectations under `/api/v1`).  
+**Options Considered:**  
+1. Replace legacy routes with canonical routes immediately (breaking existing integrations/tests).  
+2. Keep legacy routes only and defer canonical contract support.  
+3. Add canonical routes in parallel and keep legacy routes for compatibility during migration.  
+**Decision:** Option 3. Added `/webhooks/*` and `/api/v1/webhooks/*` aliases mapped to the same handlers, plus Temporal callback endpoint with run-id idempotency, while preserving legacy `/v1/gateway/webhook/*` routes.  
+**Migration Plan:**  
+1. Keep current clients on legacy paths.  
+2. Route new integrations to canonical webhook paths.  
+3. Monitor usage and deprecate legacy paths in a later controlled release.  
+**Risk:** Route-surface expansion increases maintenance/test burden.  
+**Rollback:** Remove canonical aliases and keep legacy paths only if unexpected behavior appears during migration.

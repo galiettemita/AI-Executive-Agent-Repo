@@ -460,6 +460,87 @@ func TestHealthEndpoints(t *testing.T) {
 	}
 }
 
+func TestWebhookAliasRoutesMatchLegacyHandlers(t *testing.T) {
+	t.Parallel()
+
+	svc := NewService("test-secret")
+	mux := NewMux(svc)
+	workspaceID := uuid.MustParse("018f3f6a-9a0f-7cc6-8f2f-1f0f2d2f2d2f")
+	svc.router.Bind("whatsapp", "+15550004444", workspaceID)
+	svc.router.Bind("imessage", "imsg:user-alias", workspaceID)
+
+	waPayload := []byte(`{"channel":"whatsapp","channel_identifier":"+15550004444","user_channel_id":"u_alias_wa","nonce":"n_alias_wa","message":"hello alias wa"}`)
+	waReq := signedRequestBody("test-secret", "/api/v1/webhooks/whatsapp", waPayload)
+	waResp := httptest.NewRecorder()
+	mux.ServeHTTP(waResp, waReq)
+	if waResp.Code != http.StatusAccepted {
+		t.Fatalf("expected /api/v1/webhooks/whatsapp accepted, got %d", waResp.Code)
+	}
+
+	imsgPayload := []byte(`{"channel":"imessage","channel_identifier":"imsg:user-alias","user_channel_id":"u_alias_imsg","nonce":"n_alias_imsg","message":"hello alias imsg"}`)
+	imsgReq := signedRequestBody("test-secret", "/webhooks/imessage", imsgPayload)
+	imsgReq.Header.Set("X-API-Key", "dev-imessage-key")
+	imsgResp := httptest.NewRecorder()
+	mux.ServeHTTP(imsgResp, imsgReq)
+	if imsgResp.Code != http.StatusAccepted {
+		t.Fatalf("expected /webhooks/imessage accepted, got %d", imsgResp.Code)
+	}
+
+	verifyReq := httptest.NewRequest(http.MethodGet, "/webhooks/whatsapp?hub.challenge=alias123", nil)
+	verifyResp := httptest.NewRecorder()
+	mux.ServeHTTP(verifyResp, verifyReq)
+	if verifyResp.Code != http.StatusOK || verifyResp.Body.String() != "alias123" {
+		t.Fatalf("unexpected whatsapp verify alias response: status=%d body=%s", verifyResp.Code, verifyResp.Body.String())
+	}
+}
+
+func TestTemporalWebhookIdempotencyByWorkflowRunID(t *testing.T) {
+	t.Parallel()
+
+	svc := NewService("test-secret")
+	mux := NewMux(svc)
+	payload := []byte(`{"workflow_run_id":"run_abc","workflow_id":"msg-123","event":"completed"}`)
+
+	req1 := httptest.NewRequest(http.MethodPost, "/webhooks/temporal", bytes.NewReader(payload))
+	resp1 := httptest.NewRecorder()
+	mux.ServeHTTP(resp1, req1)
+	if resp1.Code != http.StatusAccepted {
+		t.Fatalf("unexpected first temporal webhook status: %d", resp1.Code)
+	}
+	if resp1.Body.String() != `{"status":"accepted"}` {
+		t.Fatalf("unexpected first temporal webhook body: %s", resp1.Body.String())
+	}
+
+	req2 := httptest.NewRequest(http.MethodPost, "/api/v1/webhooks/temporal", bytes.NewReader(payload))
+	resp2 := httptest.NewRecorder()
+	mux.ServeHTTP(resp2, req2)
+	if resp2.Code != http.StatusAccepted {
+		t.Fatalf("unexpected replay temporal webhook status: %d", resp2.Code)
+	}
+	if resp2.Body.String() != `{"status":"accepted"}` {
+		t.Fatalf("unexpected replay temporal webhook body: %s", resp2.Body.String())
+	}
+	if !containsString(svc.AuditEntries(), "BREVIO.temporal.webhook.received.v1") {
+		t.Fatalf("expected temporal received audit event, got %v", svc.AuditEntries())
+	}
+	if !containsString(svc.AuditEntries(), "BREVIO.temporal.webhook.idempotent_replay.v1") {
+		t.Fatalf("expected temporal replay audit event, got %v", svc.AuditEntries())
+	}
+}
+
+func TestTemporalWebhookRequiresWorkflowRunID(t *testing.T) {
+	t.Parallel()
+
+	svc := NewService("test-secret")
+	mux := NewMux(svc)
+	req := httptest.NewRequest(http.MethodPost, "/webhooks/temporal", bytes.NewReader([]byte(`{"workflow_id":"msg-1"}`)))
+	resp := httptest.NewRecorder()
+	mux.ServeHTTP(resp, req)
+	if resp.Code != http.StatusBadRequest {
+		t.Fatalf("expected bad request for missing workflow_run_id, got %d", resp.Code)
+	}
+}
+
 func TestWorkspaceRouterResolveForInboundFallbackAndAutobind(t *testing.T) {
 	t.Parallel()
 
