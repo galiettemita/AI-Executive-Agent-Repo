@@ -7,6 +7,8 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	runtimeserver "github.com/brevio/brevio/internal/runtime"
 )
 
 func main() {
@@ -54,7 +56,7 @@ func main() {
 
 	addr := ":18084"
 	log.Printf("BREVIO temporal worker listening on %s", addr)
-	if err := http.ListenAndServe(addr, mux); err != nil {
+	if err := runtimeserver.ServeWithGracefulShutdown("temporal-worker", addr, mux); err != nil {
 		log.Fatalf("temporal worker failed: %v", err)
 	}
 }

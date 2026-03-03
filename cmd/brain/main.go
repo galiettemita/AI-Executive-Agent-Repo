@@ -7,6 +7,8 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	runtimeserver "github.com/brevio/brevio/internal/runtime"
 )
 
 func main() {
@@ -54,7 +56,7 @@ func main() {
 
 	addr := ":18081"
 	log.Printf("BREVIO brain listening on %s", addr)
-	if err := http.ListenAndServe(addr, mux); err != nil {
+	if err := runtimeserver.ServeWithGracefulShutdown("brain", addr, mux); err != nil {
 		log.Fatalf("brain server failed: %v", err)
 	}
 }

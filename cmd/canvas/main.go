@@ -2,9 +2,9 @@ package main
 
 import (
 	"log"
-	"net/http"
 
 	"github.com/brevio/brevio/internal/canvas"
+	runtimeserver "github.com/brevio/brevio/internal/runtime"
 )
 
 func main() {
@@ -14,7 +14,7 @@ func main() {
 
 	addr := ":18793"
 	log.Printf("BREVIO canvas listening on %s", addr)
-	if err := http.ListenAndServe(addr, mux); err != nil {
+	if err := runtimeserver.ServeWithGracefulShutdown("canvas", addr, mux); err != nil {
 		log.Fatalf("canvas server failed: %v", err)
 	}
 }

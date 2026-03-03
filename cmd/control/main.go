@@ -2,9 +2,9 @@ package main
 
 import (
 	"log"
-	"net/http"
 
 	"github.com/brevio/brevio/internal/control"
+	runtimeserver "github.com/brevio/brevio/internal/runtime"
 )
 
 func main() {
@@ -12,7 +12,7 @@ func main() {
 
 	addr := ":18082"
 	log.Printf("BREVIO control listening on %s", addr)
-	if err := http.ListenAndServe(addr, mux); err != nil {
+	if err := runtimeserver.ServeWithGracefulShutdown("control", addr, mux); err != nil {
 		log.Fatalf("control server failed: %v", err)
 	}
 }

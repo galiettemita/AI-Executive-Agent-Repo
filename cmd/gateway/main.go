@@ -2,10 +2,10 @@ package main
 
 import (
 	"log"
-	"net/http"
 	"os"
 
 	"github.com/brevio/brevio/internal/gateway"
+	runtimeserver "github.com/brevio/brevio/internal/runtime"
 )
 
 func main() {
@@ -19,7 +19,7 @@ func main() {
 
 	addr := ":18080"
 	log.Printf("BREVIO gateway listening on %s", addr)
-	if err := http.ListenAndServe(addr, mux); err != nil {
+	if err := runtimeserver.ServeWithGracefulShutdown("gateway", addr, mux); err != nil {
 		log.Fatalf("gateway server failed: %v", err)
 	}
 }
