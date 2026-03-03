@@ -30,6 +30,7 @@ import (
 	"github.com/brevio/brevio/internal/model_tiers"
 	"github.com/brevio/brevio/internal/observability"
 	raglayer "github.com/brevio/brevio/internal/rag"
+	runtimeserver "github.com/brevio/brevio/internal/runtime"
 	"github.com/brevio/brevio/internal/self_modification"
 	"github.com/brevio/brevio/internal/sessions"
 	"github.com/brevio/brevio/internal/streaming"
@@ -82,16 +83,17 @@ func NewMux(service *Service) *http.ServeMux {
 		if version == "" {
 			version = "0.1.0"
 		}
+		checks := map[string]string{
+			"process": "ok",
+		}
+		for key, status := range runtimeserver.DeepDependencyChecks(os.Getenv) {
+			checks[key] = status
+		}
 		writeJSON(w, http.StatusOK, map[string]any{
 			"status":    "healthy",
 			"version":   version,
 			"uptime_ms": time.Since(startedAt).Milliseconds(),
-			"checks": map[string]string{
-				"process":  "ok",
-				"db":       healthEnvStatus("DATABASE_URL"),
-				"redis":    healthEnvStatus("REDIS_URL"),
-				"temporal": healthEnvStatus("TEMPORAL_HOST"),
-			},
+			"checks":    checks,
 		})
 	})
 
@@ -276,13 +278,6 @@ func NewMux(service *Service) *http.ServeMux {
 
 	_ = service
 	return mux
-}
-
-func healthEnvStatus(key string) string {
-	if strings.TrimSpace(os.Getenv(key)) == "" {
-		return "not_configured"
-	}
-	return "configured"
 }
 
 func isDocsEnabled() bool {

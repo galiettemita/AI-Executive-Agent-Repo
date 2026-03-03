@@ -34,18 +34,19 @@ func main() {
 		})
 	})
 	mux.HandleFunc("GET /health/deep", func(w http.ResponseWriter, _ *http.Request) {
+		checks := map[string]string{
+			"process": "ok",
+		}
+		for key, status := range runtimeserver.DeepDependencyChecks(os.Getenv) {
+			checks[key] = status
+		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"status":    "healthy",
 			"version":   cfg.ServiceVersion,
 			"uptime_ms": time.Since(startedAt).Milliseconds(),
-			"checks": map[string]string{
-				"process":  "ok",
-				"db":       runtimeserver.EnvStatus("DATABASE_URL"),
-				"redis":    runtimeserver.EnvStatus("REDIS_URL"),
-				"temporal": runtimeserver.EnvStatus("TEMPORAL_HOST"),
-			},
+			"checks":    checks,
 		})
 	})
 	mux.HandleFunc("GET /healthz/ready", func(w http.ResponseWriter, _ *http.Request) {

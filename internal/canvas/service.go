@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	runtimeserver "github.com/brevio/brevio/internal/runtime"
 	"github.com/gorilla/websocket"
 )
 
@@ -197,9 +198,9 @@ func (s *Service) HandleHealth(w http.ResponseWriter, r *http.Request) {
 			"process": "ok",
 		}
 		if r.URL.Path == "/health/deep" {
-			checks["db"] = healthEnvCheck("DATABASE_URL")
-			checks["redis"] = healthEnvCheck("REDIS_URL")
-			checks["temporal"] = healthEnvCheck("TEMPORAL_HOST")
+			for key, status := range runtimeserver.DeepDependencyChecks(os.Getenv) {
+				checks[key] = status
+			}
 		}
 		version := strings.TrimSpace(os.Getenv("SERVICE_VERSION"))
 		if version == "" {
@@ -228,13 +229,6 @@ func NewMux(service *Service) *http.ServeMux {
 	mux.HandleFunc("GET /healthz/ready", service.HandleHealth)
 	mux.HandleFunc("GET /healthz/live", service.HandleHealth)
 	return mux
-}
-
-func healthEnvCheck(key string) string {
-	if strings.TrimSpace(os.Getenv(key)) == "" {
-		return "not_configured"
-	}
-	return "configured"
 }
 
 func writeJSON(w http.ResponseWriter, status int, payload any) {

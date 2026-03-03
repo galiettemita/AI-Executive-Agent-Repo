@@ -19,6 +19,7 @@ import (
 	"sync"
 	"time"
 
+	runtimeserver "github.com/brevio/brevio/internal/runtime"
 	"github.com/google/uuid"
 )
 
@@ -1026,9 +1027,9 @@ func (s *Service) HandleHealth(w http.ResponseWriter, r *http.Request) {
 			"process": "ok",
 		}
 		if r.URL.Path == "/health/deep" {
-			checks["db"] = envCheck("DATABASE_URL")
-			checks["redis"] = envCheck("REDIS_URL")
-			checks["temporal"] = envCheck("TEMPORAL_HOST")
+			for key, status := range runtimeserver.DeepDependencyChecks(os.Getenv) {
+				checks[key] = status
+			}
 		}
 		version := strings.TrimSpace(os.Getenv("SERVICE_VERSION"))
 		if version == "" {
@@ -1048,13 +1049,6 @@ func (s *Service) HandleHealth(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte("ok"))
-}
-
-func envCheck(key string) string {
-	if strings.TrimSpace(os.Getenv(key)) == "" {
-		return "not_configured"
-	}
-	return "configured"
 }
 
 func (s *Service) ParseInteractiveReply(raw string) string {

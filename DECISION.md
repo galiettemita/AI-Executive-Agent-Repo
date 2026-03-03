@@ -181,3 +181,21 @@
 3. Continue migrating remaining startup paths and remove duplicate env helper logic.  
 **Risk:** Deployments with previously tolerated missing env vars now fail startup, requiring explicit config completion.  
 **Rollback:** Revert individual entrypoints to previous defaulting behavior while retaining helper package for staged reintroduction.
+
+## DECISION-011: Deep Health Endpoints Must Probe Dependency Reachability, Not Only Env Presence
+
+**Date:** 2026-03-03  
+**Blueprint Section:** §20.1  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/cmd/*/main.go`, `/Users/galiettemita/Downloads/Executive AI Agent/backend/internal/gateway/service.go`, `/Users/galiettemita/Downloads/Executive AI Agent/backend/internal/control/mux.go`, `/Users/galiettemita/Downloads/Executive AI Agent/backend/internal/canvas/service.go`  
+**Conflict:** Existing `/health/deep` handlers reported dependency checks as `configured/not_configured` based only on environment variable presence, which does not satisfy the blueprint requirement for actual DB/Redis/Temporal connectivity checks.  
+**Options Considered:**  
+1. Keep env-presence checks only for speed and determinism.  
+2. Add direct network probes independently in each service handler.  
+3. Introduce shared runtime deep-probe helper and reuse it across all handlers.  
+**Decision:** Option 3. Added a shared runtime dependency probe utility that parses dependency endpoints and performs bounded TCP reachability checks, then wired all Go service deep-health handlers to use it.  
+**Migration Plan:**  
+1. Add runtime helper with deterministic statuses (`ok`, `not_configured`, `invalid_config`, `unreachable`) and parser coverage tests for DSN/URL/host:port inputs.  
+2. Replace duplicated env-only checks in gateway/control/canvas and service mains (brain/executor/temporal-worker).  
+3. Keep `/health` and `/healthz/*` behavior unchanged for backward compatibility while enriching `/health/deep` detail.  
+**Risk:** Deep-health requests may incur short dial latency when dependencies are unreachable.  
+**Rollback:** Revert handlers to prior env-presence checks and remove shared deep-probe calls if operational impact is observed.
