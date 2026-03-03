@@ -55,7 +55,7 @@ func TestClosureChecksV9Section172(t *testing.T) {
 		assertFileNonEmpty(t, promptMapPath)
 		assertFileNonEmpty(t, workflowMapPath)
 		assertCSVExactRows(t, promptMapPath, 28)
-		assertCSVExactRows(t, workflowMapPath, 23)
+		assertCSVExactRows(t, workflowMapPath, 25)
 
 		rows := readCSVRows(t, promptMapPath)
 		if len(rows) < 2 {
