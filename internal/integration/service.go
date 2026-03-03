@@ -181,9 +181,25 @@ func (s *Service) ProcessNextQueuedTurnWithOptions(ctx context.Context, options 
 		return PipelineResult{}, fmt.Errorf("no queued turn")
 	}
 
-	var inbound WebhookPayload
-	if err := json.Unmarshal(msg.Payload, &inbound); err != nil {
+	envelope, err := gateway.DecodeMessageEnvelope(msg.Payload)
+	if err != nil {
 		return PipelineResult{}, err
+	}
+	inbound := WebhookPayload{
+		Channel:           strings.ToLower(strings.TrimSpace(msg.Channel)),
+		ChannelIdentifier: strings.TrimSpace(msg.ChannelIdentifier),
+		UserChannelID:     strings.TrimSpace(msg.UserChannelID),
+		Nonce:             envelope.Metadata.ChannelMessageID,
+		Message:           envelope.ContentText(),
+	}
+	if inbound.Channel == "" {
+		inbound.Channel = strings.ToLower(strings.TrimSpace(envelope.Channel))
+	}
+	if inbound.ChannelIdentifier == "" {
+		inbound.ChannelIdentifier = inbound.UserChannelID
+	}
+	if inbound.Message == "" {
+		inbound.Message = "[non-text message]"
 	}
 
 	firewall := s.control.FirewallCheck(inbound.Message)
@@ -225,7 +241,7 @@ func (s *Service) ProcessNextQueuedTurnWithOptions(ctx context.Context, options 
 			token, err := s.control.Approval().GenerateToken(
 				"tool_commit",
 				toolRiskLevel,
-				"integration_"+inbound.Nonce,
+				"integration_"+envelope.ID,
 				now,
 			)
 			if err != nil {

@@ -99,6 +99,22 @@ func TestValidMessageCreatesIngressAndQueue(t *testing.T) {
 	if msg.DedupKey != msg.IngressTurnID.String() {
 		t.Fatalf("unexpected fifo dedup key: got=%s want=%s", msg.DedupKey, msg.IngressTurnID.String())
 	}
+	envelope, err := DecodeMessageEnvelope(msg.Payload)
+	if err != nil {
+		t.Fatalf("decode message envelope: %v", err)
+	}
+	if envelope.Channel != "WHATSAPP" {
+		t.Fatalf("unexpected envelope channel: %s", envelope.Channel)
+	}
+	if envelope.Content.Type != "TEXT" {
+		t.Fatalf("unexpected envelope content type: %s", envelope.Content.Type)
+	}
+	if envelope.Metadata.ChannelMessageID == "" {
+		t.Fatalf("expected channel_message_id in envelope: %+v", envelope.Metadata)
+	}
+	if envelope.Metadata.SessionID == "" {
+		t.Fatalf("expected session_id in envelope: %+v", envelope.Metadata)
+	}
 }
 
 func TestUnboundChannelRejectedWithIdentityFailureEvent(t *testing.T) {
@@ -177,6 +193,23 @@ func TestAttachmentInteractiveDiscoveryAndVoicePreprocess(t *testing.T) {
 	}
 	if turn.Attachments[0].S3URI == "" {
 		t.Fatal("expected attachment to be uploaded and linked with s3 uri")
+	}
+	msg, ok := svc.PopQueueMessage()
+	if !ok {
+		t.Fatal("expected queued envelope for voice turn")
+	}
+	envelope, err := DecodeMessageEnvelope(msg.Payload)
+	if err != nil {
+		t.Fatalf("decode queued envelope: %v", err)
+	}
+	if envelope.Content.Type != "VOICE" {
+		t.Fatalf("expected VOICE content type, got %s", envelope.Content.Type)
+	}
+	if envelope.Content.Text != "transcript:https://cdn.example.com/audio-note.ogg" {
+		t.Fatalf("unexpected envelope transcription text: %s", envelope.Content.Text)
+	}
+	if envelope.Content.MediaURL != "https://cdn.example.com/audio-note.ogg" {
+		t.Fatalf("unexpected envelope media_url: %s", envelope.Content.MediaURL)
 	}
 }
 
@@ -429,6 +462,72 @@ func TestWorkspaceRouterResolveForInboundFallbackAndAutobind(t *testing.T) {
 	}
 	if resolved != workspaceID || autoBound {
 		t.Fatalf("unexpected bound resolution: workspace=%s autoBound=%v", resolved, autoBound)
+	}
+}
+
+func TestSessionIDRotatesAfterFourHoursInactivity(t *testing.T) {
+	t.Parallel()
+
+	svc := NewService("test-secret")
+	workspaceID := uuid.MustParse("018f3f6a-9a0f-7cc6-8f2f-1f0f2d2f2d2f")
+	svc.router.Bind("whatsapp", "+15550003333", workspaceID)
+
+	base := time.Date(2026, time.March, 3, 10, 0, 0, 0, time.UTC)
+	now := base
+	svc.SetNowForTest(func() time.Time { return now })
+
+	makePayload := func(nonce string) []byte {
+		return []byte(fmt.Sprintf(`{"channel":"whatsapp","channel_identifier":"+15550003333","user_channel_id":"u-session","nonce":"%s","message":"hello"}`, nonce))
+	}
+
+	resp1 := httptest.NewRecorder()
+	svc.HandleInbound(resp1, signedRequestBody("test-secret", "/v1/gateway/webhook/whatsapp", makePayload("session_1")))
+	if resp1.Code != http.StatusAccepted {
+		t.Fatalf("unexpected first status: %d", resp1.Code)
+	}
+	msg1, ok := svc.PopQueueMessage()
+	if !ok {
+		t.Fatal("expected first queue message")
+	}
+	envelope1, err := DecodeMessageEnvelope(msg1.Payload)
+	if err != nil {
+		t.Fatalf("decode first envelope: %v", err)
+	}
+
+	now = base.Add(2 * time.Hour)
+	resp2 := httptest.NewRecorder()
+	svc.HandleInbound(resp2, signedRequestBody("test-secret", "/v1/gateway/webhook/whatsapp", makePayload("session_2")))
+	if resp2.Code != http.StatusAccepted {
+		t.Fatalf("unexpected second status: %d", resp2.Code)
+	}
+	msg2, ok := svc.PopQueueMessage()
+	if !ok {
+		t.Fatal("expected second queue message")
+	}
+	envelope2, err := DecodeMessageEnvelope(msg2.Payload)
+	if err != nil {
+		t.Fatalf("decode second envelope: %v", err)
+	}
+	if envelope2.Metadata.SessionID != envelope1.Metadata.SessionID {
+		t.Fatalf("expected same session_id within 4h window: first=%s second=%s", envelope1.Metadata.SessionID, envelope2.Metadata.SessionID)
+	}
+
+	now = base.Add(7 * time.Hour)
+	resp3 := httptest.NewRecorder()
+	svc.HandleInbound(resp3, signedRequestBody("test-secret", "/v1/gateway/webhook/whatsapp", makePayload("session_3")))
+	if resp3.Code != http.StatusAccepted {
+		t.Fatalf("unexpected third status: %d", resp3.Code)
+	}
+	msg3, ok := svc.PopQueueMessage()
+	if !ok {
+		t.Fatal("expected third queue message")
+	}
+	envelope3, err := DecodeMessageEnvelope(msg3.Payload)
+	if err != nil {
+		t.Fatalf("decode third envelope: %v", err)
+	}
+	if envelope3.Metadata.SessionID == envelope1.Metadata.SessionID {
+		t.Fatalf("expected rotated session_id after inactivity: first=%s third=%s", envelope1.Metadata.SessionID, envelope3.Metadata.SessionID)
 	}
 }
 

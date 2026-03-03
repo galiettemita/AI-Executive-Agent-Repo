@@ -67,11 +67,14 @@ type ChannelIdentityEnvelope struct {
 }
 
 type QueueMessage struct {
-	IngressTurnID uuid.UUID
-	WorkspaceID   uuid.UUID
-	GroupKey      string
-	DedupKey      string
-	Payload       []byte
+	IngressTurnID     uuid.UUID
+	WorkspaceID       uuid.UUID
+	Channel           string
+	ChannelIdentifier string
+	UserChannelID     string
+	GroupKey          string
+	DedupKey          string
+	Payload           []byte
 }
 
 type OutboundDispatch struct {
@@ -463,6 +466,7 @@ type Service struct {
 	nonceTTL    time.Duration
 	idempTTL    time.Duration
 	startedAt   time.Time
+	nowFn       func() time.Time
 	store       *InMemoryStore
 	queue       *InMemoryQueue
 	rateLimiter *RateLimiter
@@ -473,11 +477,20 @@ type Service struct {
 	router      *WorkspaceRouter
 	uploader    AttachmentUploader
 
+	userMu   sync.Mutex
+	userIDs  map[string]uuid.UUID
+	sessions map[string]sessionState
+
 	injectedMu  sync.Mutex
 	injectedCnt int
 
 	outboxMu sync.Mutex
 	outbox   []OutboundDispatch
+}
+
+type sessionState struct {
+	id             uuid.UUID
+	lastActivityAt time.Time
 }
 
 func NewService(secret string) *Service {
@@ -487,6 +500,7 @@ func NewService(secret string) *Service {
 		nonceTTL:    10 * time.Minute,
 		idempTTL:    idempotencyTTL,
 		startedAt:   time.Now().UTC(),
+		nowFn:       time.Now,
 		store:       NewInMemoryStore(),
 		queue:       &InMemoryQueue{},
 		rateLimiter: NewRateLimiter(),
@@ -495,6 +509,8 @@ func NewService(secret string) *Service {
 		identityLog: []ChannelIdentityEnvelope{},
 		router:      NewWorkspaceRouter(),
 		uploader:    NewInMemoryAttachmentUploader("attachments"),
+		userIDs:     map[string]uuid.UUID{},
+		sessions:    map[string]sessionState{},
 		outbox:      []OutboundDispatch{},
 	}
 }
@@ -504,12 +520,14 @@ type inboundMessage struct {
 	ChannelIdentifier string            `json:"channel_identifier"`
 	UserChannelID     string            `json:"user_channel_id"`
 	ChannelMessageID  string            `json:"channel_message_id"`
+	ReplyTo           string            `json:"reply_to"`
 	UserTier          string            `json:"user_tier"`
 	Nonce             string            `json:"nonce"`
 	Message           string            `json:"message"`
 	InteractiveReply  string            `json:"interactive_reply"`
 	DiscoveryAnswer   string            `json:"discovery_answer"`
 	AudioURL          string            `json:"audio_url"`
+	VoiceDurationMS   int               `json:"voice_duration_ms"`
 	Attachments       []AttachmentInput `json:"attachments"`
 }
 
@@ -631,6 +649,7 @@ func (s *Service) HandleInbound(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	now := s.nowUTC()
 
 	attachmentRefs := make([]AttachmentReference, 0, len(msg.Attachments))
 	for _, attachment := range msg.Attachments {
@@ -646,6 +665,41 @@ func (s *Service) HandleInbound(w http.ResponseWriter, r *http.Request) {
 		}
 		attachmentRefs = append(attachmentRefs, ref)
 	}
+	transcript := s.PreprocessVoice(r.Context(), msg.AudioURL)
+	userID, err := s.resolveOrCreateUserID(msg.Channel, msg.UserChannelID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	sessionID, err := s.resolveSessionID(msg.Channel, msg.UserChannelID, now)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	envelope, err := BuildMessageEnvelope(BuildMessageEnvelopeInput{
+		ID:               turnID,
+		Channel:          msg.Channel,
+		UserID:           userID,
+		Timestamp:        now,
+		MessageText:      msg.Message,
+		Transcript:       transcript,
+		AudioURL:         msg.AudioURL,
+		VoiceDurationMS:  msg.VoiceDurationMS,
+		Attachments:      attachmentRefs,
+		ChannelMessageID: msg.ChannelMessageID,
+		ReplyTo:          msg.ReplyTo,
+		SessionID:        sessionID,
+		UserProfileHash:  DeriveUserProfileHash(workspaceID, userID),
+	})
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	envelopePayload, err := json.Marshal(envelope)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 
 	turn := IngressTurn{
 		ID:                     turnID,
@@ -655,9 +709,9 @@ func (s *Service) HandleInbound(w http.ResponseWriter, r *http.Request) {
 		Payload:                body,
 		ParsedInteractiveReply: s.ParseInteractiveReply(msg.InteractiveReply),
 		ParsedDiscoveryAnswer:  s.ParseDiscoveryAnswer(msg.DiscoveryAnswer),
-		Transcript:             s.PreprocessVoice(r.Context(), msg.AudioURL),
+		Transcript:             transcript,
 		Attachments:            attachmentRefs,
-		CreatedAt:              time.Now().UTC(),
+		CreatedAt:              now,
 	}
 	s.recordIdentityEnvelope(ChannelIdentityEnvelope{
 		IngressTurnID:      turn.ID,
@@ -666,7 +720,7 @@ func (s *Service) HandleInbound(w http.ResponseWriter, r *http.Request) {
 		VerificationMethod: "webhook_signature+sender_binding",
 		VerificationResult: "verified",
 		RawSignature:       signature,
-		VerifiedAt:         time.Now().UTC(),
+		VerifiedAt:         now,
 	})
 
 	if inserted := s.store.InsertIngressTurn(turn); !inserted {
@@ -680,11 +734,14 @@ func (s *Service) HandleInbound(w http.ResponseWriter, r *http.Request) {
 	s.audit.Append("BREVIO.ingress.received.v1")
 
 	s.queue.Enqueue(QueueMessage{
-		IngressTurnID: turn.ID,
-		WorkspaceID:   turn.WorkspaceID,
-		GroupKey:      msg.UserChannelID,
-		DedupKey:      turn.ID.String(),
-		Payload:       body,
+		IngressTurnID:     turn.ID,
+		WorkspaceID:       turn.WorkspaceID,
+		Channel:           strings.ToLower(strings.TrimSpace(msg.Channel)),
+		ChannelIdentifier: strings.TrimSpace(msg.ChannelIdentifier),
+		UserChannelID:     msg.UserChannelID,
+		GroupKey:          msg.UserChannelID,
+		DedupKey:          turn.ID.String(),
+		Payload:           envelopePayload,
 	})
 
 	acceptedBody := []byte(`{"status":"accepted"}`)
@@ -740,6 +797,66 @@ func (s *Service) InjectedToolCallCount() int {
 
 func (s *Service) BindWorkspace(channel, identifier string, workspaceID uuid.UUID) {
 	s.router.Bind(channel, identifier, workspaceID)
+}
+
+func (s *Service) SetNowForTest(nowFn func() time.Time) {
+	if nowFn == nil {
+		return
+	}
+	s.userMu.Lock()
+	s.nowFn = nowFn
+	s.userMu.Unlock()
+	s.rateLimiter.SetNowForTest(nowFn)
+	s.idempotency.SetNowForTest(nowFn)
+}
+
+func (s *Service) nowUTC() time.Time {
+	s.userMu.Lock()
+	nowFn := s.nowFn
+	s.userMu.Unlock()
+	if nowFn == nil {
+		return time.Now().UTC()
+	}
+	return nowFn().UTC()
+}
+
+func (s *Service) resolveOrCreateUserID(channel, userChannelID string) (uuid.UUID, error) {
+	key := strings.ToLower(strings.TrimSpace(channel)) + "::" + strings.TrimSpace(userChannelID)
+	s.userMu.Lock()
+	defer s.userMu.Unlock()
+	if existing, ok := s.userIDs[key]; ok {
+		return existing, nil
+	}
+	userID, err := uuid.NewRandom()
+	if err != nil {
+		return uuid.Nil, err
+	}
+	s.userIDs[key] = userID
+	return userID, nil
+}
+
+func (s *Service) resolveSessionID(channel, userChannelID string, now time.Time) (uuid.UUID, error) {
+	key := strings.ToLower(strings.TrimSpace(channel)) + "::" + strings.TrimSpace(userChannelID)
+	s.userMu.Lock()
+	defer s.userMu.Unlock()
+
+	if existing, ok := s.sessions[key]; ok {
+		if now.Sub(existing.lastActivityAt) <= 4*time.Hour {
+			existing.lastActivityAt = now
+			s.sessions[key] = existing
+			return existing.id, nil
+		}
+	}
+
+	sessionID, err := uuid.NewV7()
+	if err != nil {
+		return uuid.Nil, err
+	}
+	s.sessions[key] = sessionState{
+		id:             sessionID,
+		lastActivityAt: now,
+	}
+	return sessionID, nil
 }
 
 func (s *Service) QueueMessageCount() int {

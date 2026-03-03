@@ -108,3 +108,22 @@
 3. Reconcile with TypeScript gateway service during traffic migration using the same tier limits.  
 **Risk:** If product policy expects the older static limits, this may be stricter for some workloads.  
 **Rollback:** Revert limiter policy map to static values and redeploy without changing API contracts.
+
+## DECISION-007: Queue Handoff Uses Canonical MessageEnvelope Instead of Raw Webhook Payload
+
+**Date:** 2026-03-03  
+**Blueprint Section:** §1.4, §2.1, §20.6  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/internal/gateway/service.go`, `/Users/galiettemita/Downloads/Executive AI Agent/backend/internal/integration/service.go`  
+**Conflict:** Existing Gateway queued raw webhook JSON payloads directly, while the blueprint requires all planes to operate on canonical `MessageEnvelope` schema and deterministic stage handoff.  
+**Options Considered:**  
+1. Keep raw webhook payload in queue and map ad hoc fields in Brain/Hands.  
+2. Store both raw payload and canonical envelope in parallel for every queue message.  
+3. Migrate queue payload to canonical `MessageEnvelope` while retaining ingress audit/raw payload in `IngressTurn` for diagnostics.  
+**Decision:** Option 3. Queue payload now carries validated canonical envelope JSON; ingress turn continues to preserve raw webhook payload for traceability/debugging.  
+**Migration Plan:**  
+1. Introduce canonical envelope model + validation in Gateway runtime.  
+2. Resolve deterministic `user_id` mapping and 4-hour `session_id` rotation at ingress time.  
+3. Encode canonical envelope into queue payload; keep raw payload in ingress store only.  
+4. Update integration pipeline consumer to decode envelope-first and continue existing gate/workflow/execution behavior.  
+**Risk:** Internal consumers that still assume raw webhook payload format may fail to decode queued messages.  
+**Rollback:** Revert queue payload assignment to raw webhook body and keep envelope generation behind non-disruptive helper functions for later staged reintroduction.
