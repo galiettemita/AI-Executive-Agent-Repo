@@ -559,3 +559,21 @@
 3. Re-run `make ci` with `proto-validate` to verify lint conformance.  
 **Risk:** Any generated client stubs that referenced old proto type names will require regeneration and type updates in downstream consumers.  
 **Rollback:** Revert proto type rename/wrapper changes and temporarily disable strict proto lint rules while staged consumer migration is prepared.
+
+## DECISION-032: Implement Custom Transactional Gap Skill Stubs as First-Class Hands Adapters
+
+**Date:** 2026-03-03  
+**Blueprint Section:** §17, §A.8  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/scripts/skills/generate_hands_skill_scaffolds.sh`  
+**Conflict:** Core OpenClaw seed coverage (153 skills) did not include Brevio’s required custom transactional moat skills, despite blueprint direction to deliver plug-and-play stub adapters for API-partnership-gated domains.  
+**Options Considered:**  
+1. Track custom transactional gaps only in docs and defer code scaffolds.  
+2. Hand-create one-off directories outside the existing scaffold generator.  
+3. Extend the existing scaffold generator to emit deterministic custom gap stubs and include them in runtime registry/index.  
+**Decision:** Option 3. Extended the generator to include 10 custom transactional gaps, regenerate registry mappings to include them, and inject explicit `// CUSTOM_BUILD_REQUIRED: Awaiting API partnership` markers in each custom adapter.  
+**Migration Plan:**  
+1. Define canonical custom gap skill ID list in the generator script.  
+2. Generate full adapter structure plus registry entries for custom IDs.  
+3. Add contract tests that enforce file presence and `CUSTOM_BUILD_REQUIRED` markers for all custom gap skills.  
+**Risk:** Seed-driven tooling now has two sources (seed migration + custom list), so future edits must keep both lists intentional and version-controlled.  
+**Rollback:** Remove custom IDs from generator list and regenerate scaffolds to return to seed-only adapter set.

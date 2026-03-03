@@ -48,19 +48,44 @@ TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "${TMP_DIR}"' EXIT
 
 SKILLS_FILE="${TMP_DIR}/skills.txt"
+CUSTOM_FILE="${TMP_DIR}/custom.txt"
+ALL_SKILLS_FILE="${TMP_DIR}/all_skills.txt"
 GATEWAY_FILE="${TMP_DIR}/gateway.txt"
 BRAIN_FILE="${TMP_DIR}/brain.txt"
 
 seed_ids >"${SKILLS_FILE}"
+
+cat >"${CUSTOM_FILE}" <<'EOF'
+restaurant-reservations
+food-delivery-ordering
+ride-hailing
+hotel-vacation-booking
+bill-pay-p2p
+streaming-recommendations
+local-service-booking
+kids-family-management
+pharmacy-prescription
+pet-care
+EOF
+
+cat "${SKILLS_FILE}" "${CUSTOM_FILE}" | sort -u >"${ALL_SKILLS_FILE}"
+
 extract_id_block "SET plane = 'gateway'" >"${GATEWAY_FILE}"
 extract_id_block "SET plane = 'brain'" >"${BRAIN_FILE}"
 
 SKILL_COUNT="$(wc -l <"${SKILLS_FILE}" | tr -d ' ')"
+CUSTOM_COUNT="$(wc -l <"${CUSTOM_FILE}" | tr -d ' ')"
+TOTAL_COUNT="$(wc -l <"${ALL_SKILLS_FILE}" | tr -d ' ')"
 
 if [[ "${SKILL_COUNT}" -ne 153 ]]; then
   echo "expected 153 skills from seed migration, got ${SKILL_COUNT}" >&2
   exit 1
 fi
+
+is_custom_skill() {
+  local skill_id="$1"
+  is_in_file "${skill_id}" "${CUSTOM_FILE}"
+}
 
 while IFS= read -r skill_id; do
   [[ -z "${skill_id}" ]] && continue
@@ -69,6 +94,10 @@ while IFS= read -r skill_id; do
     plane="gateway"
   elif is_in_file "${skill_id}" "${BRAIN_FILE}"; then
     plane="brain"
+  fi
+  custom_skill="false"
+  if is_custom_skill "${skill_id}"; then
+    custom_skill="true"
   fi
 
   skill_dir="${SKILLS_DIR}/${skill_id}"
@@ -119,6 +148,11 @@ const adapter: ISkillAdapter = {
   inputSchema: { type: 'object' },
   outputSchema: { type: 'object' },
   async execute(input: SkillInput, _ctx: SkillContext): Promise<SkillResult> {
+EOF
+  if [[ "${custom_skill}" == "true" ]]; then
+    echo "    // CUSTOM_BUILD_REQUIRED: Awaiting API partnership" >>"${skill_dir}/index.ts"
+  fi
+  cat >>"${skill_dir}/index.ts" <<EOF
     const data = await runClient({ payload: input });
     return {
       skill_id: '${skill_id}',
@@ -148,6 +182,9 @@ Generated skill adapter scaffold.
 - Plane: \`${plane}\`
 - Source: \`migrations/006_seed_skills.up.sql\`
 EOF
+  if [[ "${custom_skill}" == "true" ]]; then
+    echo "- Custom build gap stub: \`Awaiting API partnership\`" >>"${skill_dir}/README.md"
+  fi
 
   cat >"${skill_dir}/__tests__/unit.test.ts" <<EOF
 import { describe, it } from 'node:test';
@@ -172,7 +209,7 @@ describe('${skill_id} integration', () => {
 EOF
 
   : >"${skill_dir}/__tests__/fixtures/.gitkeep"
-done <"${SKILLS_FILE}"
+done <"${ALL_SKILLS_FILE}"
 
 {
   echo "import type { ISkillAdapter } from '@brevio/shared';"
@@ -181,14 +218,14 @@ done <"${SKILLS_FILE}"
     [[ -z "${skill_id}" ]] && continue
     alias_name="$(to_alias "${skill_id}")"
     echo "import ${alias_name} from './${skill_id}/index.js';"
-  done <"${SKILLS_FILE}"
+  done <"${ALL_SKILLS_FILE}"
   echo
   echo 'export const SkillRegistry: Record<string, ISkillAdapter> = {'
   while IFS= read -r skill_id; do
     [[ -z "${skill_id}" ]] && continue
     alias_name="$(to_alias "${skill_id}")"
     echo "  '${skill_id}': ${alias_name},"
-  done <"${SKILLS_FILE}"
+  done <"${ALL_SKILLS_FILE}"
   echo '};'
   echo
   echo 'export function getSkillAdapter(skillId: string): ISkillAdapter | null {'
@@ -196,4 +233,4 @@ done <"${SKILLS_FILE}"
   echo '}'
 } >"${REGISTRY_FILE}"
 
-echo "generated skill scaffolds for ${SKILL_COUNT} skills"
+echo "generated skill scaffolds for ${TOTAL_COUNT} skills (seed=${SKILL_COUNT}, custom=${CUSTOM_COUNT})"

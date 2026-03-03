@@ -17,6 +17,7 @@ import adapter_autoresponder from './autoresponder/index.js';
 import adapter_aviationstack_flight_tracker from './aviationstack-flight-tracker/index.js';
 import adapter_bear_notes from './bear-notes/index.js';
 import adapter_better_notion from './better-notion/index.js';
+import adapter_bill_pay_p2p from './bill-pay-p2p/index.js';
 import adapter_bird from './bird/index.js';
 import adapter_bluesky from './bluesky/index.js';
 import adapter_brave_search from './brave-search/index.js';
@@ -46,6 +47,7 @@ import adapter_financial_market_analysis from './financial-market-analysis/index
 import adapter_firecrawl_search from './firecrawl-search/index.js';
 import adapter_flight_tracker from './flight-tracker/index.js';
 import adapter_focus_mode from './focus-mode/index.js';
+import adapter_food_delivery_ordering from './food-delivery-ordering/index.js';
 import adapter_gamma from './gamma/index.js';
 import adapter_gemini_deep_research from './gemini-deep-research/index.js';
 import adapter_gemini_stt from './gemini-stt/index.js';
@@ -62,6 +64,7 @@ import adapter_grocery_list from './grocery-list/index.js';
 import adapter_healthkit_sync from './healthkit-sync/index.js';
 import adapter_healthkit_sync_apple from './healthkit-sync-apple/index.js';
 import adapter_home_assistant from './home-assistant/index.js';
+import adapter_hotel_vacation_booking from './hotel-vacation-booking/index.js';
 import adapter_ibkr_trading from './ibkr-trading/index.js';
 import adapter_icloud_findmy from './icloud-findmy/index.js';
 import adapter_imap_email from './imap-email/index.js';
@@ -69,12 +72,14 @@ import adapter_jira from './jira/index.js';
 import adapter_journal_to_post from './journal-to-post/index.js';
 import adapter_just_fucking_cancel from './just-fucking-cancel/index.js';
 import adapter_kagi_search from './kagi-search/index.js';
+import adapter_kids_family_management from './kids-family-management/index.js';
 import adapter_krea_api from './krea-api/index.js';
 import adapter_last30days from './last30days/index.js';
 import adapter_lastfm from './lastfm/index.js';
 import adapter_linear from './linear/index.js';
 import adapter_literature_review from './literature-review/index.js';
 import adapter_local_places from './local-places/index.js';
+import adapter_local_service_booking from './local-service-booking/index.js';
 import adapter_marketplace from './marketplace/index.js';
 import adapter_meal_planner from './meal-planner/index.js';
 import adapter_meeting_autopilot from './meeting-autopilot/index.js';
@@ -92,6 +97,8 @@ import adapter_parcel_package_tracking from './parcel-package-tracking/index.js'
 import adapter_pdf_tools from './pdf-tools/index.js';
 import adapter_perplexity from './perplexity/index.js';
 import adapter_personal_shopper from './personal-shopper/index.js';
+import adapter_pet_care from './pet-care/index.js';
+import adapter_pharmacy_prescription from './pharmacy-prescription/index.js';
 import adapter_plaid from './plaid/index.js';
 import adapter_plan_my_day from './plan-my-day/index.js';
 import adapter_plex from './plex/index.js';
@@ -107,7 +114,9 @@ import adapter_reddit from './reddit/index.js';
 import adapter_reflect from './reflect/index.js';
 import adapter_refund_radar from './refund-radar/index.js';
 import adapter_relationship_skills from './relationship-skills/index.js';
+import adapter_restaurant_reservations from './restaurant-reservations/index.js';
 import adapter_resume_builder from './resume-builder/index.js';
+import adapter_ride_hailing from './ride-hailing/index.js';
 import adapter_roku from './roku/index.js';
 import adapter_sag from './sag/index.js';
 import adapter_samsung_smart_tv from './samsung-smart-tv/index.js';
@@ -128,6 +137,7 @@ import adapter_spotify_history from './spotify-history/index.js';
 import adapter_spotify_player from './spotify-player/index.js';
 import adapter_spotify_web_api from './spotify-web-api/index.js';
 import adapter_spots from './spots/index.js';
+import adapter_streaming_recommendations from './streaming-recommendations/index.js';
 import adapter_swissweather from './swissweather/index.js';
 import adapter_tavily from './tavily/index.js';
 import adapter_tax_professional from './tax-professional/index.js';
@@ -172,6 +182,7 @@ export const SkillRegistry: Record<string, ISkillAdapter> = {
   'aviationstack-flight-tracker': adapter_aviationstack_flight_tracker,
   'bear-notes': adapter_bear_notes,
   'better-notion': adapter_better_notion,
+  'bill-pay-p2p': adapter_bill_pay_p2p,
   'bird': adapter_bird,
   'bluesky': adapter_bluesky,
   'brave-search': adapter_brave_search,
@@ -201,6 +212,7 @@ export const SkillRegistry: Record<string, ISkillAdapter> = {
   'firecrawl-search': adapter_firecrawl_search,
   'flight-tracker': adapter_flight_tracker,
   'focus-mode': adapter_focus_mode,
+  'food-delivery-ordering': adapter_food_delivery_ordering,
   'gamma': adapter_gamma,
   'gemini-deep-research': adapter_gemini_deep_research,
   'gemini-stt': adapter_gemini_stt,
@@ -217,6 +229,7 @@ export const SkillRegistry: Record<string, ISkillAdapter> = {
   'healthkit-sync': adapter_healthkit_sync,
   'healthkit-sync-apple': adapter_healthkit_sync_apple,
   'home-assistant': adapter_home_assistant,
+  'hotel-vacation-booking': adapter_hotel_vacation_booking,
   'ibkr-trading': adapter_ibkr_trading,
   'icloud-findmy': adapter_icloud_findmy,
   'imap-email': adapter_imap_email,
@@ -224,12 +237,14 @@ export const SkillRegistry: Record<string, ISkillAdapter> = {
   'journal-to-post': adapter_journal_to_post,
   'just-fucking-cancel': adapter_just_fucking_cancel,
   'kagi-search': adapter_kagi_search,
+  'kids-family-management': adapter_kids_family_management,
   'krea-api': adapter_krea_api,
   'last30days': adapter_last30days,
   'lastfm': adapter_lastfm,
   'linear': adapter_linear,
   'literature-review': adapter_literature_review,
   'local-places': adapter_local_places,
+  'local-service-booking': adapter_local_service_booking,
   'marketplace': adapter_marketplace,
   'meal-planner': adapter_meal_planner,
   'meeting-autopilot': adapter_meeting_autopilot,
@@ -247,6 +262,8 @@ export const SkillRegistry: Record<string, ISkillAdapter> = {
   'pdf-tools': adapter_pdf_tools,
   'perplexity': adapter_perplexity,
   'personal-shopper': adapter_personal_shopper,
+  'pet-care': adapter_pet_care,
+  'pharmacy-prescription': adapter_pharmacy_prescription,
   'plaid': adapter_plaid,
   'plan-my-day': adapter_plan_my_day,
   'plex': adapter_plex,
@@ -262,7 +279,9 @@ export const SkillRegistry: Record<string, ISkillAdapter> = {
   'reflect': adapter_reflect,
   'refund-radar': adapter_refund_radar,
   'relationship-skills': adapter_relationship_skills,
+  'restaurant-reservations': adapter_restaurant_reservations,
   'resume-builder': adapter_resume_builder,
+  'ride-hailing': adapter_ride_hailing,
   'roku': adapter_roku,
   'sag': adapter_sag,
   'samsung-smart-tv': adapter_samsung_smart_tv,
@@ -283,6 +302,7 @@ export const SkillRegistry: Record<string, ISkillAdapter> = {
   'spotify-player': adapter_spotify_player,
   'spotify-web-api': adapter_spotify_web_api,
   'spots': adapter_spots,
+  'streaming-recommendations': adapter_streaming_recommendations,
   'swissweather': adapter_swissweather,
   'tavily': adapter_tavily,
   'tax-professional': adapter_tax_professional,

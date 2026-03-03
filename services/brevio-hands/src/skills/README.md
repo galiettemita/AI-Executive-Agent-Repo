@@ -22,3 +22,10 @@ Skill scaffolds are generated from `migrations/006_seed_skills.up.sql`:
 
 This generates one adapter directory per seeded skill ID and refreshes
 `services/brevio-hands/src/skills/index.ts`.
+
+The generator also includes custom Brevio gap stubs for transactional domains
+(restaurant reservations, food delivery, ride hailing, hotel booking, bill pay,
+streaming recommendations, local services, family management, pharmacy, and pet care).
+These stubs are marked with:
+
+`// CUSTOM_BUILD_REQUIRED: Awaiting API partnership`
