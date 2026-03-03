@@ -235,3 +235,21 @@
 3. Replace plain startup info logs with structured `service_start` events while keeping fatal startup errors unchanged for operational clarity.  
 **Risk:** Additional logging on every request can increase log volume.  
 **Rollback:** Remove middleware wrapping in service mains and revert to previous plain startup/request logging behavior.
+
+## DECISION-014: Operationalize Execution-Log PII Scrubbing with Daily Scheduler in Temporal Worker
+
+**Date:** 2026-03-03  
+**Blueprint Section:** §A.4.1, §20.9  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/internal/compliance/execution_log_scrubber.go`, `/Users/galiettemita/Downloads/Executive AI Agent/backend/cmd/temporal-worker/main.go`  
+**Conflict:** Scrubbing logic existed as pure functions/tests but was not connected to a runtime scheduler or persistent store, so no real 03:00 UTC job execution occurred.  
+**Options Considered:**  
+1. Keep scrubber logic test-only and run manually.  
+2. Add ad hoc SQL script and external cron dependency.  
+3. Implement in-process scheduler with DB-backed store and wire into temporal-worker startup.  
+**Decision:** Option 3. Added PostgreSQL-backed scrub store for `skills.execution_log`, a scheduler loop that waits until daily 03:00 UTC, and temporal-worker boot wiring with structured lifecycle logs.  
+**Migration Plan:**  
+1. Add `PGExecutionLogPIIScrubStore` for listing stale rows and nullifying payloads.  
+2. Add `ExecutionLogPIIScrubScheduler` with deterministic next-run calculation and cancellable sleep behavior.  
+3. Start scheduler from temporal-worker when `DATABASE_URL` is available; log disabled/started/stopped states.  
+**Risk:** Startup now attempts DB connectivity for scrub store initialization and may disable scrubber when DB is unreachable at boot.  
+**Rollback:** Remove scheduler startup from temporal-worker and retain standalone scrubber functions/store for manual or external orchestration.

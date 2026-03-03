@@ -1,12 +1,15 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
 	"time"
 
+	"github.com/brevio/brevio/internal/compliance"
 	runtimeserver "github.com/brevio/brevio/internal/runtime"
 )
 
@@ -65,6 +68,35 @@ func main() {
 		"listen_addr": cfg.ListenAddr,
 		"version":     cfg.ServiceVersion,
 	})
+
+	scrubStore, err := compliance.NewPGExecutionLogPIIScrubStore(context.Background(), os.Getenv("DATABASE_URL"))
+	if err != nil {
+		logger.Info("execution_log_scrubber_disabled", map[string]any{
+			"reason": err.Error(),
+		})
+	} else {
+		defer scrubStore.Close()
+		scheduler := compliance.NewExecutionLogPIIScrubScheduler(
+			scrubStore,
+			compliance.DefaultExecutionLogPIIScrubBatchSize,
+			func(format string, args ...any) {
+				logger.Info("execution_log_scrubber_log", map[string]any{
+					"message": fmt.Sprintf(format, args...),
+				})
+			},
+		)
+		go func() {
+			if runErr := scheduler.Run(context.Background()); runErr != nil {
+				logger.Info("execution_log_scrubber_stopped", map[string]any{
+					"error": runErr.Error(),
+				})
+			}
+		}()
+		logger.Info("execution_log_scrubber_started", map[string]any{
+			"next_run_at": compliance.NextExecutionLogPIIScrubRun(time.Now().UTC()).Format(time.RFC3339),
+		})
+	}
+
 	if err := runtimeserver.ServeWithGracefulShutdown("temporal-worker", cfg.ListenAddr, handler); err != nil {
 		log.Fatalf("temporal worker failed: %v", err)
 	}
