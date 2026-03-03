@@ -2,11 +2,9 @@ syntax = "proto3";
 
 package brevio.edge.v1;
 
-import "brevio/common/v1/common.proto";
-
 service EdgeRelayService {
-  rpc DispatchLocalSkill (DispatchLocalSkillRequest) returns (DispatchLocalSkillReply);
-  rpc Health (brevio.common.v1.HealthRequest) returns (brevio.common.v1.HealthResponse);
+  rpc DispatchLocalSkill (DispatchLocalSkillRequest) returns (DispatchLocalSkillResponse);
+  rpc Health (EdgeRelayServiceHealthRequest) returns (EdgeRelayServiceHealthResponse);
 }
 
 message DispatchLocalSkillRequest {
@@ -16,7 +14,18 @@ message DispatchLocalSkillRequest {
   string input_json = 4;
 }
 
-message DispatchLocalSkillReply {
+message DispatchLocalSkillResponse {
   bool accepted = 1;
   string dispatch_id = 2;
+}
+
+message EdgeRelayServiceHealthRequest {
+  bool deep = 1;
+}
+
+message EdgeRelayServiceHealthResponse {
+  string status = 1;
+  string version = 2;
+  int64 uptime_ms = 3;
+  map<string, string> checks = 4;
 }

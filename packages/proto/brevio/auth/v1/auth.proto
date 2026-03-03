@@ -2,12 +2,10 @@ syntax = "proto3";
 
 package brevio.auth.v1;
 
-import "brevio/common/v1/common.proto";
-
 service AuthService {
-  rpc GetOAuthToken (GetOAuthTokenRequest) returns (GetOAuthTokenReply);
-  rpc RefreshOAuthToken (RefreshOAuthTokenRequest) returns (RefreshOAuthTokenReply);
-  rpc Health (brevio.common.v1.HealthRequest) returns (brevio.common.v1.HealthResponse);
+  rpc GetOAuthToken (GetOAuthTokenRequest) returns (GetOAuthTokenResponse);
+  rpc RefreshOAuthToken (RefreshOAuthTokenRequest) returns (RefreshOAuthTokenResponse);
+  rpc Health (AuthServiceHealthRequest) returns (AuthServiceHealthResponse);
 }
 
 message GetOAuthTokenRequest {
@@ -15,7 +13,7 @@ message GetOAuthTokenRequest {
   string service = 2;
 }
 
-message GetOAuthTokenReply {
+message GetOAuthTokenResponse {
   string access_token = 1;
   string refresh_token = 2;
   string expires_at = 3;
@@ -27,8 +25,19 @@ message RefreshOAuthTokenRequest {
   string service = 2;
 }
 
-message RefreshOAuthTokenReply {
+message RefreshOAuthTokenResponse {
   bool refreshed = 1;
   string access_token = 2;
   string expires_at = 3;
+}
+
+message AuthServiceHealthRequest {
+  bool deep = 1;
+}
+
+message AuthServiceHealthResponse {
+  string status = 1;
+  string version = 2;
+  int64 uptime_ms = 3;
+  map<string, string> checks = 4;
 }

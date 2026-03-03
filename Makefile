@@ -1,4 +1,4 @@
-.PHONY: dev build test lint migrate db-verify docker-build contracts acceptance policy-validate ci ci-full load-test security-validate infra-validate api-docs api-docs-check tools-md tools-md-check skills-scaffolds-check generate-remote-catalog-keys mcp-wave1-checklist mcp-wave56-checklist mcp-fleet-validate mcp-runtime-rollout deploy-helm external-closeout-check
+.PHONY: dev build test lint migrate db-verify docker-build contracts acceptance policy-validate ci ci-full load-test security-validate infra-validate api-docs api-docs-check tools-md tools-md-check skills-scaffolds-check proto-validate generate-remote-catalog-keys mcp-wave1-checklist mcp-wave56-checklist mcp-fleet-validate mcp-runtime-rollout deploy-helm external-closeout-check
 
 GO_EXEC := ./scripts/dev/go_exec.sh
 GOFMT_EXEC := ./scripts/dev/gofmt_exec.sh
@@ -43,7 +43,7 @@ docker-build:
 		docker build --build-arg SERVICE=$$svc -t brevio-$$svc:local .; \
 	done
 
-ci: lint build test migrate api-docs-check tools-md-check skills-scaffolds-check mcp-wave1-checklist mcp-wave56-checklist mcp-fleet-validate mcp-runtime-rollout policy-validate contracts acceptance
+ci: proto-validate lint build test migrate api-docs-check tools-md-check skills-scaffolds-check mcp-wave1-checklist mcp-wave56-checklist mcp-fleet-validate mcp-runtime-rollout policy-validate contracts acceptance
 
 ci-full: ci security-validate infra-validate db-verify
 
@@ -81,6 +81,9 @@ tools-md-check:
 skills-scaffolds-check:
 	bash scripts/skills/generate_hands_skill_scaffolds.sh
 	git diff --exit-code services/brevio-hands/src/skills
+
+proto-validate:
+	bash packages/proto/scripts/lint.sh
 
 generate-remote-catalog-keys:
 	$(GO_EXEC) run ./scripts/tools/remote_catalog_keys/main.go

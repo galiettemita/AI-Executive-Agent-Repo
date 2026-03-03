@@ -76,7 +76,7 @@ func TestMCPWave1ChecklistAutomationClosure(t *testing.T) {
 		"./scripts/mcp/fleet_validation/main.go",
 		"mcp-runtime-rollout:",
 		"./scripts/mcp/runtime_rollout/main.go",
-		"ci: lint build test migrate api-docs-check tools-md-check skills-scaffolds-check mcp-wave1-checklist mcp-wave56-checklist mcp-fleet-validate mcp-runtime-rollout policy-validate contracts acceptance",
+		"ci: proto-validate lint build test migrate api-docs-check tools-md-check skills-scaffolds-check mcp-wave1-checklist mcp-wave56-checklist mcp-fleet-validate mcp-runtime-rollout policy-validate contracts acceptance",
 	})
 
 	fleetSpecPath := filepath.Join(root, "spec", "mcp", "fleet_servers_v1.txt")

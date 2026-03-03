@@ -523,3 +523,39 @@
 3. Add mux tests asserting these responses stay stub-free.  
 **Risk:** Consumers that implicitly depended on previous stub text values may require minor adjustment.  
 **Rollback:** Restore prior literal stub payload strings and remove new no-stub assertions in mux tests.
+
+## DECISION-030: Enforce Proto Contract Linting in Core `make ci` Gate
+
+**Date:** 2026-03-03  
+**Blueprint Section:** §4, §9.1  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/Makefile`  
+**Conflict:** Proto lint tooling existed in the `@brevio/proto` workspace, but core CI (`make ci`) did not execute proto validation, allowing schema drift to bypass default gates.  
+**Options Considered:**  
+1. Keep proto checks manual/optional.  
+2. Add proto lint only to `ci-full` stage.  
+3. Add a dedicated `proto-validate` target and make it a mandatory dependency of `ci`.  
+**Decision:** Option 3. Added `proto-validate` target (`bash packages/proto/scripts/lint.sh`) and wired it into `ci` before build/test gates; updated strict contract tests to enforce the new CI token sequence.  
+**Migration Plan:**  
+1. Add target in `Makefile` and include it in `.PHONY`.  
+2. Insert target into `ci` dependency chain.  
+3. Update closure tests with exact `ci:` token line and new target assertions.  
+**Risk:** Environments lacking both local Buf and Docker will fail CI until one runtime is available.  
+**Rollback:** Remove `proto-validate` from `ci` and keep proto lint as a manual package-level command.
+
+## DECISION-031: Refactor Proto RPC Message Types to Satisfy Buf STANDARD Lint Rules
+
+**Date:** 2026-03-03  
+**Blueprint Section:** §4, §9.1  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/packages/proto/brevio/*/v1/*.proto`  
+**Conflict:** After enabling proto lint in `make ci`, Buf surfaced naming and uniqueness violations (`*Reply` names, shared response types across RPCs, and shared health request/response reuse).  
+**Options Considered:**  
+1. Relax Buf lint rules in `buf.yaml` by excluding naming/uniqueness checks.  
+2. Keep failing proto lint and remove gate from CI.  
+3. Refactor proto contracts to align with Buf STANDARD naming/uniqueness requirements.  
+**Decision:** Option 3. Updated RPC response names to `*Response`, introduced explicit response wrappers where common messages were directly returned, and replaced shared health request/response usage with service-scoped `*ServiceHealthRequest/Response` messages.  
+**Migration Plan:**  
+1. Rename reply message types and update service RPC signatures across all proto packages.  
+2. Add wrapper messages for RPCs that previously returned shared types directly.  
+3. Re-run `make ci` with `proto-validate` to verify lint conformance.  
+**Risk:** Any generated client stubs that referenced old proto type names will require regeneration and type updates in downstream consumers.  
+**Rollback:** Revert proto type rename/wrapper changes and temporarily disable strict proto lint rules while staged consumer migration is prepared.

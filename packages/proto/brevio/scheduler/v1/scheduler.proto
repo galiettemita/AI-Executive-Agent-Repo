@@ -2,11 +2,9 @@ syntax = "proto3";
 
 package brevio.scheduler.v1;
 
-import "brevio/common/v1/common.proto";
-
 service SchedulerService {
-  rpc ScheduleDailyRhythm (ScheduleDailyRhythmRequest) returns (ScheduleDailyRhythmReply);
-  rpc Health (brevio.common.v1.HealthRequest) returns (brevio.common.v1.HealthResponse);
+  rpc ScheduleDailyRhythm (ScheduleDailyRhythmRequest) returns (ScheduleDailyRhythmResponse);
+  rpc Health (SchedulerServiceHealthRequest) returns (SchedulerServiceHealthResponse);
 }
 
 message ScheduleDailyRhythmRequest {
@@ -15,7 +13,18 @@ message ScheduleDailyRhythmRequest {
   string wake_time = 3;
 }
 
-message ScheduleDailyRhythmReply {
+message ScheduleDailyRhythmResponse {
   bool scheduled = 1;
   string cron_expression = 2;
+}
+
+message SchedulerServiceHealthRequest {
+  bool deep = 1;
+}
+
+message SchedulerServiceHealthResponse {
+  string status = 1;
+  string version = 2;
+  int64 uptime_ms = 3;
+  map<string, string> checks = 4;
 }

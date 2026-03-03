@@ -5,9 +5,9 @@ package brevio.hands.v1;
 import "brevio/common/v1/common.proto";
 
 service HandsService {
-  rpc ExecuteSkill (ExecuteSkillRequest) returns (brevio.common.v1.SkillResult);
-  rpc ExecuteSkills (ExecuteSkillsRequest) returns (ExecuteSkillsReply);
-  rpc Health (brevio.common.v1.HealthRequest) returns (brevio.common.v1.HealthResponse);
+  rpc ExecuteSkill (ExecuteSkillRequest) returns (ExecuteSkillResponse);
+  rpc ExecuteSkills (ExecuteSkillsRequest) returns (ExecuteSkillsResponse);
+  rpc Health (HandsServiceHealthRequest) returns (HandsServiceHealthResponse);
 }
 
 message ExecuteSkillRequest {
@@ -16,10 +16,25 @@ message ExecuteSkillRequest {
   string input_json = 3;
 }
 
+message ExecuteSkillResponse {
+  brevio.common.v1.SkillResult result = 1;
+}
+
 message ExecuteSkillsRequest {
   repeated ExecuteSkillRequest requests = 1;
 }
 
-message ExecuteSkillsReply {
+message ExecuteSkillsResponse {
   repeated brevio.common.v1.SkillResult results = 1;
+}
+
+message HandsServiceHealthRequest {
+  bool deep = 1;
+}
+
+message HandsServiceHealthResponse {
+  string status = 1;
+  string version = 2;
+  int64 uptime_ms = 3;
+  map<string, string> checks = 4;
 }

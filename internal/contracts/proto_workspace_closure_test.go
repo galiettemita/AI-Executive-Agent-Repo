@@ -41,4 +41,10 @@ func TestProtoWorkspaceClosure(t *testing.T) {
 		"bufbuild/buf",
 		"mkdir -p",
 	})
+
+	assertFileContainsTokens(t, filepath.Join(root, "Makefile"), []string{
+		"proto-validate:",
+		"bash packages/proto/scripts/lint.sh",
+		"ci: proto-validate",
+	})
 }
