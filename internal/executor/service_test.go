@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/brevio/brevio/internal/audit"
 	"github.com/google/uuid"
 )
 
@@ -44,6 +45,38 @@ func TestCommitCreatesSideEffectTrustReceiptAndAudit(t *testing.T) {
 	assertAuditHasEvent(t, svc.AuditEntries(), "BREVIO.hands.tool.committed.v1")
 	assertAuditHasEvent(t, svc.AuditEntries(), "BREVIO.trust.receipt.created.v1")
 	assertAuditHasEvent(t, svc.AuditEntries(), "BREVIO.trust.evidence.attached.v1")
+}
+
+func TestCommitAppendsMutationAuditWhenConfigured(t *testing.T) {
+	t.Parallel()
+
+	svc := NewService()
+	mutationAudit := audit.NewService()
+	svc.SetMutationAudit(mutationAudit)
+
+	_, _, err := svc.Commit(ExecutionRequest{
+		WorkspaceID: "ws_mutation",
+		ToolKey:     "gmail.send",
+		Action:      "send email",
+		TargetURL:   "https://api.example.com",
+	})
+	if err != nil {
+		t.Fatalf("commit failed: %v", err)
+	}
+
+	if mutationAudit.Count("ws_mutation") != 1 {
+		t.Fatalf("expected one mutation audit entry, got=%d", mutationAudit.Count("ws_mutation"))
+	}
+	entries := mutationAudit.ListMutations("ws_mutation")
+	if len(entries) != 1 {
+		t.Fatalf("expected one mutation audit entry, got=%d", len(entries))
+	}
+	if entries[0].Action != "hands.skill.execute.commit" {
+		t.Fatalf("unexpected mutation action: %s", entries[0].Action)
+	}
+	if entries[0].Resource != "skill:gmail.send" {
+		t.Fatalf("unexpected mutation resource: %s", entries[0].Resource)
+	}
 }
 
 func TestSSRFBlocked(t *testing.T) {

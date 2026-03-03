@@ -379,3 +379,21 @@
 3. Inject configured audit service into control mux from startup path while preserving `NewMux` default behavior for tests and local dev.  
 **Risk:** Sink writes can fail when workspace/actor identifiers are not UUID-compatible with existing table constraints, resulting in memory-only persistence for those events.  
 **Rollback:** Remove sink injection from `cmd/control/main.go` and revert to `NewMux` default construction while retaining in-memory mutation ledger behavior.
+
+## DECISION-022: Link Hands Commit Path to Mutation Audit Stream for Skill Execution Coverage
+
+**Date:** 2026-03-03  
+**Blueprint Section:** §20.8  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/internal/executor/service.go`  
+**Conflict:** Control-plane state mutations were audit-linked, but Hands skill execution commits only emitted internal executor audit events, leaving mutation-ledger coverage incomplete for `skill.execute` state transitions.  
+**Options Considered:**  
+1. Keep executor audit separate from mutation ledger and rely on control-plane logs only.  
+2. Duplicate full executor audit stream into mutation ledger for every event.  
+3. Add targeted mutation-ledger append for commit-side effects only, with before/after state snapshots and identifiers.  
+**Decision:** Option 3. Added optional mutation-audit linkage in executor commit flow (`hands.skill.execute.commit`) including side-effect count before/after and execution/receipt identifiers, guarded by explicit service injection and unit tests.  
+**Migration Plan:**  
+1. Add optional audit-service dependency on executor service with setter-based injection.  
+2. Emit mutation-ledger record after successful commit side-effect and receipt creation.  
+3. Keep existing executor audit-event behavior unchanged for backward compatibility and forensic continuity.  
+**Risk:** If executor is wired with PostgreSQL-backed sink while workspace IDs are non-UUID placeholders, sink persistence may fail and fallback to in-memory mutation records.  
+**Rollback:** Remove executor mutation append call and dependency field while retaining existing executor audit events.
