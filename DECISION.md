@@ -72,3 +72,21 @@
 3. Raise duplicate exception on PK conflict to enforce idempotency invariant.  
 **Risk:** Trigger path adds one extra write per message and can become a hot key path under extreme throughput.  
 **Rollback:** Disable dedup trigger and rely on Redis idempotency cache as temporary fallback until a revised dedup strategy is deployed.
+
+## DECISION-005: Implement Disambiguation and Authz Matrix in Existing Go Runtime First
+
+**Date:** 2026-03-03  
+**Blueprint Section:** §5.3, §6.2, §A.2  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/internal`, `/Users/galiettemita/Downloads/Executive AI Agent/backend/policies`  
+**Conflict:** The blueprint specifies Brain-plane disambiguation and OPA matrix enforcement, while current production runtime is Go-first and TypeScript service scaffolds are not yet traffic-bearing.  
+**Options Considered:**  
+1. Delay implementation until TypeScript Brain service is production-ready.  
+2. Duplicate logic in both Go and TypeScript immediately.  
+3. Implement deterministic routing/policy in existing Go runtime now and keep TypeScript parity as a later migration step.  
+**Decision:** Option 3. Added deterministic 11-group disambiguation in Go (`internal/brain/disambiguation`) and expanded `policies/brevio/authz.rego` + tests for the full access matrix.  
+**Migration Plan:**  
+1. Enforce routing/policy behavior in current runtime with unit and contract coverage.  
+2. Keep config source in version-controlled YAML (`config/skill-disambiguation.yaml`) and policy bundle (`policies/brevio/authz.rego`).  
+3. Port the same behavior to TypeScript Brain/Auth services when they become primary, validated by shared eval datasets and policy tests.  
+**Risk:** Temporary implementation split between Go runtime and TypeScript scaffolds can drift if not continuously validated.  
+**Rollback:** Disable new routing/policy paths via existing control-plane feature toggles and revert to previous generic routing behavior.
