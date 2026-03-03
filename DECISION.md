@@ -271,3 +271,21 @@
 3. Add separate API-key and no-auth registries for operational auth-source mapping and test them in CI.  
 **Risk:** Registry expansion may expose downstream assumptions about previous smaller provider set.  
 **Rollback:** Revert to previous OAuth registry version and disable new API-key/no-auth map usage in call sites until downstream components are updated.
+
+## DECISION-016: Add Canonical Auth Service Map Configuration Artifact with Contract Gate
+
+**Date:** 2026-03-03  
+**Blueprint Section:** §15, §A.5.4  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/config`  
+**Conflict:** Runtime registries were expanded, but there was no standalone configuration artifact under `config/` expressing the full OAuth/API-key/no-auth service map and auth storage conventions required by the blueprint.  
+**Options Considered:**  
+1. Keep mappings embedded only in Go code.  
+2. Document mappings in markdown only.  
+3. Add structured config artifact with executable closure test.  
+**Decision:** Option 3. Added `config/auth-service-map.yaml` as canonical auth map source plus `internal/contracts/auth_service_map_closure_test.go` to enforce exact service counts and required fields.  
+**Migration Plan:**  
+1. Encode 15 OAuth, 18 API-key, and 6 no-auth services in YAML with required metadata.  
+2. Include secret naming convention, redirect URI pattern, and PKCE requirement in the same artifact.  
+3. Gate CI with closure test to prevent accidental drift.  
+**Risk:** Future provider additions now require synchronized updates in both runtime registry and config map to satisfy closure tests.  
+**Rollback:** Remove contract gate and use runtime registry as sole source of truth if dual-source maintenance becomes operationally expensive.
