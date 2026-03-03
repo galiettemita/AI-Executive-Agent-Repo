@@ -233,8 +233,8 @@ func TestRateLimitedUserGets429(t *testing.T) {
 	svc := NewService("test-secret")
 	svc.router.Bind("whatsapp", "+15550001111", uuid.MustParse("018f3f6a-9a0f-7cc6-8f2f-1f0f2d2f2d2f"))
 
-	for i := 0; i < 5; i++ {
-		payload := []byte(fmt.Sprintf(`{"channel":"whatsapp","channel_identifier":"+15550001111","user_channel_id":"u1","nonce":"n_%d","message":"hello"}`, i))
+	for i := 0; i < 30; i++ {
+		payload := []byte(fmt.Sprintf(`{"channel":"whatsapp","channel_identifier":"+15550001111","user_channel_id":"u1","user_tier":"free","nonce":"n_%d","message":"hello"}`, i))
 		resp := httptest.NewRecorder()
 		svc.HandleInbound(resp, signedRequestBody("test-secret", "/v1/gateway/webhook/whatsapp", payload))
 		if resp.Code != http.StatusAccepted {
@@ -242,11 +242,63 @@ func TestRateLimitedUserGets429(t *testing.T) {
 		}
 	}
 
-	payload := []byte(`{"channel":"whatsapp","channel_identifier":"+15550001111","user_channel_id":"u1","nonce":"n_limit","message":"hello"}`)
+	payload := []byte(`{"channel":"whatsapp","channel_identifier":"+15550001111","user_channel_id":"u1","user_tier":"free","nonce":"n_limit","message":"hello"}`)
 	resp := httptest.NewRecorder()
 	svc.HandleInbound(resp, signedRequestBody("test-secret", "/v1/gateway/webhook/whatsapp", payload))
 	if resp.Code != http.StatusTooManyRequests {
 		t.Fatalf("expected 429, got %d", resp.Code)
+	}
+}
+
+func TestEnterpriseTierBypassesRateLimit(t *testing.T) {
+	t.Parallel()
+
+	svc := NewService("test-secret")
+	svc.router.Bind("whatsapp", "+15550001111", uuid.MustParse("018f3f6a-9a0f-7cc6-8f2f-1f0f2d2f2d2f"))
+
+	for i := 0; i < 150; i++ {
+		payload := []byte(fmt.Sprintf(`{"channel":"whatsapp","channel_identifier":"+15550001111","user_channel_id":"u-enterprise","user_tier":"enterprise","nonce":"enterprise_%d","message":"hello"}`, i))
+		resp := httptest.NewRecorder()
+		svc.HandleInbound(resp, signedRequestBody("test-secret", "/v1/gateway/webhook/whatsapp", payload))
+		if resp.Code != http.StatusAccepted {
+			t.Fatalf("unexpected status at iteration %d: %d", i, resp.Code)
+		}
+	}
+}
+
+func TestChannelMessageIdIdempotencyReplayReturnsCachedResponse(t *testing.T) {
+	t.Parallel()
+
+	svc := NewService("test-secret")
+	svc.router.Bind("whatsapp", "+15550001111", uuid.MustParse("018f3f6a-9a0f-7cc6-8f2f-1f0f2d2f2d2f"))
+
+	firstPayload := []byte(`{"channel":"whatsapp","channel_identifier":"+15550001111","user_channel_id":"u1","channel_message_id":"wamid.001","nonce":"n_idem_1","message":"hello first"}`)
+	firstResp := httptest.NewRecorder()
+	svc.HandleInbound(firstResp, signedRequestBody("test-secret", "/v1/gateway/webhook/whatsapp", firstPayload))
+	if firstResp.Code != http.StatusAccepted {
+		t.Fatalf("unexpected first status: %d", firstResp.Code)
+	}
+	if firstResp.Body.String() != `{"status":"accepted"}` {
+		t.Fatalf("unexpected first response body: %s", firstResp.Body.String())
+	}
+	if svc.IngressTurnCount() != 1 || svc.QueueMessageCount() != 1 {
+		t.Fatalf("expected single turn+queue after first message, turns=%d queue=%d", svc.IngressTurnCount(), svc.QueueMessageCount())
+	}
+
+	secondPayload := []byte(`{"channel":"whatsapp","channel_identifier":"+15550001111","user_channel_id":"u1","channel_message_id":"wamid.001","nonce":"n_idem_2","message":"hello replay"}`)
+	secondResp := httptest.NewRecorder()
+	svc.HandleInbound(secondResp, signedRequestBody("test-secret", "/v1/gateway/webhook/whatsapp", secondPayload))
+	if secondResp.Code != http.StatusAccepted {
+		t.Fatalf("unexpected replay status: %d", secondResp.Code)
+	}
+	if secondResp.Body.String() != `{"status":"accepted"}` {
+		t.Fatalf("unexpected replay response body: %s", secondResp.Body.String())
+	}
+	if svc.IngressTurnCount() != 1 || svc.QueueMessageCount() != 1 {
+		t.Fatalf("expected idempotent replay to skip write path, turns=%d queue=%d", svc.IngressTurnCount(), svc.QueueMessageCount())
+	}
+	if !containsString(svc.AuditEntries(), "BREVIO.ingress.idempotent_replay.v1") {
+		t.Fatalf("expected idempotent replay audit event, got %v", svc.AuditEntries())
 	}
 }
 

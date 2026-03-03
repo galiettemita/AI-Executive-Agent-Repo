@@ -90,3 +90,21 @@
 3. Port the same behavior to TypeScript Brain/Auth services when they become primary, validated by shared eval datasets and policy tests.  
 **Risk:** Temporary implementation split between Go runtime and TypeScript scaffolds can drift if not continuously validated.  
 **Rollback:** Disable new routing/policy paths via existing control-plane feature toggles and revert to previous generic routing behavior.
+
+## DECISION-006: Gateway Rate-Limit Precedence Uses Tier Policy from §20.5
+
+**Date:** 2026-03-03  
+**Blueprint Section:** §1.2.1, §20.5  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/internal/gateway/service.go`  
+**Conflict:** The spec contains two rate-limit definitions: fixed token-bucket values in §1.2.1 (`60 req/min`, `1000 req/hr`) and tier-based policy in §20.5 (`free=30/hr`, `pro=120/hr`, `enterprise=unlimited`).  
+**Options Considered:**  
+1. Keep static limits from §1.2.1 for all users.  
+2. Enforce only §20.5 tier-based limits.  
+3. Enforce both with the strictest result per tier.  
+**Decision:** Option 2 for now, because §20.5 is the newer production requirement and aligns with OPA role/tier policy semantics. Implemented tier-aware sliding windows in Gateway with enterprise/admin bypass.  
+**Migration Plan:**  
+1. Apply tier-aware limiter in current Go Gateway runtime.  
+2. Keep limiter internals injectable for future Redis-backed distributed enforcement.  
+3. Reconcile with TypeScript gateway service during traffic migration using the same tier limits.  
+**Risk:** If product policy expects the older static limits, this may be stricter for some workloads.  
+**Rollback:** Revert limiter policy map to static values and redeploy without changing API contracts.
