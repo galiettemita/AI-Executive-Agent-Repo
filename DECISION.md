@@ -307,3 +307,21 @@
 3. Add contract closure test to prevent drift in skill count and latency budgets.  
 **Risk:** Future budget/policy updates now require code/test updates to preserve closure.  
 **Rollback:** Revert profile map and tests, returning to documentation-only representation.
+
+## DECISION-018: Enforce Auth Secret Naming and OAuth Redirect Conventions in Connector Runtime Helpers
+
+**Date:** 2026-03-03  
+**Blueprint Section:** §A.5.4  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/internal/connectors`  
+**Conflict:** Secret naming pattern and OAuth redirect URI conventions were documented but not executable, allowing drift in future auth integrations.  
+**Options Considered:**  
+1. Keep naming/redirect standards as documentation only.  
+2. Validate conventions ad hoc in each caller.  
+3. Centralize conventions in shared connector helpers with tests.  
+**Decision:** Option 3. Added canonical helper functions for Secrets Manager naming, OAuth redirect URI generation, and PKCE requirement flag, with strict tests for valid and invalid segments.  
+**Migration Plan:**  
+1. Introduce connector-level helper API for secret-name and redirect-uri generation.  
+2. Validate segment safety and allowed secret fields (`client_id`, `client_secret`).  
+3. Reuse helpers in future auth integrations and onboarding flows to avoid hardcoded divergent paths.  
+**Risk:** Existing ad hoc naming patterns may fail validation when migrated to helper usage.  
+**Rollback:** Keep helpers optional and revert callers to previous string templates if compatibility issues arise.
