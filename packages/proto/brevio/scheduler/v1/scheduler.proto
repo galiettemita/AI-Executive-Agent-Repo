@@ -1,0 +1,21 @@
+syntax = "proto3";
+
+package brevio.scheduler.v1;
+
+import "brevio/common/v1/common.proto";
+
+service SchedulerService {
+  rpc ScheduleDailyRhythm (ScheduleDailyRhythmRequest) returns (ScheduleDailyRhythmReply);
+  rpc Health (brevio.common.v1.HealthRequest) returns (brevio.common.v1.HealthResponse);
+}
+
+message ScheduleDailyRhythmRequest {
+  string user_id = 1;
+  string timezone = 2;
+  string wake_time = 3;
+}
+
+message ScheduleDailyRhythmReply {
+  bool scheduled = 1;
+  string cron_expression = 2;
+}

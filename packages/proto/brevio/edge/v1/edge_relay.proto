@@ -1,0 +1,22 @@
+syntax = "proto3";
+
+package brevio.edge.v1;
+
+import "brevio/common/v1/common.proto";
+
+service EdgeRelayService {
+  rpc DispatchLocalSkill (DispatchLocalSkillRequest) returns (DispatchLocalSkillReply);
+  rpc Health (brevio.common.v1.HealthRequest) returns (brevio.common.v1.HealthResponse);
+}
+
+message DispatchLocalSkillRequest {
+  string user_id = 1;
+  string device_id = 2;
+  string skill_id = 3;
+  string input_json = 4;
+}
+
+message DispatchLocalSkillReply {
+  bool accepted = 1;
+  string dispatch_id = 2;
+}

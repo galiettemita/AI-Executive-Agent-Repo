@@ -1,0 +1,30 @@
+syntax = "proto3";
+
+package brevio.profile.v1;
+
+import "brevio/common/v1/common.proto";
+
+service ProfileService {
+  rpc GetProfile (GetProfileRequest) returns (GetProfileReply);
+  rpc UpdateProfile (UpdateProfileRequest) returns (GetProfileReply);
+  rpc Health (brevio.common.v1.HealthRequest) returns (brevio.common.v1.HealthResponse);
+}
+
+message GetProfileRequest {
+  string user_id = 1;
+}
+
+message GetProfileReply {
+  string user_id = 1;
+  string timezone = 2;
+  string locale = 3;
+  string soul_markdown = 4;
+  string user_markdown = 5;
+  string agents_markdown = 6;
+  string preferences_json = 7;
+}
+
+message UpdateProfileRequest {
+  string user_id = 1;
+  string preferences_json = 2;
+}

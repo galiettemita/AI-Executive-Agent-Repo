@@ -1,0 +1,34 @@
+syntax = "proto3";
+
+package brevio.auth.v1;
+
+import "brevio/common/v1/common.proto";
+
+service AuthService {
+  rpc GetOAuthToken (GetOAuthTokenRequest) returns (GetOAuthTokenReply);
+  rpc RefreshOAuthToken (RefreshOAuthTokenRequest) returns (RefreshOAuthTokenReply);
+  rpc Health (brevio.common.v1.HealthRequest) returns (brevio.common.v1.HealthResponse);
+}
+
+message GetOAuthTokenRequest {
+  string user_id = 1;
+  string service = 2;
+}
+
+message GetOAuthTokenReply {
+  string access_token = 1;
+  string refresh_token = 2;
+  string expires_at = 3;
+  repeated string scopes = 4;
+}
+
+message RefreshOAuthTokenRequest {
+  string user_id = 1;
+  string service = 2;
+}
+
+message RefreshOAuthTokenReply {
+  bool refreshed = 1;
+  string access_token = 2;
+  string expires_at = 3;
+}

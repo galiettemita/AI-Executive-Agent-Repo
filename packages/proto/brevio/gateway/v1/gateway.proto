@@ -1,0 +1,38 @@
+syntax = "proto3";
+
+package brevio.gateway.v1;
+
+import "brevio/common/v1/common.proto";
+
+service GatewayService {
+  rpc NormalizeMessage (NormalizeMessageRequest) returns (brevio.common.v1.MessageEnvelope);
+  rpc FormatResponse (FormatResponseRequest) returns (FormatResponseReply);
+  rpc DeliverMessage (DeliverMessageRequest) returns (DeliverMessageReply);
+  rpc Health (brevio.common.v1.HealthRequest) returns (brevio.common.v1.HealthResponse);
+}
+
+message NormalizeMessageRequest {
+  string channel = 1;
+  string raw_payload_json = 2;
+}
+
+message FormatResponseRequest {
+  brevio.common.v1.MessageEnvelope envelope = 1;
+  string response_text = 2;
+}
+
+message FormatResponseReply {
+  string formatted_text = 1;
+  string media_url = 2;
+}
+
+message DeliverMessageRequest {
+  brevio.common.v1.MessageEnvelope envelope = 1;
+  string formatted_text = 2;
+  string media_url = 3;
+}
+
+message DeliverMessageReply {
+  bool delivered = 1;
+  string delivery_id = 2;
+}

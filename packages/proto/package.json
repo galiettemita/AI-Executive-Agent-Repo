@@ -1,0 +1,10 @@
+{
+  "name": "@brevio/proto",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "lint": "echo \"proto lint via buf\"",
+    "build": "echo \"proto generation placeholder\""
+  }
+}

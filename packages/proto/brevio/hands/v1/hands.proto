@@ -1,0 +1,25 @@
+syntax = "proto3";
+
+package brevio.hands.v1;
+
+import "brevio/common/v1/common.proto";
+
+service HandsService {
+  rpc ExecuteSkill (ExecuteSkillRequest) returns (brevio.common.v1.SkillResult);
+  rpc ExecuteSkills (ExecuteSkillsRequest) returns (ExecuteSkillsReply);
+  rpc Health (brevio.common.v1.HealthRequest) returns (brevio.common.v1.HealthResponse);
+}
+
+message ExecuteSkillRequest {
+  string skill_id = 1;
+  string user_id = 2;
+  string input_json = 3;
+}
+
+message ExecuteSkillsRequest {
+  repeated ExecuteSkillRequest requests = 1;
+}
+
+message ExecuteSkillsReply {
+  repeated brevio.common.v1.SkillResult results = 1;
+}

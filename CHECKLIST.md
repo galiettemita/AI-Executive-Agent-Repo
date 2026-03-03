@@ -23,6 +23,8 @@ Legend
 - [x] BREVIO x OPENCLAW Phase 2 schema implementation: added reversible migration pairs `migrations/001..011` (`*.up.sql`/`*.down.sql`) with additive core/auth/skills/billing/temporal schemas, RLS/policy triggers, index set, deployment mode, user preferences, and edge agents table.
 - [x] BREVIO x OPENCLAW Phase 2 skill registry seed baseline: implemented `006_seed_skills.up.sql` with 153 OpenClaw skill IDs seeded into `skills.registry` and deployment-mode/plane normalization updates.
 - [x] BREVIO x OPENCLAW Phase 2 validation: executed full migration dry-run (all up then all down) against temporary PostgreSQL 16 container with `migration dry-run: PASS`.
+- [x] BREVIO x OPENCLAW Phase 3 proto contracts scaffolded: added `packages/proto/brevio/*/v1/*.proto` service definitions for gateway, brain, hands, auth, profile, scheduler, edge relay, plus shared common messages and `buf.yaml`.
+- [x] BREVIO x OPENCLAW Phase 3 health/shutdown baseline: upgraded all scaffold TypeScript services (`services/brevio-*`) to expose `GET /health` + `GET /health/deep` JSON payloads and graceful SIGTERM/SIGINT shutdown handling with 30s drain timeout.
 - [x] V9.3 addendum phase-0 reconnaissance completed with section-by-section audit output at `docs/addendum_gap_audit.md`.
 - [x] V9.3 addendum closure: added migration `006_BREVIO_v93_addendum_specification_closure.sql` (`whatsapp_message_templates` + RLS/indexes), expanded canonical V9 events with 8 addendum events, and aligned OpenAPI/schema mapping for newly specified endpoints.
 - [x] V9.3 addendum runtime closure: implemented control/canvas endpoint ownership coverage for addendum routes, refreshed API reference docs (`docs/API_REFERENCE.md`), and revalidated with `go test ./...` passing at HEAD.
