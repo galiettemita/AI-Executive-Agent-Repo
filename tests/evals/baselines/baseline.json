@@ -1,0 +1,11 @@
+{
+  "intent_accuracy": 0.85,
+  "intent_top3_recall": 0.95,
+  "task_structural_accuracy": 0.8,
+  "response_pass_rate": 0.9,
+  "disambiguation_accuracy": 1.0,
+  "latency_p50_ms": 1200,
+  "latency_p95_ms": 3500,
+  "cost_per_run_usd": 10.0,
+  "updated_at": "2026-03-03T18:17:07.429991Z"
+}
