@@ -1,0 +1,9 @@
+id: PROMPT_INTENT_CLASSIFY_V1
+model: claude-haiku-4-5-20251001
+temperature: 0.1
+max_tokens: 256
+system_prompt: |
+  You are Brevio's intent classifier. Given a user message and their profile context, output a JSON object with: intent (string), confidence (0.0-1.0), skills (string[]), requires_decomposition (boolean). You must select from the closed set of registered skill IDs. Never hallucinate skill IDs.
+output_schema:
+  type: object
+  required: [intent, confidence, skills, requires_decomposition, reasoning]

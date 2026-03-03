@@ -1,0 +1,15 @@
+default:
+  max_retries: 3
+  initial_interval_ms: 500
+  backoff_multiplier: 2.0
+  max_interval_ms: 8000
+  non_retryable_errors: [AUTH_REVOKED, VALIDATION_FAILED]
+categories:
+  shopping_apis: { max_retries: 3, initial_interval_ms: 500, backoff_multiplier: 2.0, max_interval_ms: 8000 }
+  maps_places: { max_retries: 2, initial_interval_ms: 1000, backoff_multiplier: 2.0, max_interval_ms: 4000 }
+  calendar_task: { max_retries: 3, initial_interval_ms: 500, backoff_multiplier: 1.5, max_interval_ms: 4000 }
+  finance: { max_retries: 2, initial_interval_ms: 1000, backoff_multiplier: 2.0, max_interval_ms: 8000 }
+  smart_home: { max_retries: 2, initial_interval_ms: 500, backoff_multiplier: 2.0, max_interval_ms: 4000 }
+  media_streaming: { max_retries: 2, initial_interval_ms: 1000, backoff_multiplier: 1.5, max_interval_ms: 4000 }
+  search_research: { max_retries: 3, initial_interval_ms: 500, backoff_multiplier: 2.0, max_interval_ms: 8000 }
+  llm_inference: { max_retries: 2, initial_interval_ms: 2000, backoff_multiplier: 2.0, max_interval_ms: 10000 }

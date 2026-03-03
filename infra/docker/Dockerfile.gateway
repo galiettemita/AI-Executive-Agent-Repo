@@ -1,0 +1,2 @@
+# gateway image scaffold
+FROM node:20-alpine

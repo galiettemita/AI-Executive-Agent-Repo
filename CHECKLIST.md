@@ -18,6 +18,8 @@ Legend
 - [x] BREVIO x OPENCLAW Phase 0A discovery complete: authored `CODEBASE_INVENTORY.md` with full repo/service/schema/test/infra/config inventory against the new production directive.
 - [x] BREVIO x OPENCLAW Phase 0B gap analysis complete: authored `GAP_ANALYSIS.md` with `EXISTS_AND_MATCHES`, `EXISTS_BUT_DIFFERS`, `MISSING`, and explicit integration-point mapping.
 - [x] BREVIO x OPENCLAW Phase 0C decision log initialized: authored `DECISION.md` with migration decisions for coexistence architecture, additive DB deltas, and protocol/policy evolution.
+- [x] BREVIO x OPENCLAW Phase 1 structure scaffold started: added additive pnpm/turbo/TypeScript workspace root files (`package.json`, `pnpm-workspace.yaml`, `turbo.json`, `tsconfig.base.json`, `.eslintrc.cjs`, `.prettierrc`) while preserving existing Go runtime layout.
+- [x] BREVIO x OPENCLAW Phase 1 structure scaffold extended: created target directories for `packages/`, `services/`, `edge/`, `infra/`, `config/`, `tests/`, `docs/runbooks/`, and `docs/compliance/` plus initial files for prompts, disambiguation, retry policies, authz policy scaffold, and local setup scripts.
 - [x] V9.3 addendum phase-0 reconnaissance completed with section-by-section audit output at `docs/addendum_gap_audit.md`.
 - [x] V9.3 addendum closure: added migration `006_BREVIO_v93_addendum_specification_closure.sql` (`whatsapp_message_templates` + RLS/indexes), expanded canonical V9 events with 8 addendum events, and aligned OpenAPI/schema mapping for newly specified endpoints.
 - [x] V9.3 addendum runtime closure: implemented control/canvas endpoint ownership coverage for addendum routes, refreshed API reference docs (`docs/API_REFERENCE.md`), and revalidated with `go test ./...` passing at HEAD.
