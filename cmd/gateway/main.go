@@ -9,17 +9,18 @@ import (
 )
 
 func main() {
-	secret := os.Getenv("GATEWAY_WEBHOOK_SECRET")
-	if secret == "" {
-		secret = "dev-secret"
+	cfg, err := gateway.LoadEnvConfig(os.Getenv)
+	if err != nil {
+		log.Fatalf("gateway config validation failed: %v", err)
 	}
 
-	service := gateway.NewService(secret)
+	service := gateway.NewServiceWithOptions(cfg.WebhookSecret, gateway.ServiceOptions{
+		IMessageWebhookAPIKey: cfg.IMessageWebhookAPIKey,
+	})
 	mux := gateway.NewMux(service)
 
-	addr := ":18080"
-	log.Printf("BREVIO gateway listening on %s", addr)
-	if err := runtimeserver.ServeWithGracefulShutdown("gateway", addr, mux); err != nil {
+	log.Printf("BREVIO gateway listening on %s env=%s version=%s", cfg.ListenAddr, cfg.Environment, cfg.ServiceVersion)
+	if err := runtimeserver.ServeWithGracefulShutdown("gateway", cfg.ListenAddr, mux); err != nil {
 		log.Fatalf("gateway server failed: %v", err)
 	}
 }

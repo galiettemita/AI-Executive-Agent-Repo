@@ -491,14 +491,25 @@ type Service struct {
 	outbox   []OutboundDispatch
 }
 
+type ServiceOptions struct {
+	IMessageWebhookAPIKey string
+}
+
 type sessionState struct {
 	id             uuid.UUID
 	lastActivityAt time.Time
 }
 
 func NewService(secret string) *Service {
+	return NewServiceWithOptions(secret, ServiceOptions{})
+}
+
+func NewServiceWithOptions(secret string, options ServiceOptions) *Service {
 	idempotencyTTL := 24 * time.Hour
-	imessageAPIKey := strings.TrimSpace(os.Getenv("IMESSAGE_WEBHOOK_API_KEY"))
+	imessageAPIKey := strings.TrimSpace(options.IMessageWebhookAPIKey)
+	if imessageAPIKey == "" {
+		imessageAPIKey = strings.TrimSpace(os.Getenv("IMESSAGE_WEBHOOK_API_KEY"))
+	}
 	if imessageAPIKey == "" {
 		imessageAPIKey = "dev-imessage-key"
 	}

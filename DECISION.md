@@ -145,3 +145,21 @@
 3. Monitor usage and deprecate legacy paths in a later controlled release.  
 **Risk:** Route-surface expansion increases maintenance/test burden.  
 **Rollback:** Remove canonical aliases and keep legacy paths only if unexpected behavior appears during migration.
+
+## DECISION-009: Gateway Startup Uses Environment-Aware Fail-Fast Validation with Local Defaults
+
+**Date:** 2026-03-03  
+**Blueprint Section:** §20.4  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/cmd/gateway/main.go`, `/Users/galiettemita/Downloads/Executive AI Agent/backend/internal/gateway/service.go`  
+**Conflict:** Existing gateway startup implicitly defaulted secrets, which violates strict production fail-fast configuration validation.  
+**Options Considered:**  
+1. Keep implicit defaults for all environments.  
+2. Require all env vars in every environment including local dev.  
+3. Fail fast in non-local environments, keep safe deterministic defaults only for local/dev/test.  
+**Decision:** Option 3. Added explicit env loader with validation; production-like environments require `GATEWAY_WEBHOOK_SECRET` and `IMESSAGE_WEBHOOK_API_KEY`, while local/dev/test keep deterministic defaults for developer velocity.  
+**Migration Plan:**  
+1. Validate env at startup before server boot.  
+2. Inject validated values into gateway service options.  
+3. Extend same pattern to additional services in subsequent slices.  
+**Risk:** Misconfigured non-local deployments now fail early instead of starting with defaults.  
+**Rollback:** Revert to previous defaulting behavior in `cmd/gateway/main.go` if emergency startup compatibility is required.
