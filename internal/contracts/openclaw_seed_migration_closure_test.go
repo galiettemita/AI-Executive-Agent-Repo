@@ -1,6 +1,7 @@
 package contracts
 
 import (
+	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -54,6 +55,59 @@ func TestOpenClawSeedMigrationCountsAndModes(t *testing.T) {
 	}
 	if overlap := intersection(local, mcp); len(overlap) != 0 {
 		t.Fatalf("local_mac/mcp overlap not allowed: %v", setKeys(overlap))
+	}
+}
+
+func TestOpenClawHandsSkillScaffoldsExistForAllSeededSkills(t *testing.T) {
+	t.Parallel()
+
+	root := repositoryRoot(t)
+	sqlPath := filepath.Join(root, "migrations", "006_seed_skills.up.sql")
+	body := readFileString(t, sqlPath)
+	seedIDs := extractSeedIDs(t, body)
+
+	skillsRoot := filepath.Join(root, "services", "brevio-hands", "src", "skills")
+	requiredFiles := []string{
+		"index.ts",
+		"schema.ts",
+		"client.ts",
+		"types.ts",
+		"README.md",
+		filepath.Join("__tests__", "unit.test.ts"),
+		filepath.Join("__tests__", "integration.test.ts"),
+		filepath.Join("__tests__", "fixtures", ".gitkeep"),
+	}
+
+	for skillID := range seedIDs {
+		skillDir := filepath.Join(skillsRoot, skillID)
+		for _, file := range requiredFiles {
+			path := filepath.Join(skillDir, file)
+			info, err := os.Stat(path)
+			if err != nil {
+				t.Fatalf("missing skill scaffold file for %s: %s (%v)", skillID, path, err)
+			}
+			if info.IsDir() {
+				t.Fatalf("expected file but found directory for %s: %s", skillID, path)
+			}
+		}
+	}
+}
+
+func TestOpenClawHandsSkillRegistryContainsAllSeededSkills(t *testing.T) {
+	t.Parallel()
+
+	root := repositoryRoot(t)
+	sqlPath := filepath.Join(root, "migrations", "006_seed_skills.up.sql")
+	body := readFileString(t, sqlPath)
+	seedIDs := extractSeedIDs(t, body)
+
+	registryPath := filepath.Join(root, "services", "brevio-hands", "src", "skills", "index.ts")
+	registryBody := readFileString(t, registryPath)
+	for skillID := range seedIDs {
+		token := "'" + skillID + "':"
+		if !strings.Contains(registryBody, token) {
+			t.Fatalf("skill registry missing seeded skill mapping token: %s", token)
+		}
 	}
 }
 
