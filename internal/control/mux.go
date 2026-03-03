@@ -8,6 +8,8 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -100,6 +102,46 @@ func NewMux(service *Service) *http.ServeMux {
 	mux.HandleFunc("GET /healthz/live", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok"))
+	})
+	mux.HandleFunc("GET /docs", func(w http.ResponseWriter, _ *http.Request) {
+		if !isDocsEnabled() {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Brevio API Docs</title>
+  <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5/swagger-ui.css" />
+</head>
+<body>
+  <div id="swagger-ui"></div>
+  <script src="https://unpkg.com/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
+  <script>
+    window.ui = SwaggerUIBundle({
+      url: '/docs/openapi',
+      dom_id: '#swagger-ui'
+    });
+  </script>
+</body>
+</html>`))
+	})
+	mux.HandleFunc("GET /docs/openapi", func(w http.ResponseWriter, _ *http.Request) {
+		if !isDocsEnabled() {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		body, err := os.ReadFile(resolveOpenAPISpecPath())
+		if err != nil {
+			http.Error(w, "openapi spec unavailable", http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/yaml; charset=utf-8")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(body)
 	})
 
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
@@ -241,6 +283,18 @@ func healthEnvStatus(key string) string {
 		return "not_configured"
 	}
 	return "configured"
+}
+
+func isDocsEnabled() bool {
+	return strings.EqualFold(strings.TrimSpace(os.Getenv("APP_ENV")), "staging")
+}
+
+func resolveOpenAPISpecPath() string {
+	_, currentFile, _, ok := runtime.Caller(0)
+	if !ok {
+		return "api/openapi/v9.yaml"
+	}
+	return filepath.Clean(filepath.Join(filepath.Dir(currentFile), "..", "..", "api", "openapi", "v9.yaml"))
 }
 
 func handleWebhookIngress(w http.ResponseWriter, r *http.Request) {
