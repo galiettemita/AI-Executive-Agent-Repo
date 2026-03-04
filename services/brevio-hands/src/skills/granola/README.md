@@ -1,6 +1,13 @@
 # granola
 
-Generated skill adapter scaffold.
+Hands-plane adapter for meeting-note summarization and action extraction.
 
-- Plane: `hands`
-- Source: `migrations/006_seed_skills.up.sql`
+## Supported actions
+
+- `summarize_note`
+- `extract_actions`
+
+## Notes
+
+- Requires note text input.
+- Returns deterministic summary/action/decision sets.

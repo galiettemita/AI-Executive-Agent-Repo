@@ -1,6 +1,12 @@
 # gifhorse
 
-Generated skill adapter scaffold.
+Hands-plane adapter for reaction GIF lookup.
 
-- Plane: `hands`
-- Source: `migrations/006_seed_skills.up.sql`
+## Supported actions
+
+- `search_gif`
+
+## Notes
+
+- Requires search query input.
+- Returns deterministic GIF caption/url output.

@@ -1,6 +1,13 @@
 # react-email-skills
 
-Generated skill adapter scaffold.
+Hands-plane adapter for rendering React Email templates.
 
-- Plane: `hands`
-- Source: `migrations/006_seed_skills.up.sql`
+## Supported actions
+
+- `render_template`
+- `preview_message`
+
+## Notes
+
+- Requires template ID input.
+- Returns deterministic HTML/text preview payloads.

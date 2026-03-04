@@ -741,6 +741,36 @@ func TestHandsPrioritySkillsNoLongerScaffolded(t *testing.T) {
 			"forecasts",
 			"high_c",
 		},
+		"contract-reviewer": {
+			"action",
+			"risk_items",
+			"overall_risk",
+		},
+		"content-advisory": {
+			"action",
+			"categories",
+			"overall_advisory",
+		},
+		"react-email-skills": {
+			"action",
+			"html",
+			"preview_id",
+		},
+		"granola": {
+			"action",
+			"action_items",
+			"decisions",
+		},
+		"gifhorse": {
+			"action",
+			"gifs",
+			"caption",
+		},
+		"veo": {
+			"action",
+			"job_id",
+			"video_url",
+		},
 	}
 
 	indexTokens := map[string][]string{
@@ -1054,6 +1084,24 @@ func TestHandsPrioritySkillsNoLongerScaffolded(t *testing.T) {
 		},
 		"swissweather": {
 			"SWISSWEATHER_LOCATION_REQUIRED",
+		},
+		"contract-reviewer": {
+			"CONTRACT_REVIEWER_TEXT_REQUIRED",
+		},
+		"content-advisory": {
+			"CONTENT_ADVISORY_TITLE_REQUIRED",
+		},
+		"react-email-skills": {
+			"REACT_EMAIL_TEMPLATE_REQUIRED",
+		},
+		"granola": {
+			"GRANOLA_NOTE_TEXT_REQUIRED",
+		},
+		"gifhorse": {
+			"GIFHORSE_QUERY_REQUIRED",
+		},
+		"veo": {
+			"VEO_PROMPT_REQUIRED",
 		},
 	}
 

@@ -1,6 +1,13 @@
 # veo
 
-Generated skill adapter scaffold.
+Hands-plane adapter for Veo video generation and job status checks.
 
-- Plane: `hands`
-- Source: `migrations/006_seed_skills.up.sql`
+## Supported actions
+
+- `generate_video`
+- `check_status`
+
+## Notes
+
+- Requires prompt for generation and job ID for status checks.
+- Returns deterministic job/status/video URL payloads.

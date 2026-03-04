@@ -1,6 +1,12 @@
 # content-advisory
 
-Generated skill adapter scaffold.
+Hands-plane adapter for age/content advisory breakdowns.
 
-- Plane: `hands`
-- Source: `migrations/006_seed_skills.up.sql`
+## Supported actions
+
+- `evaluate_title`
+
+## Notes
+
+- Requires media title input.
+- Returns deterministic category-level advisory output.

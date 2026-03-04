@@ -1365,3 +1365,21 @@
 3. Run full CI and continue final waves for remaining scaffold adapters.  
 **Risk:** Deterministic fixtures do not fully emulate real provider volatility (search freshness, citation ranking, weather feed variance) until sandbox integration suites are expanded.  
 **Rollback:** Remove Wave 25 IDs from override config and regenerate scaffolds for these six skills if regressions are observed.
+
+## DECISION-076: De-Scaffold Creative Output and Advisory Skills with Typed Media/Document Contracts (Wave 26)
+
+**Date:** 2026-03-04  
+**Blueprint Section:** §2.4, §A.7.7, §A.7.11, §A.7.16, §A.7.14  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/services/brevio-hands/src/skills/{contract-reviewer,content-advisory,react-email-skills,granola,gifhorse,veo}`  
+**Conflict:** Six mixed output/advisory skills remained scaffold-only with no typed input validation for contract/title/template/note/query/prompt fields and no deterministic structured outputs suitable for CI closure checks.  
+**Options Considered:**  
+1. Keep these adapters scaffolded and finish only remaining utility/local control adapters first.  
+2. Roll all remaining adapters into one final broad migration commit.  
+3. Execute a focused wave on advisory+creative outputs with strict action schemas and per-skill validation constants.  
+**Decision:** Option 3. Replaced scaffolds for `contract-reviewer`, `content-advisory`, `react-email-skills`, `granola`, `gifhorse`, and `veo` with typed `types/schema/client/index` implementations, deterministic outputs, unit tests, and production READMEs. Added all six IDs to centralized manual override config and closure token assertions.  
+**Migration Plan:**  
+1. Register Wave 26 IDs in `config/skill-manual-overrides.txt`.  
+2. Extend schema/index token assertions in `internal/contracts/hands_priority_skills_closure_test.go` for validation constants and output shape tokens.  
+3. Run full CI and continue remaining waves for final scaffold adapters.  
+**Risk:** Deterministic fixtures do not fully represent live-provider variability for rendering/generation latency or policy-driven output filtering until integration tests are expanded with sandbox APIs.  
+**Rollback:** Remove Wave 26 IDs from override config and regenerate scaffolds for these six skills if regressions occur.

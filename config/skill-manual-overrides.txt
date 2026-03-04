@@ -143,3 +143,9 @@ literature-review
 gemini-deep-research
 proactive-research
 swissweather
+contract-reviewer
+content-advisory
+react-email-skills
+granola
+gifhorse
+veo

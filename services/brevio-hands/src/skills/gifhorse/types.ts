@@ -1,8 +1,18 @@
-export interface SkillInputPayload {
-  payload?: Record<string, unknown>;
+export type GifhorseAction = 'search_gif';
+
+export interface GifhorseInput {
+  action: GifhorseAction;
+  query?: string;
 }
 
-export interface SkillOutputPayload {
-  ok: boolean;
-  skill_id: string;
+export interface GifhorseItem {
+  caption: string;
+  gif_url: string;
+}
+
+export interface GifhorseOutput {
+  provider: 'gifhorse';
+  action: GifhorseAction;
+  gifs: GifhorseItem[];
+  summary: string;
 }
