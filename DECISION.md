@@ -721,3 +721,21 @@
 3. Add closure tests to enforce key protocol tokens and prevent scaffold regressions.  
 **Risk:** Current queueing and session state are in-memory; relay restarts will clear queued offline requests until persistent backing is introduced.  
 **Rollback:** Revert edge-agent/edge-relay source and package changes to prior scaffold baseline and remove the new edge closure contract test.
+
+## DECISION-041: Extend `infra/docker` Coverage to TypeScript Core Services (Auth/Profile/Scheduler/Metrics/Edge Relay)
+
+**Date:** 2026-03-04  
+**Blueprint Section:** §14, §16 (`infra/docker`), §20.12  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/infra/docker`  
+**Conflict:** `infra/docker` only covered Go runtime binaries, while active TypeScript service packages (`brevio-auth`, `brevio-profile`, `brevio-scheduler`, `brevio-metrics`, `brevio-edge-relay`) had no service-specific Dockerfiles in the canonical infra path.  
+**Options Considered:**  
+1. Keep TypeScript services image-less in `infra/docker` and rely on ad hoc local builds.  
+2. Reuse one generic Dockerfile and pass package paths through runtime env only.  
+3. Add explicit service Dockerfiles for each TypeScript core service using multi-stage Node build + distroless node runtime.  
+**Decision:** Option 3. Added five explicit TypeScript Dockerfiles in `infra/docker`, wired `make docker-build-infra` to build them alongside Go services, and expanded docker closure contracts to enforce both Go (`distroless/static`) and TypeScript (`distroless/nodejs20`) image baselines.  
+**Migration Plan:**  
+1. Add Dockerfiles for auth/profile/scheduler/metrics/edge-relay with pnpm workspace build/deploy stages.  
+2. Extend infra build target loop to include TypeScript service images.  
+3. Update docker closure tests and README mappings to prevent regressions.  
+**Risk:** Node distroless images depend on `pnpm deploy` behavior; pnpm major-version changes may require Dockerfile adjustments.  
+**Rollback:** Remove TypeScript Dockerfiles and revert `docker-build-infra` loop/test expectations to Go-only coverage.

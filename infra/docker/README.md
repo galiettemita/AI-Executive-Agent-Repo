@@ -12,5 +12,11 @@ Brevio runtime binaries in `cmd/`.
 - `Dockerfile.executor` -> `cmd/executor`
 - `Dockerfile.canvas` -> `cmd/canvas`
 - `Dockerfile.temporal-worker` -> `cmd/temporal-worker`
+- `Dockerfile.auth` -> `services/brevio-auth`
+- `Dockerfile.profile` -> `services/brevio-profile`
+- `Dockerfile.scheduler` -> `services/brevio-scheduler`
+- `Dockerfile.metrics` -> `services/brevio-metrics`
+- `Dockerfile.edge-relay` -> `services/brevio-edge-relay`
 
-All Dockerfiles use multi-stage builds with a distroless non-root runtime image.
+Go service Dockerfiles use `gcr.io/distroless/static:nonroot`.
+TypeScript service Dockerfiles use `gcr.io/distroless/nodejs20-debian12:nonroot`.
