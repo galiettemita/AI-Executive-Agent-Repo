@@ -851,3 +851,21 @@
 3. Add closure test assertions for endpoint/runtime tokens and rerun full `make ci`.  
 **Risk:** Scheduler state is currently in-memory; jobs/triggers are ephemeral across restarts and not shared across replicas until persistence backing (DB/Temporal schedules) is integrated.  
 **Rollback:** Revert `services/brevio-scheduler/src/index.ts`, `services/brevio-scheduler/README.md`, and `internal/contracts/scheduler_service_runtime_closure_test.go` to the prior scaffold baseline if runtime behavior diverges from deployment expectations.
+
+## DECISION-048: Replace `brevio-metrics` Health Scaffold with Prometheus/Event-Ingestion Runtime Baseline
+
+**Date:** 2026-03-04  
+**Blueprint Section:** §1.3 (`brevio-metrics`), §10.1, §20.1-§20.3  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/services/brevio-metrics`  
+**Conflict:** `brevio-metrics` only exposed health endpoints and did not expose Prometheus-formatted metrics or ingestion paths required for runtime observability collection.  
+**Options Considered:**  
+1. Keep metrics service as health-only and rely on embedded metrics from other services only.  
+2. Add `/metrics` endpoint with static placeholders but no runtime ingestion.  
+3. Implement metric-family registry with `/metrics` rendering plus ingestion/snapshot APIs and closure tests.  
+**Decision:** Option 3. Implemented `brevio-metrics` runtime with Section 10 metric family descriptors (`brevio_messages_total`, `brevio_message_latency_ms`, `brevio_skill_executions_total`, `brevio_skill_latency_ms`, `brevio_llm_tokens_total`, `brevio_llm_cost_cents`, `brevio_circuit_breaker_state`, `brevio_active_sessions`, `brevio_auth_token_refreshes`, `brevio_budget_utilization_pct`), Prometheus text exposition at `/metrics`, ingestion endpoint (`POST /api/v1|/v1 metrics/events`), snapshot endpoint (`GET /api/v1|/v1 metrics/snapshot`), structured logs, and graceful shutdown. Added `internal/contracts/metrics_service_runtime_closure_test.go` and replaced README scaffold content.  
+**Migration Plan:**  
+1. Replace health-only source with in-memory metric store supporting counter/gauge/histogram update semantics.  
+2. Render metric families in Prometheus exposition format while retaining health endpoint behavior.  
+3. Add closure test assertions for required metric identifiers and runtime endpoint tokens; re-run full `make ci`.  
+**Risk:** Metrics state is in-memory and non-persistent; metrics reset on pod restart and require scraping/storage in external Prometheus for durability.  
+**Rollback:** Revert `services/brevio-metrics/src/index.ts`, `services/brevio-metrics/README.md`, and `internal/contracts/metrics_service_runtime_closure_test.go` to prior scaffold baseline if ingestion behavior causes incompatibilities.
