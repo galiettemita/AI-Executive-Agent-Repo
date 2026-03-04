@@ -1329,3 +1329,21 @@
 3. Run full CI and continue subsequent waves for remaining scaffolded adapters.  
 **Risk:** Deterministic asset URLs and simplified output payloads do not cover full provider-side rendering variance (model availability, inference latency, and format-specific generation edge cases) until sandbox integration tests are expanded.  
 **Rollback:** Remove Wave 23 IDs from override config and regenerate scaffolds for these six skills if regressions are introduced.
+
+## DECISION-074: De-Scaffold Personal Cognition and Coaching Skills with Typed Guidance Contracts (Wave 24)
+
+**Date:** 2026-03-04  
+**Blueprint Section:** §2.4, §A.7.15, §A.8  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/services/brevio-hands/src/skills/{de-ai-ify,journal-to-post,pros-cons,relationship-skills,self-improvement,doing-tasks}`  
+**Conflict:** Six personal/cognition skills were scaffold-only and lacked typed validation for text/context payloads, deterministic coaching outputs, and closure-test protection against scaffold regressions.  
+**Options Considered:**  
+1. Keep these personal skills scaffolded while finishing remaining finance/research long-tail adapters.  
+2. Fold personal skills into a final mixed-category wave later.  
+3. Execute a focused personal-cognition wave with typed guidance/orchestration contracts and explicit validation constants.  
+**Decision:** Option 3. Replaced scaffolds for `de-ai-ify`, `journal-to-post`, `pros-cons`, `relationship-skills`, `self-improvement`, and `doing-tasks` with typed `types/schema/client/index` implementations, deterministic outputs, unit tests, and production READMEs. Added all six IDs to centralized manual override config and closure token assertions.  
+**Migration Plan:**  
+1. Register Wave 24 IDs in `config/skill-manual-overrides.txt`.  
+2. Extend schema/index token assertions in `internal/contracts/hands_priority_skills_closure_test.go` for each new validation constant and output token.  
+3. Run full CI and continue subsequent waves for remaining long-tail scaffold adapters.  
+**Risk:** Deterministic coaching text and routing outputs do not capture full conversational variability or user-specific contextual nuance until integration/eval sets are expanded for these six skills.  
+**Rollback:** Remove Wave 24 IDs from override config and regenerate scaffolds for these six skills if regressions appear.

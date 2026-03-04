@@ -1,6 +1,13 @@
 # relationship-skills
 
-Generated skill adapter scaffold.
+Hands-plane coaching adapter for interpersonal communication planning.
 
-- Plane: `brain`
-- Source: `migrations/006_seed_skills.up.sql`
+## Supported actions
+
+- `coach_message`
+- `conflict_plan`
+
+## Notes
+
+- Requires context + goal to produce targeted guidance.
+- Returns deterministic talking points and suggested message output.

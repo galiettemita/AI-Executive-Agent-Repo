@@ -1,6 +1,13 @@
 # journal-to-post
 
-Generated skill adapter scaffold.
+Hands-plane adapter for converting journal entries into social drafts.
 
-- Plane: `hands`
-- Source: `migrations/006_seed_skills.up.sql`
+## Supported actions
+
+- `draft_post`
+- `generate_thread`
+
+## Notes
+
+- Requires a journal entry payload for all actions.
+- Produces deterministic single-post and thread variants.

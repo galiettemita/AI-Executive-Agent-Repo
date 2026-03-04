@@ -1,6 +1,13 @@
 # self-improvement
 
-Generated skill adapter scaffold.
+Hands-plane adapter for personal growth logging and weekly reflection.
 
-- Plane: `brain`
-- Source: `migrations/006_seed_skills.up.sql`
+## Supported actions
+
+- `log_lesson`
+- `weekly_review`
+
+## Notes
+
+- Requires lesson text to anchor coaching output.
+- Produces deterministic improvement and next-step recommendations.

@@ -681,6 +681,36 @@ func TestHandsPrioritySkillsNoLongerScaffolded(t *testing.T) {
 			"image_url",
 			"quality_score",
 		},
+		"de-ai-ify": {
+			"action",
+			"rewritten_text",
+			"detected_ai_markers",
+		},
+		"journal-to-post": {
+			"action",
+			"post_text",
+			"thread_parts",
+		},
+		"pros-cons": {
+			"action",
+			"options",
+			"recommendation",
+		},
+		"relationship-skills": {
+			"action",
+			"talking_points",
+			"suggested_message",
+		},
+		"self-improvement": {
+			"action",
+			"improvements",
+			"next_steps",
+		},
+		"doing-tasks": {
+			"action",
+			"routed_skill",
+			"execution_plan",
+		},
 	}
 
 	indexTokens := map[string][]string{
@@ -958,6 +988,24 @@ func TestHandsPrioritySkillsNoLongerScaffolded(t *testing.T) {
 		},
 		"krea-api": {
 			"KREA_API_PROMPT_REQUIRED",
+		},
+		"de-ai-ify": {
+			"DE_AI_IFY_TEXT_REQUIRED",
+		},
+		"journal-to-post": {
+			"JOURNAL_TO_POST_ENTRY_REQUIRED",
+		},
+		"pros-cons": {
+			"PROS_CONS_DECISION_FIELDS_REQUIRED",
+		},
+		"relationship-skills": {
+			"RELATIONSHIP_SKILLS_CONTEXT_REQUIRED",
+		},
+		"self-improvement": {
+			"SELF_IMPROVEMENT_LESSON_REQUIRED",
+		},
+		"doing-tasks": {
+			"DOING_TASKS_TASK_REQUIRED",
 		},
 	}
 

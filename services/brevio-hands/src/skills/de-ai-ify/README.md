@@ -1,6 +1,13 @@
 # de-ai-ify
 
-Generated skill adapter scaffold.
+Hands-plane adapter for rewriting AI-sounding text into a human voice.
 
-- Plane: `hands`
-- Source: `migrations/006_seed_skills.up.sql`
+## Supported actions
+
+- `rewrite_text`
+- `tone_check`
+
+## Notes
+
+- Requires source text for every action.
+- Returns deterministic marker detection and rewrite output.

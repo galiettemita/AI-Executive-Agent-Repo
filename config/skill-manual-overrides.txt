@@ -131,3 +131,9 @@ figma
 gamma
 pollinations
 krea-api
+de-ai-ify
+journal-to-post
+pros-cons
+relationship-skills
+self-improvement
+doing-tasks

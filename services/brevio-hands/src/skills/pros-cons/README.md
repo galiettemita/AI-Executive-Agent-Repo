@@ -1,6 +1,12 @@
 # pros-cons
 
-Generated skill adapter scaffold.
+Hands-plane decision framework adapter for structured option scoring.
 
-- Plane: `hands`
-- Source: `migrations/006_seed_skills.up.sql`
+## Supported actions
+
+- `evaluate_decision`
+
+## Notes
+
+- Requires decision text and at least two options.
+- Produces deterministic pros/cons/score outputs for each option.
