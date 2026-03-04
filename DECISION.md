@@ -1671,3 +1671,21 @@
 3. If new drift appears, auto-apply `terraform fmt` before commit.  
 **Risk:** Formatting-only changes can create noisy diffs when mixed with functional infra updates.  
 **Rollback:** Revert formatting-only Terraform changes if needed; no runtime behavior impact expected.
+
+## DECISION-093: Automate LLM Eval Regression Gates in CI
+
+**Date:** 2026-03-04  
+**Blueprint Section:** §11.1, §20.13  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/scripts/run-evals.sh`, `/Users/galiettemita/Downloads/Executive AI Agent/backend/tests/evals/*`, `/Users/galiettemita/Downloads/Executive AI Agent/backend/.github/workflows`  
+**Conflict:** The eval harness existed and passed when run manually, but the blueprint requires regular execution (weekly and on prompt changes) with regression/budget gating in CI. Manual-only execution risks silent drift.  
+**Options Considered:**  
+1. Keep eval execution manual and rely on contributors to run `scripts/run-evals.sh` before merge.  
+2. Add eval command to every CI job run unconditionally.  
+3. Add a dedicated eval workflow triggered weekly and on prompt/eval harness changes, plus a Make target for local parity.  
+**Decision:** Option 3. Added `make evals` and introduced `.github/workflows/llm-evals.yml` to run the eval harness on a weekly schedule, workflow dispatch, and prompt/eval-related push/PR path changes. Workflow fails on regression or budget cap breach and uploads result artifacts.  
+**Migration Plan:**  
+1. Keep deterministic offline eval harness as source of truth for CI gating.  
+2. Use path-filtered triggers to avoid unnecessary CI cost on unrelated changes.  
+3. Expand workflow to include A/B comparison jobs when provider-switch rollouts are enabled.  
+**Risk:** Path-filtered triggers can miss indirect prompt-affecting code changes outside listed paths.  
+**Rollback:** Remove `llm-evals.yml` and keep manual `make evals` flow if CI runtime budget/latency requires temporary rollback.

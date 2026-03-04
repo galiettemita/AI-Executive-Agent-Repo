@@ -8,6 +8,7 @@ Datasets:
 
 Run:
 - `bash scripts/run-evals.sh`
+- `make evals`
 
 Outputs:
 - `tests/evals/results/eval-<timestamp>.json`
@@ -18,3 +19,4 @@ Baselines:
 
 Notes:
 - The harness is deterministic and offline-safe: it scores datasets with reproducible evaluators for intent classification, task decomposition, response guardrails, and disambiguation routing.
+- CI automation: `.github/workflows/llm-evals.yml` runs weekly (Monday 07:00 UTC), on prompt/eval dataset changes, and on manual dispatch. It uploads result artifacts and fails on regression or budget-cap breach.
