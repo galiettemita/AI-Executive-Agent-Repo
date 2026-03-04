@@ -1,8 +1,16 @@
-export interface SkillInputPayload {
-  payload?: Record<string, unknown>;
+export interface AutoresponderInput {
+  action: 'enable' | 'disable' | 'intercept';
+  ruleset_name?: string;
+  incoming_text?: string;
+  channel?: 'whatsapp' | 'imessage';
+  delegation_enabled?: boolean;
 }
 
-export interface SkillOutputPayload {
-  ok: boolean;
-  skill_id: string;
+export interface AutoresponderOutput {
+  provider: 'autoresponder';
+  action: 'enable' | 'disable' | 'intercept';
+  status: 'enabled' | 'disabled' | 'responded';
+  delegated_to_brain: boolean;
+  response_text?: string;
+  latency_budget_ms: 8000;
 }

@@ -1167,3 +1167,21 @@
 3. Run full CI and continue with remaining scaffolded adapters in subsequent waves.  
 **Risk:** Deterministic fixture outputs do not represent real provider transcription/voice quality variance until integration tests with sandbox credentials are added.  
 **Rollback:** Remove Wave 14 IDs from override config and regenerate scaffolds for these six skills if regressions appear.
+
+## DECISION-065: De-Scaffold Gateway Hybrid Voice/Autoresponder Skills with Delegation Contracts (Wave 15)
+
+**Date:** 2026-03-04  
+**Blueprint Section:** §1.2.1, §A.6.2-§A.6.3, §2.4  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/services/brevio-hands/src/skills/{vocal-chat,autoresponder}`  
+**Conflict:** Two gateway hybrid skills remained scaffold-only, leaving no typed round-trip voice contract for `vocal-chat` and no explicit Brain-delegation metadata for `autoresponder` intercept behavior.  
+**Options Considered:**  
+1. Keep both skills scaffolded until gateway/brain runtime integration is fully reworked.  
+2. Fold these two into a later mixed long-tail adapter wave.  
+3. Execute a focused hybrid-gateway wave with typed schemas, deterministic clients, and explicit latency/delegation fields aligned to addendum requirements.  
+**Decision:** Option 3. Replaced scaffolds for `vocal-chat` and `autoresponder` with typed `types/schema/client/index` modules, action-specific validation guards, deterministic outputs, unit tests, and updated READMEs. Added both IDs to centralized override config and closure token assertions.  
+**Migration Plan:**  
+1. Register Wave 15 IDs in `config/skill-manual-overrides.txt`.  
+2. Add closure-test schema/index token assertions for `VOCAL_CHAT_AUDIO_REQUIRED` and `AUTORESPONDER_INTERCEPT_TEXT_REQUIRED`.  
+3. Run full CI and continue with remaining scaffolded skills in next waves.  
+**Risk:** Deterministic reply synthesis/intercept behavior can diverge from live gateway + brain orchestration semantics until integrated end-to-end webhook tests are expanded.  
+**Rollback:** Remove Wave 15 IDs from override config and regenerate scaffolds for these two skills if regressions appear.

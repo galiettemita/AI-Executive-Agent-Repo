@@ -431,6 +431,16 @@ func TestHandsPrioritySkillsNoLongerScaffolded(t *testing.T) {
 			"formatted_text",
 			"applied_rules",
 		},
+		"vocal-chat": {
+			"audio_url",
+			"reply_audio_url",
+			"latency_budget_ms",
+		},
+		"autoresponder": {
+			"action",
+			"delegated_to_brain",
+			"latency_budget_ms",
+		},
 	}
 
 	indexTokens := map[string][]string{
@@ -587,6 +597,10 @@ func TestHandsPrioritySkillsNoLongerScaffolded(t *testing.T) {
 		},
 		"whatsapp-styling-guide": {
 			"WHATSAPP_STYLING_TEXT_REQUIRED",
+		},
+		"vocal-chat": {"VOCAL_CHAT_AUDIO_REQUIRED"},
+		"autoresponder": {
+			"AUTORESPONDER_INTERCEPT_TEXT_REQUIRED",
 		},
 	}
 

@@ -81,3 +81,5 @@ openai-tts
 sag
 voice-wake-say
 whatsapp-styling-guide
+vocal-chat
+autoresponder
