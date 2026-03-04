@@ -1,7 +1,36 @@
 # BREVIO x OPENCLAW Gap Analysis (Phase 0B)
 
 **Date:** 2026-03-03  
+**Last Refreshed:** 2026-03-04  
 **Scope:** Compare current repository state to the BREVIO x OPENCLAW production directive and Addendum A.
+
+## Reconciliation Update (2026-03-04)
+
+The original Phase 0B snapshot below is retained for traceability. Current status has advanced materially:
+
+### Now Implemented (previously marked missing)
+
+- Target additive repo structure under `packages/`, `services/brevio-*`, `edge/`, `infra/`, `config/`, and `tests/`.
+- Reversible migration set under `migrations/001..011` (`*.up.sql` + `*.down.sql`).
+- `packages/shared` schemas/interfaces, `packages/proto`, and service scaffolds for auth/profile/scheduler/metrics/edge-relay.
+- Skill registry + adapter layout for OpenClaw coverage and custom-build stubs.
+- `config/skill-disambiguation.yaml`, prompt templates, retry policy configs, and eval corpora.
+- Required runbooks under `docs/runbooks/` and compliance artifacts under `docs/compliance/`.
+- CI workflow split (`ci.yml`, deploy staging/production, security scan) and dedicated eval automation (`llm-evals.yml`).
+- OPA policy package/tests under `policies/brevio` and `policies/tests`.
+- Root `docker-compose.yml` and bootstrap script `scripts/setup-local.sh`.
+
+### Remaining Differentials (engineering and/or external dependency constrained)
+
+1. **Dual-stack architecture remains:** legacy Go service plane and additive Brevio/OpenClaw TypeScript-oriented structure coexist by design. This is deliberate non-destructive migration behavior, but full runtime cutover to a single stack is still an operational decision.
+2. **Full live-provider validation for all skills is constrained by external credentials/sandbox accounts and legal approvals** (OAuth clients, partner APIs, billing/payment providers, legal review for transactional integrations).
+3. **Production go-live controls remain human-gated:** AWS account bootstrap, DNS/domain provisioning, and final production deployment sign-off.
+4. **Multi-region DR and SLO soak validation require live environment execution windows** and cannot be fully completed in local/offline development context.
+
+### Effective Status
+
+- **Code/structure/policy/testing artifact coverage:** substantially converged to blueprint target state.
+- **Remaining blockers:** primarily external-system provisioning and formal go-live approvals, not local implementation scaffolding.
 
 ## Classification Summary
 

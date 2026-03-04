@@ -17,6 +17,7 @@ Legend
 ## BREVIO V9 Migration Tracker (Current Program)
 - [x] BREVIO x OPENCLAW Phase 0A discovery complete: authored `CODEBASE_INVENTORY.md` with full repo/service/schema/test/infra/config inventory against the new production directive.
 - [x] BREVIO x OPENCLAW Phase 0B gap analysis complete: authored `GAP_ANALYSIS.md` with `EXISTS_AND_MATCHES`, `EXISTS_BUT_DIFFERS`, `MISSING`, and explicit integration-point mapping.
+- [x] BREVIO x OPENCLAW Phase 0 reconciliation refresh complete: updated `CODEBASE_INVENTORY.md` and `GAP_ANALYSIS.md` with 2026-03-04 state reconciliation, preserving baseline snapshots while explicitly separating resolved build items from remaining external human-gated dependencies.
 - [x] BREVIO x OPENCLAW Phase 0C decision log initialized: authored `DECISION.md` with migration decisions for coexistence architecture, additive DB deltas, and protocol/policy evolution.
 - [x] BREVIO x OPENCLAW Phase 1 structure scaffold started: added additive pnpm/turbo/TypeScript workspace root files (`package.json`, `pnpm-workspace.yaml`, `turbo.json`, `tsconfig.base.json`, `.eslintrc.cjs`, `.prettierrc`) while preserving existing Go runtime layout.
 - [x] BREVIO x OPENCLAW Phase 1 structure scaffold extended: created target directories for `packages/`, `services/`, `edge/`, `infra/`, `config/`, `tests/`, `docs/runbooks/`, and `docs/compliance/` plus initial files for prompts, disambiguation, retry policies, authz policy scaffold, and local setup scripts.

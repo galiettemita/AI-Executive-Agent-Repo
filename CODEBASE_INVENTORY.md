@@ -1,8 +1,34 @@
 # BREVIO x OPENCLAW Codebase Inventory (Phase 0A)
 
 **Date:** 2026-03-03  
+**Last Refreshed:** 2026-03-04  
 **Repository:** `/Users/galiettemita/Downloads/Executive AI Agent/backend`  
 **Commit Baseline:** `codex/brevio-openclaw-phase0` branch created from current `main`
+
+## 0) Refresh Snapshot (2026-03-04)
+
+This inventory was originally captured at the start of Phase 0A and is retained for baseline traceability. The repository has since been extended substantially. Current high-signal state:
+
+- Monorepo now includes both legacy Go runtime and target additive layout:
+  - `packages/{shared,proto,sdk}`
+  - `services/{brevio-gateway,brevio-brain,brevio-hands,brevio-auth,brevio-profile,brevio-temporal-worker,brevio-scheduler,brevio-metrics,brevio-edge-relay}`
+  - `edge/brevio-edge-agent`
+  - `infra/{terraform,helm,docker,argocd}`
+  - `config/{skill-disambiguation.yaml,prompt-templates,retry-policies}`
+  - `tests/{contracts,integration,e2e,load,chaos,security,evals}`
+- Reversible migration set `migrations/001..011` exists in paired `*.up.sql`/`*.down.sql` format.
+- Hands skill adapter tree contains 163 generated skill directories (153 OpenClaw + 10 custom-build) plus `_template`; scaffold integration placeholders are fully eliminated from skill integration tests.
+- CI workflow split required by the directive is present:
+  - `.github/workflows/ci.yml`
+  - `.github/workflows/deploy-staging.yml`
+  - `.github/workflows/deploy-production.yml`
+  - `.github/workflows/security-scan.yml`
+  - `.github/workflows/llm-evals.yml` (weekly + prompt/eval change triggers)
+- Directive-specific docs now exist under target paths:
+  - `docs/runbooks/*` (6 required runbooks)
+  - `docs/compliance/*` (security, GDPR, SOC2 readiness set)
+
+The remaining sections below document the original Phase 0A baseline state used to drive the migration plan.
 
 ## 1) Repository Structure and Organization Pattern
 

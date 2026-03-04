@@ -1689,3 +1689,21 @@
 3. Expand workflow to include A/B comparison jobs when provider-switch rollouts are enabled.  
 **Risk:** Path-filtered triggers can miss indirect prompt-affecting code changes outside listed paths.  
 **Rollback:** Remove `llm-evals.yml` and keep manual `make evals` flow if CI runtime budget/latency requires temporary rollback.
+
+## DECISION-094: Reconcile Phase 0 Discovery Artifacts to Current Repository State
+
+**Date:** 2026-03-04  
+**Blueprint Section:** §0.4, §0.5, §18 (Phase 0A/0B/0C)  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/CODEBASE_INVENTORY.md`, `/Users/galiettemita/Downloads/Executive AI Agent/backend/GAP_ANALYSIS.md`  
+**Conflict:** Phase 0 inventory/gap documents were accurate at initial capture but became stale after substantial implementation waves, causing mismatch between documented "MISSING" items and repository reality.  
+**Options Considered:**  
+1. Keep original Phase 0 documents untouched and rely on checklist/commits for current state.  
+2. Rewrite the original sections in-place to only reflect latest state.  
+3. Preserve original baseline sections and add explicit reconciliation updates with current status and remaining blockers.  
+**Decision:** Option 3. Added 2026-03-04 reconciliation sections to both documents: retained original baseline for traceability, then documented implemented artifacts now present and isolated remaining deltas to external/human-gated deployment constraints.  
+**Migration Plan:**  
+1. Keep baseline + reconciliation model for future auditability.  
+2. Refresh reconciliation sections on major delivery milestones rather than rewriting baseline history.  
+3. Use reconciliation sections as source for final production readiness handoff.  
+**Risk:** Dual baseline/reconciliation sections can diverge if refresh cadence is missed.  
+**Rollback:** Remove reconciliation sections and restore original baseline-only docs if a single-snapshot documentation style is preferred.
