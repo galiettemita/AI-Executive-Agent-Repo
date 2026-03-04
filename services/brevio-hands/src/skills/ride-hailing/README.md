@@ -1,7 +1,20 @@
 # ride-hailing
 
-Generated skill adapter scaffold.
+Custom-build adapter for ride estimates, dispatch requests, and ride status tracking.
 
-- Plane: `hands`
-- Source: `migrations/006_seed_skills.up.sql`
-- Custom build gap stub: `Awaiting API partnership`
+## Auth
+- Pending partner API integration (Uber/Lyft). No live dispatch API yet.
+
+## Input
+- `action`: `estimate`, `request_ride`, `ride_status`, `cancel_ride`
+- route fields (`origin`, `destination`) required for estimate/request
+- `request_ride` requires `confirmed: true`
+- `ride_status` and `cancel_ride` require `ride_id`
+
+## Output
+- `provider`: `ride-hailing`
+- action echo with estimate/ride fields
+- `partnership_status`: `awaiting_api_partnership`
+
+## Notes
+- `// CUSTOM_BUILD_REQUIRED: Awaiting API partnership` enforced in adapter runtime.

@@ -321,6 +321,31 @@ func TestHandsPrioritySkillsNoLongerScaffolded(t *testing.T) {
 			"role",
 			"recommendations",
 		},
+		"restaurant-reservations": {
+			"action",
+			"party_size",
+			"partnership_status",
+		},
+		"food-delivery-ordering": {
+			"action",
+			"cart_id",
+			"partnership_status",
+		},
+		"ride-hailing": {
+			"action",
+			"service_tier",
+			"partnership_status",
+		},
+		"hotel-vacation-booking": {
+			"action",
+			"check_in",
+			"partnership_status",
+		},
+		"bill-pay-p2p": {
+			"action",
+			"amount_cents",
+			"partnership_status",
+		},
 	}
 
 	indexTokens := map[string][]string{
@@ -413,6 +438,26 @@ func TestHandsPrioritySkillsNoLongerScaffolded(t *testing.T) {
 		},
 		"pdf-tools":      {"PDF_TOOLS_MERGE_FILES_REQUIRED"},
 		"resume-builder": {"RESUME_BUILDER_ROLE_REQUIRED"},
+		"restaurant-reservations": {
+			"RESTAURANT_RESERVATIONS_CONFIRMATION_REQUIRED",
+			"CUSTOM_BUILD_REQUIRED",
+		},
+		"food-delivery-ordering": {
+			"FOOD_DELIVERY_CHECKOUT_CONFIRMATION_REQUIRED",
+			"CUSTOM_BUILD_REQUIRED",
+		},
+		"ride-hailing": {
+			"RIDE_HAILING_CONFIRMATION_REQUIRED",
+			"CUSTOM_BUILD_REQUIRED",
+		},
+		"hotel-vacation-booking": {
+			"HOTEL_BOOKING_CONFIRMATION_REQUIRED",
+			"CUSTOM_BUILD_REQUIRED",
+		},
+		"bill-pay-p2p": {
+			"BILL_PAY_CONFIRMATION_REQUIRED",
+			"CUSTOM_BUILD_REQUIRED",
+		},
 	}
 
 	scriptBody, err := os.ReadFile(scriptPath)

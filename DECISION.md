@@ -1095,3 +1095,21 @@
 4. Run full CI (`make ci`) prior to commit/push.  
 **Risk:** Deterministic financial/document fixtures can diverge from provider-specific edge behavior (for example broker symbol formats or OCR/page-range semantics) until sandbox integration tests are expanded.  
 **Rollback:** Remove Wave 10 IDs from override config and regenerate scaffolds for these six skills if regressions are discovered.
+
+## DECISION-061: De-Scaffold CRITICAL Custom-Build Transactional Skills with Confirmation-Gated Typed Stubs (Wave 11)
+
+**Date:** 2026-03-04  
+**Blueprint Section:** §17, §17.2, §A.8  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/services/brevio-hands/src/skills/{restaurant-reservations,food-delivery-ordering,ride-hailing,hotel-vacation-booking,bill-pay-p2p}`  
+**Conflict:** The highest-priority custom-build moat skills were still scaffold-only, despite explicit blueprint requirement to provide plug-and-play typed adapters with complete interface/schema/test architecture while awaiting partnerships.  
+**Options Considered:**  
+1. Keep these five skills scaffolded until external partner API credentials are provisioned.  
+2. Implement partial stubs without action-level validation to minimize upfront work.  
+3. Implement full typed stub adapters now with deterministic outputs, confirmation gates for money/booking actions, and explicit `CUSTOM_BUILD_REQUIRED` markers.  
+**Decision:** Option 3. Replaced scaffolds for `restaurant-reservations`, `food-delivery-ordering`, `ride-hailing`, `hotel-vacation-booking`, and `bill-pay-p2p` with typed `types/schema/client/index` modules, action-specific validation rules, confirmation-required mutation paths, partnership-status output contracts, updated unit tests, and updated READMEs. Preserved `// CUSTOM_BUILD_REQUIRED: Awaiting API partnership` in runtime execution paths as required by the prompt.  
+**Migration Plan:**  
+1. Register all five transactional IDs in `config/skill-manual-overrides.txt`.  
+2. Add closure test schema/index token assertions for confirmation-gate constants and `CUSTOM_BUILD_REQUIRED` markers.  
+3. Run full CI and continue with next de-scaffold wave while credentials/legal onboarding remains pending.  
+**Risk:** Deterministic stubs can diverge from real provider behavior (cancellation policy edge cases, fee breakdowns, payment failure semantics) until partner APIs are integrated in staging.  
+**Rollback:** Remove Wave 11 IDs from override config and regenerate scaffolds for these five skills if integration blockers require temporary rollback.

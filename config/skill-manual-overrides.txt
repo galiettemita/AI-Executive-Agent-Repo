@@ -59,3 +59,8 @@ yahoo-finance
 financial-market-analysis
 pdf-tools
 resume-builder
+restaurant-reservations
+food-delivery-ordering
+ride-hailing
+hotel-vacation-booking
+bill-pay-p2p
