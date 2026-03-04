@@ -471,6 +471,36 @@ func TestHandsPrioritySkillsNoLongerScaffolded(t *testing.T) {
 			"household_items",
 			"recommendations",
 		},
+		"withings-health": {
+			"measure_type",
+			"measurements",
+			"trend",
+		},
+		"dexcom": {
+			"action",
+			"readings",
+			"alerts",
+		},
+		"healthkit-sync": {
+			"alias_target",
+			"deprecated_alias",
+			"forwarded",
+		},
+		"healthkit-sync-apple": {
+			"action",
+			"snapshots",
+			"synced_metric_count",
+		},
+		"sleep-calculator": {
+			"action",
+			"recommendations",
+			"sleep_cycles",
+		},
+		"meal-planner": {
+			"action",
+			"meals",
+			"grocery_items",
+		},
 	}
 
 	indexTokens := map[string][]string{
@@ -642,6 +672,20 @@ func TestHandsPrioritySkillsNoLongerScaffolded(t *testing.T) {
 			"PERSONAL_SHOPPER_QUERY_REQUIRED",
 		},
 		"clawringhouse": {"CLAWRINGHOUSE_ITEMS_REQUIRED"},
+		"withings-health": {
+			"WITHINGS_MEASURE_TYPE_REQUIRED",
+		},
+		"dexcom": {"DEXCOM_TIME_RANGE_REQUIRED"},
+		"healthkit-sync": {
+			"HEALTHKIT_SYNC_ALIAS_RANGE_REQUIRED",
+		},
+		"healthkit-sync-apple": {
+			"HEALTHKIT_SYNC_APPLE_RANGE_REQUIRED",
+		},
+		"sleep-calculator": {
+			"SLEEP_CALCULATOR_WAKE_TIME_REQUIRED",
+		},
+		"meal-planner": {"MEAL_PLANNER_HOUSEHOLD_SIZE_REQUIRED"},
 	}
 
 	scriptBody, err := os.ReadFile(scriptPath)

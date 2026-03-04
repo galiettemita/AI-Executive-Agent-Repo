@@ -1,6 +1,13 @@
 # sleep-calculator
 
-Generated skill adapter scaffold.
+Hands-plane sleep-cycle planning adapter.
 
-- Plane: `hands`
-- Source: `migrations/006_seed_skills.up.sql`
+## Supported actions
+
+- `bedtime_from_wake`
+- `wake_from_bedtime`
+
+## Notes
+
+- Uses deterministic cycle-based timing heuristics.
+- Adds 15-minute sleep-onset buffer in recommendation math.

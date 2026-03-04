@@ -899,6 +899,14 @@ You must prove it.
 - [x] Extend centralized manual override registry and closure test token assertions for all Wave 16 adapters
 - [x] Validate Wave 16 against full `make ci` gate before merge
 
+## M15: Hands Adapter Wave 17 (Health Domain Hardening)
+- [x] De-scaffold `withings-health` + `dexcom` with typed measurement/reading contracts and required range validation
+- [x] De-scaffold `healthkit-sync-apple` with typed canonical Apple Health sync contracts and range-window enforcement
+- [x] De-scaffold `healthkit-sync` as explicit deprecated alias contract targeting `healthkit-sync-apple`
+- [x] De-scaffold `sleep-calculator` + `meal-planner` with typed planning contracts and required anchor-field validation
+- [x] Extend centralized manual override registry and closure test token assertions for all Wave 17 adapters
+- [x] Validate Wave 17 against full `make ci` gate before merge
+
 ## M13–15 (Auto-Provisioning Layer 3): Remote Server Discovery Catalog (Auto-Provisioning Sections 5, 12.3, 16)
 - [x] ToolRegistry: register native tool `search_remote_catalog` (use only if `provision_server` fails due to missing catalog entry) (Auto-Provisioning Section 9)
 - [x] Hands handler: implement `search_remote_catalog` -> query remote catalog API -> return matched entries (Auto-Provisioning Section 5)

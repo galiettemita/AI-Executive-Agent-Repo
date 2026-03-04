@@ -89,3 +89,9 @@ recipe-to-list
 marketplace
 personal-shopper
 clawringhouse
+withings-health
+dexcom
+healthkit-sync
+healthkit-sync-apple
+sleep-calculator
+meal-planner

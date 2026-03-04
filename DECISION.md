@@ -1203,3 +1203,21 @@
 3. Run full CI and continue next category wave from remaining scaffold set.  
 **Risk:** Deterministic fixture behavior will not capture full external-provider variability (checkout fees, marketplace fraud patterns, recommendation quality drift) until sandbox integrations and evals are expanded.  
 **Rollback:** Remove Wave 16 IDs from override config and regenerate scaffolds for these six skills if regressions are introduced.
+
+## DECISION-067: De-Scaffold Health Domain Skills with Canonical HealthKit Alias Semantics (Wave 17)
+
+**Date:** 2026-03-04  
+**Blueprint Section:** §2.4, §5.3(4,5), §A.7.4, §A.8  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/services/brevio-hands/src/skills/{withings-health,dexcom,healthkit-sync,healthkit-sync-apple,sleep-calculator,meal-planner}`  
+**Conflict:** Key health and wellness skills were scaffold-only, leaving no typed schemas for sensitive metric windows and no explicit deprecated-alias behavior for `healthkit-sync` routing to canonical `healthkit-sync-apple`.  
+**Options Considered:**  
+1. Keep health adapters scaffolded while prioritizing only productivity/media categories.  
+2. De-scaffold all remaining skills in one large mixed category wave.  
+3. Execute a focused health wave for six adapters with strict range validation, typed health outputs, and explicit alias/canonical semantics.  
+**Decision:** Option 3. Replaced scaffolds for `withings-health`, `dexcom`, `healthkit-sync`, `healthkit-sync-apple`, `sleep-calculator`, and `meal-planner` with typed `types/schema/client/index` implementations, deterministic outputs, validation guards, unit tests, and updated README docs. Added all six IDs to centralized manual override config and closure token assertions.  
+**Migration Plan:**  
+1. Register Wave 17 IDs in `config/skill-manual-overrides.txt`.  
+2. Extend closure test maps with health validation constants and canonical/alias tokens.  
+3. Run full CI and continue remaining scaffolded categories in later waves.  
+**Risk:** Deterministic health fixtures cannot reflect full provider behavior (sensor lag, missing data windows, per-device calibration anomalies) until sandbox-backed integration tests are added.  
+**Rollback:** Remove Wave 17 IDs from override config and regenerate scaffolds for these six skills if regressions surface.

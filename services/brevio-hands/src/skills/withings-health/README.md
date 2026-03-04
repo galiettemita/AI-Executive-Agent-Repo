@@ -1,6 +1,13 @@
 # withings-health
 
-Generated skill adapter scaffold.
+Hands-plane health metrics adapter for Withings device measurements.
 
-- Plane: `hands`
-- Source: `migrations/006_seed_skills.up.sql`
+## Supported actions
+
+- `get_measurements`
+- `trend_summary`
+
+## Notes
+
+- Requires Withings metric scopes (`user.metrics`, `user.activity`).
+- Returns deterministic fixture measurements for contract-safe validation.

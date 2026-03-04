@@ -1,6 +1,13 @@
 # meal-planner
 
-Generated skill adapter scaffold.
+Hands-plane weekly meal planning and grocery rollup adapter.
 
-- Plane: `hands`
-- Source: `migrations/006_seed_skills.up.sql`
+## Supported actions
+
+- `weekly_plan`
+- `grocery_rollup`
+
+## Notes
+
+- Generates deterministic 7-day meal structures for predictable planning behavior.
+- Produces grocery section rollups keyed to household size.

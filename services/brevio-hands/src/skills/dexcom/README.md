@@ -1,6 +1,13 @@
 # dexcom
 
-Generated skill adapter scaffold.
+Hands-plane glucose monitoring adapter for Dexcom CGM integrations.
 
-- Plane: `hands`
-- Source: `migrations/006_seed_skills.up.sql`
+## Supported actions
+
+- `glucose_readings`
+- `trend_alerts`
+
+## Notes
+
+- Requires Dexcom scope `egv:read`.
+- Uses deterministic sample readings for contract and policy validation.
