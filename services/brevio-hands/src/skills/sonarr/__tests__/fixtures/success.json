@@ -1,0 +1,6 @@
+{
+  "status": "SUCCESS",
+  "provider": "sonarr",
+  "state": "",
+  "input": {"action":"list_queue"}
+}

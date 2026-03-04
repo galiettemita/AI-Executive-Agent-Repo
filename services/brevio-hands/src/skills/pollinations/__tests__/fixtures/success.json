@@ -1,0 +1,6 @@
+{
+  "status": "SUCCESS",
+  "provider": "pollinations",
+  "state": "",
+  "input": {"action":"generate_image","prompt":"Neon skyline"}
+}

@@ -1,0 +1,6 @@
+{
+  "status": "SUCCESS",
+  "provider": "roku",
+  "state": "",
+  "input": {"action":"status"}
+}

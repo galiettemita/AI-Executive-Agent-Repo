@@ -1617,3 +1617,21 @@
 3. Preserve closure-test enforcement to prevent regressions to compile-only placeholders.  
 **Risk:** Fixture-backed assertions validate deterministic adapter output shape, not live local-device/provider variability, until sandbox/device-backed integration suites are enabled.  
 **Rollback:** Restore prior integration tests and remove corresponding fixture/closure additions if integration enforcement policy changes.
+
+## DECISION-090: De-Scaffold Final Remaining Integration Tests with Fixture Enforcement
+
+**Date:** 2026-03-04  
+**Blueprint Section:** §2.4, §11.1, §A.7, §A.8  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/services/brevio-hands/src/skills/{content-advisory,clawd-coach,dexcom,chromecast,camsnap,de-ai-ify,craft,gifhorse,sonoscli,fal-ai,george,gamma,healthkit-sync-apple,meal-planner,figma,pros-cons,healthkit-sync,home-assistant,veo,overseerr,krea-api,coloring-page,mole-mac-cleanup,sleep-calculator,sports-ticker,excalidraw-flowchart,samsung-smart-tv,radarr,pollinations,granola,sonarr,roku,journal-to-post,withings-health}/__tests__/integration.test.ts` and `/Users/galiettemita/Downloads/Executive AI Agent/backend/internal/contracts`  
+**Conflict:** The final 34 Hands skills still had compile-only scaffold integration tests (`scaffold compiles`) and empty fixture directories, which violated the integration closure standard used across previous waves.  
+**Options Considered:**  
+1. Leave remaining scaffolds and rely on unit coverage while closing other blueprint sections.  
+2. Convert only high-impact skills and defer the rest to a later pass.  
+3. Convert all remaining scaffolded integrations now and enforce closure with a dedicated contract gate.  
+**Decision:** Option 3. Replaced all 34 remaining integration tests with deterministic fixture-backed assertions, added `success.json` fixtures for each skill under `__tests__/fixtures`, and introduced `internal/contracts/final_skill_integration_closure_test.go` to fail if any covered test reverts to `scaffold compiles` or has zero JSON fixtures.  
+**Migration Plan:**  
+1. Keep fixture-backed integration tests as deterministic baseline coverage for all remaining skills.  
+2. Expand fixture scenarios with provider/network and device-state variance when sandbox credentials/hardware are available.  
+3. Keep closure contracts enabled to prevent regression to scaffold-only tests.  
+**Risk:** Deterministic fixtures validate output contracts and success-path behavior but do not simulate live provider/runtime variability until sandbox-backed integration environments are available.  
+**Rollback:** Restore prior integration test files and remove `final_skill_integration_closure_test.go` if closure enforcement strategy changes.

@@ -1,0 +1,6 @@
+{
+  "status": "SUCCESS",
+  "provider": "gamma",
+  "state": "",
+  "input": {"action":"create_deck","topic":"Quarterly strategy"}
+}

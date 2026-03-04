@@ -1,0 +1,6 @@
+{
+  "status": "SUCCESS",
+  "provider": "george",
+  "state": "",
+  "input": {"action":"fetch_accounts"}
+}

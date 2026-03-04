@@ -1,0 +1,6 @@
+{
+  "status": "SUCCESS",
+  "provider": "sports-ticker",
+  "state": "",
+  "input": {"action":"get_schedule","league":"nba"}
+}
