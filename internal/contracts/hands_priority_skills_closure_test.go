@@ -136,6 +136,36 @@ func TestHandsPrioritySkillsNoLongerScaffolded(t *testing.T) {
 			"items",
 			"news-aggregator",
 		},
+		"linear": {
+			"action",
+			"issue_create",
+			"issues",
+		},
+		"jira": {
+			"action",
+			"issue_transition",
+			"issue_key",
+		},
+		"asana": {
+			"action",
+			"task_create",
+			"tasks",
+		},
+		"trello": {
+			"action",
+			"card_move",
+			"cards",
+		},
+		"clickup-mcp": {
+			"action",
+			"doc_create",
+			"timer_started",
+		},
+		"todo": {
+			"action",
+			"complete",
+			"items",
+		},
 	}
 
 	indexTokens := map[string][]string{
@@ -168,6 +198,12 @@ func TestHandsPrioritySkillsNoLongerScaffolded(t *testing.T) {
 			"firecrawl-search execution failed",
 		},
 		"news-aggregator": {"news-aggregator execution failed"},
+		"linear":          {"LINEAR_CREATE_FIELDS_REQUIRED"},
+		"jira":            {"JIRA_CREATE_FIELDS_REQUIRED"},
+		"asana":           {"ASANA_CREATE_FIELDS_REQUIRED"},
+		"trello":          {"TRELLO_CREATE_FIELDS_REQUIRED"},
+		"clickup-mcp":     {"CLICKUP_TITLE_REQUIRED"},
+		"todo":            {"TODO_CONTENT_REQUIRED"},
 	}
 
 	scriptBody, err := os.ReadFile(scriptPath)

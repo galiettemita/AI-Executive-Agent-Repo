@@ -1,6 +1,21 @@
 # linear
 
-Generated skill adapter scaffold.
+Linear issue management adapter.
 
 - Plane: `hands`
-- Source: `migrations/006_seed_skills.up.sql`
+- External API target: Linear GraphQL API
+- Auth: API key or OAuth
+
+## Input
+
+- `action` (`issue_list`, `issue_create`, `issue_update`)
+- issue metadata (`team_id`, `issue_id`, `title`, `description`, `status`)
+
+## Output
+
+- `provider`: `linear`
+- `issue_id` and `issues[]` depending on action
+
+## Brevio use case
+
+"Create a Linear issue for this bug" or "Show open issues for ENG".

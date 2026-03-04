@@ -22,3 +22,9 @@ perplexity
 brave-search
 firecrawl-search
 news-aggregator
+linear
+jira
+asana
+trello
+clickup-mcp
+todo

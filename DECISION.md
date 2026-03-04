@@ -963,3 +963,22 @@
 4. Continue additional de-scaffolding waves by adding IDs once and implementing adapter suites.  
 **Risk:** If override-file parsing fails or shell compatibility regresses, scaffold parity checks can fail broadly and block CI.  
 **Rollback:** Revert to direct Makefile pathspec exclusions and inline generator manual list; regenerate scaffolds for Wave 4 skills if immediate stabilization is required.
+
+## DECISION-054: Extend Priority De-Scaffolding to Productivity Tasking Connectors (Wave 5)
+
+**Date:** 2026-03-04  
+**Blueprint Section:** §2.4, §5.3, §A.8  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/services/brevio-hands/src/skills/{linear,jira,asana,trello,clickup-mcp,todo}`  
+**Conflict:** Core productivity connectors remained scaffold-only, limiting Brain-plane decomposition quality for task/project intents and preventing consistent action-level validation for the most frequent executive workflows.  
+**Options Considered:**  
+1. Keep productivity skills scaffolded and prioritize only research/media connectors.  
+2. Attempt a single large migration of all remaining skills at once.  
+3. Continue controlled wave-based de-scaffolding focused on one domain cluster (productivity), with centralized override handling and closure assertions.  
+**Decision:** Option 3. Implemented Wave 5 typed adapters for `linear`, `jira`, `asana`, `trello`, `clickup-mcp`, and `todo` with explicit action contracts, deterministic mutation IDs, error normalization for missing required fields, and upgraded documentation/unit tests. Added these IDs to centralized manual override configuration and closure assertions.  
+**Migration Plan:**  
+1. Register Wave 5 skill IDs in `config/skill-manual-overrides.txt`.  
+2. Replace scaffold files (`types/schema/client/index/README/unit`) with typed implementations for each skill.  
+3. Extend `hands_priority_skills_closure_test` token map and override-file presence checks.  
+4. Re-run scaffold parity gate and full CI before commit.  
+**Risk:** Mock deterministic clients can diverge from provider-specific edge behavior unless paired with staged integration fixtures and sandbox credentials.  
+**Rollback:** Remove Wave 5 IDs from override config and regenerate scaffold defaults for affected skills if regression risk outweighs current implementation value.
