@@ -1527,3 +1527,21 @@
 3. Preserve closure gate to prevent regression to no-op integration tests.  
 **Risk:** Fixtures verify deterministic local adapter logic, but not live provider/network variance until sandbox-backed integration runs are added.  
 **Rollback:** Restore previous integration tests and remove corresponding fixture JSON/closure test if enforcement strategy changes.
+
+## DECISION-085: De-Scaffold Shopping and Transportation Integration Tests with Fixture Enforcement
+
+**Date:** 2026-03-04  
+**Blueprint Section:** §2.4, §11.1, §A.7.1, §A.7.2  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/services/brevio-hands/src/skills/{shopping-expert,buy-anything,grocery-list,marketplace,recipe-to-list,google-maps,flight-tracker,aviationstack-flight-tracker,aerobase-skill,parcel-package-tracking,track17,post-at,spots,local-places,goplaces,swissweather}/__tests__/integration.test.ts` and `/Users/galiettemita/Downloads/Executive AI Agent/backend/internal/contracts`  
+**Conflict:** Shopping and transportation adapters had deterministic clients and schema coverage, but integration tests were still scaffold placeholders (`scaffold compiles`) and did not verify execution output contracts against fixtures.  
+**Options Considered:**  
+1. Keep placeholders and rely on unit tests while finishing other categories.  
+2. Convert only top-traffic skills and defer remaining transport adapters.  
+3. Convert all 16 shopping/transportation integration tests now and add closure coverage to block scaffold regressions.  
+**Decision:** Option 3. Replaced all 16 integration tests with deterministic fixture-backed assertions, added one JSON fixture per skill under `__tests__/fixtures`, and introduced `internal/contracts/shopping_transportation_skill_integration_closure_test.go` to fail when any covered integration test contains `scaffold compiles` or has zero fixture JSON files.  
+**Migration Plan:**  
+1. Preserve deterministic fixture assertions as the integration baseline for this domain.  
+2. Expand fixture sets with provider-specific error/latency paths when sandbox credentials are available.  
+3. Keep closure gate enabled to prevent regressions to compile-only integration tests.  
+**Risk:** Fixtures validate deterministic adapter behavior and output shape, but not live provider/network variance until sandbox-backed integration runs are wired.  
+**Rollback:** Restore previous integration tests and remove corresponding fixture/closure-test additions if integration policy changes.
