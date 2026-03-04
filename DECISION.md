@@ -667,3 +667,21 @@
 3. Keep project as `default` for compatibility with current cluster onboarding, with future move to dedicated `brevio` Argo project tracked separately.  
 **Risk:** `repoURL` and `targetRevision` are pinned to the current repository/main flow; branch strategy changes will require manifest updates to avoid drift.  
 **Rollback:** Restore minimal placeholder manifests and remove ArgoCD closure test if deployment control is moved fully outside-repo.
+
+## DECISION-038: Upgrade `security-scan` Workflow from Minimal Script Trigger to Full Security Gate Pipeline
+
+**Date:** 2026-03-04  
+**Blueprint Section:** §9.1 (Stage 6), §12, §20.12  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/.github/workflows/security-scan.yml`  
+**Conflict:** The security workflow only ran on schedule/manual and executed two shell scripts, without explicit Semgrep SARIF upload, dependency-audit stage, security-event permissions, or structured artifact publication expected for production security gating.  
+**Options Considered:**  
+1. Keep minimal workflow and rely on `ci.yaml` security steps only.  
+2. Remove standalone security workflow and run scans only in manual local scripts.  
+3. Expand `security-scan.yml` into a dedicated CI security pipeline with explicit SAST, dependency, vulnerability, SBOM, and artifact/reporting controls.  
+**Decision:** Option 3. Implemented a full security workflow including Semgrep SAST (`--severity ERROR` + SARIF upload), pnpm high-severity dependency audit, strict runtime security validation script (Trivy/TruffleHog/Syft), govuln baseline checks, and artifact upload, with required GitHub permissions and concurrency controls.  
+**Migration Plan:**  
+1. Replace minimal workflow with a structured job including Go/Node/Python toolchain setup.  
+2. Add explicit SAST/dependency/runtime security steps and SARIF artifact publishing.  
+3. Add closure contract test to lock required workflow tokens and prevent regression to minimal mode.  
+**Risk:** Security workflow is stricter and may fail existing PRs until all high-severity dependency findings and Semgrep ERROR findings are resolved.  
+**Rollback:** Restore the prior minimal security workflow and remove the security workflow closure contract if strict gate rollout must be temporarily paused.
