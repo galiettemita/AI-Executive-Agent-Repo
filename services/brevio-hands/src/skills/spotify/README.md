@@ -1,6 +1,17 @@
 # spotify
 
-Generated skill adapter scaffold.
+Hands-plane local Spotify playback control adapter.
 
-- Plane: `hands`
-- Source: `migrations/006_seed_skills.up.sql`
+## Supported actions
+
+- `play`
+- `pause`
+- `next`
+- `previous`
+- `set_volume`
+- `status`
+
+## Notes
+
+- Models local/mac playback control behavior.
+- Uses deterministic now-playing fixtures for stable CI checks.

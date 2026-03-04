@@ -1,6 +1,14 @@
 # spotify-player
 
-Generated skill adapter scaffold.
+Hands-plane terminal-style Spotify queue/search control adapter.
 
-- Plane: `hands`
-- Source: `migrations/006_seed_skills.up.sql`
+## Supported actions
+
+- `search_tracks`
+- `queue_track`
+- `playback_status`
+
+## Notes
+
+- Models queue operations for CLI-oriented playback flows.
+- Deterministic track fixtures keep local tests stable.

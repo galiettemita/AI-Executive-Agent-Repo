@@ -1,6 +1,13 @@
 # video-frames
 
-Generated skill adapter scaffold.
+Hands-plane video frame extraction adapter.
 
-- Plane: `hands`
-- Source: `migrations/006_seed_skills.up.sql`
+## Supported actions
+
+- `extract_frame`
+- `extract_frames`
+
+## Notes
+
+- Supports single timestamp extraction and interval batch extraction.
+- Emits deterministic frame URLs for test and contract stability.

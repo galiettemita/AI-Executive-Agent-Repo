@@ -561,6 +561,36 @@ func TestHandsPrioritySkillsNoLongerScaffolded(t *testing.T) {
 			"estimated_deductions_cents",
 			"not_tax_advice",
 		},
+		"spotify": {
+			"action",
+			"now_playing",
+			"volume_pct",
+		},
+		"spotify-player": {
+			"action",
+			"tracks",
+			"queue_length",
+		},
+		"spotify-history": {
+			"action",
+			"top_tracks",
+			"total_listening_minutes",
+		},
+		"youtube-summarizer": {
+			"video_id",
+			"key_points",
+			"transcript_excerpt",
+		},
+		"video-transcript-downloader": {
+			"video_id",
+			"transcript_text",
+			"segment_count",
+		},
+		"video-frames": {
+			"video_url",
+			"frame_urls",
+			"extracted_count",
+		},
 	}
 
 	indexTokens := map[string][]string{
@@ -772,6 +802,18 @@ func TestHandsPrioritySkillsNoLongerScaffolded(t *testing.T) {
 		"tax-professional": {
 			"TAX_PROFESSIONAL_TAX_YEAR_REQUIRED",
 		},
+		"spotify":        {"SPOTIFY_QUERY_REQUIRED"},
+		"spotify-player": {"SPOTIFY_PLAYER_QUERY_REQUIRED"},
+		"spotify-history": {
+			"user-read-recently-played",
+		},
+		"youtube-summarizer": {
+			"YOUTUBE_SUMMARIZER_VIDEO_REQUIRED",
+		},
+		"video-transcript-downloader": {
+			"VIDEO_TRANSCRIPT_VIDEO_REQUIRED",
+		},
+		"video-frames": {"VIDEO_FRAMES_TIMESTAMP_REQUIRED"},
 	}
 
 	scriptBody, err := os.ReadFile(scriptPath)

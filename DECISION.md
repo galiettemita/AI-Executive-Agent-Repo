@@ -1257,3 +1257,21 @@
 3. Run full CI and continue de-scaffolding remaining categories in subsequent waves.  
 **Risk:** Deterministic financial fixtures cannot capture provider and regulatory edge cases (statement import anomalies, issuer reward policy changes, jurisdiction-specific tax logic) until sandbox-backed integration suites are expanded.  
 **Rollback:** Remove Wave 19 IDs from override config and regenerate scaffolds for these six skills if regressions are found.
+
+## DECISION-070: De-Scaffold Media Playback and Transcript Skills with Typed Video Contracts (Wave 20)
+
+**Date:** 2026-03-04  
+**Blueprint Section:** §2.4, §5.3(3,11), §A.7.7, §A.8  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/services/brevio-hands/src/skills/{spotify,spotify-player,spotify-history,youtube-summarizer,video-transcript-downloader,video-frames}`  
+**Conflict:** Six media-focused skills remained scaffold-only, leaving no typed playback/search/history contracts and no strict validation around video identity/transcript/frame extraction inputs.  
+**Options Considered:**  
+1. Keep media skills scaffolded and continue only with productivity/local automation categories.  
+2. Fold media adapters into a broad final all-remaining-skill migration.  
+3. Execute a focused media wave with typed playback/transcript contracts, deterministic outputs, and action-specific validation guards.  
+**Decision:** Option 3. Replaced scaffolds for `spotify`, `spotify-player`, `spotify-history`, `youtube-summarizer`, `video-transcript-downloader`, and `video-frames` with typed `types/schema/client/index` modules, deterministic outputs, unit tests, and updated README docs. Added all six IDs to centralized manual override config and closure token assertions.  
+**Migration Plan:**  
+1. Register Wave 20 IDs in `config/skill-manual-overrides.txt`.  
+2. Extend closure token maps for media validation constants and transcript/video identity checks.  
+3. Run full CI and continue the next de-scaffolding wave for remaining categories.  
+**Risk:** Deterministic media fixtures do not model real provider rate limits, transcript quality variance, or codec-specific extraction behavior until integration tests are expanded.  
+**Rollback:** Remove Wave 20 IDs from override config and regenerate scaffolds for these six skills if regressions occur.

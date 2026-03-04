@@ -107,3 +107,9 @@ refund-radar
 expense-tracker-pro
 watch-my-money
 tax-professional
+spotify
+spotify-player
+spotify-history
+youtube-summarizer
+video-transcript-downloader
+video-frames

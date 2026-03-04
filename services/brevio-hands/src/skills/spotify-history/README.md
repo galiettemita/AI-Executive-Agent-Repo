@@ -1,6 +1,14 @@
 # spotify-history
 
-Generated skill adapter scaffold.
+Hands-plane Spotify listening analytics adapter.
 
-- Plane: `hands`
-- Source: `migrations/006_seed_skills.up.sql`
+## Supported actions
+
+- `top_tracks`
+- `top_artists`
+- `listening_summary`
+
+## Notes
+
+- Surfaces deterministic history metrics for analytics and recommendation routing.
+- Uses read-only Spotify history scope contracts.

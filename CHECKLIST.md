@@ -924,6 +924,14 @@ You must prove it.
 - [x] Extend centralized manual override registry and closure test token assertions for all Wave 19 adapters
 - [x] Validate Wave 19 against full `make ci` gate before merge
 
+## M15: Hands Adapter Wave 20 (Media Playback + Transcript Hardening)
+- [x] De-scaffold `spotify` + `spotify-player` with typed playback/search/queue contracts and action validation guards
+- [x] De-scaffold `spotify-history` with typed listening analytics contracts for top tracks/artists summaries
+- [x] De-scaffold `youtube-summarizer` + `video-transcript-downloader` with typed video/transcript contracts and required video identity validation
+- [x] De-scaffold `video-frames` with typed frame extraction contracts for single and batch operations
+- [x] Extend centralized manual override registry and closure test token assertions for all Wave 20 adapters
+- [x] Validate Wave 20 against full `make ci` gate before merge
+
 ## M13–15 (Auto-Provisioning Layer 3): Remote Server Discovery Catalog (Auto-Provisioning Sections 5, 12.3, 16)
 - [x] ToolRegistry: register native tool `search_remote_catalog` (use only if `provision_server` fails due to missing catalog entry) (Auto-Provisioning Section 9)
 - [x] Hands handler: implement `search_remote_catalog` -> query remote catalog API -> return matched entries (Auto-Provisioning Section 5)

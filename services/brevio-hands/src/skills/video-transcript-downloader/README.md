@@ -1,6 +1,13 @@
 # video-transcript-downloader
 
-Generated skill adapter scaffold.
+Hands-plane transcript/subtitle extraction adapter for online video content.
 
-- Plane: `hands`
-- Source: `migrations/006_seed_skills.up.sql`
+## Supported actions
+
+- `fetch_transcript`
+- `fetch_subtitles`
+
+## Notes
+
+- Accepts `video_id` or `video_url`.
+- Provides deterministic transcript outputs for CI-safe validation.

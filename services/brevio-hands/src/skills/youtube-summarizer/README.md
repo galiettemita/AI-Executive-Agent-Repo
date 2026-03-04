@@ -1,6 +1,13 @@
 # youtube-summarizer
 
-Generated skill adapter scaffold.
+Hands-plane YouTube transcript summarization adapter.
 
-- Plane: `hands`
-- Source: `migrations/006_seed_skills.up.sql`
+## Supported actions
+
+- `summarize_video`
+- `key_points`
+
+## Notes
+
+- Accepts either `video_id` or full `video_url`.
+- Returns deterministic summary artifacts for contract testing.
