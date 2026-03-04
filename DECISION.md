@@ -925,3 +925,22 @@
 4. Re-run contract and full CI gates; iterate next wave with remaining high-impact skills.  
 **Risk:** Manualized adapters still use deterministic local simulations and may drift from external provider specifics unless paired with staged integration tests against sandbox credentials.  
 **Rollback:** Remove new preserve-list entries and regenerate scaffolds for the six skills; revert Wave 2 adapter files to generated baseline if instability appears.
+
+## DECISION-052: Extend Priority De-Scaffolding to Core Media, Finance, and Communications Connectors (Wave 3)
+
+**Date:** 2026-03-04  
+**Blueprint Section:** §2.4, §5.3, §A.8, §15.1-§15.2  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/services/brevio-hands/src/skills/{spotify-web-api,tmdb,plaid,google-workspace,outlook,icloud-findmy}`, `/Users/galiettemita/Downloads/Executive AI Agent/backend/Makefile`  
+**Conflict:** After Waves 1-2, critical connectors for media playback, streaming recommendations, banking context, and enterprise communications were still scaffold-only, and the local `skills-scaffolds-check` gate could not pass during active manualization without excluding approved override paths.  
+**Options Considered:**  
+1. Keep these connectors scaffolded until all non-critical skills are complete.  
+2. De-scaffold connectors but keep Makefile parity check against all skill paths (forcing commit-first validation only).  
+3. De-scaffold selected high-impact connectors and formalize manual-override exclusions in `skills-scaffolds-check` while preserving generator enforcement for all non-overridden skills.  
+**Decision:** Option 3. Implemented Wave 3 typed adapters for `spotify-web-api`, `tmdb`, `plaid`, `google-workspace`, `outlook`, and `icloud-findmy` (validated action contracts, scope metadata, confirmation-required send paths, deterministic result sets), expanded scaffold generator preserve list, and updated Makefile parity check with explicit override exclusions to keep local CI usable without weakening generated-skill enforcement elsewhere.  
+**Migration Plan:**  
+1. Add Wave 3 skill IDs to scaffold preserve list and closure tests.  
+2. Replace each scaffold with typed `types/schema/client/index/README/unit` implementation.  
+3. Extend `Makefile` `skills-scaffolds-check` excludes to match preserve list entries.  
+4. Re-run contract gates, scaffold parity check, and full `make ci`; continue with next connector wave.  
+**Risk:** Manual override lists now exist in both generator script and Makefile pathspec exclusions; drift between those lists could create false positives or accidental overwrites.  
+**Rollback:** Remove Wave 3 preserve/exclude entries and regenerate scaffold defaults for the six connectors if runtime regressions or maintenance burden becomes unacceptable.

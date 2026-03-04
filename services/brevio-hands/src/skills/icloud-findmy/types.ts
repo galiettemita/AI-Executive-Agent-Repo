@@ -1,8 +1,15 @@
-export interface SkillInputPayload {
-  payload?: Record<string, unknown>;
+export interface FindMyInput {
+  device_name?: string;
 }
 
-export interface SkillOutputPayload {
-  ok: boolean;
-  skill_id: string;
+export interface FindMyDevice {
+  name: string;
+  latitude: number;
+  longitude: number;
+  battery: number;
+}
+
+export interface FindMyOutput {
+  provider: 'icloud-findmy';
+  devices: FindMyDevice[];
 }

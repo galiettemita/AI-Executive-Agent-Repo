@@ -75,6 +75,36 @@ func TestHandsPrioritySkillsNoLongerScaffolded(t *testing.T) {
 			"contacts",
 			"apple-contacts-local",
 		},
+		"spotify-web-api": {
+			"action",
+			"top_tracks",
+			"playing",
+		},
+		"tmdb": {
+			"query",
+			"results",
+			"streaming",
+		},
+		"plaid": {
+			"action",
+			"account_id",
+			"balances",
+		},
+		"google-workspace": {
+			"action",
+			"gmail_send",
+			"confirmation_required",
+		},
+		"outlook": {
+			"action",
+			"send",
+			"confirmation_required",
+		},
+		"icloud-findmy": {
+			"device_name",
+			"devices",
+			"icloud-findmy",
+		},
 	}
 
 	indexTokens := map[string][]string{
@@ -90,6 +120,15 @@ func TestHandsPrioritySkillsNoLongerScaffolded(t *testing.T) {
 		"notion":          {"requiredScopes", "NOTION_TITLE_REQUIRED"},
 		"fal-ai":          {"FAL_CONTENT_POLICY_BLOCKED"},
 		"apple-contacts":  {"apple-contacts-local"},
+		"spotify-web-api": {"requiredScopes", "user-modify-playback-state"},
+		"tmdb":            {"tmdb execution failed"},
+		"plaid":           {"PLAID_ACCOUNT_NOT_FOUND"},
+		"google-workspace": {
+			"requiredScopes",
+			"GOOGLE_WORKSPACE_SEND_FIELDS_REQUIRED",
+		},
+		"outlook":       {"requiredScopes", "OUTLOOK_SEND_FIELDS_REQUIRED"},
+		"icloud-findmy": {"icloud-findmy execution failed"},
 	}
 
 	scriptBody, err := os.ReadFile(scriptPath)

@@ -102,7 +102,13 @@ skills-scaffolds-check:
 		':(exclude)services/brevio-hands/src/skills/ynab/**' \
 		':(exclude)services/brevio-hands/src/skills/notion/**' \
 		':(exclude)services/brevio-hands/src/skills/fal-ai/**' \
-		':(exclude)services/brevio-hands/src/skills/apple-contacts/**'
+		':(exclude)services/brevio-hands/src/skills/apple-contacts/**' \
+		':(exclude)services/brevio-hands/src/skills/spotify-web-api/**' \
+		':(exclude)services/brevio-hands/src/skills/tmdb/**' \
+		':(exclude)services/brevio-hands/src/skills/plaid/**' \
+		':(exclude)services/brevio-hands/src/skills/google-workspace/**' \
+		':(exclude)services/brevio-hands/src/skills/outlook/**' \
+		':(exclude)services/brevio-hands/src/skills/icloud-findmy/**'
 
 proto-validate:
 	bash packages/proto/scripts/lint.sh

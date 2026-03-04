@@ -82,6 +82,12 @@ ynab
 notion
 fal-ai
 apple-contacts
+spotify-web-api
+tmdb
+plaid
+google-workspace
+outlook
+icloud-findmy
 EOF
 
 cat "${SKILLS_FILE}" "${CUSTOM_FILE}" | sort -u >"${ALL_SKILLS_FILE}"
