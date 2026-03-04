@@ -758,3 +758,22 @@
 4. Re-run full `make ci` gate set to ensure no regressions.  
 **Risk:** OAuth token exchange currently uses deterministic simulated token issuance rather than live provider token endpoint calls; this is intentionally safe for local/staging closure but requires live secret-backed provider exchange integration before production OAuth onboarding.  
 **Rollback:** Revert `services/brevio-auth` runtime modules and contract expansions to prior health-only scaffold and basic service-map count checks if a minimal baseline is temporarily required.
+
+## DECISION-043: Replace `brevio-gateway` Health Scaffold with Webhook Ingress Runtime Baseline
+
+**Date:** 2026-03-04  
+**Blueprint Section:** §1.2.1, §2.5, §4.1, §20.1, §20.5, §20.6, Addendum §A.6  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/services/brevio-gateway`  
+**Conflict:** `brevio-gateway` only exposed health endpoints and did not implement webhook ingress, signature verification, idempotency, normalization, or rate limiting required by the production directive.  
+**Options Considered:**  
+1. Keep gateway as health-only scaffold and defer all webhook logic to legacy Go gateway runtime.  
+2. Add minimal endpoint placeholders without enforcement logic to satisfy path presence only.  
+3. Implement a typed gateway runtime baseline with real ingress/auth/idempotency/rate-limit behavior and closure tests.  
+**Decision:** Option 3. Implemented a modular TypeScript gateway runtime (`config`, `security`, `state`, `normalize`, `format`, `index`) supporting WhatsApp/iMessage/Temporal webhook endpoints (plus compatibility aliases), HMAC/API-key verification, canonical envelope normalization, 24h idempotency replay cache, tiered hourly + minute rate limiting, and outbound channel formatting endpoint.  
+**Migration Plan:**  
+1. Replace single-file scaffold with runtime modules and keep `/health` + `/health/deep` contract behavior.  
+2. Add compatibility routing for `/webhooks/*`, `/api/v1/webhooks/*`, and legacy `/v1/gateway/webhook/*` paths.  
+3. Add new gateway runtime closure contract test to enforce presence of auth/idempotency/rate-limit/normalization semantics and README runtime guidance.  
+4. Re-run full `make ci` to validate no cross-system regressions.  
+**Risk:** Current gateway state stores (dedup cache, rate-limit windows, session map) are in-memory and non-distributed; horizontal scaling without shared Redis backing may allow duplicate handling/rate-limit drift across replicas.  
+**Rollback:** Revert `services/brevio-gateway` to prior scaffold and remove `internal/contracts/gateway_service_runtime_closure_test.go` if runtime baseline causes operational instability.
