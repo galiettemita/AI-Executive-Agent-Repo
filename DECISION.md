@@ -777,3 +777,22 @@
 4. Re-run full `make ci` to validate no cross-system regressions.  
 **Risk:** Current gateway state stores (dedup cache, rate-limit windows, session map) are in-memory and non-distributed; horizontal scaling without shared Redis backing may allow duplicate handling/rate-limit drift across replicas.  
 **Rollback:** Revert `services/brevio-gateway` to prior scaffold and remove `internal/contracts/gateway_service_runtime_closure_test.go` if runtime baseline causes operational instability.
+
+## DECISION-044: Replace `brevio-brain` Health Scaffold with Deterministic Classification/Disambiguation/Decomposition Runtime Baseline
+
+**Date:** 2026-03-04  
+**Blueprint Section:** §1.2.2, §4.1, §5.3, §7.2, §20.1-§20.4  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/services/brevio-brain`  
+**Conflict:** `brevio-brain` only exposed health endpoints and did not provide production-required decision-plane API behavior for intent classification, skill disambiguation, task DAG decomposition, or result aggregation against a deterministic router contract.  
+**Options Considered:**  
+1. Keep `brevio-brain` as health-only scaffold and rely solely on existing Go runtime internals for orchestration behavior.  
+2. Add endpoint placeholders that return static mock payloads for `/api/v1/brain/*`.  
+3. Implement a typed runtime baseline with real request parsing, deterministic classifiers/decomposer/disambiguation logic, and closure tests to prevent regressions.  
+**Decision:** Option 3. Implemented a modular Brain runtime (`classify`, `disambiguate`, `decompose`, `aggregate`, `config`, `types`, `index`) exposing `/api/v1/brain/classify|disambiguate|decompose|aggregate|process`, enforcing disambiguation rule loading from `config/skill-disambiguation.yaml`, bounded DAG checks (`max 10 tasks`, cycle detection), structured correlation logging, and graceful shutdown semantics.  
+**Migration Plan:**  
+1. Replace health-only source with modular deterministic handlers while retaining `/health` and `/health/deep` compatibility.  
+2. Add README runtime contract details and endpoint behavior for operator visibility.  
+3. Add `internal/contracts/brain_service_runtime_closure_test.go` to lock endpoint/path/runtime invariants and prevent regressions to scaffold mode.  
+4. Re-run `make ci` to validate contracts, policy gates, and acceptance tests remain green.  
+**Risk:** Current classification/decomposition implementation is keyword-driven and deterministic but does not yet invoke production LLM provider calls; behavior can be less nuanced than target Sonnet/Haiku prompts until LLM-backed activities are wired in.  
+**Rollback:** Revert `services/brevio-brain` runtime modules and `internal/contracts/brain_service_runtime_closure_test.go` to restore prior scaffold baseline if rollout introduces runtime instability.
