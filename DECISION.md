@@ -815,3 +815,21 @@
 4. Re-run `make ci` full gate to verify no cross-system drift.  
 **Risk:** Circuit breaker state is currently in-memory per pod; in multi-replica deployments breaker behavior is eventually inconsistent across instances until centralized shared state is introduced.  
 **Rollback:** Revert `services/brevio-hands/src/index.ts`, `services/brevio-hands/README.md`, and `internal/contracts/hands_service_runtime_closure_test.go` to prior baseline if execution control changes trigger unexpected adapter incompatibilities.
+
+## DECISION-046: Replace `brevio-profile` Health Scaffold with Knowledge-File/Profile Runtime Baseline
+
+**Date:** 2026-03-04  
+**Blueprint Section:** §1.3 (`brevio-profile`), §1.2.2 (knowledge context), §20.1-§20.4  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/services/brevio-profile`  
+**Conflict:** `brevio-profile` only exposed health endpoints and did not provide runtime APIs for user profile retrieval, preference updates, or canonical knowledge-file management (`USER.md`, `SOUL.md`, `AGENTS.md`) required by the Brain decision plane.  
+**Options Considered:**  
+1. Keep profile service as health-only and rely on direct filesystem reads from other services.  
+2. Add lightweight profile fetch endpoint only, leaving knowledge files unmanaged.  
+3. Implement a profile runtime baseline with explicit profile/knowledge APIs, profile-hash recomputation, and closure tests.  
+**Decision:** Option 3. Implemented a typed `brevio-profile` runtime with `/api/v1` + `/v1` path support for profile fetch, preference updates, knowledge-file read/write, and profile hash refresh. Added filesystem-backed profile storage root, SHA-256 `profile_hash` recomputation from canonical knowledge files, structured correlation logging, and graceful shutdown behavior. Added `internal/contracts/profile_service_runtime_closure_test.go` and replaced README scaffold content with operational endpoint/config docs.  
+**Migration Plan:**  
+1. Replace health-only source with profile/knowledge runtime handlers while preserving `/health` and `/health/deep`.  
+2. Persist profile metadata and knowledge files under configurable profile storage root to avoid coupling to hardcoded paths.  
+3. Add closure contract coverage for runtime/README invariants and re-run full `make ci`.  
+**Risk:** Current profile persistence is filesystem-backed and local to the service runtime; multi-replica deployments require shared persistent storage or DB-backed repository to avoid divergent profile state.  
+**Rollback:** Revert `services/brevio-profile/src/index.ts`, `services/brevio-profile/README.md`, and `internal/contracts/profile_service_runtime_closure_test.go` to the prior health-only baseline if runtime storage behavior causes deployment issues.
