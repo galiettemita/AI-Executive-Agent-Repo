@@ -5,12 +5,19 @@ on:
   push:
     branches: [main, codex/**]
 
+concurrency:
+  group: ci-openclaw-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   lint_format:
     name: 1. Lint & Format
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
       - uses: pnpm/action-setup@v4
         with:
           version: 9.12.3
@@ -19,14 +26,18 @@ jobs:
           node-version: '20'
           cache: pnpm
       - run: pnpm install --frozen-lockfile=false
-      - run: pnpm lint || true
+      - run: make lint
+      - run: pnpm --filter @brevio/proto lint
 
   schema_validate:
     name: 2. Schema Validate
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: echo "Schema validation scaffold (OpenAPI/JSON schema/db diff)"
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+      - run: go test ./internal/contracts -run "TestOpenAPIV9EndpointParityClosure|TestJSONSchemaClosure|TestOpenClawSeedMigrationCountsAndModes" -count=1
 
   unit_tests:
     name: 3. Unit Tests
@@ -43,14 +54,20 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: echo "Integration test stage scaffold"
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+      - run: go test ./internal/integration -count=1
 
   contract_tests:
     name: 5. Contract Tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: echo "Pact contract stage scaffold"
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+      - run: go test ./internal/contracts -count=1
 
   security_scan:
     name: 6. Security Scan
@@ -64,7 +81,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: echo "Migration dry-run stage scaffold"
+      - run: bash scripts/database/verify_postgres_migrations.sh
 
   build_push:
     name: 8. Build & Push
@@ -72,7 +89,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: echo "Build and push image stage scaffold"
+      - run: make docker-build
 
   deploy_staging:
     name: 9. Deploy Staging
@@ -81,7 +98,28 @@ jobs:
     needs: [build_push]
     steps:
       - uses: actions/checkout@v4
-      - run: echo "Deploy staging stage scaffold"
+      - uses: azure/setup-helm@v4
+      - uses: azure/setup-kubectl@v4
+      - name: Configure kubeconfig
+        env:
+          KUBE_CONFIG_STAGING: ${{ secrets.KUBE_CONFIG_STAGING }}
+        run: |
+          if [ -z "${KUBE_CONFIG_STAGING}" ]; then
+            echo "KUBE_CONFIG_STAGING not set; skipping staging deploy."
+            exit 0
+          fi
+          mkdir -p "$HOME/.kube"
+          printf '%s' "${KUBE_CONFIG_STAGING}" | base64 -d > "$HOME/.kube/config"
+      - name: Deploy staging
+        env:
+          KUBE_CONFIG_STAGING: ${{ secrets.KUBE_CONFIG_STAGING }}
+          WAIT_FOR_ROLLOUT: "true"
+        run: |
+          if [ -z "${KUBE_CONFIG_STAGING}" ]; then
+            echo "KUBE_CONFIG_STAGING not set; skipping staging deploy."
+            exit 0
+          fi
+          bash scripts/deploy/helm_rollout.sh
 
   deploy_production:
     name: 10. Deploy Production
@@ -90,4 +128,25 @@ jobs:
     needs: [deploy_staging]
     steps:
       - uses: actions/checkout@v4
-      - run: echo "Deploy production stage scaffold"
+      - uses: azure/setup-helm@v4
+      - uses: azure/setup-kubectl@v4
+      - name: Configure kubeconfig
+        env:
+          KUBE_CONFIG_PRODUCTION: ${{ secrets.KUBE_CONFIG_PRODUCTION }}
+        run: |
+          if [ -z "${KUBE_CONFIG_PRODUCTION}" ]; then
+            echo "KUBE_CONFIG_PRODUCTION not set; skipping production deploy."
+            exit 0
+          fi
+          mkdir -p "$HOME/.kube"
+          printf '%s' "${KUBE_CONFIG_PRODUCTION}" | base64 -d > "$HOME/.kube/config"
+      - name: Deploy production
+        env:
+          KUBE_CONFIG_PRODUCTION: ${{ secrets.KUBE_CONFIG_PRODUCTION }}
+          WAIT_FOR_ROLLOUT: "true"
+        run: |
+          if [ -z "${KUBE_CONFIG_PRODUCTION}" ]; then
+            echo "KUBE_CONFIG_PRODUCTION not set; skipping production deploy."
+            exit 0
+          fi
+          bash scripts/deploy/helm_rollout.sh

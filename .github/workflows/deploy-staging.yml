@@ -11,4 +11,25 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: echo "helm upgrade --install staging scaffold"
+      - uses: azure/setup-helm@v4
+      - uses: azure/setup-kubectl@v4
+      - name: Configure kubeconfig
+        env:
+          KUBE_CONFIG_STAGING: ${{ secrets.KUBE_CONFIG_STAGING }}
+        run: |
+          if [ -z "${KUBE_CONFIG_STAGING}" ]; then
+            echo "KUBE_CONFIG_STAGING not set; skipping staging deploy."
+            exit 0
+          fi
+          mkdir -p "$HOME/.kube"
+          printf '%s' "${KUBE_CONFIG_STAGING}" | base64 -d > "$HOME/.kube/config"
+      - name: Deploy staging
+        env:
+          KUBE_CONFIG_STAGING: ${{ secrets.KUBE_CONFIG_STAGING }}
+          WAIT_FOR_ROLLOUT: "true"
+        run: |
+          if [ -z "${KUBE_CONFIG_STAGING}" ]; then
+            echo "KUBE_CONFIG_STAGING not set; skipping staging deploy."
+            exit 0
+          fi
+          bash scripts/deploy/helm_rollout.sh

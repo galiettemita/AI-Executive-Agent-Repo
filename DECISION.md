@@ -577,3 +577,21 @@
 3. Add contract tests that enforce file presence and `CUSTOM_BUILD_REQUIRED` markers for all custom gap skills.  
 **Risk:** Seed-driven tooling now has two sources (seed migration + custom list), so future edits must keep both lists intentional and version-controlled.  
 **Rollback:** Remove custom IDs from generator list and regenerate scaffolds to return to seed-only adapter set.
+
+## DECISION-033: Replace `ci-openclaw` and Deploy Workflow Echo Stages with Executable Gates
+
+**Date:** 2026-03-03  
+**Blueprint Section:** §9.1, §9.2  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/.github/workflows/ci.yml`, `/Users/galiettemita/Downloads/Executive AI Agent/backend/.github/workflows/deploy-staging.yml`, `/Users/galiettemita/Downloads/Executive AI Agent/backend/.github/workflows/deploy-production.yml`  
+**Conflict:** The openclaw CI/deploy workflows still contained scaffold `echo` placeholders for key stages (schema, integration, contract, migration, build, deploy), leaving them non-executable and out of alignment with production pipeline intent.  
+**Options Considered:**  
+1. Keep scaffold workflow as documentation-only and rely exclusively on `ci.yaml`.  
+2. Delete scaffold workflow files to avoid confusion.  
+3. Upgrade scaffold workflows to executable stage commands and secret-gated deployment logic.  
+**Decision:** Option 3. Replaced placeholder stages with real test/validation commands in `ci.yml`, added concurrency control, and updated deploy workflows to run Helm rollout scripts when kubeconfig secrets are present (graceful skip otherwise).  
+**Migration Plan:**  
+1. Replace stage `echo` commands with concrete lint/test/validation/deploy script calls.  
+2. Add kubeconfig secret checks + base64 decode setup in staging/production deploy jobs.  
+3. Verify with full local `make ci` regression run after workflow updates.  
+**Risk:** Workflow execution time and resource usage increase due to real commands in all stages.  
+**Rollback:** Revert workflow files to previous scaffold form and keep executable gating only in `ci.yaml`.

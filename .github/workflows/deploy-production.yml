@@ -8,4 +8,25 @@ jobs:
     environment: production
     steps:
       - uses: actions/checkout@v4
-      - run: echo "argocd blue/green production scaffold"
+      - uses: azure/setup-helm@v4
+      - uses: azure/setup-kubectl@v4
+      - name: Configure kubeconfig
+        env:
+          KUBE_CONFIG_PRODUCTION: ${{ secrets.KUBE_CONFIG_PRODUCTION }}
+        run: |
+          if [ -z "${KUBE_CONFIG_PRODUCTION}" ]; then
+            echo "KUBE_CONFIG_PRODUCTION not set; skipping production deploy."
+            exit 0
+          fi
+          mkdir -p "$HOME/.kube"
+          printf '%s' "${KUBE_CONFIG_PRODUCTION}" | base64 -d > "$HOME/.kube/config"
+      - name: Deploy production
+        env:
+          KUBE_CONFIG_PRODUCTION: ${{ secrets.KUBE_CONFIG_PRODUCTION }}
+          WAIT_FOR_ROLLOUT: "true"
+        run: |
+          if [ -z "${KUBE_CONFIG_PRODUCTION}" ]; then
+            echo "KUBE_CONFIG_PRODUCTION not set; skipping production deploy."
+            exit 0
+          fi
+          bash scripts/deploy/helm_rollout.sh
