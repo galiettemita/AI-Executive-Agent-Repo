@@ -1,6 +1,13 @@
 # get-focus-mode
 
-Generated skill adapter scaffold.
+Hands-plane adapter for reading macOS Focus mode context.
 
-- Plane: `hands`
-- Source: `migrations/006_seed_skills.up.sql`
+## Supported actions
+
+- `current_mode`
+- `upcoming_schedule`
+
+## Notes
+
+- Provides deterministic focus mode context for downstream routing and assistant pacing.
+- No mutation operations; read-only skill surface.

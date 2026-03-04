@@ -1,6 +1,14 @@
 # apple-mail-search
 
-Generated skill adapter scaffold.
+Hands-plane low-latency Apple Mail indexed search adapter.
 
-- Plane: `hands`
-- Source: `migrations/006_seed_skills.up.sql`
+## Supported actions
+
+- `search_all`
+- `search_sender`
+- `search_subject`
+
+## Notes
+
+- Contract encodes 50ms index-based latency profile.
+- Deterministic result fixtures for stable regression tests.

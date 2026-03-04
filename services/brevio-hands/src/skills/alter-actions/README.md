@@ -1,6 +1,13 @@
 # alter-actions
 
-Generated skill adapter scaffold.
+Hands-plane local app x-callback action orchestrator.
 
-- Plane: `hands`
-- Source: `migrations/006_seed_skills.up.sql`
+## Supported actions
+
+- `list_actions`
+- `trigger_action` (confirmation required)
+
+## Notes
+
+- Trigger path is confirmation-gated to avoid accidental local app mutations.
+- Emits callback URLs derived from configured templates.

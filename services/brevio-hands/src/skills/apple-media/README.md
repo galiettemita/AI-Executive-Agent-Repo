@@ -1,6 +1,14 @@
 # apple-media
 
-Generated skill adapter scaffold.
+Hands-plane local Apple media control adapter.
 
-- Plane: `hands`
-- Source: `migrations/006_seed_skills.up.sql`
+## Supported actions
+
+- `discover_devices`
+- `playback_status`
+- `control_playback`
+
+## Notes
+
+- Models Apple TV/HomePod/AirPlay control workflows.
+- Uses deterministic local device fixtures for contract tests.

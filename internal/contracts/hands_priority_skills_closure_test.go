@@ -501,6 +501,36 @@ func TestHandsPrioritySkillsNoLongerScaffolded(t *testing.T) {
 			"meals",
 			"grocery_items",
 		},
+		"apple-media": {
+			"action",
+			"device_name",
+			"now_playing",
+		},
+		"apple-photos": {
+			"action",
+			"albums",
+			"photos",
+		},
+		"apple-notes": {
+			"canonical_skill_id",
+			"deprecated_alias",
+			"notes",
+		},
+		"apple-mail-search": {
+			"query",
+			"results",
+			"latency_profile_ms",
+		},
+		"alter-actions": {
+			"action",
+			"actions",
+			"callback_url",
+		},
+		"get-focus-mode": {
+			"action",
+			"current_mode",
+			"schedule",
+		},
 	}
 
 	indexTokens := map[string][]string{
@@ -686,6 +716,20 @@ func TestHandsPrioritySkillsNoLongerScaffolded(t *testing.T) {
 			"SLEEP_CALCULATOR_WAKE_TIME_REQUIRED",
 		},
 		"meal-planner": {"MEAL_PLANNER_HOUSEHOLD_SIZE_REQUIRED"},
+		"apple-media": {
+			"APPLE_MEDIA_DEVICE_REQUIRED",
+		},
+		"apple-photos": {"APPLE_PHOTOS_QUERY_REQUIRED"},
+		"apple-notes":  {"APPLE_NOTES_CREATE_FIELDS_REQUIRED"},
+		"apple-mail-search": {
+			"APPLE_MAIL_SEARCH_QUERY_REQUIRED",
+		},
+		"alter-actions": {
+			"ALTER_ACTIONS_CONFIRMATION_REQUIRED",
+		},
+		"get-focus-mode": {
+			"focus_mode.read",
+		},
 	}
 
 	scriptBody, err := os.ReadFile(scriptPath)

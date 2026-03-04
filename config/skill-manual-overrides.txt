@@ -95,3 +95,9 @@ healthkit-sync
 healthkit-sync-apple
 sleep-calculator
 meal-planner
+apple-media
+apple-photos
+apple-notes
+apple-mail-search
+alter-actions
+get-focus-mode

@@ -1,6 +1,14 @@
 # apple-notes
 
-Generated skill adapter scaffold.
+Hands-plane deprecated alias adapter for Apple Notes operations.
 
-- Plane: `hands`
-- Source: `migrations/006_seed_skills.up.sql`
+## Supported actions
+
+- `create_note`
+- `search_notes`
+- `list_recent`
+
+## Notes
+
+- Preserved for compatibility; canonical route is `apple-notes-skill`.
+- Adapter emits explicit alias metadata to support deterministic disambiguation.

@@ -1,6 +1,14 @@
 # apple-photos
 
-Generated skill adapter scaffold.
+Hands-plane Apple Photos query adapter.
 
-- Plane: `hands`
-- Source: `migrations/006_seed_skills.up.sql`
+## Supported actions
+
+- `list_albums`
+- `search_photos`
+- `recent_photos`
+
+## Notes
+
+- Supports metadata search over filename/tags.
+- Uses deterministic local photo fixtures.

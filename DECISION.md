@@ -1221,3 +1221,21 @@
 3. Run full CI and continue remaining scaffolded categories in later waves.  
 **Risk:** Deterministic health fixtures cannot reflect full provider behavior (sensor lag, missing data windows, per-device calibration anomalies) until sandbox-backed integration tests are added.  
 **Rollback:** Remove Wave 17 IDs from override config and regenerate scaffolds for these six skills if regressions surface.
+
+## DECISION-068: De-Scaffold Apple Local Control Skills with Alias and Safety Guard Contracts (Wave 18)
+
+**Date:** 2026-03-04  
+**Blueprint Section:** §2.4, §5.1(local_mac set), §5.3(1,6), §A.7.13  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/services/brevio-hands/src/skills/{apple-media,apple-photos,apple-notes,apple-mail-search,alter-actions,get-focus-mode}`  
+**Conflict:** Six Apple/local-control skills were scaffold-only, which left no typed contracts for media control, indexed mail/photo lookup, local action triggering safeguards, or deprecated `apple-notes` alias semantics.  
+**Options Considered:**  
+1. Keep these Apple skills scaffolded and prioritize only cloud API categories.  
+2. Fold Apple skills into a broad mixed-category wave later.  
+3. Execute a focused Apple/local-control wave with typed contracts, alias semantics, and mutation safety gates where needed.  
+**Decision:** Option 3. Replaced scaffolds for `apple-media`, `apple-photos`, `apple-notes`, `apple-mail-search`, `alter-actions`, and `get-focus-mode` with typed `types/schema/client/index` implementations, deterministic outputs, unit tests, and updated README docs. Added all six IDs to centralized manual override config and closure test token assertions.  
+**Migration Plan:**  
+1. Register Wave 18 IDs in `config/skill-manual-overrides.txt`.  
+2. Extend closure token maps for Apple/local control validation constants and alias metadata tokens.  
+3. Run full CI and continue next category wave from remaining scaffolded adapters.  
+**Risk:** Deterministic local fixtures do not capture full macOS runtime variability (device discovery jitter, local permissions, x-callback edge cases) until on-device integration tests are expanded.  
+**Rollback:** Remove Wave 18 IDs from override config and regenerate scaffolds for these six skills if regressions appear.
