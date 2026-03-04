@@ -125,3 +125,9 @@ sonoscli
 overseerr
 radarr
 sonarr
+coloring-page
+excalidraw-flowchart
+figma
+gamma
+pollinations
+krea-api

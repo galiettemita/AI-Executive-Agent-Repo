@@ -1,6 +1,14 @@
 # excalidraw-flowchart
 
-Generated skill adapter scaffold.
+Hands-plane adapter for generating and exporting Excalidraw flowcharts.
 
-- Plane: `hands`
-- Source: `migrations/006_seed_skills.up.sql`
+## Supported actions
+
+- `generate_flowchart`
+- `update_flowchart`
+- `export_svg`
+
+## Notes
+
+- Enforces action-specific requirements for description and flowchart IDs.
+- Returns deterministic node/edge graph structures for stable tests.

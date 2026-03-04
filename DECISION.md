@@ -1311,3 +1311,21 @@
 3. Run full CI, then continue with remaining long-tail scaffolds in follow-on waves.  
 **Risk:** Deterministic fixture behavior does not capture all live-device runtime states (for example discovery jitter, LAN connectivity variance, and external media index drift) until integration tests are expanded against sandbox/home labs.  
 **Rollback:** Remove Wave 22 IDs from override config and regenerate scaffolds for these six skills if regressions are detected.
+
+## DECISION-073: De-Scaffold Creative Generation and Design Skills with Typed Asset Contracts (Wave 23)
+
+**Date:** 2026-03-04  
+**Blueprint Section:** §2.4, §A.7.14, §A.8  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/services/brevio-hands/src/skills/{coloring-page,excalidraw-flowchart,figma,gamma,pollinations,krea-api}`  
+**Conflict:** Six creative/design skills were still scaffold-only and had no typed input guards for prompt/file/deck IDs, no deterministic output contracts, and no CI-enforced token-level closure protection.  
+**Options Considered:**  
+1. Keep these creative adapters scaffolded while finishing remaining research/personal long-tail skills first.  
+2. De-scaffold all remaining adapters in one large mixed-category commit.  
+3. Execute a focused creative/design wave with strict typed generation/export contracts and action-specific validation constants.  
+**Decision:** Option 3. Replaced scaffolds for `coloring-page`, `excalidraw-flowchart`, `figma`, `gamma`, `pollinations`, and `krea-api` with typed `types/schema/client/index` modules, deterministic outputs, unit tests, and production READMEs. Added all six IDs to centralized manual override config and closure token assertions.  
+**Migration Plan:**  
+1. Register Wave 23 IDs in `config/skill-manual-overrides.txt`.  
+2. Extend schema/index token maps in `internal/contracts/hands_priority_skills_closure_test.go` for each new validation constant and contract key token.  
+3. Run full CI and continue subsequent waves for remaining scaffolded adapters.  
+**Risk:** Deterministic asset URLs and simplified output payloads do not cover full provider-side rendering variance (model availability, inference latency, and format-specific generation edge cases) until sandbox integration tests are expanded.  
+**Rollback:** Remove Wave 23 IDs from override config and regenerate scaffolds for these six skills if regressions are introduced.

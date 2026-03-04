@@ -1,8 +1,17 @@
-export interface SkillInputPayload {
-  payload?: Record<string, unknown>;
+export type ColoringPageAction = 'generate_from_prompt' | 'generate_from_image';
+
+export interface ColoringPageInput {
+  action: ColoringPageAction;
+  prompt?: string;
+  image_url?: string;
+  complexity?: 'easy' | 'medium' | 'advanced';
 }
 
-export interface SkillOutputPayload {
-  ok: boolean;
-  skill_id: string;
+export interface ColoringPageOutput {
+  provider: 'coloring-page';
+  action: ColoringPageAction;
+  output_url: string;
+  page_size: 'A4' | 'Letter';
+  line_density: 'low' | 'medium' | 'high';
+  summary: string;
 }

@@ -948,6 +948,14 @@ You must prove it.
 - [x] Extend centralized manual override registry and closure test token assertions for all Wave 22 adapters
 - [x] Validate Wave 22 against full `make ci` gate before merge
 
+## M15: Hands Adapter Wave 23 (Creative Generation and Design Tooling Hardening)
+- [x] De-scaffold `coloring-page` + `pollinations` + `krea-api` with typed generation contracts and action-specific prompt/image validation
+- [x] De-scaffold `excalidraw-flowchart` with typed graph generation/export contracts and flowchart update guard fields
+- [x] De-scaffold `figma` with typed analysis/export/audit contracts and required file/node identifiers
+- [x] De-scaffold `gamma` with typed deck lifecycle contracts and topic/deck-ID validation guards
+- [x] Extend centralized manual override registry and closure test token assertions for all Wave 23 adapters
+- [x] Validate Wave 23 against full `make ci` gate before merge
+
 ## M13–15 (Auto-Provisioning Layer 3): Remote Server Discovery Catalog (Auto-Provisioning Sections 5, 12.3, 16)
 - [x] ToolRegistry: register native tool `search_remote_catalog` (use only if `provision_server` fails due to missing catalog entry) (Auto-Provisioning Section 9)
 - [x] Hands handler: implement `search_remote_catalog` -> query remote catalog API -> return matched entries (Auto-Provisioning Section 5)

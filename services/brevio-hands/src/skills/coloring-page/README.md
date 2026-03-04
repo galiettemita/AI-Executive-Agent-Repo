@@ -1,6 +1,13 @@
 # coloring-page
 
-Generated skill adapter scaffold.
+Hands-plane adapter for converting prompts/images into printable coloring pages.
 
-- Plane: `hands`
-- Source: `migrations/006_seed_skills.up.sql`
+## Supported actions
+
+- `generate_from_prompt`
+- `generate_from_image`
+
+## Notes
+
+- Enforces prompt/image requirements per action path.
+- Uses deterministic output URLs and metadata in test environments.

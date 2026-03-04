@@ -651,6 +651,36 @@ func TestHandsPrioritySkillsNoLongerScaffolded(t *testing.T) {
 			"series",
 			"queue_count",
 		},
+		"coloring-page": {
+			"action",
+			"output_url",
+			"line_density",
+		},
+		"excalidraw-flowchart": {
+			"action",
+			"nodes",
+			"edges",
+		},
+		"figma": {
+			"action",
+			"file_key",
+			"findings",
+		},
+		"gamma": {
+			"action",
+			"deck_id",
+			"slide_count",
+		},
+		"pollinations": {
+			"action",
+			"asset_url",
+			"model_used",
+		},
+		"krea-api": {
+			"action",
+			"image_url",
+			"quality_score",
+		},
 	}
 
 	indexTokens := map[string][]string{
@@ -910,6 +940,24 @@ func TestHandsPrioritySkillsNoLongerScaffolded(t *testing.T) {
 		},
 		"sonarr": {
 			"SONARR_QUERY_REQUIRED",
+		},
+		"coloring-page": {
+			"COLORING_PAGE_PROMPT_REQUIRED",
+		},
+		"excalidraw-flowchart": {
+			"EXCALIDRAW_DESCRIPTION_REQUIRED",
+		},
+		"figma": {
+			"FIGMA_FILE_KEY_REQUIRED",
+		},
+		"gamma": {
+			"GAMMA_TOPIC_REQUIRED",
+		},
+		"pollinations": {
+			"POLLINATIONS_PROMPT_REQUIRED",
+		},
+		"krea-api": {
+			"KREA_API_PROMPT_REQUIRED",
 		},
 	}
 
