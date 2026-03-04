@@ -1599,3 +1599,21 @@
 3. Preserve closure-test enforcement to prevent regressions to compile-only placeholders.  
 **Risk:** Fixture-backed assertions verify deterministic adapter behavior and output contract shape, not live provider/network variance, until sandbox-backed integration runs are enabled.  
 **Rollback:** Restore previous integration tests and remove corresponding fixture/closure additions if integration policy changes.
+
+## DECISION-089: De-Scaffold Apple, Notes, and Local Utility Integration Tests with Fixture Enforcement
+
+**Date:** 2026-03-04  
+**Blueprint Section:** §2.4, §11.1, §A.7.13, §A.7.16  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/services/brevio-hands/src/skills/{alter-actions,apple-contacts,apple-media,apple-notes,apple-notes-skill,apple-photos,bear-notes,better-notion,gkeep,google-calendar,icloud-findmy,notion,obsidian,reflect,second-brain,shortcuts-generator,get-focus-mode}/__tests__/integration.test.ts` and `/Users/galiettemita/Downloads/Executive AI Agent/backend/internal/contracts`  
+**Conflict:** Apple/local and notes adapters were implemented with deterministic clients and typed contracts, but integration tests remained scaffold placeholders (`scaffold compiles`) and lacked fixture-backed output-contract assertions.  
+**Options Considered:**  
+1. Keep placeholders and rely on unit tests while de-scaffolding remaining categories first.  
+2. Convert only Apple-local adapters and defer notes/PKM adapters.  
+3. Convert all 17 Apple/notes/local integration tests now and add a closure contract gate for this category.  
+**Decision:** Option 3. Replaced all 17 integration tests with deterministic fixture-backed assertions, added one JSON fixture per skill under `__tests__/fixtures`, and introduced `internal/contracts/apple_notes_local_skill_integration_closure_test.go` to fail when any covered integration test contains `scaffold compiles` or has zero fixture JSON files.  
+**Migration Plan:**  
+1. Keep deterministic fixtures as baseline integration contracts for this skill category.  
+2. Expand fixtures with local-device state variance and OAuth-refresh edge cases when sandbox/device-backed integration runs are available.  
+3. Preserve closure-test enforcement to prevent regressions to compile-only placeholders.  
+**Risk:** Fixture-backed assertions validate deterministic adapter output shape, not live local-device/provider variability, until sandbox/device-backed integration suites are enabled.  
+**Rollback:** Restore prior integration tests and remove corresponding fixture/closure additions if integration enforcement policy changes.
