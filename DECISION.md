@@ -869,3 +869,21 @@
 3. Add closure test assertions for required metric identifiers and runtime endpoint tokens; re-run full `make ci`.  
 **Risk:** Metrics state is in-memory and non-persistent; metrics reset on pod restart and require scraping/storage in external Prometheus for durability.  
 **Rollback:** Revert `services/brevio-metrics/src/index.ts`, `services/brevio-metrics/README.md`, and `internal/contracts/metrics_service_runtime_closure_test.go` to prior scaffold baseline if ingestion behavior causes incompatibilities.
+
+## DECISION-049: Replace `brevio-temporal-worker` Health Scaffold with Deterministic Workflow Runtime Baseline
+
+**Date:** 2026-03-04  
+**Blueprint Section:** §4.1, §4.2, §20.1-§20.3  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/services/brevio-temporal-worker`  
+**Conflict:** `brevio-temporal-worker` exposed only health endpoints and lacked workflow runtime APIs/state tracking for `MessageProcessingWorkflow` and `DailyRhythmWorkflow` behavior expected by the production blueprint.  
+**Options Considered:**  
+1. Keep service as health-only and rely exclusively on external Temporal runtime without local contract surface.  
+2. Add minimal placeholder workflow endpoints without explicit state-machine modeling.  
+3. Implement deterministic workflow runtime endpoints with explicit state sequences, run-status retrieval, and jitter helper semantics.  
+**Decision:** Option 3. Implemented `brevio-temporal-worker` runtime with `/api/v1` + `/v1` workflow endpoints (`workflows`, `runs/:run_id`, `workflows/message-processing`, `workflows/daily-rhythm`), modeled explicit `MessageProcessingWorkflow` terminal-state transitions (`COMPLETED`/`FAILED`/`DEAD_LETTER`), daily-rhythm progression, and deterministic jitter metadata using `fnv1a` hash helper. Added structured logging, graceful shutdown, and closure enforcement in `internal/contracts/temporal_worker_service_runtime_closure_test.go`; replaced README scaffold text with runtime docs.  
+**Migration Plan:**  
+1. Replace health-only source with deterministic workflow handlers while preserving `/health` and `/health/deep`.  
+2. Add run snapshot store and workflow metadata endpoints to provide operational traceability.  
+3. Add closure tests for required workflow-state tokens and rerun full `make ci` pipeline.  
+**Risk:** Workflow run snapshots are currently in-memory and simulated for runtime closure; they do not yet persist in Temporal history tables and reset on restart.  
+**Rollback:** Revert `services/brevio-temporal-worker/src/index.ts`, `services/brevio-temporal-worker/README.md`, and `internal/contracts/temporal_worker_service_runtime_closure_test.go` to prior scaffold baseline if integration expectations require temporary rollback.
