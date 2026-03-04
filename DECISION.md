@@ -1491,3 +1491,21 @@
 3. Preserve closure-test enforcement to prevent regressions to no-op integration coverage.  
 **Risk:** Deterministic fixture checks validate mocked local adapter behavior, not external provider/network variance, until sandbox/live integration environments are wired for these flows.  
 **Rollback:** Restore prior Brain integration test files and remove related fixtures + closure gate if fixture contract strategy is changed.
+
+## DECISION-083: De-Scaffold Communication Skill Integration Tests with Fixture Enforcement
+
+**Date:** 2026-03-04  
+**Blueprint Section:** §1.2.3, §2.4, §11.1, §18  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/services/brevio-hands/src/skills/{smtp-send,react-email-skills,apple-mail,apple-mail-search,bluesky,reddit,bird,outlook,imap-email,google-workspace,slack}/__tests__/integration.test.ts` and `/Users/galiettemita/Downloads/Executive AI Agent/backend/internal/contracts`  
+**Conflict:** Core communication adapters were implemented with deterministic clients, but integration tests remained scaffold placeholders (`scaffold compiles`), leaving no fixture-backed execution contract for messaging/search/listing/send behavior.  
+**Options Considered:**  
+1. Leave communication integration tests as placeholders and rely on unit tests only.  
+2. Convert only OAuth-backed communication skills and defer local/social channels.  
+3. Convert all 11 non-gateway communication skill integration tests now and add a closure contract guard for fixture coverage.  
+**Decision:** Option 3. Replaced all 11 communication integration tests with deterministic fixture-backed assertions, added one `.json` fixture per skill under `__tests__/fixtures`, and introduced `internal/contracts/communication_skill_integration_closure_test.go` to fail on scaffold-marker regression or missing fixture JSON files.  
+**Migration Plan:**  
+1. Keep deterministic fixtures as immediate integration contracts while external provider variance remains environment-dependent.  
+2. Expand fixture matrix with send-confirmation, quota, and provider-error paths in subsequent waves.  
+3. Preserve closure test enforcement to prevent fallback to compile-only placeholder tests.  
+**Risk:** Fixture-backed tests currently verify deterministic adapter behavior and contract shape, not live provider/network failures, until sandbox/live integration runs are added.  
+**Rollback:** Restore previous communication integration tests and remove the new closure contract + fixture JSON files if policy shifts away from fixture-backed integration enforcement.
