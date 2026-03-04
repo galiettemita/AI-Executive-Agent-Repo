@@ -5,7 +5,12 @@ __pycache__/
 .DS_Store
 storage/
 classmate-ai/
+classmate-ai
 infra/node_modules/
+node_modules/
+**/node_modules/
+dist/
+**/dist/
 infra/.sst/
 .terraform/
 terraform/**/.terraform/

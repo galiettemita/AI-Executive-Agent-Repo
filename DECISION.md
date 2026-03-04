@@ -703,3 +703,21 @@
 3. Align local bootstrap script to bring up Temporal UI alongside core dependency containers and add closure test coverage.  
 **Risk:** Full compose stack increases local resource usage and initial startup time compared to dependency-only mode.  
 **Rollback:** Revert compose and setup script to dependency-only startup and remove docker-compose closure contract test if lightweight mode is temporarily preferred.
+
+## DECISION-040: Replace Edge Agent/Relay TypeScript Scaffolds with WebSocket Runtime Baseline
+
+**Date:** 2026-03-04  
+**Blueprint Section:** §1.3 (`brevio-edge-relay`), §5.2 (Edge Agent Architecture), §20.1-§20.3  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/edge/brevio-edge-agent`, `/Users/galiettemita/Downloads/Executive AI Agent/backend/services/brevio-edge-relay`  
+**Conflict:** Edge agent was a single constant export and edge relay was a minimal health-only HTTP scaffold; neither implemented the required local_mac WebSocket relay flow, session tracking, or offline queue behavior.  
+**Options Considered:**  
+1. Keep edge components as placeholders until native macOS packaging is implemented.  
+2. Implement relay only and leave agent as static placeholder.  
+3. Implement both relay and agent runtime baselines with typed message contracts, reconnect/heartbeat behavior, and offline-queue semantics.  
+**Decision:** Option 3. Implemented a typed WebSocket relay (`/ws/edge`) with session tracking, execution dispatch endpoint, offline queue and queue expiry, plus a reconnecting edge-agent runtime that registers device metadata, emits heartbeats, executes local skill requests, and returns skill results with health/deep endpoints.  
+**Migration Plan:**  
+1. Replace scaffold source files and READMEs with executable runtime behavior.  
+2. Add `ws` runtime/development dependencies in both package manifests.  
+3. Add closure tests to enforce key protocol tokens and prevent scaffold regressions.  
+**Risk:** Current queueing and session state are in-memory; relay restarts will clear queued offline requests until persistent backing is introduced.  
+**Rollback:** Revert edge-agent/edge-relay source and package changes to prior scaffold baseline and remove the new edge closure contract test.

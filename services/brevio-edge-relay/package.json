@@ -8,5 +8,11 @@
     "dev": "node dist/index.js",
     "lint": "eslint src --ext .ts",
     "test": "echo \"no tests yet\""
+  },
+  "dependencies": {
+    "ws": "8.18.3"
+  },
+  "devDependencies": {
+    "@types/ws": "8.18.1"
   }
 }
