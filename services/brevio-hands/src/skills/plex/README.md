@@ -1,6 +1,15 @@
 # plex
 
-Generated skill adapter scaffold.
+Plex adapter for media search, recent listings, and playback control.
 
-- Plane: `hands`
-- Source: `migrations/006_seed_skills.up.sql`
+## Auth
+- Plex auth/session token in production.
+
+## Input
+- `action`: `search`, `play`, `recent`
+- search: `query`
+- play: `media_id` or `query`
+
+## Output
+- `provider`: `plex`
+- action echo with optional `results` and `now_playing`

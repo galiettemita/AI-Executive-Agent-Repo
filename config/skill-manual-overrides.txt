@@ -47,3 +47,9 @@ slack
 reddit
 bluesky
 bird
+apple-music
+ytmusic
+plex
+trakt
+lastfm
+pocket-casts

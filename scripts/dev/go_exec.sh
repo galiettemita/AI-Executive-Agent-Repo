@@ -30,11 +30,19 @@ if [[ $# -eq 0 ]]; then
   exit 1
 fi
 
+go_mod_cache="${ROOT_DIR}/.cache/go-mod"
+go_build_cache="${ROOT_DIR}/.cache/go-build"
+mkdir -p "${go_mod_cache}" "${go_build_cache}"
+
 quoted_args=()
 for arg in "$@"; do
   quoted_args+=("$(printf '%q' "$arg")")
 done
 joined_args="${quoted_args[*]}"
 
-exec "$docker_bin" run --rm -v "$ROOT_DIR":/src -w /src golang:1.22 sh -lc \
+exec "$docker_bin" run --rm \
+  -v "$ROOT_DIR":/src \
+  -v "${go_mod_cache}":/go/pkg/mod \
+  -v "${go_build_cache}":/root/.cache/go-build \
+  -w /src golang:1.22 sh -lc \
   "export PATH=\"/usr/local/go/bin:/go/bin:\$PATH\"; go ${joined_args}"

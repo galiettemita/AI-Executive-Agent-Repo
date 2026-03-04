@@ -261,6 +261,36 @@ func TestHandsPrioritySkillsNoLongerScaffolded(t *testing.T) {
 			"query",
 			"posts",
 		},
+		"apple-music": {
+			"action",
+			"playlist_id",
+			"tracks",
+		},
+		"ytmusic": {
+			"action",
+			"track_id",
+			"tracks",
+		},
+		"plex": {
+			"action",
+			"media_id",
+			"results",
+		},
+		"trakt": {
+			"action",
+			"media_id",
+			"items",
+		},
+		"lastfm": {
+			"action",
+			"username",
+			"tracks",
+		},
+		"pocket-casts": {
+			"action",
+			"youtube_url",
+			"queue",
+		},
 	}
 
 	indexTokens := map[string][]string{
@@ -334,6 +364,15 @@ func TestHandsPrioritySkillsNoLongerScaffolded(t *testing.T) {
 		"reddit":  {"REDDIT_POST_CONFIRMATION_REQUIRED"},
 		"bluesky": {"BLUESKY_POST_CONFIRMATION_REQUIRED"},
 		"bird":    {"BIRD_POST_CONFIRMATION_REQUIRED"},
+		"apple-music": {
+			"requiredScopes",
+			"apple.music.modify",
+		},
+		"ytmusic":      {"ytmusic execution failed"},
+		"plex":         {"plex execution failed"},
+		"trakt":        {"trakt execution failed"},
+		"lastfm":       {"lastfm execution failed"},
+		"pocket-casts": {"pocket-casts execution failed"},
 	}
 
 	scriptBody, err := os.ReadFile(scriptPath)

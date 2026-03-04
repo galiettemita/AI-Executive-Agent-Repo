@@ -1039,3 +1039,40 @@
 4. Run scaffold parity + full `make ci` before merge.  
 **Risk:** Deterministic local message feeds do not fully model provider-specific moderation/rate-limit behavior (for example subreddit posting restrictions or Slack workspace permission deltas) until sandbox integration fixtures are expanded.  
 **Rollback:** Remove Wave 8 IDs from override config and regenerate scaffolds for these six skills if regressions emerge.
+
+## DECISION-058: Extend Priority De-Scaffolding to Media Playback and Library Connectors (Wave 9)
+
+**Date:** 2026-03-04  
+**Blueprint Section:** §2.4, §5.3, §A.7.7, §A.8  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/services/brevio-hands/src/skills/{apple-music,ytmusic,plex,trakt,lastfm,pocket-casts}`  
+**Conflict:** Core media connectors were scaffold-only, limiting disambiguation quality for playback and watch-history intents and leaving no typed validation for queue/library actions.  
+**Options Considered:**  
+1. Keep media skills scaffolded and prioritize remaining finance/document adapters first.  
+2. De-scaffold a large mixed batch across multiple categories in one step.  
+3. Execute a focused media wave with typed action contracts and deterministic outputs for playback/library routing.  
+**Decision:** Option 3. Implemented Wave 9 typed adapters for `apple-music`, `ytmusic`, `plex`, `trakt`, `lastfm`, and `pocket-casts` with explicit action enums, required-field validation, deterministic client outputs, and updated unit tests/docs. Added all six IDs to centralized manual override config and closure token assertions.  
+**Migration Plan:**  
+1. Register Wave 9 IDs in `config/skill-manual-overrides.txt`.  
+2. Replace scaffold files (`types/schema/client/index/README/unit`) across all six media skills.  
+3. Extend `hands_priority_skills_closure_test` for Wave 9 schema/index token coverage and override-file membership checks.  
+4. Run scaffold parity + full `make ci` before merge.  
+**Risk:** Deterministic media datasets may diverge from provider-specific ranking/playback semantics (for example library pagination, real-time queue state, or watch-history synchronization) until sandbox integration tests are expanded.  
+**Rollback:** Remove Wave 9 IDs from override config and regenerate scaffolds for these six skills if regressions appear.
+
+## DECISION-059: Persist Go Module/Build Cache for Dockerized `go_exec` Runs
+
+**Date:** 2026-03-04  
+**Blueprint Section:** §0.3, §9.1  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/scripts/dev/go_exec.sh`  
+**Conflict:** `go_exec.sh` launched ephemeral Docker containers without persistent Go module/build caches, causing repeated dependency downloads on every CI stage and intermittent pipeline failures from transient `proxy.golang.org` network errors.  
+**Options Considered:**  
+1. Keep current behavior and rely on retrying flaky CI runs.  
+2. Switch entirely to host-installed Go toolchain and bypass Dockerized execution.  
+3. Preserve Dockerized execution but mount persistent module/build caches from workspace-local directories.  
+**Decision:** Option 3. Added workspace-local cache directories (`.cache/go-mod`, `.cache/go-build`) and mounted them into Docker (`/go/pkg/mod`, `/root/.cache/go-build`) in `go_exec.sh`, retaining existing containerized behavior while significantly reducing repeated network fetches and CI flake risk.  
+**Migration Plan:**  
+1. Create cache directories at runtime when invoking `go_exec.sh`.  
+2. Mount caches into Dockerized Go runs for all CI commands.  
+3. Re-run full `make ci` to confirm pipeline stability.  
+**Risk:** Cache directories can grow over time and may require periodic cleanup in constrained local environments.  
+**Rollback:** Revert `scripts/dev/go_exec.sh` cache mount additions and return to stateless container runs if cache side effects appear.

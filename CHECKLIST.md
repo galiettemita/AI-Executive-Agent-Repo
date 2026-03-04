@@ -834,6 +834,14 @@ You must prove it.
 - [x] Extend centralized manual override registry and closure test token assertions for all Wave 8 adapters
 - [x] Validate Wave 8 against full `make ci` gate before merge
 
+## M15: Hands Adapter Wave 9 (Media Playback + Library Routing Hardening)
+- [x] De-scaffold `apple-music` + `ytmusic` with typed search/play/queue contracts and playback target validation
+- [x] De-scaffold `plex` + `trakt` with typed media library/history actions and required watch-target validation
+- [x] De-scaffold `lastfm` + `pocket-casts` with typed analytics/queue contracts and required-field validation
+- [x] Extend centralized manual override registry and closure test token assertions for all Wave 9 adapters
+- [x] Validate Wave 9 against full `make ci` gate before merge
+- [x] Stabilize Dockerized Go CI execution by persisting module/build caches in `scripts/dev/go_exec.sh` to reduce flaky proxy download failures
+
 ## M13–15 (Auto-Provisioning Layer 3): Remote Server Discovery Catalog (Auto-Provisioning Sections 5, 12.3, 16)
 - [x] ToolRegistry: register native tool `search_remote_catalog` (use only if `provision_server` fails due to missing catalog entry) (Auto-Provisioning Section 9)
 - [x] Hands handler: implement `search_remote_catalog` -> query remote catalog API -> return matched entries (Auto-Provisioning Section 5)

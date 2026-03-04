@@ -1,8 +1,19 @@
-export interface SkillInputPayload {
-  payload?: Record<string, unknown>;
+export interface PlexInput {
+  action: 'search' | 'play' | 'recent';
+  query?: string;
+  media_id?: string;
 }
 
-export interface SkillOutputPayload {
-  ok: boolean;
-  skill_id: string;
+export interface PlexMediaItem {
+  id: string;
+  title: string;
+  type: 'movie' | 'episode' | 'album';
+  year?: number;
+}
+
+export interface PlexOutput {
+  provider: 'plex';
+  action: PlexInput['action'];
+  results?: PlexMediaItem[];
+  now_playing?: PlexMediaItem;
 }

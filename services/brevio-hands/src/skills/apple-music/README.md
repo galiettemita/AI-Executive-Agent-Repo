@@ -1,6 +1,16 @@
 # apple-music
 
-Generated skill adapter scaffold.
+Apple Music adapter for search, playback, and playlist update actions.
 
-- Plane: `hands`
-- Source: `migrations/006_seed_skills.up.sql`
+## Auth
+- Apple Music auth/token scopes for read + modify operations.
+
+## Input
+- `action`: `search`, `play`, `add_to_playlist`
+- search: `query`
+- play: `track_id` or `query`
+- add_to_playlist: `track_id` + `playlist_id`
+
+## Output
+- `provider`: `apple-music`
+- action echo with optional `tracks`, `now_playing`, `playlist_updated`
