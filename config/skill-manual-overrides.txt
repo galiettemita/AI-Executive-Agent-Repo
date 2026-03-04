@@ -28,3 +28,9 @@ asana
 trello
 clickup-mcp
 todo
+apple-notes-skill
+gkeep
+bear-notes
+obsidian
+reflect
+second-brain

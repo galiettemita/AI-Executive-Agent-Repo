@@ -982,3 +982,22 @@
 4. Re-run scaffold parity gate and full CI before commit.  
 **Risk:** Mock deterministic clients can diverge from provider-specific edge behavior unless paired with staged integration fixtures and sandbox credentials.  
 **Rollback:** Remove Wave 5 IDs from override config and regenerate scaffold defaults for affected skills if regression risk outweighs current implementation value.
+
+## DECISION-055: Extend Priority De-Scaffolding to Notes/PKM Connectors (Wave 6)
+
+**Date:** 2026-03-04  
+**Blueprint Section:** §2.4, §5.3, §A.7.16, §A.8  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/services/brevio-hands/src/skills/{apple-notes-skill,gkeep,bear-notes,obsidian,reflect,second-brain}`  
+**Conflict:** Notes and PKM skills were still scaffold-only, despite being core to user context recall and frequent routing in executive workflows; this left no action-level validation for note creation, search, or updates.  
+**Options Considered:**  
+1. Keep notes/PKM skills scaffolded and rely on generic text responses.  
+2. De-scaffold all remaining note skills plus adjacent personal-dev skills in one large change.  
+3. Execute a focused notes/PKM wave with consistent list/create/search/update contracts and centralized override enforcement.  
+**Decision:** Option 3. Implemented Wave 6 typed adapters for `apple-notes-skill`, `gkeep`, `bear-notes`, `obsidian`, `reflect`, and `second-brain` with deterministic note IDs, explicit create/update field validation, structured note metadata outputs, and updated unit tests/docs. Added these IDs to centralized override config and closure assertions.  
+**Migration Plan:**  
+1. Register Wave 6 IDs in `config/skill-manual-overrides.txt`.  
+2. Replace scaffold implementations across all six skills with typed runtime modules.  
+3. Extend contract token maps and override-file membership checks for these skills.  
+4. Run scaffold parity plus full CI gates before merge.  
+**Risk:** Current implementations use deterministic local note stores and can diverge from provider-specific search semantics (for example tag matching, markdown parsing, or vault path behavior) until sandbox integration tests are added.  
+**Rollback:** Remove Wave 6 IDs from override config and regenerate scaffolds for these six skills if regressions occur or provider parity issues are discovered.

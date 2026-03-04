@@ -166,6 +166,36 @@ func TestHandsPrioritySkillsNoLongerScaffolded(t *testing.T) {
 			"complete",
 			"items",
 		},
+		"apple-notes-skill": {
+			"action",
+			"search",
+			"notes",
+		},
+		"gkeep": {
+			"action",
+			"create",
+			"notes",
+		},
+		"bear-notes": {
+			"action",
+			"update",
+			"notes",
+		},
+		"obsidian": {
+			"action",
+			"search",
+			"notes",
+		},
+		"reflect": {
+			"action",
+			"create",
+			"notes",
+		},
+		"second-brain": {
+			"action",
+			"search",
+			"notes",
+		},
 	}
 
 	indexTokens := map[string][]string{
@@ -204,6 +234,18 @@ func TestHandsPrioritySkillsNoLongerScaffolded(t *testing.T) {
 		"trello":          {"TRELLO_CREATE_FIELDS_REQUIRED"},
 		"clickup-mcp":     {"CLICKUP_TITLE_REQUIRED"},
 		"todo":            {"TODO_CONTENT_REQUIRED"},
+		"apple-notes-skill": {
+			"APPLE_NOTES_SKILL_CREATE_FIELDS_REQUIRED",
+		},
+		"gkeep": {"GKEEP_CREATE_FIELDS_REQUIRED"},
+		"bear-notes": {
+			"BEAR_NOTES_CREATE_FIELDS_REQUIRED",
+		},
+		"obsidian": {"OBSIDIAN_CREATE_FIELDS_REQUIRED"},
+		"reflect":  {"REFLECT_CREATE_FIELDS_REQUIRED"},
+		"second-brain": {
+			"SECOND_BRAIN_CREATE_FIELDS_REQUIRED",
+		},
 	}
 
 	scriptBody, err := os.ReadFile(scriptPath)
