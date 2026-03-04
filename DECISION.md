@@ -1455,3 +1455,21 @@
 3. Expand each fixture set from deterministic mocks to sandbox/live payloads once partnership credentials are available.  
 **Risk:** Fixture-backed tests still validate mocked deterministic adapter outputs, not third-party provider variance, until external partnership integrations are enabled.  
 **Rollback:** Restore prior integration test files and remove added fixture JSON files plus custom-build closure-test assertions if regression or policy changes require scaffold behavior.
+
+## DECISION-081: De-Scaffold Gateway Skill Integration Tests with Fixture Enforcement
+
+**Date:** 2026-03-04  
+**Blueprint Section:** §1.2.1, §2.4, §11.1, §A.6  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/services/brevio-hands/src/skills/{asr,openai-tts,gemini-stt,sag,voice-wake-say,whatsapp-styling-guide,vocal-chat,autoresponder}/__tests__/integration.test.ts` and `/Users/galiettemita/Downloads/Executive AI Agent/backend/internal/contracts`  
+**Conflict:** Gateway-profile skill adapters had typed unit tests, but integration tests remained scaffold placeholders (`scaffold compiles`) and had no fixture-level execution assertions for deterministic STT/TTS/formatting/autoresponder outputs.  
+**Options Considered:**  
+1. Leave gateway integration tests as compile placeholders and depend on unit tests only.  
+2. Replace only a subset (STT/TTS) and defer formatting/autoresponder for later.  
+3. Replace all 8 gateway-profile integration tests with fixture-backed deterministic assertions and add a closure contract that forbids scaffold regressions.  
+**Decision:** Option 3. De-scaffolded integration tests for all 8 gateway-profile skills with deterministic fixture-backed assertions, added one JSON fixture per skill under `__tests__/fixtures`, and introduced `gateway_skill_integration_closure_test.go` to require non-scaffold integration tests and at least one fixture JSON for each gateway-profile skill.  
+**Migration Plan:**  
+1. Keep deterministic mocked outputs as integration baseline while external voice/channel providers remain environment-dependent.  
+2. Expand fixture corpus with provider-specific edge cases once sandbox credentials are provisioned.  
+3. Maintain closure test to prevent any regression to no-op integration tests.  
+**Risk:** Fixture-backed assertions validate deterministic adapter behavior, but not real provider transport/quality variance until provider-backed integration runs are added.  
+**Rollback:** Restore prior gateway integration test files and remove fixture + closure-test additions if policy returns to compile-only integration tests.

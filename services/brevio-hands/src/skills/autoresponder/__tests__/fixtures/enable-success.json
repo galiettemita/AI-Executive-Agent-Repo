@@ -1,0 +1,8 @@
+{
+  "provider": "autoresponder",
+  "action": "enable",
+  "status": "enabled",
+  "delegated_to_brain": true,
+  "response_text": "Autoresponder enabled for imessage using focused-hours rules.",
+  "latency_budget_ms": 8000
+}
