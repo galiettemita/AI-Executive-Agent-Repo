@@ -1,0 +1,6 @@
+{
+  "provider": "just-fucking-cancel",
+  "action": "draft_cancellation",
+  "findings_count": 1,
+  "draft_prefix": "Hello, please cancel my subscription"
+}

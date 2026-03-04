@@ -1563,3 +1563,21 @@
 3. Retain closure gate to prevent regressions to compile-only placeholder tests.  
 **Risk:** Deterministic fixtures validate adapter behavior and output shape but not live provider/network variance until sandbox-backed runs are added.  
 **Rollback:** Restore prior integration test files and remove corresponding fixture/closure additions if enforcement strategy changes.
+
+## DECISION-087: De-Scaffold Finance and Documents Integration Tests with Fixture Enforcement
+
+**Date:** 2026-03-04  
+**Blueprint Section:** §2.4, §11.1, §A.7.8, §A.7.11  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/services/brevio-hands/src/skills/{copilot-money,expense-tracker-pro,financial-market-analysis,monarch-money,plaid,watch-my-money,yahoo-finance,ynab,tax-professional,ibkr-trading,just-fucking-cancel,pdf-tools,resume-builder}/__tests__/integration.test.ts` and `/Users/galiettemita/Downloads/Executive AI Agent/backend/internal/contracts`  
+**Conflict:** Finance/document adapters had deterministic clients and typed contracts, but integration tests remained scaffold placeholders (`scaffold compiles`) and lacked fixture-backed contract assertions.  
+**Options Considered:**  
+1. Keep placeholders and rely on unit coverage while finishing remaining categories.  
+2. Convert only core finance adapters and defer documents/advisory adapters.  
+3. Convert all 13 finance/document integration tests now and add a closure contract gate.  
+**Decision:** Option 3. Replaced all 13 integration tests with deterministic fixture-backed assertions, added one JSON fixture per skill under `__tests__/fixtures`, and introduced `internal/contracts/finance_documents_skill_integration_closure_test.go` to fail when any covered integration test contains `scaffold compiles` or has zero fixture JSON files.  
+**Migration Plan:**  
+1. Keep deterministic fixtures as baseline integration contracts for finance/document adapters.  
+2. Expand fixture scenarios with provider-side validation errors and write-confirmation edge cases once sandbox credentials are available.  
+3. Preserve closure-test enforcement to prevent regressions to compile-only placeholders.  
+**Risk:** Fixtures validate deterministic adapter behavior and output shape, but not live provider/network failures until sandbox-backed integration suites are enabled.  
+**Rollback:** Restore previous integration tests and remove corresponding fixture/closure additions if the integration enforcement policy changes.
