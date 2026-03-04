@@ -613,3 +613,21 @@
 3. Add closure tests to enforce module presence and composition tokens in all three environment files.  
 **Risk:** Module contracts remain declarative (non-resource) and require later replacement if `infra/terraform` becomes the active Terraform apply target instead of documentation/contract path.  
 **Rollback:** Revert `infra/terraform` files to prior stubs and remove infra-openclaw closure tests if maintaining dual Terraform layouts becomes operationally costly.
+
+## DECISION-035: Replace `infra/docker` Service Image Scaffolds with Executable Multi-Stage Distroless Builds
+
+**Date:** 2026-03-04  
+**Blueprint Section:** §14, §16 (`infra/docker`), §20.12  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/infra/docker`  
+**Conflict:** `infra/docker/Dockerfile.gateway`, `Dockerfile.brain`, and `Dockerfile.hands` were placeholder scaffold files (`FROM node:20-alpine`) and there were no service-scoped Dockerfiles for other runtime binaries, which diverged from the blueprint requirement for production-grade per-service container definitions.  
+**Options Considered:**  
+1. Keep using only the root `Dockerfile` and leave `infra/docker` as inert documentation stubs.  
+2. Delete `infra/docker` and rely entirely on root-level container build indirection.  
+3. Replace scaffold files with executable multi-stage distroless Dockerfiles and enforce them via closure tests and Makefile wiring.  
+**Decision:** Option 3. Implemented real Dockerfiles for gateway, brain, hands, control, executor, canvas, and temporal-worker using Go 1.22 multi-stage builds + distroless non-root runtime, mapped hands to `cmd/executor` for current runtime compatibility, and wired `make docker-build` to build from `infra/docker/Dockerfile.<service>`.  
+**Migration Plan:**  
+1. Overwrite scaffold Dockerfiles with executable production build definitions.  
+2. Add missing service Dockerfiles for all current Go runtime binaries.  
+3. Add closure test coverage to enforce token-level invariants and prevent scaffold regressions.  
+**Risk:** `make docker-build` now depends on each service-specific Dockerfile existing and remaining synchronized with command entrypoint names.  
+**Rollback:** Revert `Makefile` docker-build target to root Dockerfile loop and remove service-specific docker closure test if per-service files become unnecessary.
