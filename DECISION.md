@@ -1347,3 +1347,21 @@
 3. Run full CI and continue subsequent waves for remaining long-tail scaffold adapters.  
 **Risk:** Deterministic coaching text and routing outputs do not capture full conversational variability or user-specific contextual nuance until integration/eval sets are expanded for these six skills.  
 **Rollback:** Remove Wave 24 IDs from override config and regenerate scaffolds for these six skills if regressions appear.
+
+## DECISION-075: De-Scaffold Research and Intelligence Skills with Typed Query Contracts (Wave 25)
+
+**Date:** 2026-03-04  
+**Blueprint Section:** §2.4, §A.7.12, §A.8  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/services/brevio-hands/src/skills/{kagi-search,last30days,literature-review,gemini-deep-research,proactive-research,swissweather}`  
+**Conflict:** Six research/intelligence skills remained scaffold-only, lacking typed query/topic/location validation, deterministic result contracts, and closure-test token protections.  
+**Options Considered:**  
+1. Keep these skills scaffolded and finish only remaining media/utility adapters first.  
+2. De-scaffold all remaining adapters in one large final change.  
+3. Execute a focused research wave with explicit action schemas, validation constants, and deterministic output payloads.  
+**Decision:** Option 3. Replaced scaffolds for `kagi-search`, `last30days`, `literature-review`, `gemini-deep-research`, `proactive-research`, and `swissweather` with typed `types/schema/client/index` implementations, deterministic outputs, unit tests, and production READMEs. Added all six IDs to centralized manual override config and closure token assertions.  
+**Migration Plan:**  
+1. Register Wave 25 IDs in `config/skill-manual-overrides.txt`.  
+2. Extend schema/index token checks in `internal/contracts/hands_priority_skills_closure_test.go` for validation constants and output-shape tokens.  
+3. Run full CI and continue final waves for remaining scaffold adapters.  
+**Risk:** Deterministic fixtures do not fully emulate real provider volatility (search freshness, citation ranking, weather feed variance) until sandbox integration suites are expanded.  
+**Rollback:** Remove Wave 25 IDs from override config and regenerate scaffolds for these six skills if regressions are observed.

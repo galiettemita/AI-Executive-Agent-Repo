@@ -1,8 +1,18 @@
-import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import { describe, it } from 'node:test';
 
-describe('kagi-search unit', () => {
-  it('scaffold compiles', () => {
-    assert.equal(1, 1);
+import adapter from '../index.js';
+
+describe('kagi-search adapter', () => {
+  it('requires query', async () => {
+    const result = await adapter.execute({ action: 'search' }, {} as never);
+    assert.equal(result.status, 'FAILED');
+    assert.match(result.error?.message ?? '', /KAGI_SEARCH_QUERY_REQUIRED/);
+  });
+
+  it('returns deterministic result set', async () => {
+    const result = await adapter.execute({ action: 'search', query: 'executive assistant stack' }, {} as never);
+    assert.equal(result.status, 'SUCCESS');
+    assert.equal(result.data?.provider, 'kagi-search');
   });
 });

@@ -137,3 +137,9 @@ pros-cons
 relationship-skills
 self-improvement
 doing-tasks
+kagi-search
+last30days
+literature-review
+gemini-deep-research
+proactive-research
+swissweather

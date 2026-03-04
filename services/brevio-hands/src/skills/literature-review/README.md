@@ -1,6 +1,12 @@
 # literature-review
 
-Generated skill adapter scaffold.
+Hands-plane adapter for academic paper discovery and summarization prep.
 
-- Plane: `hands`
-- Source: `migrations/006_seed_skills.up.sql`
+## Supported actions
+
+- `search_papers`
+
+## Notes
+
+- Requires a research topic query.
+- Emits deterministic paper metadata for CI runs.

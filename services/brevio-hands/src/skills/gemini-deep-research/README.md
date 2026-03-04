@@ -1,6 +1,12 @@
 # gemini-deep-research
 
-Generated skill adapter scaffold.
+Hands-plane adapter for deep research briefs.
 
-- Plane: `hands`
-- Source: `migrations/006_seed_skills.up.sql`
+## Supported actions
+
+- `run_research`
+
+## Notes
+
+- Requires a topic input.
+- Returns deterministic sectioned report output and citations.

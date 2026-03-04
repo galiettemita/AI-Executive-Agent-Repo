@@ -1,6 +1,12 @@
 # last30days
 
-Generated skill adapter scaffold.
+Hands-plane trend scanner for recent cross-platform discussions.
 
-- Plane: `hands`
-- Source: `migrations/006_seed_skills.up.sql`
+## Supported actions
+
+- `scan_topic`
+
+## Notes
+
+- Requires a topic query.
+- Returns deterministic highlights and source URLs for CI.

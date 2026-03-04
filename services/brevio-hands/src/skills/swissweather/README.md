@@ -1,6 +1,12 @@
 # swissweather
 
-Generated skill adapter scaffold.
+Hands-plane adapter for Swiss weather forecasting.
 
-- Plane: `hands`
-- Source: `migrations/006_seed_skills.up.sql`
+## Supported actions
+
+- `forecast`
+
+## Notes
+
+- Requires location input.
+- Returns deterministic short-range forecast fixtures.

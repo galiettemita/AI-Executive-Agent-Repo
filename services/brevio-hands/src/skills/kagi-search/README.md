@@ -1,6 +1,12 @@
 # kagi-search
 
-Generated skill adapter scaffold.
+Hands-plane adapter for Kagi-style web search.
 
-- Plane: `hands`
-- Source: `migrations/006_seed_skills.up.sql`
+## Supported actions
+
+- `search`
+
+## Notes
+
+- Requires a query string.
+- Returns deterministic search results for CI stability.

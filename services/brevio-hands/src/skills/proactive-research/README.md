@@ -1,6 +1,13 @@
 # proactive-research
 
-Generated skill adapter scaffold.
+Hands-plane adapter for topic monitoring and proactive update summaries.
 
-- Plane: `brain`
-- Source: `migrations/006_seed_skills.up.sql`
+## Supported actions
+
+- `monitor_topic`
+- `summarize_updates`
+
+## Notes
+
+- Requires monitored topic input.
+- Returns deterministic alerts and next-check schedule metadata.

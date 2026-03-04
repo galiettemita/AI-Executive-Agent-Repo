@@ -711,6 +711,36 @@ func TestHandsPrioritySkillsNoLongerScaffolded(t *testing.T) {
 			"routed_skill",
 			"execution_plan",
 		},
+		"kagi-search": {
+			"action",
+			"results",
+			"snippet",
+		},
+		"last30days": {
+			"action",
+			"highlights",
+			"sources",
+		},
+		"literature-review": {
+			"action",
+			"papers",
+			"venue",
+		},
+		"gemini-deep-research": {
+			"action",
+			"report_sections",
+			"citations",
+		},
+		"proactive-research": {
+			"action",
+			"alerts",
+			"next_check_at",
+		},
+		"swissweather": {
+			"action",
+			"forecasts",
+			"high_c",
+		},
 	}
 
 	indexTokens := map[string][]string{
@@ -1006,6 +1036,24 @@ func TestHandsPrioritySkillsNoLongerScaffolded(t *testing.T) {
 		},
 		"doing-tasks": {
 			"DOING_TASKS_TASK_REQUIRED",
+		},
+		"kagi-search": {
+			"KAGI_SEARCH_QUERY_REQUIRED",
+		},
+		"last30days": {
+			"LAST30DAYS_QUERY_REQUIRED",
+		},
+		"literature-review": {
+			"LITERATURE_REVIEW_TOPIC_REQUIRED",
+		},
+		"gemini-deep-research": {
+			"GEMINI_DEEP_RESEARCH_TOPIC_REQUIRED",
+		},
+		"proactive-research": {
+			"PROACTIVE_RESEARCH_TOPIC_REQUIRED",
+		},
+		"swissweather": {
+			"SWISSWEATHER_LOCATION_REQUIRED",
 		},
 	}
 
