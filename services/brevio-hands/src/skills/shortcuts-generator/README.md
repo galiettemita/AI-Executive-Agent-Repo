@@ -1,6 +1,14 @@
 # shortcuts-generator
 
-Generated skill adapter scaffold.
+Hands-plane local Apple Shortcuts generation/install adapter.
 
-- Plane: `hands`
-- Source: `migrations/006_seed_skills.up.sql`
+## Supported actions
+
+- `generate_shortcut`
+- `list_shortcuts`
+- `install_shortcut`
+
+## Notes
+
+- Generates deterministic install links and shortcut identifiers.
+- Enforces required step payload for generated shortcut flows.

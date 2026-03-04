@@ -113,3 +113,9 @@ spotify-history
 youtube-summarizer
 video-transcript-downloader
 video-frames
+apple-remind-me
+calctl
+ticktick
+things-mac
+omnifocus
+shortcuts-generator

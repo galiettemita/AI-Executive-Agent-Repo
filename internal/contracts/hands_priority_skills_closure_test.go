@@ -591,6 +591,36 @@ func TestHandsPrioritySkillsNoLongerScaffolded(t *testing.T) {
 			"frame_urls",
 			"extracted_count",
 		},
+		"apple-remind-me": {
+			"action",
+			"reminders",
+			"due_at",
+		},
+		"calctl": {
+			"action",
+			"events",
+			"event_id",
+		},
+		"ticktick": {
+			"action",
+			"tasks",
+			"total_tasks",
+		},
+		"things-mac": {
+			"action",
+			"todos",
+			"inbox_count",
+		},
+		"omnifocus": {
+			"action",
+			"tasks",
+			"flagged_count",
+		},
+		"shortcuts-generator": {
+			"action",
+			"shortcuts",
+			"step_count",
+		},
 	}
 
 	indexTokens := map[string][]string{
@@ -814,6 +844,25 @@ func TestHandsPrioritySkillsNoLongerScaffolded(t *testing.T) {
 			"VIDEO_TRANSCRIPT_VIDEO_REQUIRED",
 		},
 		"video-frames": {"VIDEO_FRAMES_TIMESTAMP_REQUIRED"},
+		"apple-remind-me": {
+			"APPLE_REMIND_ME_TITLE_REQUIRED",
+		},
+		"calctl": {
+			"CALCTL_EVENT_FIELDS_REQUIRED",
+		},
+		"ticktick": {
+			"requiredScopes",
+			"tasks:write",
+		},
+		"things-mac": {
+			"THINGS_MAC_TITLE_REQUIRED",
+		},
+		"omnifocus": {
+			"OMNIFOCUS_TITLE_REQUIRED",
+		},
+		"shortcuts-generator": {
+			"SHORTCUTS_GENERATOR_STEPS_REQUIRED",
+		},
 	}
 
 	scriptBody, err := os.ReadFile(scriptPath)

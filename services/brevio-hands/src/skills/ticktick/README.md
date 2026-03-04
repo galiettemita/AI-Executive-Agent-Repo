@@ -1,6 +1,15 @@
 # ticktick
 
-Generated skill adapter scaffold.
+Hands-plane TickTick task adapter with typed task CRUD-like actions.
 
-- Plane: `hands`
-- Source: `migrations/006_seed_skills.up.sql`
+## Supported actions
+
+- `add_task`
+- `list_tasks`
+- `complete_task`
+- `delete_task`
+
+## Notes
+
+- Uses OAuth scopes `tasks:write` and `tasks:read`.
+- Enforces required task content or task ID for mutations.

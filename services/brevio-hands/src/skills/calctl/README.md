@@ -1,6 +1,15 @@
 # calctl
 
-Generated skill adapter scaffold.
+Hands-plane local Apple Calendar adapter for event create/list/update/cancel actions.
 
-- Plane: `hands`
-- Source: `migrations/006_seed_skills.up.sql`
+## Supported actions
+
+- `create_event`
+- `list_events`
+- `update_event`
+- `cancel_event`
+
+## Notes
+
+- Uses deterministic fixture events in local and CI environments.
+- Enforces required fields for create/update/cancel mutations.

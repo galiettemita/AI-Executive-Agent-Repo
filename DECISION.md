@@ -1275,3 +1275,21 @@
 3. Run full CI and continue the next de-scaffolding wave for remaining categories.  
 **Risk:** Deterministic media fixtures do not model real provider rate limits, transcript quality variance, or codec-specific extraction behavior until integration tests are expanded.  
 **Rollback:** Remove Wave 20 IDs from override config and regenerate scaffolds for these six skills if regressions occur.
+
+## DECISION-071: De-Scaffold Apple Productivity Local-App Skills with Typed Task and Shortcut Contracts (Wave 21)
+
+**Date:** 2026-03-04  
+**Blueprint Section:** §2.4, §5.1 (local_mac), §A.7.3, §A.7.9, §A.7.13  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/services/brevio-hands/src/skills/{apple-remind-me,calctl,ticktick,things-mac,omnifocus,shortcuts-generator}`  
+**Conflict:** Six Apple/productivity local-app skills were still scaffold-only, leaving reminder/calendar/task/shortcut flows without typed input validation, explicit mutation guards, or deterministic output contracts for CI-stable orchestration.  
+**Options Considered:**  
+1. Keep these local-app skills scaffolded and prioritize only cloud/API-backed remaining adapters.  
+2. Fold these adapters into a larger mixed final wave with many unrelated categories.  
+3. Execute a focused local productivity wave with typed contracts, deterministic client fixtures, and action-specific guard constants.  
+**Decision:** Option 3. Replaced scaffolds for `apple-remind-me`, `calctl`, `ticktick`, `things-mac`, `omnifocus`, and `shortcuts-generator` with typed `types/schema/client/index` implementations, deterministic outputs, validation guards, unit tests, and production READMEs. Added all six IDs to centralized manual override config and closure token assertions.  
+**Migration Plan:**  
+1. Register Wave 21 IDs in `config/skill-manual-overrides.txt`.  
+2. Extend closure token maps for schema/index guard constants and scope tokens in `internal/contracts/hands_priority_skills_closure_test.go`.  
+3. Run full CI, then continue de-scaffolding remaining transport/media/smart-home long-tail skills.  
+**Risk:** Deterministic local fixtures may not capture all host-level permission/runtime differences (for example per-device AppleScript accessibility prompts or local database state drift) until on-device integration tests are expanded.  
+**Rollback:** Remove Wave 21 IDs from override config and regenerate scaffolds for these six skills if regressions are identified.

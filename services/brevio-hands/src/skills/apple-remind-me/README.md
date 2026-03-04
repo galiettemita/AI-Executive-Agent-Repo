@@ -1,6 +1,15 @@
 # apple-remind-me
 
-Generated skill adapter scaffold.
+Hands-plane local Apple Reminders adapter for create/list/complete/delete flows.
 
-- Plane: `hands`
-- Source: `migrations/006_seed_skills.up.sql`
+## Supported actions
+
+- `create`
+- `list`
+- `complete`
+- `delete`
+
+## Notes
+
+- Uses deterministic local fixtures for CI-safe behavior.
+- Enforces required fields for mutation actions.

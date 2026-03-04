@@ -1,6 +1,15 @@
 # things-mac
 
-Generated skill adapter scaffold.
+Hands-plane local Things 3 adapter for task lifecycle operations.
 
-- Plane: `hands`
-- Source: `migrations/006_seed_skills.up.sql`
+## Supported actions
+
+- `create_todo`
+- `list_today`
+- `complete_todo`
+- `move_to_project`
+
+## Notes
+
+- Models deterministic Things-style task payloads for CI stability.
+- Enforces required task/project IDs for mutation actions.
