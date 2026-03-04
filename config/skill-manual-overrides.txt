@@ -34,3 +34,10 @@ bear-notes
 obsidian
 reflect
 second-brain
+flight-tracker
+aviationstack-flight-tracker
+parcel-package-tracking
+track17
+goplaces
+local-places
+spots

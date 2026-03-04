@@ -196,6 +196,41 @@ func TestHandsPrioritySkillsNoLongerScaffolded(t *testing.T) {
 			"search",
 			"notes",
 		},
+		"flight-tracker": {
+			"callsign",
+			"icao24",
+			"origin_iata",
+		},
+		"aviationstack-flight-tracker": {
+			"flight_iata",
+			"status",
+			"queried_at_utc",
+		},
+		"parcel-package-tracking": {
+			"tracking_number",
+			"carrier",
+			"history",
+		},
+		"track17": {
+			"tracking_number",
+			"checkpoints",
+			"17track",
+		},
+		"goplaces": {
+			"query",
+			"location",
+			"results",
+		},
+		"local-places": {
+			"query",
+			"radius_km",
+			"results",
+		},
+		"spots": {
+			"query",
+			"grid_density",
+			"results",
+		},
 	}
 
 	indexTokens := map[string][]string{
@@ -246,6 +281,20 @@ func TestHandsPrioritySkillsNoLongerScaffolded(t *testing.T) {
 		"second-brain": {
 			"SECOND_BRAIN_CREATE_FIELDS_REQUIRED",
 		},
+		"flight-tracker": {"FLIGHT_TRACKER_IDENTIFIER_REQUIRED"},
+		"aviationstack-flight-tracker": {
+			"AVIATIONSTACK_FLIGHT_IDENTIFIER_REQUIRED",
+		},
+		"parcel-package-tracking": {
+			"parcel-package-tracking execution failed",
+		},
+		"track17": {"track17 execution failed"},
+		"goplaces": {
+			"requiredScopes",
+			"google.places.read",
+		},
+		"local-places": {"local-places execution failed"},
+		"spots":        {"spots execution failed"},
 	}
 
 	scriptBody, err := os.ReadFile(scriptPath)

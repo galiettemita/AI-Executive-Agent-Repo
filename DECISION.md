@@ -1001,3 +1001,22 @@
 4. Run scaffold parity plus full CI gates before merge.  
 **Risk:** Current implementations use deterministic local note stores and can diverge from provider-specific search semantics (for example tag matching, markdown parsing, or vault path behavior) until sandbox integration tests are added.  
 **Rollback:** Remove Wave 6 IDs from override config and regenerate scaffolds for these six skills if regressions occur or provider parity issues are discovered.
+
+## DECISION-056: Extend Priority De-Scaffolding to Transportation and Places Routing Skills (Wave 7)
+
+**Date:** 2026-03-04  
+**Blueprint Section:** §2.4, §5.3, §A.7.2, §A.8  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/services/brevio-hands/src/skills/{flight-tracker,aviationstack-flight-tracker,parcel-package-tracking,track17,goplaces,local-places,spots}`  
+**Conflict:** Core transportation and location-routing skills remained scaffold-only, weakening disambiguation groups for flight tracking, package tracking, and places queries (`navigate`, `find near me`, `find ALL`).  
+**Options Considered:**  
+1. Keep these seven skills scaffolded and prioritize only communication/finance adapters next.  
+2. De-scaffold all remaining transportation/media skills in one large batch.  
+3. Execute a focused wave for transportation + places routing with deterministic outputs, strict input validation, and closure-gated override registration.  
+**Decision:** Option 3. Implemented Wave 7 typed adapters for `flight-tracker`, `aviationstack-flight-tracker`, `parcel-package-tracking`, `track17`, `goplaces`, `local-places`, and `spots` with explicit schema guards, deterministic mock provider outputs, and updated unit tests/README docs. Added all seven IDs to centralized manual override config and closure token assertions to prevent scaffold overwrite.  
+**Migration Plan:**  
+1. Register Wave 7 IDs in `config/skill-manual-overrides.txt`.  
+2. Replace scaffold modules (`types/schema/client/index/README/unit`) for all seven skills.  
+3. Expand `hands_priority_skills_closure_test` schema/index token maps for Wave 7 coverage.  
+4. Run scaffold parity + full `make ci` before merge.  
+**Risk:** Deterministic stub outputs may not capture provider-specific edge behavior (carrier-specific package transitions, place ranking nuances, flight identifier normalization) until sandbox-backed integration fixtures are expanded.  
+**Rollback:** Remove Wave 7 IDs from override config and regenerate scaffold defaults for these seven skills if regressions are detected.

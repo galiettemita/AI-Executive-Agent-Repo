@@ -820,6 +820,13 @@ You must prove it.
 - [x] Deploy + harden Tesla MCP (existing server fork) with physical-security approvals + strict rate limits + optional geo-fencing (`tesla.command_vehicle` A0 gate + runbook checks)
 - [x] Validate Wave 6 extras: Tesla physical operation tests in staging, Instacart checkout approval details, DocuSign recipient/document confirmation (deterministic Wave 5–6 checklist report + scenarios)
 
+## M15: Hands Adapter Wave 7 (Transportation + Places Routing Hardening)
+- [x] De-scaffold `flight-tracker` + `aviationstack-flight-tracker` with typed schemas and identifier-level validation guards
+- [x] De-scaffold `parcel-package-tracking` + `track17` with deterministic timeline outputs and carrier-aware schemas
+- [x] De-scaffold `goplaces` + `local-places` + `spots` with typed location query contracts aligned to disambiguation routing
+- [x] Extend centralized manual override registry and closure test token assertions for all Wave 7 adapters
+- [x] Validate Wave 7 against full `make ci` gate before merge
+
 ## M13–15 (Auto-Provisioning Layer 3): Remote Server Discovery Catalog (Auto-Provisioning Sections 5, 12.3, 16)
 - [x] ToolRegistry: register native tool `search_remote_catalog` (use only if `provision_server` fails due to missing catalog entry) (Auto-Provisioning Section 9)
 - [x] Hands handler: implement `search_remote_catalog` -> query remote catalog API -> return matched entries (Auto-Provisioning Section 5)

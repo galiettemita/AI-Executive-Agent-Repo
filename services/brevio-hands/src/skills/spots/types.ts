@@ -1,8 +1,20 @@
-export interface SkillInputPayload {
-  payload?: Record<string, unknown>;
+export interface SpotsInput {
+  query: string;
+  area?: string;
+  grid_density?: 'low' | 'medium' | 'high';
+  max_results?: number;
 }
 
-export interface SkillOutputPayload {
-  ok: boolean;
-  skill_id: string;
+export interface SpotsResult {
+  name: string;
+  address: string;
+  category: string;
+  lat: number;
+  lng: number;
+}
+
+export interface SpotsOutput {
+  provider: 'spots';
+  grid_density: 'low' | 'medium' | 'high';
+  results: SpotsResult[];
 }
