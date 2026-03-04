@@ -291,6 +291,36 @@ func TestHandsPrioritySkillsNoLongerScaffolded(t *testing.T) {
 			"youtube_url",
 			"queue",
 		},
+		"copilot-money": {
+			"action",
+			"account_id",
+			"net_worth_cents",
+		},
+		"monarch-money": {
+			"action",
+			"month",
+			"budgets",
+		},
+		"yahoo-finance": {
+			"action",
+			"symbols",
+			"disclaimer",
+		},
+		"financial-market-analysis": {
+			"action",
+			"symbols",
+			"correlation",
+		},
+		"pdf-tools": {
+			"action",
+			"files",
+			"page_range",
+		},
+		"resume-builder": {
+			"action",
+			"role",
+			"recommendations",
+		},
 	}
 
 	indexTokens := map[string][]string{
@@ -373,6 +403,16 @@ func TestHandsPrioritySkillsNoLongerScaffolded(t *testing.T) {
 		"trakt":        {"trakt execution failed"},
 		"lastfm":       {"lastfm execution failed"},
 		"pocket-casts": {"pocket-casts execution failed"},
+		"copilot-money": {
+			"COPILOT_MONEY_ACCOUNT_REQUIRED",
+		},
+		"monarch-money": {"MONARCH_MONEY_ACCOUNT_REQUIRED"},
+		"yahoo-finance": {"YAHOO_FINANCE_SYMBOLS_REQUIRED"},
+		"financial-market-analysis": {
+			"FINANCIAL_MARKET_ANALYSIS_SYMBOLS_REQUIRED",
+		},
+		"pdf-tools":      {"PDF_TOOLS_MERGE_FILES_REQUIRED"},
+		"resume-builder": {"RESUME_BUILDER_ROLE_REQUIRED"},
 	}
 
 	scriptBody, err := os.ReadFile(scriptPath)

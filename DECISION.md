@@ -1076,3 +1076,22 @@
 3. Re-run full `make ci` to confirm pipeline stability.  
 **Risk:** Cache directories can grow over time and may require periodic cleanup in constrained local environments.  
 **Rollback:** Revert `scripts/dev/go_exec.sh` cache mount additions and return to stateless container runs if cache side effects appear.
+
+## DECISION-060: Extend Priority De-Scaffolding to Finance and Document Skills (Wave 10)
+
+**Date:** 2026-03-04  
+**Blueprint Section:** §2.4, §A.7.8, §A.7.11, §A.8  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/services/brevio-hands/src/skills/{copilot-money,monarch-money,yahoo-finance,financial-market-analysis,pdf-tools,resume-builder}`  
+**Conflict:** High-impact finance and document skills remained scaffold-only, which left no typed validation for market/portfolio queries or document transformation workflows.  
+**Options Considered:**  
+1. Keep these six skills scaffolded and prioritize remaining long-tail lifestyle adapters first.  
+2. De-scaffold all remaining finance/document skills in one large batch.  
+3. Execute a focused wave for six finance/document adapters with explicit action contracts and deterministic testable outputs.  
+**Decision:** Option 3. Implemented Wave 10 typed adapters for `copilot-money`, `monarch-money`, `yahoo-finance`, `financial-market-analysis`, `pdf-tools`, and `resume-builder` with action-specific Zod validation, deterministic local client outputs, normalized error handling, and updated unit tests/docs. Added all six IDs to centralized override config and closure token assertions.  
+**Migration Plan:**  
+1. Register Wave 10 IDs in `config/skill-manual-overrides.txt`.  
+2. Replace scaffold modules (`types/schema/client/index/README/unit`) across all six skills.  
+3. Extend `hands_priority_skills_closure_test` schema/index token coverage and override membership checks for Wave 10 skills.  
+4. Run full CI (`make ci`) prior to commit/push.  
+**Risk:** Deterministic financial/document fixtures can diverge from provider-specific edge behavior (for example broker symbol formats or OCR/page-range semantics) until sandbox integration tests are expanded.  
+**Rollback:** Remove Wave 10 IDs from override config and regenerate scaffolds for these six skills if regressions are discovered.

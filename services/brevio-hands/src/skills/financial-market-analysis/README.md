@@ -1,6 +1,14 @@
 # financial-market-analysis
 
-Generated skill adapter scaffold.
+Market analysis adapter for sentiment, volatility, and correlation summaries.
 
-- Plane: `hands`
-- Source: `migrations/006_seed_skills.up.sql`
+## Auth
+- Uses public market data/derived metrics in this deterministic implementation.
+
+## Input
+- `action`: `sentiment`, `volatility`, `correlation`
+- `symbols` required (1-10)
+
+## Output
+- `provider`: `financial-market-analysis`
+- action echo with either `metrics` or a `correlation` matrix

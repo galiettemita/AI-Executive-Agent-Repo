@@ -1,6 +1,15 @@
 # yahoo-finance
 
-Generated skill adapter scaffold.
+Yahoo Finance adapter for quotes, fundamentals, and market news.
 
-- Plane: `hands`
-- Source: `migrations/006_seed_skills.up.sql`
+## Auth
+- Public market data access (no OAuth required in this adapter).
+
+## Input
+- `action`: `quotes`, `fundamentals`, `news`
+- `symbols` required for `quotes` and `fundamentals`
+
+## Output
+- `provider`: `yahoo-finance`
+- action echo with optional `quotes`, `fundamentals`, `news`
+- `disclaimer`: always includes not-financial-advice notice

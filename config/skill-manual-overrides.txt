@@ -53,3 +53,9 @@ plex
 trakt
 lastfm
 pocket-casts
+copilot-money
+monarch-money
+yahoo-finance
+financial-market-analysis
+pdf-tools
+resume-builder

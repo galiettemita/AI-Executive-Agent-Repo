@@ -30,8 +30,8 @@ if [[ $# -eq 0 ]]; then
   exit 1
 fi
 
-go_mod_cache="${ROOT_DIR}/.cache/go-mod"
-go_build_cache="${ROOT_DIR}/.cache/go-build"
+go_mod_cache="/tmp/brevio-go-mod-cache"
+go_build_cache="/tmp/brevio-go-build-cache"
 mkdir -p "${go_mod_cache}" "${go_build_cache}"
 
 quoted_args=()
