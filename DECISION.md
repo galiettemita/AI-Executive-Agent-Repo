@@ -1545,3 +1545,21 @@
 3. Keep closure gate enabled to prevent regressions to compile-only integration tests.  
 **Risk:** Fixtures validate deterministic adapter behavior and output shape, but not live provider/network variance until sandbox-backed integration runs are wired.  
 **Rollback:** Restore previous integration tests and remove corresponding fixture/closure-test additions if integration policy changes.
+
+## DECISION-086: De-Scaffold Search and Research Integration Tests with Fixture Enforcement
+
+**Date:** 2026-03-04  
+**Blueprint Section:** §2.4, §11.1, §A.7.12  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/services/brevio-hands/src/skills/{brave-search,exa,firecrawl-search,kagi-search,last30days,literature-review,news-aggregator,perplexity,serpapi,tavily,gemini-deep-research}/__tests__/integration.test.ts` and `/Users/galiettemita/Downloads/Executive AI Agent/backend/internal/contracts`  
+**Conflict:** Search/research adapters had deterministic clients and typed schemas, but integration tests were still scaffold placeholders (`scaffold compiles`) and did not verify contract-aligned execution outputs via fixtures.  
+**Options Considered:**  
+1. Keep scaffold placeholders and rely on unit tests while focusing on other categories.  
+2. Convert only high-traffic search adapters and defer the rest.  
+3. Convert all 11 search/research integration tests now and add a closure contract to prevent scaffold regressions.  
+**Decision:** Option 3. Replaced all 11 integration tests with deterministic fixture-backed assertions, added one JSON fixture per skill under `__tests__/fixtures`, and introduced `internal/contracts/search_research_skill_integration_closure_test.go` to fail when any covered integration test contains `scaffold compiles` or has zero fixture JSON files.  
+**Migration Plan:**  
+1. Keep deterministic fixture assertions as baseline integration contracts for search/research adapters.  
+2. Expand fixture coverage for provider error/rate-limit and domain-filter edge cases once sandbox credentials are available.  
+3. Retain closure gate to prevent regressions to compile-only placeholder tests.  
+**Risk:** Deterministic fixtures validate adapter behavior and output shape but not live provider/network variance until sandbox-backed runs are added.  
+**Rollback:** Restore prior integration test files and remove corresponding fixture/closure additions if enforcement strategy changes.
