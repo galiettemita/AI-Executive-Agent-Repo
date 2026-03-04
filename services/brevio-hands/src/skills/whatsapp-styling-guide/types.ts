@@ -1,8 +1,12 @@
-export interface SkillInputPayload {
-  payload?: Record<string, unknown>;
+export interface WhatsAppStylingGuideInput {
+  text: string;
+  style?: 'default' | 'bullet' | 'numbered' | 'emphasis';
 }
 
-export interface SkillOutputPayload {
-  ok: boolean;
-  skill_id: string;
+export interface WhatsAppStylingGuideOutput {
+  provider: 'whatsapp-styling-guide';
+  formatted_text: string;
+  applied_rules: string[];
+  char_count: number;
+  latency_budget_ms: 10;
 }

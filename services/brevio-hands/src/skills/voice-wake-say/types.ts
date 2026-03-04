@@ -1,8 +1,13 @@
-export interface SkillInputPayload {
-  payload?: Record<string, unknown>;
+export interface VoiceWakeSayInput {
+  text: string;
+  voice?: string;
+  rate_wpm?: number;
 }
 
-export interface SkillOutputPayload {
-  ok: boolean;
-  skill_id: string;
+export interface VoiceWakeSayOutput {
+  provider: 'voice-wake-say';
+  voice: string;
+  command: string;
+  estimated_duration_ms: number;
+  latency_budget_ms: 500;
 }

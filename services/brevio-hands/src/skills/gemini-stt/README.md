@@ -1,6 +1,12 @@
 # gemini-stt
 
-Generated skill adapter scaffold.
+Gateway-plane premium STT skill with optional speaker labels.
 
-- Plane: `gateway`
-- Source: `migrations/006_seed_skills.up.sql`
+## Supported action
+
+- Transcribes HTTPS audio payloads before Brain-plane routing.
+
+## Notes
+
+- Enforces gateway latency budget contract (`latency_budget_ms = 5000`).
+- Returns structured speaker segments for downstream meeting decomposition.

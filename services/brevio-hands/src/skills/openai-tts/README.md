@@ -1,6 +1,12 @@
 # openai-tts
 
-Generated skill adapter scaffold.
+Gateway-plane text-to-speech skill using the OpenAI voice profile contract.
 
-- Plane: `gateway`
-- Source: `migrations/006_seed_skills.up.sql`
+## Supported action
+
+- Converts text responses into audio metadata for channel delivery.
+
+## Notes
+
+- Enforces Gateway latency budget contract (`latency_budget_ms = 2000`).
+- Output is deterministic fixture metadata until live provider wiring is enabled.

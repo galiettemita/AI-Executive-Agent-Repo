@@ -1149,3 +1149,21 @@
 3. Run full CI, then continue with subsequent waves for remaining scaffolded adapters.  
 **Risk:** Deterministic summarization/planning heuristics may diverge from future LLM-backed behavior until full Brain integration routing tests are expanded.  
 **Rollback:** Remove Wave 13 IDs from override config and regenerate scaffolds for these six skills if regressions appear.
+
+## DECISION-064: De-Scaffold Gateway Voice and Channel Formatting Skills with Latency-Budget Contracts (Wave 14)
+
+**Date:** 2026-03-04  
+**Blueprint Section:** §1.2.1, §A.6.1-§A.6.3, §2.4  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/services/brevio-hands/src/skills/{asr,gemini-stt,openai-tts,sag,voice-wake-say,whatsapp-styling-guide}`  
+**Conflict:** Core Gateway-plane voice and formatting skills were still scaffold-only, which left no typed input validation, no deterministic output contracts, and no encoded latency-budget fields required by the gateway behavioral correction section.  
+**Options Considered:**  
+1. Keep gateway skills scaffolded and defer hardening until full gateway service rewrite.  
+2. De-scaffold all remaining gateway and communication skills together in one large wave.  
+3. Execute a focused gateway wave for six voice/formatting skills with typed schemas, deterministic clients, and explicit latency-budget contract fields.  
+**Decision:** Option 3. Replaced scaffolds for `asr`, `gemini-stt`, `openai-tts`, `sag`, `voice-wake-say`, and `whatsapp-styling-guide` with full typed `types/schema/client/index` modules, validation guards, deterministic output payloads, unit tests, and updated READMEs. Added all six IDs to centralized override config and closure token assertions to prevent scaffold regression.  
+**Migration Plan:**  
+1. Register Wave 14 IDs in `config/skill-manual-overrides.txt`.  
+2. Add closure-test schema/index token assertions for gateway validation constants.  
+3. Run full CI and continue with remaining scaffolded adapters in subsequent waves.  
+**Risk:** Deterministic fixture outputs do not represent real provider transcription/voice quality variance until integration tests with sandbox credentials are added.  
+**Rollback:** Remove Wave 14 IDs from override config and regenerate scaffolds for these six skills if regressions appear.

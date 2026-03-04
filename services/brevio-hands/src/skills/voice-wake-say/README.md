@@ -1,6 +1,12 @@
 # voice-wake-say
 
-Generated skill adapter scaffold.
+Gateway-plane local fallback TTS skill using macOS `say` command semantics.
 
-- Plane: `gateway`
-- Source: `migrations/006_seed_skills.up.sql`
+## Supported action
+
+- Generates local-synthesis command metadata for low-latency voice responses.
+
+## Notes
+
+- Enforces Gateway latency budget contract (`latency_budget_ms = 500`).
+- No remote API requirement.

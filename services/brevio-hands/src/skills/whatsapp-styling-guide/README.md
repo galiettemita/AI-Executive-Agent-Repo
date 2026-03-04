@@ -1,6 +1,12 @@
 # whatsapp-styling-guide
 
-Generated skill adapter scaffold.
+Gateway-plane channel formatter for WhatsApp-specific response presentation.
 
-- Plane: `gateway`
-- Source: `migrations/006_seed_skills.up.sql`
+## Supported action
+
+- Applies deterministic formatting styles to outgoing text (`default`, `bullet`, `numbered`, `emphasis`).
+
+## Notes
+
+- Enforces Gateway latency budget contract (`latency_budget_ms = 10`).
+- No external API dependency.

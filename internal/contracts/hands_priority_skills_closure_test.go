@@ -401,6 +401,36 @@ func TestHandsPrioritySkillsNoLongerScaffolded(t *testing.T) {
 			"session_id",
 			"check_in_schedule",
 		},
+		"asr": {
+			"audio_url",
+			"transcript",
+			"latency_budget_ms",
+		},
+		"gemini-stt": {
+			"audio_url",
+			"speakers",
+			"latency_budget_ms",
+		},
+		"openai-tts": {
+			"text",
+			"audio_url",
+			"latency_budget_ms",
+		},
+		"sag": {
+			"text",
+			"voice_id",
+			"latency_budget_ms",
+		},
+		"voice-wake-say": {
+			"text",
+			"command",
+			"latency_budget_ms",
+		},
+		"whatsapp-styling-guide": {
+			"text",
+			"formatted_text",
+			"applied_rules",
+		},
 	}
 
 	indexTokens := map[string][]string{
@@ -545,6 +575,18 @@ func TestHandsPrioritySkillsNoLongerScaffolded(t *testing.T) {
 		},
 		"focus-mode": {
 			"FOCUS_MODE_SESSION_REQUIRED",
+		},
+		"asr": {"ASR_AUDIO_URL_REQUIRED"},
+		"gemini-stt": {
+			"GEMINI_STT_AUDIO_URL_REQUIRED",
+		},
+		"openai-tts": {"OPENAI_TTS_TEXT_REQUIRED"},
+		"sag":        {"SAG_TEXT_REQUIRED"},
+		"voice-wake-say": {
+			"VOICE_WAKE_SAY_TEXT_REQUIRED",
+		},
+		"whatsapp-styling-guide": {
+			"WHATSAPP_STYLING_TEXT_REQUIRED",
 		},
 	}
 

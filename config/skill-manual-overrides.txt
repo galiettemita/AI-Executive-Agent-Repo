@@ -75,3 +75,9 @@ morning-manifesto
 meeting-autopilot
 thinking-partner
 focus-mode
+asr
+gemini-stt
+openai-tts
+sag
+voice-wake-say
+whatsapp-styling-guide
