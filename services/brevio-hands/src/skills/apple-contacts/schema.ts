@@ -1,10 +1,20 @@
 import { z } from 'zod';
 
-export const InputSchema = z.object({
-  payload: z.record(z.unknown()).optional()
+const ContactSchema = z.object({
+  name: z.string(),
+  phone: z.string().optional(),
+  email: z.string().email().optional()
 });
 
-export const OutputSchema = z.object({
-  ok: z.boolean(),
-  skill_id: z.string()
-});
+export const InputSchema = z
+  .object({
+    query: z.string().min(2).max(200)
+  })
+  .strict();
+
+export const OutputSchema = z
+  .object({
+    provider: z.literal('apple-contacts-local'),
+    contacts: z.array(ContactSchema)
+  })
+  .strict();

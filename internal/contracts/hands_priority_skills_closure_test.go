@@ -45,6 +45,36 @@ func TestHandsPrioritySkillsNoLongerScaffolded(t *testing.T) {
 			"entity_id",
 			"two_factor_code",
 		},
+		"todoist": {
+			"action",
+			"project_id",
+			"task",
+		},
+		"youtube-api": {
+			"mode",
+			"video_id",
+			"transcript",
+		},
+		"ynab": {
+			"action",
+			"budget_id",
+			"total_budget_cents",
+		},
+		"notion": {
+			"action",
+			"page_id",
+			"create_page",
+		},
+		"fal-ai": {
+			"prompt",
+			"image_url",
+			"model_used",
+		},
+		"apple-contacts": {
+			"query",
+			"contacts",
+			"apple-contacts-local",
+		},
 	}
 
 	indexTokens := map[string][]string{
@@ -54,6 +84,12 @@ func TestHandsPrioritySkillsNoLongerScaffolded(t *testing.T) {
 		"tavily":          {"VALIDATION_FAILED"},
 		"smtp-send":       {"confirmed", "confirmation_required"},
 		"home-assistant":  {"SAFETY_2FA_REQUIRED", "Action requires 2FA confirmation"},
+		"todoist":         {"requiredScopes", "TODOIST_CONTENT_REQUIRED"},
+		"youtube-api":     {"YOUTUBE_VIDEO_ID_REQUIRED"},
+		"ynab":            {"requiredScopes", "YNAB_ACCOUNT_NOT_FOUND"},
+		"notion":          {"requiredScopes", "NOTION_TITLE_REQUIRED"},
+		"fal-ai":          {"FAL_CONTENT_POLICY_BLOCKED"},
+		"apple-contacts":  {"apple-contacts-local"},
 	}
 
 	scriptBody, err := os.ReadFile(scriptPath)

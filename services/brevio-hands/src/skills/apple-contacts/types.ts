@@ -1,8 +1,14 @@
-export interface SkillInputPayload {
-  payload?: Record<string, unknown>;
+export interface AppleContactsInput {
+  query: string;
 }
 
-export interface SkillOutputPayload {
-  ok: boolean;
-  skill_id: string;
+export interface AppleContact {
+  name: string;
+  phone?: string;
+  email?: string;
+}
+
+export interface AppleContactsOutput {
+  provider: 'apple-contacts-local';
+  contacts: AppleContact[];
 }

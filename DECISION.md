@@ -906,3 +906,22 @@
 4. Continue until all high-impact skills are moved off scaffold defaults.  
 **Risk:** Manual preserve list can drift from actual manualized skill set, causing accidental overwrites or stale scaffolds if not kept in sync with tests.  
 **Rollback:** Remove preserve-list entries, re-run generator to restore baseline scaffold state for affected skills, and revert manual adapter files if rapid stabilization is required.
+
+## DECISION-051: Execute Priority Hands Adapter Wave 2 Across Task/Search/Finance/Notes/Image/Apple Local Domains
+
+**Date:** 2026-03-04  
+**Blueprint Section:** §2.4, §A.8, §17.2  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/services/brevio-hands/src/skills/{todoist,youtube-api,ynab,notion,fal-ai,apple-contacts}`  
+**Conflict:** After Wave 1, key user-facing domains were still scaffold-only (`todoist`, `youtube-api`, `ynab`, `notion`, `fal-ai`, `apple-contacts`), leaving critical actions without typed I/O validation, deterministic behavior, or policy-safe guardrails.  
+**Options Considered:**  
+1. Keep these six skills scaffolded and focus only on service-level runtime work.  
+2. De-scaffold all remaining ~150 skills immediately in one large change set.  
+3. Continue controlled waves: select a cross-domain priority set, implement typed adapters + guardrails + tests, and update preserve/closure gates.  
+**Decision:** Option 3. Implemented Wave 2 typed adapters for `todoist`, `youtube-api`, `ynab`, `notion`, `fal-ai`, and `apple-contacts` with explicit Zod schemas, deterministic mock clients, action validation, and safety checks (including content policy filtering for `fal-ai` and required-field enforcement across mutation actions). Expanded manual-preserve list and closure assertions to protect these adapters from scaffold overwrite.  
+**Migration Plan:**  
+1. Add Wave 2 skills to scaffold manual-preserve list before de-scaffolding files.  
+2. Replace each skill scaffold (`types/schema/client/index/README/unit test`) with typed runtime implementation aligned to Addendum-A API/auth constraints.  
+3. Extend `internal/contracts/hands_priority_skills_closure_test.go` token coverage to enforce non-scaffolded semantics for all preserved skills.  
+4. Re-run contract and full CI gates; iterate next wave with remaining high-impact skills.  
+**Risk:** Manualized adapters still use deterministic local simulations and may drift from external provider specifics unless paired with staged integration tests against sandbox credentials.  
+**Rollback:** Remove new preserve-list entries and regenerate scaffolds for the six skills; revert Wave 2 adapter files to generated baseline if instability appears.

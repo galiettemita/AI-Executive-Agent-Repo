@@ -76,6 +76,12 @@ google-calendar
 tavily
 smtp-send
 home-assistant
+todoist
+youtube-api
+ynab
+notion
+fal-ai
+apple-contacts
 EOF
 
 cat "${SKILLS_FILE}" "${CUSTOM_FILE}" | sort -u >"${ALL_SKILLS_FILE}"
