@@ -1,8 +1,31 @@
-import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { describe, it } from 'node:test';
+import { fileURLToPath } from 'node:url';
+
+import adapter from '../index.js';
+
+interface Fixture {
+  provider: string;
+  action: string;
+  results_count: number;
+  top_name: string;
+}
+
+const testDir = dirname(fileURLToPath(import.meta.url));
+const readFixture = (): Fixture =>
+  JSON.parse(readFileSync(join(testDir, 'fixtures', 'top-tracks-success.json'), 'utf8')) as Fixture;
 
 describe('spotify-web-api integration', () => {
-  it('scaffold compiles', () => {
-    assert.equal(1, 1);
+  it('returns deterministic top tracks payload', async () => {
+    const result = await adapter.execute({ action: 'top_tracks' }, {} as never);
+    const expected = readFixture();
+
+    assert.equal(result.status, 'SUCCESS');
+    assert.equal(result.data?.provider, expected.provider);
+    assert.equal(result.data?.action, expected.action);
+    assert.equal(result.data?.results?.length, expected.results_count);
+    assert.equal(result.data?.results?.[0]?.name, expected.top_name);
   });
 });

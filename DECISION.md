@@ -1581,3 +1581,21 @@
 3. Preserve closure-test enforcement to prevent regressions to compile-only placeholders.  
 **Risk:** Fixtures validate deterministic adapter behavior and output shape, but not live provider/network failures until sandbox-backed integration suites are enabled.  
 **Rollback:** Restore previous integration tests and remove corresponding fixture/closure additions if the integration enforcement policy changes.
+
+## DECISION-088: De-Scaffold Media and Streaming Integration Tests with Fixture Enforcement
+
+**Date:** 2026-03-04  
+**Blueprint Section:** §2.4, §11.1, §A.7.7  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/services/brevio-hands/src/skills/{spotify,spotify-player,spotify-web-api,spotify-history,apple-music,youtube-api,youtube-summarizer,video-frames,video-transcript-downloader,tmdb,trakt,plex,pocket-casts,lastfm,ytmusic}/__tests__/integration.test.ts` and `/Users/galiettemita/Downloads/Executive AI Agent/backend/internal/contracts`  
+**Conflict:** Media/streaming adapters were implemented with deterministic clients and typed contracts, but integration tests remained scaffold placeholders (`scaffold compiles`) and did not validate output shapes against fixtures.  
+**Options Considered:**  
+1. Keep scaffold placeholders and rely on unit-only coverage while finishing remaining categories.  
+2. Convert only Spotify/YouTube adapters and defer media-library/video extraction adapters.  
+3. Convert all 15 media/streaming integration tests now and add a closure contract gate for this category.  
+**Decision:** Option 3. Replaced all 15 integration tests with deterministic fixture-backed assertions, added one JSON fixture per skill under `__tests__/fixtures`, and introduced `internal/contracts/media_streaming_skill_integration_closure_test.go` to fail when any covered integration test contains `scaffold compiles` or has zero fixture JSON files.  
+**Migration Plan:**  
+1. Keep deterministic fixtures as baseline integration contracts for media/streaming adapters.  
+2. Expand fixtures with provider-specific playback/device/offline/error-path scenarios once sandbox credentials are available.  
+3. Preserve closure-test enforcement to prevent regressions to compile-only placeholders.  
+**Risk:** Fixture-backed assertions verify deterministic adapter behavior and output contract shape, not live provider/network variance, until sandbox-backed integration runs are enabled.  
+**Rollback:** Restore previous integration tests and remove corresponding fixture/closure additions if integration policy changes.
