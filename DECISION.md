@@ -1419,3 +1419,21 @@
 3. Run full CI and validate no scaffolded adapters remain outside `_template`/meta files.  
 **Risk:** Deterministic stubs still abstract provider-specific behavior (live market/exchange policies, bank auth friction, and external cancellation flows) until sandbox API integration suites expand.  
 **Rollback:** Remove Wave 28 IDs from override config and regenerate scaffolds for these six skills if regressions surface.
+
+## DECISION-079: Add Contract-Level Scaffold Regression Guard for Full Hands Adapter Set
+
+**Date:** 2026-03-04  
+**Blueprint Section:** §2.4, §18 (Validation), §21 (Preserve and verify continuously)  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/internal/contracts` and `/Users/galiettemita/Downloads/Executive AI Agent/backend/config/skill-manual-overrides.txt`  
+**Conflict:** After finishing wave-based de-scaffolding, enforcement still relied on a large token map test and parity scripts; there was no single closure test proving all hands skill directories (excluding `_template`) are represented in manual overrides and all READMEs are free of scaffold markers.  
+**Options Considered:**  
+1. Rely only on existing wave token assertions and parity shell script behavior.  
+2. Add documentation-only confirmation without executable enforcement.  
+3. Add an executable closure contract test for full-set override parity and scaffold-marker rejection.  
+**Decision:** Option 3. Added `TestHandsSkillScaffoldCompletionClosure` in `internal/contracts/hands_scaffold_completion_closure_test.go` to assert: (a) exact set parity between skill directories and manual overrides (excluding `_template`), and (b) no README contains scaffold marker text.  
+**Migration Plan:**  
+1. Keep manual override file as source of truth for scaffold generator preservation behavior.  
+2. Run contract gate + full CI to validate new closure test.  
+3. Retain wave-level token maps for contract-shape enforcement while this new guard enforces completion parity.  
+**Risk:** Future intentionally scaffolded experimental skills would require explicit exclusion handling (for example naming convention or metadata) or the closure test would fail by design.  
+**Rollback:** Remove `hands_scaffold_completion_closure_test.go` and checklist closure row if policy changes to permit scaffold READMEs again.
