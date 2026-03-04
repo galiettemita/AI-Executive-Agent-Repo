@@ -64,3 +64,8 @@ food-delivery-ordering
 ride-hailing
 hotel-vacation-booking
 bill-pay-p2p
+streaming-recommendations
+local-service-booking
+kids-family-management
+pharmacy-prescription
+pet-care

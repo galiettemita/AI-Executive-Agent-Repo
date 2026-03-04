@@ -346,6 +346,31 @@ func TestHandsPrioritySkillsNoLongerScaffolded(t *testing.T) {
 			"amount_cents",
 			"partnership_status",
 		},
+		"streaming-recommendations": {
+			"action",
+			"watchlist_added",
+			"partnership_status",
+		},
+		"local-service-booking": {
+			"action",
+			"provider_id",
+			"partnership_status",
+		},
+		"kids-family-management": {
+			"action",
+			"child_name",
+			"partnership_status",
+		},
+		"pharmacy-prescription": {
+			"action",
+			"prescription_id",
+			"partnership_status",
+		},
+		"pet-care": {
+			"action",
+			"service_type",
+			"partnership_status",
+		},
 	}
 
 	indexTokens := map[string][]string{
@@ -456,6 +481,23 @@ func TestHandsPrioritySkillsNoLongerScaffolded(t *testing.T) {
 		},
 		"bill-pay-p2p": {
 			"BILL_PAY_CONFIRMATION_REQUIRED",
+			"CUSTOM_BUILD_REQUIRED",
+		},
+		"streaming-recommendations": {
+			"STREAMING_RECOMMENDATIONS_CONFIRMATION_REQUIRED",
+			"CUSTOM_BUILD_REQUIRED",
+		},
+		"local-service-booking": {
+			"LOCAL_SERVICE_BOOKING_CONFIRMATION_REQUIRED",
+			"CUSTOM_BUILD_REQUIRED",
+		},
+		"kids-family-management": {"CUSTOM_BUILD_REQUIRED"},
+		"pharmacy-prescription": {
+			"PHARMACY_REFILL_CONFIRMATION_REQUIRED",
+			"CUSTOM_BUILD_REQUIRED",
+		},
+		"pet-care": {
+			"PET_CARE_CONFIRMATION_REQUIRED",
 			"CUSTOM_BUILD_REQUIRED",
 		},
 	}

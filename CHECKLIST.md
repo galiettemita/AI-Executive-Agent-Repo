@@ -859,6 +859,16 @@ You must prove it.
 - [x] Extend centralized manual override registry and closure test token assertions for all Wave 11 adapters
 - [x] Validate Wave 11 against full `make ci` gate before merge
 
+## M15: Hands Adapter Wave 12 (Remaining Custom Gap Stubs Hardening)
+- [x] De-scaffold `streaming-recommendations` with typed recommend/watchlist contracts and confirmation gating on watchlist mutation
+- [x] De-scaffold `local-service-booking` with typed provider/quote/booking/status contracts and confirmation gating on booking action
+- [x] De-scaffold `kids-family-management` with typed schedule/pickup/check-in contracts and family-field validation guards
+- [x] De-scaffold `pharmacy-prescription` with typed lookup/refill/status contracts and confirmation gating on refill request
+- [x] De-scaffold `pet-care` with typed provider/booking/status contracts and confirmation gating on visit booking
+- [x] Preserve `CUSTOM_BUILD_REQUIRED` architecture comments and partnership-status outputs across all five adapters
+- [x] Extend centralized manual override registry and closure test token assertions for all Wave 12 adapters
+- [x] Validate Wave 12 against full `make ci` gate before merge
+
 ## M13–15 (Auto-Provisioning Layer 3): Remote Server Discovery Catalog (Auto-Provisioning Sections 5, 12.3, 16)
 - [x] ToolRegistry: register native tool `search_remote_catalog` (use only if `provision_server` fails due to missing catalog entry) (Auto-Provisioning Section 9)
 - [x] Hands handler: implement `search_remote_catalog` -> query remote catalog API -> return matched entries (Auto-Provisioning Section 5)

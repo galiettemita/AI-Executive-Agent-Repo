@@ -1113,3 +1113,21 @@
 3. Run full CI and continue with next de-scaffold wave while credentials/legal onboarding remains pending.  
 **Risk:** Deterministic stubs can diverge from real provider behavior (cancellation policy edge cases, fee breakdowns, payment failure semantics) until partner APIs are integrated in staging.  
 **Rollback:** Remove Wave 11 IDs from override config and regenerate scaffolds for these five skills if integration blockers require temporary rollback.
+
+## DECISION-062: De-Scaffold Remaining Custom Gap Skills into Typed Partnership-Ready Stubs (Wave 12)
+
+**Date:** 2026-03-04  
+**Blueprint Section:** §17, §17.2, §A.8  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/services/brevio-hands/src/skills/{streaming-recommendations,local-service-booking,kids-family-management,pharmacy-prescription,pet-care}`  
+**Conflict:** The remaining custom-gap skills were still scaffold-only and lacked typed request validation, confirmation-gated mutations, and production-ready contract shapes for future partner API integration.  
+**Options Considered:**  
+1. Keep these five skills scaffolded until partner credentials/legal approval arrive.  
+2. Add minimal typed schemas without business-action safeguards.  
+3. Implement full typed stub adapters now with deterministic behavior, required-field validation, and confirmation gates where actions can mutate or trigger sensitive workflows.  
+**Decision:** Option 3. Replaced scaffolds for `streaming-recommendations`, `local-service-booking`, `kids-family-management`, `pharmacy-prescription`, and `pet-care` with full typed `types/schema/client/index` implementations, deterministic outputs, confirmation-gated mutation paths, updated unit tests, and README docs. Preserved `// CUSTOM_BUILD_REQUIRED: Awaiting API partnership` in runtime paths and standardized `partnership_status` output contracts.  
+**Migration Plan:**  
+1. Register Wave 12 IDs in `config/skill-manual-overrides.txt`.  
+2. Add closure-test schema/index token assertions including confirmation constants and `CUSTOM_BUILD_REQUIRED` markers.  
+3. Run full CI and continue de-scaffolding remaining non-custom skills in subsequent waves.  
+**Risk:** Stub semantics may diverge from real partner API policies (for example medication refill eligibility rules or marketplace booking dispute flows) until sandbox integrations are implemented.  
+**Rollback:** Remove Wave 12 IDs from override config and regenerate scaffolds for these five skills if integration sequencing changes.
