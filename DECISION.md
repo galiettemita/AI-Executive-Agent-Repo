@@ -595,3 +595,21 @@
 3. Verify with full local `make ci` regression run after workflow updates.  
 **Risk:** Workflow execution time and resource usage increase due to real commands in all stages.  
 **Rollback:** Revert workflow files to previous scaffold form and keep executable gating only in `ci.yaml`.
+
+## DECISION-034: Expand `infra/terraform` from Minimal Stubs to Blueprint-Aligned Module Composition
+
+**Date:** 2026-03-03  
+**Blueprint Section:** §8.1, §8.4, §16 (`infra/terraform`)  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/infra/terraform`  
+**Conflict:** `infra/terraform/environments/{staging,production,dr}` and `infra/terraform/modules` were effectively placeholders, containing only required-version stubs and a short README, with no module composition for required AWS components.  
+**Options Considered:**  
+1. Keep `infra/terraform` as documentation-only stubs and rely on top-level `terraform/` folder exclusively.  
+2. Mirror top-level modules by duplicating full infra resource definitions in `infra/terraform`.  
+3. Implement contract-oriented module definitions + environment composition in `infra/terraform` while preserving existing top-level Terraform runtime.  
+**Decision:** Option 3. Added concrete module contracts for EKS/RDS/ElastiCache/SQS+SNS/S3/Secrets/CloudFront/Route53/Monitoring/WAF and composed them in staging/production/dr environment `main.tf` files with explicit environment contract outputs.  
+**Migration Plan:**  
+1. Add module `main.tf` files under `infra/terraform/modules/*` with blueprint-aligned contract maps and outputs.  
+2. Replace environment stub files with full module composition references and environment metadata outputs.  
+3. Add closure tests to enforce module presence and composition tokens in all three environment files.  
+**Risk:** Module contracts remain declarative (non-resource) and require later replacement if `infra/terraform` becomes the active Terraform apply target instead of documentation/contract path.  
+**Rollback:** Revert `infra/terraform` files to prior stubs and remove infra-openclaw closure tests if maintaining dual Terraform layouts becomes operationally costly.
