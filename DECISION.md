@@ -1509,3 +1509,21 @@
 3. Preserve closure test enforcement to prevent fallback to compile-only placeholder tests.  
 **Risk:** Fixture-backed tests currently verify deterministic adapter behavior and contract shape, not live provider/network failures, until sandbox/live integration runs are added.  
 **Rollback:** Restore previous communication integration tests and remove the new closure contract + fixture JSON files if policy shifts away from fixture-backed integration enforcement.
+
+## DECISION-084: De-Scaffold Productivity and Calendar Integration Tests with Fixture Enforcement
+
+**Date:** 2026-03-04  
+**Blueprint Section:** §1.2.3, §2.4, §11.1, §18  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/services/brevio-hands/src/skills/{asana,clickup-mcp,jira,linear,omnifocus,things-mac,ticktick,todo,todoist,trello,calctl,apple-remind-me}/__tests__/integration.test.ts` and `/Users/galiettemita/Downloads/Executive AI Agent/backend/internal/contracts`  
+**Conflict:** Productivity/calendar adapters existed with deterministic clients and unit coverage, but integration tests remained scaffold placeholders (`scaffold compiles`) and did not verify adapter output contracts against fixtures.  
+**Options Considered:**  
+1. Keep compile-only placeholders and postpone this category until all remaining skills are addressed.  
+2. Convert only cloud productivity tools and defer local Apple task/calendar adapters.  
+3. Convert all 12 productivity/calendar integration tests now with fixture-backed assertions and add a closure contract gate.  
+**Decision:** Option 3. Replaced all 12 target integration tests with deterministic fixture-backed assertions, added one `.json` fixture per skill under `__tests__/fixtures`, and introduced `internal/contracts/productivity_skill_integration_closure_test.go` to fail if any covered integration test regresses to `scaffold compiles` or lacks fixture JSON coverage.  
+**Migration Plan:**  
+1. Keep fixture-backed deterministic assertions as immediate integration contracts.  
+2. Expand fixture scenarios with mutation and error-path cases in follow-on waves.  
+3. Preserve closure gate to prevent regression to no-op integration tests.  
+**Risk:** Fixtures verify deterministic local adapter logic, but not live provider/network variance until sandbox-backed integration runs are added.  
+**Rollback:** Restore previous integration tests and remove corresponding fixture JSON/closure test if enforcement strategy changes.
