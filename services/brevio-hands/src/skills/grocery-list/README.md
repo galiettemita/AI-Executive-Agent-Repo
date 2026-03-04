@@ -1,6 +1,16 @@
 # grocery-list
 
-Generated skill adapter scaffold.
+Hands-plane grocery planning adapter for list CRUD and section-based organization.
 
-- Plane: `hands`
-- Source: `migrations/006_seed_skills.up.sql`
+## Supported actions
+
+- `add_items`
+- `remove_items`
+- `list_items`
+- `organize_by_section`
+- `clear_list` (confirmation required)
+
+## Notes
+
+- Clear-list mutation requires `confirmed=true`.
+- Deterministic fixture state is used for local contract validation.

@@ -83,3 +83,9 @@ voice-wake-say
 whatsapp-styling-guide
 vocal-chat
 autoresponder
+buy-anything
+grocery-list
+recipe-to-list
+marketplace
+personal-shopper
+clawringhouse

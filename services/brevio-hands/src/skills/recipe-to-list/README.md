@@ -1,6 +1,13 @@
 # recipe-to-list
 
-Generated skill adapter scaffold.
+Hands-plane adapter that transforms recipes into structured grocery tasks.
 
-- Plane: `hands`
-- Source: `migrations/006_seed_skills.up.sql`
+## Supported actions
+
+- `parse_recipe`
+- `sync_todoist`
+
+## Notes
+
+- Uses Todoist scopes for task sync workflows.
+- Includes deterministic item-to-section normalization for stable tests.

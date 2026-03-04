@@ -441,6 +441,36 @@ func TestHandsPrioritySkillsNoLongerScaffolded(t *testing.T) {
 			"delegated_to_brain",
 			"latency_budget_ms",
 		},
+		"buy-anything": {
+			"action",
+			"line_items",
+			"checkout_preview",
+		},
+		"grocery-list": {
+			"action",
+			"items",
+			"total_items",
+		},
+		"recipe-to-list": {
+			"action",
+			"recipe_items",
+			"normalized_items",
+		},
+		"marketplace": {
+			"action",
+			"fair_price_cents",
+			"scam_risk",
+		},
+		"personal-shopper": {
+			"action",
+			"ranked_candidates",
+			"recommendation",
+		},
+		"clawringhouse": {
+			"action",
+			"household_items",
+			"recommendations",
+		},
 	}
 
 	indexTokens := map[string][]string{
@@ -602,6 +632,16 @@ func TestHandsPrioritySkillsNoLongerScaffolded(t *testing.T) {
 		"autoresponder": {
 			"AUTORESPONDER_INTERCEPT_TEXT_REQUIRED",
 		},
+		"buy-anything": {"BUY_ANYTHING_ORDER_CONFIRMATION_REQUIRED"},
+		"grocery-list": {
+			"GROCERY_LIST_CLEAR_CONFIRMATION_REQUIRED",
+		},
+		"recipe-to-list": {"RECIPE_TO_LIST_TEXT_REQUIRED"},
+		"marketplace":    {"MARKETPLACE_TITLE_REQUIRED"},
+		"personal-shopper": {
+			"PERSONAL_SHOPPER_QUERY_REQUIRED",
+		},
+		"clawringhouse": {"CLAWRINGHOUSE_ITEMS_REQUIRED"},
 	}
 
 	scriptBody, err := os.ReadFile(scriptPath)

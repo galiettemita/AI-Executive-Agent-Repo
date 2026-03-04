@@ -1185,3 +1185,21 @@
 3. Run full CI and continue with remaining scaffolded skills in next waves.  
 **Risk:** Deterministic reply synthesis/intercept behavior can diverge from live gateway + brain orchestration semantics until integrated end-to-end webhook tests are expanded.  
 **Rollback:** Remove Wave 15 IDs from override config and regenerate scaffolds for these two skills if regressions appear.
+
+## DECISION-066: De-Scaffold Shopping Domain Skills with Typed Transaction and Recommendation Contracts (Wave 16)
+
+**Date:** 2026-03-04  
+**Blueprint Section:** §2.4, §A.7.1, §A.8  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/services/brevio-hands/src/skills/{buy-anything,grocery-list,recipe-to-list,marketplace,personal-shopper,clawringhouse}`  
+**Conflict:** Six shopping-domain skills remained scaffold-only, leaving no typed validation for checkout/list mutations and no structured recommendation contracts for Brain-layer shopping orchestration.  
+**Options Considered:**  
+1. Keep shopping skills scaffolded and prioritize other remaining categories first.  
+2. Replace all remaining scaffolded skills in one large migration wave.  
+3. Execute a focused shopping wave for six skills with explicit action contracts, validation guards, deterministic outputs, and mutation confirmation gates where needed.  
+**Decision:** Option 3. Replaced scaffolds for `buy-anything`, `grocery-list`, `recipe-to-list`, `marketplace`, `personal-shopper`, and `clawringhouse` with full typed `types/schema/client/index` implementations, deterministic local output models, unit tests, and README docs. Added all six IDs to centralized manual override config and closure token assertions.  
+**Migration Plan:**  
+1. Register Wave 16 skill IDs in `config/skill-manual-overrides.txt`.  
+2. Extend closure token maps for shopping validation/confirmation constants.  
+3. Run full CI and continue next category wave from remaining scaffold set.  
+**Risk:** Deterministic fixture behavior will not capture full external-provider variability (checkout fees, marketplace fraud patterns, recommendation quality drift) until sandbox integrations and evals are expanded.  
+**Rollback:** Remove Wave 16 IDs from override config and regenerate scaffolds for these six skills if regressions are introduced.
