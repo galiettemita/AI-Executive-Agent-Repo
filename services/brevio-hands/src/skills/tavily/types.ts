@@ -1,8 +1,17 @@
-export interface SkillInputPayload {
-  payload?: Record<string, unknown>;
+export interface TavilyInput {
+  query: string;
+  max_results?: number;
+  include_domains?: string[];
 }
 
-export interface SkillOutputPayload {
-  ok: boolean;
-  skill_id: string;
+export interface TavilyResult {
+  title: string;
+  url: string;
+  content: string;
+  score: number;
+}
+
+export interface TavilyOutput {
+  results: TavilyResult[];
+  provider: 'tavily';
 }

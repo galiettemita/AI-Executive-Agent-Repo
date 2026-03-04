@@ -887,3 +887,22 @@
 3. Add closure tests for required workflow-state tokens and rerun full `make ci` pipeline.  
 **Risk:** Workflow run snapshots are currently in-memory and simulated for runtime closure; they do not yet persist in Temporal history tables and reset on restart.  
 **Rollback:** Revert `services/brevio-temporal-worker/src/index.ts`, `services/brevio-temporal-worker/README.md`, and `internal/contracts/temporal_worker_service_runtime_closure_test.go` to prior scaffold baseline if integration expectations require temporary rollback.
+
+## DECISION-050: Keep Generator-Backed Skill Coverage While Preserving Manual High-Value Hands Adapters
+
+**Date:** 2026-03-04  
+**Blueprint Section:** §2.4, §5.3, §A.8, §17.2  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/scripts/skills/generate_hands_skill_scaffolds.sh`, `/Users/galiettemita/Downloads/Executive AI Agent/backend/services/brevio-hands/src/skills/*`  
+**Conflict:** The scaffold generator is the only practical way to maintain full file-structure coverage across 153+ skills, but it would overwrite early production-grade adapters for critical skills unless manual exceptions are explicitly preserved.  
+**Options Considered:**  
+1. Keep fully generated scaffolds for all skills until every adapter is production-ready.  
+2. Stop using generator checks and manually maintain all skill directories immediately.  
+3. Keep generator as the default for broad coverage but add explicit manual-preserve rules for priority skills being de-scaffolded incrementally.  
+**Decision:** Option 3. Added explicit manual-preserve behavior in the scaffold generator for `shopping-expert`, `google-maps`, `google-calendar`, `tavily`, `smtp-send`, and `home-assistant`, then replaced those skill scaffolds with typed adapters (schema validation, deterministic client behavior, and safety/confirmation handling) plus closure enforcement in `internal/contracts/hands_priority_skills_closure_test.go`.  
+**Migration Plan:**  
+1. Preserve generator ownership for non-priority skills to keep contract parity and full registry coverage.  
+2. De-scaffold priority skills in small waves with deterministic unit tests and README/runtime notes.  
+3. Add each newly manualized skill to the preserve list and closure tests before merging the wave.  
+4. Continue until all high-impact skills are moved off scaffold defaults.  
+**Risk:** Manual preserve list can drift from actual manualized skill set, causing accidental overwrites or stale scaffolds if not kept in sync with tests.  
+**Rollback:** Remove preserve-list entries, re-run generator to restore baseline scaffold state for affected skills, and revert manual adapter files if rapid stabilization is required.

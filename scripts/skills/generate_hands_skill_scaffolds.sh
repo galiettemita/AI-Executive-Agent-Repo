@@ -49,6 +49,7 @@ trap 'rm -rf "${TMP_DIR}"' EXIT
 
 SKILLS_FILE="${TMP_DIR}/skills.txt"
 CUSTOM_FILE="${TMP_DIR}/custom.txt"
+MANUAL_FILE="${TMP_DIR}/manual.txt"
 ALL_SKILLS_FILE="${TMP_DIR}/all_skills.txt"
 GATEWAY_FILE="${TMP_DIR}/gateway.txt"
 BRAIN_FILE="${TMP_DIR}/brain.txt"
@@ -66,6 +67,15 @@ local-service-booking
 kids-family-management
 pharmacy-prescription
 pet-care
+EOF
+
+cat >"${MANUAL_FILE}" <<'EOF'
+shopping-expert
+google-maps
+google-calendar
+tavily
+smtp-send
+home-assistant
 EOF
 
 cat "${SKILLS_FILE}" "${CUSTOM_FILE}" | sort -u >"${ALL_SKILLS_FILE}"
@@ -87,6 +97,11 @@ is_custom_skill() {
   is_in_file "${skill_id}" "${CUSTOM_FILE}"
 }
 
+is_manual_skill() {
+  local skill_id="$1"
+  is_in_file "${skill_id}" "${MANUAL_FILE}"
+}
+
 while IFS= read -r skill_id; do
   [[ -z "${skill_id}" ]] && continue
   plane="hands"
@@ -102,6 +117,12 @@ while IFS= read -r skill_id; do
 
   skill_dir="${SKILLS_DIR}/${skill_id}"
   mkdir -p "${skill_dir}/__tests__/fixtures"
+
+  if is_manual_skill "${skill_id}" && [[ -f "${skill_dir}/index.ts" ]]; then
+    # Manually maintained skills are intentionally preserved and validated separately.
+    : >"${skill_dir}/__tests__/fixtures/.gitkeep"
+    continue
+  fi
 
   cat >"${skill_dir}/schema.ts" <<EOF
 import { z } from 'zod';

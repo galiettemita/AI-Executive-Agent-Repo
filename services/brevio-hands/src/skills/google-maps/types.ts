@@ -1,8 +1,19 @@
-export interface SkillInputPayload {
-  payload?: Record<string, unknown>;
+export type TravelMode = 'driving' | 'walking' | 'bicycling' | 'transit';
+
+export interface GoogleMapsInput {
+  origin: string;
+  destination: string;
+  mode?: TravelMode;
 }
 
-export interface SkillOutputPayload {
-  ok: boolean;
-  skill_id: string;
+export interface RouteStep {
+  instruction: string;
+  distance_m: number;
+}
+
+export interface GoogleMapsOutput {
+  distance_m: number;
+  duration_s: number;
+  mode: TravelMode;
+  steps: RouteStep[];
 }
