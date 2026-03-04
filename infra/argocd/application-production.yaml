@@ -2,5 +2,38 @@ apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
   name: brevio-production
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: brevio
+    brevio.env: production
 spec:
   project: default
+  source:
+    repoURL: https://github.com/galiettemita/AI-Executive-Agent-Repo.git
+    targetRevision: main
+    path: infra/helm/brevio
+    helm:
+      releaseName: brevio
+      valueFiles:
+        - values.yaml
+        - values-production.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: brevio-system
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+      - PruneLast=true
+      - ApplyOutOfSyncOnly=true
+    retry:
+      limit: 3
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+  revisionHistoryLimit: 20
+  ignoreDifferences:
+    - group: autoscaling
+      kind: HorizontalPodAutoscaler
+      jsonPointers:
+        - /status

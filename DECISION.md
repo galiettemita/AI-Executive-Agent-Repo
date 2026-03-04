@@ -649,3 +649,21 @@
 3. Add closure test to enforce required dependency, values, and template tokens and prevent scaffold regressions.  
 **Risk:** Umbrella dependency versions are pinned to current local chart versions (`0.1.0`); when subchart versions change, dependency metadata must be updated in lockstep.  
 **Rollback:** Restore prior scaffold files in `infra/helm/brevio` and remove the new helm umbrella closure contract test.
+
+## DECISION-037: Replace Minimal `infra/argocd` Placeholders with Executable Staging/Production Application Manifests
+
+**Date:** 2026-03-04  
+**Blueprint Section:** §9.2, §16 (`infra/argocd`)  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/infra/argocd/application-staging.yaml`, `/Users/galiettemita/Downloads/Executive AI Agent/backend/infra/argocd/application-production.yaml`  
+**Conflict:** Both ArgoCD Application manifests only defined `apiVersion/kind/name/project` and lacked source repo/path, Helm value files, destination cluster/namespace, sync policies, and retry controls required for real deployments.  
+**Options Considered:**  
+1. Keep placeholder manifests and treat ArgoCD config as out-of-band operations.  
+2. Remove ArgoCD manifests to avoid implying support.  
+3. Implement production-usable staging/production ArgoCD Application specs with explicit helm source, namespace targeting, sync policy, and safety controls.  
+**Decision:** Option 3. Added complete staging and production ArgoCD Application manifests targeting `infra/helm/brevio` with environment-specific values files, `brevio-system` destination, staging automated sync, production retry policy, namespace-creation sync options, and HPA status ignore-difference rules.  
+**Migration Plan:**  
+1. Replace placeholder YAML with complete application specs for staging and production.  
+2. Add closure test coverage to enforce critical source/destination/sync tokens and prevent regression to placeholders.  
+3. Keep project as `default` for compatibility with current cluster onboarding, with future move to dedicated `brevio` Argo project tracked separately.  
+**Risk:** `repoURL` and `targetRevision` are pinned to the current repository/main flow; branch strategy changes will require manifest updates to avoid drift.  
+**Rollback:** Restore minimal placeholder manifests and remove ArgoCD closure test if deployment control is moved fully outside-repo.

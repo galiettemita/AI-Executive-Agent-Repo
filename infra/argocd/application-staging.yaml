@@ -2,5 +2,36 @@ apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
   name: brevio-staging
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: brevio
+    brevio.env: staging
 spec:
   project: default
+  source:
+    repoURL: https://github.com/galiettemita/AI-Executive-Agent-Repo.git
+    targetRevision: main
+    path: infra/helm/brevio
+    helm:
+      releaseName: brevio
+      valueFiles:
+        - values.yaml
+        - values-staging.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: brevio-system
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+      allowEmpty: false
+    syncOptions:
+      - CreateNamespace=true
+      - PruneLast=true
+      - ApplyOutOfSyncOnly=true
+  revisionHistoryLimit: 10
+  ignoreDifferences:
+    - group: autoscaling
+      kind: HorizontalPodAutoscaler
+      jsonPointers:
+        - /status
