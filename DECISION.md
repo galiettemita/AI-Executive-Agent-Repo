@@ -833,3 +833,21 @@
 3. Add closure contract coverage for runtime/README invariants and re-run full `make ci`.  
 **Risk:** Current profile persistence is filesystem-backed and local to the service runtime; multi-replica deployments require shared persistent storage or DB-backed repository to avoid divergent profile state.  
 **Rollback:** Revert `services/brevio-profile/src/index.ts`, `services/brevio-profile/README.md`, and `internal/contracts/profile_service_runtime_closure_test.go` to the prior health-only baseline if runtime storage behavior causes deployment issues.
+
+## DECISION-047: Replace `brevio-scheduler` Health Scaffold with Job/Trigger Runtime Baseline
+
+**Date:** 2026-03-04  
+**Blueprint Section:** §1.3 (`brevio-scheduler`), §4.2, §20.1-§20.3  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/services/brevio-scheduler`  
+**Conflict:** `brevio-scheduler` only exposed health endpoints and did not provide runtime APIs for managing scheduled jobs or dispatching trigger events required for cron-style skill invocation paths (e.g., DailyRhythm orchestration).  
+**Options Considered:**  
+1. Keep scheduler as health-only and rely on external cron/manual triggers.  
+2. Add trigger-only endpoint without a managed job registry.  
+3. Implement full baseline scheduler API with job lifecycle endpoints, trigger queueing, and closure tests.  
+**Decision:** Option 3. Implemented `brevio-scheduler` runtime with `/api/v1` + `/v1` job and trigger endpoints (list/create/run/disable jobs, queue/list triggers), structured correlation logging, deep health checks, and graceful shutdown. Added closure enforcement with `internal/contracts/scheduler_service_runtime_closure_test.go` and replaced README scaffold text with runtime endpoint/configuration documentation.  
+**Migration Plan:**  
+1. Replace health-only source with in-memory scheduler runtime handlers while preserving `/health` and `/health/deep`.  
+2. Add clear alias path support to reduce endpoint migration friction (`/v1` and `/api/v1`).  
+3. Add closure test assertions for endpoint/runtime tokens and rerun full `make ci`.  
+**Risk:** Scheduler state is currently in-memory; jobs/triggers are ephemeral across restarts and not shared across replicas until persistence backing (DB/Temporal schedules) is integrated.  
+**Rollback:** Revert `services/brevio-scheduler/src/index.ts`, `services/brevio-scheduler/README.md`, and `internal/contracts/scheduler_service_runtime_closure_test.go` to the prior scaffold baseline if runtime behavior diverges from deployment expectations.
