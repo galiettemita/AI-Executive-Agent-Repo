@@ -796,3 +796,22 @@
 4. Re-run `make ci` to validate contracts, policy gates, and acceptance tests remain green.  
 **Risk:** Current classification/decomposition implementation is keyword-driven and deterministic but does not yet invoke production LLM provider calls; behavior can be less nuanced than target Sonnet/Haiku prompts until LLM-backed activities are wired in.  
 **Rollback:** Revert `services/brevio-brain` runtime modules and `internal/contracts/brain_service_runtime_closure_test.go` to restore prior scaffold baseline if rollout introduces runtime instability.
+
+## DECISION-045: Upgrade `brevio-hands` Runtime to Circuit-Breaker/Timeout-Aware Skill Execution Baseline
+
+**Date:** 2026-03-04  
+**Blueprint Section:** §1.2.3, §2.2, §4.3, §13.1, §20.1-§20.3  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/services/brevio-hands`  
+**Conflict:** `brevio-hands` exposed minimal execute/list endpoints but lacked production-grade execution controls (explicit circuit-breaker transitions, timeout-normalized `SkillResult` errors, API alias compatibility, and closure protection against regression to scaffold docs).  
+**Options Considered:**  
+1. Keep existing lightweight runtime and defer execution resilience controls to downstream adapters only.  
+2. Add only path aliases while leaving error/circuit behavior unchanged.  
+3. Implement service-level execution controls with per-skill circuit tracking, timeout/error normalization, and runtime closure test enforcement.  
+**Decision:** Option 3. Reworked `brevio-hands` runtime to enforce execute-time controls: timeout-bound adapter execution, normalized failure payloads (`SKILL_NOT_FOUND`, `CIRCUIT_OPEN`, `EXTERNAL_TIMEOUT`, `EXTERNAL_ERROR`), per-skill circuit breaker transitions (`CLOSED`/`HALF_OPEN`/`OPEN`), circuit snapshot endpoint, `/v1` + `/api/v1` execute/skills aliases, structured correlation logging, and graceful shutdown. Added `internal/contracts/hands_service_runtime_closure_test.go` and replaced README scaffold text with operational runtime documentation.  
+**Migration Plan:**  
+1. Replace single-file minimal runtime with typed execution-control logic while preserving existing health/skills/execute routes through aliases.  
+2. Add explicit API compatibility paths (`/api/v1/hands/*`, `/v1/hands/tool/execute`) to reduce downstream contract churn.  
+3. Add contract gate verifying runtime tokens and README content to prevent regressions.  
+4. Re-run `make ci` full gate to verify no cross-system drift.  
+**Risk:** Circuit breaker state is currently in-memory per pod; in multi-replica deployments breaker behavior is eventually inconsistent across instances until centralized shared state is introduced.  
+**Rollback:** Revert `services/brevio-hands/src/index.ts`, `services/brevio-hands/README.md`, and `internal/contracts/hands_service_runtime_closure_test.go` to prior baseline if execution control changes trigger unexpected adapter incompatibilities.
