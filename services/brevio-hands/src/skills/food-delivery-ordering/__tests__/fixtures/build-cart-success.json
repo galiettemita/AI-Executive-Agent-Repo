@@ -1,0 +1,8 @@
+{
+  "provider": "food-delivery-ordering",
+  "action": "build_cart",
+  "cart_id": "cart_fd_001",
+  "estimated_total_cents": 4350,
+  "status": "pending",
+  "partnership_status": "awaiting_api_partnership"
+}

@@ -1437,3 +1437,21 @@
 3. Retain wave-level token maps for contract-shape enforcement while this new guard enforces completion parity.  
 **Risk:** Future intentionally scaffolded experimental skills would require explicit exclusion handling (for example naming convention or metadata) or the closure test would fail by design.  
 **Rollback:** Remove `hands_scaffold_completion_closure_test.go` and checklist closure row if policy changes to permit scaffold READMEs again.
+
+## DECISION-080: De-Scaffold Custom-Build Integration Tests with Fixture-Backed Contracts
+
+**Date:** 2026-03-04  
+**Blueprint Section:** §2.4, §11.1, §17.2  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/services/brevio-hands/src/skills/{restaurant-reservations,food-delivery-ordering,ride-hailing,hotel-vacation-booking,bill-pay-p2p,streaming-recommendations,local-service-booking,kids-family-management,pharmacy-prescription,pet-care}/__tests__/integration.test.ts` and `/Users/galiettemita/Downloads/Executive AI Agent/backend/internal/contracts/custom_build_skills_closure_test.go`  
+**Conflict:** Custom-build skill adapters were structurally present, but integration tests were still scaffold-only (`assert.equal(1, 1)`), so CI had no execution-level proof that these adapters returned deterministic contract-valid payloads with fixture parity.  
+**Options Considered:**  
+1. Keep no-op integration tests and rely on unit-only coverage for custom-build adapters.  
+2. Replace only some integration tests and defer the rest until external API partnerships are ready.  
+3. De-scaffold all 10 custom-build integration tests now with deterministic fixture-backed execution checks and add a contract guard preventing regression to scaffold tests.  
+**Decision:** Option 3. Replaced all 10 custom-build `integration.test.ts` files with real adapter execution assertions using deterministic JSON fixtures; added one fixture JSON per custom-build skill; strengthened `custom_build_skills_closure_test.go` to require (a) no `scaffold compiles` marker in custom-build integration tests and (b) at least one `.json` fixture in each custom-build fixture directory.  
+**Migration Plan:**  
+1. Keep adapter runtime behavior deterministic until partner APIs are provisioned (`CUSTOM_BUILD_REQUIRED`).  
+2. Use fixture-backed integration tests as baseline behavior contracts for each custom skill action path.  
+3. Expand each fixture set from deterministic mocks to sandbox/live payloads once partnership credentials are available.  
+**Risk:** Fixture-backed tests still validate mocked deterministic adapter outputs, not third-party provider variance, until external partnership integrations are enabled.  
+**Rollback:** Restore prior integration test files and remove added fixture JSON files plus custom-build closure-test assertions if regression or policy changes require scaffold behavior.
