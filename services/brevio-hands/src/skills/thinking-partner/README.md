@@ -1,6 +1,14 @@
 # thinking-partner
 
-Generated skill adapter scaffold.
+Brain-plane reasoning skill for clarifying problems, testing assumptions, and structuring choices.
 
-- Plane: `brain`
-- Source: `migrations/006_seed_skills.up.sql`
+## Supported actions
+
+- `clarify_problem`: reframes the decision context and asks high-leverage questions.
+- `challenge_assumptions`: surfaces assumptions that should be tested.
+- `decision_matrix`: builds a deterministic option matrix with confidence scores.
+
+## Notes
+
+- Runs fully in deterministic local logic.
+- Intended to complement `plan-my-day` and strategic planning flows.

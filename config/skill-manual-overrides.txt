@@ -69,3 +69,9 @@ local-service-booking
 kids-family-management
 pharmacy-prescription
 pet-care
+daily-rhythm
+plan-my-day
+morning-manifesto
+meeting-autopilot
+thinking-partner
+focus-mode

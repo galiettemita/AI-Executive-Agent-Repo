@@ -371,6 +371,36 @@ func TestHandsPrioritySkillsNoLongerScaffolded(t *testing.T) {
 			"service_type",
 			"partnership_status",
 		},
+		"daily-rhythm": {
+			"action",
+			"wake_time_local",
+			"schedule_blocks",
+		},
+		"plan-my-day": {
+			"action",
+			"tasks",
+			"time_blocks",
+		},
+		"morning-manifesto": {
+			"action",
+			"goals",
+			"manifesto",
+		},
+		"meeting-autopilot": {
+			"action",
+			"transcript",
+			"action_items",
+		},
+		"thinking-partner": {
+			"action",
+			"questions",
+			"decision_matrix",
+		},
+		"focus-mode": {
+			"action",
+			"session_id",
+			"check_in_schedule",
+		},
 	}
 
 	indexTokens := map[string][]string{
@@ -499,6 +529,22 @@ func TestHandsPrioritySkillsNoLongerScaffolded(t *testing.T) {
 		"pet-care": {
 			"PET_CARE_CONFIRMATION_REQUIRED",
 			"CUSTOM_BUILD_REQUIRED",
+		},
+		"daily-rhythm": {
+			"DAILY_RHYTHM_CONTEXT_REQUIRED",
+		},
+		"plan-my-day": {"PLAN_MY_DAY_TASKS_REQUIRED"},
+		"morning-manifesto": {
+			"MORNING_MANIFESTO_GOALS_REQUIRED",
+		},
+		"meeting-autopilot": {
+			"MEETING_AUTOPILOT_TRANSCRIPT_REQUIRED",
+		},
+		"thinking-partner": {
+			"THINKING_PARTNER_TOPIC_REQUIRED",
+		},
+		"focus-mode": {
+			"FOCUS_MODE_SESSION_REQUIRED",
 		},
 	}
 

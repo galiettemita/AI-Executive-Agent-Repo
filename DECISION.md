@@ -1131,3 +1131,21 @@
 3. Run full CI and continue de-scaffolding remaining non-custom skills in subsequent waves.  
 **Risk:** Stub semantics may diverge from real partner API policies (for example medication refill eligibility rules or marketplace booking dispute flows) until sandbox integrations are implemented.  
 **Rollback:** Remove Wave 12 IDs from override config and regenerate scaffolds for these five skills if integration sequencing changes.
+
+## DECISION-063: De-Scaffold Core Brain-Orchestration Skills with Typed Deterministic Contracts (Wave 13)
+
+**Date:** 2026-03-04  
+**Blueprint Section:** §1.2.2, §2.4, §4.2, §7.2  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/services/brevio-hands/src/skills/{daily-rhythm,plan-my-day,morning-manifesto,meeting-autopilot,thinking-partner,focus-mode}`  
+**Conflict:** Six high-frequency Brain-plane orchestration skills remained scaffold-only, which left planning, meeting synthesis, and focus-session flows without typed validation or deterministic output contracts required for reliable DAG aggregation paths.  
+**Options Considered:**  
+1. Keep these Brain skills scaffolded and continue only with remaining hands-provider connectors.  
+2. De-scaffold all remaining skills in one large change set.  
+3. Execute a focused Brain wave replacing scaffolds for the six orchestration skills with typed schemas, deterministic clients, and action-specific validation guards.  
+**Decision:** Option 3. Replaced scaffolds for `daily-rhythm`, `plan-my-day`, `morning-manifesto`, `meeting-autopilot`, `thinking-partner`, and `focus-mode` with typed `types/schema/client/index` modules, deterministic internal logic, explicit action constraints, upgraded unit tests, and README notes. Added all six IDs to centralized manual override config and closure token assertions.  
+**Migration Plan:**  
+1. Register Wave 13 IDs in `config/skill-manual-overrides.txt`.  
+2. Add closure-test schema/index token assertions for each new adapter guard constant and contract token.  
+3. Run full CI, then continue with subsequent waves for remaining scaffolded adapters.  
+**Risk:** Deterministic summarization/planning heuristics may diverge from future LLM-backed behavior until full Brain integration routing tests are expanded.  
+**Rollback:** Remove Wave 13 IDs from override config and regenerate scaffolds for these six skills if regressions appear.
