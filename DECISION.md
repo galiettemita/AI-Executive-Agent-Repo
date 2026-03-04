@@ -685,3 +685,21 @@
 3. Add closure contract test to lock required workflow tokens and prevent regression to minimal mode.  
 **Risk:** Security workflow is stricter and may fail existing PRs until all high-severity dependency findings and Semgrep ERROR findings are resolved.  
 **Rollback:** Restore the prior minimal security workflow and remove the security workflow closure contract if strict gate rollout must be temporarily paused.
+
+## DECISION-039: Expand Local `docker-compose.yml` from Dependency Stub to Runnable Core Service Stack
+
+**Date:** 2026-03-04  
+**Blueprint Section:** §8.4 (`local`), §16 (`docker-compose.yml`), §20.11  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/docker-compose.yml`, `/Users/galiettemita/Downloads/Executive AI Agent/backend/scripts/setup-local.sh`  
+**Conflict:** Local compose only defined PostgreSQL/Redis/Temporal and a sleeping `gateway` placeholder, which did not represent a runnable local Brevio stack and did not align with one-command local bootstrap intent.  
+**Options Considered:**  
+1. Keep compose as dependency-only and rely entirely on `go run` for services.  
+2. Add only one or two services to compose and leave the rest implicit.  
+3. Define a full local compose stack for core binaries plus extension-profile service stubs and shared runtime env wiring.  
+**Decision:** Option 3. Replaced compose with a runnable stack covering core dependencies plus gateway/brain/control/executor/canvas/temporal-worker service builds from local source, added Temporal UI and dependency health checks, and modeled additional non-local binaries (`auth/profile/scheduler/metrics/edge-relay`) behind an explicit `openclaw-extension` profile.  
+**Migration Plan:**  
+1. Replace placeholder compose content with shared env anchors, health checks, and per-service build args.  
+2. Add extension profile services for components not yet represented by local Go binaries.  
+3. Align local bootstrap script to bring up Temporal UI alongside core dependency containers and add closure test coverage.  
+**Risk:** Full compose stack increases local resource usage and initial startup time compared to dependency-only mode.  
+**Rollback:** Revert compose and setup script to dependency-only startup and remove docker-compose closure contract test if lightweight mode is temporarily preferred.

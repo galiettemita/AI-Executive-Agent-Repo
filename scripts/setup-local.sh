@@ -27,8 +27,8 @@ fi
 
 docker_bin="$(resolve_docker_bin || true)"
 if [[ -n "$docker_bin" ]]; then
-  echo "[setup-local] starting docker compose dependencies (postgres, redis, temporal)"
-  "$docker_bin" compose up -d postgres redis temporal
+  echo "[setup-local] starting docker compose dependencies (postgres, redis, temporal, temporal-ui)"
+  "$docker_bin" compose up -d postgres redis temporal temporal-ui
 else
   echo "[setup-local] docker not available; skipping docker compose startup"
 fi
