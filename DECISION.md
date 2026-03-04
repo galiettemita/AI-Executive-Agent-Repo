@@ -1653,3 +1653,21 @@
 3. Require all newly added skill adapters to ship with integration test + fixture to pass the global gate.  
 **Risk:** Redundant global and category checks can increase maintenance noise if directory conventions change.  
 **Rollback:** Remove `hands_skill_integration_global_closure_test.go` and rely on existing category closure tests if the global gate needs to be temporarily relaxed.
+
+## DECISION-092: Normalize Terraform Module Formatting to Unblock Full CI Gate
+
+**Date:** 2026-03-04  
+**Blueprint Section:** §8, §9.1, §21.4  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/infra/terraform/modules/{cloudfront,elasticache,monitoring,secrets}/main.tf`  
+**Conflict:** `make ci-full` failed in `infra-validate` due Terraform format drift, which blocked full pipeline completion despite functional validity of the modules.  
+**Options Considered:**  
+1. Ignore `ci-full` failure and proceed with partial validation (`make ci`).  
+2. Temporarily relax `infra-validate` formatting gate.  
+3. Apply canonical `terraform fmt` to drifted module files and keep the gate strict.  
+**Decision:** Option 3. Applied canonical Terraform formatting to all reported module files and re-ran `make ci-full` successfully, preserving strict infrastructure quality gates.  
+**Migration Plan:**  
+1. Keep `infra-validate` formatting checks enabled in CI.  
+2. Continue running `make ci-full` before push for infra-touching changes.  
+3. If new drift appears, auto-apply `terraform fmt` before commit.  
+**Risk:** Formatting-only changes can create noisy diffs when mixed with functional infra updates.  
+**Rollback:** Revert formatting-only Terraform changes if needed; no runtime behavior impact expected.

@@ -6,17 +6,17 @@ locals {
   module_name = "monitoring"
   config = {
     cloudwatch = {
-      enabled = true
+      enabled            = true
       log_retention_days = 30
     }
     grafana = {
-      enabled          = true
-      metrics_backend  = "prometheus"
-      traces_backend   = "tempo"
-      logs_backend     = "loki"
+      enabled         = true
+      metrics_backend = "prometheus"
+      traces_backend  = "tempo"
+      logs_backend    = "loki"
     }
     alerting = {
-      pagerduty = true
+      pagerduty            = true
       slo_burn_rate_alerts = true
     }
   }
