@@ -1,6 +1,13 @@
 # aerobase-skill
 
-Generated skill adapter scaffold.
+Hands-plane adapter for flight search and itinerary comparison.
 
-- Plane: `hands`
-- Source: `migrations/006_seed_skills.up.sql`
+## Supported actions
+
+- `search_flights`
+- `compare_itineraries`
+
+## Notes
+
+- Requires origin, destination, and departure date.
+- Returns deterministic itinerary scoring payloads.

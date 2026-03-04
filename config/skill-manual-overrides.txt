@@ -155,3 +155,9 @@ mole-mac-cleanup
 post-at
 roku
 sports-ticker
+aerobase-skill
+better-notion
+clawd-coach
+george
+ibkr-trading
+just-fucking-cancel

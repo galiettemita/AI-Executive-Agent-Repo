@@ -1,6 +1,13 @@
 # just-fucking-cancel
 
-Generated skill adapter scaffold.
+Hands-plane adapter for recurring subscription detection and cancellation draft prep.
 
-- Plane: `hands`
-- Source: `migrations/006_seed_skills.up.sql`
+## Supported actions
+
+- `scan_subscriptions`
+- `draft_cancellation`
+
+## Notes
+
+- Requires transaction CSV for scan and merchant name for draft message.
+- Returns deterministic recurring-charge findings.

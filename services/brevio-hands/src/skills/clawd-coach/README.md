@@ -1,6 +1,13 @@
 # clawd-coach
 
-Generated skill adapter scaffold.
+Hands-plane adapter for training-plan generation and session logging.
 
-- Plane: `hands`
-- Source: `migrations/006_seed_skills.up.sql`
+## Supported actions
+
+- `build_plan`
+- `log_session`
+
+## Notes
+
+- Requires goal for plan creation and notes for session logging.
+- Returns deterministic workout and milestone suggestions.

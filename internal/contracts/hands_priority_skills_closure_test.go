@@ -801,6 +801,36 @@ func TestHandsPrioritySkillsNoLongerScaffolded(t *testing.T) {
 			"items",
 			"status",
 		},
+		"aerobase-skill": {
+			"action",
+			"itineraries",
+			"jetlag_score",
+		},
+		"better-notion": {
+			"action",
+			"pages",
+			"last_edited",
+		},
+		"clawd-coach": {
+			"action",
+			"workouts",
+			"milestones",
+		},
+		"george": {
+			"action",
+			"accounts",
+			"balance_eur",
+		},
+		"ibkr-trading": {
+			"action",
+			"symbol",
+			"price_usd",
+		},
+		"just-fucking-cancel": {
+			"action",
+			"findings",
+			"cadence",
+		},
 	}
 
 	indexTokens := map[string][]string{
@@ -1150,6 +1180,24 @@ func TestHandsPrioritySkillsNoLongerScaffolded(t *testing.T) {
 		},
 		"sports-ticker": {
 			"SPORTS_TICKER_LEAGUE_REQUIRED",
+		},
+		"aerobase-skill": {
+			"AEROBASE_ROUTE_REQUIRED",
+		},
+		"better-notion": {
+			"BETTER_NOTION_CREATE_TITLE_REQUIRED",
+		},
+		"clawd-coach": {
+			"CLAWD_COACH_GOAL_REQUIRED",
+		},
+		"george": {
+			"GEORGE_ACCOUNT_REQUIRED",
+		},
+		"ibkr-trading": {
+			"IBKR_TRADING_SYMBOL_REQUIRED",
+		},
+		"just-fucking-cancel": {
+			"JUST_FUCKING_CANCEL_INPUT_REQUIRED",
 		},
 	}
 

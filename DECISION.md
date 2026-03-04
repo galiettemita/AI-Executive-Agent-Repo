@@ -1401,3 +1401,21 @@
 3. Run full CI and proceed to final wave for remaining scaffold adapters.  
 **Risk:** Deterministic local/device fixtures do not capture full real-device state/latency variability until integration tests run against physical devices and live APIs.  
 **Rollback:** Remove Wave 27 IDs from override config and regenerate scaffolds for these six skills if regressions appear.
+
+## DECISION-078: Close Final Scaffold Gap with Typed Finance/Travel/Knowledge Adapters (Wave 28)
+
+**Date:** 2026-03-04  
+**Blueprint Section:** §2.4, §A.7.2, §A.7.4, §A.7.8, §A.7.16  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/services/brevio-hands/src/skills/{aerobase-skill,better-notion,clawd-coach,george,ibkr-trading,just-fucking-cancel}`  
+**Conflict:** The final six adapters remained scaffold-only and lacked typed input guards for route/page/goal/account/order/subscription fields, deterministic outputs, and closure-test protections.  
+**Options Considered:**  
+1. Keep final six scaffolded until separate provider-integration milestones.  
+2. Do a single broad rewrite mixed with unrelated runtime work.  
+3. Finish a dedicated terminal wave to eliminate scaffold adapters entirely with deterministic typed contracts and tests.  
+**Decision:** Option 3. Replaced scaffolds for `aerobase-skill`, `better-notion`, `clawd-coach`, `george`, `ibkr-trading`, and `just-fucking-cancel` with typed `types/schema/client/index` implementations, deterministic outputs, unit tests, and production READMEs. Added all six IDs to centralized manual override config and closure token assertions.  
+**Migration Plan:**  
+1. Register Wave 28 IDs in `config/skill-manual-overrides.txt`.  
+2. Extend closure token assertions in `internal/contracts/hands_priority_skills_closure_test.go` for each validation constant and output token.  
+3. Run full CI and validate no scaffolded adapters remain outside `_template`/meta files.  
+**Risk:** Deterministic stubs still abstract provider-specific behavior (live market/exchange policies, bank auth friction, and external cancellation flows) until sandbox API integration suites expand.  
+**Rollback:** Remove Wave 28 IDs from override config and regenerate scaffolds for these six skills if regressions surface.

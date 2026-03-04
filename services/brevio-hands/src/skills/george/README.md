@@ -1,6 +1,13 @@
 # george
 
-Generated skill adapter scaffold.
+Hands-plane adapter for George banking account snapshots and analysis.
 
-- Plane: `hands`
-- Source: `migrations/006_seed_skills.up.sql`
+## Supported actions
+
+- `fetch_accounts`
+- `analyze_transactions`
+
+## Notes
+
+- Requires account ID for transaction analysis path.
+- Returns deterministic EUR account payloads.
