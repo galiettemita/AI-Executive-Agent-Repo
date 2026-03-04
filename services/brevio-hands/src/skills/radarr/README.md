@@ -1,6 +1,14 @@
 # radarr
 
-Generated skill adapter scaffold.
+Hands-plane Radarr adapter for movie search, add, and queue introspection.
 
-- Plane: `hands`
-- Source: `migrations/006_seed_skills.up.sql`
+## Supported actions
+
+- `search_movie`
+- `add_movie`
+- `list_queue`
+
+## Notes
+
+- Uses deterministic movie queue fixtures for CI stability.
+- Enforces required query/TMDB fields for relevant actions.

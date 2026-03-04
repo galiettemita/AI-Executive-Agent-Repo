@@ -1293,3 +1293,21 @@
 3. Run full CI, then continue de-scaffolding remaining transport/media/smart-home long-tail skills.  
 **Risk:** Deterministic local fixtures may not capture all host-level permission/runtime differences (for example per-device AppleScript accessibility prompts or local database state drift) until on-device integration tests are expanded.  
 **Rollback:** Remove Wave 21 IDs from override config and regenerate scaffolds for these six skills if regressions are identified.
+
+## DECISION-072: De-Scaffold Home and Media-Server Control Skills with Typed Device Contracts (Wave 22)
+
+**Date:** 2026-03-04  
+**Blueprint Section:** §2.4, §A.7.6, §A.7.7, §A.8  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/services/brevio-hands/src/skills/{samsung-smart-tv,chromecast,sonoscli,overseerr,radarr,sonarr}`  
+**Conflict:** Six home/media-server control skills remained scaffold-only and lacked typed validation contracts for device routing, media request identifiers, and queue-management operations.  
+**Options Considered:**  
+1. Keep this cluster scaffolded while prioritizing remaining research/personal adapters.  
+2. Fold these adapters into an eventual final long-tail wave with mixed categories.  
+3. Execute a focused wave on home/media control with deterministic typed contracts and action-specific guard constants.  
+**Decision:** Option 3. Replaced scaffolds for `samsung-smart-tv`, `chromecast`, `sonoscli`, `overseerr`, `radarr`, and `sonarr` with typed `types/schema/client/index` implementations, deterministic fixture outputs, unit tests, and production READMEs. Added all six IDs to centralized manual override config and closure token assertions.  
+**Migration Plan:**  
+1. Register Wave 22 IDs in `config/skill-manual-overrides.txt`.  
+2. Extend closure token maps for schema/index validation constants in `internal/contracts/hands_priority_skills_closure_test.go`.  
+3. Run full CI, then continue with remaining long-tail scaffolds in follow-on waves.  
+**Risk:** Deterministic fixture behavior does not capture all live-device runtime states (for example discovery jitter, LAN connectivity variance, and external media index drift) until integration tests are expanded against sandbox/home labs.  
+**Rollback:** Remove Wave 22 IDs from override config and regenerate scaffolds for these six skills if regressions are detected.

@@ -1,6 +1,17 @@
 # chromecast
 
-Generated skill adapter scaffold.
+Hands-plane Chromecast control adapter for discovery and media playback.
 
-- Plane: `hands`
-- Source: `migrations/006_seed_skills.up.sql`
+## Supported actions
+
+- `discover_devices`
+- `cast_media`
+- `pause`
+- `resume`
+- `stop`
+- `status`
+
+## Notes
+
+- Validates required device/media fields for cast and control operations.
+- Returns deterministic local device fixtures for CI stability.

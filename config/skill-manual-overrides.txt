@@ -119,3 +119,9 @@ ticktick
 things-mac
 omnifocus
 shortcuts-generator
+samsung-smart-tv
+chromecast
+sonoscli
+overseerr
+radarr
+sonarr

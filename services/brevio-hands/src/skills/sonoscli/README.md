@@ -1,6 +1,17 @@
 # sonoscli
 
-Generated skill adapter scaffold.
+Hands-plane Sonos multi-speaker control adapter.
 
-- Plane: `hands`
-- Source: `migrations/006_seed_skills.up.sql`
+## Supported actions
+
+- `discover`
+- `play`
+- `pause`
+- `set_volume`
+- `group`
+- `status`
+
+## Notes
+
+- Enforces required speaker/query fields for active playback actions.
+- Returns deterministic zone topology for CI-safe testing.

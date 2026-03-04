@@ -621,6 +621,36 @@ func TestHandsPrioritySkillsNoLongerScaffolded(t *testing.T) {
 			"shortcuts",
 			"step_count",
 		},
+		"samsung-smart-tv": {
+			"action",
+			"power_state",
+			"volume_pct",
+		},
+		"chromecast": {
+			"action",
+			"devices",
+			"media_url",
+		},
+		"sonoscli": {
+			"action",
+			"zones",
+			"group_members",
+		},
+		"overseerr": {
+			"action",
+			"requests",
+			"media_id",
+		},
+		"radarr": {
+			"action",
+			"movies",
+			"queue_count",
+		},
+		"sonarr": {
+			"action",
+			"series",
+			"queue_count",
+		},
 	}
 
 	indexTokens := map[string][]string{
@@ -862,6 +892,24 @@ func TestHandsPrioritySkillsNoLongerScaffolded(t *testing.T) {
 		},
 		"shortcuts-generator": {
 			"SHORTCUTS_GENERATOR_STEPS_REQUIRED",
+		},
+		"samsung-smart-tv": {
+			"SAMSUNG_SMART_TV_APP_REQUIRED",
+		},
+		"chromecast": {
+			"CHROMECAST_CAST_FIELDS_REQUIRED",
+		},
+		"sonoscli": {
+			"SONOSCLI_PLAY_FIELDS_REQUIRED",
+		},
+		"overseerr": {
+			"OVERSEERR_QUERY_REQUIRED",
+		},
+		"radarr": {
+			"RADARR_QUERY_REQUIRED",
+		},
+		"sonarr": {
+			"SONARR_QUERY_REQUIRED",
 		},
 	}
 

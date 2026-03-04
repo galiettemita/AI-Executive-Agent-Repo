@@ -1,6 +1,14 @@
 # sonarr
 
-Generated skill adapter scaffold.
+Hands-plane Sonarr adapter for series search, add, and queue introspection.
 
-- Plane: `hands`
-- Source: `migrations/006_seed_skills.up.sql`
+## Supported actions
+
+- `search_series`
+- `add_series`
+- `list_queue`
+
+## Notes
+
+- Uses deterministic series queue fixtures for CI stability.
+- Enforces required query/TVDB fields for relevant actions.

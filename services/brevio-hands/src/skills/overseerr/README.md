@@ -1,6 +1,14 @@
 # overseerr
 
-Generated skill adapter scaffold.
+Hands-plane Overseerr adapter for searching and requesting media.
 
-- Plane: `hands`
-- Source: `migrations/006_seed_skills.up.sql`
+## Supported actions
+
+- `search_media`
+- `request_media`
+- `list_requests`
+
+## Notes
+
+- Uses deterministic request fixtures for CI-safe behavior.
+- Enforces required query/media fields for action-specific flows.

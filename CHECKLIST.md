@@ -940,6 +940,14 @@ You must prove it.
 - [x] Extend centralized manual override registry and closure test token assertions for all Wave 21 adapters
 - [x] Validate Wave 21 against full `make ci` gate before merge
 
+## M15: Hands Adapter Wave 22 (Home + Media Server Control Hardening)
+- [x] De-scaffold `samsung-smart-tv` + `chromecast` with typed device-control contracts and action-specific required-field validation
+- [x] De-scaffold `sonoscli` with typed zone/group/playback contracts and mutation guard constants
+- [x] De-scaffold `overseerr` with typed search/request/list contracts and media identifier validation
+- [x] De-scaffold `radarr` + `sonarr` with typed queue/search/add contracts and required catalog-ID validation
+- [x] Extend centralized manual override registry and closure test token assertions for all Wave 22 adapters
+- [x] Validate Wave 22 against full `make ci` gate before merge
+
 ## M13–15 (Auto-Provisioning Layer 3): Remote Server Discovery Catalog (Auto-Provisioning Sections 5, 12.3, 16)
 - [x] ToolRegistry: register native tool `search_remote_catalog` (use only if `provision_server` fails due to missing catalog entry) (Auto-Provisioning Section 9)
 - [x] Hands handler: implement `search_remote_catalog` -> query remote catalog API -> return matched entries (Auto-Provisioning Section 5)
