@@ -1,6 +1,13 @@
 # watch-my-money
 
-Generated skill adapter scaffold.
+Hands-plane statement analysis and budget alert adapter.
 
-- Plane: `hands`
-- Source: `migrations/006_seed_skills.up.sql`
+## Supported actions
+
+- `analyze_statement`
+- `budget_alerts`
+
+## Notes
+
+- Computes category totals and spend-rate signals from normalized transactions.
+- Deterministic outputs are used for CI stability and policy checks.

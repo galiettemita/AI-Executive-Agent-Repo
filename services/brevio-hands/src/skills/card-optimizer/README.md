@@ -1,6 +1,13 @@
 # card-optimizer
 
-Generated skill adapter scaffold.
+Brain-plane card rewards recommendation adapter.
 
-- Plane: `brain`
-- Source: `migrations/006_seed_skills.up.sql`
+## Supported actions
+
+- `recommend_card`
+- `category_strategy`
+
+## Notes
+
+- Computes deterministic reward estimates from card bonus rates.
+- Designed for routing from smart expense and checkout workflows.

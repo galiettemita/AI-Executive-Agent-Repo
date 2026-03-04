@@ -101,3 +101,9 @@ apple-notes
 apple-mail-search
 alter-actions
 get-focus-mode
+smart-expense-tracker
+card-optimizer
+refund-radar
+expense-tracker-pro
+watch-my-money
+tax-professional

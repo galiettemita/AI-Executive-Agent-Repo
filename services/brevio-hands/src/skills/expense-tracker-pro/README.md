@@ -1,6 +1,14 @@
 # expense-tracker-pro
 
-Generated skill adapter scaffold.
+Hands-plane detailed expense tracker adapter.
 
-- Plane: `hands`
-- Source: `migrations/006_seed_skills.up.sql`
+## Supported actions
+
+- `add_expense`
+- `monthly_summary`
+- `category_breakdown`
+
+## Notes
+
+- Provides deterministic category aggregation for reporting.
+- Suitable as delegated backend for `smart-expense-tracker` orchestration.

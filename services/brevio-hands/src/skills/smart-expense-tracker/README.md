@@ -1,6 +1,14 @@
 # smart-expense-tracker
 
-Generated skill adapter scaffold.
+Brain-plane expense orchestration adapter for logging, budget status, and daily briefings.
 
-- Plane: `brain`
-- Source: `migrations/006_seed_skills.up.sql`
+## Supported actions
+
+- `log_expense`
+- `daily_briefing`
+- `budget_status`
+
+## Notes
+
+- Provides deterministic spend rollups used by downstream finance routing.
+- No external provider dependency in current test harness.

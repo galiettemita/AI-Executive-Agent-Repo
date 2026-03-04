@@ -531,6 +531,36 @@ func TestHandsPrioritySkillsNoLongerScaffolded(t *testing.T) {
 			"current_mode",
 			"schedule",
 		},
+		"smart-expense-tracker": {
+			"action",
+			"entries",
+			"budget_alerts",
+		},
+		"card-optimizer": {
+			"purchase_category",
+			"recommended_card",
+			"estimated_reward_cents",
+		},
+		"refund-radar": {
+			"action",
+			"flagged_charges",
+			"draft_message",
+		},
+		"expense-tracker-pro": {
+			"action",
+			"totals_by_category",
+			"total_cents",
+		},
+		"watch-my-money": {
+			"transactions",
+			"spend_rate_pct_of_income",
+			"alerts",
+		},
+		"tax-professional": {
+			"tax_year",
+			"estimated_deductions_cents",
+			"not_tax_advice",
+		},
 	}
 
 	indexTokens := map[string][]string{
@@ -729,6 +759,18 @@ func TestHandsPrioritySkillsNoLongerScaffolded(t *testing.T) {
 		},
 		"get-focus-mode": {
 			"focus_mode.read",
+		},
+		"smart-expense-tracker": {
+			"SMART_EXPENSE_TRACKER_LOG_FIELDS_REQUIRED",
+		},
+		"card-optimizer": {"CARD_OPTIMIZER_CATEGORY_REQUIRED"},
+		"refund-radar":   {"REFUND_RADAR_DRAFT_FIELDS_REQUIRED"},
+		"expense-tracker-pro": {
+			"EXPENSE_TRACKER_PRO_ADD_FIELDS_REQUIRED",
+		},
+		"watch-my-money": {"WATCH_MY_MONEY_TRANSACTIONS_REQUIRED"},
+		"tax-professional": {
+			"TAX_PROFESSIONAL_TAX_YEAR_REQUIRED",
 		},
 	}
 

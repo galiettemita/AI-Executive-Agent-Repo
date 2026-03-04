@@ -1,6 +1,13 @@
 # refund-radar
 
-Generated skill adapter scaffold.
+Brain-plane recurring-charge scanner and refund-draft assistant.
 
-- Plane: `brain`
-- Source: `migrations/006_seed_skills.up.sql`
+## Supported actions
+
+- `scan_recurring_charges`
+- `draft_refund_request`
+
+## Notes
+
+- Produces deterministic recurring-charge flags and refund draft templates.
+- Intended to feed user confirmation and outbound comms workflows.

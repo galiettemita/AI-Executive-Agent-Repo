@@ -1,6 +1,13 @@
 # tax-professional
 
-Generated skill adapter scaffold.
+Hands-plane tax planning assistant adapter.
 
-- Plane: `hands`
-- Source: `migrations/006_seed_skills.up.sql`
+## Supported actions
+
+- `estimate_deductions`
+- `filing_checklist`
+
+## Notes
+
+- Emits explicit `not_tax_advice` disclaimer in all responses.
+- Provides deterministic checklist and deduction estimate outputs.

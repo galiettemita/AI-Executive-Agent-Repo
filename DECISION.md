@@ -1239,3 +1239,21 @@
 3. Run full CI and continue next category wave from remaining scaffolded adapters.  
 **Risk:** Deterministic local fixtures do not capture full macOS runtime variability (device discovery jitter, local permissions, x-callback edge cases) until on-device integration tests are expanded.  
 **Rollback:** Remove Wave 18 IDs from override config and regenerate scaffolds for these six skills if regressions appear.
+
+## DECISION-069: De-Scaffold Finance Advisory Skills with Explicit Validation and Disclaimer Contracts (Wave 19)
+
+**Date:** 2026-03-04  
+**Blueprint Section:** §2.4, §A.7.8, §A.8  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/services/brevio-hands/src/skills/{smart-expense-tracker,card-optimizer,refund-radar,expense-tracker-pro,watch-my-money,tax-professional}`  
+**Conflict:** Six finance-focused skills remained scaffold-only, leaving no typed constraints for spend analysis, rewards optimization, refund drafting, or tax-planning outputs.  
+**Options Considered:**  
+1. Keep finance skills scaffolded until all transport/media scaffolds are complete.  
+2. De-scaffold all remaining finance and productivity skills in one very large wave.  
+3. Execute a focused finance-advisory wave with typed action contracts, validation guards, deterministic outputs, and explicit compliance disclaimers.  
+**Decision:** Option 3. Replaced scaffolds for `smart-expense-tracker`, `card-optimizer`, `refund-radar`, `expense-tracker-pro`, `watch-my-money`, and `tax-professional` with typed `types/schema/client/index` modules, deterministic outputs, unit tests, and updated README docs. Added all six IDs to centralized manual override config and closure token assertions.  
+**Migration Plan:**  
+1. Register Wave 19 IDs in `config/skill-manual-overrides.txt`.  
+2. Extend closure token maps for finance validation constants and disclaimer token checks.  
+3. Run full CI and continue de-scaffolding remaining categories in subsequent waves.  
+**Risk:** Deterministic financial fixtures cannot capture provider and regulatory edge cases (statement import anomalies, issuer reward policy changes, jurisdiction-specific tax logic) until sandbox-backed integration suites are expanded.  
+**Rollback:** Remove Wave 19 IDs from override config and regenerate scaffolds for these six skills if regressions are found.
