@@ -631,3 +631,21 @@
 3. Add closure test coverage to enforce token-level invariants and prevent scaffold regressions.  
 **Risk:** `make docker-build` now depends on each service-specific Dockerfile existing and remaining synchronized with command entrypoint names.  
 **Rollback:** Revert `Makefile` docker-build target to root Dockerfile loop and remove service-specific docker closure test if per-service files become unnecessary.
+
+## DECISION-036: Replace `infra/helm/brevio` Scaffold with Executable Umbrella Chart + Additional Service Templates
+
+**Date:** 2026-03-04  
+**Blueprint Section:** §8.2, §16 (`infra/helm/brevio`)  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/infra/helm/brevio`  
+**Conflict:** The `infra/helm/brevio` chart contained scaffold-level placeholder content (single-line duplicated `global.environment` values and no executable templates), which did not satisfy the production umbrella-chart requirement.  
+**Options Considered:**  
+1. Keep `infra/helm/brevio` as documentation-only placeholder and rely solely on top-level `helm/BREVIO-*` charts.  
+2. Delete `infra/helm/brevio` and avoid umbrella composition entirely.  
+3. Implement an executable umbrella chart that composes existing core subcharts and renders missing core services via generic templates.  
+**Decision:** Option 3. Replaced `infra/helm/brevio` with a dependency-backed umbrella chart for gateway/brain/hands/control/canvas/temporal-worker and added templated Deployment/Service/HPA rendering for additional services (`auth`, `profile`, `scheduler`, `metrics`, `edge-relay`) including non-root/read-only container security defaults.  
+**Migration Plan:**  
+1. Replace scaffold chart metadata and values with environment-aware production values (`values.yaml`, `values-staging.yaml`, `values-production.yaml`).  
+2. Add Helm helpers, service account template, and additional-service render template set.  
+3. Add closure test to enforce required dependency, values, and template tokens and prevent scaffold regressions.  
+**Risk:** Umbrella dependency versions are pinned to current local chart versions (`0.1.0`); when subchart versions change, dependency metadata must be updated in lockstep.  
+**Rollback:** Restore prior scaffold files in `infra/helm/brevio` and remove the new helm umbrella closure contract test.

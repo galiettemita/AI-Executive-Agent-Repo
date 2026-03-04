@@ -1,2 +1,35 @@
 global:
   environment: staging
+
+gateway:
+  image:
+    tag: staging
+
+brain:
+  image:
+    tag: staging
+
+hands:
+  image:
+    tag: staging
+
+temporalWorker:
+  image:
+    tag: staging
+
+additionalServices:
+  auth:
+    image:
+      tag: staging
+  profile:
+    image:
+      tag: staging
+  scheduler:
+    image:
+      tag: staging
+  metrics:
+    image:
+      tag: staging
+  edge-relay:
+    image:
+      tag: staging

@@ -1,2 +1,35 @@
 global:
   environment: production
+
+gateway:
+  image:
+    tag: v9.3.0
+
+brain:
+  image:
+    tag: v9.3.0
+
+hands:
+  image:
+    tag: v9.3.0
+
+temporalWorker:
+  image:
+    tag: v9.3.0
+
+additionalServices:
+  auth:
+    image:
+      tag: v9.3.0
+  profile:
+    image:
+      tag: v9.3.0
+  scheduler:
+    image:
+      tag: v9.3.0
+  metrics:
+    image:
+      tag: v9.3.0
+  edge-relay:
+    image:
+      tag: v9.3.0
