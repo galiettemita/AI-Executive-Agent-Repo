@@ -1635,3 +1635,21 @@
 3. Keep closure contracts enabled to prevent regression to scaffold-only tests.  
 **Risk:** Deterministic fixtures validate output contracts and success-path behavior but do not simulate live provider/runtime variability until sandbox-backed integration environments are available.  
 **Rollback:** Restore prior integration test files and remove `final_skill_integration_closure_test.go` if closure enforcement strategy changes.
+
+## DECISION-091: Add Global Hands Integration Closure Contract Gate
+
+**Date:** 2026-03-04  
+**Blueprint Section:** §2.4, §11.1, §21.4  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/internal/contracts/*_skill_integration_closure_test.go`  
+**Conflict:** Category-specific closure tests prevented regressions only for hardcoded skill lists and required ongoing manual updates whenever skills were added or reclassified.  
+**Options Considered:**  
+1. Keep only category-specific closure tests and update lists manually over time.  
+2. Remove category tests and replace with a single global test.  
+3. Add a global closure gate while preserving existing category tests for redundancy.  
+**Decision:** Option 3. Added `internal/contracts/hands_skill_integration_global_closure_test.go` to iterate over every skill directory under `services/brevio-hands/src/skills/` and fail if (a) `__tests__/integration.test.ts` contains `scaffold compiles` or (b) `__tests__/fixtures` has no `.json` files. Existing category-level closure tests remain in place for defense in depth.  
+**Migration Plan:**  
+1. Keep global gate enabled in CI contract runs.  
+2. Preserve category closure tests during transition and de-duplicate later only if maintenance cost increases.  
+3. Require all newly added skill adapters to ship with integration test + fixture to pass the global gate.  
+**Risk:** Redundant global and category checks can increase maintenance noise if directory conventions change.  
+**Rollback:** Remove `hands_skill_integration_global_closure_test.go` and rely on existing category closure tests if the global gate needs to be temporarily relaxed.
