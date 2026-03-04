@@ -1,68 +1,40 @@
-import http from 'node:http';
+import { randomUUID } from 'node:crypto';
 
-const serviceName = 'brevio-auth';
-const version = process.env.SERVICE_VERSION ?? '0.1.0';
-const start = Date.now();
-const port = Number(process.env.PORT ?? 8080);
+import { logJSON } from './logger.js';
+import { installSignalHandlers, startAuthService } from './server.js';
 
-function healthPayload(deep: boolean): string {
-  const checks: Record<string, string> = {
-    process: 'ok'
-  };
+async function main(): Promise<void> {
+  const runtime = await startAuthService();
+  installSignalHandlers(runtime);
 
-  if (deep) {
-    checks.db = process.env.DATABASE_URL ? 'configured' : 'not_configured';
-    checks.redis = process.env.REDIS_URL ? 'configured' : 'not_configured';
-    checks.temporal = process.env.TEMPORAL_HOST ? 'configured' : 'not_configured';
-  }
-
-  return JSON.stringify({
-    status: 'healthy',
-    service: serviceName,
-    version,
-    uptime_ms: Date.now() - start,
-    checks
-  });
+  logJSON(
+    'service_started',
+    'INFO',
+    runtime.config.serviceName,
+    runtime.config.environment,
+    {
+      traceId: randomUUID(),
+      spanId: randomUUID(),
+      correlationId: randomUUID()
+    },
+    {
+      port: runtime.config.port,
+      map_path: runtime.config.mapPath,
+      oauth_services: runtime.serviceMap.oauth_services.length,
+      api_key_services: runtime.serviceMap.api_key_services.length,
+      no_auth_services: runtime.serviceMap.no_auth_services.length
+    }
+  );
 }
 
-const server = http.createServer((req, res) => {
-  if (!req.url) {
-    res.writeHead(400).end();
-    return;
-  }
-
-  if (req.method === 'GET' && req.url === '/health') {
-    res.writeHead(200, { 'content-type': 'application/json' });
-    res.end(healthPayload(false));
-    return;
-  }
-
-  if (req.method === 'GET' && req.url === '/health/deep') {
-    res.writeHead(200, { 'content-type': 'application/json' });
-    res.end(healthPayload(true));
-    return;
-  }
-
-  res.writeHead(404, { 'content-type': 'application/json' });
-  res.end(JSON.stringify({ error: 'not_found', service: serviceName }));
+void main().catch((err) => {
+  process.stderr.write(
+    JSON.stringify({
+      ts: new Date().toISOString(),
+      event: 'service_start_failed',
+      severity: 'ERROR',
+      error: err instanceof Error ? err.message : String(err)
+    }) + '\n'
+  );
+  process.exit(1);
 });
-
-server.listen(port, () => {
-  process.stdout.write(JSON.stringify({ event: 'service_started', service: serviceName, port }) + '\n');
-});
-
-function shutdown(signal: string): void {
-  process.stdout.write(JSON.stringify({ event: 'shutdown_start', service: serviceName, signal }) + '\n');
-  server.close(() => {
-    process.stdout.write(JSON.stringify({ event: 'shutdown_complete', service: serviceName }) + '\n');
-    process.exit(0);
-  });
-
-  setTimeout(() => {
-    process.stdout.write(JSON.stringify({ event: 'shutdown_timeout', service: serviceName }) + '\n');
-    process.exit(1);
-  }, 30_000).unref();
-}
-
-process.on('SIGTERM', () => shutdown('SIGTERM'));
-process.on('SIGINT', () => shutdown('SIGINT'));

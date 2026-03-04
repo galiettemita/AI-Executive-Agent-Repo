@@ -739,3 +739,22 @@
 3. Update docker closure tests and README mappings to prevent regressions.  
 **Risk:** Node distroless images depend on `pnpm deploy` behavior; pnpm major-version changes may require Dockerfile adjustments.  
 **Rollback:** Remove TypeScript Dockerfiles and revert `docker-build-infra` loop/test expectations to Go-only coverage.
+
+## DECISION-042: Replace `brevio-auth` Health-Only Scaffold with OAuth Registry + PKCE Runtime and Tight Addendum-A Service-Map Enforcement
+
+**Date:** 2026-03-04  
+**Blueprint Section:** §15, §20.1-§20.4, §20.6, Addendum §A.5  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/services/brevio-auth`, `/Users/galiettemita/Downloads/Executive AI Agent/backend/config/auth-service-map.yaml`, `/Users/galiettemita/Downloads/Executive AI Agent/backend/internal/contracts/auth_service_map_closure_test.go`  
+**Conflict:** `brevio-auth` only exposed health endpoints and did not provide OAuth provider discovery, PKCE authorization-state management, or callback/exchange flows. Auth service-map contracts validated only counts/basic fields and did not enforce canonical Addendum-A provider sets or full `local-macos` 24-skill coverage.  
+**Options Considered:**  
+1. Keep `brevio-auth` as health-only scaffold and rely on future auth implementation work.  
+2. Add only contract hardening for service-map data without runtime service upgrades.  
+3. Implement both runtime auth service capabilities and stricter config/contract enforcement in one batch.  
+**Decision:** Option 3. Implemented typed auth runtime modules for provider registry loading, PKCE state generation, OAuth authorize/exchange/refresh/callback endpoints, structured JSON logging with correlation fields, and graceful shutdown handling. Simultaneously hardened `config/auth-service-map.yaml` and contract tests to enforce exact OAuth/API-key/no-auth service sets and full 24-skill local-mac mapping.  
+**Migration Plan:**  
+1. Extend `brevio-auth` source into modular runtime (`config`, `server`, `pkce`, `logger`, `types`) while preserving `/health` and `/health/deep` behavior.  
+2. Tighten `auth-service-map` data to canonical service IDs and complete `local-macos` skill list.  
+3. Upgrade contract gates with exact-set assertions and add a dedicated `auth_service_runtime_closure_test.go` to lock endpoint/runtime invariants.  
+4. Re-run full `make ci` gate set to ensure no regressions.  
+**Risk:** OAuth token exchange currently uses deterministic simulated token issuance rather than live provider token endpoint calls; this is intentionally safe for local/staging closure but requires live secret-backed provider exchange integration before production OAuth onboarding.  
+**Rollback:** Revert `services/brevio-auth` runtime modules and contract expansions to prior health-only scaffold and basic service-map count checks if a minimal baseline is temporarily required.

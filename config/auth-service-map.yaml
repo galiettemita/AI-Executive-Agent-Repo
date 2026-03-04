@@ -176,7 +176,7 @@ api_key_services:
     skills_using: [parcel-package-tracking]
     rate_limit: provider limited
     cost_model: "$0.005/track"
-  - service: home-assistant-api-key
+  - service: home-assistant
     key_source: user home assistant instance
     skills_using: [home-assistant]
     rate_limit: self-hosted
@@ -196,11 +196,11 @@ no_auth_services:
     skills_using: [trakt]
     notes: client-id auth
   - service: local-macos
-    skills_using: [apple-remind-me, apple-mail, apple-notes-skill, things-mac, obsidian]
-    notes: local edge-agent permissions
+    skills_using: [apple-remind-me, calctl, healthkit-sync, healthkit-sync-apple, apple-mail, apple-mail-search, apple-media, apple-music, apple-contacts, apple-photos, apple-notes, apple-notes-skill, shortcuts-generator, get-focus-mode, mole-mac-cleanup, alter-actions, spotify, things-mac, omnifocus, voice-wake-say, bear-notes, obsidian, craft, gamma]
+    notes: no remote auth; edge-agent executes with local macOS permissions
   - service: internal-llm-only
-    skills_using: [focus-mode, thinking-partner, self-improvement]
-    notes: no external api
+    skills_using: [doing-tasks, plan-my-day, daily-rhythm, morning-manifesto, focus-mode, relationship-skills, thinking-partner, self-improvement]
+    notes: no external api; brain-plane llm-only skills
 
 auth_config_storage:
   secret_naming_convention:
