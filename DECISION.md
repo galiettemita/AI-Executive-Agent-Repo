@@ -1473,3 +1473,21 @@
 3. Maintain closure test to prevent any regression to no-op integration tests.  
 **Risk:** Fixture-backed assertions validate deterministic adapter behavior, but not real provider transport/quality variance until provider-backed integration runs are added.  
 **Rollback:** Restore prior gateway integration test files and remove fixture + closure-test additions if policy returns to compile-only integration tests.
+
+## DECISION-082: De-Scaffold Brain Skill Integration Tests with Fixture Enforcement
+
+**Date:** 2026-03-04  
+**Blueprint Section:** §1.2.2, §2.4, §11.1, §18  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/services/brevio-hands/src/skills/{doing-tasks,plan-my-day,daily-rhythm,morning-manifesto,personal-shopper,clawringhouse,smart-expense-tracker,card-optimizer,refund-radar,contract-reviewer,meeting-autopilot,proactive-research,focus-mode,thinking-partner,relationship-skills,self-improvement}/__tests__/integration.test.ts` and `/Users/galiettemita/Downloads/Executive AI Agent/backend/internal/contracts`  
+**Conflict:** Brain-plane skill adapters had typed unit tests and deterministic clients, but integration tests remained scaffold placeholders (`scaffold compiles`), leaving no executable fixture contract for core orchestration behaviors.  
+**Options Considered:**  
+1. Keep Brain-plane integration tests as compile placeholders while de-scaffolding other categories first.  
+2. Convert only selected high-traffic Brain skills and defer the rest.  
+3. Convert all 16 Brain-plane skill integration tests now with fixture-backed deterministic assertions and add a closure contract gate.  
+**Decision:** Option 3. Replaced all 16 Brain-plane `integration.test.ts` files with deterministic fixture-backed execution assertions, added one `.json` fixture per skill under `__tests__/fixtures`, and introduced `internal/contracts/brain_skill_integration_closure_test.go` to fail if any Brain-plane integration test contains `scaffold compiles` or lacks fixture JSON coverage.  
+**Migration Plan:**  
+1. Keep deterministic fixture baselines as stability contracts for Brain-skill behavior.  
+2. Expand fixture sets with richer edge-case scenarios (fallback routing, partial aggregation, budget constraints) in subsequent waves.  
+3. Preserve closure-test enforcement to prevent regressions to no-op integration coverage.  
+**Risk:** Deterministic fixture checks validate mocked local adapter behavior, not external provider/network variance, until sandbox/live integration environments are wired for these flows.  
+**Rollback:** Restore prior Brain integration test files and remove related fixtures + closure gate if fixture contract strategy is changed.
