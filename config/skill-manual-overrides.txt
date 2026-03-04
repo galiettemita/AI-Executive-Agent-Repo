@@ -41,3 +41,9 @@ track17
 goplaces
 local-places
 spots
+apple-mail
+imap-email
+slack
+reddit
+bluesky
+bird

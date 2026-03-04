@@ -231,6 +231,36 @@ func TestHandsPrioritySkillsNoLongerScaffolded(t *testing.T) {
 			"grid_density",
 			"results",
 		},
+		"apple-mail": {
+			"action",
+			"to",
+			"subject",
+		},
+		"imap-email": {
+			"action",
+			"mailbox",
+			"messages",
+		},
+		"slack": {
+			"action",
+			"channel_id",
+			"emoji",
+		},
+		"reddit": {
+			"action",
+			"subreddit",
+			"posts",
+		},
+		"bluesky": {
+			"action",
+			"query",
+			"posts",
+		},
+		"bird": {
+			"action",
+			"query",
+			"posts",
+		},
 	}
 
 	indexTokens := map[string][]string{
@@ -295,6 +325,15 @@ func TestHandsPrioritySkillsNoLongerScaffolded(t *testing.T) {
 		},
 		"local-places": {"local-places execution failed"},
 		"spots":        {"spots execution failed"},
+		"apple-mail":   {"APPLE_MAIL_CONFIRMATION_REQUIRED"},
+		"imap-email":   {"IMAP_EMAIL_CONFIRMATION_REQUIRED"},
+		"slack": {
+			"requiredScopes",
+			"chat:write",
+		},
+		"reddit":  {"REDDIT_POST_CONFIRMATION_REQUIRED"},
+		"bluesky": {"BLUESKY_POST_CONFIRMATION_REQUIRED"},
+		"bird":    {"BIRD_POST_CONFIRMATION_REQUIRED"},
 	}
 
 	scriptBody, err := os.ReadFile(scriptPath)

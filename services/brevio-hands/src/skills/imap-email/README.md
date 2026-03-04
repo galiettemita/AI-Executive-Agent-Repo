@@ -1,6 +1,19 @@
 # imap-email
 
-Generated skill adapter scaffold.
+IMAP email adapter for generic mailbox listing/search plus confirmation-gated send.
 
-- Plane: `hands`
-- Source: `migrations/006_seed_skills.up.sql`
+## Auth
+- IMAP credentials with read/send privileges.
+
+## Input
+- `action`: `list`, `search`, `send`
+- `mailbox` optional mailbox name
+- `query` required for `search`
+- `to`, `subject`, `body`, `confirmed` for `send`
+
+## Output
+- `provider`: `imap-email`
+- action echo, mailbox, optional `messages[]`, optional `sent`
+
+## Notes
+- Send is blocked unless `confirmed: true`.

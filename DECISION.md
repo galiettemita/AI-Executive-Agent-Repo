@@ -1020,3 +1020,22 @@
 4. Run scaffold parity + full `make ci` before merge.  
 **Risk:** Deterministic stub outputs may not capture provider-specific edge behavior (carrier-specific package transitions, place ranking nuances, flight identifier normalization) until sandbox-backed integration fixtures are expanded.  
 **Rollback:** Remove Wave 7 IDs from override config and regenerate scaffold defaults for these seven skills if regressions are detected.
+
+## DECISION-057: Extend Priority De-Scaffolding to Communication and Social Connectors (Wave 8)
+
+**Date:** 2026-03-04  
+**Blueprint Section:** §2.4, §5.3, §A.7.5, §A.8  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/services/brevio-hands/src/skills/{apple-mail,imap-email,slack,reddit,bluesky,bird}`  
+**Conflict:** Communication and social skills were still scaffold-only, leaving no action-level validation or confirmation gating for high-risk outbound messaging/posting actions.  
+**Options Considered:**  
+1. Keep communication/social skills scaffolded and focus remaining waves on finance/health adapters first.  
+2. Replace all remaining communication and media adapters in one broad migration.  
+3. Execute a focused wave for six communication/social connectors with strict per-action schema contracts and posting/send confirmation controls.  
+**Decision:** Option 3. Implemented Wave 8 typed adapters for `apple-mail`, `imap-email`, `slack`, `reddit`, `bluesky`, and `bird` with explicit action enums, required-field validation, deterministic provider outputs, and confirmation requirements for send/post mutations. Added all six IDs to centralized manual override config and closure token assertions.  
+**Migration Plan:**  
+1. Register Wave 8 IDs in `config/skill-manual-overrides.txt`.  
+2. Replace scaffold files (`types/schema/client/index/README/unit`) across all six skills.  
+3. Extend `hands_priority_skills_closure_test` for Wave 8 schema/index token coverage and override membership checks.  
+4. Run scaffold parity + full `make ci` before merge.  
+**Risk:** Deterministic local message feeds do not fully model provider-specific moderation/rate-limit behavior (for example subreddit posting restrictions or Slack workspace permission deltas) until sandbox integration fixtures are expanded.  
+**Rollback:** Remove Wave 8 IDs from override config and regenerate scaffolds for these six skills if regressions emerge.
