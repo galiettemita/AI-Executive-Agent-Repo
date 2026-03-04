@@ -1,10 +1,21 @@
 import { z } from 'zod';
 
-export const InputSchema = z.object({
-  payload: z.record(z.unknown()).optional()
+const ItemSchema = z.object({
+  source: z.string(),
+  title: z.string(),
+  url: z.string().url()
 });
 
-export const OutputSchema = z.object({
-  ok: z.boolean(),
-  skill_id: z.string()
-});
+export const InputSchema = z
+  .object({
+    topic: z.string().min(2).max(200).optional(),
+    max_items: z.number().int().min(1).max(20).optional()
+  })
+  .strict();
+
+export const OutputSchema = z
+  .object({
+    provider: z.literal('news-aggregator'),
+    items: z.array(ItemSchema)
+  })
+  .strict();

@@ -13,6 +13,7 @@ func TestHandsPrioritySkillsNoLongerScaffolded(t *testing.T) {
 	root := repositoryRoot(t)
 	skillsRoot := filepath.Join(root, "services", "brevio-hands", "src", "skills")
 	scriptPath := filepath.Join(root, "scripts", "skills", "generate_hands_skill_scaffolds.sh")
+	manualOverridePath := filepath.Join(root, "config", "skill-manual-overrides.txt")
 
 	schemaTokens := map[string][]string{
 		"shopping-expert": {
@@ -105,6 +106,36 @@ func TestHandsPrioritySkillsNoLongerScaffolded(t *testing.T) {
 			"devices",
 			"icloud-findmy",
 		},
+		"exa": {
+			"query",
+			"results",
+			"score",
+		},
+		"serpapi": {
+			"query",
+			"engine",
+			"results",
+		},
+		"perplexity": {
+			"query",
+			"answer",
+			"citations",
+		},
+		"brave-search": {
+			"query",
+			"results",
+			"brave-search",
+		},
+		"firecrawl-search": {
+			"query",
+			"content",
+			"firecrawl",
+		},
+		"news-aggregator": {
+			"topic",
+			"items",
+			"news-aggregator",
+		},
 	}
 
 	indexTokens := map[string][]string{
@@ -129,6 +160,14 @@ func TestHandsPrioritySkillsNoLongerScaffolded(t *testing.T) {
 		},
 		"outlook":       {"requiredScopes", "OUTLOOK_SEND_FIELDS_REQUIRED"},
 		"icloud-findmy": {"icloud-findmy execution failed"},
+		"exa":           {"exa execution failed"},
+		"serpapi":       {"serpapi execution failed"},
+		"perplexity":    {"perplexity execution failed"},
+		"brave-search":  {"brave-search execution failed"},
+		"firecrawl-search": {
+			"firecrawl-search execution failed",
+		},
+		"news-aggregator": {"news-aggregator execution failed"},
 	}
 
 	scriptBody, err := os.ReadFile(scriptPath)
@@ -136,6 +175,15 @@ func TestHandsPrioritySkillsNoLongerScaffolded(t *testing.T) {
 		t.Fatalf("read skill scaffold script: %v", err)
 	}
 	scriptText := string(scriptBody)
+	if !strings.Contains(scriptText, "config/skill-manual-overrides.txt") {
+		t.Fatalf("skill scaffold script missing manual override config reference")
+	}
+
+	overrideBody, err := os.ReadFile(manualOverridePath)
+	if err != nil {
+		t.Fatalf("read manual override file: %v", err)
+	}
+	overrideText := string(overrideBody)
 
 	for skillID, tokens := range schemaTokens {
 		skillDir := filepath.Join(skillsRoot, skillID)
@@ -154,8 +202,8 @@ func TestHandsPrioritySkillsNoLongerScaffolded(t *testing.T) {
 			t.Fatalf("priority skill %s README still contains scaffold marker", skillID)
 		}
 
-		if !strings.Contains(scriptText, skillID) {
-			t.Fatalf("skill scaffold script manual preserve list missing %s", skillID)
+		if !strings.Contains(overrideText, skillID) {
+			t.Fatalf("manual override list missing %s", skillID)
 		}
 	}
 }

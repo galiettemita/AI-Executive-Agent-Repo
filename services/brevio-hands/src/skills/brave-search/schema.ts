@@ -1,10 +1,21 @@
 import { z } from 'zod';
 
-export const InputSchema = z.object({
-  payload: z.record(z.unknown()).optional()
+const ResultSchema = z.object({
+  title: z.string(),
+  url: z.string().url(),
+  description: z.string()
 });
 
-export const OutputSchema = z.object({
-  ok: z.boolean(),
-  skill_id: z.string()
-});
+export const InputSchema = z
+  .object({
+    query: z.string().min(2).max(500),
+    max_results: z.number().int().min(1).max(20).optional()
+  })
+  .strict();
+
+export const OutputSchema = z
+  .object({
+    provider: z.literal('brave-search'),
+    results: z.array(ResultSchema)
+  })
+  .strict();

@@ -1,8 +1,15 @@
-export interface SkillInputPayload {
-  payload?: Record<string, unknown>;
+export interface BraveSearchInput {
+  query: string;
+  max_results?: number;
 }
 
-export interface SkillOutputPayload {
-  ok: boolean;
-  skill_id: string;
+export interface BraveSearchResult {
+  title: string;
+  url: string;
+  description: string;
+}
+
+export interface BraveSearchOutput {
+  provider: 'brave-search';
+  results: BraveSearchResult[];
 }

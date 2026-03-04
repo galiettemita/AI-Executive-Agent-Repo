@@ -5,6 +5,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 SQL_FILE="${ROOT_DIR}/migrations/006_seed_skills.up.sql"
 SKILLS_DIR="${ROOT_DIR}/services/brevio-hands/src/skills"
 REGISTRY_FILE="${SKILLS_DIR}/index.ts"
+MANUAL_OVERRIDE_FILE="${ROOT_DIR}/config/skill-manual-overrides.txt"
 
 if [[ ! -f "${SQL_FILE}" ]]; then
   echo "missing seed migration: ${SQL_FILE}" >&2
@@ -69,26 +70,17 @@ pharmacy-prescription
 pet-care
 EOF
 
-cat >"${MANUAL_FILE}" <<'EOF'
-shopping-expert
-google-maps
-google-calendar
-tavily
-smtp-send
-home-assistant
-todoist
-youtube-api
-ynab
-notion
-fal-ai
-apple-contacts
-spotify-web-api
-tmdb
-plaid
-google-workspace
-outlook
-icloud-findmy
-EOF
+if [[ ! -f "${MANUAL_OVERRIDE_FILE}" ]]; then
+  echo "missing manual skill override list: ${MANUAL_OVERRIDE_FILE}" >&2
+  exit 1
+fi
+
+rg -v '^\s*$|^\s*#' "${MANUAL_OVERRIDE_FILE}" | sort -u >"${MANUAL_FILE}"
+
+if [[ ! -s "${MANUAL_FILE}" ]]; then
+  echo "manual skill override list is empty: ${MANUAL_OVERRIDE_FILE}" >&2
+  exit 1
+fi
 
 cat "${SKILLS_FILE}" "${CUSTOM_FILE}" | sort -u >"${ALL_SKILLS_FILE}"
 

@@ -1,8 +1,15 @@
-export interface SkillInputPayload {
-  payload?: Record<string, unknown>;
+export interface PerplexityInput {
+  query: string;
+  model?: string;
 }
 
-export interface SkillOutputPayload {
-  ok: boolean;
-  skill_id: string;
+export interface PerplexityCitation {
+  title: string;
+  url: string;
+}
+
+export interface PerplexityOutput {
+  provider: 'perplexity';
+  answer: string;
+  citations: PerplexityCitation[];
 }

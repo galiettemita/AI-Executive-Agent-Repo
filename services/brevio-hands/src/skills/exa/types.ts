@@ -1,8 +1,17 @@
-export interface SkillInputPayload {
-  payload?: Record<string, unknown>;
+export interface ExaInput {
+  query: string;
+  max_results?: number;
+  include_domains?: string[];
 }
 
-export interface SkillOutputPayload {
-  ok: boolean;
-  skill_id: string;
+export interface ExaResultItem {
+  title: string;
+  url: string;
+  snippet: string;
+  score: number;
+}
+
+export interface ExaOutput {
+  provider: 'exa';
+  results: ExaResultItem[];
 }

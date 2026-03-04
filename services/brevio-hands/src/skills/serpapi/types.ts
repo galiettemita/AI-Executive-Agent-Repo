@@ -1,8 +1,17 @@
-export interface SkillInputPayload {
-  payload?: Record<string, unknown>;
+export interface SerpAPIInput {
+  query: string;
+  engine?: 'google' | 'amazon' | 'yelp';
+  max_results?: number;
 }
 
-export interface SkillOutputPayload {
-  ok: boolean;
-  skill_id: string;
+export interface SerpAPIResultItem {
+  title: string;
+  link: string;
+  source: string;
+}
+
+export interface SerpAPIOutput {
+  provider: 'serpapi';
+  engine: 'google' | 'amazon' | 'yelp';
+  results: SerpAPIResultItem[];
 }

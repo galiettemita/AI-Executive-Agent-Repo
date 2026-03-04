@@ -1,8 +1,15 @@
-export interface SkillInputPayload {
-  payload?: Record<string, unknown>;
+export interface NewsAggregatorInput {
+  topic?: string;
+  max_items?: number;
 }
 
-export interface SkillOutputPayload {
-  ok: boolean;
-  skill_id: string;
+export interface NewsAggregatorItem {
+  source: string;
+  title: string;
+  url: string;
+}
+
+export interface NewsAggregatorOutput {
+  provider: 'news-aggregator';
+  items: NewsAggregatorItem[];
 }

@@ -1,10 +1,21 @@
 import { z } from 'zod';
 
-export const InputSchema = z.object({
-  payload: z.record(z.unknown()).optional()
+const CitationSchema = z.object({
+  title: z.string(),
+  url: z.string().url()
 });
 
-export const OutputSchema = z.object({
-  ok: z.boolean(),
-  skill_id: z.string()
-});
+export const InputSchema = z
+  .object({
+    query: z.string().min(2).max(800),
+    model: z.string().min(2).max(120).optional()
+  })
+  .strict();
+
+export const OutputSchema = z
+  .object({
+    provider: z.literal('perplexity'),
+    answer: z.string().min(1),
+    citations: z.array(CitationSchema).max(10)
+  })
+  .strict();

@@ -89,26 +89,7 @@ tools-md-check:
 	git diff --exit-code TOOLS.md
 
 skills-scaffolds-check:
-	bash scripts/skills/generate_hands_skill_scaffolds.sh
-	git diff --exit-code -- services/brevio-hands/src/skills \
-		':(exclude)services/brevio-hands/src/skills/shopping-expert/**' \
-		':(exclude)services/brevio-hands/src/skills/google-maps/**' \
-		':(exclude)services/brevio-hands/src/skills/google-calendar/**' \
-		':(exclude)services/brevio-hands/src/skills/tavily/**' \
-		':(exclude)services/brevio-hands/src/skills/smtp-send/**' \
-		':(exclude)services/brevio-hands/src/skills/home-assistant/**' \
-		':(exclude)services/brevio-hands/src/skills/todoist/**' \
-		':(exclude)services/brevio-hands/src/skills/youtube-api/**' \
-		':(exclude)services/brevio-hands/src/skills/ynab/**' \
-		':(exclude)services/brevio-hands/src/skills/notion/**' \
-		':(exclude)services/brevio-hands/src/skills/fal-ai/**' \
-		':(exclude)services/brevio-hands/src/skills/apple-contacts/**' \
-		':(exclude)services/brevio-hands/src/skills/spotify-web-api/**' \
-		':(exclude)services/brevio-hands/src/skills/tmdb/**' \
-		':(exclude)services/brevio-hands/src/skills/plaid/**' \
-		':(exclude)services/brevio-hands/src/skills/google-workspace/**' \
-		':(exclude)services/brevio-hands/src/skills/outlook/**' \
-		':(exclude)services/brevio-hands/src/skills/icloud-findmy/**'
+	bash scripts/skills/check_hands_skill_scaffold_parity.sh
 
 proto-validate:
 	bash packages/proto/scripts/lint.sh

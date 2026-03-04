@@ -1,8 +1,15 @@
-export interface SkillInputPayload {
-  payload?: Record<string, unknown>;
+export interface FirecrawlInput {
+  query: string;
+  max_results?: number;
 }
 
-export interface SkillOutputPayload {
-  ok: boolean;
-  skill_id: string;
+export interface FirecrawlResult {
+  title: string;
+  url: string;
+  content: string;
+}
+
+export interface FirecrawlOutput {
+  provider: 'firecrawl';
+  results: FirecrawlResult[];
 }

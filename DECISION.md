@@ -944,3 +944,22 @@
 4. Re-run contract gates, scaffold parity check, and full `make ci`; continue with next connector wave.  
 **Risk:** Manual override lists now exist in both generator script and Makefile pathspec exclusions; drift between those lists could create false positives or accidental overwrites.  
 **Rollback:** Remove Wave 3 preserve/exclude entries and regenerate scaffold defaults for the six connectors if runtime regressions or maintenance burden becomes unacceptable.
+
+## DECISION-053: Centralize Manual Skill Override Source and Expand Search/Research Priority Adapters (Wave 4)
+
+**Date:** 2026-03-04  
+**Blueprint Section:** §2.4, §A.3, §A.8, §17.2  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/scripts/skills/*`, `/Users/galiettemita/Downloads/Executive AI Agent/backend/config/skill-manual-overrides.txt`, `/Users/galiettemita/Downloads/Executive AI Agent/backend/services/brevio-hands/src/skills/{exa,serpapi,perplexity,brave-search,firecrawl-search,news-aggregator}`  
+**Conflict:** Manual skill override IDs were duplicated across generator logic, Makefile pathspec exclusions, and contract expectations, creating drift risk; search/research connectors were still scaffold-only despite high routing importance in Brain orchestration and proactive research workflows.  
+**Options Considered:**  
+1. Keep duplicated override lists and continue adding skills manually in multiple files each wave.  
+2. Remove scaffold parity gate to avoid override maintenance complexity.  
+3. Introduce a single override source file consumed by generator and scaffold parity checker, then de-scaffold next search/research skill wave under the unified mechanism.  
+**Decision:** Option 3. Added `config/skill-manual-overrides.txt` as canonical override list, updated scaffold generator to consume it, introduced `scripts/skills/check_hands_skill_scaffold_parity.sh` for parity checks (excluding only configured manual skills), and wired Makefile `skills-scaffolds-check` to that script. In the same wave, replaced scaffolds for `exa`, `serpapi`, `perplexity`, `brave-search`, `firecrawl-search`, and `news-aggregator` with typed adapters, deterministic client behavior, and unit/readme upgrades.  
+**Migration Plan:**  
+1. Use `config/skill-manual-overrides.txt` as the only editable manual-skill list.  
+2. Run parity script in CI/local to enforce generated skill stability outside override set.  
+3. Expand closure tests to assert de-scaffolded tokens and override-file membership for each priority skill.  
+4. Continue additional de-scaffolding waves by adding IDs once and implementing adapter suites.  
+**Risk:** If override-file parsing fails or shell compatibility regresses, scaffold parity checks can fail broadly and block CI.  
+**Rollback:** Revert to direct Makefile pathspec exclusions and inline generator manual list; regenerate scaffolds for Wave 4 skills if immediate stabilization is required.
