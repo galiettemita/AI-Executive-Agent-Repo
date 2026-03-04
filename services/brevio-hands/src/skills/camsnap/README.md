@@ -1,6 +1,13 @@
 # camsnap
 
-Generated skill adapter scaffold.
+Hands-plane adapter for camera frame/clip capture workflows.
 
-- Plane: `hands`
-- Source: `migrations/006_seed_skills.up.sql`
+## Supported actions
+
+- `capture_frame`
+- `capture_clip`
+
+## Notes
+
+- Requires camera ID and clip duration for clip captures.
+- Returns deterministic capture asset metadata.

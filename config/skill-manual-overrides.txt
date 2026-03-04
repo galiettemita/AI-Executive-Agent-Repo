@@ -149,3 +149,9 @@ react-email-skills
 granola
 gifhorse
 veo
+camsnap
+craft
+mole-mac-cleanup
+post-at
+roku
+sports-ticker

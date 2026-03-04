@@ -1383,3 +1383,21 @@
 3. Run full CI and continue remaining waves for final scaffold adapters.  
 **Risk:** Deterministic fixtures do not fully represent live-provider variability for rendering/generation latency or policy-driven output filtering until integration tests are expanded with sandbox APIs.  
 **Rollback:** Remove Wave 26 IDs from override config and regenerate scaffolds for these six skills if regressions occur.
+
+## DECISION-077: De-Scaffold Local Utility and Device-Control Skills with Typed Operational Guards (Wave 27)
+
+**Date:** 2026-03-04  
+**Blueprint Section:** §2.4, §A.7.6, §A.7.9, §A.7.16, §A.7.13  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/services/brevio-hands/src/skills/{camsnap,craft,mole-mac-cleanup,post-at,roku,sports-ticker}`  
+**Conflict:** Six local/device utility skills were scaffold-only and lacked typed required-field validation (camera/tracking/device/team/confirmation), deterministic structured outputs, and closure-test token guards.  
+**Options Considered:**  
+1. Leave utility/device adapters scaffolded until after all cloud adapters are finalized.  
+2. Include these in a final one-shot de-scaffold commit with unrelated finance/travel adapters.  
+3. Execute a focused local utility wave with strict action schemas, confirmation guards, and deterministic outputs.  
+**Decision:** Option 3. Replaced scaffolds for `camsnap`, `craft`, `mole-mac-cleanup`, `post-at`, `roku`, and `sports-ticker` with typed `types/schema/client/index` implementations, deterministic outputs, unit tests, and production READMEs. Added all six IDs to centralized manual override config and closure token assertions.  
+**Migration Plan:**  
+1. Register Wave 27 IDs in `config/skill-manual-overrides.txt`.  
+2. Extend schema/index token checks in `internal/contracts/hands_priority_skills_closure_test.go` for each new validation constant and output token.  
+3. Run full CI and proceed to final wave for remaining scaffold adapters.  
+**Risk:** Deterministic local/device fixtures do not capture full real-device state/latency variability until integration tests run against physical devices and live APIs.  
+**Rollback:** Remove Wave 27 IDs from override config and regenerate scaffolds for these six skills if regressions appear.

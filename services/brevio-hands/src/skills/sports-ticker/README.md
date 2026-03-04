@@ -1,6 +1,13 @@
 # sports-ticker
 
-Generated skill adapter scaffold.
+Hands-plane adapter for live scores and schedule lookups.
 
-- Plane: `hands`
-- Source: `migrations/006_seed_skills.up.sql`
+## Supported actions
+
+- `get_score`
+- `get_schedule`
+
+## Notes
+
+- Requires league for all calls and team for score lookups.
+- Returns deterministic ticker items in CI/local runs.

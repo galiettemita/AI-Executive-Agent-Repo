@@ -1,6 +1,12 @@
 # post-at
 
-Generated skill adapter scaffold.
+Hands-plane adapter for Austrian Post parcel tracking.
 
-- Plane: `hands`
-- Source: `migrations/006_seed_skills.up.sql`
+## Supported actions
+
+- `track_parcel`
+
+## Notes
+
+- Requires tracking number input.
+- Returns deterministic checkpoint history payloads.

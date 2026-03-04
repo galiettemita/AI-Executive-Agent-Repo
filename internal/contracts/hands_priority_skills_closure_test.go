@@ -771,6 +771,36 @@ func TestHandsPrioritySkillsNoLongerScaffolded(t *testing.T) {
 			"job_id",
 			"video_url",
 		},
+		"camsnap": {
+			"action",
+			"media_url",
+			"resolution",
+		},
+		"craft": {
+			"action",
+			"docs",
+			"updated_at",
+		},
+		"mole-mac-cleanup": {
+			"action",
+			"reclaimable_mb",
+			"categories",
+		},
+		"post-at": {
+			"action",
+			"tracking_number",
+			"checkpoints",
+		},
+		"roku": {
+			"action",
+			"current_app",
+			"power_state",
+		},
+		"sports-ticker": {
+			"action",
+			"items",
+			"status",
+		},
 	}
 
 	indexTokens := map[string][]string{
@@ -1102,6 +1132,24 @@ func TestHandsPrioritySkillsNoLongerScaffolded(t *testing.T) {
 		},
 		"veo": {
 			"VEO_PROMPT_REQUIRED",
+		},
+		"camsnap": {
+			"CAMSNAP_CAMERA_REQUIRED",
+		},
+		"craft": {
+			"CRAFT_DOC_TITLE_REQUIRED",
+		},
+		"mole-mac-cleanup": {
+			"MOLE_MAC_CLEANUP_CONFIRMATION_REQUIRED",
+		},
+		"post-at": {
+			"POST_AT_TRACKING_REQUIRED",
+		},
+		"roku": {
+			"ROKU_ACTION_FIELDS_REQUIRED",
+		},
+		"sports-ticker": {
+			"SPORTS_TICKER_LEAGUE_REQUIRED",
 		},
 	}
 

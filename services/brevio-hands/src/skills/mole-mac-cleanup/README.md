@@ -1,6 +1,13 @@
 # mole-mac-cleanup
 
-Generated skill adapter scaffold.
+Hands-plane adapter for macOS cleanup scanning and confirmed cleanup runs.
 
-- Plane: `hands`
-- Source: `migrations/006_seed_skills.up.sql`
+## Supported actions
+
+- `scan_cleanup`
+- `run_cleanup`
+
+## Notes
+
+- Requires explicit confirmation for cleanup execution.
+- Returns deterministic reclaimable/cleaned size estimates.

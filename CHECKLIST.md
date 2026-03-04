@@ -978,6 +978,13 @@ You must prove it.
 - [x] Extend centralized manual override registry and closure test token assertions for all Wave 26 adapters
 - [x] Validate Wave 26 against full `make ci` gate before merge
 
+## M15: Hands Adapter Wave 27 (Local Utility and Device Control Hardening)
+- [x] De-scaffold `camsnap` + `post-at` with typed capture/tracking contracts and required camera/tracking validation
+- [x] De-scaffold `craft` + `mole-mac-cleanup` with typed note-cleanup contracts and explicit confirmation guard on cleanup runs
+- [x] De-scaffold `roku` + `sports-ticker` with typed device/sports status contracts and action-specific field guards
+- [x] Extend centralized manual override registry and closure test token assertions for all Wave 27 adapters
+- [x] Validate Wave 27 against full `make ci` gate before merge
+
 ## M13–15 (Auto-Provisioning Layer 3): Remote Server Discovery Catalog (Auto-Provisioning Sections 5, 12.3, 16)
 - [x] ToolRegistry: register native tool `search_remote_catalog` (use only if `provision_server` fails due to missing catalog entry) (Auto-Provisioning Section 9)
 - [x] Hands handler: implement `search_remote_catalog` -> query remote catalog API -> return matched entries (Auto-Provisioning Section 5)
