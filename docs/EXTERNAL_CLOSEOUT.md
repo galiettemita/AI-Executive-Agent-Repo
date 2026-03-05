@@ -585,3 +585,15 @@ The packet includes:
 2. handoff artifact references
 3. pending human sign-off checklist (Release/Engineering/Security/Product)
 4. final go-live next action guidance
+
+To mark each approval in the packet:
+
+```bash
+cd /Users/galiettemita/Downloads/Executive AI Agent/backend
+make go-live-approval-confirm ROLE="Release Manager" APPROVED_BY="alice" NOTE="change ticket CAB-2026-03-05 approved"
+make go-live-approval-confirm ROLE="Engineering Lead" APPROVED_BY="bob"
+make go-live-approval-confirm ROLE="Security Lead" APPROVED_BY="carol"
+make go-live-approval-confirm ROLE="Product Owner" APPROVED_BY="dave"
+```
+
+Re-open `artifacts/deploy/final_go_live_approval_packet.md` and confirm all four roles show `APPROVED`.

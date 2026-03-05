@@ -2386,3 +2386,22 @@
 4. Enforce via contracts and runbook documentation.  
 **Risk:** Packet readiness still depends on integrity of upstream closure artifacts and environment probe fidelity.  
 **Rollback:** Remove packet script/Make target/workflow steps and rely on phase-status + handoff bundle artifacts only.
+
+## DECISION-132: Persist Per-Role Final Go-Live Approvals in Packet Artifacts
+
+**Date:** 2026-03-05  
+**Blueprint Section:** §0.1 (human required sign-off), §14 (deployment runbook evidence)  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/scripts/deploy/generate_final_go_live_approval_packet.sh`, `/Users/galiettemita/Downloads/Executive AI Agent/backend/artifacts/deploy/final_go_live_approval_packet.json`  
+**Conflict:** The initial packet provided pending checkboxes but lacked a deterministic command path to record role approvals (`approved_by`, timestamp, note) in machine-readable artifacts.  
+**Options Considered:**  
+1. Keep approval recording manual in Markdown only.  
+2. Add ad-hoc JSON edits by operators.  
+3. Add explicit approval confirmation command that updates packet JSON and regenerates markdown while preserving prior approvals.  
+**Decision:** Option 3. Added `scripts/deploy/confirm_final_go_live_approval.sh` and `make go-live-approval-confirm`, plus generator enhancements to preserve approval states and expose `technical_ready_for_approval`, `human_approvals_complete`, and `ready_for_go_live_execution`.  
+**Migration Plan:**  
+1. Generate packet (`make go-live-approval-packet`).  
+2. Record each role approval (`make go-live-approval-confirm ROLE=... APPROVED_BY=...`).  
+3. Re-generate packet automatically after each confirmation.  
+4. Verify all roles `APPROVED` before execution handoff.  
+**Risk:** Incorrect role labels can prevent updates; commands require canonical role names.  
+**Rollback:** Re-run packet generation to reset to default pending roles, then re-apply approvals correctly.

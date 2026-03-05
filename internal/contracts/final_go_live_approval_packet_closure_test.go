@@ -14,6 +14,8 @@ func TestFinalGoLiveApprovalPacketClosure(t *testing.T) {
 	assertFileContainsTokens(t, makefilePath, []string{
 		"go-live-approval-packet:",
 		"generate_final_go_live_approval_packet.sh",
+		"go-live-approval-confirm:",
+		"confirm_final_go_live_approval.sh",
 	})
 
 	scriptPath := filepath.Join(root, "scripts", "deploy", "generate_final_go_live_approval_packet.sh")
@@ -24,12 +26,23 @@ func TestFinalGoLiveApprovalPacketClosure(t *testing.T) {
 		"phase_status.txt",
 		"final_go_live_approval_packet.json",
 		"final_go_live_approval_packet.md",
-		"ready_for_approval",
+		"technical_ready_for_approval",
+		"human_approvals_complete",
+		"ready_for_go_live_execution",
+	})
+
+	confirmScriptPath := filepath.Join(root, "scripts", "deploy", "confirm_final_go_live_approval.sh")
+	assertFileNonEmpty(t, confirmScriptPath)
+	assertFileContainsTokens(t, confirmScriptPath, []string{
+		"approvals_required",
+		"APPROVED",
+		"generate_final_go_live_approval_packet.sh",
 	})
 
 	docPath := filepath.Join(root, "docs", "EXTERNAL_CLOSEOUT.md")
 	assertFileContainsTokens(t, docPath, []string{
 		"make go-live-approval-packet",
+		"make go-live-approval-confirm",
 		"final_go_live_approval_packet.json",
 		"final_go_live_approval_packet.md",
 	})

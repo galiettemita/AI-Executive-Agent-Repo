@@ -68,14 +68,41 @@ if phase_status_path.exists():
 handoff_bundle = str(handoff.get("bundle_path", ""))
 handoff_generated_at = str(handoff.get("generated_at_utc", ""))
 
-final_approvals = [
-    {"role": "Release Manager", "status": "PENDING"},
-    {"role": "Engineering Lead", "status": "PENDING"},
-    {"role": "Security Lead", "status": "PENDING"},
-    {"role": "Product Owner", "status": "PENDING"},
+approval_roles = [
+    "Release Manager",
+    "Engineering Lead",
+    "Security Lead",
+    "Product Owner",
 ]
 
-ready_for_approval = (
+existing_by_role = {}
+if output_json_path.exists():
+    try:
+        existing_packet = json.loads(output_json_path.read_text(encoding="utf-8"))
+        for entry in existing_packet.get("approvals_required", []):
+            if not isinstance(entry, dict):
+                continue
+            role = str(entry.get("role", "")).strip()
+            if role:
+                existing_by_role[role] = entry
+    except Exception:
+        existing_by_role = {}
+
+final_approvals = []
+for role in approval_roles:
+    existing = existing_by_role.get(role, {})
+    status = str(existing.get("status", "PENDING")).upper().strip()
+    if status not in {"PENDING", "APPROVED", "REJECTED"}:
+        status = "PENDING"
+
+    entry = {"role": role, "status": status}
+    for key in ("approved_by", "approved_at_utc", "note"):
+        value = existing.get(key)
+        if isinstance(value, str) and value.strip():
+            entry[key] = value.strip()
+    final_approvals.append(entry)
+
+technical_ready_for_approval = (
     overall_status == "READY"
     and required_failed == 0
     and required_manual == 0
@@ -85,10 +112,15 @@ ready_for_approval = (
     and post_deploy_pass
 )
 
+human_approvals_complete = all(entry.get("status") == "APPROVED" for entry in final_approvals)
+ready_for_go_live_execution = technical_ready_for_approval and human_approvals_complete
+
 packet = {
     "generated_at_utc": datetime.now(timezone.utc).isoformat(),
     "git_head": git_head,
-    "ready_for_approval": ready_for_approval,
+    "technical_ready_for_approval": technical_ready_for_approval,
+    "human_approvals_complete": human_approvals_complete,
+    "ready_for_go_live_execution": ready_for_go_live_execution,
     "overall_status": overall_status,
     "summary": {
         "required_failed": required_failed,
@@ -106,9 +138,11 @@ packet = {
     },
     "approvals_required": final_approvals,
     "next_action": (
-        "Collect final human go-live approvals and execute production go-live."
-        if ready_for_approval
-        else "Resolve outstanding blockers before final go-live approval."
+        "Resolve outstanding technical blockers before final go-live approval."
+        if not technical_ready_for_approval
+        else "Collect final human go-live approvals and execute production go-live."
+        if not human_approvals_complete
+        else "All approvals complete. Proceed with production go-live execution."
     ),
 }
 
@@ -120,7 +154,9 @@ md_lines = [
     f"- Generated (UTC): {packet['generated_at_utc']}",
     f"- Git Head: `{git_head}`",
     f"- Overall Status: `{overall_status}`",
-    f"- Ready For Approval: `{str(ready_for_approval).lower()}`",
+    f"- Technical Ready For Approval: `{str(technical_ready_for_approval).lower()}`",
+    f"- Human Approvals Complete: `{str(human_approvals_complete).lower()}`",
+    f"- Ready For Go-Live Execution: `{str(ready_for_go_live_execution).lower()}`",
     "",
     "## Gate Summary",
     "",
@@ -136,7 +172,19 @@ md_lines = [
 ]
 
 for entry in final_approvals:
-    md_lines.append(f"- [ ] {entry['role']} approval")
+    status = str(entry.get("status", "PENDING")).upper().strip()
+    checked = "x" if status == "APPROVED" else " "
+    line = f"- [{checked}] {entry['role']} approval ({status})"
+    approved_by = str(entry.get("approved_by", "")).strip()
+    approved_at = str(entry.get("approved_at_utc", "")).strip()
+    if approved_by:
+        line += f" by `{approved_by}`"
+    if approved_at:
+        line += f" at `{approved_at}`"
+    note = str(entry.get("note", "")).strip()
+    if note:
+        line += f" — {note}"
+    md_lines.append(line)
 
 md_lines.extend(
     [
@@ -162,7 +210,7 @@ output_md_path.write_text("\n".join(md_lines) + "\n", encoding="utf-8")
 
 print(json.dumps(packet, indent=2))
 
-if ready_for_approval:
+if technical_ready_for_approval:
     sys.exit(0)
 sys.exit(1)
 PY
