@@ -2441,3 +2441,21 @@
 3. Validate with `CI=1 bash scripts/security/run_security_validation.sh` and contract tests.  
 **Risk:** Secrets accidentally added to `docker-compose.yml` will no longer be flagged by TruffleHog.  
 **Rollback:** Remove `docker-compose.yml` exclusion and restore earlier deep-health test fixture literals if needed.
+
+## DECISION-135: Support Base64 and Raw Kubeconfig Secret Formats in Deploy Workflows
+
+**Date:** 2026-03-05  
+**Blueprint Section:** §9.1 Stage 9/10, §14 deployment runbook reliability  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/.github/workflows/ci.yml`, `/Users/galiettemita/Downloads/Executive AI Agent/backend/.github/workflows/deploy-staging.yml`, `/Users/galiettemita/Downloads/Executive AI Agent/backend/.github/workflows/deploy-production.yml`  
+**Conflict:** Deploy workflows assumed kubeconfig secrets were always base64-encoded; if operators pasted raw kubeconfig YAML, `base64 -d` failed and deployment exited before rollout.  
+**Options Considered:**  
+1. Keep base64-only decoding and require strict operator formatting.  
+2. Switch to raw-only kubeconfig payload and remove decoding.  
+3. Attempt base64 decode first, then fall back to raw kubeconfig text, and validate context load.  
+**Decision:** Option 3. Configure-kubeconfig steps now support both secret formats and run `kubectl config current-context` to fail fast on invalid content.  
+**Migration Plan:**  
+1. Update all configure-kubeconfig steps in staging/production workflows (including `ci-openclaw` deploy jobs).  
+2. Preserve existing skip behavior when secret is empty.  
+3. Validate production rerun path with updated workflow code.  
+**Risk:** Raw kubeconfig values are more likely to include accidental formatting mistakes if copied with extra whitespace.  
+**Rollback:** Revert to base64-only decode lines and enforce explicit secret formatting in runbook documentation.

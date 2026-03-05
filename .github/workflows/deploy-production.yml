@@ -19,7 +19,13 @@ jobs:
             exit 0
           fi
           mkdir -p "$HOME/.kube"
-          printf '%s' "${KUBE_CONFIG_PRODUCTION}" | base64 -d > "$HOME/.kube/config"
+          if printf '%s' "${KUBE_CONFIG_PRODUCTION}" | base64 -d > "$HOME/.kube/config" 2>/dev/null; then
+            echo "Loaded base64-encoded production kubeconfig secret."
+          else
+            printf '%s' "${KUBE_CONFIG_PRODUCTION}" > "$HOME/.kube/config"
+            echo "KUBE_CONFIG_PRODUCTION not valid base64; loaded raw kubeconfig content."
+          fi
+          kubectl config current-context >/dev/null
       - name: Deploy production
         env:
           KUBE_CONFIG_PRODUCTION: ${{ secrets.KUBE_CONFIG_PRODUCTION }}
