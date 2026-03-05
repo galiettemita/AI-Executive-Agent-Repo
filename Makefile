@@ -53,7 +53,7 @@ docker-build-infra:
 		docker build -f infra/docker/Dockerfile.$$svc -t brevio-$$svc:local .; \
 	done
 
-ci: proto-validate lint build test migrate api-docs-check tools-md-check skills-scaffolds-check mcp-wave1-checklist mcp-wave56-checklist mcp-fleet-validate mcp-runtime-rollout policy-validate contracts acceptance
+ci: proto-validate lint build test migrate api-docs-check tools-md-check skills-scaffolds-check mcp-wave1-checklist mcp-wave56-checklist mcp-fleet-validate mcp-runtime-rollout policy-validate contracts acceptance evals
 
 ci-full: ci security-validate infra-validate db-verify
 

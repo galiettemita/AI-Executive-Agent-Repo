@@ -69,6 +69,16 @@ jobs:
           go-version: '1.22'
       - run: go test ./internal/contracts -count=1
 
+  llm_evals:
+    name: 5b. LLM Evals
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: bash scripts/run-evals.sh
+
   security_scan:
     name: 6. Security Scan
     runs-on: ubuntu-latest

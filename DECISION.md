@@ -1725,3 +1725,21 @@
 3. Use typed wrappers/utilities instead of fallback `any` when integrating new adapters/services.  
 **Risk:** Regex-based scanning may miss uncommon `any` forms or produce false positives in edge syntax.  
 **Rollback:** Remove `typescript_no_any_closure_test.go` and revert to lint-only enforcement if contract scanning becomes too noisy.
+
+## DECISION-096: Promote LLM Evals from Auxiliary Workflow to Core CI Gate
+
+**Date:** 2026-03-05  
+**Blueprint Section:** §9.1, §11.1, §20.13  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/Makefile`, `/Users/galiettemita/Downloads/Executive AI Agent/backend/.github/workflows/ci.yml`, `/Users/galiettemita/Downloads/Executive AI Agent/backend/.github/workflows/llm-evals.yml`  
+**Conflict:** Scheduled/path-triggered eval workflow existed, but core branch CI could still pass without running evals, allowing prompt/dataset regressions to slip through routine PR gates.  
+**Options Considered:**  
+1. Keep evals only in dedicated scheduled/path workflow.  
+2. Add evals to local `make ci` only and leave GitHub CI unchanged.  
+3. Add evals to both `make ci` and primary GitHub CI workflow as a blocking stage.  
+**Decision:** Option 3. Updated `make ci` to include `evals` target and added `5b. LLM Evals` job to `.github/workflows/ci.yml` so evaluation regressions/budget breaches fail standard CI runs while retaining the dedicated `llm-evals.yml` workflow for weekly and targeted execution.  
+**Migration Plan:**  
+1. Keep deterministic eval harness runtime bounded for CI viability.  
+2. If runtime grows, shard datasets but keep blocking regression checks.  
+3. Maintain weekly dedicated workflow for trend artifacts in parallel with core CI blocking checks.  
+**Risk:** Additional CI runtime and occasional baseline churn may increase PR friction.  
+**Rollback:** Remove evals from `make ci` and `ci.yml` while keeping `llm-evals.yml` if immediate CI throughput constraints require temporary rollback.
