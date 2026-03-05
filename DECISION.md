@@ -1743,3 +1743,21 @@
 3. Maintain weekly dedicated workflow for trend artifacts in parallel with core CI blocking checks.  
 **Risk:** Additional CI runtime and occasional baseline churn may increase PR friction.  
 **Rollback:** Remove evals from `make ci` and `ci.yml` while keeping `llm-evals.yml` if immediate CI throughput constraints require temporary rollback.
+
+## DECISION-097: Publish Dedicated Brevio x OpenClaw Final Validation Evidence Report
+
+**Date:** 2026-03-05  
+**Blueprint Section:** §0.3, §9.1, §11.1, §21  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/docs/FINAL_VALIDATION_v9.2.0-final.md`  
+**Conflict:** Existing final validation evidence file is tied to V9.2 scope and does not explicitly represent current Brevio x OpenClaw closure state, eval gate integration, and remaining human-gated dependencies.  
+**Options Considered:**  
+1. Keep only the legacy V9.2 final validation file.  
+2. Overwrite the V9.2 report with Brevio x OpenClaw content.  
+3. Add a dedicated Brevio x OpenClaw final validation report while preserving V9.2 historical evidence.  
+**Decision:** Option 3. Added `docs/FINAL_VALIDATION_brevio_openclaw.md` with timestamped full gate evidence, closure highlights (integration de-scaffolding, no-`any` gate, eval CI gate), and explicit external human-gated go-live blockers.  
+**Migration Plan:**  
+1. Keep both reports to preserve release-history provenance.  
+2. Refresh Brevio/OpenClaw report after each major closure batch or pre-release candidate.  
+3. Use this report as the operational handoff artifact for production sign-off.  
+**Risk:** Multiple final validation documents can drift without clear ownership.  
+**Rollback:** Remove Brevio/OpenClaw report and revert to single-report model if documentation policy requires one canonical file.
