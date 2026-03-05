@@ -1,8 +1,8 @@
 # BREVIO x OPENCLAW Final Validation Report
 
-Timestamp (UTC): 2026-03-05 02:52:32 UTC
+Timestamp (UTC): 2026-03-05 02:55:17 UTC
 Branch: `codex/brevio-openclaw-phase0`
-Head: `9319754`
+Head: `8f8cfe9`
 
 ## Scope
 
@@ -27,6 +27,7 @@ Head: `9319754`
 - `make infra-validate`: PASS
 - `make db-verify`: PASS
 - `make ci-full`: PASS
+- `make ci-full` (post-security/manual-closeout rerun at 2026-03-05T02:55:17Z): PASS
 - `make security-validate` (post-signoff rerun at 2026-03-05T02:31:47Z): PASS
 - `pnpm audit --audit-level high` (network-enabled run): PASS (`No known vulnerabilities found`)
 
