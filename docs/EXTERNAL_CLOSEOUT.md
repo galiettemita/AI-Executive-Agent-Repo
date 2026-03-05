@@ -337,6 +337,28 @@ Override for controlled manual acceptance:
 ALLOW_CONDITIONAL_MANUAL=1 make external-phase-transition-check
 ```
 
+## 16) Generate Batch Confirmation Script
+
+To generate a script with confirm commands for every currently pending manual required item:
+
+```bash
+cd /Users/galiettemita/Downloads/Executive AI Agent/backend
+make manual-closeout-batch-commands
+```
+
+Output:
+- `artifacts/deploy/manual_closeout_batch_commands.sh`
+
+Run it with actor name:
+
+```bash
+./artifacts/deploy/manual_closeout_batch_commands.sh ops
+```
+
+The generated script will:
+1. run `make manual-closeout-confirm` for each pending manual required item
+2. run `make external-phase-sync` to refresh all artifacts
+
 Optional: disable regression check for troubleshooting only:
 
 ```bash

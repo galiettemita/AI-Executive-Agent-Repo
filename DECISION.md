@@ -2068,3 +2068,22 @@
 3. Keep command templates aligned with Make target names if command interfaces change.  
 **Risk:** If command interfaces change and templates are not updated, generated instructions could drift.  
 **Rollback:** Remove per-item command lines and revert to high-level TODO output.
+
+## DECISION-115: Generate Batch Manual Closeout Command Script from Signoff Artifact
+
+**Date:** 2026-03-05  
+**Blueprint Section:** §14, §18, §21  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/scripts/deploy/generate_manual_closeout_todo.sh`, `/Users/galiettemita/Downloads/Executive AI Agent/backend/artifacts/deploy/go_live_signoff_status.json`  
+**Conflict:** Operators had per-item command templates in markdown, but closing many required manual items still involved repetitive copy/paste and increased execution friction.  
+**Options Considered:**  
+1. Keep markdown command templates only and run commands manually one-by-one.  
+2. Add a monolithic closeout script with hardcoded item IDs.  
+3. Generate a batch script from current signoff state so commands always match active pending manual items.  
+**Decision:** Option 3. Added `scripts/deploy/generate_manual_closeout_batch_commands.sh` and `make manual-closeout-batch-commands`, which create `artifacts/deploy/manual_closeout_batch_commands.sh` with actor-driven `make manual-closeout-confirm` commands for each pending required manual item plus a trailing `make external-phase-sync`.  
+**Migration Plan:**  
+1. Run `make external-phase-sync` to refresh current required manual items.  
+2. Run `make manual-closeout-batch-commands` to generate the batch command artifact.  
+3. Execute `./artifacts/deploy/manual_closeout_batch_commands.sh <actor>` in production-verification context.  
+4. Re-run `make external-phase-transition-check` to confirm phase progression status.  
+**Risk:** Running the generated script without validating underlying real-world confirmations could over-confirm items quickly.  
+**Rollback:** Remove batch-command generator and keep per-item manual execution via `manual_closeout_todo.md`.

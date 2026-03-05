@@ -37,6 +37,8 @@ Head: `addee5d`
 - `make ci` (post-regression-default-sync rerun at 2026-03-05T03:29:05Z): PASS
 - `make ci` (post-phase-transition-gate automation rerun at 2026-03-05T03:31:26Z): PASS
 - `make ci` (post-manual-command-template automation rerun at 2026-03-05T03:34:10Z): PASS
+- `make ci` (post-manual-batch-command closure rerun at 2026-03-05T03:39:34Z): PASS
+- `make manual-closeout-batch-commands` (2026-03-05T03:38:55Z): PASS (`manual_closeout_batch_commands.sh` generated)
 - `EXTERNAL_REGRESSION_CHECK=1 make external-phase-sync` (2026-03-05T03:25:33Z): PASS (`external_closeout_regression_report.json.status=PASS`)
 - `make external-phase-transition-check`: strict mode blocks as expected on `CONDITIONAL_MANUAL`; `ALLOW_CONDITIONAL_MANUAL=1` mode passes and sets `next_phase=production-deployment-signoff`
 - `make security-validate` (post-signoff rerun at 2026-03-05T02:31:47Z): PASS
@@ -72,6 +74,9 @@ Head: `addee5d`
   - `ALLOW_CONDITIONAL_MANUAL=1` supports explicit operator override when intentionally accepted
 - Manual closeout TODO execution commands are embedded:
   - `manual_closeout_todo.md` includes per-item confirm and revoke command templates
+- Manual closeout batch command generation is active:
+  - `make manual-closeout-batch-commands` generates `artifacts/deploy/manual_closeout_batch_commands.sh` from current signoff pending-manual items
+  - generated script accepts `<actor>` and executes per-item confirmations plus final `make external-phase-sync`
 
 ## Remaining Human-Gated Items (Per Directive)
 
@@ -103,6 +108,8 @@ Artifact source: `artifacts/deploy/external_closeout_status.json` (`manual_evide
 `make go-live-signoff` executed at 2026-03-05T03:33:33Z and produced `artifacts/deploy/go_live_signoff_status.json` with `status=CONDITIONAL_MANUAL` and `required_failed=0`, confirming transition to manual provisioning closeout without code-gate blockers.
 
 `make manual-closeout-todo` executed at 2026-03-05T03:33:33Z and produced `artifacts/deploy/manual_closeout_todo.md`, mapping each pending manual item to the runbook section required for closure execution.
+
+`make manual-closeout-batch-commands` executed at 2026-03-05T03:38:55Z and produced `artifacts/deploy/manual_closeout_batch_commands.sh` for actor-parameterized confirmation of all currently pending required manual items.
 
 `make external-phase-sync` executed at 2026-03-05T03:33:33Z and refreshed all external closeout artifacts in one pass (`required_failed=0`, `status=CONDITIONAL_MANUAL`).
 
