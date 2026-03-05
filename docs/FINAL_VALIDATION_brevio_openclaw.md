@@ -46,6 +46,8 @@ Head: `addee5d`
 - `make ci` (post-phase-handoff-bundle closure rerun at 2026-03-05T04:25:13Z): PASS
 - `make ci` (post-phase-status reporting closure rerun at 2026-03-05T04:27:43Z): PASS
 - `make ci` (post-manual-provider-steps closure rerun at 2026-03-05T04:30:56Z): PASS
+- `make ci` (post-staging-smoke-gate closure rerun at 2026-03-05T04:39:31Z): PASS
+- `make ci` (post-staging-smoke-gate final rerun at 2026-03-05T04:40:30Z): PASS
 - `make manual-closeout-batch-commands` (2026-03-05T03:38:55Z): PASS (`manual_closeout_batch_commands.sh` generated)
 - `EXTERNAL_REGRESSION_CHECK=1 make external-phase-sync` (2026-03-05T03:25:33Z): PASS (`external_closeout_regression_report.json.status=PASS`)
 - `make external-phase-transition-check`: strict mode blocks as expected on `CONDITIONAL_MANUAL`; `ALLOW_CONDITIONAL_MANUAL=1` mode passes and sets `next_phase=production-deployment-signoff`
@@ -107,6 +109,8 @@ Head: `addee5d`
   - `make phase-status` emits `phase_status.txt` with concise status + next-action guidance sourced from closure manifest and bundle metadata
 - Manual provider button-steps generator is active:
   - `make manual-provider-steps` emits `manual_provider_steps.md` with click-by-click actions and exact confirmation commands for pending manual blockers
+- Staging deployment smoke gate is active:
+  - `make staging-smoke-tests` emits `staging_smoke_test_report.json` and is now wired into `.github/workflows/ci.yml` and `.github/workflows/deploy-staging.yml` immediately after staging rollout
 - Manual closeout TODO execution commands are embedded:
   - `manual_closeout_todo.md` includes per-item confirm and revoke command templates
 - Manual closeout batch command generation is active:
@@ -161,6 +165,8 @@ Artifact source: `artifacts/deploy/external_closeout_status.json` (`manual_evide
 `make phase-status` executed at 2026-03-05T04:27:00Z and produced `artifacts/deploy/phase_status.txt` with current summary (`overall_status=CONDITIONAL_MANUAL`, `required_failed=0`, `required_manual=8`).
 
 `make manual-provider-steps` executed at 2026-03-05T04:30:01Z and produced `artifacts/deploy/manual_provider_steps.md` with item-specific UI steps and `manual-closeout-confirm` commands.
+
+Staging smoke validation is now enforced in staging deployment workflows via `scripts/deploy/run_staging_smoke_tests.sh`; local runtime validation used `make ci` contract/workflow gates because staging kubeconfig is environment-dependent.
 
 `make external-phase-sync` executed at 2026-03-05T03:33:33Z and refreshed all external closeout artifacts in one pass (`required_failed=0`, `status=CONDITIONAL_MANUAL`).
 

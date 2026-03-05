@@ -130,6 +130,15 @@ jobs:
             exit 0
           fi
           bash scripts/deploy/helm_rollout.sh
+      - name: Staging smoke tests
+        env:
+          KUBE_CONFIG_STAGING: ${{ secrets.KUBE_CONFIG_STAGING }}
+        run: |
+          if [ -z "${KUBE_CONFIG_STAGING}" ]; then
+            echo "KUBE_CONFIG_STAGING not set; skipping staging smoke tests."
+            exit 0
+          fi
+          bash scripts/deploy/run_staging_smoke_tests.sh
 
   deploy_production:
     name: 10. Deploy Production

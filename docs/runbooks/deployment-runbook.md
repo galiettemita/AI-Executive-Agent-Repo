@@ -22,6 +22,7 @@ Deploy Brevio services with blue/green + canary while preserving SLOs and fast r
    - Run `helm upgrade --install` for all Brevio charts.
    - Wait for rollouts: `kubectl rollout status` for each deployment.
    - Execute smoke tests (`/health`, `/health/deep`, webhook path, one synthetic workflow).
+   - Run `bash scripts/deploy/run_staging_smoke_tests.sh` and archive `artifacts/deploy/staging_smoke_test_report.json`.
 3. Request production approval.
    - Confirm no P1/P2 alerts in last 30 minutes.
    - Post deployment summary in `#deployments`.

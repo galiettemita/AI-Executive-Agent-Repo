@@ -2234,3 +2234,22 @@
 4. Re-run phase sync/status commands to validate closure progression.  
 **Risk:** Provider UI changes can make specific click-path wording stale over time.  
 **Rollback:** Remove generated step sheet and rely on runbook-only manual guidance.
+
+## DECISION-124: Add Executable Staging Smoke Test Gate to Deployment Pipeline
+
+**Date:** 2026-03-05  
+**Blueprint Section:** §9.1 Stage 9, §11.2, §14  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/.github/workflows/ci.yml`, `/Users/galiettemita/Downloads/Executive AI Agent/backend/.github/workflows/deploy-staging.yml`, `/Users/galiettemita/Downloads/Executive AI Agent/backend/scripts/deploy/helm_rollout.sh`  
+**Conflict:** Staging deploy steps upgraded Helm releases but did not execute an explicit smoke-test gate covering health endpoints, webhook route presence, and synthetic workflow start before production progression.  
+**Options Considered:**  
+1. Keep rollout-only staging deploy and rely on manual checks.  
+2. Add shallow `kubectl get pods` checks only.  
+3. Add deterministic smoke-test script and wire it into staging deploy workflows.  
+**Decision:** Option 3. Added `scripts/deploy/run_staging_smoke_tests.sh` and `make staging-smoke-tests`, producing `artifacts/deploy/staging_smoke_test_report.json` with deployment readiness checks, gateway `/health` + `/health/deep`, webhook route probe, and synthetic Temporal message-processing workflow start probe. Wired this gate into both staging deploy workflows.  
+**Migration Plan:**  
+1. Keep `helm_rollout.sh` as deployment action.  
+2. Run `run_staging_smoke_tests.sh` immediately after staging rollout in CI/workflow.  
+3. Fail staging deploy phase on smoke test failures and capture JSON report artifact.  
+4. Use report for deployment runbook evidence.  
+**Risk:** Port-forward-based probes can fail in constrained cluster RBAC/network contexts and may need environment-specific tuning.  
+**Rollback:** Remove staging smoke script/workflow steps and revert to rollout-only staging deploy path.
