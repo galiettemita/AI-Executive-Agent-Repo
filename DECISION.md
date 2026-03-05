@@ -1960,3 +1960,21 @@
 3. Run `make external-phase-sync` to propagate corrected status into closeout/signoff/TODO artifacts.  
 **Risk:** Frequent toggling can reduce confidence in manual evidence integrity without operator discipline.  
 **Rollback:** Remove revocation script/target and return to confirmation-only evidence records.
+
+## DECISION-109: Append Confirm/Revoke Events for Manual Evidence Audit Traceability
+
+**Date:** 2026-03-05  
+**Blueprint Section:** §20.8, §21  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/scripts/deploy/update_manual_closeout_evidence.sh`, `/Users/galiettemita/Downloads/Executive AI Agent/backend/scripts/deploy/revoke_manual_closeout_evidence.sh`  
+**Conflict:** Evidence state was mutable and only stored current per-item status. Operator actions were not preserved as a timeline, reducing auditability of manual closeout decisions.  
+**Options Considered:**  
+1. Keep only current-state fields per item.  
+2. Emit logs to stdout and rely on shell history.  
+3. Persist append-only event records inside the evidence artifact.  
+**Decision:** Option 3. Added an `events` array to `manual_closeout_evidence.json` and now append `{item_id, action, actor, at_utc, note}` on every confirm and revoke operation, while keeping `items` as current state.  
+**Migration Plan:**  
+1. Keep existing `items` contract unchanged for checker compatibility.  
+2. Append `events` entries from both confirm and revoke scripts.  
+3. Use evidence file as a lightweight operational audit log during external closeout.  
+**Risk:** Evidence file size grows with event volume over long periods.  
+**Rollback:** Remove event append logic and retain only current-state `items` if storage/noise becomes problematic.

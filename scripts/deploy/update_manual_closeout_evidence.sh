@@ -64,6 +64,19 @@ items[item_id] = {
     "confirmed_at_utc": datetime.now(timezone.utc).isoformat(),
     "note": note,
 }
+events = payload.setdefault("events", [])
+if not isinstance(events, list):
+    events = []
+    payload["events"] = events
+events.append(
+    {
+        "item_id": item_id,
+        "action": "confirm",
+        "actor": confirmed_by,
+        "at_utc": datetime.now(timezone.utc).isoformat(),
+        "note": note,
+    }
+)
 payload["updated_at_utc"] = datetime.now(timezone.utc).isoformat()
 
 with open(path, "w", encoding="utf-8") as fh:
