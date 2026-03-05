@@ -165,21 +165,21 @@ Artifact source: `artifacts/deploy/external_closeout_status.json` (`manual_evide
 
 `make production-deployment-todo` executed at 2026-03-05T03:44:58Z and produced `artifacts/deploy/production_deployment_todo.md` with deterministic deployment, canary, rollback, and evidence steps for runbook execution.
 
-`make production-post-deploy-validation` executed at 2026-03-05T03:51:07Z and produced `artifacts/deploy/production_post_deploy_validation.json` with `status=CONDITIONAL_MANUAL` in conditional mode and expected `BLOCKED` behavior in strict mode without endpoint URLs.
+`make production-post-deploy-validation` executed at 2026-03-05T05:06:36Z and produced `artifacts/deploy/production_post_deploy_validation.json` with `status=CONDITIONAL_MANUAL`; explicit 1-hour SLO metrics gate (`slo_window_1h`) passed while endpoint URL probes remained manual in endpoint-restricted context.
 
-`make production-phase-sync` executed at 2026-03-05T04:47:29Z and refreshed all production-phase artifacts (`external_phase_transition_check.json`, `production_deployment_signoff_check.json`, `production_canary_check.json`, `production_deployment_todo.md`, `production_post_deploy_validation.json`) in one run.
+`make production-phase-sync` executed at 2026-03-05T05:06:36Z and refreshed all production-phase artifacts (`external_phase_transition_check.json`, `production_deployment_signoff_check.json`, `production_canary_check.json`, `production_deployment_todo.md`, `production_post_deploy_validation.json`) in one run with canary `PASS` and post-deploy `CONDITIONAL_MANUAL`.
 
-`make phase-closure-manifest` executed at 2026-03-05T04:22:17Z and produced `artifacts/deploy/phase_closure_manifest.json` with aggregated status `overall_status=CONDITIONAL_MANUAL`.
+`make phase-closure-manifest` executed at 2026-03-05T05:06:36Z and produced `artifacts/deploy/phase_closure_manifest.json` with aggregated status `overall_status=CONDITIONAL_MANUAL` (`canary_pass=true`, `post_deploy_pass=true`).
 
-`make phase-handoff-bundle` executed at 2026-03-05T04:24:45Z and produced `artifacts/deploy/handoff/phase-handoff-20260305T042445Z.tar.gz` plus `artifacts/deploy/phase_handoff_bundle.json`.
+`make phase-handoff-bundle` executed at 2026-03-05T05:06:42Z and produced `artifacts/deploy/handoff/phase-handoff-20260305T050642Z.tar.gz` plus `artifacts/deploy/phase_handoff_bundle.json`.
 
-`make phase-status` executed at 2026-03-05T04:27:00Z and produced `artifacts/deploy/phase_status.txt` with current summary (`overall_status=CONDITIONAL_MANUAL`, `required_failed=0`, `required_manual=8`).
+`make phase-status` executed at 2026-03-05T05:06:42Z and produced `artifacts/deploy/phase_status.txt` with current summary (`overall_status=CONDITIONAL_MANUAL`, `required_failed=0`, `required_manual=8`).
 
 `make manual-provider-steps` executed at 2026-03-05T04:30:01Z and produced `artifacts/deploy/manual_provider_steps.md` with item-specific UI steps and `manual-closeout-confirm` commands.
 
 Staging smoke validation is now enforced in staging deployment workflows via `scripts/deploy/run_staging_smoke_tests.sh`; local runtime validation used `make ci` contract/workflow gates because staging kubeconfig is environment-dependent.
 
-`make production-canary-check` executed at 2026-03-05T04:47:29Z and produced `artifacts/deploy/production_canary_check.json`; subsequent `production-phase-sync`, `phase-closure-manifest`, `phase-handoff-bundle`, and `phase-status` runs incorporated canary status (`PASS`) into closure reporting.
+`make production-canary-check` executed at 2026-03-05T05:06:36Z and produced `artifacts/deploy/production_canary_check.json`; subsequent `production-phase-sync`, `phase-closure-manifest`, `phase-handoff-bundle`, and `phase-status` runs incorporated canary status (`PASS`) into closure reporting.
 
 `make external-phase-sync` executed at 2026-03-05T03:33:33Z and refreshed all external closeout artifacts in one pass (`required_failed=0`, `status=CONDITIONAL_MANUAL`).
 
