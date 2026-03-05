@@ -74,9 +74,51 @@ jobs:
   security_scan:
     name: 6. Security Scan
     runs-on: ubuntu-latest
+    env:
+      CI: "true"
+      REQUIRE_SECURITY_TOOLS: "1"
+      SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.12.3
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: pnpm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile=false
+      - name: Semgrep SAST scan
+        run: |
+          python3 -m pip install --upgrade pip
+          python3 -m pip install semgrep
+          mkdir -p artifacts/security
+          semgrep scan --config auto --severity ERROR --sarif --output artifacts/security/semgrep.sarif --error
+      - name: Snyk dependency scan
+        run: |
+          if [ -z "${SNYK_TOKEN:-}" ]; then
+            echo "SNYK_TOKEN secret is required for strict CI security scans." >&2
+            exit 1
+          fi
+          mkdir -p artifacts/security
+          pnpm dlx snyk@1.1296.0 test --all-projects --severity-threshold=high --json-file-output=artifacts/security/snyk_report.json
       - run: bash scripts/security/run_security_validation.sh
+      - name: Upload security artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-security-artifacts-${{ github.run_id }}
+          if-no-files-found: ignore
+          path: |
+            artifacts/security/**
+            sbom.spdx.json
 
   migration_safety:
     name: 7. Migration Safety

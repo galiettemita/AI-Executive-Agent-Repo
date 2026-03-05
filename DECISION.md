@@ -2514,3 +2514,39 @@
 3. Push and merge before re-running dispatch workflows.  
 **Risk:** Empty secret values still skip their associated credential path, but queueing remains valid and fallback behavior is explicit.  
 **Rollback:** Revert to pre-auth-bootstrap workflow revision and restore manual credential setup outside workflows.
+
+## DECISION-139: Enforce Snyk in Core CI Security Stage
+
+**Date:** 2026-03-05  
+**Blueprint Section:** §0.3, §9.1 Stage 6, §20.12  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/.github/workflows/ci.yml`, `/Users/galiettemita/Downloads/Executive AI Agent/backend/.github/workflows/security-scan.yml`  
+**Conflict:** Security gates covered Semgrep/Trivy/TruffleHog but did not enforce Snyk in the core CI security stage, which deviated from required `Trivy + Snyk + semgrep` pipeline semantics.  
+**Options Considered:**  
+1. Keep current scans and rely on periodic security workflow only.  
+2. Add best-effort Snyk step that silently skips when token is missing.  
+3. Add strict Snyk dependency scan in both CI and security workflows and fail clearly when token is not configured.  
+**Decision:** Option 3. Added deterministic Snyk scan steps using `pnpm dlx snyk ...` with explicit `SNYK_TOKEN` requirement, plus artifact persistence under `artifacts/security/`.  
+**Migration Plan:**  
+1. Extend security jobs with Node/pnpm bootstrap and dependency install where needed.  
+2. Add `SNYK_TOKEN` job env and strict missing-token guard.  
+3. Publish Snyk JSON report in workflow artifacts.  
+**Risk:** Security jobs will fail until `SNYK_TOKEN` is provisioned in repository/environment secrets.  
+**Rollback:** Remove Snyk steps/env from the workflows and return to pre-change scanner set.
+
+## DECISION-140: Seed Per-Skill Registry Metadata from Canonical Skill Readmes
+
+**Date:** 2026-03-05  
+**Blueprint Section:** §3.3, §A.7, §A.9  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/migrations/006_seed_skills.up.sql`, `/Users/galiettemita/Downloads/Executive AI Agent/backend/services/brevio-hands/src/skills/*/README.md`  
+**Conflict:** `006_seed_skills.up.sql` previously inserted generic descriptions/use-cases (`initcap(id)`, `Execute ... workflow`) rather than per-skill metadata quality required for production registry fidelity.  
+**Options Considered:**  
+1. Keep generic seeded text and rely on docs/readmes for detail.  
+2. Manually hardcode 153 rows by hand in migration.  
+3. Add deterministic per-skill metadata update block keyed by skill ID using canonical skill readme summaries/use-case lines.  
+**Decision:** Option 3. Added a `skill_metadata` `VALUES` block for all 153 seeded IDs and post-seed update join to set concrete `description` and `brevio_use_case` values.  
+**Migration Plan:**  
+1. Preserve existing seed CTE/insert behavior for compatibility.  
+2. Apply metadata normalization update immediately after plane/deployment-mode updates.  
+3. Keep future metadata refinement centralized in skill readmes and migration updates.  
+**Risk:** Metadata quality now depends on README consistency; weak readme text can degrade seed quality.  
+**Rollback:** Remove the `skill_metadata` update block and revert to prior generic generated metadata.
