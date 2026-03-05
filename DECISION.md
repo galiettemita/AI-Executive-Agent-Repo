@@ -2179,3 +2179,21 @@
 3. Use manifest as canonical machine-readable handoff snapshot for go-live operations.  
 **Risk:** Manifest correctness depends on freshness of upstream artifacts.  
 **Rollback:** Remove manifest generator and rely on source artifact inspection directly.
+
+## DECISION-121: Add Final Phase Handoff Bundle Packaging
+
+**Date:** 2026-03-05  
+**Blueprint Section:** §14, §18, §21  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/artifacts/deploy/`, `/Users/galiettemita/Downloads/Executive AI Agent/backend/docs/FINAL_VALIDATION_brevio_openclaw.md`  
+**Conflict:** Final closure artifacts were distributed across multiple files and folders, making transfer and archival error-prone for operational handoff.  
+**Options Considered:**  
+1. Keep artifacts unpackaged and share paths manually.  
+2. Create an ad hoc archive command in runbook text only.  
+3. Add deterministic bundle generation command with metadata manifest.  
+**Decision:** Option 3. Added `scripts/deploy/create_phase_handoff_bundle.sh` and `make phase-handoff-bundle`, producing `artifacts/deploy/handoff/phase-handoff-<timestamp>.tar.gz` plus `artifacts/deploy/phase_handoff_bundle.json` metadata with included artifact list and size.  
+**Migration Plan:**  
+1. Refresh closure artifacts (`external-phase-sync`, `production-phase-sync`, `phase-closure-manifest`).  
+2. Run `make phase-handoff-bundle`.  
+3. Use generated bundle + metadata as the canonical transfer package for go-live review and archival.  
+**Risk:** Bundle can become stale if regenerated artifacts are not refreshed before packaging.  
+**Rollback:** Remove bundle generator and continue sharing individual artifact paths.

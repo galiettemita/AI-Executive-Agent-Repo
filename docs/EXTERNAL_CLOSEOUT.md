@@ -466,6 +466,26 @@ The manifest summarizes:
 3. post-deploy validation status
 4. overall closure state (`READY` / `CONDITIONAL_MANUAL` / `BLOCKED`)
 
+## 22) Create Final Handoff Bundle
+
+To package all closure artifacts into a single archive:
+
+```bash
+cd /Users/galiettemita/Downloads/Executive AI Agent/backend
+make phase-handoff-bundle
+```
+
+Outputs:
+- `artifacts/deploy/handoff/phase-handoff-<timestamp>.tar.gz`
+- `artifacts/deploy/phase_handoff_bundle.json`
+
+Bundle includes:
+1. external closeout + signoff artifacts
+2. transition + production signoff artifacts
+3. production deployment todo + post-deploy validation artifacts
+4. consolidated closure manifest
+5. final validation report
+
 Optional: disable regression check for troubleshooting only:
 
 ```bash
