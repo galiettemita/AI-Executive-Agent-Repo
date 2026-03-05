@@ -2087,3 +2087,22 @@
 4. Re-run `make external-phase-transition-check` to confirm phase progression status.  
 **Risk:** Running the generated script without validating underlying real-world confirmations could over-confirm items quickly.  
 **Rollback:** Remove batch-command generator and keep per-item manual execution via `manual_closeout_todo.md`.
+
+## DECISION-116: Add Deterministic Production Deployment Signoff Gate Artifact
+
+**Date:** 2026-03-05  
+**Blueprint Section:** §9, §14, §18, §21  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/scripts/deploy/check_external_phase_transition.sh`, `/Users/galiettemita/Downloads/Executive AI Agent/backend/scripts/deploy/check_external_closeout_regressions.sh`  
+**Conflict:** External-phase transition checking existed, but there was no explicit machine gate for the next phase (`production-deployment-signoff`) that combined transition status, regression status, and signoff failed-item invariants in one artifact.  
+**Options Considered:**  
+1. Use external transition artifact directly and start deployment runbook manually.  
+2. Add manual runbook-only checklist with no executable gate.  
+3. Add a dedicated production deployment signoff checker artifact with deterministic exit codes.  
+**Decision:** Option 3. Added `scripts/deploy/check_production_deployment_signoff.sh` and `make production-deployment-signoff-check`, generating `artifacts/deploy/production_deployment_signoff_check.json` with explicit `pass_signoff`, `signoff_mode`, `blocking_conditions`, and `next_phase` semantics.  
+**Migration Plan:**  
+1. Run `make external-phase-sync` to refresh external artifacts.  
+2. Run `make external-phase-transition-check` (or override variant if explicitly accepted).  
+3. Run `make production-deployment-signoff-check` to generate deterministic phase-pass evidence.  
+4. Only proceed to deployment runbook when `pass_signoff=true`.  
+**Risk:** Conditional-manual override flow can still mask incomplete manual confirmations if operators misuse override mode.  
+**Rollback:** Remove production signoff checker and rely on existing transition-check + manual runbook interpretation.

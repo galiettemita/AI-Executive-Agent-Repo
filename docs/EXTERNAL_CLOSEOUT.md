@@ -359,6 +359,31 @@ The generated script will:
 1. run `make manual-closeout-confirm` for each pending manual required item
 2. run `make external-phase-sync` to refresh all artifacts
 
+## 17) Production Deployment Signoff Gate
+
+After external phase transition is in `READY` or explicit conditional-manual override mode,
+run the production signoff gate:
+
+```bash
+cd /Users/galiettemita/Downloads/Executive AI Agent/backend
+make production-deployment-signoff-check
+```
+
+Output:
+- `artifacts/deploy/production_deployment_signoff_check.json`
+
+Behavior:
+- exits `0` only when all signoff checks pass
+- validates transition gate pass state, regression report status, and failed-required-item count
+- supports `signoff_mode=conditional_manual_override` when transition check was generated with manual override
+
+Typical conditional-manual flow:
+
+```bash
+ALLOW_CONDITIONAL_MANUAL=1 make external-phase-transition-check
+make production-deployment-signoff-check
+```
+
 Optional: disable regression check for troubleshooting only:
 
 ```bash

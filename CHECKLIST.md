@@ -1241,6 +1241,7 @@ You must prove it.
 - [x] External-to-production transition gate phase closure: added `make external-phase-transition-check`, verified strict mode blocks on `CONDITIONAL_MANUAL` and override mode (`ALLOW_CONDITIONAL_MANUAL=1`) allows controlled pivot to `production-deployment-signoff`.
 - [x] Manual closeout execution UX phase closure: `manual_closeout_todo.md` now emits per-item ready-to-run confirm/unconfirm commands, reducing manual transcription risk during provider/account closeout.
 - [x] Manual closeout batch execution phase closure: added `make manual-closeout-batch-commands` to generate `artifacts/deploy/manual_closeout_batch_commands.sh`, producing actor-parameterized confirm commands for all pending required manual items and a final `make external-phase-sync` refresh step.
+- [x] Production deployment signoff gate phase closure: added `make production-deployment-signoff-check`, generating `artifacts/deploy/production_deployment_signoff_check.json` from transition/signoff/regression artifacts and enforcing deterministic pass/fail progression before deployment runbook execution.
 - [x] Clerk (auth) account + keys (`CLERK_SECRET_KEY`)
 - [x] Stripe (billing) account + keys (`STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, Price IDs) (Operational Blueprint Component 1) (verified via `make external-closeout-check`)
 - [x] Anthropic account + `ANTHROPIC_API_KEY`
