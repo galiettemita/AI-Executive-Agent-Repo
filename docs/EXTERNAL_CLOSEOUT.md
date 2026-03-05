@@ -504,6 +504,23 @@ The report includes:
 3. transition/signoff/post-deploy summary
 4. next recommended action
 
+## 24) Generate Button-by-Button Manual Provider Steps
+
+To generate concrete click-by-click instructions for each pending manual required item:
+
+```bash
+cd /Users/galiettemita/Downloads/Executive AI Agent/backend
+make manual-provider-steps
+```
+
+Output:
+- `artifacts/deploy/manual_provider_steps.md`
+
+This file includes:
+1. provider-console navigation steps
+2. exact `make manual-closeout-confirm` commands for each item
+3. ordered follow-up commands to resync all closure artifacts
+
 Optional: disable regression check for troubleshooting only:
 
 ```bash

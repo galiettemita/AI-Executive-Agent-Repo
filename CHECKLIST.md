@@ -1248,6 +1248,7 @@ You must prove it.
 - [x] Consolidated phase closure manifest phase closure: added `make phase-closure-manifest` to generate `artifacts/deploy/phase_closure_manifest.json` summarizing external+production gate states and final overall closure status.
 - [x] Final phase handoff bundle closure: added `make phase-handoff-bundle` to package closure artifacts into `phase-handoff-<timestamp>.tar.gz` and emit machine-readable bundle metadata in `artifacts/deploy/phase_handoff_bundle.json`.
 - [x] Phase-status reporting closure: added `make phase-status` to generate `artifacts/deploy/phase_status.txt` with concise overall state, blocker counts, and next-action guidance from manifest+bundle metadata.
+- [x] Manual provider button-steps closure: added `make manual-provider-steps` to generate `artifacts/deploy/manual_provider_steps.md` with click-by-click console actions and exact confirm commands for remaining manual blockers.
 - [x] Clerk (auth) account + keys (`CLERK_SECRET_KEY`)
 - [x] Stripe (billing) account + keys (`STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, Price IDs) (Operational Blueprint Component 1) (verified via `make external-closeout-check`)
 - [x] Anthropic account + `ANTHROPIC_API_KEY`

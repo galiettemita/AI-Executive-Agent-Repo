@@ -2215,3 +2215,22 @@
 3. Use report output in deployment channel updates and handoff checklists.  
 **Risk:** Status report accuracy depends on freshness of source artifacts.  
 **Rollback:** Remove status reporter and rely on raw JSON artifacts.
+
+## DECISION-123: Add Generated Button-by-Button Manual Provider Step Sheet
+
+**Date:** 2026-03-05  
+**Blueprint Section:** §0.1, §14, §18, §21  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/docs/EXTERNAL_CLOSEOUT.md`, `/Users/galiettemita/Downloads/Executive AI Agent/backend/artifacts/deploy/go_live_signoff_status.json`  
+**Conflict:** Remaining blockers are human-gated and provider-console specific; operators still needed to translate blocker IDs into concrete UI click paths and command confirmations.  
+**Options Considered:**  
+1. Keep high-level runbook sections only.  
+2. Write static manual instructions disconnected from current blocker set.  
+3. Generate provider step sheets directly from pending manual items in signoff artifact.  
+**Decision:** Option 3. Added `scripts/deploy/generate_manual_provider_steps.sh` and `make manual-provider-steps`, producing `artifacts/deploy/manual_provider_steps.md` with item-specific click paths and exact `manual-closeout-confirm` commands for each pending manual blocker.  
+**Migration Plan:**  
+1. Refresh signoff artifact via `make external-phase-sync`.  
+2. Run `make manual-provider-steps`.  
+3. Execute generated instructions and confirm each item.  
+4. Re-run phase sync/status commands to validate closure progression.  
+**Risk:** Provider UI changes can make specific click-path wording stale over time.  
+**Rollback:** Remove generated step sheet and rely on runbook-only manual guidance.
