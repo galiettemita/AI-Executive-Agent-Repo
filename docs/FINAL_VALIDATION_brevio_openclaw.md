@@ -1,8 +1,8 @@
 # BREVIO x OPENCLAW Final Validation Report
 
-Timestamp (UTC): 2026-03-05 02:28:24 UTC
+Timestamp (UTC): 2026-03-05 02:30:27 UTC
 Branch: `codex/brevio-openclaw-phase0`
-Head: `94f7695`
+Head: `d6a1512`
 
 ## Scope
 
@@ -54,7 +54,7 @@ The following are outside autonomous code changes and require human provisioning
 
 ## Next Phase Status: External Closeout Gate
 
-`make external-closeout-check` executed at 2026-03-05T02:28:20Z and completed with non-failing required status (`required_passed=0`, `required_failed=0`, `required_manual=8`).
+`make external-closeout-check` executed at 2026-03-05T02:30:27Z and completed with non-failing required status (`required_passed=0`, `required_failed=0`, `required_manual=8`).
 
 Current required manual items:
 
@@ -69,7 +69,7 @@ Current required manual items:
 
 Artifact source: `artifacts/deploy/external_closeout_status.json`.
 
-`make go-live-signoff` executed at 2026-03-05T02:28:24Z and produced `artifacts/deploy/go_live_signoff_status.json` with `status=CONDITIONAL_MANUAL` and `required_failed=0`, confirming transition to manual provisioning closeout without code-gate blockers.
+`make go-live-signoff` executed at 2026-03-05T02:30:27Z and produced `artifacts/deploy/go_live_signoff_status.json` with `status=CONDITIONAL_MANUAL` and `required_failed=0`, confirming transition to manual provisioning closeout without code-gate blockers.
 
 ## Conclusion
 

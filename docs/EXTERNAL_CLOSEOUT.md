@@ -4,7 +4,7 @@ This runbook covers the only checklist items that remain outside repository auto
 
 ## Current Phase Status (Latest Gate Run)
 
-Latest gate run: `make external-closeout-check` at `2026-03-05T02:28:20Z`
+Latest gate run: `make external-closeout-check` at `2026-03-05T02:30:27Z`
 
 - Required checks: `8`
 - Passed: `0`
@@ -24,7 +24,7 @@ Active required blockers right now:
 
 Authoritative status artifact:
 - `artifacts/deploy/external_closeout_status.json`
-- `artifacts/deploy/go_live_signoff_status.json` (`status=CONDITIONAL_MANUAL` from `make go-live-signoff` at `2026-03-05T02:28:24Z`)
+- `artifacts/deploy/go_live_signoff_status.json` (`status=CONDITIONAL_MANUAL` from `make go-live-signoff` at `2026-03-05T02:30:27Z`)
 
 ## 1) Partner Applications (Zoom/Instacart/Canva/Booking.com)
 
