@@ -2106,3 +2106,21 @@
 4. Only proceed to deployment runbook when `pass_signoff=true`.  
 **Risk:** Conditional-manual override flow can still mask incomplete manual confirmations if operators misuse override mode.  
 **Rollback:** Remove production signoff checker and rely on existing transition-check + manual runbook interpretation.
+
+## DECISION-117: Generate Production Deployment TODO Artifact from Signoff Gate
+
+**Date:** 2026-03-05  
+**Blueprint Section:** §9.2, §14, §18, §21  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/scripts/deploy/helm_rollout.sh`, `/Users/galiettemita/Downloads/Executive AI Agent/backend/docs/runbooks/deployment-runbook.md`  
+**Conflict:** Production signoff could pass, but execution still depended on manual translation of runbook prose into a concrete, timestamped action list tied to the latest gate artifact.  
+**Options Considered:**  
+1. Keep runbook-only execution with no generated task artifact.  
+2. Hardcode deployment commands in documentation only.  
+3. Generate a deployment TODO artifact directly from production signoff status.  
+**Decision:** Option 3. Added `scripts/deploy/generate_production_deployment_todo.sh` and `make production-deployment-todo`, which generate `artifacts/deploy/production_deployment_todo.md` with deterministic rollout steps, canary thresholds, rollback triggers, and evidence-capture instructions anchored to the latest signoff artifact state.  
+**Migration Plan:**  
+1. Run `make production-deployment-signoff-check` to ensure signoff gate status is current.  
+2. Run `make production-deployment-todo` to generate operator-ready deployment checklist.  
+3. Execute deployment runbook commands from generated artifact and capture evidence.  
+**Risk:** If signoff artifact is stale, generated TODO can reflect outdated readiness context.  
+**Rollback:** Remove deployment TODO generator and use manual runbook execution directly.

@@ -384,6 +384,24 @@ ALLOW_CONDITIONAL_MANUAL=1 make external-phase-transition-check
 make production-deployment-signoff-check
 ```
 
+## 18) Generate Production Deployment TODO
+
+Once the production signoff gate passes, generate the rollout execution checklist artifact:
+
+```bash
+cd /Users/galiettemita/Downloads/Executive AI Agent/backend
+make production-deployment-todo
+```
+
+Output:
+- `artifacts/deploy/production_deployment_todo.md`
+
+The generated TODO includes:
+1. final CI/full-gate command
+2. deployment command using `scripts/deploy/helm_rollout.sh`
+3. health checks + canary thresholds
+4. rollback trigger reminder and evidence capture checklist
+
 Optional: disable regression check for troubleshooting only:
 
 ```bash

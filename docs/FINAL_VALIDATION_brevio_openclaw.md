@@ -39,11 +39,13 @@ Head: `addee5d`
 - `make ci` (post-manual-command-template automation rerun at 2026-03-05T03:34:10Z): PASS
 - `make ci` (post-manual-batch-command closure rerun at 2026-03-05T03:39:34Z): PASS
 - `make ci` (post-production-signoff-gate closure rerun at 2026-03-05T03:43:01Z): PASS
+- `make ci` (post-production-deployment-todo closure rerun at 2026-03-05T03:45:25Z): PASS
 - `make manual-closeout-batch-commands` (2026-03-05T03:38:55Z): PASS (`manual_closeout_batch_commands.sh` generated)
 - `EXTERNAL_REGRESSION_CHECK=1 make external-phase-sync` (2026-03-05T03:25:33Z): PASS (`external_closeout_regression_report.json.status=PASS`)
 - `make external-phase-transition-check`: strict mode blocks as expected on `CONDITIONAL_MANUAL`; `ALLOW_CONDITIONAL_MANUAL=1` mode passes and sets `next_phase=production-deployment-signoff`
 - `ALLOW_CONDITIONAL_MANUAL=1 make external-phase-transition-check` (2026-03-05T03:42:34Z): PASS
 - `make production-deployment-signoff-check` (2026-03-05T03:42:34Z): PASS (`signoff_mode=conditional_manual_override`, `pass_signoff=true`)
+- `make production-deployment-todo` (2026-03-05T03:44:58Z): PASS (`production_deployment_todo.md` generated)
 - `make security-validate` (post-signoff rerun at 2026-03-05T02:31:47Z): PASS
 - `pnpm audit --audit-level high` (network-enabled run): PASS (`No known vulnerabilities found`)
 
@@ -78,6 +80,8 @@ Head: `addee5d`
 - Production deployment signoff gate is active:
   - `make production-deployment-signoff-check` emits `production_deployment_signoff_check.json` and enforces transition + regression + signoff invariants before deployment runbook execution
   - supports `signoff_mode=conditional_manual_override` when manual acceptance is explicitly enabled at transition check time
+- Production deployment execution TODO artifact is active:
+  - `make production-deployment-todo` emits `production_deployment_todo.md` from the signoff gate artifact with rollout, canary, rollback, and evidence-capture steps
 - Manual closeout TODO execution commands are embedded:
   - `manual_closeout_todo.md` includes per-item confirm and revoke command templates
 - Manual closeout batch command generation is active:
@@ -118,6 +122,8 @@ Artifact source: `artifacts/deploy/external_closeout_status.json` (`manual_evide
 `make manual-closeout-batch-commands` executed at 2026-03-05T03:38:55Z and produced `artifacts/deploy/manual_closeout_batch_commands.sh` for actor-parameterized confirmation of all currently pending required manual items.
 
 `ALLOW_CONDITIONAL_MANUAL=1 make external-phase-transition-check` and `make production-deployment-signoff-check` executed at 2026-03-05T03:42:34Z and produced transition/signoff artifacts with `next_phase=production-deployment-signoff` and `pass_signoff=true` under explicit conditional-manual acceptance.
+
+`make production-deployment-todo` executed at 2026-03-05T03:44:58Z and produced `artifacts/deploy/production_deployment_todo.md` with deterministic deployment, canary, rollback, and evidence steps for runbook execution.
 
 `make external-phase-sync` executed at 2026-03-05T03:33:33Z and refreshed all external closeout artifacts in one pass (`required_failed=0`, `status=CONDITIONAL_MANUAL`).
 
