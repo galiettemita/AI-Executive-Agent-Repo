@@ -2124,3 +2124,22 @@
 3. Execute deployment runbook commands from generated artifact and capture evidence.  
 **Risk:** If signoff artifact is stale, generated TODO can reflect outdated readiness context.  
 **Rollback:** Remove deployment TODO generator and use manual runbook execution directly.
+
+## DECISION-118: Add Post-Deployment Validation Artifact Gate for Health/SLO Closure
+
+**Date:** 2026-03-05  
+**Blueprint Section:** §9.2, §10.2, §14, §21  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/docs/runbooks/deployment-runbook.md`, `/Users/galiettemita/Downloads/Executive AI Agent/backend/scripts/deploy/generate_production_deployment_todo.sh`  
+**Conflict:** Deployment execution steps existed, but there was no explicit executable gate artifact to classify deployment completion based on health endpoint and canary SLO outcomes.  
+**Options Considered:**  
+1. Treat rollout completion as manual runbook status only.  
+2. Store ad-hoc deployment notes with no machine-readable summary.  
+3. Add deterministic post-deploy validation script with strict and conditional-manual modes.  
+**Decision:** Option 3. Added `scripts/deploy/check_production_post_deploy_validation.sh` and `make production-post-deploy-validation`, producing `artifacts/deploy/production_post_deploy_validation.json` with endpoint checks, canary metric checks (`CANARY_ERROR_RATE_PCT`, `CANARY_P99_RATIO`), and phase status (`READY`/`CONDITIONAL_MANUAL`/`BLOCKED`).  
+**Migration Plan:**  
+1. Complete deployment using generated production TODO.  
+2. Run `make production-post-deploy-validation` with environment URLs and canary metrics when available.  
+3. Use strict mode (`ALLOW_CONDITIONAL_MANUAL=0`) for fully instrumented environments.  
+4. Track and resolve any `BLOCKED` output before declaring deployment complete.  
+**Risk:** Conditional-manual mode can mask missing telemetry if used excessively.  
+**Rollback:** Remove post-deploy validation script and revert to runbook/manual closure only.

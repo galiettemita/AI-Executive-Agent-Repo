@@ -1243,6 +1243,7 @@ You must prove it.
 - [x] Manual closeout batch execution phase closure: added `make manual-closeout-batch-commands` to generate `artifacts/deploy/manual_closeout_batch_commands.sh`, producing actor-parameterized confirm commands for all pending required manual items and a final `make external-phase-sync` refresh step.
 - [x] Production deployment signoff gate phase closure: added `make production-deployment-signoff-check`, generating `artifacts/deploy/production_deployment_signoff_check.json` from transition/signoff/regression artifacts and enforcing deterministic pass/fail progression before deployment runbook execution.
 - [x] Production deployment execution-TODO phase closure: added `make production-deployment-todo` to generate `artifacts/deploy/production_deployment_todo.md` from the signoff artifact with explicit rollout/canary/rollback/evidence steps for immediate runbook execution.
+- [x] Post-deployment validation gate phase closure: added `make production-post-deploy-validation`, generating `artifacts/deploy/production_post_deploy_validation.json` with endpoint health and canary SLO checks plus strict/conditional-manual enforcement.
 - [x] Clerk (auth) account + keys (`CLERK_SECRET_KEY`)
 - [x] Stripe (billing) account + keys (`STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, Price IDs) (Operational Blueprint Component 1) (verified via `make external-closeout-check`)
 - [x] Anthropic account + `ANTHROPIC_API_KEY`

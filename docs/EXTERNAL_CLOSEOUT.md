@@ -402,6 +402,34 @@ The generated TODO includes:
 3. health checks + canary thresholds
 4. rollback trigger reminder and evidence capture checklist
 
+## 19) Post-Deployment Validation Gate
+
+After deployment/canary execution, run post-deploy validation:
+
+```bash
+cd /Users/galiettemita/Downloads/Executive AI Agent/backend
+make production-post-deploy-validation
+```
+
+Output:
+- `artifacts/deploy/production_post_deploy_validation.json`
+
+Environment inputs (optional but recommended):
+- `GATEWAY_BASE_URL`, `BRAIN_BASE_URL`, `HANDS_BASE_URL` for `/health` + `/health/deep` probes
+- `CANARY_ERROR_RATE_PCT` and `CANARY_P99_RATIO` for SLO gate checks
+
+Example with explicit canary metrics:
+
+```bash
+CANARY_ERROR_RATE_PCT=0.4 CANARY_P99_RATIO=1.3 make production-post-deploy-validation
+```
+
+Strict mode:
+
+```bash
+ALLOW_CONDITIONAL_MANUAL=0 make production-post-deploy-validation
+```
+
 Optional: disable regression check for troubleshooting only:
 
 ```bash
