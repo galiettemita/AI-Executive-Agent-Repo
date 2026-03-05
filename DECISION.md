@@ -1833,3 +1833,21 @@
 3. Keep phase progression blocked only on required `fail` statuses.  
 **Risk:** Manual-only status can delay discovery of truly missing values until production-context verification runs.  
 **Rollback:** Revert to strict fail-on-manual policy if governance requires no manual statuses at checkpoint transition.
+
+## DECISION-102: Add Deterministic Go-Live Signoff Artifact for Phase-Closure Progression
+
+**Date:** 2026-03-05  
+**Blueprint Section:** §18, §21  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/scripts/deploy/external_closeout_check.sh`, `/Users/galiettemita/Downloads/Executive AI Agent/backend/artifacts/deploy/external_closeout_status.json`  
+**Conflict:** External closeout status existed, but there was no dedicated phase-signoff artifact encoding next-step readiness (`BLOCKED` vs `CONDITIONAL_MANUAL` vs `READY`) to drive deterministic progression into the next phase.  
+**Options Considered:**  
+1. Keep only `external_closeout_status.json` and infer phase status manually.  
+2. Encode phase status in markdown docs only.  
+3. Generate a dedicated machine-readable go-live signoff artifact from external closeout results.  
+**Decision:** Option 3. Added `scripts/deploy/generate_go_live_signoff.sh` and `make go-live-signoff` to generate `artifacts/deploy/go_live_signoff_status.json` with explicit status classification and next-action guidance. Current artifact is `CONDITIONAL_MANUAL` with `required_failed=0`, enabling direct transition into manual provisioning closeout.  
+**Migration Plan:**  
+1. Run `make external-closeout-check` followed by `make go-live-signoff` at each checkpoint.  
+2. Use signoff artifact status as deterministic phase gate: block only on `BLOCKED`, proceed on `CONDITIONAL_MANUAL`/`READY` per governance.  
+3. Continue updating runbook/validation docs from latest artifact timestamps.  
+**Risk:** If source external artifact is stale, go-live signoff status can be stale too.  
+**Rollback:** Remove `generate_go_live_signoff.sh`/Make target and revert to direct manual interpretation of `external_closeout_status.json`.

@@ -1222,6 +1222,7 @@ You must prove it.
 - [x] Move directly into external provisioning phase after autonomous closure: reran `make external-closeout-check` (2026-03-05) and synchronized active blocker list in `docs/EXTERNAL_CLOSEOUT.md` + `docs/FINAL_VALIDATION_brevio_openclaw.md` from the latest artifact output.
 - [x] External-closeout gate hardening: updated `scripts/deploy/external_closeout_check.sh` with retry/timeouts, endpoint-unavailable manual classification, and analytics bus secret fallback so phase gating avoids false-missing secret failures under transient/unreachable AWS endpoints.
 - [x] External provisioning phase checkpoint closure: `make external-closeout-check` now completes with `required_failed=0` and explicit `manual` statuses for remaining human-gated provider/account confirmations in endpoint-restricted environments.
+- [x] Go-live signoff phase artifact closure: added `make go-live-signoff`, generated `artifacts/deploy/go_live_signoff_status.json`, and confirmed `status=CONDITIONAL_MANUAL` with `required_failed=0` for immediate transition into manual provisioning closeout.
 - [x] Clerk (auth) account + keys (`CLERK_SECRET_KEY`)
 - [x] Stripe (billing) account + keys (`STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, Price IDs) (Operational Blueprint Component 1) (verified via `make external-closeout-check`)
 - [x] Anthropic account + `ANTHROPIC_API_KEY`

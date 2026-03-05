@@ -4,7 +4,7 @@ This runbook covers the only checklist items that remain outside repository auto
 
 ## Current Phase Status (Latest Gate Run)
 
-Latest gate run: `make external-closeout-check` at `2026-03-05T02:26:00Z`
+Latest gate run: `make external-closeout-check` at `2026-03-05T02:28:20Z`
 
 - Required checks: `8`
 - Passed: `0`
@@ -24,6 +24,7 @@ Active required blockers right now:
 
 Authoritative status artifact:
 - `artifacts/deploy/external_closeout_status.json`
+- `artifacts/deploy/go_live_signoff_status.json` (`status=CONDITIONAL_MANUAL` from `make go-live-signoff` at `2026-03-05T02:28:24Z`)
 
 ## 1) Partner Applications (Zoom/Instacart/Canva/Booking.com)
 
@@ -197,3 +198,20 @@ cd /Users/galiettemita/Downloads/Executive AI Agent/backend
 make ci
 make security-validate
 ```
+
+## 10) Generate Go-Live Signoff Artifact
+
+After each external closeout run, generate the next-phase signoff status artifact:
+
+```bash
+cd /Users/galiettemita/Downloads/Executive AI Agent/backend
+make go-live-signoff
+```
+
+Output:
+- `artifacts/deploy/go_live_signoff_status.json`
+
+Status meanings:
+- `READY`: no required failed/manual items remain.
+- `CONDITIONAL_MANUAL`: no required failures, but manual provider/account confirmations still required.
+- `BLOCKED`: one or more required failed items still unresolved.
