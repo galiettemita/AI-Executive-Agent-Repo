@@ -1707,3 +1707,21 @@
 3. Use reconciliation sections as source for final production readiness handoff.  
 **Risk:** Dual baseline/reconciliation sections can diverge if refresh cadence is missed.  
 **Rollback:** Remove reconciliation sections and restore original baseline-only docs if a single-snapshot documentation style is preferred.
+
+## DECISION-095: Enforce No-`any` TypeScript Rule via Contract Test
+
+**Date:** 2026-03-05  
+**Blueprint Section:** §0.3, §11.1, §16 (TypeScript services/packages)  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/packages`, `/Users/galiettemita/Downloads/Executive AI Agent/backend/services`, `/Users/galiettemita/Downloads/Executive AI Agent/backend/edge`, `/Users/galiettemita/Downloads/Executive AI Agent/backend/internal/contracts`  
+**Conflict:** The directive requires zero TypeScript `any` usage in production code. Source was currently clean, but no automated contract gate prevented regressions.  
+**Options Considered:**  
+1. Rely on code review and ESLint only.  
+2. Add/expand ESLint rule coverage and assume all TS paths are linted uniformly.  
+3. Add a repository contract test that scans production TS trees and fails on explicit `any` syntax forms.  
+**Decision:** Option 3. Added `internal/contracts/typescript_no_any_closure_test.go` to scan `packages/`, `services/`, and `edge/` production `.ts` files (excluding test/build/vendor dirs) and fail on explicit patterns (`: any`, `<any>`, `as any`, `Array<any>`, `Promise<any>`).  
+**Migration Plan:**  
+1. Keep the contract test in standard `internal/contracts` CI runs.  
+2. Expand pattern coverage if additional `any` escape hatches appear.  
+3. Use typed wrappers/utilities instead of fallback `any` when integrating new adapters/services.  
+**Risk:** Regex-based scanning may miss uncommon `any` forms or produce false positives in edge syntax.  
+**Rollback:** Remove `typescript_no_any_closure_test.go` and revert to lint-only enforcement if contract scanning becomes too noisy.
