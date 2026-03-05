@@ -1,4 +1,4 @@
-.PHONY: dev build test lint migrate db-verify docker-build docker-build-infra contracts acceptance policy-validate ci ci-full load-test security-validate infra-validate api-docs api-docs-check tools-md tools-md-check skills-scaffolds-check proto-validate evals generate-remote-catalog-keys mcp-wave1-checklist mcp-wave56-checklist mcp-fleet-validate mcp-runtime-rollout deploy-helm external-closeout-check external-closeout-regression-check external-phase-transition-check production-deployment-signoff-check production-deployment-todo production-post-deploy-validation production-phase-sync phase-closure-manifest phase-handoff-bundle go-live-signoff manual-closeout-todo manual-closeout-batch-commands manual-closeout-confirm manual-closeout-unconfirm external-phase-sync
+.PHONY: dev build test lint migrate db-verify docker-build docker-build-infra contracts acceptance policy-validate ci ci-full load-test security-validate infra-validate api-docs api-docs-check tools-md tools-md-check skills-scaffolds-check proto-validate evals generate-remote-catalog-keys mcp-wave1-checklist mcp-wave56-checklist mcp-fleet-validate mcp-runtime-rollout deploy-helm external-closeout-check external-closeout-regression-check external-phase-transition-check production-deployment-signoff-check production-deployment-todo production-post-deploy-validation production-phase-sync phase-closure-manifest phase-handoff-bundle phase-status go-live-signoff manual-closeout-todo manual-closeout-batch-commands manual-closeout-confirm manual-closeout-unconfirm external-phase-sync
 
 GO_EXEC := ./scripts/dev/go_exec.sh
 GOFMT_EXEC := ./scripts/dev/gofmt_exec.sh
@@ -97,6 +97,9 @@ phase-closure-manifest:
 
 phase-handoff-bundle:
 	bash scripts/deploy/create_phase_handoff_bundle.sh
+
+phase-status:
+	bash scripts/deploy/print_phase_status.sh
 
 go-live-signoff:
 	bash scripts/deploy/generate_go_live_signoff.sh

@@ -2197,3 +2197,21 @@
 3. Use generated bundle + metadata as the canonical transfer package for go-live review and archival.  
 **Risk:** Bundle can become stale if regenerated artifacts are not refreshed before packaging.  
 **Rollback:** Remove bundle generator and continue sharing individual artifact paths.
+
+## DECISION-122: Add One-Command Human-Readable Phase Status Report
+
+**Date:** 2026-03-05  
+**Blueprint Section:** §14, §18, §21  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/artifacts/deploy/phase_closure_manifest.json`, `/Users/galiettemita/Downloads/Executive AI Agent/backend/artifacts/deploy/phase_handoff_bundle.json`  
+**Conflict:** Machine-readable artifacts existed, but operators still needed a quick textual status summary and next action without parsing JSON files manually.  
+**Options Considered:**  
+1. Keep JSON-only status artifacts.  
+2. Add static docs note with manual interpretation steps.  
+3. Add executable status reporter that renders a concise text snapshot from current artifacts.  
+**Decision:** Option 3. Added `scripts/deploy/print_phase_status.sh` and `make phase-status`, generating `artifacts/deploy/phase_status.txt` with overall status, blocker/manual counts, transition/signoff/post-deploy summaries, handoff bundle reference, and next-action guidance.  
+**Migration Plan:**  
+1. Refresh artifacts via phase sync + manifest/bundle commands.  
+2. Run `make phase-status` for operator-ready snapshot.  
+3. Use report output in deployment channel updates and handoff checklists.  
+**Risk:** Status report accuracy depends on freshness of source artifacts.  
+**Rollback:** Remove status reporter and rely on raw JSON artifacts.

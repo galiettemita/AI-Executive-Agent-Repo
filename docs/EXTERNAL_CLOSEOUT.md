@@ -486,6 +486,24 @@ Bundle includes:
 4. consolidated closure manifest
 5. final validation report
 
+## 23) Print Current Phase Status
+
+To get a single human-readable status snapshot from the latest manifest/bundle metadata:
+
+```bash
+cd /Users/galiettemita/Downloads/Executive AI Agent/backend
+make phase-status
+```
+
+Output:
+- `artifacts/deploy/phase_status.txt`
+
+The report includes:
+1. overall closure state
+2. required manual/failed counts
+3. transition/signoff/post-deploy summary
+4. next recommended action
+
 Optional: disable regression check for troubleshooting only:
 
 ```bash
