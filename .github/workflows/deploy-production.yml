@@ -42,3 +42,31 @@ jobs:
             exit 0
           fi
           bash scripts/deploy/check_production_canary_window.sh
+      - name: Production post-deploy validation gate
+        env:
+          KUBE_CONFIG_PRODUCTION: ${{ secrets.KUBE_CONFIG_PRODUCTION }}
+          CANARY_ERROR_RATE_PCT: ${{ secrets.CANARY_ERROR_RATE_PCT }}
+          CANARY_P99_RATIO: ${{ secrets.CANARY_P99_RATIO }}
+          GATEWAY_BASE_URL: ${{ secrets.PRODUCTION_GATEWAY_BASE_URL }}
+          BRAIN_BASE_URL: ${{ secrets.PRODUCTION_BRAIN_BASE_URL }}
+          HANDS_BASE_URL: ${{ secrets.PRODUCTION_HANDS_BASE_URL }}
+          ALLOW_CONDITIONAL_MANUAL: "1"
+        run: |
+          if [ -z "${KUBE_CONFIG_PRODUCTION}" ]; then
+            echo "KUBE_CONFIG_PRODUCTION not set; skipping production post-deploy validation gate."
+            exit 0
+          fi
+          ALLOW_CONDITIONAL_MANUAL=1 bash scripts/deploy/check_external_phase_transition.sh
+          bash scripts/deploy/check_production_deployment_signoff.sh
+          bash scripts/deploy/check_production_post_deploy_validation.sh
+      - name: Upload production gate artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-gate-artifacts-${{ github.run_id }}
+          path: |
+            artifacts/deploy/external_phase_transition_check.json
+            artifacts/deploy/production_deployment_signoff_check.json
+            artifacts/deploy/production_canary_check.json
+            artifacts/deploy/production_post_deploy_validation.json
+          if-no-files-found: warn

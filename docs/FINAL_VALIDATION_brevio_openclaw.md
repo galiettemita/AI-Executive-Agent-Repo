@@ -49,6 +49,7 @@ Head: `addee5d`
 - `make ci` (post-staging-smoke-gate closure rerun at 2026-03-05T04:39:31Z): PASS
 - `make ci` (post-staging-smoke-gate final rerun at 2026-03-05T04:40:30Z): PASS
 - `make ci` (post-production-canary integration rerun at 2026-03-05T04:48:38Z): PASS
+- `make ci` (post-production-post-deploy-workflow-gate closure rerun at 2026-03-05T04:56:36Z): PASS
 - `make manual-closeout-batch-commands` (2026-03-05T03:38:55Z): PASS (`manual_closeout_batch_commands.sh` generated)
 - `EXTERNAL_REGRESSION_CHECK=1 make external-phase-sync` (2026-03-05T03:25:33Z): PASS (`external_closeout_regression_report.json.status=PASS`)
 - `make external-phase-transition-check`: strict mode blocks as expected on `CONDITIONAL_MANUAL`; `ALLOW_CONDITIONAL_MANUAL=1` mode passes and sets `next_phase=production-deployment-signoff`
@@ -101,6 +102,7 @@ Head: `addee5d`
   - `make production-deployment-todo` emits `production_deployment_todo.md` from the signoff gate artifact with rollout, canary, rollback, and evidence-capture steps
 - Post-deployment validation gate is active:
   - `make production-post-deploy-validation` emits `production_post_deploy_validation.json` with endpoint health + canary SLO checks and strict/conditional-manual mode semantics
+  - production deploy workflows now execute external transition + deployment signoff + post-deploy validation scripts directly after canary and upload gate artifacts for run evidence
 - Production-phase sync wrapper is active:
   - `make production-phase-sync` orchestrates transition/signoff/canary/deployment-todo/post-deploy-validation artifact refresh in a single deterministic command
 - Consolidated phase-closure manifest is active:

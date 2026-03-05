@@ -33,4 +33,24 @@ func TestExternalPostDeployValidationClosure(t *testing.T) {
 		"production_post_deploy_validation.json",
 		"CANARY_ERROR_RATE_PCT",
 	})
+
+	ciWorkflowPath := filepath.Join(root, ".github", "workflows", "ci.yml")
+	assertFileContainsTokens(t, ciWorkflowPath, []string{
+		"Production post-deploy validation gate",
+		"check_external_phase_transition.sh",
+		"check_production_deployment_signoff.sh",
+		"check_production_post_deploy_validation.sh",
+		"Upload production gate artifacts",
+		"production_post_deploy_validation.json",
+	})
+
+	prodWorkflowPath := filepath.Join(root, ".github", "workflows", "deploy-production.yml")
+	assertFileContainsTokens(t, prodWorkflowPath, []string{
+		"Production post-deploy validation gate",
+		"check_external_phase_transition.sh",
+		"check_production_deployment_signoff.sh",
+		"check_production_post_deploy_validation.sh",
+		"Upload production gate artifacts",
+		"production_post_deploy_validation.json",
+	})
 }

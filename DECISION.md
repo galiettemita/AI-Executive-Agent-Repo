@@ -2272,3 +2272,22 @@
 4. Proceed only when canary gate passes (or explicit conditional-manual policy is accepted).  
 **Risk:** Missing metric inputs can degrade to conditional/manual paths and hide incomplete telemetry if used carelessly.  
 **Rollback:** Remove dedicated canary gate and revert to runbook-only canary interpretation.
+
+## DECISION-126: Execute Post-Deploy Signoff/Validation Gates in Production Workflows
+
+**Date:** 2026-03-05  
+**Blueprint Section:** §9.1 Stage 10, §9.2, §10.2, §18 (Phases 20-21)  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/.github/workflows/ci.yml`, `/Users/galiettemita/Downloads/Executive AI Agent/backend/.github/workflows/deploy-production.yml`, `/Users/galiettemita/Downloads/Executive AI Agent/backend/scripts/deploy/check_production_post_deploy_validation.sh`  
+**Conflict:** Production workflows executed rollout + canary but did not run post-canary external transition/signoff/post-deploy validation scripts, leaving phase-closure evidence partially manual.  
+**Options Considered:**  
+1. Keep post-deploy checks manual/runbook only.  
+2. Run only `check_production_post_deploy_validation.sh` in workflow.  
+3. Execute full post-canary sequence (`check_external_phase_transition.sh`, `check_production_deployment_signoff.sh`, `check_production_post_deploy_validation.sh`) and upload artifacts.  
+**Decision:** Option 3. Added a `Production post-deploy validation gate` step to both production deploy workflows, kept conditional-manual semantics for endpoint-restricted contexts, and uploaded all production gate artifacts to workflow outputs for deterministic evidence capture.  
+**Migration Plan:**  
+1. Keep existing deploy + canary steps unchanged.  
+2. Add post-deploy gate sequence immediately after canary in both workflows.  
+3. Upload gate artifacts (`external_phase_transition_check.json`, `production_deployment_signoff_check.json`, `production_canary_check.json`, `production_post_deploy_validation.json`).  
+4. Enforce token presence via contract tests to prevent regressions.  
+**Risk:** If signoff baselines are stale, automated post-deploy gates can pass with conditional/manual status while still requiring human confirmation.  
+**Rollback:** Remove post-deploy gate steps/artifact upload from workflows and revert to canary-only workflow behavior.
