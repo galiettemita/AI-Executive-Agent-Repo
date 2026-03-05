@@ -1942,3 +1942,21 @@
 3. Keep external status/manual TODO tooling consuming evidence as-is; no further schema migration required.  
 **Risk:** Catalog drift could block valid IDs if new blockers are introduced without updating the file.  
 **Rollback:** Remove catalog validation and revert to free-form IDs if emergency flexibility is required.
+
+## DECISION-108: Add Manual Evidence Revocation Command for Safe Rollback of Incorrect Confirmations
+
+**Date:** 2026-03-05  
+**Blueprint Section:** §13, §18, §21  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/scripts/deploy/update_manual_closeout_evidence.sh`, `/Users/galiettemita/Downloads/Executive AI Agent/backend/scripts/deploy/external_closeout_check.sh`  
+**Conflict:** Confirmation writes existed, but there was no controlled way to revoke an incorrect manual confirmation; operators had to edit JSON manually, increasing audit and operational risk.  
+**Options Considered:**  
+1. Keep manual JSON edits for rollback.  
+2. Overwrite by re-running confirm with a different note.  
+3. Add explicit revoke command that marks an item unconfirmed with actor + timestamp.  
+**Decision:** Option 3. Added `scripts/deploy/revoke_manual_closeout_evidence.sh` and `make manual-closeout-unconfirm`, requiring `REVOKED_BY` and writing `confirmed=false`, `revoked_by`, and `revoked_at_utc` for the item.  
+**Migration Plan:**  
+1. Use `make manual-closeout-confirm` for valid confirmations.  
+2. If entered incorrectly, run `make manual-closeout-unconfirm ITEM_ID=... REVOKED_BY=... NOTE=...`.  
+3. Run `make external-phase-sync` to propagate corrected status into closeout/signoff/TODO artifacts.  
+**Risk:** Frequent toggling can reduce confidence in manual evidence integrity without operator discipline.  
+**Rollback:** Remove revocation script/target and return to confirmation-only evidence records.

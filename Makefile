@@ -1,4 +1,4 @@
-.PHONY: dev build test lint migrate db-verify docker-build docker-build-infra contracts acceptance policy-validate ci ci-full load-test security-validate infra-validate api-docs api-docs-check tools-md tools-md-check skills-scaffolds-check proto-validate evals generate-remote-catalog-keys mcp-wave1-checklist mcp-wave56-checklist mcp-fleet-validate mcp-runtime-rollout deploy-helm external-closeout-check go-live-signoff manual-closeout-todo manual-closeout-confirm external-phase-sync
+.PHONY: dev build test lint migrate db-verify docker-build docker-build-infra contracts acceptance policy-validate ci ci-full load-test security-validate infra-validate api-docs api-docs-check tools-md tools-md-check skills-scaffolds-check proto-validate evals generate-remote-catalog-keys mcp-wave1-checklist mcp-wave56-checklist mcp-fleet-validate mcp-runtime-rollout deploy-helm external-closeout-check go-live-signoff manual-closeout-todo manual-closeout-confirm manual-closeout-unconfirm external-phase-sync
 
 GO_EXEC := ./scripts/dev/go_exec.sh
 GOFMT_EXEC := ./scripts/dev/gofmt_exec.sh
@@ -84,6 +84,11 @@ manual-closeout-confirm:
 	test -n "$(ITEM_ID)"
 	test -n "$(CONFIRMED_BY)"
 	bash scripts/deploy/update_manual_closeout_evidence.sh "$(ITEM_ID)" "$(CONFIRMED_BY)" "$(NOTE)"
+
+manual-closeout-unconfirm:
+	test -n "$(ITEM_ID)"
+	test -n "$(REVOKED_BY)"
+	bash scripts/deploy/revoke_manual_closeout_evidence.sh "$(ITEM_ID)" "$(REVOKED_BY)" "$(NOTE)"
 
 external-phase-sync:
 	bash scripts/deploy/sync_external_phase_artifacts.sh

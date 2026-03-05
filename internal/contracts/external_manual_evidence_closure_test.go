@@ -13,7 +13,9 @@ func TestExternalManualEvidenceClosure(t *testing.T) {
 	makefilePath := filepath.Join(root, "Makefile")
 	assertFileContainsTokens(t, makefilePath, []string{
 		"manual-closeout-confirm:",
+		"manual-closeout-unconfirm:",
 		"update_manual_closeout_evidence.sh",
+		"revoke_manual_closeout_evidence.sh",
 		"external-phase-sync:",
 		"sync_external_phase_artifacts.sh",
 	})
@@ -39,6 +41,17 @@ func TestExternalManualEvidenceClosure(t *testing.T) {
 		"item_id",
 	})
 
+	evidenceRevokePath := filepath.Join(root, "scripts", "deploy", "revoke_manual_closeout_evidence.sh")
+	assertFileNonEmpty(t, evidenceRevokePath)
+	assertFileContainsTokens(t, evidenceRevokePath, []string{
+		"manual_closeout_evidence.json",
+		"external-closeout-required-item-ids.txt",
+		"unsupported item_id",
+		"revoked_by",
+		"revoked_at_utc",
+		"status\": \"revoked\"",
+	})
+
 	catalogPath := filepath.Join(root, "config", "external-closeout-required-item-ids.txt")
 	assertFileNonEmpty(t, catalogPath)
 	assertFileContainsTokens(t, catalogPath, []string{
@@ -55,6 +68,7 @@ func TestExternalManualEvidenceClosure(t *testing.T) {
 	docPath := filepath.Join(root, "docs", "EXTERNAL_CLOSEOUT.md")
 	assertFileContainsTokens(t, docPath, []string{
 		"make manual-closeout-confirm",
+		"make manual-closeout-unconfirm",
 		"artifacts/deploy/manual_closeout_evidence.json",
 		"ITEM_ID=partner_applications_submitted",
 		"config/external-closeout-required-item-ids.txt",
