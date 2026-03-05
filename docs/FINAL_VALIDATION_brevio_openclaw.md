@@ -1,8 +1,8 @@
 # BREVIO x OPENCLAW Final Validation Report
 
-Timestamp (UTC): 2026-03-05 02:30:27 UTC
+Timestamp (UTC): 2026-03-05 02:31:47 UTC
 Branch: `codex/brevio-openclaw-phase0`
-Head: `d6a1512`
+Head: `5499b94`
 
 ## Scope
 
@@ -27,6 +27,7 @@ Head: `d6a1512`
 - `make infra-validate`: PASS
 - `make db-verify`: PASS
 - `make ci-full`: PASS
+- `make security-validate` (post-signoff rerun at 2026-03-05T02:31:47Z): PASS
 
 ## Notable Closure Evidence
 
