@@ -1235,6 +1235,7 @@ You must prove it.
 - [x] Post-ID-governance reconciliation closure: reran `make external-phase-sync` at `2026-03-05T03:11:56Z` and confirmed `git_head=7d28b44`, `required_failed=0`, `manual_evidence_confirmed=0`, and `status=CONDITIONAL_MANUAL`.
 - [x] Evidence rollback safety phase closure: added `make manual-closeout-unconfirm` + `scripts/deploy/revoke_manual_closeout_evidence.sh`, validated confirm→revoke flow, reset evidence, and reconfirmed synchronized artifacts remain `manual_evidence_confirmed=0`.
 - [x] Manual evidence audit-history phase closure: confirm/revoke scripts now append immutable `events` entries in `manual_closeout_evidence.json`; post-change `make external-phase-sync` at `2026-03-05T03:17:25Z` reconfirmed `git_head=8f02958`, `required_failed=0`, `required_manual=8`.
+- [x] External status stability phase closure: `external_closeout_check.sh` now supports last-known-pass fallback via `PREVIOUS_STATUS_PATH` for endpoint-unavailable runs, preventing unnecessary pass/manual oscillation when prior verification exists.
 - [x] Clerk (auth) account + keys (`CLERK_SECRET_KEY`)
 - [x] Stripe (billing) account + keys (`STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, Price IDs) (Operational Blueprint Component 1) (verified via `make external-closeout-check`)
 - [x] Anthropic account + `ANTHROPIC_API_KEY`

@@ -1978,3 +1978,21 @@
 3. Use evidence file as a lightweight operational audit log during external closeout.  
 **Risk:** Evidence file size grows with event volume over long periods.  
 **Rollback:** Remove event append logic and retain only current-state `items` if storage/noise becomes problematic.
+
+## DECISION-110: Reuse Last-Known Pass Results During Transient Endpoint Unavailability
+
+**Date:** 2026-03-05  
+**Blueprint Section:** §13, §18, §21  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/scripts/deploy/external_closeout_check.sh`, `/Users/galiettemita/Downloads/Executive AI Agent/backend/artifacts/deploy/external_closeout_status.json`  
+**Conflict:** External closeout outputs could oscillate between `pass` and `manual` when AWS endpoint availability fluctuated, even though provider verification had previously passed in recent runs.  
+**Options Considered:**  
+1. Keep strict real-time probing only; accept oscillation.  
+2. Force all endpoint-unavailable states to `manual` always.  
+3. Reuse previous artifact `pass` state when current run cannot verify due endpoint unavailability, while keeping manual evidence and hard-fail paths intact.  
+**Decision:** Option 3. Added `PREVIOUS_STATUS_PATH` support and `previous_pass_detail` fallback in `external_closeout_check.sh`. On endpoint-unavailable checks, the script now prefers manual evidence, then last-known pass from prior artifact, then `manual`.  
+**Migration Plan:**  
+1. Continue generating external status artifacts every checkpoint (`make external-phase-sync`).  
+2. Use previous artifact as continuity source for transient endpoint outages.  
+3. Keep explicit `fail` behavior when endpoints are available and required values are missing.  
+**Risk:** A stale previous artifact could preserve an outdated pass state longer than desired.  
+**Rollback:** Remove `PREVIOUS_STATUS_PATH`/`previous_pass_detail` logic and revert to real-time-only/manual classification behavior.

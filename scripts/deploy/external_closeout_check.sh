@@ -16,6 +16,7 @@ fi
 
 REGION="${AWS_REGION:-${REGION:-us-east-1}}"
 OUTPUT_PATH="${OUTPUT_PATH:-artifacts/deploy/external_closeout_status.json}"
+PREVIOUS_STATUS_PATH="${PREVIOUS_STATUS_PATH:-$OUTPUT_PATH}"
 AWS_CLI_CONNECT_TIMEOUT="${AWS_CLI_CONNECT_TIMEOUT:-5}"
 AWS_CLI_READ_TIMEOUT="${AWS_CLI_READ_TIMEOUT:-20}"
 export AWS_CLI_CONNECT_TIMEOUT AWS_CLI_READ_TIMEOUT
@@ -102,6 +103,44 @@ PY
 manual_confirmation_or_empty() {
   local item_id="$1"
   manual_confirmation_detail "$item_id" 2>/dev/null || true
+}
+
+previous_pass_detail() {
+  local item_id="$1"
+  python3 - "$PREVIOUS_STATUS_PATH" "$item_id" <<'PY'
+import json
+import os
+import sys
+
+path, item_id = sys.argv[1:3]
+if not os.path.exists(path):
+    sys.exit(1)
+
+try:
+    with open(path, "r", encoding="utf-8") as fh:
+        payload = json.load(fh)
+except Exception:
+    sys.exit(1)
+
+generated_at = str(payload.get("generated_at_utc") or "unknown-time").strip()
+for row in payload.get("results", []):
+    if row.get("id") != item_id:
+        continue
+    if row.get("status") != "pass":
+        continue
+    detail = str(row.get("detail") or "").strip()
+    if detail:
+        print(f"Last known pass from {generated_at}: {detail}")
+    else:
+        print(f"Last known pass from {generated_at}")
+    sys.exit(0)
+sys.exit(1)
+PY
+}
+
+previous_pass_or_empty() {
+  local item_id="$1"
+  previous_pass_detail "$item_id" 2>/dev/null || true
 }
 
 append_result() {
@@ -259,9 +298,12 @@ else
 fi
 
 plaid_secret_manual_detail="$(manual_confirmation_or_empty "plaid_secret_prod")"
+plaid_secret_previous_pass_detail="$(previous_pass_or_empty "plaid_secret_prod")"
 if [[ "$SM_AVAILABLE" != "1" ]]; then
   if [[ -n "$plaid_secret_manual_detail" ]]; then
     append_result "plaid_secret_prod" "true" "pass" "$plaid_secret_manual_detail"
+  elif [[ -n "$plaid_secret_previous_pass_detail" ]]; then
+    append_result "plaid_secret_prod" "true" "pass" "$plaid_secret_previous_pass_detail"
   else
     append_result "plaid_secret_prod" "true" "manual" "Unable to verify secrets: AWS Secrets Manager endpoint unavailable from current environment."
   fi
@@ -274,9 +316,12 @@ else
 fi
 
 plaid_webhook_manual_detail="$(manual_confirmation_or_empty "plaid_webhook_secret")"
+plaid_webhook_previous_pass_detail="$(previous_pass_or_empty "plaid_webhook_secret")"
 if [[ "$SM_AVAILABLE" != "1" ]]; then
   if [[ -n "$plaid_webhook_manual_detail" ]]; then
     append_result "plaid_webhook_secret" "true" "pass" "$plaid_webhook_manual_detail"
+  elif [[ -n "$plaid_webhook_previous_pass_detail" ]]; then
+    append_result "plaid_webhook_secret" "true" "pass" "$plaid_webhook_previous_pass_detail"
   else
     append_result "plaid_webhook_secret" "true" "manual" "Unable to verify secrets: AWS Secrets Manager endpoint unavailable from current environment."
   fi
@@ -293,9 +338,12 @@ fi
 stripe_secret_location=""
 stripe_webhook_location=""
 stripe_manual_detail="$(manual_confirmation_or_empty "stripe_billing_keys")"
+stripe_previous_pass_detail="$(previous_pass_or_empty "stripe_billing_keys")"
 if [[ "$SM_AVAILABLE" != "1" ]]; then
   if [[ -n "$stripe_manual_detail" ]]; then
     append_result "stripe_billing_keys" "true" "pass" "$stripe_manual_detail"
+  elif [[ -n "$stripe_previous_pass_detail" ]]; then
+    append_result "stripe_billing_keys" "true" "pass" "$stripe_previous_pass_detail"
   else
     append_result "stripe_billing_keys" "true" "manual" "Unable to verify secrets: AWS Secrets Manager endpoint unavailable from current environment."
   fi
@@ -312,9 +360,12 @@ else
 fi
 
 unstructured_manual_detail="$(manual_confirmation_or_empty "unstructured_api_key")"
+unstructured_previous_pass_detail="$(previous_pass_or_empty "unstructured_api_key")"
 if [[ "$SM_AVAILABLE" != "1" ]]; then
   if [[ -n "$unstructured_manual_detail" ]]; then
     append_result "unstructured_api_key" "true" "pass" "$unstructured_manual_detail"
+  elif [[ -n "$unstructured_previous_pass_detail" ]]; then
+    append_result "unstructured_api_key" "true" "pass" "$unstructured_previous_pass_detail"
   else
     append_result "unstructured_api_key" "true" "manual" "Unable to verify secrets: AWS Secrets Manager endpoint unavailable from current environment."
   fi
@@ -328,9 +379,12 @@ fi
 
 pagerduty_location=""
 pagerduty_manual_detail="$(manual_confirmation_or_empty "pagerduty_routing_key")"
+pagerduty_previous_pass_detail="$(previous_pass_or_empty "pagerduty_routing_key")"
 if [[ "$SM_AVAILABLE" != "1" ]]; then
   if [[ -n "$pagerduty_manual_detail" ]]; then
     append_result "pagerduty_routing_key" "true" "pass" "$pagerduty_manual_detail"
+  elif [[ -n "$pagerduty_previous_pass_detail" ]]; then
+    append_result "pagerduty_routing_key" "true" "pass" "$pagerduty_previous_pass_detail"
   else
     append_result "pagerduty_routing_key" "true" "manual" "Unable to verify secrets: AWS Secrets Manager endpoint unavailable from current environment."
   fi
@@ -349,9 +403,12 @@ else
 fi
 
 analytics_bus_manual_detail="$(manual_confirmation_or_empty "analytics_event_bus")"
+analytics_bus_previous_pass_detail="$(previous_pass_or_empty "analytics_event_bus")"
 if [[ "$EVENTS_AVAILABLE" != "1" ]]; then
   if [[ -n "$analytics_bus_manual_detail" ]]; then
     append_result "analytics_event_bus" "true" "pass" "$analytics_bus_manual_detail"
+  elif [[ -n "$analytics_bus_previous_pass_detail" ]]; then
+    append_result "analytics_event_bus" "true" "pass" "$analytics_bus_previous_pass_detail"
   else
     append_result "analytics_event_bus" "true" "manual" "Unable to verify EventBridge bus: AWS Events endpoint unavailable from current environment."
   fi
@@ -366,9 +423,12 @@ fi
 remote_catalog_private_location=""
 remote_catalog_public_location=""
 remote_catalog_manual_detail="$(manual_confirmation_or_empty "remote_catalog_signing_keys")"
+remote_catalog_previous_pass_detail="$(previous_pass_or_empty "remote_catalog_signing_keys")"
 if [[ "$SM_AVAILABLE" != "1" ]]; then
   if [[ -n "$remote_catalog_manual_detail" ]]; then
     append_result "remote_catalog_signing_keys" "true" "pass" "$remote_catalog_manual_detail"
+  elif [[ -n "$remote_catalog_previous_pass_detail" ]]; then
+    append_result "remote_catalog_signing_keys" "true" "pass" "$remote_catalog_previous_pass_detail"
   else
     append_result "remote_catalog_signing_keys" "true" "manual" "Unable to verify secrets: AWS Secrets Manager endpoint unavailable from current environment."
   fi

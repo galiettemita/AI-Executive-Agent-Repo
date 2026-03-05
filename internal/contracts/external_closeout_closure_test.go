@@ -22,6 +22,8 @@ func TestExternalCloseoutAutomationClosure(t *testing.T) {
 		"ANALYTICS_EVENT_BUS",
 		"REMOTE_CATALOG_PRIVATE_KEY",
 		"REMOTE_CATALOG_PUBLIC_KEY",
+		"PREVIOUS_STATUS_PATH",
+		"previous_pass_detail",
 		"external_closeout_status.json",
 	})
 
