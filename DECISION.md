@@ -1761,3 +1761,21 @@
 3. Use this report as the operational handoff artifact for production sign-off.  
 **Risk:** Multiple final validation documents can drift without clear ownership.  
 **Rollback:** Remove Brevio/OpenClaw report and revert to single-report model if documentation policy requires one canonical file.
+
+## DECISION-098: Transition Immediately to External Provisioning Phase After Autonomous Closure
+
+**Date:** 2026-03-05  
+**Blueprint Section:** §0.1, §18, §21  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/docs/FINAL_VALIDATION_brevio_openclaw.md`, `/Users/galiettemita/Downloads/Executive AI Agent/backend/artifacts/deploy/external_closeout_status.json`  
+**Conflict:** Autonomous code closure and full CI gates are passing, but directive-defined human-gated dependencies remained implicit and needed explicit phase transition status to avoid stalling at post-closure ambiguity.  
+**Options Considered:**  
+1. Stop at autonomous closure and leave external blockers implied.  
+2. Continue coding unrelated areas despite external gate failures.  
+3. Execute external closeout gate immediately, publish blocker list, and formally mark transition into human-gated provisioning phase.  
+**Decision:** Option 3. Ran `make external-closeout-check`, captured current required blocker statuses, and updated Brevio/OpenClaw final validation evidence to represent active next-phase state (external provisioning/legal/account gates).  
+**Migration Plan:**  
+1. Keep autonomous closure artifacts unchanged and stable.  
+2. Resolve blocked external items (credentials/manual confirmations) in target environment.  
+3. Re-run `make external-closeout-check` and then proceed to production deployment sign-off steps.  
+**Risk:** Local/CI environment secret visibility may differ from production account state, so blocker list must be validated against intended prod account context.  
+**Rollback:** Remove the explicit external-phase section if a different deployment-governance process is adopted.
