@@ -1,8 +1,8 @@
 # BREVIO x OPENCLAW Final Validation Report
 
-Timestamp (UTC): 2026-03-05 13:30:15 UTC
+Timestamp (UTC): 2026-03-05 14:08:42 UTC
 Branch: `codex/brevio-openclaw-phase0`
-Head: `d4175ed`
+Head: `0f4ccfc`
 
 ## Scope
 
@@ -57,6 +57,7 @@ Head: `d4175ed`
 - `make ci` (post-final-go-live-approval-packet closure rerun at 2026-03-05T13:22:14Z): PASS
 - `make ci` (post-go-live-approval-confirmation-flow closure rerun at 2026-03-05T13:28:40Z): PASS
 - `make ci` (post-approval-confirm-persistence closure rerun at 2026-03-05T13:30:15Z): PASS
+- `./scripts/dev/go_exec.sh test ./internal/contracts -count=1` (post-ci-lint-stability patch at 2026-03-05T14:08:42Z): PASS
 - `make manual-closeout-batch-commands` (2026-03-05T03:38:55Z): PASS (`manual_closeout_batch_commands.sh` generated)
 - `EXTERNAL_REGRESSION_CHECK=1 make external-phase-sync` (2026-03-05T03:25:33Z): PASS (`external_closeout_regression_report.json.status=PASS`)
 - `ALLOW_CONDITIONAL_MANUAL=0 make external-phase-transition-check` (2026-03-05T05:55:20Z): PASS (`signoff_status=READY`, `pass_transition=true`)
@@ -118,6 +119,8 @@ Head: `d4175ed`
   - `make go-live-approval-packet` emits `final_go_live_approval_packet.json` and `final_go_live_approval_packet.md` with final gate summary + required human signoff checklist
   - `make go-live-approval-confirm ROLE=... APPROVED_BY=...` persists per-role approval metadata and regenerates packet artifacts
   - production deploy workflows generate and upload final go-live approval packet artifacts after closure bundle generation
+- CI lint stability is hardened:
+  - `.github/workflows/ci.yml` lint stage now runs `make lint` + `bash packages/proto/scripts/lint.sh` directly, removing redundant pnpm/node bootstrap from docs-validation runs
 - Consolidated phase-closure manifest is active:
   - `make phase-closure-manifest` emits `phase_closure_manifest.json` aggregating external and production gate artifacts into one machine-readable summary
 - Final handoff bundle packaging is active:

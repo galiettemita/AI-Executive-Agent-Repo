@@ -2405,3 +2405,21 @@
 4. Verify all roles `APPROVED` before execution handoff.  
 **Risk:** Incorrect role labels can prevent updates; commands require canonical role names.  
 **Rollback:** Re-run packet generation to reset to default pending roles, then re-apply approvals correctly.
+
+## DECISION-133: Remove Redundant Node Bootstrap from `ci-openclaw` Lint Stage
+
+**Date:** 2026-03-05  
+**Blueprint Section:** §9.1 Stage 1 (Lint & Format), §0.3 (quality gates)  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/.github/workflows/ci.yml`, `/Users/galiettemita/Downloads/Executive AI Agent/backend/packages/proto/scripts/lint.sh`  
+**Conflict:** The lint stage in `ci-openclaw` installed pnpm/node dependencies only to run proto lint, even though proto lint is shell-driven (`packages/proto/scripts/lint.sh`) and does not require workspace npm dependencies. This introduced an avoidable external dependency path for docs-only validation runs.  
+**Options Considered:**  
+1. Keep pnpm/node bootstrap in lint stage.  
+2. Keep node bootstrap but skip it for docs-only changes via path filters.  
+3. Remove pnpm/node bootstrap from lint stage and invoke proto lint script directly.  
+**Decision:** Option 3. Updated lint stage to run `make lint` and `bash packages/proto/scripts/lint.sh` directly, removing redundant pnpm/node setup/install from that stage.  
+**Migration Plan:**  
+1. Keep existing schema/unit/integration/contract/security stages unchanged.  
+2. Replace lint-stage `pnpm`/`node` setup + install + pnpm proto command with direct proto lint shell invocation.  
+3. Re-run `make ci` locally to confirm quality gates remain green.  
+**Risk:** If lint stage later requires TS package lint commands, node bootstrap must be reintroduced explicitly.  
+**Rollback:** Restore prior lint-stage pnpm/node setup/install and pnpm proto lint command lines in `.github/workflows/ci.yml`.

@@ -18,16 +18,8 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: '1.22'
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 9.12.3
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile=false
       - run: make lint
-      - run: pnpm --filter @brevio/proto lint
+      - run: bash packages/proto/scripts/lint.sh
 
   schema_validate:
     name: 2. Schema Validate
