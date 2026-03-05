@@ -1226,6 +1226,7 @@ You must prove it.
 - [x] Post-signoff security phase closure: reran `make security-validate` at `2026-03-05T02:31:47Z` after signoff reconciliation commit and confirmed clean completion under current Trivy/govulncheck allowlist policy.
 - [x] Manual provisioning closeout phase acceleration: added `make manual-closeout-todo` to generate `artifacts/deploy/manual_closeout_todo.md` from signoff data and map each pending manual item to the exact runbook section; reconfirmed on commit `87cacb1` (`2026-03-05T02:34:29Z`) with status `CONDITIONAL_MANUAL`.
 - [x] Dependency-security triage closure: verified with compatibility probes that `github.com/jackc/pgx/v5 v5.7.4`, `golang.org/x/crypto v0.33.0`, `golang.org/x/sync v0.11.0`, and `golang.org/x/text v0.22.0` are the highest versions compatible with current `go 1.22`; newer versions require `go >= 1.23/1.24`.
+- [x] npm security audit phase closure: `pnpm audit --audit-level high` completed with `No known vulnerabilities found` (network-enabled run) and no high/critical npm findings.
 - [x] Clerk (auth) account + keys (`CLERK_SECRET_KEY`)
 - [x] Stripe (billing) account + keys (`STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, Price IDs) (Operational Blueprint Component 1) (verified via `make external-closeout-check`)
 - [x] Anthropic account + `ANTHROPIC_API_KEY`
