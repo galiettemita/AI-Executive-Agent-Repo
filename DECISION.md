@@ -2329,3 +2329,22 @@
 4. Update closure docs/checklists and contract assertions for regression safety.  
 **Risk:** Incomplete metric export from monitoring can yield manual or fail statuses until telemetry wiring is fully operational.  
 **Rollback:** Remove SLO metric checks and revert post-deploy validation to endpoint/canary-only logic.
+
+## DECISION-129: Generate Phase Closure Manifest/Handoff/Status in Production Deploy Workflows
+
+**Date:** 2026-03-05  
+**Blueprint Section:** §18 Phases 20-21, §14 runbook evidence requirements  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/.github/workflows/ci.yml`, `/Users/galiettemita/Downloads/Executive AI Agent/backend/.github/workflows/deploy-production.yml`, `/Users/galiettemita/Downloads/Executive AI Agent/backend/scripts/deploy/generate_phase_closure_manifest.sh`  
+**Conflict:** Production workflows uploaded gate artifacts, but did not execute final phase-closure packaging scripts (`phase_closure_manifest.json`, handoff bundle metadata/tarball, `phase_status.txt`) in the same deployment run.  
+**Options Considered:**  
+1. Keep closure bundle generation as manual/CLI-only operation.  
+2. Generate manifest only and skip handoff/status packaging in workflow.  
+3. Add a dedicated workflow step to generate manifest + handoff + status, then upload all outputs with gate artifacts.  
+**Decision:** Option 3. Added `Production phase closure bundle` step after post-deploy validation in both production deploy workflows and expanded artifact upload lists to include manifest/handoff/status outputs and handoff tarball.  
+**Migration Plan:**  
+1. Keep existing deploy/canary/post-deploy gates unchanged.  
+2. Run manifest/handoff/status scripts as a deterministic post-validation closure step.  
+3. Upload closure artifacts via existing `actions/upload-artifact` step.  
+4. Extend contract tests and docs to lock in workflow coverage.  
+**Risk:** Workflows running without production kubeconfig will skip closure bundle generation and only emit warning-level artifact upload results.  
+**Rollback:** Remove closure-bundle workflow step and artifact paths; rely on manual `make phase-closure-manifest`, `make phase-handoff-bundle`, and `make phase-status`.

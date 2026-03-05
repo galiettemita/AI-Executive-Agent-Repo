@@ -466,7 +466,7 @@ Strict mode:
 ALLOW_CONDITIONAL_MANUAL=0 make production-post-deploy-validation
 ```
 
-Production deploy workflows (`.github/workflows/ci.yml` and `.github/workflows/deploy-production.yml`) now run external transition/signoff/post-deploy validation scripts after canary and upload the resulting gate artifacts.
+Production deploy workflows (`.github/workflows/ci.yml` and `.github/workflows/deploy-production.yml`) now run external transition/signoff/post-deploy validation scripts after canary, then generate phase closure manifest/handoff/status artifacts, and upload all resulting deployment-gate evidence.
 
 ## 20) Sync All Production-Phase Artifacts in One Command
 

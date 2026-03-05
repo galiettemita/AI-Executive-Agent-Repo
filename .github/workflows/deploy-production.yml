@@ -64,6 +64,17 @@ jobs:
           ALLOW_CONDITIONAL_MANUAL=1 bash scripts/deploy/check_external_phase_transition.sh
           bash scripts/deploy/check_production_deployment_signoff.sh
           bash scripts/deploy/check_production_post_deploy_validation.sh
+      - name: Production phase closure bundle
+        env:
+          KUBE_CONFIG_PRODUCTION: ${{ secrets.KUBE_CONFIG_PRODUCTION }}
+        run: |
+          if [ -z "${KUBE_CONFIG_PRODUCTION}" ]; then
+            echo "KUBE_CONFIG_PRODUCTION not set; skipping production phase closure bundle."
+            exit 0
+          fi
+          bash scripts/deploy/generate_phase_closure_manifest.sh
+          bash scripts/deploy/create_phase_handoff_bundle.sh
+          bash scripts/deploy/print_phase_status.sh
       - name: Upload production gate artifacts
         if: always()
         uses: actions/upload-artifact@v4
@@ -74,4 +85,8 @@ jobs:
             artifacts/deploy/production_deployment_signoff_check.json
             artifacts/deploy/production_canary_check.json
             artifacts/deploy/production_post_deploy_validation.json
+            artifacts/deploy/phase_closure_manifest.json
+            artifacts/deploy/phase_handoff_bundle.json
+            artifacts/deploy/phase_status.txt
+            artifacts/deploy/handoff/phase-handoff-*.tar.gz
           if-no-files-found: warn
