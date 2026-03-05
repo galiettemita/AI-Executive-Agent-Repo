@@ -1905,3 +1905,22 @@
 3. Continue using artifact outputs as source of truth for phase status.  
 **Risk:** Wrapper script failure can block all artifact refreshes if one step errors.  
 **Rollback:** Remove `external-phase-sync` wrapper and revert to explicit per-command execution.
+
+## DECISION-106: Support Manual Evidence Promotion for External Closeout Required Items
+
+**Date:** 2026-03-05  
+**Blueprint Section:** §0.1, §18, §21  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/scripts/deploy/external_closeout_check.sh`, `/Users/galiettemita/Downloads/Executive AI Agent/backend/docs/EXTERNAL_CLOSEOUT.md`  
+**Conflict:** Remaining blockers were explicitly human-gated, but local endpoint-restricted environments could not convert verified production actions into deterministic `pass` states, leaving perpetual `manual` statuses despite completed operator work.  
+**Options Considered:**  
+1. Keep `manual` statuses until local runtime can directly verify all external systems.  
+2. Allow env-var-only overrides for each required item.  
+3. Add persistent, auditable manual evidence records consumed by closeout checks.  
+**Decision:** Option 3. Added `scripts/deploy/update_manual_closeout_evidence.sh` and `make manual-closeout-confirm`, storing confirmations in `artifacts/deploy/manual_closeout_evidence.json`. Updated `external_closeout_check.sh` to promote specific required items from `manual`/`fail` to `pass` when matching evidence is present, and surfaced `manual_evidence_path`/`manual_evidence_confirmed` in closeout/signoff artifacts.  
+**Migration Plan:**  
+1. Operator completes a manual task in production context.  
+2. Operator records evidence via `make manual-closeout-confirm ITEM_ID=... CONFIRMED_BY=... NOTE=...`.  
+3. Run `make external-phase-sync` to propagate updated status into all phase artifacts.  
+4. Repeat until `go_live_signoff_status.json` reaches `READY`.  
+**Risk:** Incorrect or low-quality manual evidence could falsely mark required items as pass without real completion.  
+**Rollback:** Remove manual evidence promotion logic and return to strict automated verification/manual-only classification in `external_closeout_check.sh`.

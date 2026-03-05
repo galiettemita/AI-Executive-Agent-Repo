@@ -4,7 +4,7 @@ This runbook covers the only checklist items that remain outside repository auto
 
 ## Current Phase Status (Latest Gate Run)
 
-Latest gate run: `make external-closeout-check` at `2026-03-05T02:56:33Z`
+Latest gate run: `make external-closeout-check` at `2026-03-05T03:08:47Z`
 
 - Required checks: `8`
 - Passed: `0`
@@ -24,8 +24,9 @@ Active required blockers right now:
 
 Authoritative status artifact:
 - `artifacts/deploy/external_closeout_status.json`
-- `artifacts/deploy/go_live_signoff_status.json` (`status=CONDITIONAL_MANUAL` from `make go-live-signoff` at `2026-03-05T02:56:33Z`)
-- `artifacts/deploy/manual_closeout_todo.md` (generated from signoff at `2026-03-05T02:56:33Z`)
+- `artifacts/deploy/go_live_signoff_status.json` (`status=CONDITIONAL_MANUAL` from `make go-live-signoff` at `2026-03-05T03:08:47Z`)
+- `artifacts/deploy/manual_closeout_todo.md` (generated from signoff at `2026-03-05T03:08:47Z`)
+- `artifacts/deploy/manual_closeout_evidence.json` (`manual_evidence_confirmed=0` in latest run)
 
 ## 1) Partner Applications (Zoom/Instacart/Canva/Booking.com)
 
@@ -231,7 +232,35 @@ Output:
 
 This file maps each pending required item to the matching runbook section (`Section 1`-`Section 7`) and should be treated as the active closure checklist until signoff reaches `READY`.
 
-## 12) One-Command External Phase Sync
+## 12) Record Manual Evidence (Per Item)
+
+When a human finishes a manual blocker in production context, record evidence so the gate can mark it `pass` even if the local runtime cannot reach AWS endpoints.
+
+```bash
+cd /Users/galiettemita/Downloads/Executive AI Agent/backend
+make manual-closeout-confirm ITEM_ID=partner_applications_submitted CONFIRMED_BY=ops NOTE="Submitted all partner apps"
+```
+
+Example for key verification completed in production account:
+
+```bash
+make manual-closeout-confirm ITEM_ID=plaid_secret_prod CONFIRMED_BY=ops NOTE="Verified PLAID_SECRET_PROD in prod secrets"
+```
+
+Evidence file:
+- `artifacts/deploy/manual_closeout_evidence.json`
+
+Supported `ITEM_ID` values:
+- `partner_applications_submitted`
+- `plaid_secret_prod`
+- `plaid_webhook_secret`
+- `stripe_billing_keys`
+- `unstructured_api_key`
+- `pagerduty_routing_key`
+- `analytics_event_bus`
+- `remote_catalog_signing_keys`
+
+## 13) One-Command External Phase Sync
 
 To refresh all three external-phase artifacts in one command:
 

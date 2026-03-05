@@ -34,6 +34,8 @@ required_failed = int(external.get("required_failed", 0))
 required_manual = int(external.get("required_manual", 0))
 required_passed = int(external.get("required_passed", 0))
 required_total = int(external.get("required_total", 0))
+manual_evidence_path = str(external.get("manual_evidence_path", "") or "")
+manual_evidence_confirmed = int(external.get("manual_evidence_confirmed", 0))
 
 if required_failed > 0:
     status = "BLOCKED"
@@ -76,6 +78,8 @@ payload = {
     "required_passed": required_passed,
     "required_failed": required_failed,
     "required_manual": required_manual,
+    "manual_evidence_path": manual_evidence_path,
+    "manual_evidence_confirmed": manual_evidence_confirmed,
     "blocking_required_items": failed_items,
     "manual_required_items": manual_items,
     "external_status_source": external_path,

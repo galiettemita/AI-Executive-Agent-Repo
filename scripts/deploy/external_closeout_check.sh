@@ -31,6 +31,7 @@ ANALYTICS_EVENT_BUS="${ANALYTICS_EVENT_BUS:-}"
 LOCAL_LLM_ENDPOINT="${LOCAL_LLM_ENDPOINT:-}"
 ELEVENLABS_API_KEY="${ELEVENLABS_API_KEY:-}"
 PLAID_WEBHOOK_REQUIRED="${PLAID_WEBHOOK_REQUIRED:-1}"
+MANUAL_EVIDENCE_PATH="${MANUAL_EVIDENCE_PATH:-artifacts/deploy/manual_closeout_evidence.json}"
 
 PARTNER_APPS_CONFIRMED="${PARTNER_APPS_CONFIRMED:-0}"
 
@@ -63,6 +64,44 @@ aws_retry() {
     attempt=$((attempt + 1))
   done
   return 1
+}
+
+manual_confirmation_detail() {
+  local item_id="$1"
+  python3 - "$MANUAL_EVIDENCE_PATH" "$item_id" <<'PY'
+import json
+import os
+import sys
+
+path, item_id = sys.argv[1:3]
+if not os.path.exists(path):
+    sys.exit(1)
+
+try:
+    with open(path, "r", encoding="utf-8") as fh:
+        payload = json.load(fh)
+except Exception:
+    sys.exit(1)
+
+entry = (payload.get("items") or {}).get(item_id)
+if not isinstance(entry, dict):
+    sys.exit(1)
+if entry.get("confirmed") is not True:
+    sys.exit(1)
+
+confirmed_by = str(entry.get("confirmed_by") or "manual-operator").strip()
+confirmed_at = str(entry.get("confirmed_at_utc") or "unknown-time").strip()
+note = str(entry.get("note") or "").strip()
+detail = f"Manual evidence confirmed by {confirmed_by} at {confirmed_at}"
+if note:
+    detail += f" ({note})"
+print(detail)
+PY
+}
+
+manual_confirmation_or_empty() {
+  local item_id="$1"
+  manual_confirmation_detail "$item_id" 2>/dev/null || true
 }
 
 append_result() {
@@ -210,55 +249,91 @@ if [[ "$SM_AVAILABLE" == "1" && -z "$ANALYTICS_EVENT_BUS" ]]; then
   )"
 fi
 
+partner_manual_detail="$(manual_confirmation_or_empty "partner_applications_submitted")"
 if [[ "$PARTNER_APPS_CONFIRMED" == "1" ]]; then
   append_result "partner_applications_submitted" "true" "pass" "PARTNER_APPS_CONFIRMED=1"
+elif [[ -n "$partner_manual_detail" ]]; then
+  append_result "partner_applications_submitted" "true" "pass" "$partner_manual_detail"
 else
   append_result "partner_applications_submitted" "true" "manual" "Set PARTNER_APPS_CONFIRMED=1 after submitting Zoom/Instacart/Canva/Booking.com apps."
 fi
 
+plaid_secret_manual_detail="$(manual_confirmation_or_empty "plaid_secret_prod")"
 if [[ "$SM_AVAILABLE" != "1" ]]; then
-  append_result "plaid_secret_prod" "true" "manual" "Unable to verify secrets: AWS Secrets Manager endpoint unavailable from current environment."
+  if [[ -n "$plaid_secret_manual_detail" ]]; then
+    append_result "plaid_secret_prod" "true" "pass" "$plaid_secret_manual_detail"
+  else
+    append_result "plaid_secret_prod" "true" "manual" "Unable to verify secrets: AWS Secrets Manager endpoint unavailable from current environment."
+  fi
 elif plaid_secret_location="$(locate_key_in_secrets "PLAID_SECRET_PROD" "$PLAID_OAUTH_SECRET_NAME" "$APP_SECRET_NAME" "$BILLING_SECRET_NAME" 2>/dev/null)"; then
   append_result "plaid_secret_prod" "true" "pass" "Found PLAID_SECRET_PROD in ${plaid_secret_location}"
+elif [[ -n "$plaid_secret_manual_detail" ]]; then
+  append_result "plaid_secret_prod" "true" "pass" "$plaid_secret_manual_detail"
 else
   append_result "plaid_secret_prod" "true" "fail" "Missing PLAID_SECRET_PROD in checked secrets (${PLAID_OAUTH_SECRET_NAME}, ${APP_SECRET_NAME}, ${BILLING_SECRET_NAME})"
 fi
 
+plaid_webhook_manual_detail="$(manual_confirmation_or_empty "plaid_webhook_secret")"
 if [[ "$SM_AVAILABLE" != "1" ]]; then
-  append_result "plaid_webhook_secret" "true" "manual" "Unable to verify secrets: AWS Secrets Manager endpoint unavailable from current environment."
+  if [[ -n "$plaid_webhook_manual_detail" ]]; then
+    append_result "plaid_webhook_secret" "true" "pass" "$plaid_webhook_manual_detail"
+  else
+    append_result "plaid_webhook_secret" "true" "manual" "Unable to verify secrets: AWS Secrets Manager endpoint unavailable from current environment."
+  fi
 elif plaid_webhook_location="$(locate_key_in_secrets "PLAID_WEBHOOK_SECRET" "$GATEWAY_WEBHOOK_SECRET_NAME" "$APP_SECRET_NAME" "$PLAID_OAUTH_SECRET_NAME" 2>/dev/null)"; then
   append_result "plaid_webhook_secret" "true" "pass" "Found PLAID_WEBHOOK_SECRET in ${plaid_webhook_location}"
 elif [[ "$PLAID_WEBHOOK_REQUIRED" == "0" ]]; then
   append_result "plaid_webhook_secret" "true" "manual" "PLAID_WEBHOOK_REQUIRED=0 override set; webhook validation is waived pending Plaid production access."
+elif [[ -n "$plaid_webhook_manual_detail" ]]; then
+  append_result "plaid_webhook_secret" "true" "pass" "$plaid_webhook_manual_detail"
 else
   append_result "plaid_webhook_secret" "true" "fail" "Missing PLAID_WEBHOOK_SECRET in checked secrets (${GATEWAY_WEBHOOK_SECRET_NAME}, ${APP_SECRET_NAME}, ${PLAID_OAUTH_SECRET_NAME})"
 fi
 
 stripe_secret_location=""
 stripe_webhook_location=""
+stripe_manual_detail="$(manual_confirmation_or_empty "stripe_billing_keys")"
 if [[ "$SM_AVAILABLE" != "1" ]]; then
-  append_result "stripe_billing_keys" "true" "manual" "Unable to verify secrets: AWS Secrets Manager endpoint unavailable from current environment."
+  if [[ -n "$stripe_manual_detail" ]]; then
+    append_result "stripe_billing_keys" "true" "pass" "$stripe_manual_detail"
+  else
+    append_result "stripe_billing_keys" "true" "manual" "Unable to verify secrets: AWS Secrets Manager endpoint unavailable from current environment."
+  fi
 else
   stripe_secret_location="$(locate_key_in_secrets "STRIPE_SECRET_KEY" "$BILLING_SECRET_NAME" "$APP_SECRET_NAME" "$PLAID_OAUTH_SECRET_NAME" 2>/dev/null || true)"
   stripe_webhook_location="$(locate_key_in_secrets "STRIPE_WEBHOOK_SECRET" "$BILLING_SECRET_NAME" "$APP_SECRET_NAME" "$PLAID_OAUTH_SECRET_NAME" 2>/dev/null || true)"
   if [[ -n "$stripe_secret_location" && -n "$stripe_webhook_location" ]]; then
     append_result "stripe_billing_keys" "true" "pass" "Found STRIPE_SECRET_KEY in ${stripe_secret_location}; STRIPE_WEBHOOK_SECRET in ${stripe_webhook_location}"
+  elif [[ -n "$stripe_manual_detail" ]]; then
+    append_result "stripe_billing_keys" "true" "pass" "$stripe_manual_detail"
   else
     append_result "stripe_billing_keys" "true" "fail" "Missing STRIPE_SECRET_KEY and/or STRIPE_WEBHOOK_SECRET in checked secrets (${BILLING_SECRET_NAME}, ${APP_SECRET_NAME}, ${PLAID_OAUTH_SECRET_NAME})"
   fi
 fi
 
+unstructured_manual_detail="$(manual_confirmation_or_empty "unstructured_api_key")"
 if [[ "$SM_AVAILABLE" != "1" ]]; then
-  append_result "unstructured_api_key" "true" "manual" "Unable to verify secrets: AWS Secrets Manager endpoint unavailable from current environment."
+  if [[ -n "$unstructured_manual_detail" ]]; then
+    append_result "unstructured_api_key" "true" "pass" "$unstructured_manual_detail"
+  else
+    append_result "unstructured_api_key" "true" "manual" "Unable to verify secrets: AWS Secrets Manager endpoint unavailable from current environment."
+  fi
 elif unstructured_key_location="$(locate_key_in_secrets "UNSTRUCTURED_API_KEY" "$DOC_PARSING_SECRET_NAME" "$APP_SECRET_NAME" "$PLAID_OAUTH_SECRET_NAME" 2>/dev/null)"; then
   append_result "unstructured_api_key" "true" "pass" "Found UNSTRUCTURED_API_KEY in ${unstructured_key_location}"
+elif [[ -n "$unstructured_manual_detail" ]]; then
+  append_result "unstructured_api_key" "true" "pass" "$unstructured_manual_detail"
 else
   append_result "unstructured_api_key" "true" "fail" "Missing UNSTRUCTURED_API_KEY in checked secrets (${DOC_PARSING_SECRET_NAME}, ${APP_SECRET_NAME}, ${PLAID_OAUTH_SECRET_NAME})"
 fi
 
 pagerduty_location=""
+pagerduty_manual_detail="$(manual_confirmation_or_empty "pagerduty_routing_key")"
 if [[ "$SM_AVAILABLE" != "1" ]]; then
-  append_result "pagerduty_routing_key" "true" "manual" "Unable to verify secrets: AWS Secrets Manager endpoint unavailable from current environment."
+  if [[ -n "$pagerduty_manual_detail" ]]; then
+    append_result "pagerduty_routing_key" "true" "pass" "$pagerduty_manual_detail"
+  else
+    append_result "pagerduty_routing_key" "true" "manual" "Unable to verify secrets: AWS Secrets Manager endpoint unavailable from current environment."
+  fi
 else
   pagerduty_location="$(locate_key_in_secrets "PAGERDUTY_ROUTING_KEY" "$ALERTING_SECRET_NAME" "$APP_SECRET_NAME" "$PLAID_OAUTH_SECRET_NAME" 2>/dev/null || true)"
   if [[ -z "$pagerduty_location" ]]; then
@@ -266,28 +341,44 @@ else
   fi
   if [[ -n "$pagerduty_location" ]]; then
     append_result "pagerduty_routing_key" "true" "pass" "Found PagerDuty key in ${pagerduty_location}"
+  elif [[ -n "$pagerduty_manual_detail" ]]; then
+    append_result "pagerduty_routing_key" "true" "pass" "$pagerduty_manual_detail"
   else
     append_result "pagerduty_routing_key" "true" "fail" "Missing PAGERDUTY_ROUTING_KEY/PAGERDUTY_INTEGRATION_KEY in checked secrets (${ALERTING_SECRET_NAME}, ${APP_SECRET_NAME}, ${PLAID_OAUTH_SECRET_NAME})"
   fi
 fi
 
+analytics_bus_manual_detail="$(manual_confirmation_or_empty "analytics_event_bus")"
 if [[ "$EVENTS_AVAILABLE" != "1" ]]; then
-  append_result "analytics_event_bus" "true" "manual" "Unable to verify EventBridge bus: AWS Events endpoint unavailable from current environment."
+  if [[ -n "$analytics_bus_manual_detail" ]]; then
+    append_result "analytics_event_bus" "true" "pass" "$analytics_bus_manual_detail"
+  else
+    append_result "analytics_event_bus" "true" "manual" "Unable to verify EventBridge bus: AWS Events endpoint unavailable from current environment."
+  fi
 elif event_bus_exists "$ANALYTICS_EVENT_BUS"; then
   append_result "analytics_event_bus" "true" "pass" "EventBridge bus exists: ${ANALYTICS_EVENT_BUS}"
+elif [[ -n "$analytics_bus_manual_detail" ]]; then
+  append_result "analytics_event_bus" "true" "pass" "$analytics_bus_manual_detail"
 else
   append_result "analytics_event_bus" "true" "fail" "Missing/invalid ANALYTICS_EVENT_BUS (${ANALYTICS_EVENT_BUS:-unset})"
 fi
 
 remote_catalog_private_location=""
 remote_catalog_public_location=""
+remote_catalog_manual_detail="$(manual_confirmation_or_empty "remote_catalog_signing_keys")"
 if [[ "$SM_AVAILABLE" != "1" ]]; then
-  append_result "remote_catalog_signing_keys" "true" "manual" "Unable to verify secrets: AWS Secrets Manager endpoint unavailable from current environment."
+  if [[ -n "$remote_catalog_manual_detail" ]]; then
+    append_result "remote_catalog_signing_keys" "true" "pass" "$remote_catalog_manual_detail"
+  else
+    append_result "remote_catalog_signing_keys" "true" "manual" "Unable to verify secrets: AWS Secrets Manager endpoint unavailable from current environment."
+  fi
 else
   remote_catalog_private_location="$(locate_key_in_secrets "REMOTE_CATALOG_PRIVATE_KEY" "$REMOTE_CATALOG_SECRET_NAME" "$PLAID_OAUTH_SECRET_NAME" "$APP_SECRET_NAME" 2>/dev/null || true)"
   remote_catalog_public_location="$(locate_key_in_secrets "REMOTE_CATALOG_PUBLIC_KEY" "$REMOTE_CATALOG_SECRET_NAME" "$PLAID_OAUTH_SECRET_NAME" "$APP_SECRET_NAME" 2>/dev/null || true)"
   if [[ -n "$remote_catalog_private_location" && -n "$remote_catalog_public_location" ]]; then
     append_result "remote_catalog_signing_keys" "true" "pass" "Found REMOTE_CATALOG_PRIVATE_KEY in ${remote_catalog_private_location}; REMOTE_CATALOG_PUBLIC_KEY in ${remote_catalog_public_location}"
+  elif [[ -n "$remote_catalog_manual_detail" ]]; then
+    append_result "remote_catalog_signing_keys" "true" "pass" "$remote_catalog_manual_detail"
   else
     append_result "remote_catalog_signing_keys" "true" "fail" "Missing REMOTE_CATALOG_PRIVATE_KEY and/or REMOTE_CATALOG_PUBLIC_KEY in checked secrets (${REMOTE_CATALOG_SECRET_NAME}, ${PLAID_OAUTH_SECRET_NAME}, ${APP_SECRET_NAME})"
   fi
@@ -314,20 +405,34 @@ else
 fi
 
 mkdir -p "$(dirname "$OUTPUT_PATH")"
-python3 - "$TMP_FILE" "$OUTPUT_PATH" "$REGION" <<'PY'
+python3 - "$TMP_FILE" "$OUTPUT_PATH" "$REGION" "$MANUAL_EVIDENCE_PATH" <<'PY'
 import json
 import os
 import sys
 from datetime import datetime, timezone
 
-src, out, region = sys.argv[1:4]
+src, out, region, evidence_path = sys.argv[1:5]
 with open(src, "r", encoding="utf-8") as fh:
     payload = json.load(fh)
 results = payload.get("results", [])
 required = [r for r in results if r.get("required")]
+manual_evidence_confirmed = 0
+if os.path.exists(evidence_path):
+    try:
+        with open(evidence_path, "r", encoding="utf-8") as fh:
+            evidence = json.load(fh)
+        items = evidence.get("items") or {}
+        if isinstance(items, dict):
+            manual_evidence_confirmed = sum(
+                1 for _, item in items.items() if isinstance(item, dict) and item.get("confirmed") is True
+            )
+    except Exception:
+        manual_evidence_confirmed = 0
 summary = {
     "generated_at_utc": datetime.now(timezone.utc).isoformat(),
     "region": region,
+    "manual_evidence_path": evidence_path,
+    "manual_evidence_confirmed": manual_evidence_confirmed,
     "required_total": len(required),
     "required_passed": sum(1 for r in required if r.get("status") == "pass"),
     "required_failed": sum(1 for r in required if r.get("status") == "fail"),

@@ -34,6 +34,8 @@ git_head = signoff.get("git_head", "unknown")
 manual_items = signoff.get("manual_required_items", [])
 blocked_items = signoff.get("blocking_required_items", [])
 next_action = signoff.get("next_action", "Review signoff artifact and continue per runbook.")
+manual_evidence_path = signoff.get("manual_evidence_path", "")
+manual_evidence_confirmed = int(signoff.get("manual_evidence_confirmed", 0))
 
 section_map = {
     "partner_applications_submitted": "Section 1",
@@ -53,6 +55,9 @@ lines.append(f"- Generated at (UTC): {datetime.now(timezone.utc).isoformat()}")
 lines.append(f"- Git head: `{git_head}`")
 lines.append(f"- Signoff status: `{status}`")
 lines.append(f"- Source artifact: `{signoff_path}`")
+if manual_evidence_path:
+    lines.append(f"- Manual evidence file: `{manual_evidence_path}`")
+lines.append(f"- Manual evidence confirmed items: `{manual_evidence_confirmed}`")
 lines.append("")
 lines.append("Runbook reference:")
 lines.append("- `docs/EXTERNAL_CLOSEOUT.md`")
@@ -90,9 +95,7 @@ lines.append("## Next Action")
 lines.append("")
 lines.append(f"- {next_action}")
 lines.append("- After updates, rerun:")
-lines.append("  - `make external-closeout-check`")
-lines.append("  - `make go-live-signoff`")
-lines.append("  - `make manual-closeout-todo`")
+lines.append("  - `make external-phase-sync`")
 lines.append("")
 
 with open(output_path, "w", encoding="utf-8") as fh:
