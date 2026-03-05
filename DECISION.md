@@ -1924,3 +1924,21 @@
 4. Repeat until `go_live_signoff_status.json` reaches `READY`.  
 **Risk:** Incorrect or low-quality manual evidence could falsely mark required items as pass without real completion.  
 **Rollback:** Remove manual evidence promotion logic and return to strict automated verification/manual-only classification in `external_closeout_check.sh`.
+
+## DECISION-107: Enforce Canonical External Closeout Item IDs for Manual Evidence Writes
+
+**Date:** 2026-03-05  
+**Blueprint Section:** §18, §21  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/scripts/deploy/update_manual_closeout_evidence.sh`, `/Users/galiettemita/Downloads/Executive AI Agent/backend/docs/EXTERNAL_CLOSEOUT.md`  
+**Conflict:** Manual evidence command accepted arbitrary `ITEM_ID` values, allowing typos or non-required IDs to be recorded, which could create misleading evidence counts and operator confusion.  
+**Options Considered:**  
+1. Keep free-form item IDs and rely on operator discipline.  
+2. Hardcode ID checks in the script only.  
+3. Introduce a canonical ID catalog file and enforce membership at write time.  
+**Decision:** Option 3. Added `config/external-closeout-required-item-ids.txt` and updated `update_manual_closeout_evidence.sh` to reject unsupported IDs with a clear allowed-values list. Also wired contract tests and docs to the canonical file.  
+**Migration Plan:**  
+1. Maintain required item IDs in the catalog file.  
+2. Use `make manual-closeout-confirm` for all evidence writes (validated against catalog).  
+3. Keep external status/manual TODO tooling consuming evidence as-is; no further schema migration required.  
+**Risk:** Catalog drift could block valid IDs if new blockers are introduced without updating the file.  
+**Rollback:** Remove catalog validation and revert to free-form IDs if emergency flexibility is required.

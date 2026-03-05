@@ -13,6 +13,7 @@ ITEM_ID="${1:-}"
 CONFIRMED_BY="${2:-}"
 NOTE="${3:-}"
 MANUAL_EVIDENCE_PATH="${MANUAL_EVIDENCE_PATH:-artifacts/deploy/manual_closeout_evidence.json}"
+ITEM_CATALOG_PATH="${ITEM_CATALOG_PATH:-config/external-closeout-required-item-ids.txt}"
 
 if [[ -z "$ITEM_ID" ]]; then
   echo "usage: update_manual_closeout_evidence.sh <item_id> <confirmed_by> [note]" >&2
@@ -21,6 +22,18 @@ fi
 
 if [[ -z "$CONFIRMED_BY" ]]; then
   echo "confirmed_by is required" >&2
+  exit 1
+fi
+
+if [[ ! -f "$ITEM_CATALOG_PATH" ]]; then
+  echo "missing item catalog: $ITEM_CATALOG_PATH" >&2
+  exit 1
+fi
+
+if ! grep -qx "$ITEM_ID" "$ITEM_CATALOG_PATH"; then
+  echo "unsupported item_id: $ITEM_ID" >&2
+  echo "allowed item_id values:" >&2
+  cat "$ITEM_CATALOG_PATH" >&2
   exit 1
 fi
 

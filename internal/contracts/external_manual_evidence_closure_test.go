@@ -32,9 +32,24 @@ func TestExternalManualEvidenceClosure(t *testing.T) {
 	assertFileNonEmpty(t, evidenceUpdaterPath)
 	assertFileContainsTokens(t, evidenceUpdaterPath, []string{
 		"manual_closeout_evidence.json",
+		"external-closeout-required-item-ids.txt",
+		"unsupported item_id",
 		"confirmed_by",
 		"confirmed_at_utc",
 		"item_id",
+	})
+
+	catalogPath := filepath.Join(root, "config", "external-closeout-required-item-ids.txt")
+	assertFileNonEmpty(t, catalogPath)
+	assertFileContainsTokens(t, catalogPath, []string{
+		"partner_applications_submitted",
+		"plaid_secret_prod",
+		"plaid_webhook_secret",
+		"stripe_billing_keys",
+		"unstructured_api_key",
+		"pagerduty_routing_key",
+		"analytics_event_bus",
+		"remote_catalog_signing_keys",
 	})
 
 	docPath := filepath.Join(root, "docs", "EXTERNAL_CLOSEOUT.md")
@@ -42,5 +57,6 @@ func TestExternalManualEvidenceClosure(t *testing.T) {
 		"make manual-closeout-confirm",
 		"artifacts/deploy/manual_closeout_evidence.json",
 		"ITEM_ID=partner_applications_submitted",
+		"config/external-closeout-required-item-ids.txt",
 	})
 }

@@ -260,6 +260,9 @@ Supported `ITEM_ID` values:
 - `analytics_event_bus`
 - `remote_catalog_signing_keys`
 
+Canonical source of allowed IDs:
+- `config/external-closeout-required-item-ids.txt`
+
 ## 13) One-Command External Phase Sync
 
 To refresh all three external-phase artifacts in one command:

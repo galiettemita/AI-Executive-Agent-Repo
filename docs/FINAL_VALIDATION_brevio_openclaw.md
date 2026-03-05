@@ -1,6 +1,6 @@
 # BREVIO x OPENCLAW Final Validation Report
 
-Timestamp (UTC): 2026-03-05 03:08:47 UTC
+Timestamp (UTC): 2026-03-05 03:10:46 UTC
 Branch: `codex/brevio-openclaw-phase0`
 Head: `764b99f`
 
@@ -29,6 +29,7 @@ Head: `764b99f`
 - `make ci-full`: PASS
 - `make ci-full` (post-security/manual-closeout rerun at 2026-03-05T02:55:17Z): PASS
 - `make ci` (post-manual-evidence automation rerun at 2026-03-05T03:06:14Z): PASS
+- `make ci` (post-item-catalog validation rerun at 2026-03-05T03:10:46Z): PASS
 - `make security-validate` (post-signoff rerun at 2026-03-05T02:31:47Z): PASS
 - `pnpm audit --audit-level high` (network-enabled run): PASS (`No known vulnerabilities found`)
 
@@ -50,6 +51,7 @@ Head: `764b99f`
 - External manual-closeout evidence promotion is active:
   - `make manual-closeout-confirm ITEM_ID=... CONFIRMED_BY=...` updates `artifacts/deploy/manual_closeout_evidence.json`
   - `external_closeout_check.sh` consumes evidence and reports `manual_evidence_confirmed` in status artifacts
+  - `config/external-closeout-required-item-ids.txt` enforces canonical required blocker IDs for evidence writes
 
 ## Remaining Human-Gated Items (Per Directive)
 
