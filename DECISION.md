@@ -2496,3 +2496,21 @@
 4. Fail fast with explicit message if kubeconfig requires AWS exec auth and credentials are absent.  
 **Risk:** Misconfigured IAM role or missing assume-role trust will still block deploys, but failures become deterministic and actionable at credential setup step.  
 **Rollback:** Remove AWS credential bootstrap steps and preflight checks, reverting to kubeconfig-only behavior.
+
+## DECISION-138: Replace Invalid `secrets.*` `if` Expressions to Restore Workflow Queueing
+
+**Date:** 2026-03-05  
+**Blueprint Section:** §9.1 pipeline operability, §14 deployment runbook execution reliability  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/.github/workflows/deploy-production.yml`, `/Users/galiettemita/Downloads/Executive AI Agent/backend/.github/workflows/deploy-staging.yml`, `/Users/galiettemita/Downloads/Executive AI Agent/backend/.github/workflows/ci.yml`  
+**Conflict:** Step-level `if:` expressions referenced `secrets.*` directly, which is not allowed in that expression context. GitHub rejected queueing with generic "Failed to queue workflow run" and config-check runs failed before execution.  
+**Options Considered:**  
+1. Remove conditional AWS credential steps and always require one auth mode.  
+2. Keep `secrets.*` in `if` and rely on UI retries.  
+3. Project secrets to job-level `env` and use `env.*` in `if` expressions.  
+**Decision:** Option 3. Added job-level env mapping (`AWS_ROLE_TO_ASSUME`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`) and switched all step conditionals/with-fields to `env.*` references.  
+**Migration Plan:**  
+1. Update all affected workflow jobs.  
+2. Validate with `actionlint` and contract tests.  
+3. Push and merge before re-running dispatch workflows.  
+**Risk:** Empty secret values still skip their associated credential path, but queueing remains valid and fallback behavior is explicit.  
+**Rollback:** Revert to pre-auth-bootstrap workflow revision and restore manual credential setup outside workflows.
