@@ -2,6 +2,29 @@
 
 This runbook covers the only checklist items that remain outside repository automation.
 
+## Current Phase Status (Latest Gate Run)
+
+Latest gate run: `make external-closeout-check` at `2026-03-05T02:03:09Z`
+
+- Required checks: `8`
+- Passed: `0`
+- Failed: `7`
+- Manual pending: `1`
+
+Active required blockers right now:
+
+1. `partner_applications_submitted` (`PARTNER_APPS_CONFIRMED=1` still required)
+2. `PLAID_SECRET_PROD` missing
+3. `PLAID_WEBHOOK_SECRET` missing
+4. `STRIPE_SECRET_KEY` and/or `STRIPE_WEBHOOK_SECRET` missing
+5. `UNSTRUCTURED_API_KEY` missing
+6. `PAGERDUTY_ROUTING_KEY` or `PAGERDUTY_INTEGRATION_KEY` missing
+7. `ANALYTICS_EVENT_BUS` missing/invalid
+8. `REMOTE_CATALOG_PRIVATE_KEY` and/or `REMOTE_CATALOG_PUBLIC_KEY` missing
+
+Authoritative status artifact:
+- `artifacts/deploy/external_closeout_status.json`
+
 ## 1) Partner Applications (Zoom/Instacart/Canva/Booking.com)
 
 ### Zoom Marketplace

@@ -1779,3 +1779,21 @@
 3. Re-run `make external-closeout-check` and then proceed to production deployment sign-off steps.  
 **Risk:** Local/CI environment secret visibility may differ from production account state, so blocker list must be validated against intended prod account context.  
 **Rollback:** Remove the explicit external-phase section if a different deployment-governance process is adopted.
+
+## DECISION-099: Align External Closeout Runbook with Active Gate Output for Next-Phase Execution
+
+**Date:** 2026-03-05  
+**Blueprint Section:** §0.1, §15, §21 (human-required domains)  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/docs/EXTERNAL_CLOSEOUT.md`, `/Users/galiettemita/Downloads/Executive AI Agent/backend/artifacts/deploy/external_closeout_status.json`  
+**Conflict:** External closeout runbook existed, but phase execution required explicit alignment to latest gate output so next-phase work could proceed without ambiguity about current blockers.  
+**Options Considered:**  
+1. Leave runbook static and rely on artifact readers to infer current blockers.  
+2. Replace runbook with only dynamic artifact references.  
+3. Keep step-by-step runbook and prepend latest gate-status summary with active blocker list.  
+**Decision:** Option 3. Updated `docs/EXTERNAL_CLOSEOUT.md` with a current-phase status section (latest gate timestamp, required pass/fail/manual counts, and exact blocker IDs) while preserving button-by-button remediation steps.  
+**Migration Plan:**  
+1. Re-run `make external-closeout-check` after each credential/manual provisioning update.  
+2. Refresh runbook status section to match the latest artifact until all required checks pass.  
+3. Once all required checks pass, proceed directly to production sign-off gate.  
+**Risk:** Status section can drift if artifact refreshes occur without runbook sync.  
+**Rollback:** Remove status header and rely solely on artifact JSON if documentation synchronization becomes noisy.
