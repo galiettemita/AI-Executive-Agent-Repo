@@ -441,11 +441,23 @@ Output:
 Environment inputs (optional but recommended):
 - `GATEWAY_BASE_URL`, `BRAIN_BASE_URL`, `HANDS_BASE_URL` for `/health` + `/health/deep` probes
 - `CANARY_ERROR_RATE_PCT` and `CANARY_P99_RATIO` for SLO gate checks
+- `SLO_WINDOW_MINUTES` (default `60`), `SLO_P50_LATENCY_SECONDS`, `SLO_P99_LATENCY_SECONDS`, `SLO_SKILL_SUCCESS_RATE_PCT`, `SLO_DELIVERY_SUCCESS_RATE_PCT` for explicit 1-hour SLO compliance checks
 
 Example with explicit canary metrics:
 
 ```bash
 CANARY_ERROR_RATE_PCT=0.4 CANARY_P99_RATIO=1.3 make production-post-deploy-validation
+```
+
+Example with explicit 1-hour SLO metrics:
+
+```bash
+SLO_WINDOW_MINUTES=60 \
+SLO_P50_LATENCY_SECONDS=1.6 \
+SLO_P99_LATENCY_SECONDS=8.4 \
+SLO_SKILL_SUCCESS_RATE_PCT=97.2 \
+SLO_DELIVERY_SUCCESS_RATE_PCT=99.8 \
+make production-post-deploy-validation
 ```
 
 Strict mode:

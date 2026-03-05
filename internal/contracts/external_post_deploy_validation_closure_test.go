@@ -24,6 +24,12 @@ func TestExternalPostDeployValidationClosure(t *testing.T) {
 		"ALLOW_CONDITIONAL_MANUAL",
 		"CANARY_ERROR_RATE_PCT",
 		"CANARY_P99_RATIO",
+		"SLO_WINDOW_MINUTES",
+		"SLO_P50_LATENCY_SECONDS",
+		"SLO_P99_LATENCY_SECONDS",
+		"SLO_SKILL_SUCCESS_RATE_PCT",
+		"SLO_DELIVERY_SUCCESS_RATE_PCT",
+		"slo_window_1h",
 		"deployment-complete",
 	})
 
@@ -40,6 +46,10 @@ func TestExternalPostDeployValidationClosure(t *testing.T) {
 		"check_external_phase_transition.sh",
 		"check_production_deployment_signoff.sh",
 		"check_production_post_deploy_validation.sh",
+		"SLO_P50_LATENCY_SECONDS",
+		"SLO_P99_LATENCY_SECONDS",
+		"SLO_SKILL_SUCCESS_RATE_PCT",
+		"SLO_DELIVERY_SUCCESS_RATE_PCT",
 		"Upload production gate artifacts",
 		"production_post_deploy_validation.json",
 	})
@@ -50,6 +60,10 @@ func TestExternalPostDeployValidationClosure(t *testing.T) {
 		"check_external_phase_transition.sh",
 		"check_production_deployment_signoff.sh",
 		"check_production_post_deploy_validation.sh",
+		"SLO_P50_LATENCY_SECONDS",
+		"SLO_P99_LATENCY_SECONDS",
+		"SLO_SKILL_SUCCESS_RATE_PCT",
+		"SLO_DELIVERY_SUCCESS_RATE_PCT",
 		"Upload production gate artifacts",
 		"production_post_deploy_validation.json",
 	})

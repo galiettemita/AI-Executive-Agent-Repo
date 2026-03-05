@@ -2310,3 +2310,22 @@
 4. Reference artifact retention in validation docs/checklist.  
 **Risk:** Deploy runs without staging kubeconfig can legitimately skip smoke tests and produce warning-only artifact upload events.  
 **Rollback:** Remove artifact upload steps and keep smoke-gate execution only.
+
+## DECISION-128: Enforce Explicit 1-Hour SLO Metrics in Post-Deploy Validation Gate
+
+**Date:** 2026-03-05  
+**Blueprint Section:** §10.2 (SLOs), §18 Phase 21  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/scripts/deploy/check_production_post_deploy_validation.sh`, `/Users/galiettemita/Downloads/Executive AI Agent/backend/.github/workflows/ci.yml`, `/Users/galiettemita/Downloads/Executive AI Agent/backend/.github/workflows/deploy-production.yml`  
+**Conflict:** Post-deploy validation previously evaluated endpoint checks and canary thresholds, but lacked explicit 60-minute SLO metric validation aligned to Phase 21 targets.  
+**Options Considered:**  
+1. Keep canary-only metrics in post-deploy validation.  
+2. Add non-blocking SLO metrics as informational output only.  
+3. Add explicit SLO result gate with required metrics and fail/manual semantics, then wire metrics through production workflows.  
+**Decision:** Option 3. Added SLO input handling (`SLO_WINDOW_MINUTES`, `SLO_P50_LATENCY_SECONDS`, `SLO_P99_LATENCY_SECONDS`, `SLO_SKILL_SUCCESS_RATE_PCT`, `SLO_DELIVERY_SUCCESS_RATE_PCT`) and enforced a `slo_window_1h` gate result in `check_production_post_deploy_validation.sh`, plus workflow env wiring and closure-test token enforcement.  
+**Migration Plan:**  
+1. Extend post-deploy script with 1-hour SLO metric parsing/validation.  
+2. Preserve conditional-manual behavior when explicit metrics are unavailable.  
+3. Pass SLO metric environment variables in both production deploy workflows.  
+4. Update closure docs/checklists and contract assertions for regression safety.  
+**Risk:** Incomplete metric export from monitoring can yield manual or fail statuses until telemetry wiring is fully operational.  
+**Rollback:** Remove SLO metric checks and revert post-deploy validation to endpoint/canary-only logic.

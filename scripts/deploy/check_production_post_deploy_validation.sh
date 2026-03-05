@@ -22,6 +22,11 @@ BRAIN_BASE_URL="${BRAIN_BASE_URL:-}"
 HANDS_BASE_URL="${HANDS_BASE_URL:-}"
 CANARY_ERROR_RATE_PCT="${CANARY_ERROR_RATE_PCT:-}"
 CANARY_P99_RATIO="${CANARY_P99_RATIO:-}"
+SLO_WINDOW_MINUTES="${SLO_WINDOW_MINUTES:-60}"
+SLO_P50_LATENCY_SECONDS="${SLO_P50_LATENCY_SECONDS:-}"
+SLO_P99_LATENCY_SECONDS="${SLO_P99_LATENCY_SECONDS:-}"
+SLO_SKILL_SUCCESS_RATE_PCT="${SLO_SKILL_SUCCESS_RATE_PCT:-}"
+SLO_DELIVERY_SUCCESS_RATE_PCT="${SLO_DELIVERY_SUCCESS_RATE_PCT:-}"
 
 if [[ ! -f "$SIGNOFF_CHECK_PATH" ]]; then
   echo "missing production deployment signoff artifact: $SIGNOFF_CHECK_PATH" >&2
@@ -71,7 +76,7 @@ ENDPOINT_RESULTS+=("$(check_endpoint "brain" "$BRAIN_BASE_URL" "/health/deep")")
 ENDPOINT_RESULTS+=("$(check_endpoint "hands" "$HANDS_BASE_URL" "/health")")
 ENDPOINT_RESULTS+=("$(check_endpoint "hands" "$HANDS_BASE_URL" "/health/deep")")
 
-python3 - "$SIGNOFF_CHECK_PATH" "$OUTPUT_PATH" "$ALLOW_CONDITIONAL_MANUAL" "$CANARY_ERROR_RATE_PCT" "$CANARY_P99_RATIO" <<'PY' "${ENDPOINT_RESULTS[@]}"
+python3 - "$SIGNOFF_CHECK_PATH" "$OUTPUT_PATH" "$ALLOW_CONDITIONAL_MANUAL" "$CANARY_ERROR_RATE_PCT" "$CANARY_P99_RATIO" "$SLO_WINDOW_MINUTES" "$SLO_P50_LATENCY_SECONDS" "$SLO_P99_LATENCY_SECONDS" "$SLO_SKILL_SUCCESS_RATE_PCT" "$SLO_DELIVERY_SUCCESS_RATE_PCT" <<'PY' "${ENDPOINT_RESULTS[@]}"
 import json
 import sys
 from datetime import datetime, timezone
@@ -81,7 +86,12 @@ output_path = sys.argv[2]
 allow_conditional_manual = sys.argv[3] == "1"
 canary_error_rate_raw = sys.argv[4]
 canary_p99_ratio_raw = sys.argv[5]
-endpoint_json_rows = sys.argv[6:]
+slo_window_raw = sys.argv[6]
+slo_p50_raw = sys.argv[7]
+slo_p99_raw = sys.argv[8]
+slo_skill_success_raw = sys.argv[9]
+slo_delivery_success_raw = sys.argv[10]
+endpoint_json_rows = sys.argv[11:]
 
 with open(signoff_path, "r", encoding="utf-8") as fh:
     signoff = json.load(fh)
@@ -132,6 +142,84 @@ if canary_error_rate_raw and canary_p99_ratio_raw:
         }
 
 results.append(canary_result)
+
+slo_result = {
+    "service": "slo",
+    "check": "slo_window_1h",
+    "status": "manual",
+    "detail": "SLO metrics not fully provided",
+}
+
+slo_metric_fields = [
+    slo_p50_raw,
+    slo_p99_raw,
+    slo_skill_success_raw,
+    slo_delivery_success_raw,
+]
+
+if any(slo_metric_fields) and not all([slo_window_raw] + slo_metric_fields):
+    slo_result = {
+        "service": "slo",
+        "check": "slo_window_1h",
+        "status": "fail",
+        "detail": (
+            "incomplete SLO metrics; required SLO_WINDOW_MINUTES, "
+            "SLO_P50_LATENCY_SECONDS, SLO_P99_LATENCY_SECONDS, "
+            "SLO_SKILL_SUCCESS_RATE_PCT, SLO_DELIVERY_SUCCESS_RATE_PCT"
+        ),
+    }
+elif all(slo_metric_fields):
+    try:
+        slo_window_minutes = int(slo_window_raw)
+        slo_p50 = float(slo_p50_raw)
+        slo_p99 = float(slo_p99_raw)
+        slo_skill_success = float(slo_skill_success_raw)
+        slo_delivery_success = float(slo_delivery_success_raw)
+
+        if slo_window_minutes < 60:
+            slo_result = {
+                "service": "slo",
+                "check": "slo_window_1h",
+                "status": "fail",
+                "detail": f"SLO window too short: {slo_window_minutes}m (<60m required)",
+            }
+        elif (
+            slo_p50 < 2.0
+            and slo_p99 < 10.0
+            and slo_skill_success > 95.0
+            and slo_delivery_success > 99.5
+        ):
+            slo_result = {
+                "service": "slo",
+                "check": "slo_window_1h",
+                "status": "pass",
+                "detail": (
+                    f"window={slo_window_minutes}m, p50_s={slo_p50}, "
+                    f"p99_s={slo_p99}, skill_success_pct={slo_skill_success}, "
+                    f"delivery_success_pct={slo_delivery_success}"
+                ),
+            }
+        else:
+            slo_result = {
+                "service": "slo",
+                "check": "slo_window_1h",
+                "status": "fail",
+                "detail": (
+                    "SLO breach: "
+                    f"window={slo_window_minutes}m, p50_s={slo_p50}, "
+                    f"p99_s={slo_p99}, skill_success_pct={slo_skill_success}, "
+                    f"delivery_success_pct={slo_delivery_success}"
+                ),
+            }
+    except ValueError:
+        slo_result = {
+            "service": "slo",
+            "check": "slo_window_1h",
+            "status": "fail",
+            "detail": "invalid SLO metrics format",
+        }
+
+results.append(slo_result)
 
 pass_count = sum(1 for item in results if item.get("status") == "pass")
 manual_count = sum(1 for item in results if item.get("status") == "manual")
