@@ -4,7 +4,7 @@ This runbook covers the only checklist items that remain outside repository auto
 
 ## Current Phase Status (Latest Gate Run)
 
-Latest gate run: `make external-closeout-check` at `2026-03-05T03:28:28Z`
+Latest gate run: `make external-closeout-check` at `2026-03-05T03:31:50Z`
 
 - Required checks: `8`
 - Passed: `0`
@@ -24,8 +24,8 @@ Active required blockers right now:
 
 Authoritative status artifact:
 - `artifacts/deploy/external_closeout_status.json`
-- `artifacts/deploy/go_live_signoff_status.json` (`status=CONDITIONAL_MANUAL` from `make go-live-signoff` at `2026-03-05T03:28:28Z`)
-- `artifacts/deploy/manual_closeout_todo.md` (generated from signoff at `2026-03-05T03:28:28Z`)
+- `artifacts/deploy/go_live_signoff_status.json` (`status=CONDITIONAL_MANUAL` from `make go-live-signoff` at `2026-03-05T03:31:50Z`)
+- `artifacts/deploy/manual_closeout_todo.md` (generated from signoff at `2026-03-05T03:31:50Z`)
 - `artifacts/deploy/manual_closeout_evidence.json` (`manual_evidence_confirmed=0` in latest run)
 - `artifacts/deploy/external_closeout_regression_report.json` (`status=PASS`, no regressions in latest run)
 
@@ -313,6 +313,28 @@ Explicit enforced mode (equivalent behavior):
 
 ```bash
 EXTERNAL_REGRESSION_CHECK=1 make external-phase-sync
+```
+
+## 15) Phase Transition Check (External -> Production Signoff)
+
+To check if current artifacts allow transition to the next phase:
+
+```bash
+cd /Users/galiettemita/Downloads/Executive AI Agent/backend
+make external-phase-transition-check
+```
+
+Output:
+- `artifacts/deploy/external_phase_transition_check.json`
+
+Behavior:
+- exits `0` only when signoff status is `READY`
+- exits non-zero while status remains `CONDITIONAL_MANUAL` or `BLOCKED`
+
+Override for controlled manual acceptance:
+
+```bash
+ALLOW_CONDITIONAL_MANUAL=1 make external-phase-transition-check
 ```
 
 Optional: disable regression check for troubleshooting only:

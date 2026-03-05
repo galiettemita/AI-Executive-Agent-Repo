@@ -2032,3 +2032,21 @@
 3. Keep regression report artifacts in checkpoint evidence.  
 **Risk:** Strict default may surface transient regressions more frequently, increasing temporary operator friction.  
 **Rollback:** Revert default to opt-in behavior if checkpoint operations require looser gating.
+
+## DECISION-113: Add Explicit External->Production Phase Transition Gate Check
+
+**Date:** 2026-03-05  
+**Blueprint Section:** §18, §21  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/scripts/deploy/generate_go_live_signoff.sh`, `/Users/galiettemita/Downloads/Executive AI Agent/backend/scripts/deploy/sync_external_phase_artifacts.sh`  
+**Conflict:** Phase progression relied on reading signoff JSON manually, which made it easy to continue operations without a deterministic pass/fail transition check between external closeout and production sign-off phases.  
+**Options Considered:**  
+1. Continue interpreting `go_live_signoff_status.json` manually.  
+2. Implicitly infer transition readiness in docs only.  
+3. Add an explicit executable transition-check gate with machine-readable output and strict/override modes.  
+**Decision:** Option 3. Added `scripts/deploy/check_external_phase_transition.sh` and `make external-phase-transition-check`, producing `artifacts/deploy/external_phase_transition_check.json`. Strict mode passes only on `READY`; override mode (`ALLOW_CONDITIONAL_MANUAL=1`) supports controlled acceptance when manual items are intentionally deferred.  
+**Migration Plan:**  
+1. Run `make external-phase-transition-check` after each `external-phase-sync`.  
+2. Use strict mode for normal progression.  
+3. Use override mode only with explicit operator acceptance and audit trail.  
+**Risk:** Override mode could be misused to bypass unresolved manual tasks.  
+**Rollback:** Remove transition-check override behavior and enforce strict `READY`-only phase progression.
