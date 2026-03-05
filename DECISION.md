@@ -2161,3 +2161,21 @@
 3. Keep generated artifacts as source of truth for deployment phase status.  
 **Risk:** A single failing sub-step blocks the sync command; operators must inspect step-level artifacts.  
 **Rollback:** Remove production-phase sync wrapper and revert to explicit command-by-command execution.
+
+## DECISION-120: Add Consolidated Phase Closure Manifest for Final Handoff
+
+**Date:** 2026-03-05  
+**Blueprint Section:** §14, §18, §21  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/artifacts/deploy/*.json`, `/Users/galiettemita/Downloads/Executive AI Agent/backend/docs/FINAL_VALIDATION_brevio_openclaw.md`  
+**Conflict:** Closure evidence was spread across multiple artifacts, requiring manual stitching to determine final state for operational handoff.  
+**Options Considered:**  
+1. Continue reading individual artifacts manually.  
+2. Use only markdown final validation report for status interpretation.  
+3. Generate a machine-readable manifest that aggregates all phase-gate artifacts and computes an overall closure status.  
+**Decision:** Option 3. Added `scripts/deploy/generate_phase_closure_manifest.sh` and `make phase-closure-manifest`, producing `artifacts/deploy/phase_closure_manifest.json` with summarized gate statuses (`READY`/`CONDITIONAL_MANUAL`/`BLOCKED`) and explicit next-action guidance.  
+**Migration Plan:**  
+1. Refresh source artifacts via `make external-phase-sync` and `make production-phase-sync`.  
+2. Run `make phase-closure-manifest`.  
+3. Use manifest as canonical machine-readable handoff snapshot for go-live operations.  
+**Risk:** Manifest correctness depends on freshness of upstream artifacts.  
+**Rollback:** Remove manifest generator and rely on source artifact inspection directly.

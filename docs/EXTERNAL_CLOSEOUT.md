@@ -448,6 +448,24 @@ This runs:
 Script:
 - `scripts/deploy/sync_production_phase_artifacts.sh`
 
+## 21) Generate Consolidated Phase Closure Manifest
+
+To produce a single machine-readable handoff artifact across external and production phases:
+
+```bash
+cd /Users/galiettemita/Downloads/Executive AI Agent/backend
+make phase-closure-manifest
+```
+
+Output:
+- `artifacts/deploy/phase_closure_manifest.json`
+
+The manifest summarizes:
+1. external closeout status + signoff
+2. transition and production signoff gate states
+3. post-deploy validation status
+4. overall closure state (`READY` / `CONDITIONAL_MANUAL` / `BLOCKED`)
+
 Optional: disable regression check for troubleshooting only:
 
 ```bash

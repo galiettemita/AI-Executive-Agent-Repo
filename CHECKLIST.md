@@ -1245,6 +1245,7 @@ You must prove it.
 - [x] Production deployment execution-TODO phase closure: added `make production-deployment-todo` to generate `artifacts/deploy/production_deployment_todo.md` from the signoff artifact with explicit rollout/canary/rollback/evidence steps for immediate runbook execution.
 - [x] Post-deployment validation gate phase closure: added `make production-post-deploy-validation`, generating `artifacts/deploy/production_post_deploy_validation.json` with endpoint health and canary SLO checks plus strict/conditional-manual enforcement.
 - [x] Production phase sync automation closure: added `make production-phase-sync` (`scripts/deploy/sync_production_phase_artifacts.sh`) to refresh transition/signoff/deployment-todo/post-deploy-validation artifacts in one deterministic run.
+- [x] Consolidated phase closure manifest phase closure: added `make phase-closure-manifest` to generate `artifacts/deploy/phase_closure_manifest.json` summarizing external+production gate states and final overall closure status.
 - [x] Clerk (auth) account + keys (`CLERK_SECRET_KEY`)
 - [x] Stripe (billing) account + keys (`STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, Price IDs) (Operational Blueprint Component 1) (verified via `make external-closeout-check`)
 - [x] Anthropic account + `ANTHROPIC_API_KEY`
