@@ -1869,3 +1869,21 @@
 3. Regenerate after each provider/account update until status transitions to `READY`.  
 **Risk:** Mapping table must stay synced if blocker IDs are renamed in the closeout checker.  
 **Rollback:** Remove manual TODO generator and revert to direct runbook + JSON artifact interpretation.
+
+## DECISION-104: Keep Go 1.22 and Cap Security Dependency Upgrades at Compatible Maximums
+
+**Date:** 2026-03-05  
+**Blueprint Section:** §0.3, §9.1, §12.3  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/go.mod`, `/Users/galiettemita/Downloads/Executive AI Agent/backend/scripts/security/run_security_validation.sh`  
+**Conflict:** GitHub reported default-branch vulnerabilities and `go list -m -u` showed newer dependency versions, but attempted upgrades required Go versions above the repository's declared `go 1.22` baseline.  
+**Options Considered:**  
+1. Force-upgrade dependencies to latest and simultaneously raise toolchain baseline to Go 1.24.  
+2. Ignore dependency drift and leave upgradeability unverified.  
+3. Probe version compatibility and keep dependencies at the highest versions that still support Go 1.22, documenting the cap.  
+**Decision:** Option 3. Compatibility probes confirmed current pins are already at the maximum Go 1.22-compatible versions for key security-sensitive modules (`pgx v5.7.4`, `x/crypto v0.33.0`, `x/sync v0.11.0`, `x/text v0.22.0`). Newer tags require `go >= 1.23/1.24`, so no safe patch-only dependency bump exists without a toolchain migration phase.  
+**Migration Plan:**  
+1. Keep current dependency pins and passing `make security-validate` gate.  
+2. Plan explicit Go toolchain migration phase before adopting blocked module upgrades.  
+3. Re-run compatibility probes immediately after toolchain bump to pull latest security patches.  
+**Risk:** Remaining advisories tied to post-Go1.22 module releases cannot be remediated until toolchain upgrade.  
+**Rollback:** If Go baseline strategy changes, revert this cap decision and perform full dependency/toolchain upgrade in a dedicated migration branch.

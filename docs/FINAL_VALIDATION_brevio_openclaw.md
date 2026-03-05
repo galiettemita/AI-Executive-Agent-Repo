@@ -1,8 +1,8 @@
 # BREVIO x OPENCLAW Final Validation Report
 
-Timestamp (UTC): 2026-03-05 02:34:29 UTC
+Timestamp (UTC): 2026-03-05 02:35:58 UTC
 Branch: `codex/brevio-openclaw-phase0`
-Head: `87cacb1`
+Head: `0b5ae2b`
 
 ## Scope
 
@@ -39,6 +39,8 @@ Head: `87cacb1`
 - LLM eval gating is active in both pathways:
   - Core CI stage (`.github/workflows/ci.yml`, `5b. LLM Evals`)
   - Scheduled/path-triggered eval workflow (`.github/workflows/llm-evals.yml`)
+- Dependency triage completed against Go 1.22 baseline:
+  - Current pins are the highest Go 1.22-compatible versions for `pgx`, `x/crypto`, `x/sync`, and `x/text`; newer tags require `go >= 1.23/1.24` and are deferred to a toolchain migration phase.
 - Reconciliation docs refreshed to current implementation state:
   - `CODEBASE_INVENTORY.md`
   - `GAP_ANALYSIS.md`
