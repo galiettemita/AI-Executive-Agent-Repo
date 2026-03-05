@@ -1250,6 +1250,7 @@ You must prove it.
 - [x] Phase-status reporting closure: added `make phase-status` to generate `artifacts/deploy/phase_status.txt` with concise overall state, blocker counts, and next-action guidance from manifest+bundle metadata.
 - [x] Manual provider button-steps closure: added `make manual-provider-steps` to generate `artifacts/deploy/manual_provider_steps.md` with click-by-click console actions and exact confirm commands for remaining manual blockers.
 - [x] Staging deploy smoke-validation closure: added `make staging-smoke-tests` (`scripts/deploy/run_staging_smoke_tests.sh`) and wired staging deploy workflows to enforce deployment readiness + `/health`/`/health/deep` + webhook-route + synthetic temporal workflow checks with JSON artifact output.
+- [x] Production canary gate closure: added `make production-canary-check` (`scripts/deploy/check_production_canary_window.sh`) with explicit traffic/duration/SLO threshold enforcement and integrated canary artifact coverage into production sync/manifest/handoff/status flows.
 - [x] Clerk (auth) account + keys (`CLERK_SECRET_KEY`)
 - [x] Stripe (billing) account + keys (`STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, Price IDs) (Operational Blueprint Component 1) (verified via `make external-closeout-check`)
 - [x] Anthropic account + `ANTHROPIC_API_KEY`

@@ -402,6 +402,30 @@ The generated TODO includes:
 3. health checks + canary thresholds
 4. rollback trigger reminder and evidence capture checklist
 
+## 18A) Production Canary Gate
+
+After running the 10%/15m canary window, execute the canary gate:
+
+```bash
+cd /Users/galiettemita/Downloads/Executive AI Agent/backend
+CANARY_ERROR_RATE_PCT=0.4 CANARY_P99_RATIO=1.3 make production-canary-check
+```
+
+Output:
+- `artifacts/deploy/production_canary_check.json`
+
+Inputs:
+- `CANARY_TRAFFIC_PCT` (default `10`)
+- `CANARY_DURATION_MINUTES` (default `15`)
+- `CANARY_ERROR_RATE_PCT`
+- `CANARY_P99_RATIO`
+
+Strict mode:
+
+```bash
+ALLOW_CONDITIONAL_MANUAL=0 CANARY_ERROR_RATE_PCT=0.4 CANARY_P99_RATIO=1.3 make production-canary-check
+```
+
 ## 19) Post-Deployment Validation Gate
 
 After deployment/canary execution, run post-deploy validation:
@@ -442,8 +466,9 @@ CANARY_ERROR_RATE_PCT=0.4 CANARY_P99_RATIO=1.3 make production-phase-sync
 This runs:
 1. `check_external_phase_transition.sh`
 2. `check_production_deployment_signoff.sh`
-3. `generate_production_deployment_todo.sh`
-4. `check_production_post_deploy_validation.sh`
+3. `check_production_canary_window.sh`
+4. `generate_production_deployment_todo.sh`
+5. `check_production_post_deploy_validation.sh`
 
 Script:
 - `scripts/deploy/sync_production_phase_artifacts.sh`
@@ -463,8 +488,9 @@ Output:
 The manifest summarizes:
 1. external closeout status + signoff
 2. transition and production signoff gate states
-3. post-deploy validation status
-4. overall closure state (`READY` / `CONDITIONAL_MANUAL` / `BLOCKED`)
+3. production canary gate status
+4. post-deploy validation status
+5. overall closure state (`READY` / `CONDITIONAL_MANUAL` / `BLOCKED`)
 
 ## 22) Create Final Handoff Bundle
 
@@ -481,7 +507,7 @@ Outputs:
 
 Bundle includes:
 1. external closeout + signoff artifacts
-2. transition + production signoff artifacts
+2. transition + production signoff + canary artifacts
 3. production deployment todo + post-deploy validation artifacts
 4. consolidated closure manifest
 5. final validation report

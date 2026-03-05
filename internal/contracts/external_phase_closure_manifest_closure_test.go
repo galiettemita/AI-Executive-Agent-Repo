@@ -23,6 +23,7 @@ func TestExternalPhaseClosureManifestClosure(t *testing.T) {
 		"go_live_signoff_status.json",
 		"external_phase_transition_check.json",
 		"production_deployment_signoff_check.json",
+		"production_canary_check.json",
 		"production_post_deploy_validation.json",
 		"phase_closure_manifest.json",
 		"overall_status",

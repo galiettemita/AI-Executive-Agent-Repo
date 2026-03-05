@@ -33,6 +33,7 @@ Deploy Brevio services with blue/green + canary while preserving SLOs and fast r
    - Route 10% traffic to green.
    - Observe for 15 minutes.
    - Watch error rate, P99 latency, queue backlog, circuit breaker opens.
+   - Run `CANARY_ERROR_RATE_PCT=<value> CANARY_P99_RATIO=<value> make production-canary-check`.
 6. Promote to 100%.
    - Shift all traffic to green.
    - Drain blue and keep rollback window open for 30 minutes.

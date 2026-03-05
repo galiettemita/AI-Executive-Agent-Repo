@@ -23,6 +23,7 @@ func TestExternalProductionTodoClosure(t *testing.T) {
 		"production_deployment_todo.md",
 		"make ci-full",
 		"helm_rollout.sh",
+		"make production-canary-check",
 		"Pass Signoff",
 	})
 

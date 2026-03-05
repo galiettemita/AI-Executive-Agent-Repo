@@ -13,6 +13,7 @@ EXTERNAL_STATUS_PATH="${EXTERNAL_STATUS_PATH:-artifacts/deploy/external_closeout
 GO_LIVE_SIGNOFF_PATH="${GO_LIVE_SIGNOFF_PATH:-artifacts/deploy/go_live_signoff_status.json}"
 TRANSITION_PATH="${TRANSITION_PATH:-artifacts/deploy/external_phase_transition_check.json}"
 PROD_SIGNOFF_PATH="${PROD_SIGNOFF_PATH:-artifacts/deploy/production_deployment_signoff_check.json}"
+CANARY_PATH="${CANARY_PATH:-artifacts/deploy/production_canary_check.json}"
 POST_DEPLOY_PATH="${POST_DEPLOY_PATH:-artifacts/deploy/production_post_deploy_validation.json}"
 REGRESSION_PATH="${REGRESSION_PATH:-artifacts/deploy/external_closeout_regression_report.json}"
 OUTPUT_PATH="${OUTPUT_PATH:-artifacts/deploy/phase_closure_manifest.json}"
@@ -22,6 +23,7 @@ for required_file in \
   "$GO_LIVE_SIGNOFF_PATH" \
   "$TRANSITION_PATH" \
   "$PROD_SIGNOFF_PATH" \
+  "$CANARY_PATH" \
   "$POST_DEPLOY_PATH" \
   "$REGRESSION_PATH"; do
   if [[ ! -f "$required_file" ]]; then
@@ -32,7 +34,7 @@ done
 
 mkdir -p "$(dirname "$OUTPUT_PATH")"
 
-python3 - "$EXTERNAL_STATUS_PATH" "$GO_LIVE_SIGNOFF_PATH" "$TRANSITION_PATH" "$PROD_SIGNOFF_PATH" "$POST_DEPLOY_PATH" "$REGRESSION_PATH" "$OUTPUT_PATH" <<'PY'
+python3 - "$EXTERNAL_STATUS_PATH" "$GO_LIVE_SIGNOFF_PATH" "$TRANSITION_PATH" "$PROD_SIGNOFF_PATH" "$CANARY_PATH" "$POST_DEPLOY_PATH" "$REGRESSION_PATH" "$OUTPUT_PATH" <<'PY'
 import json
 import sys
 from datetime import datetime, timezone
@@ -42,10 +44,11 @@ from datetime import datetime, timezone
     go_live_signoff_path,
     transition_path,
     prod_signoff_path,
+    canary_path,
     post_deploy_path,
     regression_path,
     output_path,
-) = sys.argv[1:8]
+) = sys.argv[1:9]
 
 
 def load_json(path: str):
@@ -56,6 +59,7 @@ external_status = load_json(external_status_path)
 go_live_signoff = load_json(go_live_signoff_path)
 transition = load_json(transition_path)
 prod_signoff = load_json(prod_signoff_path)
+canary = load_json(canary_path)
 post_deploy = load_json(post_deploy_path)
 regression = load_json(regression_path)
 
@@ -64,13 +68,15 @@ required_manual = int(external_status.get("required_manual", 0))
 regression_status = str(regression.get("status", "UNKNOWN"))
 transition_pass = bool(transition.get("pass_transition", False))
 prod_signoff_pass = bool(prod_signoff.get("pass_signoff", False))
+canary_pass = bool(canary.get("pass_canary", False))
+canary_status = str(canary.get("status", "UNKNOWN"))
 post_deploy_pass = bool(post_deploy.get("pass_validation", False))
 post_deploy_status = str(post_deploy.get("status", "UNKNOWN"))
 
 overall_status = "READY"
-if required_failed > 0 or regression_status != "PASS" or not transition_pass or not prod_signoff_pass or not post_deploy_pass:
+if required_failed > 0 or regression_status != "PASS" or not transition_pass or not prod_signoff_pass or not canary_pass or not post_deploy_pass:
     overall_status = "BLOCKED"
-elif required_manual > 0 or post_deploy_status == "CONDITIONAL_MANUAL":
+elif required_manual > 0 or canary_status == "CONDITIONAL_MANUAL" or post_deploy_status == "CONDITIONAL_MANUAL":
     overall_status = "CONDITIONAL_MANUAL"
 
 payload = {
@@ -80,6 +86,7 @@ payload = {
         "go_live_signoff": go_live_signoff_path,
         "transition": transition_path,
         "production_signoff": prod_signoff_path,
+        "canary": canary_path,
         "post_deploy": post_deploy_path,
         "regression": regression_path,
     },
@@ -90,6 +97,8 @@ payload = {
         "regression_status": regression_status,
         "transition_pass": transition_pass,
         "production_signoff_pass": prod_signoff_pass,
+        "canary_pass": canary_pass,
+        "canary_status": canary_status,
         "post_deploy_pass": post_deploy_pass,
         "post_deploy_status": post_deploy_status,
     },
@@ -98,6 +107,7 @@ payload = {
         "go_live_signoff": go_live_signoff,
         "transition": transition,
         "production_signoff": prod_signoff,
+        "canary": canary,
         "post_deploy": post_deploy,
         "regression": regression,
     },

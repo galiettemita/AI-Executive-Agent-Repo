@@ -23,6 +23,7 @@ func TestExternalPhaseStatusClosure(t *testing.T) {
 		"phase_handoff_bundle.json",
 		"phase_status.txt",
 		"overall_status",
+		"canary_status",
 		"next_action",
 	})
 

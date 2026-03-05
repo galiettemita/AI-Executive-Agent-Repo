@@ -5,31 +5,32 @@ import (
 	"testing"
 )
 
-func TestExternalPhaseHandoffBundleClosure(t *testing.T) {
+func TestExternalProductionCanaryClosure(t *testing.T) {
 	t.Parallel()
 
 	root := repositoryRoot(t)
 
 	makefilePath := filepath.Join(root, "Makefile")
 	assertFileContainsTokens(t, makefilePath, []string{
-		"phase-handoff-bundle:",
-		"create_phase_handoff_bundle.sh",
+		"production-canary-check:",
+		"check_production_canary_window.sh",
 	})
 
-	scriptPath := filepath.Join(root, "scripts", "deploy", "create_phase_handoff_bundle.sh")
+	scriptPath := filepath.Join(root, "scripts", "deploy", "check_production_canary_window.sh")
 	assertFileNonEmpty(t, scriptPath)
 	assertFileContainsTokens(t, scriptPath, []string{
-		"phase_closure_manifest.json",
-		"phase_handoff_bundle.json",
 		"production_canary_check.json",
-		"FINAL_VALIDATION_brevio_openclaw.md",
-		"phase-handoff-",
-		"tar -czf",
+		"CANARY_TRAFFIC_PCT",
+		"CANARY_DURATION_MINUTES",
+		"CANARY_ERROR_RATE_PCT",
+		"CANARY_P99_RATIO",
+		"pass_canary",
 	})
 
 	docPath := filepath.Join(root, "docs", "EXTERNAL_CLOSEOUT.md")
 	assertFileContainsTokens(t, docPath, []string{
-		"make phase-handoff-bundle",
-		"phase_handoff_bundle.json",
+		"make production-canary-check",
+		"production_canary_check.json",
+		"CANARY_ERROR_RATE_PCT",
 	})
 }

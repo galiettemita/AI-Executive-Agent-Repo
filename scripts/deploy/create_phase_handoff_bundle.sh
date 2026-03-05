@@ -24,6 +24,7 @@ REQUIRED_FILES=(
   "artifacts/deploy/go_live_signoff_status.json"
   "artifacts/deploy/external_phase_transition_check.json"
   "artifacts/deploy/production_deployment_signoff_check.json"
+  "artifacts/deploy/production_canary_check.json"
   "artifacts/deploy/production_deployment_todo.md"
   "artifacts/deploy/production_post_deploy_validation.json"
   "artifacts/deploy/phase_closure_manifest.json"
@@ -58,6 +59,7 @@ payload = {
         "artifacts/deploy/go_live_signoff_status.json",
         "artifacts/deploy/external_phase_transition_check.json",
         "artifacts/deploy/production_deployment_signoff_check.json",
+        "artifacts/deploy/production_canary_check.json",
         "artifacts/deploy/production_deployment_todo.md",
         "artifacts/deploy/production_post_deploy_validation.json",
         "artifacts/deploy/phase_closure_manifest.json",

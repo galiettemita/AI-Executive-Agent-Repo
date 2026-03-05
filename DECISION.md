@@ -2253,3 +2253,22 @@
 4. Use report for deployment runbook evidence.  
 **Risk:** Port-forward-based probes can fail in constrained cluster RBAC/network contexts and may need environment-specific tuning.  
 **Rollback:** Remove staging smoke script/workflow steps and revert to rollout-only staging deploy path.
+
+## DECISION-125: Add Explicit Production Canary Gate Artifact and Integrate It into Phase Closure Flow
+
+**Date:** 2026-03-05  
+**Blueprint Section:** §9.2, §10.2, §14, §18  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/scripts/deploy/sync_production_phase_artifacts.sh`, `/Users/galiettemita/Downloads/Executive AI Agent/backend/scripts/deploy/generate_phase_closure_manifest.sh`, `/Users/galiettemita/Downloads/Executive AI Agent/backend/scripts/deploy/create_phase_handoff_bundle.sh`  
+**Conflict:** Canary requirements existed in runbooks/TODO text, but there was no dedicated machine gate artifact evaluating traffic/duration/SLO thresholds before promotion.  
+**Options Considered:**  
+1. Keep canary evaluation manual-only in runbook.  
+2. Reuse post-deploy validation as implicit canary check.  
+3. Add separate canary gate with explicit inputs/thresholds and integrate it into phase-sync/manifest/handoff status aggregation.  
+**Decision:** Option 3. Added `scripts/deploy/check_production_canary_window.sh` and `make production-canary-check` (`production_canary_check.json`), then integrated canary status into production-phase sync, phase closure manifest, handoff bundle, phase-status output, and production deployment TODO guidance.  
+**Migration Plan:**  
+1. Run canary window at 10% for 15m.  
+2. Execute `make production-canary-check` with observed metrics.  
+3. Use `make production-phase-sync`/`make phase-closure-manifest` to propagate canary state into closure artifacts.  
+4. Proceed only when canary gate passes (or explicit conditional-manual policy is accepted).  
+**Risk:** Missing metric inputs can degrade to conditional/manual paths and hide incomplete telemetry if used carelessly.  
+**Rollback:** Remove dedicated canary gate and revert to runbook-only canary interpretation.

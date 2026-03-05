@@ -60,8 +60,9 @@ else:
     lines.append("2. Deploy charts with rollout waits: `WAIT_FOR_ROLLOUT=true NAMESPACE=default bash scripts/deploy/helm_rollout.sh`.")
     lines.append("3. Run service health sweeps: `kubectl get pods -n default` and probe `/health` + `/health/deep` on gateway/brain/hands.")
     lines.append("4. Execute canary window (10% traffic for 15 minutes) and watch SLOs (error rate <= 1%, P99 <= 2x baseline).")
-    lines.append("5. Promote to 100% only if canary is stable; otherwise execute rollback runbook immediately.")
-    lines.append("6. Record deployment evidence in release ticket and attach artifact snapshots.")
+    lines.append("5. Run canary gate: `CANARY_ERROR_RATE_PCT=<value> CANARY_P99_RATIO=<value> make production-canary-check`.")
+    lines.append("6. Promote to 100% only if canary is stable; otherwise execute rollback runbook immediately.")
+    lines.append("7. Record deployment evidence in release ticket and attach artifact snapshots.")
     lines.append("")
 
 lines.append("## Manual Required Items Snapshot")

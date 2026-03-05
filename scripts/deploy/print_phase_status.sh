@@ -36,6 +36,8 @@ required_manual = int(summary.get("required_manual", 0))
 required_failed = int(summary.get("required_failed", 0))
 transition_pass = bool(summary.get("transition_pass", False))
 prod_signoff_pass = bool(summary.get("production_signoff_pass", False))
+canary_pass = bool(summary.get("canary_pass", False))
+canary_status = str(summary.get("canary_status", "UNKNOWN"))
 post_deploy_status = str(summary.get("post_deploy_status", "UNKNOWN"))
 
 handoff_bundle = None
@@ -51,6 +53,8 @@ lines.append(f"required_failed: {required_failed}")
 lines.append(f"required_manual: {required_manual}")
 lines.append(f"transition_pass: {transition_pass}")
 lines.append(f"production_signoff_pass: {prod_signoff_pass}")
+lines.append(f"canary_pass: {canary_pass}")
+lines.append(f"canary_status: {canary_status}")
 lines.append(f"post_deploy_status: {post_deploy_status}")
 
 if handoff_bundle:

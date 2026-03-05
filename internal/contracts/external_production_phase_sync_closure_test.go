@@ -21,6 +21,7 @@ func TestExternalProductionPhaseSyncClosure(t *testing.T) {
 	assertFileContainsTokens(t, scriptPath, []string{
 		"check_external_phase_transition.sh",
 		"check_production_deployment_signoff.sh",
+		"check_production_canary_window.sh",
 		"generate_production_deployment_todo.sh",
 		"check_production_post_deploy_validation.sh",
 		"production phase artifacts synced",
