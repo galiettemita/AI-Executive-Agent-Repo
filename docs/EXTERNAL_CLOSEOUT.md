@@ -4,7 +4,7 @@ This runbook covers the only checklist items that remain outside repository auto
 
 ## Current Phase Status (Latest Gate Run)
 
-Latest gate run: `make external-closeout-check` at `2026-03-05T03:20:31Z`
+Latest gate run: `make external-closeout-check` at `2026-03-05T03:25:33Z`
 
 - Required checks: `8`
 - Passed: `0`
@@ -24,9 +24,10 @@ Active required blockers right now:
 
 Authoritative status artifact:
 - `artifacts/deploy/external_closeout_status.json`
-- `artifacts/deploy/go_live_signoff_status.json` (`status=CONDITIONAL_MANUAL` from `make go-live-signoff` at `2026-03-05T03:20:31Z`)
-- `artifacts/deploy/manual_closeout_todo.md` (generated from signoff at `2026-03-05T03:20:31Z`)
+- `artifacts/deploy/go_live_signoff_status.json` (`status=CONDITIONAL_MANUAL` from `make go-live-signoff` at `2026-03-05T03:25:33Z`)
+- `artifacts/deploy/manual_closeout_todo.md` (generated from signoff at `2026-03-05T03:25:33Z`)
 - `artifacts/deploy/manual_closeout_evidence.json` (`manual_evidence_confirmed=0` in latest run)
+- `artifacts/deploy/external_closeout_regression_report.json` (`status=PASS`, no regressions in latest run)
 
 Stability behavior:
 - If AWS endpoints are transiently unavailable, the closeout checker reuses last-known `pass` results from the previous status artifact for required items (unless manually revoked), reducing pass/manual oscillation between runs.

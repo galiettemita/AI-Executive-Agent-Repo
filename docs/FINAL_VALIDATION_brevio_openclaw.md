@@ -1,8 +1,8 @@
 # BREVIO x OPENCLAW Final Validation Report
 
-Timestamp (UTC): 2026-03-05 03:24:02 UTC
+Timestamp (UTC): 2026-03-05 03:25:33 UTC
 Branch: `codex/brevio-openclaw-phase0`
-Head: `cd86fd7`
+Head: `368228d`
 
 ## Scope
 
@@ -34,6 +34,7 @@ Head: `cd86fd7`
 - `make ci` (post-evidence-audit-history automation rerun at 2026-03-05T03:16:46Z): PASS
 - `make ci` (post-status-stability automation rerun at 2026-03-05T03:21:07Z): PASS
 - `make ci` (post-regression-guard automation rerun at 2026-03-05T03:24:02Z): PASS
+- `EXTERNAL_REGRESSION_CHECK=1 make external-phase-sync` (2026-03-05T03:25:33Z): PASS (`external_closeout_regression_report.json.status=PASS`)
 - `make security-validate` (post-signoff rerun at 2026-03-05T02:31:47Z): PASS
 - `pnpm audit --audit-level high` (network-enabled run): PASS (`No known vulnerabilities found`)
 
@@ -75,7 +76,7 @@ The following are outside autonomous code changes and require human provisioning
 
 ## Next Phase Status: External Closeout Gate
 
-`make external-closeout-check` executed at 2026-03-05T03:20:31Z and completed with non-failing required status (`required_passed=0`, `required_failed=0`, `required_manual=8`).
+`make external-closeout-check` executed at 2026-03-05T03:25:33Z and completed with non-failing required status (`required_passed=0`, `required_failed=0`, `required_manual=8`).
 
 Current required manual items:
 
@@ -90,11 +91,11 @@ Current required manual items:
 
 Artifact source: `artifacts/deploy/external_closeout_status.json` (`manual_evidence_path=artifacts/deploy/manual_closeout_evidence.json`, `manual_evidence_confirmed=0`).
 
-`make go-live-signoff` executed at 2026-03-05T03:20:31Z and produced `artifacts/deploy/go_live_signoff_status.json` with `status=CONDITIONAL_MANUAL` and `required_failed=0`, confirming transition to manual provisioning closeout without code-gate blockers.
+`make go-live-signoff` executed at 2026-03-05T03:25:33Z and produced `artifacts/deploy/go_live_signoff_status.json` with `status=CONDITIONAL_MANUAL` and `required_failed=0`, confirming transition to manual provisioning closeout without code-gate blockers.
 
-`make manual-closeout-todo` executed at 2026-03-05T03:20:31Z and produced `artifacts/deploy/manual_closeout_todo.md`, mapping each pending manual item to the runbook section required for closure execution.
+`make manual-closeout-todo` executed at 2026-03-05T03:25:33Z and produced `artifacts/deploy/manual_closeout_todo.md`, mapping each pending manual item to the runbook section required for closure execution.
 
-`make external-phase-sync` executed at 2026-03-05T03:20:31Z and refreshed all external closeout artifacts in one pass (`required_failed=0`, `status=CONDITIONAL_MANUAL`).
+`make external-phase-sync` executed at 2026-03-05T03:25:33Z and refreshed all external closeout artifacts in one pass (`required_failed=0`, `status=CONDITIONAL_MANUAL`).
 
 `make manual-closeout-confirm ITEM_ID=... CONFIRMED_BY=...` is now available to persist production-context manual confirmations into `artifacts/deploy/manual_closeout_evidence.json`, allowing endpoint-restricted local environments to transition individual required items from `manual` to `pass` once verified by operators.
 
