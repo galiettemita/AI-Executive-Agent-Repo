@@ -876,6 +876,7 @@ You must prove it.
 - [x] De-scaffold `pdf-tools` + `resume-builder` with typed document workflow contracts and action-specific required-field checks
 - [x] Extend centralized manual override registry and closure test token assertions for all Wave 10 adapters
 - [x] Validate Wave 10 against full `make ci` gate before merge
+- [x] Harden Dockerized Go fallback execution in `scripts/dev/go_exec.sh` by marking `/src` as a safe Git directory and disabling Go VCS stamping so containerized `make ci` runs do not fail on Git ownership/VCS metadata checks
 
 ## M15: Hands Adapter Wave 11 (CRITICAL Custom-Build Transactional Gaps)
 - [x] De-scaffold `restaurant-reservations` with typed search/hold/book/status contracts and confirmation gating on booking
