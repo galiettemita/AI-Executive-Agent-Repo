@@ -2423,3 +2423,21 @@
 3. Re-run `make ci` locally to confirm quality gates remain green.  
 **Risk:** If lint stage later requires TS package lint commands, node bootstrap must be reintroduced explicitly.  
 **Rollback:** Restore prior lint-stage pnpm/node setup/install and pnpm proto lint command lines in `.github/workflows/ci.yml`.
+
+## DECISION-134: Harden TruffleHog Strict Gate Against Local/Test Postgres DSN Placeholders
+
+**Date:** 2026-03-05  
+**Blueprint Section:** §0.3 (security gates), §12.3 (supply chain/secret scanning)  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/scripts/security/run_security_validation.sh`, `/Users/galiettemita/Downloads/Executive AI Agent/backend/scripts/security/trufflehog_exclude_paths.txt`, `/Users/galiettemita/Downloads/Executive AI Agent/backend/internal/runtime/deep_health_test.go`  
+**Conflict:** CI strict-mode security validation failed repeatedly on TruffleHog unverified Postgres detector matches in local/test placeholders (`docker-compose.yml` and deep-health tests), blocking non-security documentation refresh waves.  
+**Options Considered:**  
+1. Keep current scan behavior and accept recurring false-positive failures.  
+2. Disable TruffleHog `--fail` in CI strict mode.  
+3. Keep strict mode, remove password-like test literals, and add a narrow path exclusion for local compose DSN placeholders.  
+**Decision:** Option 3. Preserved strict security gates while removing test credential-like literals and excluding only `docker-compose.yml` from TruffleHog path scanning to prevent deterministic false positives from local dev DSNs.  
+**Migration Plan:**  
+1. Replace password-bearing DSN fixtures in `internal/runtime/deep_health_test.go` with non-secret equivalents.  
+2. Extend `scripts/security/trufflehog_exclude_paths.txt` with `^docker-compose\.yml$` only.  
+3. Validate with `CI=1 bash scripts/security/run_security_validation.sh` and contract tests.  
+**Risk:** Secrets accidentally added to `docker-compose.yml` will no longer be flagged by TruffleHog.  
+**Rollback:** Remove `docker-compose.yml` exclusion and restore earlier deep-health test fixture literals if needed.

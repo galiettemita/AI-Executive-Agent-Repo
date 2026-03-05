@@ -33,7 +33,7 @@ func TestDeepDependencyChecksWithOptionsConnectivity(t *testing.T) {
 		Getenv: func(key string) string {
 			switch key {
 			case "DATABASE_URL":
-				return "postgres://user:pass@db.internal:5432/brevio"
+				return "postgres://user@db.internal:5432/brevio"
 			case "REDIS_URL":
 				return "redis://redis.internal:6379/0"
 			case "TEMPORAL_HOST":
@@ -75,7 +75,7 @@ func TestDeepDependencyChecksWithOptionsInvalidConfig(t *testing.T) {
 		Getenv: func(key string) string {
 			switch key {
 			case "DATABASE_URL":
-				return "dbname=brevio user=svc password=secret"
+				return "dbname=brevio user=svc"
 			case "REDIS_URL":
 				return "redis://"
 			case "TEMPORAL_HOST":
@@ -112,7 +112,7 @@ func TestParseDatabaseAddress(t *testing.T) {
 		t.Fatalf("unexpected parsed address: %s", address)
 	}
 
-	address, err = parseDatabaseAddress("postgres://svc:pwd@db.internal/brevio", "5432")
+	address, err = parseDatabaseAddress("postgres://svc@db.internal/brevio", "5432")
 	if err != nil {
 		t.Fatalf("parse url dsn: %v", err)
 	}
