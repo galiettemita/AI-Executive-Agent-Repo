@@ -2143,3 +2143,21 @@
 4. Track and resolve any `BLOCKED` output before declaring deployment complete.  
 **Risk:** Conditional-manual mode can mask missing telemetry if used excessively.  
 **Rollback:** Remove post-deploy validation script and revert to runbook/manual closure only.
+
+## DECISION-119: Add One-Command Production-Phase Artifact Sync
+
+**Date:** 2026-03-05  
+**Blueprint Section:** §9, §14, §18, §21  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/scripts/deploy/check_external_phase_transition.sh`, `/Users/galiettemita/Downloads/Executive AI Agent/backend/scripts/deploy/check_production_deployment_signoff.sh`, `/Users/galiettemita/Downloads/Executive AI Agent/backend/scripts/deploy/generate_production_deployment_todo.sh`, `/Users/galiettemita/Downloads/Executive AI Agent/backend/scripts/deploy/check_production_post_deploy_validation.sh`  
+**Conflict:** Production-phase progression required running four commands in sequence, increasing artifact drift risk and slowing repetitive closure loops.  
+**Options Considered:**  
+1. Keep manual per-command execution.  
+2. Fold all logic into one large script and remove standalone gates.  
+3. Keep standalone gates and add a thin orchestrator for deterministic sync.  
+**Decision:** Option 3. Added `scripts/deploy/sync_production_phase_artifacts.sh` and `make production-phase-sync` to run transition, signoff, deployment TODO generation, and post-deploy validation in sequence while preserving standalone command paths.  
+**Migration Plan:**  
+1. Use `make production-phase-sync` for routine production-phase checkpoints.  
+2. Continue running individual commands when debugging specific gate behavior.  
+3. Keep generated artifacts as source of truth for deployment phase status.  
+**Risk:** A single failing sub-step blocks the sync command; operators must inspect step-level artifacts.  
+**Rollback:** Remove production-phase sync wrapper and revert to explicit command-by-command execution.

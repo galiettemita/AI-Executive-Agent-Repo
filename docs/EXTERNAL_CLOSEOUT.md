@@ -430,6 +430,24 @@ Strict mode:
 ALLOW_CONDITIONAL_MANUAL=0 make production-post-deploy-validation
 ```
 
+## 20) Sync All Production-Phase Artifacts in One Command
+
+To refresh all production-phase artifacts in sequence:
+
+```bash
+cd /Users/galiettemita/Downloads/Executive AI Agent/backend
+CANARY_ERROR_RATE_PCT=0.4 CANARY_P99_RATIO=1.3 make production-phase-sync
+```
+
+This runs:
+1. `check_external_phase_transition.sh`
+2. `check_production_deployment_signoff.sh`
+3. `generate_production_deployment_todo.sh`
+4. `check_production_post_deploy_validation.sh`
+
+Script:
+- `scripts/deploy/sync_production_phase_artifacts.sh`
+
 Optional: disable regression check for troubleshooting only:
 
 ```bash
