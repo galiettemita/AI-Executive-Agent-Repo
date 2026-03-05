@@ -83,6 +83,12 @@ if manual_items:
         section = section_map.get(item_id, "See runbook")
         lines.append(f"- [ ] `{item_id}` ({section})")
         lines.append(f"  - Detail: {detail}")
+        lines.append(
+            f"  - Confirm command: `make manual-closeout-confirm ITEM_ID={item_id} CONFIRMED_BY=<name> NOTE=\"<evidence>\"`"
+        )
+        lines.append(
+            f"  - Revoke command: `make manual-closeout-unconfirm ITEM_ID={item_id} REVOKED_BY=<name> NOTE=\"<reason>\"`"
+        )
     lines.append("")
 
 if not manual_items and not blocked_items:

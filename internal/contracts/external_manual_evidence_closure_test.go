@@ -56,6 +56,14 @@ func TestExternalManualEvidenceClosure(t *testing.T) {
 		"status\": \"revoked\"",
 	})
 
+	manualTodoGeneratorPath := filepath.Join(root, "scripts", "deploy", "generate_manual_closeout_todo.sh")
+	assertFileContainsTokens(t, manualTodoGeneratorPath, []string{
+		"Confirm command:",
+		"make manual-closeout-confirm ITEM_ID=",
+		"Revoke command:",
+		"make manual-closeout-unconfirm ITEM_ID=",
+	})
+
 	catalogPath := filepath.Join(root, "config", "external-closeout-required-item-ids.txt")
 	assertFileNonEmpty(t, catalogPath)
 	assertFileContainsTokens(t, catalogPath, []string{

@@ -2050,3 +2050,21 @@
 3. Use override mode only with explicit operator acceptance and audit trail.  
 **Risk:** Override mode could be misused to bypass unresolved manual tasks.  
 **Rollback:** Remove transition-check override behavior and enforce strict `READY`-only phase progression.
+
+## DECISION-114: Add Per-Item Confirm/Revoke Command Templates to Manual Closeout TODO
+
+**Date:** 2026-03-05  
+**Blueprint Section:** §14, §18, §21  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/scripts/deploy/generate_manual_closeout_todo.sh`, `/Users/galiettemita/Downloads/Executive AI Agent/backend/artifacts/deploy/manual_closeout_todo.md`  
+**Conflict:** The manual TODO listed pending items but still required operators to remember command syntax, increasing command-entry errors and slowing closure.  
+**Options Considered:**  
+1. Keep checklist-only TODO items without command guidance.  
+2. Add one global command example at top of file.  
+3. Emit per-item copy/paste command templates for both confirm and revoke actions.  
+**Decision:** Option 3. Updated `generate_manual_closeout_todo.sh` to add item-specific `manual-closeout-confirm` and `manual-closeout-unconfirm` command templates directly under each pending manual item.  
+**Migration Plan:**  
+1. Continue generating TODO via `make external-phase-sync`.  
+2. Use per-item commands from the artifact during manual closeout execution.  
+3. Keep command templates aligned with Make target names if command interfaces change.  
+**Risk:** If command interfaces change and templates are not updated, generated instructions could drift.  
+**Rollback:** Remove per-item command lines and revert to high-level TODO output.
