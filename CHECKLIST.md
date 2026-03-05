@@ -1232,6 +1232,7 @@ You must prove it.
 - [x] Manual evidence-driven closeout phase closure: added `make manual-closeout-confirm` + `scripts/deploy/update_manual_closeout_evidence.sh`, wired `external_closeout_check.sh` to consume `artifacts/deploy/manual_closeout_evidence.json`, and verified sync artifacts now report `manual_evidence_confirmed` for deterministic progression from `manual` to `pass`.
 - [x] Manual evidence command validation: executed `make manual-closeout-confirm ITEM_ID=test_item CONFIRMED_BY=codex NOTE="automation smoke test"` to verify artifact write path, then reset local evidence and reconfirmed `make external-phase-sync` reports `manual_evidence_confirmed=0`.
 - [x] Manual evidence ID-governance phase closure: added canonical allowlist file `config/external-closeout-required-item-ids.txt` and enforced item validation in `update_manual_closeout_evidence.sh` to reject unsupported IDs before evidence write.
+- [x] Post-ID-governance reconciliation closure: reran `make external-phase-sync` at `2026-03-05T03:11:56Z` and confirmed `git_head=7d28b44`, `required_failed=0`, `manual_evidence_confirmed=0`, and `status=CONDITIONAL_MANUAL`.
 - [x] Clerk (auth) account + keys (`CLERK_SECRET_KEY`)
 - [x] Stripe (billing) account + keys (`STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, Price IDs) (Operational Blueprint Component 1) (verified via `make external-closeout-check`)
 - [x] Anthropic account + `ANTHROPIC_API_KEY`
