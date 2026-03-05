@@ -566,3 +566,22 @@ Optional: disable regression check for troubleshooting only:
 ```bash
 EXTERNAL_REGRESSION_CHECK=0 make external-phase-sync
 ```
+
+## 25) Generate Final Go-Live Approval Packet
+
+When closure status is `READY`, generate the final human approval packet:
+
+```bash
+cd /Users/galiettemita/Downloads/Executive AI Agent/backend
+make go-live-approval-packet
+```
+
+Outputs:
+- `artifacts/deploy/final_go_live_approval_packet.json`
+- `artifacts/deploy/final_go_live_approval_packet.md`
+
+The packet includes:
+1. closure gate summary (required/manual/transition/signoff/canary/post-deploy)
+2. handoff artifact references
+3. pending human sign-off checklist (Release/Engineering/Security/Product)
+4. final go-live next action guidance

@@ -221,6 +221,15 @@ jobs:
           bash scripts/deploy/generate_phase_closure_manifest.sh
           bash scripts/deploy/create_phase_handoff_bundle.sh
           bash scripts/deploy/print_phase_status.sh
+      - name: Generate final go-live approval packet
+        env:
+          KUBE_CONFIG_PRODUCTION: ${{ secrets.KUBE_CONFIG_PRODUCTION }}
+        run: |
+          if [ -z "${KUBE_CONFIG_PRODUCTION}" ]; then
+            echo "KUBE_CONFIG_PRODUCTION not set; skipping final go-live approval packet."
+            exit 0
+          fi
+          bash scripts/deploy/generate_final_go_live_approval_packet.sh
       - name: Upload production gate artifacts
         if: always()
         uses: actions/upload-artifact@v4
@@ -234,5 +243,7 @@ jobs:
             artifacts/deploy/phase_closure_manifest.json
             artifacts/deploy/phase_handoff_bundle.json
             artifacts/deploy/phase_status.txt
+            artifacts/deploy/final_go_live_approval_packet.json
+            artifacts/deploy/final_go_live_approval_packet.md
             artifacts/deploy/handoff/phase-handoff-*.tar.gz
           if-no-files-found: warn

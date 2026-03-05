@@ -2367,3 +2367,22 @@
 4. Regenerate manifest/handoff/status artifacts and record evidence.  
 **Risk:** Manual evidence reflects operator attestation rather than live endpoint verification from this runtime context; strict probe pass used a sandbox-compatible shim.  
 **Rollback:** Revoke any incorrect confirmations via `make manual-closeout-unconfirm ITEM_ID=...`, rerun `make external-phase-sync`, and repeat strict closure using production-connected runtime context.
+
+## DECISION-131: Add Final Go-Live Approval Packet Artifact and Workflow Export
+
+**Date:** 2026-03-05  
+**Blueprint Section:** §0.1 (human go-live approval), §14 (deployment/incident runbooks), §18 Phase 21  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/scripts/deploy/create_phase_handoff_bundle.sh`, `/Users/galiettemita/Downloads/Executive AI Agent/backend/.github/workflows/deploy-production.yml`  
+**Conflict:** Closure state reached `READY`, but there was no dedicated final approval packet artifact capturing gate status + approver checklist for the required human sign-off action.  
+**Options Considered:**  
+1. Keep human approval implicit in phase status text only.  
+2. Add documentation-only checklist without machine artifact.  
+3. Add a deterministic final approval packet generator, Make target, workflow generation step, and artifact upload paths.  
+**Decision:** Option 3. Implemented `scripts/deploy/generate_final_go_live_approval_packet.sh`, added `make go-live-approval-packet`, integrated packet generation into both production deploy workflows, and exported `final_go_live_approval_packet.json` + `.md` as deployment artifacts.  
+**Migration Plan:**  
+1. Generate packet from existing `phase_closure_manifest.json`, `phase_status.txt`, and `phase_handoff_bundle.json`.  
+2. Fail packet generation when closure is not `READY`.  
+3. Include human approval checklist (Release/Engineering/Security/Product) in markdown packet.  
+4. Enforce via contracts and runbook documentation.  
+**Risk:** Packet readiness still depends on integrity of upstream closure artifacts and environment probe fidelity.  
+**Rollback:** Remove packet script/Make target/workflow steps and rely on phase-status + handoff bundle artifacts only.
