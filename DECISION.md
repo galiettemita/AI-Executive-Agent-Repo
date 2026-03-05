@@ -2459,3 +2459,21 @@
 3. Validate production rerun path with updated workflow code.  
 **Risk:** Raw kubeconfig values are more likely to include accidental formatting mistakes if copied with extra whitespace.  
 **Rollback:** Revert to base64-only decode lines and enforce explicit secret formatting in runbook documentation.
+
+## DECISION-136: Add Committed Deploy Values Fallback for Clean CI Runners
+
+**Date:** 2026-03-05  
+**Blueprint Section:** §9.1 Stage 10 (production deploy reliability), §14 deployment runbook  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/scripts/deploy/helm_rollout.sh`, `/Users/galiettemita/Downloads/Executive AI Agent/backend/artifacts/deploy/gateway-prod-values.yaml`, `/Users/galiettemita/Downloads/Executive AI Agent/backend/.gitignore`  
+**Conflict:** `helm_rollout.sh` required `artifacts/deploy/gateway-prod-values.yaml` and `artifacts/deploy/admin-frontend-prod-values.yaml`, but `artifacts/` is gitignored, so fresh GitHub runners failed with missing values files before deployment.  
+**Options Considered:**  
+1. Keep artifacts-only path and require manual pre-generation in every workflow.  
+2. Track `artifacts/deploy/*-prod-values.yaml` in git by changing ignore policy.  
+3. Keep artifacts path for overrides, but add committed fallback defaults in a tracked directory and auto-fallback in rollout script.  
+**Decision:** Option 3. Added tracked defaults under `config/deploy/` and updated `helm_rollout.sh` to auto-fallback when artifact files are absent.  
+**Migration Plan:**  
+1. Add committed fallback files: `config/deploy/gateway-prod-values.yaml`, `config/deploy/admin-frontend-prod-values.yaml`.  
+2. Update `helm_rollout.sh` to prefer artifacts overrides, fallback to config defaults on clean runners.  
+3. Re-run contract tests and production workflow to confirm no missing-values failures.  
+**Risk:** Fallback host/certificate values can drift from environment-specific needs if not maintained alongside infrastructure changes.  
+**Rollback:** Remove fallback logic and restore strict artifacts-only requirement with an explicit pre-render step in workflows.
