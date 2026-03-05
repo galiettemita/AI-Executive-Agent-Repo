@@ -2517,6 +2517,8 @@
 
 ## DECISION-139: Enforce Snyk in Core CI Security Stage
 
+**Superseded By:** DECISION-141
+
 **Date:** 2026-03-05  
 **Blueprint Section:** §0.3, §9.1 Stage 6, §20.12  
 **Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/.github/workflows/ci.yml`, `/Users/galiettemita/Downloads/Executive AI Agent/backend/.github/workflows/security-scan.yml`  
@@ -2550,3 +2552,21 @@
 3. Keep future metadata refinement centralized in skill readmes and migration updates.  
 **Risk:** Metadata quality now depends on README consistency; weak readme text can degrade seed quality.  
 **Rollback:** Remove the `skill_metadata` update block and revert to prior generic generated metadata.
+
+## DECISION-141: Drop Snyk as a Required Workflow Dependency
+
+**Date:** 2026-03-05  
+**Blueprint Section:** §0.3, §9.1 Stage 6  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/.github/workflows/ci.yml`, `/Users/galiettemita/Downloads/Executive AI Agent/backend/.github/workflows/security-scan.yml`  
+**Conflict:** The prior hardening wave added a mandatory `SNYK_TOKEN` dependency to security jobs. The current operating preference is to avoid Snyk entirely and keep the pipeline runnable without a third-party Snyk account.  
+**Options Considered:**  
+1. Keep Snyk mandatory and require account/token setup.  
+2. Make Snyk optional and silently skip when token is absent.  
+3. Remove Snyk from workflow gates and rely on Semgrep, `pnpm audit`, Trivy, TruffleHog, Syft, and govulncheck.  
+**Decision:** Option 3. Removed Snyk-specific env/steps from workflow security gates and retained the rest of the enforced scanner stack.  
+**Migration Plan:**  
+1. Delete `SNYK_TOKEN` env bindings from CI/security workflows.  
+2. Remove Snyk scan steps from workflow execution.  
+3. Re-run workflow lint to verify queueable workflow configuration.  
+**Risk:** Dependency scanning no longer includes Snyk's advisory dataset; residual coverage relies on `pnpm audit`, Trivy, and govulncheck.  
+**Rollback:** Reintroduce the prior Snyk steps and provision `SNYK_TOKEN`.

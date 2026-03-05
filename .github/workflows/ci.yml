@@ -77,7 +77,6 @@ jobs:
     env:
       CI: "true"
       REQUIRE_SECURITY_TOOLS: "1"
-      SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -101,14 +100,6 @@ jobs:
           python3 -m pip install semgrep
           mkdir -p artifacts/security
           semgrep scan --config auto --severity ERROR --sarif --output artifacts/security/semgrep.sarif --error
-      - name: Snyk dependency scan
-        run: |
-          if [ -z "${SNYK_TOKEN:-}" ]; then
-            echo "SNYK_TOKEN secret is required for strict CI security scans." >&2
-            exit 1
-          fi
-          mkdir -p artifacts/security
-          pnpm dlx snyk@1.1296.0 test --all-projects --severity-threshold=high --json-file-output=artifacts/security/snyk_report.json
       - run: bash scripts/security/run_security_validation.sh
       - name: Upload security artifacts
         if: always()

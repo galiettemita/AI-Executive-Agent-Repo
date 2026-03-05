@@ -23,7 +23,6 @@ jobs:
     env:
       CI: "true"
       REQUIRE_SECURITY_TOOLS: "1"
-      SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
     steps:
       - uses: actions/checkout@v4
 
@@ -62,15 +61,6 @@ jobs:
 
       - name: JavaScript dependency audit
         run: pnpm audit --audit-level high
-
-      - name: Snyk dependency scan
-        run: |
-          if [ -z "${SNYK_TOKEN:-}" ]; then
-            echo "SNYK_TOKEN secret is required for strict security scans." >&2
-            exit 1
-          fi
-          mkdir -p artifacts/security
-          pnpm dlx snyk@1.1296.0 test --all-projects --severity-threshold=high --json-file-output=artifacts/security/snyk_report.json
 
       - name: Security runtime validation (Trivy/TruffleHog/Syft)
         run: bash scripts/security/run_security_validation.sh
