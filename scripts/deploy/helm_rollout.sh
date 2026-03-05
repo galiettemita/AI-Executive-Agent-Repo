@@ -5,10 +5,13 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 NAMESPACE="${NAMESPACE:-default}"
 VALUES_DIR="${VALUES_DIR:-${ROOT_DIR}/artifacts/deploy}"
+FALLBACK_VALUES_DIR="${FALLBACK_VALUES_DIR:-${ROOT_DIR}/config/deploy}"
 WAIT_FOR_ROLLOUT="${WAIT_FOR_ROLLOUT:-false}"
 
 GATEWAY_VALUES_FILE="${GATEWAY_VALUES_FILE:-${VALUES_DIR}/gateway-prod-values.yaml}"
 ADMIN_FRONTEND_VALUES_FILE="${ADMIN_FRONTEND_VALUES_FILE:-${VALUES_DIR}/admin-frontend-prod-values.yaml}"
+FALLBACK_GATEWAY_VALUES_FILE="${FALLBACK_GATEWAY_VALUES_FILE:-${FALLBACK_VALUES_DIR}/gateway-prod-values.yaml}"
+FALLBACK_ADMIN_FRONTEND_VALUES_FILE="${FALLBACK_ADMIN_FRONTEND_VALUES_FILE:-${FALLBACK_VALUES_DIR}/admin-frontend-prod-values.yaml}"
 
 if ! command -v helm >/dev/null 2>&1; then
   echo "helm is required but was not found in PATH" >&2
@@ -21,13 +24,25 @@ if ! command -v kubectl >/dev/null 2>&1; then
 fi
 
 if [[ ! -f "${GATEWAY_VALUES_FILE}" ]]; then
-  echo "missing gateway values file: ${GATEWAY_VALUES_FILE}" >&2
-  exit 1
+  if [[ -f "${FALLBACK_GATEWAY_VALUES_FILE}" ]]; then
+    echo "missing gateway values file: ${GATEWAY_VALUES_FILE}; using fallback ${FALLBACK_GATEWAY_VALUES_FILE}"
+    GATEWAY_VALUES_FILE="${FALLBACK_GATEWAY_VALUES_FILE}"
+  else
+    echo "missing gateway values file: ${GATEWAY_VALUES_FILE}" >&2
+    echo "missing gateway fallback values file: ${FALLBACK_GATEWAY_VALUES_FILE}" >&2
+    exit 1
+  fi
 fi
 
 if [[ ! -f "${ADMIN_FRONTEND_VALUES_FILE}" ]]; then
-  echo "missing admin frontend values file: ${ADMIN_FRONTEND_VALUES_FILE}" >&2
-  exit 1
+  if [[ -f "${FALLBACK_ADMIN_FRONTEND_VALUES_FILE}" ]]; then
+    echo "missing admin frontend values file: ${ADMIN_FRONTEND_VALUES_FILE}; using fallback ${FALLBACK_ADMIN_FRONTEND_VALUES_FILE}"
+    ADMIN_FRONTEND_VALUES_FILE="${FALLBACK_ADMIN_FRONTEND_VALUES_FILE}"
+  else
+    echo "missing admin frontend values file: ${ADMIN_FRONTEND_VALUES_FILE}" >&2
+    echo "missing admin frontend fallback values file: ${FALLBACK_ADMIN_FRONTEND_VALUES_FILE}" >&2
+    exit 1
+  fi
 fi
 
 declare -a gateway_args=("-f" "${GATEWAY_VALUES_FILE}")
