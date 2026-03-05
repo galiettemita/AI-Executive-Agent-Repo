@@ -9,8 +9,24 @@ jobs:
   deploy:
     if: github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main')
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - uses: actions/checkout@v4
+      - name: Configure AWS credentials (OIDC)
+        if: ${{ secrets.AWS_ROLE_TO_ASSUME != '' }}
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ secrets.AWS_REGION || 'us-east-1' }}
+      - name: Configure AWS credentials (access key fallback)
+        if: ${{ secrets.AWS_ROLE_TO_ASSUME == '' && secrets.AWS_ACCESS_KEY_ID != '' && secrets.AWS_SECRET_ACCESS_KEY != '' }}
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION || 'us-east-1' }}
       - uses: azure/setup-helm@v4
       - uses: azure/setup-kubectl@v4
       - name: Configure kubeconfig
@@ -27,6 +43,16 @@ jobs:
           else
             printf '%s' "${KUBE_CONFIG_STAGING}" > "$HOME/.kube/config"
             echo "KUBE_CONFIG_STAGING not valid base64; loaded raw kubeconfig content."
+          fi
+          if grep -q "command: aws" "$HOME/.kube/config"; then
+            if ! command -v aws >/dev/null 2>&1; then
+              echo "aws CLI is required by kubeconfig exec auth but is not available." >&2
+              exit 1
+            fi
+            if ! aws sts get-caller-identity >/dev/null 2>&1; then
+              echo "EKS kubeconfig requires AWS credentials. Configure AWS_ROLE_TO_ASSUME (preferred) or AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY secrets." >&2
+              exit 1
+            fi
           fi
           kubectl config current-context >/dev/null
       - name: Deploy staging

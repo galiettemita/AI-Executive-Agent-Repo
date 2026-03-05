@@ -2477,3 +2477,22 @@
 3. Re-run contract tests and production workflow to confirm no missing-values failures.  
 **Risk:** Fallback host/certificate values can drift from environment-specific needs if not maintained alongside infrastructure changes.  
 **Rollback:** Remove fallback logic and restore strict artifacts-only requirement with an explicit pre-render step in workflows.
+
+## DECISION-137: Bootstrap AWS Credentials in Deploy Workflows for EKS Exec-Auth Kubeconfigs
+
+**Date:** 2026-03-05  
+**Blueprint Section:** §9.1 Stage 9/10 deployment reliability, §8 EKS deployment, §13 service recovery  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/.github/workflows/deploy-production.yml`, `/Users/galiettemita/Downloads/Executive AI Agent/backend/.github/workflows/deploy-staging.yml`, `/Users/galiettemita/Downloads/Executive AI Agent/backend/.github/workflows/ci.yml`  
+**Conflict:** Deploy workflows loaded kubeconfig and proceeded to `helm/kubectl`, but EKS kubeconfig used `exec: aws eks get-token`; runners without AWS credentials failed at deploy time (`NoCredentials`, cluster unreachable).  
+**Options Considered:**  
+1. Require static kubeconfig bearer tokens only.  
+2. Keep current workflow and rely on implicit runner AWS identity.  
+3. Explicitly configure AWS credentials in workflow (OIDC role preferred, static key fallback) and preflight validate AWS identity when kubeconfig uses `exec: aws`.  
+**Decision:** Option 3. Added workflow AWS credential bootstrap steps (`aws-actions/configure-aws-credentials@v4`) and kubeconfig exec-auth preflight (`aws sts get-caller-identity`) in staging/production deploy paths.  
+**Migration Plan:**  
+1. Add job permissions (`id-token: write`, `contents: read`) to deploy jobs.  
+2. Add OIDC path using `AWS_ROLE_TO_ASSUME` + `AWS_REGION` (default `us-east-1`).  
+3. Add static key fallback using `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`.  
+4. Fail fast with explicit message if kubeconfig requires AWS exec auth and credentials are absent.  
+**Risk:** Misconfigured IAM role or missing assume-role trust will still block deploys, but failures become deterministic and actionable at credential setup step.  
+**Rollback:** Remove AWS credential bootstrap steps and preflight checks, reverting to kubeconfig-only behavior.
