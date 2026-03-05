@@ -1,0 +1,5 @@
+{
+  "provider": "trakt",
+  "action": "history",
+  "items_count": 2
+}

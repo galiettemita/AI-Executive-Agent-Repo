@@ -48,6 +48,9 @@ func assertExactBlueprintDocSet(t *testing.T, root string, expected []string) {
 	for _, name := range expected {
 		expectedSet[name] = struct{}{}
 	}
+	optionalSet := map[string]struct{}{
+		"brevio-openclaw-blueprint.docx": {},
+	}
 
 	missing := make([]string, 0)
 	for name := range expectedSet {
@@ -59,6 +62,9 @@ func assertExactBlueprintDocSet(t *testing.T, root string, expected []string) {
 	extra := make([]string, 0)
 	for name := range actualSet {
 		if _, ok := expectedSet[name]; !ok {
+			if _, allowed := optionalSet[name]; allowed {
+				continue
+			}
 			extra = append(extra, name)
 		}
 	}

@@ -1,0 +1,6 @@
+{
+  "status": "SUCCESS",
+  "provider": "meal-planner",
+  "state": "",
+  "input": {"action":"grocery_rollup","household_size":2,"dietary_preferences":["high-protein"],"calorie_target_per_person":2300}
+}

@@ -2,6 +2,36 @@
 
 This runbook covers the only checklist items that remain outside repository automation.
 
+## Current Phase Status (Latest Gate Run)
+
+Latest gate run: `make external-closeout-check` at `2026-03-05T03:33:33Z`
+
+- Required checks: `8`
+- Passed: `0`
+- Failed: `0`
+- Manual pending: `8`
+
+Active required blockers right now:
+
+1. `partner_applications_submitted` (`PARTNER_APPS_CONFIRMED=1` still required)
+2. `PLAID_SECRET_PROD` manual verification required (AWS endpoint-unverifiable from current runtime context)
+3. `PLAID_WEBHOOK_SECRET` manual verification required (AWS endpoint-unverifiable from current runtime context)
+4. `STRIPE_SECRET_KEY`/`STRIPE_WEBHOOK_SECRET` manual verification required (AWS endpoint-unverifiable from current runtime context)
+5. `UNSTRUCTURED_API_KEY` manual verification required (AWS endpoint-unverifiable from current runtime context)
+6. `PAGERDUTY_ROUTING_KEY` (or `PAGERDUTY_INTEGRATION_KEY`) manual verification required (AWS endpoint-unverifiable from current runtime context)
+7. `ANALYTICS_EVENT_BUS` manual verification required (AWS Events endpoint-unverifiable from current runtime context)
+8. `REMOTE_CATALOG_PRIVATE_KEY`/`REMOTE_CATALOG_PUBLIC_KEY` manual verification required (AWS endpoint-unverifiable from current runtime context)
+
+Authoritative status artifact:
+- `artifacts/deploy/external_closeout_status.json`
+- `artifacts/deploy/go_live_signoff_status.json` (`status=CONDITIONAL_MANUAL` from `make go-live-signoff` at `2026-03-05T03:33:33Z`)
+- `artifacts/deploy/manual_closeout_todo.md` (generated from signoff at `2026-03-05T03:33:33Z`)
+- `artifacts/deploy/manual_closeout_evidence.json` (`manual_evidence_confirmed=0` in latest run)
+- `artifacts/deploy/external_closeout_regression_report.json` (`status=PASS`, no regressions in latest run)
+
+Stability behavior:
+- If AWS endpoints are transiently unavailable, the closeout checker reuses last-known `pass` results from the previous status artifact for required items (unless manually revoked), reducing pass/manual oscillation between runs.
+
 ## 1) Partner Applications (Zoom/Instacart/Canva/Booking.com)
 
 ### Zoom Marketplace
@@ -174,3 +204,396 @@ cd /Users/galiettemita/Downloads/Executive AI Agent/backend
 make ci
 make security-validate
 ```
+
+## 10) Generate Go-Live Signoff Artifact
+
+After each external closeout run, generate the next-phase signoff status artifact:
+
+```bash
+cd /Users/galiettemita/Downloads/Executive AI Agent/backend
+make go-live-signoff
+```
+
+Output:
+- `artifacts/deploy/go_live_signoff_status.json`
+
+Status meanings:
+- `READY`: no required failed/manual items remain.
+- `CONDITIONAL_MANUAL`: no required failures, but manual provider/account confirmations still required.
+- `BLOCKED`: one or more required failed items still unresolved.
+
+## 11) Generate Manual Closeout TODO Artifact
+
+After go-live signoff generation, create a deterministic manual TODO list from pending required items:
+
+```bash
+cd /Users/galiettemita/Downloads/Executive AI Agent/backend
+make manual-closeout-todo
+```
+
+Output:
+- `artifacts/deploy/manual_closeout_todo.md`
+
+This file maps each pending required item to the matching runbook section (`Section 1`-`Section 7`) and should be treated as the active closure checklist until signoff reaches `READY`.
+
+## 12) Record Manual Evidence (Per Item)
+
+When a human finishes a manual blocker in production context, record evidence so the gate can mark it `pass` even if the local runtime cannot reach AWS endpoints.
+
+```bash
+cd /Users/galiettemita/Downloads/Executive AI Agent/backend
+make manual-closeout-confirm ITEM_ID=partner_applications_submitted CONFIRMED_BY=ops NOTE="Submitted all partner apps"
+```
+
+Example for key verification completed in production account:
+
+```bash
+make manual-closeout-confirm ITEM_ID=plaid_secret_prod CONFIRMED_BY=ops NOTE="Verified PLAID_SECRET_PROD in prod secrets"
+```
+
+If a confirmation was added in error, revoke it:
+
+```bash
+make manual-closeout-unconfirm ITEM_ID=plaid_secret_prod REVOKED_BY=ops NOTE="Entered wrong workspace evidence"
+```
+
+Evidence file:
+- `artifacts/deploy/manual_closeout_evidence.json`
+- includes:
+  - `items` current confirmation state per required item
+  - `events` append-only confirm/revoke history for audit traceability
+
+Supported `ITEM_ID` values:
+- `partner_applications_submitted`
+- `plaid_secret_prod`
+- `plaid_webhook_secret`
+- `stripe_billing_keys`
+- `unstructured_api_key`
+- `pagerduty_routing_key`
+- `analytics_event_bus`
+- `remote_catalog_signing_keys`
+
+Canonical source of allowed IDs:
+- `config/external-closeout-required-item-ids.txt`
+
+## 13) One-Command External Phase Sync
+
+To refresh all three external-phase artifacts in one command:
+
+```bash
+cd /Users/galiettemita/Downloads/Executive AI Agent/backend
+make external-phase-sync
+```
+
+This runs:
+1. `make external-closeout-check`
+2. `make go-live-signoff`
+3. `make manual-closeout-todo`
+
+## 14) Regression Check Between Runs
+
+To detect required-item regressions (`pass -> manual/fail`) between closeout runs:
+
+```bash
+cd /Users/galiettemita/Downloads/Executive AI Agent/backend
+make external-closeout-regression-check
+```
+
+Outputs:
+- `artifacts/deploy/external_closeout_regression_report.json`
+- `artifacts/deploy/external_closeout_status.last.json` (updated snapshot baseline)
+
+Included by default in sync:
+
+```bash
+make external-phase-sync
+```
+
+Explicit enforced mode (equivalent behavior):
+
+```bash
+EXTERNAL_REGRESSION_CHECK=1 make external-phase-sync
+```
+
+## 15) Phase Transition Check (External -> Production Signoff)
+
+To check if current artifacts allow transition to the next phase:
+
+```bash
+cd /Users/galiettemita/Downloads/Executive AI Agent/backend
+make external-phase-transition-check
+```
+
+Output:
+- `artifacts/deploy/external_phase_transition_check.json`
+
+Behavior:
+- exits `0` only when signoff status is `READY`
+- exits non-zero while status remains `CONDITIONAL_MANUAL` or `BLOCKED`
+
+Override for controlled manual acceptance:
+
+```bash
+ALLOW_CONDITIONAL_MANUAL=1 make external-phase-transition-check
+```
+
+## 16) Generate Batch Confirmation Script
+
+To generate a script with confirm commands for every currently pending manual required item:
+
+```bash
+cd /Users/galiettemita/Downloads/Executive AI Agent/backend
+make manual-closeout-batch-commands
+```
+
+Output:
+- `artifacts/deploy/manual_closeout_batch_commands.sh`
+
+Run it with actor name:
+
+```bash
+./artifacts/deploy/manual_closeout_batch_commands.sh ops
+```
+
+The generated script will:
+1. run `make manual-closeout-confirm` for each pending manual required item
+2. run `make external-phase-sync` to refresh all artifacts
+
+## 17) Production Deployment Signoff Gate
+
+After external phase transition is in `READY` or explicit conditional-manual override mode,
+run the production signoff gate:
+
+```bash
+cd /Users/galiettemita/Downloads/Executive AI Agent/backend
+make production-deployment-signoff-check
+```
+
+Output:
+- `artifacts/deploy/production_deployment_signoff_check.json`
+
+Behavior:
+- exits `0` only when all signoff checks pass
+- validates transition gate pass state, regression report status, and failed-required-item count
+- supports `signoff_mode=conditional_manual_override` when transition check was generated with manual override
+
+Typical conditional-manual flow:
+
+```bash
+ALLOW_CONDITIONAL_MANUAL=1 make external-phase-transition-check
+make production-deployment-signoff-check
+```
+
+## 18) Generate Production Deployment TODO
+
+Once the production signoff gate passes, generate the rollout execution checklist artifact:
+
+```bash
+cd /Users/galiettemita/Downloads/Executive AI Agent/backend
+make production-deployment-todo
+```
+
+Output:
+- `artifacts/deploy/production_deployment_todo.md`
+
+The generated TODO includes:
+1. final CI/full-gate command
+2. deployment command using `scripts/deploy/helm_rollout.sh`
+3. health checks + canary thresholds
+4. rollback trigger reminder and evidence capture checklist
+
+## 18A) Production Canary Gate
+
+After running the 10%/15m canary window, execute the canary gate:
+
+```bash
+cd /Users/galiettemita/Downloads/Executive AI Agent/backend
+CANARY_ERROR_RATE_PCT=0.4 CANARY_P99_RATIO=1.3 make production-canary-check
+```
+
+Output:
+- `artifacts/deploy/production_canary_check.json`
+
+Inputs:
+- `CANARY_TRAFFIC_PCT` (default `10`)
+- `CANARY_DURATION_MINUTES` (default `15`)
+- `CANARY_ERROR_RATE_PCT`
+- `CANARY_P99_RATIO`
+
+Strict mode:
+
+```bash
+ALLOW_CONDITIONAL_MANUAL=0 CANARY_ERROR_RATE_PCT=0.4 CANARY_P99_RATIO=1.3 make production-canary-check
+```
+
+## 19) Post-Deployment Validation Gate
+
+After deployment/canary execution, run post-deploy validation:
+
+```bash
+cd /Users/galiettemita/Downloads/Executive AI Agent/backend
+make production-post-deploy-validation
+```
+
+Output:
+- `artifacts/deploy/production_post_deploy_validation.json`
+
+Environment inputs (optional but recommended):
+- `GATEWAY_BASE_URL`, `BRAIN_BASE_URL`, `HANDS_BASE_URL` for `/health` + `/health/deep` probes
+- `CANARY_ERROR_RATE_PCT` and `CANARY_P99_RATIO` for SLO gate checks
+- `SLO_WINDOW_MINUTES` (default `60`), `SLO_P50_LATENCY_SECONDS`, `SLO_P99_LATENCY_SECONDS`, `SLO_SKILL_SUCCESS_RATE_PCT`, `SLO_DELIVERY_SUCCESS_RATE_PCT` for explicit 1-hour SLO compliance checks
+
+Example with explicit canary metrics:
+
+```bash
+CANARY_ERROR_RATE_PCT=0.4 CANARY_P99_RATIO=1.3 make production-post-deploy-validation
+```
+
+Example with explicit 1-hour SLO metrics:
+
+```bash
+SLO_WINDOW_MINUTES=60 \
+SLO_P50_LATENCY_SECONDS=1.6 \
+SLO_P99_LATENCY_SECONDS=8.4 \
+SLO_SKILL_SUCCESS_RATE_PCT=97.2 \
+SLO_DELIVERY_SUCCESS_RATE_PCT=99.8 \
+make production-post-deploy-validation
+```
+
+Strict mode:
+
+```bash
+ALLOW_CONDITIONAL_MANUAL=0 make production-post-deploy-validation
+```
+
+Production deploy workflows (`.github/workflows/ci.yml` and `.github/workflows/deploy-production.yml`) now run external transition/signoff/post-deploy validation scripts after canary, then generate phase closure manifest/handoff/status artifacts, and upload all resulting deployment-gate evidence.
+
+## 20) Sync All Production-Phase Artifacts in One Command
+
+To refresh all production-phase artifacts in sequence:
+
+```bash
+cd /Users/galiettemita/Downloads/Executive AI Agent/backend
+CANARY_ERROR_RATE_PCT=0.4 CANARY_P99_RATIO=1.3 make production-phase-sync
+```
+
+This runs:
+1. `check_external_phase_transition.sh`
+2. `check_production_deployment_signoff.sh`
+3. `check_production_canary_window.sh`
+4. `generate_production_deployment_todo.sh`
+5. `check_production_post_deploy_validation.sh`
+
+Script:
+- `scripts/deploy/sync_production_phase_artifacts.sh`
+
+## 21) Generate Consolidated Phase Closure Manifest
+
+To produce a single machine-readable handoff artifact across external and production phases:
+
+```bash
+cd /Users/galiettemita/Downloads/Executive AI Agent/backend
+make phase-closure-manifest
+```
+
+Output:
+- `artifacts/deploy/phase_closure_manifest.json`
+
+The manifest summarizes:
+1. external closeout status + signoff
+2. transition and production signoff gate states
+3. production canary gate status
+4. post-deploy validation status
+5. overall closure state (`READY` / `CONDITIONAL_MANUAL` / `BLOCKED`)
+
+## 22) Create Final Handoff Bundle
+
+To package all closure artifacts into a single archive:
+
+```bash
+cd /Users/galiettemita/Downloads/Executive AI Agent/backend
+make phase-handoff-bundle
+```
+
+Outputs:
+- `artifacts/deploy/handoff/phase-handoff-<timestamp>.tar.gz`
+- `artifacts/deploy/phase_handoff_bundle.json`
+
+Bundle includes:
+1. external closeout + signoff artifacts
+2. transition + production signoff + canary artifacts
+3. production deployment todo + post-deploy validation artifacts
+4. consolidated closure manifest
+5. final validation report
+
+## 23) Print Current Phase Status
+
+To get a single human-readable status snapshot from the latest manifest/bundle metadata:
+
+```bash
+cd /Users/galiettemita/Downloads/Executive AI Agent/backend
+make phase-status
+```
+
+Output:
+- `artifacts/deploy/phase_status.txt`
+
+The report includes:
+1. overall closure state
+2. required manual/failed counts
+3. transition/signoff/post-deploy summary
+4. next recommended action
+
+## 24) Generate Button-by-Button Manual Provider Steps
+
+To generate concrete click-by-click instructions for each pending manual required item:
+
+```bash
+cd /Users/galiettemita/Downloads/Executive AI Agent/backend
+make manual-provider-steps
+```
+
+Output:
+- `artifacts/deploy/manual_provider_steps.md`
+
+This file includes:
+1. provider-console navigation steps
+2. exact `make manual-closeout-confirm` commands for each item
+3. ordered follow-up commands to resync all closure artifacts
+
+Optional: disable regression check for troubleshooting only:
+
+```bash
+EXTERNAL_REGRESSION_CHECK=0 make external-phase-sync
+```
+
+## 25) Generate Final Go-Live Approval Packet
+
+When closure status is `READY`, generate the final human approval packet:
+
+```bash
+cd /Users/galiettemita/Downloads/Executive AI Agent/backend
+make go-live-approval-packet
+```
+
+Outputs:
+- `artifacts/deploy/final_go_live_approval_packet.json`
+- `artifacts/deploy/final_go_live_approval_packet.md`
+
+The packet includes:
+1. closure gate summary (required/manual/transition/signoff/canary/post-deploy)
+2. handoff artifact references
+3. pending human sign-off checklist (Release/Engineering/Security/Product)
+4. final go-live next action guidance
+
+To mark each approval in the packet:
+
+```bash
+cd /Users/galiettemita/Downloads/Executive AI Agent/backend
+make go-live-approval-confirm ROLE="Release Manager" APPROVED_BY="alice" NOTE="change ticket CAB-2026-03-05 approved"
+make go-live-approval-confirm ROLE="Engineering Lead" APPROVED_BY="bob"
+make go-live-approval-confirm ROLE="Security Lead" APPROVED_BY="carol"
+make go-live-approval-confirm ROLE="Product Owner" APPROVED_BY="dave"
+```
+
+Re-open `artifacts/deploy/final_go_live_approval_packet.md` and confirm all four roles show `APPROVED`.

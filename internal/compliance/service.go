@@ -56,6 +56,19 @@ type DeletionReport struct {
 	CompletedAt        string `json:"completed_at"`
 }
 
+type PortabilityExport struct {
+	ID          string   `json:"id"`
+	RequestID   string   `json:"request_id"`
+	WorkspaceID string   `json:"workspace_id"`
+	UserID      string   `json:"user_id"`
+	Format      string   `json:"format"`
+	Status      string   `json:"status"`
+	DownloadURI string   `json:"download_uri"`
+	DataClasses []string `json:"data_classes"`
+	GeneratedAt string   `json:"generated_at"`
+	ExpiresAt   string   `json:"expires_at"`
+}
+
 type RetentionPolicy struct {
 	PolicyID        string
 	Name            string
@@ -71,6 +84,7 @@ type Service struct {
 	evidence   []Evidence
 	dsr        map[string]DSRRequest
 	deletions  map[string]DeletionReport
+	exports    map[string]PortabilityExport
 	now        func() time.Time
 }
 
@@ -142,6 +156,7 @@ func NewService() *Service {
 		evidence:   []Evidence{},
 		dsr:        map[string]DSRRequest{},
 		deletions:  map[string]DeletionReport{},
+		exports:    map[string]PortabilityExport{},
 		now:        func() time.Time { return time.Now().UTC() },
 	}
 }
@@ -348,6 +363,67 @@ func (s *Service) ListDeletionReports(workspaceID string) []DeletionReport {
 			continue
 		}
 		out = append(out, report)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].ID < out[j].ID
+	})
+	return out
+}
+
+func (s *Service) GeneratePortabilityExport(dsrID string) (PortabilityExport, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	request, ok := s.dsr[dsrID]
+	if !ok {
+		return PortabilityExport{}, fmt.Errorf("DSR_NOT_FOUND")
+	}
+	if !strings.EqualFold(strings.TrimSpace(request.RequestType), "portability") {
+		return PortabilityExport{}, fmt.Errorf("DSR_TYPE_NOT_PORTABILITY")
+	}
+
+	if existing, ok := s.exports[request.RequestID]; ok {
+		return existing, nil
+	}
+
+	now := s.now().UTC()
+	export := PortabilityExport{
+		ID:          fmt.Sprintf("portability_%06d", s.nextID),
+		RequestID:   request.RequestID,
+		WorkspaceID: request.WorkspaceID,
+		UserID:      request.SubjectUserID,
+		Format:      "json",
+		Status:      "ready",
+		DownloadURI: fmt.Sprintf("s3://brevio-exports/%s/%s.json", request.WorkspaceID, request.RequestID),
+		DataClasses: []string{"messages", "skills_execution", "profile", "preferences", "oauth_connections"},
+		GeneratedAt: now.Format(time.RFC3339),
+		ExpiresAt:   now.Add(7 * 24 * time.Hour).Format(time.RFC3339),
+	}
+	s.nextID++
+	s.exports[request.RequestID] = export
+	return export, nil
+}
+
+func (s *Service) GetPortabilityExport(requestID string) (PortabilityExport, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	export, ok := s.exports[requestID]
+	if !ok {
+		return PortabilityExport{}, false
+	}
+	return export, true
+}
+
+func (s *Service) ListPortabilityExports(workspaceID string) []PortabilityExport {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	workspaceID = normalizeWorkspaceID(workspaceID)
+	out := make([]PortabilityExport, 0, len(s.exports))
+	for _, export := range s.exports {
+		if export.WorkspaceID != workspaceID {
+			continue
+		}
+		out = append(out, export)
 	}
 	sort.Slice(out, func(i, j int) bool {
 		return out[i].ID < out[j].ID

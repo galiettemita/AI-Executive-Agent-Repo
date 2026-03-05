@@ -1,0 +1,6 @@
+{
+  "provider": "recipe-to-list",
+  "action": "parse_recipe",
+  "normalized_items_count": 3,
+  "first_section": "protein"
+}

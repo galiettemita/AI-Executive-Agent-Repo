@@ -1,0 +1,31 @@
+syntax = "proto3";
+
+package brevio.edge.v1;
+
+service EdgeRelayService {
+  rpc DispatchLocalSkill (DispatchLocalSkillRequest) returns (DispatchLocalSkillResponse);
+  rpc Health (EdgeRelayServiceHealthRequest) returns (EdgeRelayServiceHealthResponse);
+}
+
+message DispatchLocalSkillRequest {
+  string user_id = 1;
+  string device_id = 2;
+  string skill_id = 3;
+  string input_json = 4;
+}
+
+message DispatchLocalSkillResponse {
+  bool accepted = 1;
+  string dispatch_id = 2;
+}
+
+message EdgeRelayServiceHealthRequest {
+  bool deep = 1;
+}
+
+message EdgeRelayServiceHealthResponse {
+  string status = 1;
+  string version = 2;
+  int64 uptime_ms = 3;
+  map<string, string> checks = 4;
+}

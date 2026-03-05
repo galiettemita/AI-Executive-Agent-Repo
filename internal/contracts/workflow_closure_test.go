@@ -21,6 +21,8 @@ func TestWorkflowIdentifierClosure(t *testing.T) {
 	}
 
 	expectedWorkflowIDs := []string{
+		"message_processing_v1",
+		"daily_rhythm_v1",
 		"interactive_turn_v1",
 		"provisioning_v9",
 		"onboarding_v1",
@@ -81,6 +83,23 @@ func TestWorkflowRuntimeExerciseClosure(t *testing.T) {
 	svc := workflows.NewService()
 	ctx := context.Background()
 
+	if result := svc.MessageProcessingWorkflowV1(workflows.MessageProcessingInput{
+		MessageID:                "runtime-message-1",
+		WorkflowRunID:            "runtime-workflow-run-1",
+		EnvelopeValid:            true,
+		ClassifyConfidence:       0.95,
+		KeywordFallbackAvailable: true,
+		DAGValid:                 true,
+	}); result.TerminalState != workflows.MessageStateCompleted {
+		t.Fatalf("message_processing_v1 unexpected terminal state: %s", result.TerminalState)
+	}
+	if result := svc.DailyRhythmWorkflowV1(workflows.DailyRhythmInput{
+		UserID:             "runtime-user-1",
+		HasProfile:         true,
+		HasScheduleContext: true,
+	}); result.TerminalState != workflows.DailyRhythmStateCompleted {
+		t.Fatalf("daily_rhythm_v1 unexpected terminal state: %s", result.TerminalState)
+	}
 	if result := svc.InteractiveTurnV1(ctx, "runtime"); result.FinalState != "TERMINAL" {
 		t.Fatalf("interactive_turn_v1 unexpected final state: %s", result.FinalState)
 	}

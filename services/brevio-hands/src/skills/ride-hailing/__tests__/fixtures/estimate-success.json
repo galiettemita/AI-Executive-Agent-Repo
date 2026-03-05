@@ -1,0 +1,25 @@
+{
+  "provider": "ride-hailing",
+  "action": "estimate",
+  "estimates": [
+    {
+      "service_tier": "economy",
+      "eta_minutes": 5,
+      "fare_low_cents": 1450,
+      "fare_high_cents": 2150
+    },
+    {
+      "service_tier": "comfort",
+      "eta_minutes": 7,
+      "fare_low_cents": 2250,
+      "fare_high_cents": 3150
+    },
+    {
+      "service_tier": "xl",
+      "eta_minutes": 9,
+      "fare_low_cents": 3250,
+      "fare_high_cents": 4550
+    }
+  ],
+  "partnership_status": "awaiting_api_partnership"
+}

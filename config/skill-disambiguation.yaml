@@ -1,0 +1,46 @@
+version: 1
+rules:
+  - group: apple-notes
+    canonical: apple-notes-skill
+    aliases: [apple-notes]
+  - group: notion
+    canonical: better-notion
+    fallback: notion
+  - group: spotify
+    cloud: spotify-web-api
+    local_mac: spotify
+    terminal: spotify-player
+    analytics: spotify-history
+  - group: flight-tracking
+    track: aviationstack-flight-tracker
+    find: aerobase-skill
+    free_tier: flight-tracker
+  - group: healthkit
+    canonical: healthkit-sync-apple
+    aliases: [healthkit-sync]
+  - group: apple-mail
+    crud: apple-mail
+    search: apple-mail-search
+  - group: email-send
+    by_preference:
+      google: google-workspace
+      microsoft: outlook
+      apple: apple-mail
+      imap: imap-email
+      send_only: smtp-send
+  - group: expense-tracking
+    canonical: smart-expense-tracker
+    delegates: [expense-tracker-pro, watch-my-money]
+  - group: package-tracking
+    international: parcel-package-tracking
+    carriers_17track: track17
+    austrian_post: post-at
+  - group: places-location
+    navigate: google-maps
+    near_me: goplaces
+    find_all: spots
+    simple_nearby: local-places
+  - group: youtube
+    search: youtube-api
+    summarize: youtube-summarizer
+    download: video-transcript-downloader

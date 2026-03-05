@@ -1,0 +1,5 @@
+{
+  "action": "search_subject",
+  "results_count": 1,
+  "latency_profile_ms": 50
+}

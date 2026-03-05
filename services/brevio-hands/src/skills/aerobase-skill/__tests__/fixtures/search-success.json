@@ -1,0 +1,5 @@
+{
+  "provider": "aerobase-skill",
+  "action": "search_flights",
+  "itineraries_count": 2
+}

@@ -1,0 +1,8 @@
+{
+  "provider": "openai-tts",
+  "voice": "verse",
+  "format": "mp3",
+  "audio_url": "https://cdn.brevio.local/tts/openai/board-update-complete-and-approved-for-r.mp3",
+  "estimated_duration_ms": 1598,
+  "latency_budget_ms": 2000
+}

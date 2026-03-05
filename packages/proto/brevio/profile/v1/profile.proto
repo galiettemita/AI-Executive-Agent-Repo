@@ -1,0 +1,43 @@
+syntax = "proto3";
+
+package brevio.profile.v1;
+
+service ProfileService {
+  rpc GetProfile (GetProfileRequest) returns (GetProfileResponse);
+  rpc UpdateProfile (UpdateProfileRequest) returns (UpdateProfileResponse);
+  rpc Health (ProfileServiceHealthRequest) returns (ProfileServiceHealthResponse);
+}
+
+message GetProfileRequest {
+  string user_id = 1;
+}
+
+message GetProfileResponse {
+  string user_id = 1;
+  string timezone = 2;
+  string locale = 3;
+  string soul_markdown = 4;
+  string user_markdown = 5;
+  string agents_markdown = 6;
+  string preferences_json = 7;
+}
+
+message UpdateProfileRequest {
+  string user_id = 1;
+  string preferences_json = 2;
+}
+
+message UpdateProfileResponse {
+  GetProfileResponse profile = 1;
+}
+
+message ProfileServiceHealthRequest {
+  bool deep = 1;
+}
+
+message ProfileServiceHealthResponse {
+  string status = 1;
+  string version = 2;
+  int64 uptime_ms = 3;
+  map<string, string> checks = 4;
+}

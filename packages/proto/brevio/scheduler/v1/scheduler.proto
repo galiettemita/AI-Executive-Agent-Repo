@@ -1,0 +1,30 @@
+syntax = "proto3";
+
+package brevio.scheduler.v1;
+
+service SchedulerService {
+  rpc ScheduleDailyRhythm (ScheduleDailyRhythmRequest) returns (ScheduleDailyRhythmResponse);
+  rpc Health (SchedulerServiceHealthRequest) returns (SchedulerServiceHealthResponse);
+}
+
+message ScheduleDailyRhythmRequest {
+  string user_id = 1;
+  string timezone = 2;
+  string wake_time = 3;
+}
+
+message ScheduleDailyRhythmResponse {
+  bool scheduled = 1;
+  string cron_expression = 2;
+}
+
+message SchedulerServiceHealthRequest {
+  bool deep = 1;
+}
+
+message SchedulerServiceHealthResponse {
+  string status = 1;
+  string version = 2;
+  int64 uptime_ms = 3;
+  map<string, string> checks = 4;
+}

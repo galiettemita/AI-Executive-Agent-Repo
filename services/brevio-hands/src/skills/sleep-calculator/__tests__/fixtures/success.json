@@ -1,0 +1,6 @@
+{
+  "status": "SUCCESS",
+  "provider": "sleep-calculator",
+  "state": "",
+  "input": {"action":"bedtime_from_wake","wake_time_local":"06:30"}
+}

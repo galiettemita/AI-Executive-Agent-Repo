@@ -1,0 +1,6 @@
+{
+  "status": "SUCCESS",
+  "provider": "dexcom",
+  "state": "",
+  "input": {"action":"trend_alerts","minutes":30}
+}

@@ -1,0 +1,21 @@
+{
+  "provider": "hotel-vacation-booking",
+  "action": "search_hotels",
+  "hotels": [
+    {
+      "hotel_id": "hotel_001",
+      "name": "Riverside Suites",
+      "nightly_rate_cents": 18900,
+      "total_cents": 37800,
+      "refundable": true
+    },
+    {
+      "hotel_id": "hotel_002",
+      "name": "Summit Grand Hotel",
+      "nightly_rate_cents": 22900,
+      "total_cents": 45800,
+      "refundable": false
+    }
+  ],
+  "partnership_status": "awaiting_api_partnership"
+}

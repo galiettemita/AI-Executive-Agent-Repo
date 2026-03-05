@@ -8,10 +8,12 @@ import (
 	"net/http"
 	"net/netip"
 	"net/url"
+	"os"
 	"strings"
 	"sync"
 	"time"
 
+	runtimeserver "github.com/brevio/brevio/internal/runtime"
 	"github.com/gorilla/websocket"
 )
 
@@ -51,19 +53,21 @@ func (i *InMemoryInjector) Count() int {
 }
 
 type Service struct {
-	upgrader websocket.Upgrader
-	injector Injector
-	mu       sync.Mutex
-	sessions map[*websocket.Conn]string
-	logs     []Interaction
+	upgrader  websocket.Upgrader
+	injector  Injector
+	startedAt time.Time
+	mu        sync.Mutex
+	sessions  map[*websocket.Conn]string
+	logs      []Interaction
 }
 
 func NewService(injector Injector) *Service {
 	return &Service{
-		upgrader: websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }},
-		injector: injector,
-		sessions: map[*websocket.Conn]string{},
-		logs:     []Interaction{},
+		upgrader:  websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }},
+		injector:  injector,
+		startedAt: time.Now().UTC(),
+		sessions:  map[*websocket.Conn]string{},
+		logs:      []Interaction{},
 	}
 }
 
@@ -188,7 +192,28 @@ func (s *Service) InteractionCount() int {
 	return len(s.logs)
 }
 
-func (s *Service) HandleHealth(w http.ResponseWriter, _ *http.Request) {
+func (s *Service) HandleHealth(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path == "/health" || r.URL.Path == "/health/deep" {
+		checks := map[string]string{
+			"process": "ok",
+		}
+		if r.URL.Path == "/health/deep" {
+			for key, status := range runtimeserver.DeepDependencyChecks(os.Getenv) {
+				checks[key] = status
+			}
+		}
+		version := strings.TrimSpace(os.Getenv("SERVICE_VERSION"))
+		if version == "" {
+			version = "0.1.0"
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"status":    "healthy",
+			"version":   version,
+			"uptime_ms": time.Since(s.startedAt).Milliseconds(),
+			"checks":    checks,
+		})
+		return
+	}
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte("ok"))
 }
@@ -199,6 +224,8 @@ func NewMux(service *Service) *http.ServeMux {
 	mux.HandleFunc("POST /v1/canvas/push", service.HandlePush)
 	mux.HandleFunc("GET /v1/canvas/surfaces/mission_control", service.HandleA2UISurface)
 	mux.HandleFunc("POST /v1/canvas/fetch", service.HandleFetchPreview)
+	mux.HandleFunc("GET /health", service.HandleHealth)
+	mux.HandleFunc("GET /health/deep", service.HandleHealth)
 	mux.HandleFunc("GET /healthz/ready", service.HandleHealth)
 	mux.HandleFunc("GET /healthz/live", service.HandleHealth)
 	return mux

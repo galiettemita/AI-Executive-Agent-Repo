@@ -1,0 +1,17 @@
+{
+  "provider": "pharmacy-prescription",
+  "action": "medication_lookup",
+  "medications": [
+    {
+      "medication_name": "Atorvastatin",
+      "dosage": "20mg",
+      "refill_eligible": true
+    },
+    {
+      "medication_name": "Lisinopril",
+      "dosage": "10mg",
+      "refill_eligible": true
+    }
+  ],
+  "partnership_status": "awaiting_api_partnership"
+}

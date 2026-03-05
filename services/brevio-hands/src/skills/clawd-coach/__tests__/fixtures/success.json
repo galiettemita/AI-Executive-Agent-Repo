@@ -1,0 +1,6 @@
+{
+  "status": "SUCCESS",
+  "provider": "clawd-coach",
+  "state": "",
+  "input": {"action":"build_plan","goal":"Half marathon","weeks":12}
+}

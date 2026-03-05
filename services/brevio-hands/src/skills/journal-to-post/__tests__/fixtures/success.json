@@ -1,0 +1,6 @@
+{
+  "status": "SUCCESS",
+  "provider": "journal-to-post",
+  "state": "",
+  "input": {"action":"draft_post","journal_entry":"Today I learned to ship in smaller batches and review faster."}
+}

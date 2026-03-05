@@ -1,0 +1,6 @@
+{
+  "status": "SUCCESS",
+  "provider": "chromecast",
+  "state": "",
+  "input": {"action":"discover_devices"}
+}

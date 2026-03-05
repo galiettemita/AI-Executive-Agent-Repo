@@ -42,10 +42,10 @@ func maxAttachmentBytesForMime(mime string) int64 {
 func ValidateAttachmentInput(attachment AttachmentInput) error {
 	mime := strings.ToLower(strings.TrimSpace(attachment.MIMEType))
 	if _, ok := attachmentMimeAllowlist[mime]; !ok {
-		return fmt.Errorf("I can't process that file type/size.")
+		return fmt.Errorf("unsupported attachment type or size")
 	}
 	if attachment.SizeBytes < 0 || attachment.SizeBytes > maxAttachmentBytesForMime(mime) {
-		return fmt.Errorf("I can't process that file type/size.")
+		return fmt.Errorf("unsupported attachment type or size")
 	}
 	return nil
 }

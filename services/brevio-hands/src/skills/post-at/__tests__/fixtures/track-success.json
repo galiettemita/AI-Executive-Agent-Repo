@@ -1,0 +1,6 @@
+{
+  "provider": "post-at",
+  "action": "track_parcel",
+  "checkpoints_count": 2,
+  "latest_status": "Out for local processing"
+}

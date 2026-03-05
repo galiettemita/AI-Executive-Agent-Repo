@@ -1,0 +1,6 @@
+{
+  "status": "SUCCESS",
+  "provider": "veo",
+  "state": "",
+  "input": {"action":"generate_video","prompt":"A drone flyover of mountains"}
+}

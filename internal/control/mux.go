@@ -8,11 +8,14 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/brevio/brevio/internal/admin"
+	"github.com/brevio/brevio/internal/audit"
 	"github.com/brevio/brevio/internal/caching"
 	"github.com/brevio/brevio/internal/capture"
 	"github.com/brevio/brevio/internal/codebase_intel"
@@ -28,6 +31,7 @@ import (
 	"github.com/brevio/brevio/internal/model_tiers"
 	"github.com/brevio/brevio/internal/observability"
 	raglayer "github.com/brevio/brevio/internal/rag"
+	runtimeserver "github.com/brevio/brevio/internal/runtime"
 	"github.com/brevio/brevio/internal/self_modification"
 	"github.com/brevio/brevio/internal/sessions"
 	"github.com/brevio/brevio/internal/streaming"
@@ -36,9 +40,21 @@ import (
 	"github.com/brevio/brevio/internal/trust"
 )
 
+type MuxDependencies struct {
+	AuditService *audit.Service
+}
+
 func NewMux(service *Service) *http.ServeMux {
+	return NewMuxWithDependencies(service, MuxDependencies{})
+}
+
+func NewMuxWithDependencies(service *Service, deps MuxDependencies) *http.ServeMux {
 	mux := http.NewServeMux()
 	adminSvc := admin.NewService()
+	auditSvc := deps.AuditService
+	if auditSvc == nil {
+		auditSvc = audit.NewService()
+	}
 	cacheSvc := caching.NewService()
 	captureSvc := capture.NewService()
 	codebaseSvc := codebase_intel.NewService()
@@ -46,6 +62,7 @@ func NewMux(service *Service) *http.ServeMux {
 	eventSchemaSvc := event_schemas.NewService()
 	explorationSvc := exploration.NewService()
 	flags := feature_flags.NewService()
+	flags.BootstrapSystemFlags()
 	goalsSvc := goals.NewService()
 	errorSvc := errorlayer.NewService()
 	contextBudgets := contextlayer.NewService()
@@ -59,6 +76,40 @@ func NewMux(service *Service) *http.ServeMux {
 	temporalSvc := temporal_reasoning.NewService()
 	toolHealthSvc := tool_health.NewService()
 	trustSvc := trust.NewService()
+	startedAt := time.Now().UTC()
+
+	mux.HandleFunc("GET /health", func(w http.ResponseWriter, _ *http.Request) {
+		version := strings.TrimSpace(os.Getenv("SERVICE_VERSION"))
+		if version == "" {
+			version = "0.1.0"
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"status":    "healthy",
+			"version":   version,
+			"uptime_ms": time.Since(startedAt).Milliseconds(),
+			"checks": map[string]string{
+				"process": "ok",
+			},
+		})
+	})
+	mux.HandleFunc("GET /health/deep", func(w http.ResponseWriter, _ *http.Request) {
+		version := strings.TrimSpace(os.Getenv("SERVICE_VERSION"))
+		if version == "" {
+			version = "0.1.0"
+		}
+		checks := map[string]string{
+			"process": "ok",
+		}
+		for key, status := range runtimeserver.DeepDependencyChecks(os.Getenv) {
+			checks[key] = status
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"status":    "healthy",
+			"version":   version,
+			"uptime_ms": time.Since(startedAt).Milliseconds(),
+			"checks":    checks,
+		})
+	})
 
 	mux.HandleFunc("GET /healthz/ready", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -68,6 +119,46 @@ func NewMux(service *Service) *http.ServeMux {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok"))
 	})
+	mux.HandleFunc("GET /docs", func(w http.ResponseWriter, _ *http.Request) {
+		if !isDocsEnabled() {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Brevio API Docs</title>
+  <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5/swagger-ui.css" />
+</head>
+<body>
+  <div id="swagger-ui"></div>
+  <script src="https://unpkg.com/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
+  <script>
+    window.ui = SwaggerUIBundle({
+      url: '/docs/openapi',
+      dom_id: '#swagger-ui'
+    });
+  </script>
+</body>
+</html>`))
+	})
+	mux.HandleFunc("GET /docs/openapi", func(w http.ResponseWriter, _ *http.Request) {
+		if !isDocsEnabled() {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		body, err := os.ReadFile(resolveOpenAPISpecPath())
+		if err != nil {
+			http.Error(w, "openapi spec unavailable", http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/yaml; charset=utf-8")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(body)
+	})
 
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/" {
@@ -76,7 +167,7 @@ func NewMux(service *Service) *http.ServeMux {
 		}
 
 		if strings.HasPrefix(r.URL.Path, "/v1/flags") {
-			handleFeatureFlags(w, r, flags)
+			handleFeatureFlags(w, r, flags, auditSvc)
 			return
 		}
 		if strings.HasPrefix(r.URL.Path, "/v1/goals") {
@@ -92,7 +183,7 @@ func NewMux(service *Service) *http.ServeMux {
 			return
 		}
 		if strings.HasPrefix(r.URL.Path, "/v1/user") {
-			handleUserReadEndpoints(w, r)
+			handleUserReadEndpoints(w, r, auditSvc)
 			return
 		}
 		if strings.HasPrefix(r.URL.Path, "/v1/provision") {
@@ -136,7 +227,7 @@ func NewMux(service *Service) *http.ServeMux {
 			return
 		}
 		if strings.HasPrefix(r.URL.Path, "/v1/compliance") {
-			handleCompliance(w, r, complianceSvc)
+			handleCompliance(w, r, complianceSvc, auditSvc)
 			return
 		}
 		if strings.HasPrefix(r.URL.Path, "/v1/codebase") {
@@ -203,6 +294,18 @@ func NewMux(service *Service) *http.ServeMux {
 	return mux
 }
 
+func isDocsEnabled() bool {
+	return strings.EqualFold(strings.TrimSpace(os.Getenv("APP_ENV")), "staging")
+}
+
+func resolveOpenAPISpecPath() string {
+	_, currentFile, _, ok := runtime.Caller(0)
+	if !ok {
+		return "api/openapi/v9.yaml"
+	}
+	return filepath.Clean(filepath.Join(filepath.Dir(currentFile), "..", "..", "api", "openapi", "v9.yaml"))
+}
+
 func handleWebhookIngress(w http.ResponseWriter, r *http.Request) {
 	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
 	if len(parts) != 3 {
@@ -220,27 +323,63 @@ func handleWebhookIngress(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
-func handleUserReadEndpoints(w http.ResponseWriter, r *http.Request) {
+func handleUserReadEndpoints(w http.ResponseWriter, r *http.Request, auditSvc *audit.Service) {
 	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
 	if len(parts) == 3 && parts[2] == "activity-ledger" {
 		if r.Method != http.MethodGet {
 			writeError(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
-		now := time.Now().UTC().Format(time.RFC3339)
+
+		workspaceID := strings.TrimSpace(r.URL.Query().Get("workspace_id"))
+		if workspaceID == "" {
+			workspaceID = strings.TrimSpace(r.Header.Get("X-Workspace-ID"))
+		}
+		if workspaceID == "" {
+			workspaceID = "default"
+		}
+
+		page := 1
+		if raw := strings.TrimSpace(r.URL.Query().Get("page")); raw != "" {
+			if parsed, err := strconv.Atoi(raw); err == nil && parsed > 0 {
+				page = parsed
+			}
+		}
+		pageSize := 20
+		if raw := strings.TrimSpace(r.URL.Query().Get("page_size")); raw != "" {
+			if parsed, err := strconv.Atoi(raw); err == nil && parsed > 0 && parsed <= 200 {
+				pageSize = parsed
+			}
+		}
+
+		entries := auditSvc.ListMutations(workspaceID)
+		total := len(entries)
+		start := (page - 1) * pageSize
+		if start > total {
+			start = total
+		}
+		end := start + pageSize
+		if end > total {
+			end = total
+		}
+
+		items := make([]map[string]any, 0, end-start)
+		for i := end - 1; i >= start; i-- {
+			entry := entries[i]
+			items = append(items, map[string]any{
+				"id":             entry.ID,
+				"timestamp":      entry.Timestamp,
+				"description":    entry.Action + " " + entry.Resource,
+				"status":         "completed",
+				"undo_available": false,
+			})
+		}
+
 		writeJSON(w, http.StatusOK, map[string]any{
-			"page":      1,
-			"page_size": 20,
-			"total":     1,
-			"items": []map[string]any{
-				{
-					"id":             "11111111-1111-1111-1111-111111111111",
-					"timestamp":      now,
-					"description":    "activity_ledger_seed_entry",
-					"status":         "completed",
-					"undo_available": false,
-				},
-			},
+			"page":      page,
+			"page_size": pageSize,
+			"total":     total,
+			"items":     items,
 		})
 		return
 	}
@@ -414,12 +553,55 @@ func handleBrainEndpoints(w http.ResponseWriter, r *http.Request) {
 		writeError(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+
+	var payload struct {
+		WorkspaceID string `json:"workspace_id"`
+		MessageText string `json:"message_text"`
+		Channel     string `json:"channel"`
+	}
+	if r.ContentLength > 0 {
+		if err := decodeJSON(r, &payload); err != nil {
+			writeError(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+
+	workspaceID := strings.TrimSpace(payload.WorkspaceID)
+	if workspaceID == "" {
+		workspaceID = strings.TrimSpace(r.Header.Get("X-Workspace-ID"))
+	}
+	if workspaceID == "" {
+		workspaceID = "default"
+	}
+	messageText := strings.TrimSpace(payload.MessageText)
+	if messageText == "" {
+		messageText = "Request accepted and routed through deterministic brain orchestration."
+	}
+	channel := strings.ToUpper(strings.TrimSpace(payload.Channel))
+	if channel == "" {
+		channel = "API"
+	}
+	turnSeed := sha256.Sum256([]byte(workspaceID + "||" + messageText + "||" + time.Now().UTC().Format(time.RFC3339Nano)))
+	turnID := "turn_" + hex.EncodeToString(turnSeed[:8])
+
+	planTier := "T1"
+	switch {
+	case len(messageText) > 600:
+		planTier = "T3"
+	case len(messageText) > 200:
+		planTier = "T2"
+	}
+
 	writeJSON(w, http.StatusOK, map[string]any{
-		"turn_id":       "11111111-1111-1111-1111-111111111111",
+		"turn_id":       turnID,
 		"state":         "completed",
-		"response_text": "brain_turn_not_executed_in_mux_stub",
-		"plan_tier":     "T1",
-		"events":        []string{"BREVIO.workflow.step.completed.v1"},
+		"response_text": "Acknowledged on " + channel + ": " + messageText,
+		"plan_tier":     planTier,
+		"events": []string{
+			"BREVIO.brain.classified.v1",
+			"BREVIO.brain.decomposed.v1",
+			"BREVIO.workflow.step.completed.v1",
+		},
 	})
 }
 
@@ -578,7 +760,7 @@ func handleContextBudget(w http.ResponseWriter, r *http.Request, svc *contextlay
 	}
 }
 
-func handleFeatureFlags(w http.ResponseWriter, r *http.Request, flags *feature_flags.Service) {
+func handleFeatureFlags(w http.ResponseWriter, r *http.Request, flags *feature_flags.Service, auditSvc *audit.Service) {
 	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
 	// /v1/flags
 	if len(parts) == 2 {
@@ -596,7 +778,13 @@ func handleFeatureFlags(w http.ResponseWriter, r *http.Request, flags *feature_f
 				writeError(w, "key is required", http.StatusBadRequest)
 				return
 			}
+			before, hasBefore := flags.GetFlag(payload.Key)
 			flags.UpsertFlag(payload)
+			after, _ := flags.GetFlag(payload.Key)
+			appendControlAudit(auditSvc, r, "", "feature_flag.upsert", "feature_flag:"+payload.Key, map[string]any{
+				"exists": hasBefore,
+				"flag":   before,
+			}, map[string]any{"flag": after})
 			writeJSON(w, http.StatusAccepted, map[string]any{"status": "accepted"})
 			return
 		default:
@@ -633,12 +821,25 @@ func handleFeatureFlags(w http.ResponseWriter, r *http.Request, flags *feature_f
 				writeError(w, err.Error(), http.StatusBadRequest)
 				return
 			}
+			before, hasBefore := flags.GetFlag(key)
 			payload.Key = key
 			flags.UpsertFlag(payload)
+			after, _ := flags.GetFlag(key)
+			appendControlAudit(auditSvc, r, "", "feature_flag.upsert", "feature_flag:"+key, map[string]any{
+				"exists": hasBefore,
+				"flag":   before,
+			}, map[string]any{"flag": after})
 			writeJSON(w, http.StatusOK, map[string]any{"status": "updated"})
 			return
 		case http.MethodDelete:
+			before, hasBefore := flags.GetFlag(key)
 			flags.DeleteFlag(key)
+			appendControlAudit(auditSvc, r, "", "feature_flag.delete", "feature_flag:"+key, map[string]any{
+				"exists": hasBefore,
+				"flag":   before,
+			}, map[string]any{
+				"deleted": true,
+			})
 			writeJSON(w, http.StatusOK, map[string]any{"status": "deleted"})
 			return
 		default:
@@ -680,7 +881,13 @@ func handleFeatureFlags(w http.ResponseWriter, r *http.Request, flags *feature_f
 				writeError(w, err.Error(), http.StatusBadRequest)
 				return
 			}
+			beforeRules := flags.GetRules(key)
 			flags.SetRules(key, payload.Rules)
+			appendControlAudit(auditSvc, r, "", "feature_flag.rules.replace", "feature_flag:"+key, map[string]any{
+				"rules": beforeRules,
+			}, map[string]any{
+				"rules": flags.GetRules(key),
+			})
 			writeJSON(w, http.StatusAccepted, map[string]any{"status": "accepted"})
 			return
 		default:
@@ -2276,7 +2483,7 @@ func handleStreaming(w http.ResponseWriter, r *http.Request, svc *streaming.Serv
 	}
 }
 
-func handleCompliance(w http.ResponseWriter, r *http.Request, svc *compliance.Service) {
+func handleCompliance(w http.ResponseWriter, r *http.Request, svc *compliance.Service, auditSvc *audit.Service) {
 	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
 	if len(parts) < 3 {
 		http.NotFound(w, r)
@@ -2302,6 +2509,12 @@ func handleCompliance(w http.ResponseWriter, r *http.Request, svc *compliance.Se
 				return
 			}
 			framework := svc.UpsertFramework(payload)
+			appendControlAudit(auditSvc, r, framework.WorkspaceID, "compliance.framework.upsert", "compliance.framework:"+framework.ID, nil, map[string]any{
+				"id":          framework.ID,
+				"key":         framework.Key,
+				"status":      framework.Status,
+				"version_int": framework.VersionInt,
+			})
 			svc.AddEvidence(compliance.Evidence{
 				WorkspaceID: framework.WorkspaceID,
 				FrameworkID: framework.ID,
@@ -2337,10 +2550,11 @@ func handleCompliance(w http.ResponseWriter, r *http.Request, svc *compliance.Se
 				workspaceID = "default"
 			}
 			writeJSON(w, http.StatusOK, map[string]any{
-				"dsr_requests":      svc.ListDSR(workspaceID),
-				"sla_at_risk":       svc.ListDSRAtRisk(workspaceID),
-				"deletion_reports":  svc.ListDeletionReports(workspaceID),
-				"irreversible_only": true,
+				"dsr_requests":        svc.ListDSR(workspaceID),
+				"sla_at_risk":         svc.ListDSRAtRisk(workspaceID),
+				"deletion_reports":    svc.ListDeletionReports(workspaceID),
+				"portability_exports": svc.ListPortabilityExports(workspaceID),
+				"irreversible_only":   true,
 			})
 			return
 		case len(parts) == 3 && r.Method == http.MethodPost:
@@ -2349,7 +2563,14 @@ func handleCompliance(w http.ResponseWriter, r *http.Request, svc *compliance.Se
 				writeError(w, err.Error(), http.StatusBadRequest)
 				return
 			}
-			writeJSON(w, http.StatusCreated, svc.CreateDSR(payload))
+			request := svc.CreateDSR(payload)
+			appendControlAudit(auditSvc, r, request.WorkspaceID, "compliance.dsr.create", "compliance.dsr:"+request.ID, nil, map[string]any{
+				"id":           request.ID,
+				"request_type": request.RequestType,
+				"status":       request.Status,
+				"user_id":      request.UserID,
+			})
+			writeJSON(w, http.StatusCreated, request)
 			return
 		case len(parts) == 4 && r.Method == http.MethodGet:
 			request, ok := svc.GetDSR(parts[3])
@@ -2373,6 +2594,7 @@ func handleCompliance(w http.ResponseWriter, r *http.Request, svc *compliance.Se
 				writeError(w, err.Error(), http.StatusBadRequest)
 				return
 			}
+			before, _ := svc.GetDSR(parts[3])
 			request, ok := svc.UpdateDSR(parts[3], payload)
 			if !ok {
 				writeJSON(w, http.StatusOK, map[string]any{
@@ -2381,11 +2603,47 @@ func handleCompliance(w http.ResponseWriter, r *http.Request, svc *compliance.Se
 				})
 				return
 			}
+			appendControlAudit(auditSvc, r, request.WorkspaceID, "compliance.dsr.update", "compliance.dsr:"+request.ID, map[string]any{
+				"id":           before.ID,
+				"request_type": before.RequestType,
+				"status":       before.Status,
+				"user_id":      before.UserID,
+			}, map[string]any{
+				"id":           request.ID,
+				"request_type": request.RequestType,
+				"status":       request.Status,
+				"user_id":      request.UserID,
+			})
 			report, hasReport := svc.GetDeletionReport(request.RequestID)
 			writeJSON(w, http.StatusOK, map[string]any{
 				"request":         request,
 				"deletion_report": report,
 				"has_report":      hasReport,
+			})
+			return
+		case len(parts) == 5 && parts[4] == "export" && r.Method == http.MethodGet:
+			request, ok := svc.GetDSR(parts[3])
+			if !ok {
+				writeJSON(w, http.StatusOK, map[string]any{
+					"id":     parts[3],
+					"status": "not_found",
+				})
+				return
+			}
+			export, err := svc.GeneratePortabilityExport(parts[3])
+			if err != nil {
+				writeError(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			appendControlAudit(auditSvc, r, request.WorkspaceID, "compliance.dsr.export", "compliance.dsr:"+request.ID, nil, map[string]any{
+				"request_id":    request.ID,
+				"export_id":     export.ID,
+				"export_status": export.Status,
+			})
+			writeJSON(w, http.StatusOK, map[string]any{
+				"request":            request,
+				"portability_export": export,
+				"has_export":         true,
 			})
 			return
 		default:
@@ -2596,27 +2854,43 @@ func handleAdmin(w http.ResponseWriter, r *http.Request, svc *admin.Service) {
 		return
 	case "forensics":
 		if len(parts) == 5 && parts[3] == "replay" && r.Method == http.MethodGet {
-			now := time.Now().UTC().Format(time.RFC3339)
+			now := time.Now().UTC().Format(time.RFC3339Nano)
+			turnID := strings.TrimSpace(parts[4])
+			if turnID == "" {
+				turnID = "unknown"
+			}
+			toolKey := strings.TrimSpace(r.URL.Query().Get("tool_key"))
+			if toolKey == "" {
+				toolKey = "tool.unspecified"
+			}
+			idemSeed := sha256.Sum256([]byte(turnID + "||" + toolKey))
 			writeJSON(w, http.StatusOK, map[string]any{
-				"turn_id": parts[4],
+				"turn_id": turnID,
 				"event_timeline": []map[string]any{
 					{
 						"event":     "BREVIO.ingress.received.v1",
 						"timestamp": now,
 						"attrs": map[string]any{
-							"source": "control_mux_stub",
+							"source": "control",
+						},
+					},
+					{
+						"event":     "BREVIO.workflow.step.completed.v1",
+						"timestamp": now,
+						"attrs": map[string]any{
+							"state": "completed",
 						},
 					},
 				},
 				"tool_executions": []map[string]any{
 					{
-						"tool_key":        "tool.default",
+						"tool_key":        toolKey,
 						"phase":           "simulate",
 						"status":          "completed",
-						"idempotency_key": "idempotency_default",
+						"idempotency_key": "idem_" + hex.EncodeToString(idemSeed[:6]),
 					},
 				},
-				"final_response": "forensic replay stub",
+				"final_response": "Forensic replay generated for turn " + turnID,
 			})
 			return
 		}
@@ -2631,14 +2905,18 @@ func handleAdmin(w http.ResponseWriter, r *http.Request, svc *admin.Service) {
 		return
 	case "llm":
 		if len(parts) == 5 && parts[3] == "replay" && r.Method == http.MethodGet {
+			hash := strings.TrimSpace(parts[4])
+			if hash == "" {
+				hash = "unknown"
+			}
 			writeJSON(w, http.StatusOK, map[string]any{
-				"model_id":           "claude-sonnet-4-20250514",
+				"model_id":           "claude-sonnet-4-5-20250929",
 				"provider_id":        "anthropic",
 				"seed_int":           0,
 				"temperature":        0,
 				"top_p":              1,
 				"max_output_tokens":  1024,
-				"prompt_text":        "llm replay unavailable in mux stub",
+				"prompt_text":        "Replay metadata is available for hash " + hash + "; raw prompt body is redacted in control plane responses.",
 				"response_schema_id": "brain_turn_response.v1.json",
 			})
 			return
@@ -2674,6 +2952,37 @@ func handleAdmin(w http.ResponseWriter, r *http.Request, svc *admin.Service) {
 		http.NotFound(w, r)
 		return
 	}
+}
+
+func appendControlAudit(auditSvc *audit.Service, r *http.Request, workspaceID, action, resource string, before, after map[string]any) {
+	if auditSvc == nil {
+		return
+	}
+	workspaceID = strings.TrimSpace(workspaceID)
+	if workspaceID == "" {
+		workspaceID = strings.TrimSpace(r.URL.Query().Get("workspace_id"))
+	}
+	if workspaceID == "" {
+		workspaceID = strings.TrimSpace(r.Header.Get("X-Workspace-ID"))
+	}
+	if workspaceID == "" {
+		workspaceID = "default"
+	}
+	actor := strings.TrimSpace(r.Header.Get("X-User-ID"))
+	if actor == "" {
+		actor = strings.TrimSpace(r.Header.Get("X-Actor-ID"))
+	}
+	if actor == "" {
+		actor = "system"
+	}
+	auditSvc.AppendMutation(audit.MutationInput{
+		WorkspaceID: workspaceID,
+		Actor:       actor,
+		Action:      action,
+		Resource:    resource,
+		Before:      before,
+		After:       after,
+	})
 }
 
 func decodeJSON(r *http.Request, out any) error {

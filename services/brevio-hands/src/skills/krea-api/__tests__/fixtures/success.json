@@ -1,0 +1,6 @@
+{
+  "status": "SUCCESS",
+  "provider": "krea-api",
+  "state": "",
+  "input": {"action":"generate_image","prompt":"Architectural rendering"}
+}

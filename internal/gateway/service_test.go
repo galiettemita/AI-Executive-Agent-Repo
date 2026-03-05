@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -98,6 +99,22 @@ func TestValidMessageCreatesIngressAndQueue(t *testing.T) {
 	if msg.DedupKey != msg.IngressTurnID.String() {
 		t.Fatalf("unexpected fifo dedup key: got=%s want=%s", msg.DedupKey, msg.IngressTurnID.String())
 	}
+	envelope, err := DecodeMessageEnvelope(msg.Payload)
+	if err != nil {
+		t.Fatalf("decode message envelope: %v", err)
+	}
+	if envelope.Channel != "WHATSAPP" {
+		t.Fatalf("unexpected envelope channel: %s", envelope.Channel)
+	}
+	if envelope.Content.Type != "TEXT" {
+		t.Fatalf("unexpected envelope content type: %s", envelope.Content.Type)
+	}
+	if envelope.Metadata.ChannelMessageID == "" {
+		t.Fatalf("expected channel_message_id in envelope: %+v", envelope.Metadata)
+	}
+	if envelope.Metadata.SessionID == "" {
+		t.Fatalf("expected session_id in envelope: %+v", envelope.Metadata)
+	}
 }
 
 func TestUnboundChannelRejectedWithIdentityFailureEvent(t *testing.T) {
@@ -124,12 +141,31 @@ func TestIMessageInboundUsesSamePipeline(t *testing.T) {
 	payload := []byte(`{"channel":"imessage","channel_identifier":"imsg:user-1","user_channel_id":"imsg_u1","nonce":"n_imsg","message":"hello from iMessage"}`)
 
 	resp := httptest.NewRecorder()
-	svc.HandleInbound(resp, signedRequestBody("test-secret", "/v1/gateway/webhook/imessage", payload))
+	req := signedRequestBody("test-secret", "/v1/gateway/webhook/imessage", payload)
+	req.Header.Set("X-API-Key", "dev-imessage-key")
+	svc.HandleInbound(resp, req)
 	if resp.Code != http.StatusAccepted {
 		t.Fatalf("expected imessage webhook to be accepted, got %d", resp.Code)
 	}
 	if svc.IngressTurnCount() != 1 {
 		t.Fatalf("expected ingress turn count 1, got %d", svc.IngressTurnCount())
+	}
+}
+
+func TestIMessageInboundMissingAPIKeyRejected(t *testing.T) {
+	t.Parallel()
+
+	svc := NewService("test-secret")
+	svc.router.Bind("imessage", "imsg:user-2", uuid.MustParse("018f3f6a-9a0f-7cc6-8f2f-1f0f2d2f2d2f"))
+	payload := []byte(`{"channel":"imessage","channel_identifier":"imsg:user-2","user_channel_id":"imsg_u2","nonce":"n_imsg_missing_key","message":"hello"}`)
+
+	resp := httptest.NewRecorder()
+	svc.HandleInbound(resp, signedRequestBody("test-secret", "/v1/gateway/webhook/imessage", payload))
+	if resp.Code != http.StatusUnauthorized {
+		t.Fatalf("expected unauthorized when imessage api key is missing, got %d", resp.Code)
+	}
+	if !containsString(svc.AuditEntries(), "BREVIO.security.imessage.api_key_invalid.v1") {
+		t.Fatalf("expected imessage api-key audit event, got %v", svc.AuditEntries())
 	}
 }
 
@@ -176,6 +212,23 @@ func TestAttachmentInteractiveDiscoveryAndVoicePreprocess(t *testing.T) {
 	}
 	if turn.Attachments[0].S3URI == "" {
 		t.Fatal("expected attachment to be uploaded and linked with s3 uri")
+	}
+	msg, ok := svc.PopQueueMessage()
+	if !ok {
+		t.Fatal("expected queued envelope for voice turn")
+	}
+	envelope, err := DecodeMessageEnvelope(msg.Payload)
+	if err != nil {
+		t.Fatalf("decode queued envelope: %v", err)
+	}
+	if envelope.Content.Type != "VOICE" {
+		t.Fatalf("expected VOICE content type, got %s", envelope.Content.Type)
+	}
+	if envelope.Content.Text != "transcript:https://cdn.example.com/audio-note.ogg" {
+		t.Fatalf("unexpected envelope transcription text: %s", envelope.Content.Text)
+	}
+	if envelope.Content.MediaURL != "https://cdn.example.com/audio-note.ogg" {
+		t.Fatalf("unexpected envelope media_url: %s", envelope.Content.MediaURL)
 	}
 }
 
@@ -233,8 +286,8 @@ func TestRateLimitedUserGets429(t *testing.T) {
 	svc := NewService("test-secret")
 	svc.router.Bind("whatsapp", "+15550001111", uuid.MustParse("018f3f6a-9a0f-7cc6-8f2f-1f0f2d2f2d2f"))
 
-	for i := 0; i < 5; i++ {
-		payload := []byte(fmt.Sprintf(`{"channel":"whatsapp","channel_identifier":"+15550001111","user_channel_id":"u1","nonce":"n_%d","message":"hello"}`, i))
+	for i := 0; i < 30; i++ {
+		payload := []byte(fmt.Sprintf(`{"channel":"whatsapp","channel_identifier":"+15550001111","user_channel_id":"u1","user_tier":"free","nonce":"n_%d","message":"hello"}`, i))
 		resp := httptest.NewRecorder()
 		svc.HandleInbound(resp, signedRequestBody("test-secret", "/v1/gateway/webhook/whatsapp", payload))
 		if resp.Code != http.StatusAccepted {
@@ -242,11 +295,63 @@ func TestRateLimitedUserGets429(t *testing.T) {
 		}
 	}
 
-	payload := []byte(`{"channel":"whatsapp","channel_identifier":"+15550001111","user_channel_id":"u1","nonce":"n_limit","message":"hello"}`)
+	payload := []byte(`{"channel":"whatsapp","channel_identifier":"+15550001111","user_channel_id":"u1","user_tier":"free","nonce":"n_limit","message":"hello"}`)
 	resp := httptest.NewRecorder()
 	svc.HandleInbound(resp, signedRequestBody("test-secret", "/v1/gateway/webhook/whatsapp", payload))
 	if resp.Code != http.StatusTooManyRequests {
 		t.Fatalf("expected 429, got %d", resp.Code)
+	}
+}
+
+func TestEnterpriseTierBypassesRateLimit(t *testing.T) {
+	t.Parallel()
+
+	svc := NewService("test-secret")
+	svc.router.Bind("whatsapp", "+15550001111", uuid.MustParse("018f3f6a-9a0f-7cc6-8f2f-1f0f2d2f2d2f"))
+
+	for i := 0; i < 150; i++ {
+		payload := []byte(fmt.Sprintf(`{"channel":"whatsapp","channel_identifier":"+15550001111","user_channel_id":"u-enterprise","user_tier":"enterprise","nonce":"enterprise_%d","message":"hello"}`, i))
+		resp := httptest.NewRecorder()
+		svc.HandleInbound(resp, signedRequestBody("test-secret", "/v1/gateway/webhook/whatsapp", payload))
+		if resp.Code != http.StatusAccepted {
+			t.Fatalf("unexpected status at iteration %d: %d", i, resp.Code)
+		}
+	}
+}
+
+func TestChannelMessageIdIdempotencyReplayReturnsCachedResponse(t *testing.T) {
+	t.Parallel()
+
+	svc := NewService("test-secret")
+	svc.router.Bind("whatsapp", "+15550001111", uuid.MustParse("018f3f6a-9a0f-7cc6-8f2f-1f0f2d2f2d2f"))
+
+	firstPayload := []byte(`{"channel":"whatsapp","channel_identifier":"+15550001111","user_channel_id":"u1","channel_message_id":"wamid.001","nonce":"n_idem_1","message":"hello first"}`)
+	firstResp := httptest.NewRecorder()
+	svc.HandleInbound(firstResp, signedRequestBody("test-secret", "/v1/gateway/webhook/whatsapp", firstPayload))
+	if firstResp.Code != http.StatusAccepted {
+		t.Fatalf("unexpected first status: %d", firstResp.Code)
+	}
+	if firstResp.Body.String() != `{"status":"accepted"}` {
+		t.Fatalf("unexpected first response body: %s", firstResp.Body.String())
+	}
+	if svc.IngressTurnCount() != 1 || svc.QueueMessageCount() != 1 {
+		t.Fatalf("expected single turn+queue after first message, turns=%d queue=%d", svc.IngressTurnCount(), svc.QueueMessageCount())
+	}
+
+	secondPayload := []byte(`{"channel":"whatsapp","channel_identifier":"+15550001111","user_channel_id":"u1","channel_message_id":"wamid.001","nonce":"n_idem_2","message":"hello replay"}`)
+	secondResp := httptest.NewRecorder()
+	svc.HandleInbound(secondResp, signedRequestBody("test-secret", "/v1/gateway/webhook/whatsapp", secondPayload))
+	if secondResp.Code != http.StatusAccepted {
+		t.Fatalf("unexpected replay status: %d", secondResp.Code)
+	}
+	if secondResp.Body.String() != `{"status":"accepted"}` {
+		t.Fatalf("unexpected replay response body: %s", secondResp.Body.String())
+	}
+	if svc.IngressTurnCount() != 1 || svc.QueueMessageCount() != 1 {
+		t.Fatalf("expected idempotent replay to skip write path, turns=%d queue=%d", svc.IngressTurnCount(), svc.QueueMessageCount())
+	}
+	if !containsString(svc.AuditEntries(), "BREVIO.ingress.idempotent_replay.v1") {
+		t.Fatalf("expected idempotent replay audit event, got %v", svc.AuditEntries())
 	}
 }
 
@@ -336,13 +441,103 @@ func TestHealthEndpoints(t *testing.T) {
 	svc := NewService("test-secret")
 	mux := NewMux(svc)
 
-	for _, path := range []string{"/healthz/ready", "/healthz/live"} {
+	for _, path := range []string{"/healthz/ready", "/healthz/live", "/health", "/health/deep"} {
 		req := httptest.NewRequest(http.MethodGet, path, nil)
 		resp := httptest.NewRecorder()
 		mux.ServeHTTP(resp, req)
 		if resp.Code != http.StatusOK {
 			t.Fatalf("unexpected status for %s: %d", path, resp.Code)
 		}
+		if path == "/health" || path == "/health/deep" {
+			var payload map[string]any
+			if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+				t.Fatalf("expected json response for %s: %v", path, err)
+			}
+			if payload["status"] != "healthy" {
+				t.Fatalf("unexpected health payload for %s: %+v", path, payload)
+			}
+		}
+	}
+}
+
+func TestWebhookAliasRoutesMatchLegacyHandlers(t *testing.T) {
+	t.Parallel()
+
+	svc := NewService("test-secret")
+	mux := NewMux(svc)
+	workspaceID := uuid.MustParse("018f3f6a-9a0f-7cc6-8f2f-1f0f2d2f2d2f")
+	svc.router.Bind("whatsapp", "+15550004444", workspaceID)
+	svc.router.Bind("imessage", "imsg:user-alias", workspaceID)
+
+	waPayload := []byte(`{"channel":"whatsapp","channel_identifier":"+15550004444","user_channel_id":"u_alias_wa","nonce":"n_alias_wa","message":"hello alias wa"}`)
+	waReq := signedRequestBody("test-secret", "/api/v1/webhooks/whatsapp", waPayload)
+	waResp := httptest.NewRecorder()
+	mux.ServeHTTP(waResp, waReq)
+	if waResp.Code != http.StatusAccepted {
+		t.Fatalf("expected /api/v1/webhooks/whatsapp accepted, got %d", waResp.Code)
+	}
+
+	imsgPayload := []byte(`{"channel":"imessage","channel_identifier":"imsg:user-alias","user_channel_id":"u_alias_imsg","nonce":"n_alias_imsg","message":"hello alias imsg"}`)
+	imsgReq := signedRequestBody("test-secret", "/webhooks/imessage", imsgPayload)
+	imsgReq.Header.Set("X-API-Key", "dev-imessage-key")
+	imsgResp := httptest.NewRecorder()
+	mux.ServeHTTP(imsgResp, imsgReq)
+	if imsgResp.Code != http.StatusAccepted {
+		t.Fatalf("expected /webhooks/imessage accepted, got %d", imsgResp.Code)
+	}
+
+	verifyReq := httptest.NewRequest(http.MethodGet, "/webhooks/whatsapp?hub.challenge=alias123", nil)
+	verifyResp := httptest.NewRecorder()
+	mux.ServeHTTP(verifyResp, verifyReq)
+	if verifyResp.Code != http.StatusOK || verifyResp.Body.String() != "alias123" {
+		t.Fatalf("unexpected whatsapp verify alias response: status=%d body=%s", verifyResp.Code, verifyResp.Body.String())
+	}
+}
+
+func TestTemporalWebhookIdempotencyByWorkflowRunID(t *testing.T) {
+	t.Parallel()
+
+	svc := NewService("test-secret")
+	mux := NewMux(svc)
+	payload := []byte(`{"workflow_run_id":"run_abc","workflow_id":"msg-123","event":"completed"}`)
+
+	req1 := httptest.NewRequest(http.MethodPost, "/webhooks/temporal", bytes.NewReader(payload))
+	resp1 := httptest.NewRecorder()
+	mux.ServeHTTP(resp1, req1)
+	if resp1.Code != http.StatusAccepted {
+		t.Fatalf("unexpected first temporal webhook status: %d", resp1.Code)
+	}
+	if resp1.Body.String() != `{"status":"accepted"}` {
+		t.Fatalf("unexpected first temporal webhook body: %s", resp1.Body.String())
+	}
+
+	req2 := httptest.NewRequest(http.MethodPost, "/api/v1/webhooks/temporal", bytes.NewReader(payload))
+	resp2 := httptest.NewRecorder()
+	mux.ServeHTTP(resp2, req2)
+	if resp2.Code != http.StatusAccepted {
+		t.Fatalf("unexpected replay temporal webhook status: %d", resp2.Code)
+	}
+	if resp2.Body.String() != `{"status":"accepted"}` {
+		t.Fatalf("unexpected replay temporal webhook body: %s", resp2.Body.String())
+	}
+	if !containsString(svc.AuditEntries(), "BREVIO.temporal.webhook.received.v1") {
+		t.Fatalf("expected temporal received audit event, got %v", svc.AuditEntries())
+	}
+	if !containsString(svc.AuditEntries(), "BREVIO.temporal.webhook.idempotent_replay.v1") {
+		t.Fatalf("expected temporal replay audit event, got %v", svc.AuditEntries())
+	}
+}
+
+func TestTemporalWebhookRequiresWorkflowRunID(t *testing.T) {
+	t.Parallel()
+
+	svc := NewService("test-secret")
+	mux := NewMux(svc)
+	req := httptest.NewRequest(http.MethodPost, "/webhooks/temporal", bytes.NewReader([]byte(`{"workflow_id":"msg-1"}`)))
+	resp := httptest.NewRecorder()
+	mux.ServeHTTP(resp, req)
+	if resp.Code != http.StatusBadRequest {
+		t.Fatalf("expected bad request for missing workflow_run_id, got %d", resp.Code)
 	}
 }
 
@@ -367,6 +562,72 @@ func TestWorkspaceRouterResolveForInboundFallbackAndAutobind(t *testing.T) {
 	}
 	if resolved != workspaceID || autoBound {
 		t.Fatalf("unexpected bound resolution: workspace=%s autoBound=%v", resolved, autoBound)
+	}
+}
+
+func TestSessionIDRotatesAfterFourHoursInactivity(t *testing.T) {
+	t.Parallel()
+
+	svc := NewService("test-secret")
+	workspaceID := uuid.MustParse("018f3f6a-9a0f-7cc6-8f2f-1f0f2d2f2d2f")
+	svc.router.Bind("whatsapp", "+15550003333", workspaceID)
+
+	base := time.Date(2026, time.March, 3, 10, 0, 0, 0, time.UTC)
+	now := base
+	svc.SetNowForTest(func() time.Time { return now })
+
+	makePayload := func(nonce string) []byte {
+		return []byte(fmt.Sprintf(`{"channel":"whatsapp","channel_identifier":"+15550003333","user_channel_id":"u-session","nonce":"%s","message":"hello"}`, nonce))
+	}
+
+	resp1 := httptest.NewRecorder()
+	svc.HandleInbound(resp1, signedRequestBody("test-secret", "/v1/gateway/webhook/whatsapp", makePayload("session_1")))
+	if resp1.Code != http.StatusAccepted {
+		t.Fatalf("unexpected first status: %d", resp1.Code)
+	}
+	msg1, ok := svc.PopQueueMessage()
+	if !ok {
+		t.Fatal("expected first queue message")
+	}
+	envelope1, err := DecodeMessageEnvelope(msg1.Payload)
+	if err != nil {
+		t.Fatalf("decode first envelope: %v", err)
+	}
+
+	now = base.Add(2 * time.Hour)
+	resp2 := httptest.NewRecorder()
+	svc.HandleInbound(resp2, signedRequestBody("test-secret", "/v1/gateway/webhook/whatsapp", makePayload("session_2")))
+	if resp2.Code != http.StatusAccepted {
+		t.Fatalf("unexpected second status: %d", resp2.Code)
+	}
+	msg2, ok := svc.PopQueueMessage()
+	if !ok {
+		t.Fatal("expected second queue message")
+	}
+	envelope2, err := DecodeMessageEnvelope(msg2.Payload)
+	if err != nil {
+		t.Fatalf("decode second envelope: %v", err)
+	}
+	if envelope2.Metadata.SessionID != envelope1.Metadata.SessionID {
+		t.Fatalf("expected same session_id within 4h window: first=%s second=%s", envelope1.Metadata.SessionID, envelope2.Metadata.SessionID)
+	}
+
+	now = base.Add(7 * time.Hour)
+	resp3 := httptest.NewRecorder()
+	svc.HandleInbound(resp3, signedRequestBody("test-secret", "/v1/gateway/webhook/whatsapp", makePayload("session_3")))
+	if resp3.Code != http.StatusAccepted {
+		t.Fatalf("unexpected third status: %d", resp3.Code)
+	}
+	msg3, ok := svc.PopQueueMessage()
+	if !ok {
+		t.Fatal("expected third queue message")
+	}
+	envelope3, err := DecodeMessageEnvelope(msg3.Payload)
+	if err != nil {
+		t.Fatalf("decode third envelope: %v", err)
+	}
+	if envelope3.Metadata.SessionID == envelope1.Metadata.SessionID {
+		t.Fatalf("expected rotated session_id after inactivity: first=%s third=%s", envelope1.Metadata.SessionID, envelope3.Metadata.SessionID)
 	}
 }
 

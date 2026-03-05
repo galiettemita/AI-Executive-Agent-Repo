@@ -17,6 +17,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/brevio/brevio/internal/audit"
 	"gopkg.in/yaml.v3"
 )
 
@@ -140,6 +141,7 @@ type Service struct {
 	health                map[string]ConnectorHealth
 	userConnectorSettings map[string]UserConnectorSetting
 	keyProvider           KeyProvider
+	mutationAudit         *audit.Service
 	now                   func() time.Time
 }
 
@@ -165,6 +167,12 @@ func (s *Service) SetNow(now func() time.Time) {
 		return
 	}
 	s.now = now
+}
+
+func (s *Service) SetMutationAudit(auditSvc *audit.Service) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.mutationAudit = auditSvc
 }
 
 func (s *Service) LoadSeedFile(path string) error {
@@ -589,6 +597,7 @@ func (s *Service) GetOAuthTokenForUse(
 	if err != nil {
 		return "", metadata, err
 	}
+	previousExpiresAt := metadata.ExpiresAt
 	metadata.ExpiresAt = newExpiresAt.UTC()
 	metadata.UpdatedAt = now
 	metadata.LastRefreshedAt = now
@@ -600,6 +609,7 @@ func (s *Service) GetOAuthTokenForUse(
 	s.oauth[key] = newAccessEnvelope
 	s.oauthMeta[key] = metadata
 	s.mu.Unlock()
+	s.appendOAuthRefreshMutationAudit(workspaceID, userID, connectorKey, previousExpiresAt, metadata)
 	return newAccessToken, metadata, nil
 }
 
@@ -616,6 +626,36 @@ func (s *Service) DecryptOAuthToken(ctx context.Context, workspaceID, userID, co
 		return "", OAuthEnvelope{}, err
 	}
 	return plaintext, envelope, nil
+}
+
+func (s *Service) appendOAuthRefreshMutationAudit(workspaceID, userID, connectorKey string, beforeExpiresAt time.Time, metadata OAuthTokenMetadata) {
+	s.mu.RLock()
+	mutationAudit := s.mutationAudit
+	s.mu.RUnlock()
+	if mutationAudit == nil {
+		return
+	}
+	before := map[string]any{}
+	if !beforeExpiresAt.IsZero() {
+		before["expires_at"] = beforeExpiresAt.UTC().Format(time.RFC3339)
+	}
+	after := map[string]any{
+		"provider": metadata.Provider,
+	}
+	if !metadata.ExpiresAt.IsZero() {
+		after["expires_at"] = metadata.ExpiresAt.UTC().Format(time.RFC3339)
+	}
+	if !metadata.LastRefreshedAt.IsZero() {
+		after["last_refreshed_at"] = metadata.LastRefreshedAt.UTC().Format(time.RFC3339)
+	}
+	mutationAudit.AppendMutation(audit.MutationInput{
+		WorkspaceID: workspaceID,
+		Actor:       userID,
+		Action:      "oauth.token.refresh",
+		Resource:    "oauth:" + connectorKey,
+		Before:      before,
+		After:       after,
+	})
 }
 
 func (s *Service) ensureConnectorExists(connectorKey string) error {

@@ -1,0 +1,5 @@
+{
+  "provider": "gemini-deep-research",
+  "action": "run_research",
+  "report_sections_count": 3
+}

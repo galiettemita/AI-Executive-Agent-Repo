@@ -1,0 +1,6 @@
+{
+  "status": "SUCCESS",
+  "provider": "camsnap",
+  "state": "",
+  "input": {"action":"capture_frame","camera_id":"front-door"}
+}

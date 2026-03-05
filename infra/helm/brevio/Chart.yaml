@@ -1,0 +1,39 @@
+apiVersion: v2
+name: brevio
+description: Unified Brevio umbrella chart for OpenClaw production rollout
+type: application
+version: 0.2.0
+appVersion: v9.3.0
+kubeVersion: ">=1.29.0-0"
+
+dependencies:
+  - name: BREVIO-gateway
+    alias: gateway
+    version: 0.1.0
+    repository: "file://../../../helm/BREVIO-gateway"
+    condition: gateway.enabled
+  - name: BREVIO-brain
+    alias: brain
+    version: 0.1.0
+    repository: "file://../../../helm/BREVIO-brain"
+    condition: brain.enabled
+  - name: BREVIO-executor
+    alias: hands
+    version: 0.1.0
+    repository: "file://../../../helm/BREVIO-executor"
+    condition: hands.enabled
+  - name: BREVIO-control
+    alias: control
+    version: 0.1.0
+    repository: "file://../../../helm/BREVIO-control"
+    condition: control.enabled
+  - name: BREVIO-canvas
+    alias: canvas
+    version: 0.1.0
+    repository: "file://../../../helm/BREVIO-canvas"
+    condition: canvas.enabled
+  - name: BREVIO-temporal-worker
+    alias: temporalWorker
+    version: 0.1.0
+    repository: "file://../../../helm/BREVIO-temporal-worker"
+    condition: temporalWorker.enabled

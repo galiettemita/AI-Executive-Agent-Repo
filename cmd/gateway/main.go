@@ -2,24 +2,31 @@ package main
 
 import (
 	"log"
-	"net/http"
 	"os"
 
 	"github.com/brevio/brevio/internal/gateway"
+	runtimeserver "github.com/brevio/brevio/internal/runtime"
 )
 
 func main() {
-	secret := os.Getenv("GATEWAY_WEBHOOK_SECRET")
-	if secret == "" {
-		secret = "dev-secret"
+	cfg, err := gateway.LoadEnvConfig(os.Getenv)
+	if err != nil {
+		log.Fatalf("gateway config validation failed: %v", err)
 	}
 
-	service := gateway.NewService(secret)
+	service := gateway.NewServiceWithOptions(cfg.WebhookSecret, gateway.ServiceOptions{
+		IMessageWebhookAPIKey: cfg.IMessageWebhookAPIKey,
+	})
 	mux := gateway.NewMux(service)
+	logger := runtimeserver.NewJSONLogger("gateway", cfg.Environment)
+	logger.SetOutput(os.Stdout)
+	handler := logger.Middleware(mux)
 
-	addr := ":18080"
-	log.Printf("BREVIO gateway listening on %s", addr)
-	if err := http.ListenAndServe(addr, mux); err != nil {
+	logger.Info("service_start", map[string]any{
+		"listen_addr": cfg.ListenAddr,
+		"version":     cfg.ServiceVersion,
+	})
+	if err := runtimeserver.ServeWithGracefulShutdown("gateway", cfg.ListenAddr, handler); err != nil {
 		log.Fatalf("gateway server failed: %v", err)
 	}
 }

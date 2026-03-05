@@ -1,0 +1,5 @@
+{
+  "provider": "apple-media",
+  "action": "discover_devices",
+  "devices_count": 3
+}

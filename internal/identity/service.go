@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/brevio/brevio/internal/audit"
 	"github.com/google/uuid"
 
 	"github.com/brevio/brevio/internal/determinism"
@@ -58,6 +59,7 @@ type Service struct {
 	users                map[uuid.UUID]User
 	workspaces           map[uuid.UUID]Workspace
 	channelBindingLookup map[string]uuid.UUID
+	mutationAudit        *audit.Service
 }
 
 type AccountUpdate struct {
@@ -95,6 +97,12 @@ func NewService() *Service {
 		workspaces:           map[uuid.UUID]Workspace{},
 		channelBindingLookup: map[string]uuid.UUID{},
 	}
+}
+
+func (s *Service) SetMutationAudit(auditSvc *audit.Service) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.mutationAudit = auditSvc
 }
 
 func (s *Service) CreateAccount(planKey, status, billingRef string) (Account, error) {
@@ -218,6 +226,7 @@ func (s *Service) UpdateUser(userID uuid.UUID, update UserUpdate) (User, error) 
 	if !ok {
 		return User{}, fmt.Errorf("user not found")
 	}
+	before := user
 	if update.Email != nil && *update.Email != "" {
 		user.Email = *update.Email
 	}
@@ -235,6 +244,29 @@ func (s *Service) UpdateUser(userID uuid.UUID, update UserUpdate) (User, error) 
 	}
 	user.UpdatedAt = time.Now().UTC()
 	s.users[userID] = user
+	mutationAudit := s.mutationAudit
+	if mutationAudit != nil {
+		mutationAudit.AppendMutation(audit.MutationInput{
+			WorkspaceID: user.AccountID.String(),
+			Actor:       user.ID.String(),
+			Action:      "identity.user.profile.update",
+			Resource:    "user:" + user.ID.String(),
+			Before: map[string]any{
+				"email":           before.Email,
+				"phone_e164":      before.PhoneE164,
+				"global_autonomy": before.GlobalAutonomy,
+				"timezone":        before.Timezone,
+				"status":          before.Status,
+			},
+			After: map[string]any{
+				"email":           user.Email,
+				"phone_e164":      user.PhoneE164,
+				"global_autonomy": user.GlobalAutonomy,
+				"timezone":        user.Timezone,
+				"status":          user.Status,
+			},
+		})
+	}
 	return user, nil
 }
 

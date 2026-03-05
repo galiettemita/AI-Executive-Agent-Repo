@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"time"
 
@@ -161,14 +162,51 @@ func (s *Service) IngestWebhook(payload WebhookPayload) (int, error) {
 		return 0, err
 	}
 	path := "/v1/gateway/webhook/whatsapp"
+	imessage := false
 	if strings.EqualFold(strings.TrimSpace(payload.Channel), "imessage") {
-		path = "/v1/gateway/webhook/imessage"
+		path = "/webhooks/imessage"
+		imessage = true
 	}
 	req := httptest.NewRequest(http.MethodPost, path, bytes.NewReader(blob))
 	req.Header.Set("X-Signature", signPayload([]byte(s.secret), blob))
+	if imessage {
+		req.Header.Set("X-API-Key", integrationIMessageAPIKey())
+	}
 	resp := httptest.NewRecorder()
 	s.gatewayMux.ServeHTTP(resp, req)
 	return resp.Code, nil
+}
+
+func (s *Service) IngestWebhookRaw(channel string, payload []byte, signatureOverride string) (int, error) {
+	if s.gatewayMux == nil {
+		s.gatewayMux = gateway.NewMux(s.gateway)
+	}
+	path := "/v1/gateway/webhook/whatsapp"
+	imessage := false
+	if strings.EqualFold(strings.TrimSpace(channel), "imessage") {
+		path = "/webhooks/imessage"
+		imessage = true
+	}
+	req := httptest.NewRequest(http.MethodPost, path, bytes.NewReader(payload))
+	signature := strings.TrimSpace(signatureOverride)
+	if signature == "" {
+		signature = signPayload([]byte(s.secret), payload)
+	}
+	req.Header.Set("X-Signature", signature)
+	if imessage {
+		req.Header.Set("X-API-Key", integrationIMessageAPIKey())
+	}
+	resp := httptest.NewRecorder()
+	s.gatewayMux.ServeHTTP(resp, req)
+	return resp.Code, nil
+}
+
+func integrationIMessageAPIKey() string {
+	apiKey := strings.TrimSpace(os.Getenv("IMESSAGE_WEBHOOK_API_KEY"))
+	if apiKey == "" {
+		return "dev-imessage-key"
+	}
+	return apiKey
 }
 
 func (s *Service) ProcessNextQueuedTurn(ctx context.Context, budgetExhausted bool) (PipelineResult, error) {
@@ -181,9 +219,25 @@ func (s *Service) ProcessNextQueuedTurnWithOptions(ctx context.Context, options 
 		return PipelineResult{}, fmt.Errorf("no queued turn")
 	}
 
-	var inbound WebhookPayload
-	if err := json.Unmarshal(msg.Payload, &inbound); err != nil {
+	envelope, err := gateway.DecodeMessageEnvelope(msg.Payload)
+	if err != nil {
 		return PipelineResult{}, err
+	}
+	inbound := WebhookPayload{
+		Channel:           strings.ToLower(strings.TrimSpace(msg.Channel)),
+		ChannelIdentifier: strings.TrimSpace(msg.ChannelIdentifier),
+		UserChannelID:     strings.TrimSpace(msg.UserChannelID),
+		Nonce:             envelope.Metadata.ChannelMessageID,
+		Message:           envelope.ContentText(),
+	}
+	if inbound.Channel == "" {
+		inbound.Channel = strings.ToLower(strings.TrimSpace(envelope.Channel))
+	}
+	if inbound.ChannelIdentifier == "" {
+		inbound.ChannelIdentifier = inbound.UserChannelID
+	}
+	if inbound.Message == "" {
+		inbound.Message = "[non-text message]"
 	}
 
 	firewall := s.control.FirewallCheck(inbound.Message)
@@ -225,7 +279,7 @@ func (s *Service) ProcessNextQueuedTurnWithOptions(ctx context.Context, options 
 			token, err := s.control.Approval().GenerateToken(
 				"tool_commit",
 				toolRiskLevel,
-				"integration_"+inbound.Nonce,
+				"integration_"+envelope.ID,
 				now,
 			)
 			if err != nil {

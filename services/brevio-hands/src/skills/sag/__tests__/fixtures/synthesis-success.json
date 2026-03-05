@@ -1,0 +1,8 @@
+{
+  "provider": "sag",
+  "voice_id": "elevenlabs-voice-42",
+  "style": "warm",
+  "audio_url": "https://cdn.brevio.local/tts/sag/your-travel-itinerary-has-been-optimized.mp3",
+  "estimated_duration_ms": 1980,
+  "latency_budget_ms": 3000
+}

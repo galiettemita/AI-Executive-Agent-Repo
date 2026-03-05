@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/brevio/brevio/internal/audit"
 	"github.com/google/uuid"
 )
 
@@ -97,6 +98,7 @@ type Service struct {
 	synthItems    []SynthesisEvidenceItem
 	audit         []AuditLogEntry
 	lastAuditHash string
+	mutationAudit *audit.Service
 	idempotency   map[string]ToolExecution
 	circuits      map[string]CircuitState
 	l1Cache       map[string]string
@@ -133,6 +135,12 @@ func (s *Service) SetNowFunc(nowFunc func() time.Time) {
 		return
 	}
 	s.nowFunc = nowFunc
+}
+
+func (s *Service) SetMutationAudit(auditSvc *audit.Service) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.mutationAudit = auditSvc
 }
 
 func logicalActionHash(workspaceID, toolKey, action string) string {
@@ -179,7 +187,9 @@ func (s *Service) Commit(req ExecutionRequest) (ToolExecution, TrustReceipt, err
 	s.emitAudit("BREVIO.hands.tool.committed.v1", exec.ID.String())
 
 	s.mu.Lock()
-	s.sideEffects[req.WorkspaceID+"::"+req.ToolKey]++
+	sideEffectKey := req.WorkspaceID + "::" + req.ToolKey
+	beforeSideEffects := s.sideEffects[sideEffectKey]
+	s.sideEffects[sideEffectKey] = beforeSideEffects + 1
 	s.mu.Unlock()
 
 	receipt := TrustReceipt{
@@ -195,6 +205,7 @@ func (s *Service) Commit(req ExecutionRequest) (ToolExecution, TrustReceipt, err
 	s.mu.Unlock()
 	s.emitAudit("BREVIO.trust.receipt.created.v1", receipt.ID.String())
 	s.emitAudit("BREVIO.trust.evidence.attached.v1", receipt.ID.String())
+	s.appendMutationAudit(req, exec, receipt, beforeSideEffects, beforeSideEffects+1)
 
 	return exec, receipt, nil
 }
@@ -266,6 +277,28 @@ func (s *Service) emitAudit(eventType, payload string) {
 func hashAudit(input string) string {
 	sum := sha256.Sum256([]byte(input))
 	return hex.EncodeToString(sum[:])
+}
+
+func (s *Service) appendMutationAudit(req ExecutionRequest, exec ToolExecution, receipt TrustReceipt, beforeSideEffects, afterSideEffects int) {
+	s.mu.Lock()
+	mutationAudit := s.mutationAudit
+	s.mu.Unlock()
+	if mutationAudit == nil {
+		return
+	}
+	mutationAudit.AppendMutation(audit.MutationInput{
+		WorkspaceID: req.WorkspaceID,
+		Action:      "hands.skill.execute.commit",
+		Resource:    "skill:" + req.ToolKey,
+		Before: map[string]any{
+			"side_effect_count": beforeSideEffects,
+		},
+		After: map[string]any{
+			"execution_id":      exec.ID.String(),
+			"trust_receipt_id":  receipt.ID.String(),
+			"side_effect_count": afterSideEffects,
+		},
+	})
 }
 
 var blockedPrefixes = []string{"169.254.169.254", "127.", "::1"}

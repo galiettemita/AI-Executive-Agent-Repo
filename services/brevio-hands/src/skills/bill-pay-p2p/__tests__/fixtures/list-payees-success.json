@@ -1,0 +1,17 @@
+{
+  "provider": "bill-pay-p2p",
+  "action": "list_payees",
+  "payees": [
+    {
+      "payee_id": "payee_001",
+      "name": "Austin Utilities",
+      "last4": "4481"
+    },
+    {
+      "payee_id": "payee_002",
+      "name": "Jordan Smith",
+      "last4": "1150"
+    }
+  ],
+  "partnership_status": "awaiting_api_partnership"
+}

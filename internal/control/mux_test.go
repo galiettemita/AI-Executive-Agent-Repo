@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/brevio/brevio/internal/audit"
+	"github.com/brevio/brevio/internal/feature_flags"
 	"gopkg.in/yaml.v3"
 )
 
@@ -175,6 +177,42 @@ func TestControlMuxFeatureFlagsFlow(t *testing.T) {
 	}
 }
 
+func TestControlMuxBootstrapsSystemFeatureFlags(t *testing.T) {
+	t.Parallel()
+
+	mux := NewMux(NewService("dev-secret"))
+	req := httptest.NewRequest(http.MethodGet, "/v1/flags", nil)
+	resp := httptest.NewRecorder()
+	mux.ServeHTTP(resp, req)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("unexpected list flags status: %d", resp.Code)
+	}
+
+	var payload struct {
+		Flags []map[string]any `json:"flags"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode flags payload: %v", err)
+	}
+
+	found := map[string]bool{
+		feature_flags.FlagSkillsRollout:     false,
+		feature_flags.FlagLLMProviderSwitch: false,
+		feature_flags.FlagCanaryFeatures:    false,
+	}
+	for _, flag := range payload.Flags {
+		key, _ := flag["key"].(string)
+		if _, ok := found[key]; ok {
+			found[key] = true
+		}
+	}
+	for key, ok := range found {
+		if !ok {
+			t.Fatalf("missing bootstrapped system flag: %s", key)
+		}
+	}
+}
+
 func TestControlMuxErrorsFlow(t *testing.T) {
 	t.Parallel()
 
@@ -237,6 +275,42 @@ func TestControlMuxErrorsFlow(t *testing.T) {
 	mux.ServeHTTP(postErrorMessageResp, postErrorMessageReq)
 	if postErrorMessageResp.Code != http.StatusCreated {
 		t.Fatalf("unexpected create error-message status: %d body=%s", postErrorMessageResp.Code, postErrorMessageResp.Body.String())
+	}
+}
+
+func TestControlMuxNoStubResponsePayloads(t *testing.T) {
+	t.Parallel()
+
+	mux := NewMux(NewService("dev-secret"))
+
+	brainReq := httptest.NewRequest(http.MethodPost, "/v1/brain/turn", bytes.NewReader([]byte(`{"workspace_id":"ws_1","message_text":"Plan tomorrow around two meetings","channel":"whatsapp"}`)))
+	brainResp := httptest.NewRecorder()
+	mux.ServeHTTP(brainResp, brainReq)
+	if brainResp.Code != http.StatusOK {
+		t.Fatalf("unexpected brain status: %d", brainResp.Code)
+	}
+	if strings.Contains(strings.ToLower(brainResp.Body.String()), "stub") {
+		t.Fatalf("brain payload still contains stub marker: %s", brainResp.Body.String())
+	}
+
+	forensicsReq := httptest.NewRequest(http.MethodGet, "/v1/admin/forensics/replay/turn_123?tool_key=google-maps", nil)
+	forensicsResp := httptest.NewRecorder()
+	mux.ServeHTTP(forensicsResp, forensicsReq)
+	if forensicsResp.Code != http.StatusOK {
+		t.Fatalf("unexpected forensics status: %d", forensicsResp.Code)
+	}
+	if strings.Contains(strings.ToLower(forensicsResp.Body.String()), "stub") {
+		t.Fatalf("forensics payload still contains stub marker: %s", forensicsResp.Body.String())
+	}
+
+	llmReq := httptest.NewRequest(http.MethodGet, "/v1/admin/llm/replay/hash_abc123", nil)
+	llmResp := httptest.NewRecorder()
+	mux.ServeHTTP(llmResp, llmReq)
+	if llmResp.Code != http.StatusOK {
+		t.Fatalf("unexpected llm replay status: %d", llmResp.Code)
+	}
+	if strings.Contains(strings.ToLower(llmResp.Body.String()), "stub") {
+		t.Fatalf("llm replay payload still contains stub marker: %s", llmResp.Body.String())
 	}
 }
 
@@ -642,6 +716,126 @@ func TestControlMuxComplianceFlow(t *testing.T) {
 	}
 	if reports, ok := dsrListPayload["deletion_reports"].([]any); !ok || len(reports) == 0 {
 		t.Fatalf("expected deletion_reports in dsr payload: %v", dsrListPayload)
+	}
+
+	postPortabilityBody := []byte(`{"workspace_id":"ws_1","user_id":"user_2","request_type":"portability","status":"in_progress"}`)
+	postPortabilityReq := httptest.NewRequest(http.MethodPost, "/v1/compliance/dsr", bytes.NewReader(postPortabilityBody))
+	postPortabilityResp := httptest.NewRecorder()
+	mux.ServeHTTP(postPortabilityResp, postPortabilityReq)
+	if postPortabilityResp.Code != http.StatusCreated {
+		t.Fatalf("unexpected portability dsr create status: %d", postPortabilityResp.Code)
+	}
+	var portabilityPayload map[string]any
+	if err := json.Unmarshal(postPortabilityResp.Body.Bytes(), &portabilityPayload); err != nil {
+		t.Fatalf("decode portability dsr payload: %v", err)
+	}
+	portabilityID, ok := portabilityPayload["id"].(string)
+	if !ok || portabilityID == "" {
+		t.Fatalf("missing portability dsr id: %v", portabilityPayload)
+	}
+
+	getPortabilityExportReq := httptest.NewRequest(http.MethodGet, "/v1/compliance/dsr/"+portabilityID+"/export", nil)
+	getPortabilityExportResp := httptest.NewRecorder()
+	mux.ServeHTTP(getPortabilityExportResp, getPortabilityExportReq)
+	if getPortabilityExportResp.Code != http.StatusOK {
+		t.Fatalf("unexpected portability export status: %d", getPortabilityExportResp.Code)
+	}
+	var portabilityExportPayload map[string]any
+	if err := json.Unmarshal(getPortabilityExportResp.Body.Bytes(), &portabilityExportPayload); err != nil {
+		t.Fatalf("decode portability export payload: %v", err)
+	}
+	if hasExport, _ := portabilityExportPayload["has_export"].(bool); !hasExport {
+		t.Fatalf("expected has_export=true payload: %v", portabilityExportPayload)
+	}
+	exportObj, ok := portabilityExportPayload["portability_export"].(map[string]any)
+	if !ok {
+		t.Fatalf("missing portability_export object: %v", portabilityExportPayload)
+	}
+	if _, ok := exportObj["download_uri"].(string); !ok {
+		t.Fatalf("missing portability export download_uri: %v", exportObj)
+	}
+
+	getDeletionExportReq := httptest.NewRequest(http.MethodGet, "/v1/compliance/dsr/"+dsrID+"/export", nil)
+	getDeletionExportResp := httptest.NewRecorder()
+	mux.ServeHTTP(getDeletionExportResp, getDeletionExportReq)
+	if getDeletionExportResp.Code != http.StatusBadRequest {
+		t.Fatalf("expected non-portability export rejection status, got: %d", getDeletionExportResp.Code)
+	}
+}
+
+func TestControlMuxActivityLedgerReflectsMutationAudit(t *testing.T) {
+	t.Parallel()
+
+	mux := NewMux(NewService("dev-secret"))
+
+	postFlagBody := []byte(`{"key":"audit.flag.rollout","flag_type":"boolean","enabled":true}`)
+	postFlagReq := httptest.NewRequest(http.MethodPost, "/v1/flags?workspace_id=ws_audit", bytes.NewReader(postFlagBody))
+	postFlagReq.Header.Set("X-User-ID", "user_audit")
+	postFlagResp := httptest.NewRecorder()
+	mux.ServeHTTP(postFlagResp, postFlagReq)
+	if postFlagResp.Code != http.StatusAccepted {
+		t.Fatalf("unexpected feature-flag create status: %d", postFlagResp.Code)
+	}
+
+	getLedgerReq := httptest.NewRequest(http.MethodGet, "/v1/user/activity-ledger?workspace_id=ws_audit", nil)
+	getLedgerResp := httptest.NewRecorder()
+	mux.ServeHTTP(getLedgerResp, getLedgerReq)
+	if getLedgerResp.Code != http.StatusOK {
+		t.Fatalf("unexpected activity-ledger status: %d", getLedgerResp.Code)
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal(getLedgerResp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode activity-ledger payload: %v", err)
+	}
+	if total, ok := payload["total"].(float64); !ok || int(total) < 1 {
+		t.Fatalf("expected audited activity entries, payload=%v", payload)
+	}
+	items, ok := payload["items"].([]any)
+	if !ok || len(items) == 0 {
+		t.Fatalf("expected non-empty items, payload=%v", payload)
+	}
+	first, ok := items[0].(map[string]any)
+	if !ok {
+		t.Fatalf("expected activity item object, got=%T", items[0])
+	}
+	description, _ := first["description"].(string)
+	if !strings.Contains(description, "feature_flag.upsert") {
+		t.Fatalf("expected feature-flag audit description, got=%v", first)
+	}
+	status, _ := first["status"].(string)
+	if status != "completed" {
+		t.Fatalf("unexpected activity status: %v", first)
+	}
+}
+
+func TestControlMuxWithDependenciesUsesInjectedAuditService(t *testing.T) {
+	t.Parallel()
+
+	auditSvc := audit.NewService()
+	auditSvc.AppendMutation(audit.MutationInput{
+		WorkspaceID: "ws_injected",
+		Actor:       "user_1",
+		Action:      "seed.action",
+		Resource:    "seed.resource",
+	})
+
+	mux := NewMuxWithDependencies(NewService("dev-secret"), MuxDependencies{
+		AuditService: auditSvc,
+	})
+
+	getLedgerReq := httptest.NewRequest(http.MethodGet, "/v1/user/activity-ledger?workspace_id=ws_injected", nil)
+	getLedgerResp := httptest.NewRecorder()
+	mux.ServeHTTP(getLedgerResp, getLedgerReq)
+	if getLedgerResp.Code != http.StatusOK {
+		t.Fatalf("unexpected activity-ledger status: %d", getLedgerResp.Code)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(getLedgerResp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode activity-ledger payload: %v", err)
+	}
+	if total, ok := payload["total"].(float64); !ok || int(total) != 1 {
+		t.Fatalf("expected injected audit entry in ledger, payload=%v", payload)
 	}
 }
 

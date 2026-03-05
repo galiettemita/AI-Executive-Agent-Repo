@@ -1,0 +1,6 @@
+{
+  "status": "SUCCESS",
+  "provider": "healthkit-sync-apple",
+  "state": "",
+  "input": {"action":"sync_steps","days":7}
+}

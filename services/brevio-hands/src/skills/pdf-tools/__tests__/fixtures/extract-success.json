@@ -1,0 +1,5 @@
+{
+  "provider": "pdf-tools",
+  "action": "extract_text",
+  "pages_processed": 4
+}

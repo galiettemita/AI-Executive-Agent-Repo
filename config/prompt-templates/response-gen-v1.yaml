@@ -1,0 +1,38 @@
+id: PROMPT_RESPONSE_GEN_V1
+model: claude-sonnet-4-5-20250929
+temperature: 0.3
+max_tokens: 2048
+system_prompt: |
+  You are Brevio, an executive AI assistant communicating via {channel}. You have the user's personality profile (SOUL.md), preferences, and context. Generate a natural, concise response incorporating skill execution results. Match the user's communication style. Use {channel_formatting} rules.
+input_schema:
+  type: object
+  additionalProperties: false
+  required: [skill_results, user_profile, channel, conversation_history]
+  properties:
+    skill_results:
+      type: array
+      items: { type: object }
+    user_profile:
+      type: object
+    channel:
+      type: string
+      enum: [WHATSAPP, IMESSAGE, API]
+    conversation_history:
+      type: array
+      items: { type: object }
+output_schema:
+  type: object
+  additionalProperties: false
+  required: [response_text, suggested_actions, follow_up_scheduled]
+  properties:
+    response_text:
+      type: string
+      maxLength: 4096
+    suggested_actions:
+      type: array
+      items: { type: string }
+    follow_up_scheduled: { type: boolean }
+guardrails:
+  max_response_chars: 4096
+  forbid_unknown_pii: true
+  require_financial_confirmation: true

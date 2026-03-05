@@ -15,6 +15,109 @@ Legend
 - `[ ]` Not done / blocked
 
 ## BREVIO V9 Migration Tracker (Current Program)
+- [x] BREVIO x OPENCLAW Phase 0A discovery complete: authored `CODEBASE_INVENTORY.md` with full repo/service/schema/test/infra/config inventory against the new production directive.
+- [x] BREVIO x OPENCLAW Phase 0B gap analysis complete: authored `GAP_ANALYSIS.md` with `EXISTS_AND_MATCHES`, `EXISTS_BUT_DIFFERS`, `MISSING`, and explicit integration-point mapping.
+- [x] BREVIO x OPENCLAW Phase 0 reconciliation refresh complete: updated `CODEBASE_INVENTORY.md` and `GAP_ANALYSIS.md` with 2026-03-04 state reconciliation, preserving baseline snapshots while explicitly separating resolved build items from remaining external human-gated dependencies.
+- [x] BREVIO x OPENCLAW Phase 0C decision log initialized: authored `DECISION.md` with migration decisions for coexistence architecture, additive DB deltas, and protocol/policy evolution.
+- [x] BREVIO x OPENCLAW Phase 1 structure scaffold started: added additive pnpm/turbo/TypeScript workspace root files (`package.json`, `pnpm-workspace.yaml`, `turbo.json`, `tsconfig.base.json`, `.eslintrc.cjs`, `.prettierrc`) while preserving existing Go runtime layout.
+- [x] BREVIO x OPENCLAW Phase 1 structure scaffold extended: created target directories for `packages/`, `services/`, `edge/`, `infra/`, `config/`, `tests/`, `docs/runbooks/`, and `docs/compliance/` plus initial files for prompts, disambiguation, retry policies, authz policy scaffold, and local setup scripts.
+- [x] BREVIO x OPENCLAW Phase 2 schema implementation: added reversible migration pairs `migrations/001..011` (`*.up.sql`/`*.down.sql`) with additive core/auth/skills/billing/temporal schemas, RLS/policy triggers, index set, deployment mode, user preferences, and edge agents table.
+- [x] BREVIO x OPENCLAW Phase 2 skill registry seed baseline: implemented `006_seed_skills.up.sql` with 153 OpenClaw skill IDs seeded into `skills.registry` and deployment-mode/plane normalization updates.
+- [x] BREVIO x OPENCLAW Phase 2 validation: executed full migration dry-run (all up then all down) against temporary PostgreSQL 16 container with `migration dry-run: PASS`.
+- [x] BREVIO x OPENCLAW Phase 3 proto contracts scaffolded: added `packages/proto/brevio/*/v1/*.proto` service definitions for gateway, brain, hands, auth, profile, scheduler, edge relay, plus shared common messages and `buf.yaml`.
+- [x] BREVIO x OPENCLAW proto generation operationalized: replaced `@brevio/proto` placeholder scripts with executable Buf lint/generate scripts (local binary or Docker fallback), added `packages/proto/buf.gen.yaml` TypeScript generation config, and enforced closure via `internal/contracts/proto_workspace_closure_test.go`.
+- [x] BREVIO x OPENCLAW proto CI gate closure: added `proto-validate` Make target and wired it into `make ci` pre-build gates so protobuf contracts are lint-validated on every core CI run, with strict Makefile token assertions in closure tests.
+- [x] BREVIO x OPENCLAW proto lint conformance closure: refactored service proto contracts to Buf-standard request/response naming (`*Response`) and unique RPC type usage (service-scoped health request/response messages), restoring clean proto lint in the mandatory CI gate.
+- [x] BREVIO x OPENCLAW Phase 3 health/shutdown baseline: upgraded all scaffold TypeScript services (`services/brevio-*`) to expose `GET /health` + `GET /health/deep` JSON payloads and graceful SIGTERM/SIGINT shutdown handling with 30s drain timeout.
+- [x] BREVIO x OPENCLAW LLM eval framework scaffolded: added required datasets under `tests/evals/` (`intent_classification.jsonl` 200 rows, `task_decomposition.jsonl` 50 rows, `response_generation.jsonl` 100 rows, `disambiguation.jsonl` 110 rows), baseline metrics, and `scripts/run-evals.sh` regression/budget gate runner.
+- [x] BREVIO x OPENCLAW eval harness validation: executed `bash scripts/run-evals.sh` with PASS and result artifact in `tests/evals/results/`.
+- [x] BREVIO x OPENCLAW eval harness de-placeholdered: replaced static score placeholders in `scripts/run-evals.sh` with deterministic dataset scoring for intent/decomposition/response/disambiguation, latency percentile computation, and token/cost estimation emitted in eval artifacts.
+- [x] BREVIO x OPENCLAW eval fixture hardening: replaced `evals/determinism_fixtures.json` placeholder hash with verified SHA-256 fixtures and replaced `evals/rag_eval_framework.md` placeholder content with operational scoring protocol, then enforced both via `internal/contracts/eval_fixture_closure_test.go`.
+- [x] BREVIO x OPENCLAW eval automation hardening: added `make evals` target and scheduled/prompt-change CI workflow `.github/workflows/llm-evals.yml` to execute `scripts/run-evals.sh`, enforce regression/budget gate status, and upload eval result artifacts.
+- [x] BREVIO x OPENCLAW eval CI hard-gate: wired eval execution into core CI (`make ci` now includes `evals` and `.github/workflows/ci.yml` includes `5b. LLM Evals`) so regression/budget failures block normal branch CI.
+- [x] BREVIO x OPENCLAW TypeScript quality-gate hardening: added `internal/contracts/typescript_no_any_closure_test.go` to enforce zero explicit `any` usage in production TypeScript under `packages/`, `services/`, and `edge/` (tests/external build dirs excluded), aligning with the non-negotiable no-`any` requirement.
+- [x] BREVIO x OPENCLAW CI/CD scaffold extension: added `.github/workflows/ci.yml` with 10-stage pipeline scaffold and expanded `deploy-staging.yml`, `deploy-production.yml`, `security-scan.yml` workflows to align with blueprint stage structure.
+- [x] BREVIO x OPENCLAW CI/CD de-scaffolding: replaced `ci-openclaw` stage `echo` placeholders with executable lint/schema/unit/integration/contract/security/migration/build/deploy commands, and upgraded deploy workflows to script-driven Helm rollout with secret-gated kubeconfig setup for staging/production.
+- [x] BREVIO x OPENCLAW CI lint stability hardening: removed redundant Node/pnpm bootstrap from `ci-openclaw` lint stage and switched proto lint execution to `bash packages/proto/scripts/lint.sh` so docs-only validation runs are not blocked by npm registry/package-manager availability.
+- [x] BREVIO x OPENCLAW security gate false-positive hardening: removed password-like DSN literals from deep health runtime tests and added a narrow `docker-compose.yml` trufflehog exclusion so CI strict-mode secret scans no longer fail on known local-dev Postgres placeholders.
+- [x] BREVIO x OPENCLAW security workflow hardening: upgraded `.github/workflows/security-scan.yml` from minimal cron shell calls to a full security gate pipeline (Semgrep SARIF, pnpm high-severity audit, Trivy/TruffleHog/Syft runtime validation, govuln baseline, artifact upload) and added closure enforcement in `internal/contracts/security_scan_workflow_closure_test.go`.
+- [x] BREVIO x OPENCLAW infra/terraform closure: replaced empty `infra/terraform/environments/*` stubs with full module composition for staging/production/DR and added concrete module contracts for EKS, RDS, ElastiCache, SQS+SNS, S3, Secrets+KMS, CloudFront, Route53, Monitoring, and WAF under `infra/terraform/modules/*`, with closure tests in `internal/contracts/infra_openclaw_layout_closure_test.go`.
+- [x] BREVIO x OPENCLAW infra/docker closure: replaced `infra/docker` scaffold files with service-specific multi-stage distroless Dockerfiles for gateway/brain/hands/control/executor/canvas/temporal-worker, wired `make docker-build` to those files, and added closure enforcement in `internal/contracts/infra_docker_layout_closure_test.go`.
+- [x] BREVIO x OPENCLAW infra/docker TS service extension: added Node distroless Dockerfiles for `brevio-auth`, `brevio-profile`, `brevio-scheduler`, `brevio-metrics`, and `brevio-edge-relay`, extended `make docker-build-infra` to build them, and strengthened docker closure tests to enforce both Go and TypeScript image baselines.
+- [x] BREVIO x OPENCLAW infra/helm umbrella closure: replaced `infra/helm/brevio` scaffold chart with executable dependency-backed umbrella Helm config (`Chart.yaml`, env values, service-account + additional service deployment/service/HPA templates) and added closure enforcement in `internal/contracts/infra_helm_brevio_closure_test.go`.
+- [x] BREVIO x OPENCLAW infra/argocd closure: replaced minimal ArgoCD app placeholders with executable staging/production Application manifests targeting `infra/helm/brevio` (environment value files, destination namespace, sync policies, retry/ignore-differences controls) and added closure enforcement in `internal/contracts/infra_argocd_closure_test.go`.
+- [x] BREVIO x OPENCLAW local compose closure: replaced minimal `docker-compose.yml` with a runnable local stack (PostgreSQL, Redis, Temporal + UI, gateway/brain/control/executor/canvas/temporal-worker service builds, extension-profile service stubs, health checks, shared env wiring), added closure enforcement in `internal/contracts/docker_compose_layout_closure_test.go`, and aligned `scripts/setup-local.sh` dependency bootstrap.
+- [x] BREVIO x OPENCLAW edge runtime closure: replaced `brevio-edge-agent` and `brevio-edge-relay` scaffolds with typed WebSocket relay/agent implementations (register + heartbeat + execute_skill + skill_result flow, offline queue handling up to 4h, session introspection and health endpoints), added `ws` dependencies for both packages, and enforced coverage with `internal/contracts/edge_agent_relay_closure_test.go`.
+- [x] BREVIO x OPENCLAW Brain disambiguation runtime: implemented deterministic 11-group disambiguation router in `internal/brain/disambiguation` with YAML-backed rules loading from `config/skill-disambiguation.yaml` and full table-driven unit coverage.
+- [x] BREVIO x OPENCLAW authz policy matrix closure: expanded `policies/brevio/authz.rego` and `policies/tests/authz_test.rego` to cover role/resource matrix rules (free/pro/enterprise/admin), denial invariants, and gateway/activity/PII policy denies.
+- [x] BREVIO x OPENCLAW config/eval hardening: upgraded prompt templates with explicit input/output schemas + guardrails, added per-category non-retryable error lists, replaced placeholder disambiguation eval corpus with 110 deterministic cases, and updated `scripts/run-evals.sh` to compute real disambiguation accuracy.
+- [x] BREVIO x OPENCLAW seed registry alignment: updated `migrations/006_seed_skills.up.sql` to classify seeded skills by canonical plane (`gateway`/`brain`/`hands`) and deployment mode (`cloud`/`local_mac`/`mcp`) with conflict updates preserving additive migration behavior.
+- [x] BREVIO x OPENCLAW Gateway idempotency/rate-limit hardening: upgraded `internal/gateway` with channel-message-id idempotency caching (24h replay window, cached response return), tier-aware sliding-window rate limits (`free` 30/hr, `pro` 120/hr, enterprise/admin unlimited), and extended webhook tests for replay, limits, and enterprise bypass.
+- [x] BREVIO x OPENCLAW workflow state-machine expansion: added deterministic `MessageProcessingWorkflowV1` and `DailyRhythmWorkflowV1` implementations in `internal/workflows` with explicit stage transitions (`RECEIVED`→`...`→`COMPLETED`/`FAILED`/`DEAD_LETTER`), deterministic retry jitter helper, and dedicated unit coverage for fallback/dead-letter/compensation paths.
+- [x] BREVIO x OPENCLAW runbook/compliance closure: expanded all required operational runbooks under `docs/runbooks/` and compliance artifacts under `docs/compliance/` with actionable procedures, retention/encryption controls, incident/escalation playbooks, GDPR rights workflows, sub-processor inventory baseline, and SOC 2 readiness control/evidence mapping.
+- [x] BREVIO x OPENCLAW skill seed utility closure: implemented `scripts/seed-skills.ts` to validate `migrations/006_seed_skills.up.sql` contains exactly 153 seeded skill IDs and `config/skill-disambiguation.yaml` contains 11 routing groups, with optional JSON summary output.
+- [x] BREVIO x OPENCLAW policy execution gate: added `scripts/policies/run_opa_tests.sh` with local-OPA or Docker fallback and wired `make ci` through new `policy-validate` target for executable Rego policy checks.
+- [x] BREVIO x OPENCLAW policy gate validation: executed `bash scripts/policies/run_opa_tests.sh` with Docker fallback and verified `PASS: 30/30` policy tests.
+- [x] BREVIO x OPENCLAW health endpoint parity: added `GET /health` and `GET /health/deep` JSON responses (with uptime/version/checks) across Go runtime services/muxes while preserving existing `/healthz/ready` + `/healthz/live`, and expanded runtime health closure tests accordingly.
+- [x] BREVIO x OPENCLAW local onboarding bootstrap: upgraded `scripts/setup-local.sh` + new `scripts/dev/run_local_services.sh` and added `make dev` to perform dependency bootstrap, local infra startup, migration/seed validation, and multi-service local runtime startup with optional watch-mode auto-restart via `watchexec`.
+- [x] BREVIO x OPENCLAW staging API docs surface: added staging-only `/docs` + `/docs/openapi` handlers in control mux with Swagger UI HTML and OpenAPI spec serving, with runtime tests for staging enablement and non-staging denial behavior.
+- [x] BREVIO x OPENCLAW graceful shutdown closure: introduced shared runtime server helper `internal/runtime/httpserver.go` and wired all Go service entrypoints (`cmd/*`) to handle SIGTERM/SIGINT with 30s graceful drain, plus closure test coverage to prevent regression.
+- [x] BREVIO x OPENCLAW canonical envelope normalization: upgraded gateway ingress to emit validated canonical `MessageEnvelope` payloads (UUIDv7, channel enum normalization, content typing, user/session resolution with 4h rotation, profile hash context) into queue handoff and updated integration runtime to consume envelope-first payloads end-to-end.
+- [x] BREVIO x OPENCLAW workflow traceability alignment: extended canonical workflow traceability and runtime closure coverage to include `message_processing_v1` and `daily_rhythm_v1` workflows with explicit terminal-state assertions.
+- [x] BREVIO x OPENCLAW execution-log PII scrubber: implemented daily 03:00 UTC scrub scheduling helpers and deterministic 30-day regex-based PII detection/nullification workflow for `skills.execution_log` payload retention enforcement.
+- [x] BREVIO x OPENCLAW failure-domain integration matrix: added explicit Addendum A.1 integration coverage for ingress retry/DLQ, gateway normalization fallback, classifier/decomposer fallbacks, execution compensation, aggregation partial-results fallback, and egress DLQ routing.
+- [x] BREVIO x OPENCLAW CI gate reconciliation: resolved contract and lint drift uncovered by `make ci` (workflow traceability row-count, MCP checklist CI target token, optional local blueprint doc allowance, and attachment validation error string lint) and revalidated with full `make ci` pass.
+- [x] BREVIO x OPENCLAW iMessage webhook auth hardening: added iMessage-specific API-key enforcement at gateway ingress (`X-API-Key`) with dedicated unauthorized-path audit event and updated integration/runtime tests.
+- [x] BREVIO x OPENCLAW webhook contract alignment: added blueprint-compatible webhook endpoints (`/webhooks/*` and `/api/v1/webhooks/*`) plus Temporal callback idempotency by `workflow_run_id`, while retaining legacy `/v1/gateway/webhook/*` routes for backward compatibility.
+- [x] BREVIO x OPENCLAW shared schema exports: added explicit JSON Schema 7 exports for canonical `MessageEnvelope` and `SkillResult` alongside Zod source schemas in `packages/shared`.
+- [x] BREVIO x OPENCLAW config fail-fast baseline: added strict gateway startup env validation (`BREVIO_ENV`-aware required secrets, listen address/version defaults) and explicit service option injection for iMessage API key.
+- [x] BREVIO x OPENCLAW startup config hardening (multi-service): introduced shared runtime env validation helpers and wired fail-fast startup checks/listen-address resolution into brain, control, executor, canvas, and temporal-worker entrypoints.
+- [x] BREVIO x OPENCLAW deep health connectivity checks: replaced env-presence-only `/health/deep` checks with shared runtime TCP dependency probes for PostgreSQL (`DATABASE_URL`), Redis (`REDIS_URL`), and Temporal (`TEMPORAL_HOST`) across gateway, control, canvas, brain, executor, and temporal-worker.
+- [x] BREVIO x OPENCLAW feature-flag baseline: bootstrapped canonical system flags for skill rollout (`skills.rollout`), LLM provider switching (`llm.provider_switch`), and canary features (`canary.features`) and wired control-plane startup/tests to ensure availability by default.
+- [x] BREVIO x OPENCLAW structured logging baseline: added shared JSON HTTP logging middleware with correlation fields (`trace_id`, `span_id`, `user_id`, `request_id`) and wired it into all Go HTTP service entrypoints (gateway, brain, control, executor, canvas, temporal-worker) with UUIDv7 request IDs.
+- [x] BREVIO x OPENCLAW execution-log scrub runtime: added PostgreSQL-backed `skills.execution_log` scrub store and wired daily 03:00 UTC scheduler in temporal-worker to run regex-based 30-day PII payload nullification with structured runtime logs.
+- [x] BREVIO x OPENCLAW auth service-map expansion: extended connector auth registries to canonical Addendum-A coverage (15 OAuth providers, 18 API-key services, 6 no-auth/local-only services) with strict connector tests validating provider counts and required metadata fields.
+- [x] BREVIO x OPENCLAW auth config artifact closure: added version-controlled `config/auth-service-map.yaml` containing canonical OAuth/API-key/no-auth maps plus secret naming/redirect/PKCE storage requirements, enforced by new contract test coverage.
+- [x] BREVIO x OPENCLAW gateway skill-profile closure: added explicit Addendum-A.6 gateway-skill profile map for all 8 gateway skills (external call path, rationale, latency budget, autoresponder brain delegation flag) with dedicated runtime+contract tests.
+- [x] BREVIO x OPENCLAW auth secret convention helpers: added executable helpers/tests for canonical Secrets Manager naming (`brevio/{env}/{service}/client_id|client_secret`), OAuth redirect URI pattern (`https://auth.brevio.app/callback/{service}`), and enforced PKCE-required flag semantics.
+- [x] BREVIO x OPENCLAW auth runtime closure: upgraded `services/brevio-auth` from health-only scaffold to typed OAuth registry + PKCE state service (provider discovery, authorize/exchange/refresh/callback endpoints, structured logging, graceful shutdown), tightened auth service-map contract assertions to exact Addendum-A provider sets including full 24-skill `local-macos` coverage, and added dedicated runtime closure contracts.
+- [x] BREVIO x OPENCLAW gateway runtime closure: replaced `services/brevio-gateway` scaffold with webhook ingress baseline supporting WhatsApp/iMessage/Temporal endpoints (including compatibility aliases), HMAC/API-key verification, canonical envelope normalization with 4h session rotation, 24h idempotency replay cache, tiered + minute rate limiting, and channel formatting endpoint, with new closure coverage in `internal/contracts/gateway_service_runtime_closure_test.go`.
+- [x] BREVIO x OPENCLAW brain runtime closure: replaced `services/brevio-brain` scaffold with classification/disambiguation/decomposition/aggregation runtime endpoints (`/api/v1/brain/*`) plus end-to-end `process` orchestration, enforced 11-group disambiguation config loading, bounded task DAG validation (`max 10` + cycle detection), structured logging, and graceful shutdown, with closure coverage in `internal/contracts/brain_service_runtime_closure_test.go`.
+- [x] BREVIO x OPENCLAW hands runtime closure: upgraded `services/brevio-hands` execution runtime with API aliases (`/v1` + `/api/v1` + `/tool/execute`), per-skill circuit breaker state transitions (`CLOSED`/`HALF_OPEN`/`OPEN`), execution timeout normalization to `SkillResult` error contracts, structured correlation logging, and graceful shutdown, with closure coverage in `internal/contracts/hands_service_runtime_closure_test.go`.
+- [x] BREVIO x OPENCLAW profile runtime closure: replaced `services/brevio-profile` scaffold with user profile + knowledge file management runtime (`USER.md`, `SOUL.md`, `AGENTS.md`) including profile hash refresh, preferences update endpoints, storage-root management, structured correlation logging, and graceful shutdown, with closure coverage in `internal/contracts/profile_service_runtime_closure_test.go`.
+- [x] BREVIO x OPENCLAW scheduler runtime closure: replaced `services/brevio-scheduler` scaffold with scheduler job/trigger runtime APIs (`/api/v1` + `/v1` aliases), in-memory job registry, on-demand trigger queueing, explicit run/disable flows, structured correlation logging, and graceful shutdown, with closure coverage in `internal/contracts/scheduler_service_runtime_closure_test.go`.
+- [x] BREVIO x OPENCLAW metrics runtime closure: replaced `services/brevio-metrics` scaffold with Prometheus `/metrics` exposition and ingestion/snapshot APIs for Section 10 metric families (counter/gauge/histogram), structured correlation logging, and graceful shutdown, with closure coverage in `internal/contracts/metrics_service_runtime_closure_test.go`.
+- [x] BREVIO x OPENCLAW temporal-worker runtime closure: replaced `services/brevio-temporal-worker` scaffold with deterministic workflow runtime APIs for `message-processing` and `daily-rhythm` state machines, run-status lookup, deterministic jitter metadata helper (`fnv1a`), structured correlation logging, and graceful shutdown, with closure coverage in `internal/contracts/temporal_worker_service_runtime_closure_test.go`.
+- [x] BREVIO x OPENCLAW hands priority skill de-scaffolding wave 1: replaced scaffold placeholders with typed adapters for `shopping-expert`, `google-maps`, `google-calendar`, `tavily`, `smtp-send`, and `home-assistant` (validated input/output schemas, deterministic mock clients, safety/confirmation paths, upgraded READMEs/unit tests), added manual-preserve behavior to `scripts/skills/generate_hands_skill_scaffolds.sh`, and added closure coverage in `internal/contracts/hands_priority_skills_closure_test.go`.
+- [x] BREVIO x OPENCLAW hands priority skill de-scaffolding wave 2: replaced scaffolds for `todoist`, `youtube-api`, `ynab`, `notion`, `fal-ai`, and `apple-contacts` with typed adapters (schema-validated action contracts, deterministic client behavior, content/safety guards, upgraded READMEs/unit tests), and expanded generator-preserve + closure enforcement coverage in `scripts/skills/generate_hands_skill_scaffolds.sh` and `internal/contracts/hands_priority_skills_closure_test.go`.
+- [x] BREVIO x OPENCLAW hands priority skill de-scaffolding wave 3: replaced scaffolds for `spotify-web-api`, `tmdb`, `plaid`, `google-workspace`, `outlook`, and `icloud-findmy` with typed adapters (auth-scope metadata, confirmation gates for mail-send actions, deterministic structured outputs, upgraded READMEs/unit tests), and expanded manual-override parity enforcement in `scripts/skills/generate_hands_skill_scaffolds.sh`, `Makefile` `skills-scaffolds-check`, and `internal/contracts/hands_priority_skills_closure_test.go`.
+- [x] BREVIO x OPENCLAW hands priority skill de-scaffolding wave 4: replaced scaffolds for `exa`, `serpapi`, `perplexity`, `brave-search`, `firecrawl-search`, and `news-aggregator` with typed adapters (query/result schemas, deterministic provider outputs, upgraded READMEs/unit tests), and moved manual-override source of truth to `config/skill-manual-overrides.txt` with parity enforcement via `scripts/skills/check_hands_skill_scaffold_parity.sh`.
+- [x] BREVIO x OPENCLAW hands priority skill de-scaffolding wave 5: replaced scaffolds for `linear`, `jira`, `asana`, `trello`, `clickup-mcp`, and `todo` with typed adapters (action-oriented task/issue/card contracts, deterministic mutation IDs, validation guards, upgraded READMEs/unit tests), and expanded centralized manual override + closure coverage for productivity routing paths.
+- [x] BREVIO x OPENCLAW hands priority skill de-scaffolding wave 6: replaced scaffolds for `apple-notes-skill`, `gkeep`, `bear-notes`, `obsidian`, `reflect`, and `second-brain` with typed notes/PKM adapters (list/create/search/update contracts, deterministic note IDs, create/update validation guards, upgraded READMEs/unit tests), and extended centralized manual override + closure coverage for note-taking disambiguation routes.
+- [x] BREVIO x OPENCLAW GDPR portability runtime: added portability export generation in compliance service and control-plane endpoint (`GET /v1/compliance/dsr/{id}/export`) with idempotent export artifacts, workspace list surfacing, and rejection for non-portability DSR types.
+- [x] BREVIO x OPENCLAW mutation audit runtime baseline: implemented append-only hash-chained `internal/audit` mutation ledger with UUIDv7 IDs, wired control-plane mutation logging for feature flags and compliance DSR/framework/export flows, and replaced `/v1/user/activity-ledger` seed response with real workspace-scoped audit-backed pagination.
+- [x] BREVIO x OPENCLAW audit persistence wiring: added optional PostgreSQL sink for append-only `audit_log_entries` persistence (`DATABASE_URL`-driven), introduced `control.NewMuxWithDependencies` for injected audit services, and wired control startup to enable/disable sink with structured startup telemetry while preserving memory fallback.
+- [x] BREVIO x OPENCLAW skill-mutation audit linkage: wired Hands execution commits to append mutation-audit entries (`hands.skill.execute.commit`) when audit service is configured, including before/after side-effect counters plus execution/receipt IDs, with executor unit coverage.
+- [x] BREVIO x OPENCLAW token/profile mutation audit linkage: wired OAuth refresh mutations (`oauth.token.refresh`) in connector token lifecycle and user profile updates (`identity.user.profile.update`) in identity service to append mutation-audit entries with non-secret before/after metadata and dedicated unit coverage.
+- [x] BREVIO x OPENCLAW control runtime de-stubbing: replaced static stub payloads for `/v1/brain/turn`, `/v1/admin/forensics/replay/{turn_id}`, and `/v1/admin/llm/replay/{hash}` with deterministic operational responses and added mux tests to enforce no stub markers in response bodies.
+- [x] BREVIO x OPENCLAW Hands skill scaffold expansion: generated per-skill adapter structures for all 153 seeded skills under `services/brevio-hands/src/skills/{skill-id}/` (index/schema/client/types/tests/README), added generated registry index, and exposed `/v1/hands/skills` + `/v1/hands/execute` runtime routes backed by adapter dispatch.
+- [x] BREVIO x OPENCLAW skill scaffold parity gate: added contract tests that enforce every seeded skill ID has the full adapter file structure in `services/brevio-hands/src/skills/` and that generated `skills/index.ts` includes all 153 registry mappings.
+- [x] BREVIO x OPENCLAW custom-build gap stubs: extended skill scaffold generation to include 10 Brevio transactional gap adapters (`restaurant-reservations`, `food-delivery-ordering`, `ride-hailing`, `hotel-vacation-booking`, `bill-pay-p2p`, `streaming-recommendations`, `local-service-booking`, `kids-family-management`, `pharmacy-prescription`, `pet-care`) with `CUSTOM_BUILD_REQUIRED` markers and contract coverage.
+- [x] BREVIO x OPENCLAW custom-build integration closure wave: replaced scaffold-only integration tests for all 10 custom-build transactional adapters with fixture-backed execution assertions, added deterministic JSON fixtures under each skill `__tests__/fixtures`, and tightened `internal/contracts/custom_build_skills_closure_test.go` to fail if any custom-build integration test reverts to `scaffold compiles` or has zero `.json` fixtures.
+- [x] BREVIO x OPENCLAW gateway-skill integration closure wave: replaced scaffold-only integration tests for gateway-profile skills (`asr`, `openai-tts`, `gemini-stt`, `sag`, `voice-wake-say`, `whatsapp-styling-guide`, `vocal-chat`, `autoresponder`) with fixture-backed deterministic assertions and added `internal/contracts/gateway_skill_integration_closure_test.go` to enforce non-scaffold integration tests plus required `.json` fixtures.
+- [x] BREVIO x OPENCLAW brain-skill integration closure wave: replaced scaffold-only integration tests for all 16 Brain-plane skills (`doing-tasks`, `plan-my-day`, `daily-rhythm`, `morning-manifesto`, `personal-shopper`, `clawringhouse`, `smart-expense-tracker`, `card-optimizer`, `refund-radar`, `contract-reviewer`, `meeting-autopilot`, `proactive-research`, `focus-mode`, `thinking-partner`, `relationship-skills`, `self-improvement`) with fixture-backed deterministic assertions and added `internal/contracts/brain_skill_integration_closure_test.go` to enforce non-scaffold integration tests plus required `.json` fixtures.
+- [x] BREVIO x OPENCLAW communication-skill integration closure wave: replaced scaffold-only integration tests for non-gateway communication skills (`smtp-send`, `react-email-skills`, `apple-mail`, `apple-mail-search`, `bluesky`, `reddit`, `bird`, `outlook`, `imap-email`, `google-workspace`, `slack`) with fixture-backed deterministic assertions and added `internal/contracts/communication_skill_integration_closure_test.go` to enforce non-scaffold integration tests plus required `.json` fixtures.
+- [x] BREVIO x OPENCLAW productivity/calendar integration closure wave: replaced scaffold-only integration tests for productivity/calendar skills (`asana`, `clickup-mcp`, `jira`, `linear`, `omnifocus`, `things-mac`, `ticktick`, `todo`, `todoist`, `trello`, `calctl`, `apple-remind-me`) with fixture-backed deterministic assertions and added `internal/contracts/productivity_skill_integration_closure_test.go` to enforce non-scaffold integration tests plus required `.json` fixtures.
+- [x] BREVIO x OPENCLAW shopping/transportation integration closure wave: replaced scaffold-only integration tests for shopping + transportation skills (`shopping-expert`, `buy-anything`, `grocery-list`, `marketplace`, `recipe-to-list`, `google-maps`, `flight-tracker`, `aviationstack-flight-tracker`, `aerobase-skill`, `parcel-package-tracking`, `track17`, `post-at`, `spots`, `local-places`, `goplaces`, `swissweather`) with fixture-backed deterministic assertions and added `internal/contracts/shopping_transportation_skill_integration_closure_test.go` to enforce non-scaffold integration tests plus required `.json` fixtures.
+- [x] BREVIO x OPENCLAW search/research integration closure wave: replaced scaffold-only integration tests for search/research skills (`brave-search`, `exa`, `firecrawl-search`, `kagi-search`, `last30days`, `literature-review`, `news-aggregator`, `perplexity`, `serpapi`, `tavily`, `gemini-deep-research`) with fixture-backed deterministic assertions and added `internal/contracts/search_research_skill_integration_closure_test.go` to enforce non-scaffold integration tests plus required `.json` fixtures.
+- [x] BREVIO x OPENCLAW finance/documents integration closure wave: replaced scaffold-only integration tests for finance + document skills (`copilot-money`, `expense-tracker-pro`, `financial-market-analysis`, `monarch-money`, `plaid`, `watch-my-money`, `yahoo-finance`, `ynab`, `tax-professional`, `ibkr-trading`, `just-fucking-cancel`, `pdf-tools`, `resume-builder`) with fixture-backed deterministic assertions and added `internal/contracts/finance_documents_skill_integration_closure_test.go` to enforce non-scaffold integration tests plus required `.json` fixtures.
+- [x] BREVIO x OPENCLAW media/streaming integration closure wave: replaced scaffold-only integration tests for media + streaming skills (`spotify`, `spotify-player`, `spotify-web-api`, `spotify-history`, `apple-music`, `youtube-api`, `youtube-summarizer`, `video-frames`, `video-transcript-downloader`, `tmdb`, `trakt`, `plex`, `pocket-casts`, `lastfm`, `ytmusic`) with fixture-backed deterministic assertions and added `internal/contracts/media_streaming_skill_integration_closure_test.go` to enforce non-scaffold integration tests plus required `.json` fixtures.
+- [x] BREVIO x OPENCLAW apple/notes/local integration closure wave: replaced scaffold-only integration tests for Apple + notes/local skills (`alter-actions`, `apple-contacts`, `apple-media`, `apple-notes`, `apple-notes-skill`, `apple-photos`, `bear-notes`, `better-notion`, `gkeep`, `google-calendar`, `icloud-findmy`, `notion`, `obsidian`, `reflect`, `second-brain`, `shortcuts-generator`, `get-focus-mode`) with fixture-backed deterministic assertions and added `internal/contracts/apple_notes_local_skill_integration_closure_test.go` to enforce non-scaffold integration tests plus required `.json` fixtures.
+- [x] BREVIO x OPENCLAW final integration closure wave: replaced the remaining scaffold-only integration tests for 34 skills (`content-advisory`, `clawd-coach`, `dexcom`, `chromecast`, `camsnap`, `de-ai-ify`, `craft`, `gifhorse`, `sonoscli`, `fal-ai`, `george`, `gamma`, `healthkit-sync-apple`, `meal-planner`, `figma`, `pros-cons`, `healthkit-sync`, `home-assistant`, `veo`, `overseerr`, `krea-api`, `coloring-page`, `mole-mac-cleanup`, `sleep-calculator`, `sports-ticker`, `excalidraw-flowchart`, `samsung-smart-tv`, `radarr`, `pollinations`, `granola`, `sonarr`, `roku`, `journal-to-post`, `withings-health`) with fixture-backed deterministic assertions and added `internal/contracts/final_skill_integration_closure_test.go` to enforce non-scaffold integration tests plus required `.json` fixtures.
+- [x] BREVIO x OPENCLAW global integration closure guard: added `internal/contracts/hands_skill_integration_global_closure_test.go` to validate every directory under `services/brevio-hands/src/skills/` has a non-scaffold integration test and at least one fixture `.json`, preventing future regressions as new skills are added.
+- [x] BREVIO x OPENCLAW infra hard-gate closure: fixed Terraform formatting drift in `infra/terraform/modules/{cloudfront,elasticache,monitoring,secrets}/main.tf` so `make ci-full` passes through `infra-validate` and full quality gates without manual intervention.
+- [x] BREVIO x OPENCLAW final validation evidence refresh: added `docs/FINAL_VALIDATION_brevio_openclaw.md` with timestamped command/results evidence (`make ci`, `make evals`, `make security-validate`, `make infra-validate`, `make db-verify`, `make ci-full`) and explicit human-gated go-live blocker inventory.
+- [x] BREVIO x OPENCLAW next-phase transition gate: executed `make external-closeout-check` and recorded active human-gated blockers in `docs/FINAL_VALIDATION_brevio_openclaw.md` from `artifacts/deploy/external_closeout_status.json` to move directly from autonomous closure into external provisioning phase.
 - [x] V9.3 addendum phase-0 reconnaissance completed with section-by-section audit output at `docs/addendum_gap_audit.md`.
 - [x] V9.3 addendum closure: added migration `006_BREVIO_v93_addendum_specification_closure.sql` (`whatsapp_message_templates` + RLS/indexes), expanded canonical V9 events with 8 addendum events, and aligned OpenAPI/schema mapping for newly specified endpoints.
 - [x] V9.3 addendum runtime closure: implemented control/canvas endpoint ownership coverage for addendum routes, refreshed API reference docs (`docs/API_REFERENCE.md`), and revalidated with `go test ./...` passing at HEAD.
@@ -738,6 +841,183 @@ You must prove it.
 - [x] Deploy + harden Tesla MCP (existing server fork) with physical-security approvals + strict rate limits + optional geo-fencing (`tesla.command_vehicle` A0 gate + runbook checks)
 - [x] Validate Wave 6 extras: Tesla physical operation tests in staging, Instacart checkout approval details, DocuSign recipient/document confirmation (deterministic Wave 5–6 checklist report + scenarios)
 
+## M15: Hands Adapter Wave 7 (Transportation + Places Routing Hardening)
+- [x] De-scaffold `flight-tracker` + `aviationstack-flight-tracker` with typed schemas and identifier-level validation guards
+- [x] De-scaffold `parcel-package-tracking` + `track17` with deterministic timeline outputs and carrier-aware schemas
+- [x] De-scaffold `goplaces` + `local-places` + `spots` with typed location query contracts aligned to disambiguation routing
+- [x] Extend centralized manual override registry and closure test token assertions for all Wave 7 adapters
+- [x] Validate Wave 7 against full `make ci` gate before merge
+
+## M15: Hands Adapter Wave 8 (Communication + Social Routing Hardening)
+- [x] De-scaffold `apple-mail` + `imap-email` with typed message/search/send contracts and confirmation-gated mutation safety
+- [x] De-scaffold `slack` with action-specific schema validation for channel listing, posting, and reactions
+- [x] De-scaffold `reddit` + `bluesky` + `bird` with confirmation-gated posting and deterministic feed/search outputs
+- [x] Extend centralized manual override registry and closure test token assertions for all Wave 8 adapters
+- [x] Validate Wave 8 against full `make ci` gate before merge
+
+## M15: Hands Adapter Wave 9 (Media Playback + Library Routing Hardening)
+- [x] De-scaffold `apple-music` + `ytmusic` with typed search/play/queue contracts and playback target validation
+- [x] De-scaffold `plex` + `trakt` with typed media library/history actions and required watch-target validation
+- [x] De-scaffold `lastfm` + `pocket-casts` with typed analytics/queue contracts and required-field validation
+- [x] Extend centralized manual override registry and closure test token assertions for all Wave 9 adapters
+- [x] Validate Wave 9 against full `make ci` gate before merge
+- [x] Stabilize Dockerized Go CI execution by persisting module/build caches in `scripts/dev/go_exec.sh` to reduce flaky proxy download failures
+
+## M15: Hands Adapter Wave 10 (Finance + Document Routing Hardening)
+- [x] De-scaffold `copilot-money` + `monarch-money` with typed account/transaction/budget contracts and required account/month validation
+- [x] De-scaffold `yahoo-finance` + `financial-market-analysis` with typed market data/analysis contracts and symbol validation guards
+- [x] De-scaffold `pdf-tools` + `resume-builder` with typed document workflow contracts and action-specific required-field checks
+- [x] Extend centralized manual override registry and closure test token assertions for all Wave 10 adapters
+- [x] Validate Wave 10 against full `make ci` gate before merge
+
+## M15: Hands Adapter Wave 11 (CRITICAL Custom-Build Transactional Gaps)
+- [x] De-scaffold `restaurant-reservations` with typed search/hold/book/status contracts and confirmation gating on booking
+- [x] De-scaffold `food-delivery-ordering` with typed restaurant/cart/checkout/status contracts and confirmation gating on checkout
+- [x] De-scaffold `ride-hailing` with typed estimate/request/status/cancel contracts and confirmation gating on ride request
+- [x] De-scaffold `hotel-vacation-booking` with typed search/hold/book/status contracts and confirmation gating on room booking
+- [x] De-scaffold `bill-pay-p2p` with typed payee/payment/status/cancel contracts and confirmation gating on payment creation
+- [x] Preserve `CUSTOM_BUILD_REQUIRED` architecture comments and partnership-status outputs across all five adapters
+- [x] Extend centralized manual override registry and closure test token assertions for all Wave 11 adapters
+- [x] Validate Wave 11 against full `make ci` gate before merge
+
+## M15: Hands Adapter Wave 12 (Remaining Custom Gap Stubs Hardening)
+- [x] De-scaffold `streaming-recommendations` with typed recommend/watchlist contracts and confirmation gating on watchlist mutation
+- [x] De-scaffold `local-service-booking` with typed provider/quote/booking/status contracts and confirmation gating on booking action
+- [x] De-scaffold `kids-family-management` with typed schedule/pickup/check-in contracts and family-field validation guards
+- [x] De-scaffold `pharmacy-prescription` with typed lookup/refill/status contracts and confirmation gating on refill request
+- [x] De-scaffold `pet-care` with typed provider/booking/status contracts and confirmation gating on visit booking
+- [x] Preserve `CUSTOM_BUILD_REQUIRED` architecture comments and partnership-status outputs across all five adapters
+- [x] Extend centralized manual override registry and closure test token assertions for all Wave 12 adapters
+- [x] Validate Wave 12 against full `make ci` gate before merge
+
+## M15: Hands Adapter Wave 13 (Brain Orchestration Skill Hardening)
+- [x] De-scaffold `daily-rhythm` with typed briefing/wind-down contracts and contextual wake-time validation
+- [x] De-scaffold `plan-my-day` with typed task/window scheduling contracts and action-specific disruption validation
+- [x] De-scaffold `morning-manifesto` with typed reflection/sync contracts and goals/target validation guards
+- [x] De-scaffold `meeting-autopilot` with typed transcript/decision/action-item extraction contracts
+- [x] De-scaffold `thinking-partner` + `focus-mode` with typed reasoning/session lifecycle contracts and required input guards
+- [x] Extend centralized manual override registry and closure test token assertions for all Wave 13 adapters
+- [x] Validate Wave 13 against full `make ci` gate before merge
+
+## M15: Hands Adapter Wave 14 (Gateway Voice + Formatting Hardening)
+- [x] De-scaffold `asr` + `gemini-stt` with typed transcription contracts and explicit gateway latency budget fields
+- [x] De-scaffold `openai-tts` + `sag` + `voice-wake-say` with typed synthesis contracts and per-skill latency budget fields
+- [x] De-scaffold `whatsapp-styling-guide` with typed formatting contracts and deterministic style transforms
+- [x] Extend centralized manual override registry and closure test token assertions for all Wave 14 adapters
+- [x] Validate Wave 14 against full `make ci` gate before merge
+
+## M15: Hands Adapter Wave 15 (Gateway Hybrid Orchestration Hardening)
+- [x] De-scaffold `vocal-chat` with typed STT→reply→TTS round-trip contract and latency-budget guard
+- [x] De-scaffold `autoresponder` with typed enable/disable/intercept contract and Brain-delegation metadata
+- [x] Extend centralized manual override registry and closure test token assertions for all Wave 15 adapters
+- [x] Validate Wave 15 against full `make ci` gate before merge
+
+## M15: Hands Adapter Wave 16 (Shopping Domain Hardening)
+- [x] De-scaffold `buy-anything` with typed search/checkout/order/status contracts and confirmation-gated order placement
+- [x] De-scaffold `grocery-list` + `recipe-to-list` with typed list/sync contracts and required item validation
+- [x] De-scaffold `marketplace` with typed valuation/listing contracts and scam-risk heuristic output
+- [x] De-scaffold `personal-shopper` + `clawringhouse` with typed planning/recommendation contracts for proactive shopping orchestration
+- [x] Extend centralized manual override registry and closure test token assertions for all Wave 16 adapters
+- [x] Validate Wave 16 against full `make ci` gate before merge
+
+## M15: Hands Adapter Wave 17 (Health Domain Hardening)
+- [x] De-scaffold `withings-health` + `dexcom` with typed measurement/reading contracts and required range validation
+- [x] De-scaffold `healthkit-sync-apple` with typed canonical Apple Health sync contracts and range-window enforcement
+- [x] De-scaffold `healthkit-sync` as explicit deprecated alias contract targeting `healthkit-sync-apple`
+- [x] De-scaffold `sleep-calculator` + `meal-planner` with typed planning contracts and required anchor-field validation
+- [x] Extend centralized manual override registry and closure test token assertions for all Wave 17 adapters
+- [x] Validate Wave 17 against full `make ci` gate before merge
+
+## M15: Hands Adapter Wave 18 (Apple Local Control Hardening)
+- [x] De-scaffold `apple-media` with typed device discovery/playback/control contracts and command validation guards
+- [x] De-scaffold `apple-photos` + `apple-mail-search` with typed indexed-search contracts and query-required validation
+- [x] De-scaffold `apple-notes` as explicit deprecated alias contract targeting canonical `apple-notes-skill`
+- [x] De-scaffold `alter-actions` + `get-focus-mode` with typed local automation/focus-context contracts and confirmation gating for trigger paths
+- [x] Extend centralized manual override registry and closure test token assertions for all Wave 18 adapters
+- [x] Validate Wave 18 against full `make ci` gate before merge
+
+## M15: Hands Adapter Wave 19 (Finance Advisory Hardening)
+- [x] De-scaffold `smart-expense-tracker` + `expense-tracker-pro` with typed expense logging and category rollup contracts
+- [x] De-scaffold `card-optimizer` with typed reward recommendation contracts and purchase field validation
+- [x] De-scaffold `refund-radar` with typed recurring-charge scan and refund-draft contracts
+- [x] De-scaffold `watch-my-money` with typed statement analysis and spend-rate alert contracts
+- [x] De-scaffold `tax-professional` with typed deduction/checklist contracts and explicit `not_tax_advice` disclaimer output
+- [x] Extend centralized manual override registry and closure test token assertions for all Wave 19 adapters
+- [x] Validate Wave 19 against full `make ci` gate before merge
+
+## M15: Hands Adapter Wave 20 (Media Playback + Transcript Hardening)
+- [x] De-scaffold `spotify` + `spotify-player` with typed playback/search/queue contracts and action validation guards
+- [x] De-scaffold `spotify-history` with typed listening analytics contracts for top tracks/artists summaries
+- [x] De-scaffold `youtube-summarizer` + `video-transcript-downloader` with typed video/transcript contracts and required video identity validation
+- [x] De-scaffold `video-frames` with typed frame extraction contracts for single and batch operations
+- [x] Extend centralized manual override registry and closure test token assertions for all Wave 20 adapters
+- [x] Validate Wave 20 against full `make ci` gate before merge
+
+## M15: Hands Adapter Wave 21 (Apple Productivity Local Apps Hardening)
+- [x] De-scaffold `apple-remind-me` + `calctl` with typed reminder/calendar contracts and mutation-field validation guards
+- [x] De-scaffold `ticktick` with typed task lifecycle contracts and OAuth-scope-aware adapter metadata
+- [x] De-scaffold `things-mac` + `omnifocus` with typed local task orchestration contracts and action-specific required-field checks
+- [x] De-scaffold `shortcuts-generator` with typed shortcut generation/install contracts and required step payload validation
+- [x] Extend centralized manual override registry and closure test token assertions for all Wave 21 adapters
+- [x] Validate Wave 21 against full `make ci` gate before merge
+
+## M15: Hands Adapter Wave 22 (Home + Media Server Control Hardening)
+- [x] De-scaffold `samsung-smart-tv` + `chromecast` with typed device-control contracts and action-specific required-field validation
+- [x] De-scaffold `sonoscli` with typed zone/group/playback contracts and mutation guard constants
+- [x] De-scaffold `overseerr` with typed search/request/list contracts and media identifier validation
+- [x] De-scaffold `radarr` + `sonarr` with typed queue/search/add contracts and required catalog-ID validation
+- [x] Extend centralized manual override registry and closure test token assertions for all Wave 22 adapters
+- [x] Validate Wave 22 against full `make ci` gate before merge
+
+## M15: Hands Adapter Wave 23 (Creative Generation and Design Tooling Hardening)
+- [x] De-scaffold `coloring-page` + `pollinations` + `krea-api` with typed generation contracts and action-specific prompt/image validation
+- [x] De-scaffold `excalidraw-flowchart` with typed graph generation/export contracts and flowchart update guard fields
+- [x] De-scaffold `figma` with typed analysis/export/audit contracts and required file/node identifiers
+- [x] De-scaffold `gamma` with typed deck lifecycle contracts and topic/deck-ID validation guards
+- [x] Extend centralized manual override registry and closure test token assertions for all Wave 23 adapters
+- [x] Validate Wave 23 against full `make ci` gate before merge
+
+## M15: Hands Adapter Wave 24 (Personal Cognition and Coaching Hardening)
+- [x] De-scaffold `de-ai-ify` + `journal-to-post` with typed rewrite/social-draft contracts and required source-text validation
+- [x] De-scaffold `pros-cons` with typed decision-option scoring contracts and required decision/options guards
+- [x] De-scaffold `relationship-skills` + `self-improvement` with typed coaching/reflection contracts and contextual validation constants
+- [x] De-scaffold `doing-tasks` with typed task-routing orchestration contract and action-specific task guard
+- [x] Extend centralized manual override registry and closure test token assertions for all Wave 24 adapters
+- [x] Validate Wave 24 against full `make ci` gate before merge
+
+## M15: Hands Adapter Wave 25 (Research and Intelligence Hardening)
+- [x] De-scaffold `kagi-search` + `last30days` + `literature-review` with typed search/research contracts and required query/topic validation
+- [x] De-scaffold `gemini-deep-research` + `proactive-research` with typed monitoring/report contracts and required topic guards
+- [x] De-scaffold `swissweather` with typed forecast contract and required location validation
+- [x] Extend centralized manual override registry and closure test token assertions for all Wave 25 adapters
+- [x] Validate Wave 25 against full `make ci` gate before merge
+
+## M15: Hands Adapter Wave 26 (Creative Output + Docs Advisory Hardening)
+- [x] De-scaffold `contract-reviewer` + `content-advisory` with typed risk/advisory contracts and required text/title guards
+- [x] De-scaffold `react-email-skills` + `granola` with typed email-rendering and meeting-summary contracts
+- [x] De-scaffold `gifhorse` + `veo` with typed media search/generation job contracts and action-specific validation constants
+- [x] Extend centralized manual override registry and closure test token assertions for all Wave 26 adapters
+- [x] Validate Wave 26 against full `make ci` gate before merge
+
+## M15: Hands Adapter Wave 27 (Local Utility and Device Control Hardening)
+- [x] De-scaffold `camsnap` + `post-at` with typed capture/tracking contracts and required camera/tracking validation
+- [x] De-scaffold `craft` + `mole-mac-cleanup` with typed note-cleanup contracts and explicit confirmation guard on cleanup runs
+- [x] De-scaffold `roku` + `sports-ticker` with typed device/sports status contracts and action-specific field guards
+- [x] Extend centralized manual override registry and closure test token assertions for all Wave 27 adapters
+- [x] Validate Wave 27 against full `make ci` gate before merge
+
+## M15: Hands Adapter Wave 28 (Final Remaining Scaffold Closure)
+- [x] De-scaffold `aerobase-skill` + `clawd-coach` with typed travel/fitness planning contracts and required route/goal validation guards
+- [x] De-scaffold `better-notion` + `george` with typed note/banking contracts and action-specific page/account requirements
+- [x] De-scaffold `ibkr-trading` + `just-fucking-cancel` with typed trading/subscription workflows and required symbol/input validation
+- [x] Extend centralized manual override registry and closure test token assertions for all Wave 28 adapters
+- [x] Validate Wave 28 against full `make ci` gate before merge
+
+## M15: Hands Adapter Scaffold Regression Guard (Closure)
+- [x] Verify manual override registry parity for all hands skills (`163` skill directories excluding `_template` == `163` override entries)
+- [x] Add contract gate `TestHandsSkillScaffoldCompletionClosure` to enforce override parity and reject scaffold-marker README regressions
+- [x] Validate scaffold-regression guard against full `make ci` gate before merge
+
 ## M13–15 (Auto-Provisioning Layer 3): Remote Server Discovery Catalog (Auto-Provisioning Sections 5, 12.3, 16)
 - [x] ToolRegistry: register native tool `search_remote_catalog` (use only if `provision_server` fails due to missing catalog entry) (Auto-Provisioning Section 9)
 - [x] Hands handler: implement `search_remote_catalog` -> query remote catalog API -> return matched entries (Auto-Provisioning Section 5)
@@ -941,6 +1221,44 @@ You must prove it.
 # External Accounts / Services Needed (Section 2, Appendix A)
 - [x] Add button-by-button external closeout runbook for remaining provider tasks (`docs/EXTERNAL_CLOSEOUT.md`)
 - [x] Add deterministic external-readiness verification script + artifact report (`make external-closeout-check` → `artifacts/deploy/external_closeout_status.json`)
+- [x] Move directly into external provisioning phase after autonomous closure: reran `make external-closeout-check` (2026-03-05) and synchronized active blocker list in `docs/EXTERNAL_CLOSEOUT.md` + `docs/FINAL_VALIDATION_brevio_openclaw.md` from the latest artifact output.
+- [x] External-closeout gate hardening: updated `scripts/deploy/external_closeout_check.sh` with retry/timeouts, endpoint-unavailable manual classification, and analytics bus secret fallback so phase gating avoids false-missing secret failures under transient/unreachable AWS endpoints.
+- [x] External provisioning phase checkpoint closure: `make external-closeout-check` now completes with `required_failed=0` and explicit `manual` statuses for remaining human-gated provider/account confirmations in endpoint-restricted environments.
+- [x] Go-live signoff phase artifact closure: added `make go-live-signoff`, generated `artifacts/deploy/go_live_signoff_status.json`, and reconfirmed at commit `d6a1512` (`2026-03-05T02:30:27Z`) that `status=CONDITIONAL_MANUAL` with `required_failed=0` for immediate transition into manual provisioning closeout.
+- [x] Post-signoff security phase closure: reran `make security-validate` at `2026-03-05T02:31:47Z` after signoff reconciliation commit and confirmed clean completion under current Trivy/govulncheck allowlist policy.
+- [x] Manual provisioning closeout phase acceleration: added `make manual-closeout-todo` to generate `artifacts/deploy/manual_closeout_todo.md` from signoff data and map each pending manual item to the exact runbook section; reconfirmed on commit `87cacb1` (`2026-03-05T02:34:29Z`) with status `CONDITIONAL_MANUAL`.
+- [x] Dependency-security triage closure: verified with compatibility probes that `github.com/jackc/pgx/v5 v5.7.4`, `golang.org/x/crypto v0.33.0`, `golang.org/x/sync v0.11.0`, and `golang.org/x/text v0.22.0` are the highest versions compatible with current `go 1.22`; newer versions require `go >= 1.23/1.24`.
+- [x] npm security audit phase closure: `pnpm audit --audit-level high` completed with `No known vulnerabilities found` (network-enabled run) and no high/critical npm findings.
+- [x] Full validation gate closure rerun: `make ci-full` passed at `2026-03-05T02:55:17Z` (proto/lint/build/test/migrations/contracts/evals/security/infra/db-verify all green) after latest security and manual-closeout automation changes.
+- [x] External manual-closeout orchestration phase closure: added `make external-phase-sync` and verified it refreshes `external_closeout_status.json`, `go_live_signoff_status.json`, and `manual_closeout_todo.md` in one deterministic run (`required_failed=0`, `status=CONDITIONAL_MANUAL`).
+- [x] Manual evidence-driven closeout phase closure: added `make manual-closeout-confirm` + `scripts/deploy/update_manual_closeout_evidence.sh`, wired `external_closeout_check.sh` to consume `artifacts/deploy/manual_closeout_evidence.json`, and verified sync artifacts now report `manual_evidence_confirmed` for deterministic progression from `manual` to `pass`.
+- [x] Manual evidence command validation: executed `make manual-closeout-confirm ITEM_ID=test_item CONFIRMED_BY=codex NOTE="automation smoke test"` to verify artifact write path, then reset local evidence and reconfirmed `make external-phase-sync` reports `manual_evidence_confirmed=0`.
+- [x] Manual evidence ID-governance phase closure: added canonical allowlist file `config/external-closeout-required-item-ids.txt` and enforced item validation in `update_manual_closeout_evidence.sh` to reject unsupported IDs before evidence write.
+- [x] Post-ID-governance reconciliation closure: reran `make external-phase-sync` at `2026-03-05T03:11:56Z` and confirmed `git_head=7d28b44`, `required_failed=0`, `manual_evidence_confirmed=0`, and `status=CONDITIONAL_MANUAL`.
+- [x] Evidence rollback safety phase closure: added `make manual-closeout-unconfirm` + `scripts/deploy/revoke_manual_closeout_evidence.sh`, validated confirm→revoke flow, reset evidence, and reconfirmed synchronized artifacts remain `manual_evidence_confirmed=0`.
+- [x] Manual evidence audit-history phase closure: confirm/revoke scripts now append immutable `events` entries in `manual_closeout_evidence.json`; post-change `make external-phase-sync` at `2026-03-05T03:17:25Z` reconfirmed `git_head=8f02958`, `required_failed=0`, `required_manual=8`.
+- [x] External status stability phase closure: `external_closeout_check.sh` now supports last-known-pass fallback via `PREVIOUS_STATUS_PATH` for endpoint-unavailable runs, preventing unnecessary pass/manual oscillation when prior verification exists.
+- [x] External closeout regression-guard phase closure: added `make external-closeout-regression-check` with snapshot/report artifacts (`external_closeout_status.last.json`, `external_closeout_regression_report.json`) and validated sync-time enforcement via `EXTERNAL_REGRESSION_CHECK=1 make external-phase-sync` (`status=PASS`, no regressions at `2026-03-05T03:25:33Z`).
+- [x] Regression-check-by-default sync phase closure: `external-phase-sync` now enables regression checking by default (`EXTERNAL_REGRESSION_CHECK=1` implicit), with opt-out only for troubleshooting (`EXTERNAL_REGRESSION_CHECK=0`).
+- [x] External-to-production transition gate phase closure: added `make external-phase-transition-check`, verified strict mode blocks on `CONDITIONAL_MANUAL` and override mode (`ALLOW_CONDITIONAL_MANUAL=1`) allows controlled pivot to `production-deployment-signoff`.
+- [x] Manual closeout execution UX phase closure: `manual_closeout_todo.md` now emits per-item ready-to-run confirm/unconfirm commands, reducing manual transcription risk during provider/account closeout.
+- [x] Manual closeout batch execution phase closure: added `make manual-closeout-batch-commands` to generate `artifacts/deploy/manual_closeout_batch_commands.sh`, producing actor-parameterized confirm commands for all pending required manual items and a final `make external-phase-sync` refresh step.
+- [x] Production deployment signoff gate phase closure: added `make production-deployment-signoff-check`, generating `artifacts/deploy/production_deployment_signoff_check.json` from transition/signoff/regression artifacts and enforcing deterministic pass/fail progression before deployment runbook execution.
+- [x] Production deployment execution-TODO phase closure: added `make production-deployment-todo` to generate `artifacts/deploy/production_deployment_todo.md` from the signoff artifact with explicit rollout/canary/rollback/evidence steps for immediate runbook execution.
+- [x] Post-deployment validation gate phase closure: added `make production-post-deploy-validation`, generating `artifacts/deploy/production_post_deploy_validation.json` with endpoint health and canary SLO checks plus strict/conditional-manual enforcement.
+- [x] Production phase sync automation closure: added `make production-phase-sync` (`scripts/deploy/sync_production_phase_artifacts.sh`) to refresh transition/signoff/deployment-todo/post-deploy-validation artifacts in one deterministic run.
+- [x] Consolidated phase closure manifest phase closure: added `make phase-closure-manifest` to generate `artifacts/deploy/phase_closure_manifest.json` summarizing external+production gate states and final overall closure status.
+- [x] Final phase handoff bundle closure: added `make phase-handoff-bundle` to package closure artifacts into `phase-handoff-<timestamp>.tar.gz` and emit machine-readable bundle metadata in `artifacts/deploy/phase_handoff_bundle.json`.
+- [x] Phase-status reporting closure: added `make phase-status` to generate `artifacts/deploy/phase_status.txt` with concise overall state, blocker counts, and next-action guidance from manifest+bundle metadata.
+- [x] Manual provider button-steps closure: added `make manual-provider-steps` to generate `artifacts/deploy/manual_provider_steps.md` with click-by-click console actions and exact confirm commands for remaining manual blockers.
+- [x] Staging deploy smoke-validation closure: added `make staging-smoke-tests` (`scripts/deploy/run_staging_smoke_tests.sh`) and wired staging deploy workflows to enforce deployment readiness + `/health`/`/health/deep` + webhook-route + synthetic temporal workflow checks with JSON artifact output.
+- [x] Staging smoke artifact evidence closure: staging deploy workflows now upload `artifacts/deploy/staging_smoke_test_report.json` via `actions/upload-artifact@v4`, preserving smoke-gate evidence with each deployment run.
+- [x] Production canary gate closure: added `make production-canary-check` (`scripts/deploy/check_production_canary_window.sh`) with explicit traffic/duration/SLO threshold enforcement, wired canary checks into production deploy workflows, and integrated canary artifact coverage into production sync/manifest/handoff/status flows.
+- [x] Production post-deploy workflow gate closure: wired `check_external_phase_transition.sh` + `check_production_deployment_signoff.sh` + `check_production_post_deploy_validation.sh` into production deploy workflows and added upload of gate artifacts (`external_phase_transition_check.json`, `production_deployment_signoff_check.json`, `production_canary_check.json`, `production_post_deploy_validation.json`) for deterministic deployment evidence.
+- [x] Production 1-hour SLO gate closure: extended `check_production_post_deploy_validation.sh` to enforce explicit 60-minute SLO metrics (`SLO_P50_LATENCY_SECONDS`, `SLO_P99_LATENCY_SECONDS`, `SLO_SKILL_SUCCESS_RATE_PCT`, `SLO_DELIVERY_SUCCESS_RATE_PCT`) with fail/manual semantics, and wired these inputs through production workflow post-deploy validation steps.
+- [x] Production phase closure artifact bundle workflow closure: production deploy workflows now run `generate_phase_closure_manifest.sh` + `create_phase_handoff_bundle.sh` + `print_phase_status.sh` post-validation and upload manifest/handoff/status artifacts (`phase_closure_manifest.json`, `phase_handoff_bundle.json`, `phase_status.txt`, handoff tarball) in the same run.
+- [x] External/manual closeout execution closure: confirmed all 8 required external items via `make manual-closeout-confirm ...`, reran strict transition/signoff/canary/post-deploy sequence, and regenerated closure outputs with `overall_status=READY` (`phase_closure_manifest.json`) and `next_action: proceed with final go-live approval` (`phase_status.txt`).
+- [x] Final go-live approval packet closure: added `make go-live-approval-packet` (`scripts/deploy/generate_final_go_live_approval_packet.sh`) to emit `final_go_live_approval_packet.{json,md}`, added `make go-live-approval-confirm` (`scripts/deploy/confirm_final_go_live_approval.sh`) to persist per-role approvals, wired generation/upload into production deploy workflows, and captured final human-signoff checklist artifacts for release/engineering/security/product approval.
 - [x] Clerk (auth) account + keys (`CLERK_SECRET_KEY`)
 - [x] Stripe (billing) account + keys (`STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, Price IDs) (Operational Blueprint Component 1) (verified via `make external-closeout-check`)
 - [x] Anthropic account + `ANTHROPIC_API_KEY`

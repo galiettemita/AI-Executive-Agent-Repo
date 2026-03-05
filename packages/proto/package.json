@@ -1,0 +1,11 @@
+{
+  "name": "@brevio/proto",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "lint": "bash ./scripts/lint.sh",
+    "build": "bash ./scripts/generate.sh",
+    "clean": "rm -rf gen"
+  }
+}

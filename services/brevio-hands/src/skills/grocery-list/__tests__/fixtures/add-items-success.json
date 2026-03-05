@@ -1,0 +1,7 @@
+{
+  "provider": "grocery-list",
+  "action": "add_items",
+  "total_items": 3,
+  "items_count": 3,
+  "new_item_name": "apples"
+}

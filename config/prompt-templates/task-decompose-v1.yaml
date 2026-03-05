@@ -1,0 +1,37 @@
+id: PROMPT_TASK_DECOMPOSE_V1
+model: claude-sonnet-4-5-20250929
+temperature: 0.2
+max_tokens: 1024
+system_prompt: |
+  Decompose the user request into a bounded task DAG for Brevio. Return JSON only.
+  Every task must reference a registered and enabled skill_id.
+  Keep the graph deterministic and minimal.
+output_schema:
+  type: object
+  additionalProperties: false
+  required: [tasks, execution_order]
+  properties:
+    tasks:
+      type: array
+      maxItems: 10
+      items:
+        type: object
+        additionalProperties: false
+        required: [skill_id, input, dependencies, priority]
+        properties:
+          skill_id: { type: string }
+          input: { type: object }
+          dependencies:
+            type: array
+            items: { type: string }
+          priority:
+            type: integer
+            minimum: 1
+    execution_order:
+      type: string
+      enum: [parallel, sequential, mixed]
+validation:
+  max_tasks: 10
+  max_depth: 5
+  acyclic_dag: true
+  all_skill_ids_registered: true

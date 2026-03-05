@@ -193,3 +193,61 @@ func TestDefaultRetentionPoliciesAndClassMapping(t *testing.T) {
 		t.Fatalf("unexpected PUBLIC retention policy: %s", got)
 	}
 }
+
+func TestGeneratePortabilityExport(t *testing.T) {
+	t.Parallel()
+
+	s := NewService()
+	base := time.Date(2026, 3, 3, 12, 0, 0, 0, time.UTC)
+	s.now = func() time.Time { return base }
+
+	request := s.CreateDSR(DSRRequest{
+		WorkspaceID: "ws_portability",
+		UserID:      "user_portability",
+		RequestType: "portability",
+		Status:      "in_progress",
+	})
+
+	export, err := s.GeneratePortabilityExport(request.ID)
+	if err != nil {
+		t.Fatalf("generate portability export: %v", err)
+	}
+	if export.RequestID != request.RequestID {
+		t.Fatalf("unexpected export request id: %#v", export)
+	}
+	if export.DownloadURI == "" || !strings.Contains(export.DownloadURI, request.RequestID) {
+		t.Fatalf("unexpected portability export download uri: %#v", export)
+	}
+	if len(export.DataClasses) == 0 {
+		t.Fatalf("expected portability export data classes: %#v", export)
+	}
+
+	list := s.ListPortabilityExports("ws_portability")
+	if len(list) != 1 {
+		t.Fatalf("expected one portability export, got %d", len(list))
+	}
+
+	again, err := s.GeneratePortabilityExport(request.ID)
+	if err != nil {
+		t.Fatalf("generate portability export second call: %v", err)
+	}
+	if again.ID != export.ID {
+		t.Fatalf("expected idempotent portability export: first=%s second=%s", export.ID, again.ID)
+	}
+}
+
+func TestGeneratePortabilityExportRejectsNonPortabilityRequests(t *testing.T) {
+	t.Parallel()
+
+	s := NewService()
+	request := s.CreateDSR(DSRRequest{
+		WorkspaceID: "ws_1",
+		UserID:      "user_1",
+		RequestType: "deletion",
+		Status:      "in_progress",
+	})
+
+	if _, err := s.GeneratePortabilityExport(request.ID); err == nil {
+		t.Fatalf("expected non-portability request to fail")
+	}
+}

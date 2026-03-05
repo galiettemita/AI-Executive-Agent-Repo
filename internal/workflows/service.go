@@ -286,7 +286,8 @@ type Service struct {
 }
 
 // Supported workflow IDs for closure mapping:
-// interactive_turn_v1, provisioning_v9, onboarding_v1, drift_watchdog_v1,
+// message_processing_v1, daily_rhythm_v1, interactive_turn_v1,
+// provisioning_v9, onboarding_v1, drift_watchdog_v1,
 // outbox_hold_worker, memory_consolidation, daily_capture_v1,
 // daily_log_capture_v1, goal_review_v1, trust_eval_v1,
 // learning_consolidation_v1, capability_exploration_v1,

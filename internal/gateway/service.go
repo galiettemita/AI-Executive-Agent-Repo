@@ -10,6 +10,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
+	"os"
 	"path"
 	"regexp"
 	"strconv"
@@ -17,13 +19,15 @@ import (
 	"sync"
 	"time"
 
+	runtimeserver "github.com/brevio/brevio/internal/runtime"
 	"github.com/google/uuid"
 )
 
 var (
-	ErrInvalidSignature = errors.New("invalid signature")
-	ErrReplayDetected   = errors.New("replay detected")
-	ErrRateLimited      = errors.New("rate limited")
+	ErrInvalidSignature      = errors.New("invalid signature")
+	ErrReplayDetected        = errors.New("replay detected")
+	ErrRateLimited           = errors.New("rate limited")
+	ErrInvalidIMessageAPIKey = errors.New("invalid imessage api key")
 )
 
 type AttachmentInput struct {
@@ -66,11 +70,14 @@ type ChannelIdentityEnvelope struct {
 }
 
 type QueueMessage struct {
-	IngressTurnID uuid.UUID
-	WorkspaceID   uuid.UUID
-	GroupKey      string
-	DedupKey      string
-	Payload       []byte
+	IngressTurnID     uuid.UUID
+	WorkspaceID       uuid.UUID
+	Channel           string
+	ChannelIdentifier string
+	UserChannelID     string
+	GroupKey          string
+	DedupKey          string
+	Payload           []byte
 }
 
 type OutboundDispatch struct {
@@ -179,20 +186,92 @@ func (q *InMemoryQueue) Pop() (QueueMessage, bool) {
 }
 
 type RateLimiter struct {
-	mu      sync.Mutex
-	counts  map[string]int
-	maxHits int
+	mu          sync.Mutex
+	hourlyHits  map[string][]time.Time
+	minuteHits  map[string][]time.Time
+	nowFn       func() time.Time
+	hourlyLimit map[string]int
+	minuteLimit map[string]int
 }
 
-func NewRateLimiter(maxHits int) *RateLimiter {
-	return &RateLimiter{counts: map[string]int{}, maxHits: maxHits}
+func NewRateLimiter() *RateLimiter {
+	return &RateLimiter{
+		hourlyHits: map[string][]time.Time{},
+		minuteHits: map[string][]time.Time{},
+		nowFn:      time.Now,
+		hourlyLimit: map[string]int{
+			"free":       30,
+			"pro":        120,
+			"enterprise": 1_000_000,
+			"admin":      1_000_000,
+			"service":    1_000_000,
+		},
+		minuteLimit: map[string]int{
+			"free":       30,
+			"pro":        60,
+			"enterprise": 1_000_000,
+			"admin":      1_000_000,
+			"service":    1_000_000,
+		},
+	}
 }
 
-func (r *RateLimiter) Allow(subject string) bool {
+func (r *RateLimiter) SetNowForTest(nowFn func() time.Time) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.counts[subject]++
-	return r.counts[subject] <= r.maxHits
+	if nowFn != nil {
+		r.nowFn = nowFn
+	}
+}
+
+func (r *RateLimiter) Allow(subject, tier string) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	tier = normalizeTier(tier)
+	if tier == "enterprise" || tier == "admin" || tier == "service" {
+		return true
+	}
+
+	now := r.nowFn().UTC()
+	hourlyWindowStart := now.Add(-1 * time.Hour)
+	minuteWindowStart := now.Add(-1 * time.Minute)
+
+	hourly := pruneBefore(r.hourlyHits[subject], hourlyWindowStart)
+	minutely := pruneBefore(r.minuteHits[subject], minuteWindowStart)
+
+	if len(hourly) >= r.hourlyLimit[tier] || len(minutely) >= r.minuteLimit[tier] {
+		r.hourlyHits[subject] = hourly
+		r.minuteHits[subject] = minutely
+		return false
+	}
+
+	hourly = append(hourly, now)
+	minutely = append(minutely, now)
+	r.hourlyHits[subject] = hourly
+	r.minuteHits[subject] = minutely
+	return true
+}
+
+func pruneBefore(hits []time.Time, threshold time.Time) []time.Time {
+	if len(hits) == 0 {
+		return hits
+	}
+	out := make([]time.Time, 0, len(hits))
+	for _, hit := range hits {
+		if !hit.Before(threshold) {
+			out = append(out, hit)
+		}
+	}
+	return out
+}
+
+func normalizeTier(tier string) string {
+	switch strings.ToLower(strings.TrimSpace(tier)) {
+	case "free", "pro", "enterprise", "admin", "service":
+		return strings.ToLower(strings.TrimSpace(tier))
+	default:
+		return "pro"
+	}
 }
 
 type AuditLog struct {
@@ -218,6 +297,72 @@ func (a *AuditLog) Entries() []string {
 	out := make([]string, len(a.entries))
 	copy(out, a.entries)
 	return out
+}
+
+type cachedHTTPResponse struct {
+	statusCode int
+	body       []byte
+	expiresAt  time.Time
+}
+
+type IdempotencyStore struct {
+	mu    sync.Mutex
+	ttl   time.Duration
+	nowFn func() time.Time
+	byKey map[string]cachedHTTPResponse
+}
+
+func NewIdempotencyStore(ttl time.Duration) *IdempotencyStore {
+	if ttl <= 0 {
+		ttl = 24 * time.Hour
+	}
+	return &IdempotencyStore{
+		ttl:   ttl,
+		nowFn: time.Now,
+		byKey: map[string]cachedHTTPResponse{},
+	}
+}
+
+func (s *IdempotencyStore) SetNowForTest(nowFn func() time.Time) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if nowFn != nil {
+		s.nowFn = nowFn
+	}
+}
+
+func (s *IdempotencyStore) Get(key string) (statusCode int, body []byte, ok bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.cleanupLocked()
+	entry, found := s.byKey[key]
+	if !found {
+		return 0, nil, false
+	}
+	out := make([]byte, len(entry.body))
+	copy(out, entry.body)
+	return entry.statusCode, out, true
+}
+
+func (s *IdempotencyStore) Set(key string, statusCode int, body []byte) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	buf := make([]byte, len(body))
+	copy(buf, body)
+	s.byKey[key] = cachedHTTPResponse{
+		statusCode: statusCode,
+		body:       buf,
+		expiresAt:  s.nowFn().UTC().Add(s.ttl),
+	}
+}
+
+func (s *IdempotencyStore) cleanupLocked() {
+	now := s.nowFn().UTC()
+	for key, value := range s.byKey {
+		if now.After(value.expiresAt) {
+			delete(s.byKey, key)
+		}
+	}
 }
 
 type WorkspaceRouter struct {
@@ -320,16 +465,25 @@ func (u *InMemoryAttachmentUploader) Upload(_ context.Context, workspaceID uuid.
 }
 
 type Service struct {
-	secret      []byte
-	nonceTTL    time.Duration
-	store       *InMemoryStore
-	queue       *InMemoryQueue
-	rateLimiter *RateLimiter
-	audit       *AuditLog
-	identityMu  sync.Mutex
-	identityLog []ChannelIdentityEnvelope
-	router      *WorkspaceRouter
-	uploader    AttachmentUploader
+	secret         []byte
+	imessageAPIKey string
+	nonceTTL       time.Duration
+	idempTTL       time.Duration
+	startedAt      time.Time
+	nowFn          func() time.Time
+	store          *InMemoryStore
+	queue          *InMemoryQueue
+	rateLimiter    *RateLimiter
+	idempotency    *IdempotencyStore
+	audit          *AuditLog
+	identityMu     sync.Mutex
+	identityLog    []ChannelIdentityEnvelope
+	router         *WorkspaceRouter
+	uploader       AttachmentUploader
+
+	userMu   sync.Mutex
+	userIDs  map[string]uuid.UUID
+	sessions map[string]sessionState
 
 	injectedMu  sync.Mutex
 	injectedCnt int
@@ -338,18 +492,46 @@ type Service struct {
 	outbox   []OutboundDispatch
 }
 
+type ServiceOptions struct {
+	IMessageWebhookAPIKey string
+}
+
+type sessionState struct {
+	id             uuid.UUID
+	lastActivityAt time.Time
+}
+
 func NewService(secret string) *Service {
+	return NewServiceWithOptions(secret, ServiceOptions{})
+}
+
+func NewServiceWithOptions(secret string, options ServiceOptions) *Service {
+	idempotencyTTL := 24 * time.Hour
+	imessageAPIKey := strings.TrimSpace(options.IMessageWebhookAPIKey)
+	if imessageAPIKey == "" {
+		imessageAPIKey = strings.TrimSpace(os.Getenv("IMESSAGE_WEBHOOK_API_KEY"))
+	}
+	if imessageAPIKey == "" {
+		imessageAPIKey = "dev-imessage-key"
+	}
 	return &Service{
-		secret:      []byte(secret),
-		nonceTTL:    10 * time.Minute,
-		store:       NewInMemoryStore(),
-		queue:       &InMemoryQueue{},
-		rateLimiter: NewRateLimiter(5),
-		audit:       &AuditLog{},
-		identityLog: []ChannelIdentityEnvelope{},
-		router:      NewWorkspaceRouter(),
-		uploader:    NewInMemoryAttachmentUploader("attachments"),
-		outbox:      []OutboundDispatch{},
+		secret:         []byte(secret),
+		imessageAPIKey: imessageAPIKey,
+		nonceTTL:       10 * time.Minute,
+		idempTTL:       idempotencyTTL,
+		startedAt:      time.Now().UTC(),
+		nowFn:          time.Now,
+		store:          NewInMemoryStore(),
+		queue:          &InMemoryQueue{},
+		rateLimiter:    NewRateLimiter(),
+		idempotency:    NewIdempotencyStore(idempotencyTTL),
+		audit:          &AuditLog{},
+		identityLog:    []ChannelIdentityEnvelope{},
+		router:         NewWorkspaceRouter(),
+		uploader:       NewInMemoryAttachmentUploader("attachments"),
+		userIDs:        map[string]uuid.UUID{},
+		sessions:       map[string]sessionState{},
+		outbox:         []OutboundDispatch{},
 	}
 }
 
@@ -357,11 +539,15 @@ type inboundMessage struct {
 	Channel           string            `json:"channel"`
 	ChannelIdentifier string            `json:"channel_identifier"`
 	UserChannelID     string            `json:"user_channel_id"`
+	ChannelMessageID  string            `json:"channel_message_id"`
+	ReplyTo           string            `json:"reply_to"`
+	UserTier          string            `json:"user_tier"`
 	Nonce             string            `json:"nonce"`
 	Message           string            `json:"message"`
 	InteractiveReply  string            `json:"interactive_reply"`
 	DiscoveryAnswer   string            `json:"discovery_answer"`
 	AudioURL          string            `json:"audio_url"`
+	VoiceDurationMS   int               `json:"voice_duration_ms"`
 	Attachments       []AttachmentInput `json:"attachments"`
 }
 
@@ -370,6 +556,12 @@ type outboundSendRequest struct {
 	Channel           string `json:"channel"`
 	ChannelIdentifier string `json:"channel_identifier"`
 	Body              string `json:"body"`
+}
+
+type temporalWebhookRequest struct {
+	WorkflowRunID string `json:"workflow_run_id"`
+	WorkflowID    string `json:"workflow_id"`
+	Event         string `json:"event"`
 }
 
 type injectedToolCall struct {
@@ -406,10 +598,34 @@ func dedupHash(payload []byte) string {
 	return hex.EncodeToString(sum[:])
 }
 
+func gatewayIdempotencyKey(channel, channelMessageID string) string {
+	channelMessageID = strings.TrimSpace(channelMessageID)
+	if channelMessageID == "" {
+		return ""
+	}
+	channel = strings.ToLower(strings.TrimSpace(channel))
+	if channel == "" {
+		channel = "unknown"
+	}
+	return channel + "::" + channelMessageID
+}
+
+func temporalIdempotencyKey(workflowRunID string) string {
+	workflowRunID = strings.TrimSpace(workflowRunID)
+	if workflowRunID == "" {
+		return ""
+	}
+	return "temporal::" + workflowRunID
+}
+
 func (s *Service) HandleInbound(w http.ResponseWriter, r *http.Request) {
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if err := s.validateIMessageAPIKey(r); err != nil {
+		http.Error(w, err.Error(), http.StatusUnauthorized)
 		return
 	}
 
@@ -437,13 +653,23 @@ func (s *Service) HandleInbound(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	idempotencyKey := gatewayIdempotencyKey(msg.Channel, msg.ChannelMessageID)
+	if idempotencyKey != "" {
+		if statusCode, cachedBody, ok := s.idempotency.Get(idempotencyKey); ok {
+			s.audit.Append("BREVIO.ingress.idempotent_replay.v1")
+			w.WriteHeader(statusCode)
+			_, _ = w.Write(cachedBody)
+			return
+		}
+	}
+
 	if !s.store.AddNonce(msg.Nonce, s.nonceTTL) {
 		s.audit.Append("BREVIO.security.webhook.replay_blocked.v1")
 		http.Error(w, ErrReplayDetected.Error(), http.StatusConflict)
 		return
 	}
 
-	if !s.rateLimiter.Allow(msg.UserChannelID) {
+	if !s.rateLimiter.Allow(msg.Channel+"::"+msg.UserChannelID, msg.UserTier) {
 		s.audit.Append("BREVIO.gateway.rate_limited.v1")
 		http.Error(w, ErrRateLimited.Error(), http.StatusTooManyRequests)
 		return
@@ -461,6 +687,7 @@ func (s *Service) HandleInbound(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	now := s.nowUTC()
 
 	attachmentRefs := make([]AttachmentReference, 0, len(msg.Attachments))
 	for _, attachment := range msg.Attachments {
@@ -476,6 +703,41 @@ func (s *Service) HandleInbound(w http.ResponseWriter, r *http.Request) {
 		}
 		attachmentRefs = append(attachmentRefs, ref)
 	}
+	transcript := s.PreprocessVoice(r.Context(), msg.AudioURL)
+	userID, err := s.resolveOrCreateUserID(msg.Channel, msg.UserChannelID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	sessionID, err := s.resolveSessionID(msg.Channel, msg.UserChannelID, now)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	envelope, err := BuildMessageEnvelope(BuildMessageEnvelopeInput{
+		ID:               turnID,
+		Channel:          msg.Channel,
+		UserID:           userID,
+		Timestamp:        now,
+		MessageText:      msg.Message,
+		Transcript:       transcript,
+		AudioURL:         msg.AudioURL,
+		VoiceDurationMS:  msg.VoiceDurationMS,
+		Attachments:      attachmentRefs,
+		ChannelMessageID: msg.ChannelMessageID,
+		ReplyTo:          msg.ReplyTo,
+		SessionID:        sessionID,
+		UserProfileHash:  DeriveUserProfileHash(workspaceID, userID),
+	})
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	envelopePayload, err := json.Marshal(envelope)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 
 	turn := IngressTurn{
 		ID:                     turnID,
@@ -485,9 +747,9 @@ func (s *Service) HandleInbound(w http.ResponseWriter, r *http.Request) {
 		Payload:                body,
 		ParsedInteractiveReply: s.ParseInteractiveReply(msg.InteractiveReply),
 		ParsedDiscoveryAnswer:  s.ParseDiscoveryAnswer(msg.DiscoveryAnswer),
-		Transcript:             s.PreprocessVoice(r.Context(), msg.AudioURL),
+		Transcript:             transcript,
 		Attachments:            attachmentRefs,
-		CreatedAt:              time.Now().UTC(),
+		CreatedAt:              now,
 	}
 	s.recordIdentityEnvelope(ChannelIdentityEnvelope{
 		IngressTurnID:      turn.ID,
@@ -496,32 +758,54 @@ func (s *Service) HandleInbound(w http.ResponseWriter, r *http.Request) {
 		VerificationMethod: "webhook_signature+sender_binding",
 		VerificationResult: "verified",
 		RawSignature:       signature,
-		VerifiedAt:         time.Now().UTC(),
+		VerifiedAt:         now,
 	})
 
 	if inserted := s.store.InsertIngressTurn(turn); !inserted {
 		s.audit.Append("BREVIO.ingress.duplicate_dropped.v1")
+		if idempotencyKey != "" {
+			s.idempotency.Set(idempotencyKey, http.StatusOK, []byte(`{"status":"duplicate_dropped"}`))
+		}
 		w.WriteHeader(http.StatusOK)
 		return
 	}
 	s.audit.Append("BREVIO.ingress.received.v1")
 
 	s.queue.Enqueue(QueueMessage{
-		IngressTurnID: turn.ID,
-		WorkspaceID:   turn.WorkspaceID,
-		GroupKey:      msg.UserChannelID,
-		DedupKey:      turn.ID.String(),
-		Payload:       body,
+		IngressTurnID:     turn.ID,
+		WorkspaceID:       turn.WorkspaceID,
+		Channel:           strings.ToLower(strings.TrimSpace(msg.Channel)),
+		ChannelIdentifier: strings.TrimSpace(msg.ChannelIdentifier),
+		UserChannelID:     msg.UserChannelID,
+		GroupKey:          msg.UserChannelID,
+		DedupKey:          turn.ID.String(),
+		Payload:           envelopePayload,
 	})
 
+	acceptedBody := []byte(`{"status":"accepted"}`)
+	if idempotencyKey != "" {
+		s.idempotency.Set(idempotencyKey, http.StatusAccepted, acceptedBody)
+	}
 	w.WriteHeader(http.StatusAccepted)
-	_, _ = w.Write([]byte(`{"status":"accepted"}`))
+	_, _ = w.Write(acceptedBody)
 }
 
 func (s *Service) recordIdentityEnvelope(envelope ChannelIdentityEnvelope) {
 	s.identityMu.Lock()
 	defer s.identityMu.Unlock()
 	s.identityLog = append(s.identityLog, envelope)
+}
+
+func (s *Service) validateIMessageAPIKey(r *http.Request) error {
+	if !strings.Contains(strings.ToLower(strings.TrimSpace(r.URL.Path)), "/imessage") {
+		return nil
+	}
+	provided := strings.TrimSpace(r.Header.Get("X-API-Key"))
+	if provided == "" || provided != s.imessageAPIKey {
+		s.audit.Append("BREVIO.security.imessage.api_key_invalid.v1")
+		return ErrInvalidIMessageAPIKey
+	}
+	return nil
 }
 
 func (s *Service) ChannelIdentityEnvelopeCount() int {
@@ -555,6 +839,37 @@ func (s *Service) HandleInjectToolCall(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte(`{"status":"accepted"}`))
 }
 
+func (s *Service) HandleTemporalWebhook(w http.ResponseWriter, r *http.Request) {
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	var payload temporalWebhookRequest
+	if err := json.Unmarshal(body, &payload); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if strings.TrimSpace(payload.WorkflowRunID) == "" {
+		http.Error(w, "workflow_run_id is required", http.StatusBadRequest)
+		return
+	}
+	idempotencyKey := temporalIdempotencyKey(payload.WorkflowRunID)
+	if statusCode, cachedBody, ok := s.idempotency.Get(idempotencyKey); ok {
+		s.audit.Append("BREVIO.temporal.webhook.idempotent_replay.v1")
+		w.WriteHeader(statusCode)
+		_, _ = w.Write(cachedBody)
+		return
+	}
+
+	acceptedBody := []byte(`{"status":"accepted"}`)
+	s.idempotency.Set(idempotencyKey, http.StatusAccepted, acceptedBody)
+	s.audit.Append("BREVIO.temporal.webhook.received.v1")
+	w.WriteHeader(http.StatusAccepted)
+	_, _ = w.Write(acceptedBody)
+}
+
 func (s *Service) InjectedToolCallCount() int {
 	s.injectedMu.Lock()
 	defer s.injectedMu.Unlock()
@@ -563,6 +878,66 @@ func (s *Service) InjectedToolCallCount() int {
 
 func (s *Service) BindWorkspace(channel, identifier string, workspaceID uuid.UUID) {
 	s.router.Bind(channel, identifier, workspaceID)
+}
+
+func (s *Service) SetNowForTest(nowFn func() time.Time) {
+	if nowFn == nil {
+		return
+	}
+	s.userMu.Lock()
+	s.nowFn = nowFn
+	s.userMu.Unlock()
+	s.rateLimiter.SetNowForTest(nowFn)
+	s.idempotency.SetNowForTest(nowFn)
+}
+
+func (s *Service) nowUTC() time.Time {
+	s.userMu.Lock()
+	nowFn := s.nowFn
+	s.userMu.Unlock()
+	if nowFn == nil {
+		return time.Now().UTC()
+	}
+	return nowFn().UTC()
+}
+
+func (s *Service) resolveOrCreateUserID(channel, userChannelID string) (uuid.UUID, error) {
+	key := strings.ToLower(strings.TrimSpace(channel)) + "::" + strings.TrimSpace(userChannelID)
+	s.userMu.Lock()
+	defer s.userMu.Unlock()
+	if existing, ok := s.userIDs[key]; ok {
+		return existing, nil
+	}
+	userID, err := uuid.NewRandom()
+	if err != nil {
+		return uuid.Nil, err
+	}
+	s.userIDs[key] = userID
+	return userID, nil
+}
+
+func (s *Service) resolveSessionID(channel, userChannelID string, now time.Time) (uuid.UUID, error) {
+	key := strings.ToLower(strings.TrimSpace(channel)) + "::" + strings.TrimSpace(userChannelID)
+	s.userMu.Lock()
+	defer s.userMu.Unlock()
+
+	if existing, ok := s.sessions[key]; ok {
+		if now.Sub(existing.lastActivityAt) <= 4*time.Hour {
+			existing.lastActivityAt = now
+			s.sessions[key] = existing
+			return existing.id, nil
+		}
+	}
+
+	sessionID, err := uuid.NewV7()
+	if err != nil {
+		return uuid.Nil, err
+	}
+	s.sessions[key] = sessionState{
+		id:             sessionID,
+		lastActivityAt: now,
+	}
+	return sessionID, nil
 }
 
 func (s *Service) QueueMessageCount() int {
@@ -646,7 +1021,32 @@ func (s *Service) OutboundDispatchCount() int {
 	return len(s.outbox)
 }
 
-func (s *Service) HandleHealth(w http.ResponseWriter, _ *http.Request) {
+func (s *Service) HandleHealth(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path == "/health" || r.URL.Path == "/health/deep" {
+		checks := map[string]string{
+			"process": "ok",
+		}
+		if r.URL.Path == "/health/deep" {
+			for key, status := range runtimeserver.DeepDependencyChecks(os.Getenv) {
+				checks[key] = status
+			}
+		}
+		version := strings.TrimSpace(os.Getenv("SERVICE_VERSION"))
+		if version == "" {
+			version = "0.1.0"
+		}
+		payload := map[string]any{
+			"status":    "healthy",
+			"version":   version,
+			"uptime_ms": time.Since(s.startedAt).Milliseconds(),
+			"checks":    checks,
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(payload)
+		return
+	}
+
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte("ok"))
 }
@@ -723,6 +1123,10 @@ func (s *Service) ParseDiscoveryAnswer(raw string) string {
 func (s *Service) PreprocessVoice(_ context.Context, audioURL string) string {
 	audioURL = strings.TrimSpace(audioURL)
 	if audioURL == "" {
+		return ""
+	}
+	parsed, err := url.Parse(audioURL)
+	if err != nil || !strings.EqualFold(parsed.Scheme, "https") || parsed.Host == "" {
 		return ""
 	}
 	return "transcript:" + audioURL
