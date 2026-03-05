@@ -1,6 +1,6 @@
 # BREVIO x OPENCLAW Final Validation Report
 
-Timestamp (UTC): 2026-03-05 03:21:07 UTC
+Timestamp (UTC): 2026-03-05 03:24:02 UTC
 Branch: `codex/brevio-openclaw-phase0`
 Head: `cd86fd7`
 
@@ -33,6 +33,7 @@ Head: `cd86fd7`
 - `make ci` (post-evidence-revocation automation rerun at 2026-03-05T03:14:32Z): PASS
 - `make ci` (post-evidence-audit-history automation rerun at 2026-03-05T03:16:46Z): PASS
 - `make ci` (post-status-stability automation rerun at 2026-03-05T03:21:07Z): PASS
+- `make ci` (post-regression-guard automation rerun at 2026-03-05T03:24:02Z): PASS
 - `make security-validate` (post-signoff rerun at 2026-03-05T02:31:47Z): PASS
 - `pnpm audit --audit-level high` (network-enabled run): PASS (`No known vulnerabilities found`)
 
@@ -58,6 +59,9 @@ Head: `cd86fd7`
   - `make manual-closeout-unconfirm ITEM_ID=... REVOKED_BY=...` safely revokes incorrect confirmations
   - `manual_closeout_evidence.json.events[]` captures append-only confirm/revoke action history for auditability
   - `PREVIOUS_STATUS_PATH` fallback supports last-known-pass continuity for endpoint-unavailable closeout runs
+- External closeout regression guard is active:
+  - `make external-closeout-regression-check` maintains `external_closeout_status.last.json` baseline and emits `external_closeout_regression_report.json`
+  - `EXTERNAL_REGRESSION_CHECK=1 make external-phase-sync` enables sync-time regression enforcement
 
 ## Remaining Human-Gated Items (Per Directive)
 

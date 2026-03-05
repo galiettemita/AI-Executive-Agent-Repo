@@ -288,3 +288,22 @@ This runs:
 1. `make external-closeout-check`
 2. `make go-live-signoff`
 3. `make manual-closeout-todo`
+
+## 14) Regression Check Between Runs
+
+To detect required-item regressions (`pass -> manual/fail`) between closeout runs:
+
+```bash
+cd /Users/galiettemita/Downloads/Executive AI Agent/backend
+make external-closeout-regression-check
+```
+
+Outputs:
+- `artifacts/deploy/external_closeout_regression_report.json`
+- `artifacts/deploy/external_closeout_status.last.json` (updated snapshot baseline)
+
+Optional: include this automatically in sync:
+
+```bash
+EXTERNAL_REGRESSION_CHECK=1 make external-phase-sync
+```

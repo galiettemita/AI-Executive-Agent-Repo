@@ -1996,3 +1996,21 @@
 3. Keep explicit `fail` behavior when endpoints are available and required values are missing.  
 **Risk:** A stale previous artifact could preserve an outdated pass state longer than desired.  
 **Rollback:** Remove `PREVIOUS_STATUS_PATH`/`previous_pass_detail` logic and revert to real-time-only/manual classification behavior.
+
+## DECISION-111: Add External Closeout Regression Snapshot Guard
+
+**Date:** 2026-03-05  
+**Blueprint Section:** §13, §18, §21  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/scripts/deploy/sync_external_phase_artifacts.sh`, `/Users/galiettemita/Downloads/Executive AI Agent/backend/artifacts/deploy/external_closeout_status.json`  
+**Conflict:** There was no deterministic way to detect state regressions between closeout runs (for example, required item status moving from `pass` back to `manual`/`fail`) as environments fluctuated.  
+**Options Considered:**  
+1. Rely on operators to visually diff JSON outputs across runs.  
+2. Add status regression reporting without baseline persistence.  
+3. Maintain a snapshot baseline and emit structured regression reports each run.  
+**Decision:** Option 3. Added `scripts/deploy/check_external_closeout_regressions.sh` and `make external-closeout-regression-check`, which compares current status to `external_closeout_status.last.json`, writes `external_closeout_regression_report.json`, updates snapshot baseline, and can fail on regressions unless explicitly allowed.  
+**Migration Plan:**  
+1. Initialize baseline by running regression check once after generating status artifact.  
+2. Run regression check each checkpoint (or set `EXTERNAL_REGRESSION_CHECK=1` during phase sync).  
+3. Investigate and resolve any reported regressions before promoting status changes.  
+**Risk:** Baseline replacement on each run can hide older regressions if reports are not retained.  
+**Rollback:** Remove regression-check script/target and return to manual artifact comparison.
