@@ -43,7 +43,11 @@ jobs:
       - name: Capture latest eval result
         id: latest_result
         run: |
-          latest="$(find tests/evals/results -maxdepth 1 -type f -name 'eval-*.json' | sort | tail -n1)"
+          latest="$(find tests/evals/results -maxdepth 1 -type f -name 'eval-*.json' -printf '%T@ %p\n' | sort -rn | head -n1 | cut -d' ' -f2-)"
+          if [ -z "$latest" ]; then
+            echo "::error::No eval result file found in tests/evals/results/"
+            exit 1
+          fi
           echo "latest=$latest" >> "$GITHUB_OUTPUT"
 
       - name: Upload eval artifacts
