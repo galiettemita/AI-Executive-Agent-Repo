@@ -24,8 +24,8 @@ Active required blockers right now:
 
 Authoritative status artifact:
 - `artifacts/deploy/external_closeout_status.json`
-- `artifacts/deploy/go_live_signoff_status.json` (`status=CONDITIONAL_MANUAL` from `make go-live-signoff` at `2026-03-05T02:33:21Z`)
-- `artifacts/deploy/manual_closeout_todo.md` (generated from signoff at `2026-03-05T02:33:21Z`)
+- `artifacts/deploy/go_live_signoff_status.json` (`status=CONDITIONAL_MANUAL` from `make go-live-signoff` at `2026-03-05T02:34:29Z`)
+- `artifacts/deploy/manual_closeout_todo.md` (generated from signoff at `2026-03-05T02:34:29Z`)
 
 ## 1) Partner Applications (Zoom/Instacart/Canva/Booking.com)
 
