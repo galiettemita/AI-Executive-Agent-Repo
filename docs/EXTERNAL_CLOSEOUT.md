@@ -4,7 +4,7 @@ This runbook covers the only checklist items that remain outside repository auto
 
 ## Current Phase Status (Latest Gate Run)
 
-Latest gate run: `make external-closeout-check` at `2026-03-05T02:30:27Z`
+Latest gate run: `make external-closeout-check` at `2026-03-05T02:56:33Z`
 
 - Required checks: `8`
 - Passed: `0`
@@ -24,8 +24,8 @@ Active required blockers right now:
 
 Authoritative status artifact:
 - `artifacts/deploy/external_closeout_status.json`
-- `artifacts/deploy/go_live_signoff_status.json` (`status=CONDITIONAL_MANUAL` from `make go-live-signoff` at `2026-03-05T02:34:29Z`)
-- `artifacts/deploy/manual_closeout_todo.md` (generated from signoff at `2026-03-05T02:34:29Z`)
+- `artifacts/deploy/go_live_signoff_status.json` (`status=CONDITIONAL_MANUAL` from `make go-live-signoff` at `2026-03-05T02:56:33Z`)
+- `artifacts/deploy/manual_closeout_todo.md` (generated from signoff at `2026-03-05T02:56:33Z`)
 
 ## 1) Partner Applications (Zoom/Instacart/Canva/Booking.com)
 
@@ -230,3 +230,17 @@ Output:
 - `artifacts/deploy/manual_closeout_todo.md`
 
 This file maps each pending required item to the matching runbook section (`Section 1`-`Section 7`) and should be treated as the active closure checklist until signoff reaches `READY`.
+
+## 12) One-Command External Phase Sync
+
+To refresh all three external-phase artifacts in one command:
+
+```bash
+cd /Users/galiettemita/Downloads/Executive AI Agent/backend
+make external-phase-sync
+```
+
+This runs:
+1. `make external-closeout-check`
+2. `make go-live-signoff`
+3. `make manual-closeout-todo`

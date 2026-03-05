@@ -1228,6 +1228,7 @@ You must prove it.
 - [x] Dependency-security triage closure: verified with compatibility probes that `github.com/jackc/pgx/v5 v5.7.4`, `golang.org/x/crypto v0.33.0`, `golang.org/x/sync v0.11.0`, and `golang.org/x/text v0.22.0` are the highest versions compatible with current `go 1.22`; newer versions require `go >= 1.23/1.24`.
 - [x] npm security audit phase closure: `pnpm audit --audit-level high` completed with `No known vulnerabilities found` (network-enabled run) and no high/critical npm findings.
 - [x] Full validation gate closure rerun: `make ci-full` passed at `2026-03-05T02:55:17Z` (proto/lint/build/test/migrations/contracts/evals/security/infra/db-verify all green) after latest security and manual-closeout automation changes.
+- [x] External manual-closeout orchestration phase closure: added `make external-phase-sync` and verified it refreshes `external_closeout_status.json`, `go_live_signoff_status.json`, and `manual_closeout_todo.md` in one deterministic run (`required_failed=0`, `status=CONDITIONAL_MANUAL`).
 - [x] Clerk (auth) account + keys (`CLERK_SECRET_KEY`)
 - [x] Stripe (billing) account + keys (`STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, Price IDs) (Operational Blueprint Component 1) (verified via `make external-closeout-check`)
 - [x] Anthropic account + `ANTHROPIC_API_KEY`

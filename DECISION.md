@@ -1887,3 +1887,21 @@
 3. Re-run compatibility probes immediately after toolchain bump to pull latest security patches.  
 **Risk:** Remaining advisories tied to post-Go1.22 module releases cannot be remediated until toolchain upgrade.  
 **Rollback:** If Go baseline strategy changes, revert this cap decision and perform full dependency/toolchain upgrade in a dedicated migration branch.
+
+## DECISION-105: Add Single-Command External Phase Artifact Sync
+
+**Date:** 2026-03-05  
+**Blueprint Section:** §18, §21  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/scripts/deploy/external_closeout_check.sh`, `/Users/galiettemita/Downloads/Executive AI Agent/backend/scripts/deploy/generate_go_live_signoff.sh`, `/Users/galiettemita/Downloads/Executive AI Agent/backend/scripts/deploy/generate_manual_closeout_todo.sh`  
+**Conflict:** External manual-closeout execution required running three commands in sequence, which increased the chance of stale artifacts and slowed phase checkpoint closure.  
+**Options Considered:**  
+1. Keep manual three-command sequence in runbook.  
+2. Move logic into one large script and remove individual commands.  
+3. Keep existing commands and add a thin orchestration wrapper + Make target.  
+**Decision:** Option 3. Added `scripts/deploy/sync_external_phase_artifacts.sh` and `make external-phase-sync` to run closeout, signoff, and manual TODO generation sequentially while preserving standalone commands.  
+**Migration Plan:**  
+1. Use `make external-phase-sync` as default checkpoint command.  
+2. Keep individual commands for debugging/partial reruns.  
+3. Continue using artifact outputs as source of truth for phase status.  
+**Risk:** Wrapper script failure can block all artifact refreshes if one step errors.  
+**Rollback:** Remove `external-phase-sync` wrapper and revert to explicit per-command execution.
