@@ -114,7 +114,7 @@ Head: `addee5d`
 - Staging deployment smoke gate is active:
   - `make staging-smoke-tests` emits `staging_smoke_test_report.json` and is now wired into `.github/workflows/ci.yml` and `.github/workflows/deploy-staging.yml` immediately after staging rollout
 - Production canary gate is active:
-  - `make production-canary-check` emits `production_canary_check.json` with explicit traffic/duration/SLO checks and is included in production phase sync + closure manifest + handoff bundle
+  - `make production-canary-check` emits `production_canary_check.json` with explicit traffic/duration/SLO checks, is wired into production deploy workflows, and is included in production phase sync + closure manifest + handoff bundle
 - Manual closeout TODO execution commands are embedded:
   - `manual_closeout_todo.md` includes per-item confirm and revoke command templates
 - Manual closeout batch command generation is active:

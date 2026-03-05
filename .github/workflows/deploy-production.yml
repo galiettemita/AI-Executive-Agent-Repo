@@ -30,3 +30,15 @@ jobs:
             exit 0
           fi
           bash scripts/deploy/helm_rollout.sh
+      - name: Production canary gate
+        env:
+          KUBE_CONFIG_PRODUCTION: ${{ secrets.KUBE_CONFIG_PRODUCTION }}
+          CANARY_ERROR_RATE_PCT: ${{ secrets.CANARY_ERROR_RATE_PCT }}
+          CANARY_P99_RATIO: ${{ secrets.CANARY_P99_RATIO }}
+          ALLOW_CONDITIONAL_MANUAL: "1"
+        run: |
+          if [ -z "${KUBE_CONFIG_PRODUCTION}" ]; then
+            echo "KUBE_CONFIG_PRODUCTION not set; skipping production canary gate."
+            exit 0
+          fi
+          bash scripts/deploy/check_production_canary_window.sh

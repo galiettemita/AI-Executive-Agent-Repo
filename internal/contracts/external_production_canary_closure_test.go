@@ -33,4 +33,16 @@ func TestExternalProductionCanaryClosure(t *testing.T) {
 		"production_canary_check.json",
 		"CANARY_ERROR_RATE_PCT",
 	})
+
+	ciWorkflowPath := filepath.Join(root, ".github", "workflows", "ci.yml")
+	assertFileContainsTokens(t, ciWorkflowPath, []string{
+		"Production canary gate",
+		"check_production_canary_window.sh",
+	})
+
+	prodWorkflowPath := filepath.Join(root, ".github", "workflows", "deploy-production.yml")
+	assertFileContainsTokens(t, prodWorkflowPath, []string{
+		"Production canary gate",
+		"check_production_canary_window.sh",
+	})
 }

@@ -2264,7 +2264,7 @@
 1. Keep canary evaluation manual-only in runbook.  
 2. Reuse post-deploy validation as implicit canary check.  
 3. Add separate canary gate with explicit inputs/thresholds and integrate it into phase-sync/manifest/handoff status aggregation.  
-**Decision:** Option 3. Added `scripts/deploy/check_production_canary_window.sh` and `make production-canary-check` (`production_canary_check.json`), then integrated canary status into production-phase sync, phase closure manifest, handoff bundle, phase-status output, and production deployment TODO guidance.  
+**Decision:** Option 3. Added `scripts/deploy/check_production_canary_window.sh` and `make production-canary-check` (`production_canary_check.json`), wired canary gate execution into `.github/workflows/ci.yml` deploy-production stage and `.github/workflows/deploy-production.yml`, then integrated canary status into production-phase sync, phase closure manifest, handoff bundle, phase-status output, and production deployment TODO guidance.  
 **Migration Plan:**  
 1. Run canary window at 10% for 15m.  
 2. Execute `make production-canary-check` with observed metrics.  
