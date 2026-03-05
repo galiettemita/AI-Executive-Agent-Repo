@@ -4,7 +4,7 @@ This runbook covers the only checklist items that remain outside repository auto
 
 ## Current Phase Status (Latest Gate Run)
 
-Latest gate run: `make external-closeout-check` at `2026-03-05T03:25:33Z`
+Latest gate run: `make external-closeout-check` at `2026-03-05T03:28:28Z`
 
 - Required checks: `8`
 - Passed: `0`
@@ -24,8 +24,8 @@ Active required blockers right now:
 
 Authoritative status artifact:
 - `artifacts/deploy/external_closeout_status.json`
-- `artifacts/deploy/go_live_signoff_status.json` (`status=CONDITIONAL_MANUAL` from `make go-live-signoff` at `2026-03-05T03:25:33Z`)
-- `artifacts/deploy/manual_closeout_todo.md` (generated from signoff at `2026-03-05T03:25:33Z`)
+- `artifacts/deploy/go_live_signoff_status.json` (`status=CONDITIONAL_MANUAL` from `make go-live-signoff` at `2026-03-05T03:28:28Z`)
+- `artifacts/deploy/manual_closeout_todo.md` (generated from signoff at `2026-03-05T03:28:28Z`)
 - `artifacts/deploy/manual_closeout_evidence.json` (`manual_evidence_confirmed=0` in latest run)
 - `artifacts/deploy/external_closeout_regression_report.json` (`status=PASS`, no regressions in latest run)
 
@@ -303,8 +303,20 @@ Outputs:
 - `artifacts/deploy/external_closeout_regression_report.json`
 - `artifacts/deploy/external_closeout_status.last.json` (updated snapshot baseline)
 
-Optional: include this automatically in sync:
+Included by default in sync:
+
+```bash
+make external-phase-sync
+```
+
+Explicit enforced mode (equivalent behavior):
 
 ```bash
 EXTERNAL_REGRESSION_CHECK=1 make external-phase-sync
+```
+
+Optional: disable regression check for troubleshooting only:
+
+```bash
+EXTERNAL_REGRESSION_CHECK=0 make external-phase-sync
 ```

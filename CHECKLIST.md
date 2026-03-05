@@ -1237,6 +1237,7 @@ You must prove it.
 - [x] Manual evidence audit-history phase closure: confirm/revoke scripts now append immutable `events` entries in `manual_closeout_evidence.json`; post-change `make external-phase-sync` at `2026-03-05T03:17:25Z` reconfirmed `git_head=8f02958`, `required_failed=0`, `required_manual=8`.
 - [x] External status stability phase closure: `external_closeout_check.sh` now supports last-known-pass fallback via `PREVIOUS_STATUS_PATH` for endpoint-unavailable runs, preventing unnecessary pass/manual oscillation when prior verification exists.
 - [x] External closeout regression-guard phase closure: added `make external-closeout-regression-check` with snapshot/report artifacts (`external_closeout_status.last.json`, `external_closeout_regression_report.json`) and validated sync-time enforcement via `EXTERNAL_REGRESSION_CHECK=1 make external-phase-sync` (`status=PASS`, no regressions at `2026-03-05T03:25:33Z`).
+- [x] Regression-check-by-default sync phase closure: `external-phase-sync` now enables regression checking by default (`EXTERNAL_REGRESSION_CHECK=1` implicit), with opt-out only for troubleshooting (`EXTERNAL_REGRESSION_CHECK=0`).
 - [x] Clerk (auth) account + keys (`CLERK_SECRET_KEY`)
 - [x] Stripe (billing) account + keys (`STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, Price IDs) (Operational Blueprint Component 1) (verified via `make external-closeout-check`)
 - [x] Anthropic account + `ANTHROPIC_API_KEY`

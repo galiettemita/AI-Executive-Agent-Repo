@@ -28,7 +28,7 @@ func TestExternalCloseoutRegressionGuardClosure(t *testing.T) {
 
 	syncScriptPath := filepath.Join(root, "scripts", "deploy", "sync_external_phase_artifacts.sh")
 	assertFileContainsTokens(t, syncScriptPath, []string{
-		"EXTERNAL_REGRESSION_CHECK",
+		"EXTERNAL_REGRESSION_CHECK:-1",
 		"check_external_closeout_regressions.sh",
 	})
 

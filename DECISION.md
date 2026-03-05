@@ -2014,3 +2014,21 @@
 3. Investigate and resolve any reported regressions before promoting status changes.  
 **Risk:** Baseline replacement on each run can hide older regressions if reports are not retained.  
 **Rollback:** Remove regression-check script/target and return to manual artifact comparison.
+
+## DECISION-112: Enable External Regression Checking by Default During Phase Sync
+
+**Date:** 2026-03-05  
+**Blueprint Section:** §18, §21  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/scripts/deploy/sync_external_phase_artifacts.sh`, `/Users/galiettemita/Downloads/Executive AI Agent/backend/docs/EXTERNAL_CLOSEOUT.md`  
+**Conflict:** Regression check existed but required explicit opt-in (`EXTERNAL_REGRESSION_CHECK=1`), making it easy to skip unintentionally during routine sync runs.  
+**Options Considered:**  
+1. Keep opt-in behavior and rely on operator discipline.  
+2. Force regression check with no override.  
+3. Enable regression check by default with explicit troubleshooting opt-out.  
+**Decision:** Option 3. Updated sync script to default `EXTERNAL_REGRESSION_CHECK=1`, retaining `EXTERNAL_REGRESSION_CHECK=0` as an explicit temporary bypass.  
+**Migration Plan:**  
+1. Use `make external-phase-sync` as default (regression check included automatically).  
+2. Use `EXTERNAL_REGRESSION_CHECK=0 make external-phase-sync` only for debugging transient issues.  
+3. Keep regression report artifacts in checkpoint evidence.  
+**Risk:** Strict default may surface transient regressions more frequently, increasing temporary operator friction.  
+**Rollback:** Revert default to opt-in behavior if checkpoint operations require looser gating.
