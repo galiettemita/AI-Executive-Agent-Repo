@@ -1851,3 +1851,21 @@
 3. Continue updating runbook/validation docs from latest artifact timestamps.  
 **Risk:** If source external artifact is stale, go-live signoff status can be stale too.  
 **Rollback:** Remove `generate_go_live_signoff.sh`/Make target and revert to direct manual interpretation of `external_closeout_status.json`.
+
+## DECISION-103: Generate Manual Closeout TODO from Go-Live Signoff State
+
+**Date:** 2026-03-05  
+**Blueprint Section:** §14, §18, §21  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/docs/EXTERNAL_CLOSEOUT.md`, `/Users/galiettemita/Downloads/Executive AI Agent/backend/artifacts/deploy/go_live_signoff_status.json`  
+**Conflict:** Remaining blockers were manual by design, but closure execution still required hand-translating signoff JSON into operator action items, which slows phase transition throughput.  
+**Options Considered:**  
+1. Keep manual interpretation of signoff JSON and runbook sections.  
+2. Maintain a hand-edited markdown checklist.  
+3. Generate a deterministic markdown TODO directly from signoff artifact with runbook section mapping.  
+**Decision:** Option 3. Added `scripts/deploy/generate_manual_closeout_todo.sh` and `make manual-closeout-todo`, producing `artifacts/deploy/manual_closeout_todo.md` with pending required items and mapped section references (`Section 1`-`Section 7`) to reduce manual translation overhead in the external closeout phase.  
+**Migration Plan:**  
+1. Run `make go-live-signoff` before `make manual-closeout-todo` at each checkpoint.  
+2. Use generated markdown as active manual closure checklist.  
+3. Regenerate after each provider/account update until status transitions to `READY`.  
+**Risk:** Mapping table must stay synced if blocker IDs are renamed in the closeout checker.  
+**Rollback:** Remove manual TODO generator and revert to direct runbook + JSON artifact interpretation.

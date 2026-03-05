@@ -24,7 +24,8 @@ Active required blockers right now:
 
 Authoritative status artifact:
 - `artifacts/deploy/external_closeout_status.json`
-- `artifacts/deploy/go_live_signoff_status.json` (`status=CONDITIONAL_MANUAL` from `make go-live-signoff` at `2026-03-05T02:30:27Z`)
+- `artifacts/deploy/go_live_signoff_status.json` (`status=CONDITIONAL_MANUAL` from `make go-live-signoff` at `2026-03-05T02:33:21Z`)
+- `artifacts/deploy/manual_closeout_todo.md` (generated from signoff at `2026-03-05T02:33:21Z`)
 
 ## 1) Partner Applications (Zoom/Instacart/Canva/Booking.com)
 
@@ -215,3 +216,17 @@ Status meanings:
 - `READY`: no required failed/manual items remain.
 - `CONDITIONAL_MANUAL`: no required failures, but manual provider/account confirmations still required.
 - `BLOCKED`: one or more required failed items still unresolved.
+
+## 11) Generate Manual Closeout TODO Artifact
+
+After go-live signoff generation, create a deterministic manual TODO list from pending required items:
+
+```bash
+cd /Users/galiettemita/Downloads/Executive AI Agent/backend
+make manual-closeout-todo
+```
+
+Output:
+- `artifacts/deploy/manual_closeout_todo.md`
+
+This file maps each pending required item to the matching runbook section (`Section 1`-`Section 7`) and should be treated as the active closure checklist until signoff reaches `READY`.

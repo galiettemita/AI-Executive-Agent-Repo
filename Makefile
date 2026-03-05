@@ -1,4 +1,4 @@
-.PHONY: dev build test lint migrate db-verify docker-build docker-build-infra contracts acceptance policy-validate ci ci-full load-test security-validate infra-validate api-docs api-docs-check tools-md tools-md-check skills-scaffolds-check proto-validate evals generate-remote-catalog-keys mcp-wave1-checklist mcp-wave56-checklist mcp-fleet-validate mcp-runtime-rollout deploy-helm external-closeout-check go-live-signoff
+.PHONY: dev build test lint migrate db-verify docker-build docker-build-infra contracts acceptance policy-validate ci ci-full load-test security-validate infra-validate api-docs api-docs-check tools-md tools-md-check skills-scaffolds-check proto-validate evals generate-remote-catalog-keys mcp-wave1-checklist mcp-wave56-checklist mcp-fleet-validate mcp-runtime-rollout deploy-helm external-closeout-check go-live-signoff manual-closeout-todo
 
 GO_EXEC := ./scripts/dev/go_exec.sh
 GOFMT_EXEC := ./scripts/dev/gofmt_exec.sh
@@ -76,6 +76,9 @@ external-closeout-check:
 
 go-live-signoff:
 	bash scripts/deploy/generate_go_live_signoff.sh
+
+manual-closeout-todo:
+	bash scripts/deploy/generate_manual_closeout_todo.sh
 
 api-docs:
 	$(GO_EXEC) run ./scripts/docs/generate_api_reference.go
