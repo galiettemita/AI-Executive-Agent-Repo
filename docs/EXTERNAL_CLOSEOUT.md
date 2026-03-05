@@ -4,23 +4,23 @@ This runbook covers the only checklist items that remain outside repository auto
 
 ## Current Phase Status (Latest Gate Run)
 
-Latest gate run: `make external-closeout-check` at `2026-03-05T02:03:09Z`
+Latest gate run: `make external-closeout-check` at `2026-03-05T02:26:00Z`
 
 - Required checks: `8`
 - Passed: `0`
-- Failed: `7`
-- Manual pending: `1`
+- Failed: `0`
+- Manual pending: `8`
 
 Active required blockers right now:
 
 1. `partner_applications_submitted` (`PARTNER_APPS_CONFIRMED=1` still required)
-2. `PLAID_SECRET_PROD` missing
-3. `PLAID_WEBHOOK_SECRET` missing
-4. `STRIPE_SECRET_KEY` and/or `STRIPE_WEBHOOK_SECRET` missing
-5. `UNSTRUCTURED_API_KEY` missing
-6. `PAGERDUTY_ROUTING_KEY` or `PAGERDUTY_INTEGRATION_KEY` missing
-7. `ANALYTICS_EVENT_BUS` missing/invalid
-8. `REMOTE_CATALOG_PRIVATE_KEY` and/or `REMOTE_CATALOG_PUBLIC_KEY` missing
+2. `PLAID_SECRET_PROD` manual verification required (AWS endpoint-unverifiable from current runtime context)
+3. `PLAID_WEBHOOK_SECRET` manual verification required (AWS endpoint-unverifiable from current runtime context)
+4. `STRIPE_SECRET_KEY`/`STRIPE_WEBHOOK_SECRET` manual verification required (AWS endpoint-unverifiable from current runtime context)
+5. `UNSTRUCTURED_API_KEY` manual verification required (AWS endpoint-unverifiable from current runtime context)
+6. `PAGERDUTY_ROUTING_KEY` (or `PAGERDUTY_INTEGRATION_KEY`) manual verification required (AWS endpoint-unverifiable from current runtime context)
+7. `ANALYTICS_EVENT_BUS` manual verification required (AWS Events endpoint-unverifiable from current runtime context)
+8. `REMOTE_CATALOG_PRIVATE_KEY`/`REMOTE_CATALOG_PUBLIC_KEY` manual verification required (AWS endpoint-unverifiable from current runtime context)
 
 Authoritative status artifact:
 - `artifacts/deploy/external_closeout_status.json`

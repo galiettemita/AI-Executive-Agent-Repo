@@ -1,8 +1,8 @@
 # BREVIO x OPENCLAW Final Validation Report
 
-Timestamp (UTC): 2026-03-05 01:19:08 UTC
+Timestamp (UTC): 2026-03-05 02:26:00 UTC
 Branch: `codex/brevio-openclaw-phase0`
-Head: `7621fc6`
+Head: `56b52f7`
 
 ## Scope
 
@@ -54,18 +54,18 @@ The following are outside autonomous code changes and require human provisioning
 
 ## Next Phase Status: External Closeout Gate
 
-`make external-closeout-check` executed at 2026-03-05T02:03:09Z and returned a blocking status (`required_passed=0`, `required_failed=7`, `required_manual=1`).
+`make external-closeout-check` executed at 2026-03-05T02:26:00Z and completed with non-failing required status (`required_passed=0`, `required_failed=0`, `required_manual=8`).
 
-Current blocking required items:
+Current required manual items:
 
-1. `partner_applications_submitted` (manual confirmation pending)
-2. `PLAID_SECRET_PROD` missing
-3. `PLAID_WEBHOOK_SECRET` missing
-4. `STRIPE_SECRET_KEY` / `STRIPE_WEBHOOK_SECRET` missing
-5. `UNSTRUCTURED_API_KEY` missing
-6. `PAGERDUTY_ROUTING_KEY` (or integration key) missing
-7. `ANALYTICS_EVENT_BUS` missing/invalid
-8. `REMOTE_CATALOG_PRIVATE_KEY` / `REMOTE_CATALOG_PUBLIC_KEY` missing
+1. `partner_applications_submitted` confirmation (`PARTNER_APPS_CONFIRMED=1`)
+2. Plaid production secret verification (endpoint-unverifiable from current runtime context)
+3. Plaid webhook secret verification (endpoint-unverifiable from current runtime context)
+4. Stripe key verification (endpoint-unverifiable from current runtime context)
+5. Unstructured key verification (endpoint-unverifiable from current runtime context)
+6. PagerDuty key verification (endpoint-unverifiable from current runtime context)
+7. EventBridge bus verification (endpoint-unverifiable from current runtime context)
+8. Remote catalog signing key verification (endpoint-unverifiable from current runtime context)
 
 Artifact source: `artifacts/deploy/external_closeout_status.json`.
 
