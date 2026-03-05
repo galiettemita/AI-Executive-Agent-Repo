@@ -2291,3 +2291,22 @@
 4. Enforce token presence via contract tests to prevent regressions.  
 **Risk:** If signoff baselines are stale, automated post-deploy gates can pass with conditional/manual status while still requiring human confirmation.  
 **Rollback:** Remove post-deploy gate steps/artifact upload from workflows and revert to canary-only workflow behavior.
+
+## DECISION-127: Upload Staging Smoke-Test Artifacts in Deployment Workflows
+
+**Date:** 2026-03-05  
+**Blueprint Section:** §9.1 Stage 9, §11.2, §14  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/.github/workflows/ci.yml`, `/Users/galiettemita/Downloads/Executive AI Agent/backend/.github/workflows/deploy-staging.yml`, `/Users/galiettemita/Downloads/Executive AI Agent/backend/scripts/deploy/run_staging_smoke_tests.sh`  
+**Conflict:** Staging smoke tests were executed in workflow but evidence retention relied on workspace-local artifact files instead of CI-attached artifacts for deployment traceability.  
+**Options Considered:**  
+1. Keep smoke JSON local-only and rely on logs.  
+2. Commit generated smoke reports to git after each deployment.  
+3. Upload smoke report as workflow artifact in both staging deployment workflows.  
+**Decision:** Option 3. Added `Upload staging smoke artifacts` steps in `.github/workflows/ci.yml` and `.github/workflows/deploy-staging.yml` using `actions/upload-artifact@v4` with `artifacts/deploy/staging_smoke_test_report.json`.  
+**Migration Plan:**  
+1. Keep smoke check execution unchanged.  
+2. Add always-run artifact upload step with `if-no-files-found: warn`.  
+3. Enforce workflow token presence in staging smoke closure contracts.  
+4. Reference artifact retention in validation docs/checklist.  
+**Risk:** Deploy runs without staging kubeconfig can legitimately skip smoke tests and produce warning-only artifact upload events.  
+**Rollback:** Remove artifact upload steps and keep smoke-gate execution only.

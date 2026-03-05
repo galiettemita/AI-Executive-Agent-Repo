@@ -31,11 +31,15 @@ func TestStagingSmokeClosure(t *testing.T) {
 	assertFileContainsTokens(t, ciWorkflow, []string{
 		"Staging smoke tests",
 		"run_staging_smoke_tests.sh",
+		"Upload staging smoke artifacts",
+		"staging_smoke_test_report.json",
 	})
 
 	stagingWorkflow := filepath.Join(root, ".github", "workflows", "deploy-staging.yml")
 	assertFileContainsTokens(t, stagingWorkflow, []string{
 		"Staging smoke tests",
 		"run_staging_smoke_tests.sh",
+		"Upload staging smoke artifacts",
+		"staging_smoke_test_report.json",
 	})
 }

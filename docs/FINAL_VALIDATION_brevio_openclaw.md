@@ -50,6 +50,7 @@ Head: `addee5d`
 - `make ci` (post-staging-smoke-gate final rerun at 2026-03-05T04:40:30Z): PASS
 - `make ci` (post-production-canary integration rerun at 2026-03-05T04:48:38Z): PASS
 - `make ci` (post-production-post-deploy-workflow-gate closure rerun at 2026-03-05T04:56:36Z): PASS
+- `make ci` (post-staging-smoke-artifact closure rerun at 2026-03-05T05:00:03Z): PASS
 - `make manual-closeout-batch-commands` (2026-03-05T03:38:55Z): PASS (`manual_closeout_batch_commands.sh` generated)
 - `EXTERNAL_REGRESSION_CHECK=1 make external-phase-sync` (2026-03-05T03:25:33Z): PASS (`external_closeout_regression_report.json.status=PASS`)
 - `make external-phase-transition-check`: strict mode blocks as expected on `CONDITIONAL_MANUAL`; `ALLOW_CONDITIONAL_MANUAL=1` mode passes and sets `next_phase=production-deployment-signoff`
@@ -115,6 +116,7 @@ Head: `addee5d`
   - `make manual-provider-steps` emits `manual_provider_steps.md` with click-by-click actions and exact confirmation commands for pending manual blockers
 - Staging deployment smoke gate is active:
   - `make staging-smoke-tests` emits `staging_smoke_test_report.json` and is now wired into `.github/workflows/ci.yml` and `.github/workflows/deploy-staging.yml` immediately after staging rollout
+  - staging deploy workflows upload `staging_smoke_test_report.json` as a workflow artifact for deterministic deployment evidence retention
 - Production canary gate is active:
   - `make production-canary-check` emits `production_canary_check.json` with explicit traffic/duration/SLO checks, is wired into production deploy workflows, and is included in production phase sync + closure manifest + handoff bundle
 - Manual closeout TODO execution commands are embedded:

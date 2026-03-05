@@ -139,6 +139,13 @@ jobs:
             exit 0
           fi
           bash scripts/deploy/run_staging_smoke_tests.sh
+      - name: Upload staging smoke artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: staging-smoke-artifacts-${{ github.run_id }}
+          path: artifacts/deploy/staging_smoke_test_report.json
+          if-no-files-found: warn
 
   deploy_production:
     name: 10. Deploy Production
