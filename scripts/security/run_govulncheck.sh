@@ -42,9 +42,9 @@ else
     echo "[govulncheck] neither govulncheck/go nor docker is available"
     exit 1
   fi
-  echo "[govulncheck] go toolchain unavailable; using dockerized go1.22 scanner"
+  echo "[govulncheck] go toolchain unavailable; using dockerized go1.23 scanner"
   set +e
-  "$docker_bin" run --rm -v "$ROOT_DIR":/src -w /src golang:1.22 sh -lc \
+  "$docker_bin" run --rm -v "$ROOT_DIR":/src -w /src golang:1.23 sh -lc \
     'export PATH="/usr/local/go/bin:/go/bin:$PATH"; go install golang.org/x/vuln/cmd/govulncheck@v1.1.4 && /go/bin/govulncheck -show verbose ./...' \
     >"$REPORT_FILE" 2>&1
   SCAN_EXIT=$?

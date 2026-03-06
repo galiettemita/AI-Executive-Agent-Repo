@@ -11,7 +11,7 @@ func TestContainerBaselineClosure(t *testing.T) {
 	dockerfilePath := filepath.Join(root, "Dockerfile")
 
 	assertFileContainsTokens(t, dockerfilePath, []string{
-		"FROM golang:1.22 AS build",
+		"FROM golang:1.23 AS build",
 		"ARG SERVICE=gateway",
 		"./cmd/${SERVICE}",
 		"/out/service",

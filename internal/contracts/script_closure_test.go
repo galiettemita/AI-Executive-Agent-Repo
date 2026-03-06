@@ -149,14 +149,14 @@ func TestScriptPortabilityAndFallbackClosure(t *testing.T) {
 	}
 	assertFileContainsTokens(t, govulnScriptPath, []string{
 		"resolve_docker_bin()",
-		"go toolchain unavailable; using dockerized go1.22 scanner",
-		"run --rm -v \"$ROOT_DIR\":/src -w /src golang:1.22",
+		"go toolchain unavailable; using dockerized go1.23 scanner",
+		"run --rm -v \"$ROOT_DIR\":/src -w /src golang:1.23",
 	})
 
 	securityScriptPath := filepath.Join(root, "scripts", "security", "run_security_validation.sh")
 	assertFileContainsTokens(t, securityScriptPath, []string{
 		"run_go_cmd()",
-		"run --rm -v \"$ROOT_DIR\":/src -w /src golang:1.22",
+		"run --rm -v \"$ROOT_DIR\":/src -w /src golang:1.23",
 	})
 }
 

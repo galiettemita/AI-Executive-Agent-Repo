@@ -77,7 +77,7 @@ run_go_cmd() {
     return 0
   fi
 
-  "$docker_bin" run --rm -v "$ROOT_DIR":/src -w /src golang:1.22 sh -lc \
+  "$docker_bin" run --rm -v "$ROOT_DIR":/src -w /src golang:1.23 sh -lc \
     "export PATH=\"/usr/local/go/bin:/go/bin:\$PATH\"; ${command_text}"
 }
 

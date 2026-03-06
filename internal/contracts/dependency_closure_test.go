@@ -18,7 +18,7 @@ func TestDependencyVersionClosure(t *testing.T) {
 	content := string(body)
 
 	requiredTokens := []string{
-		"go 1.22",
+		"go 1.23",
 		"github.com/jackc/pgx/v5 v5.7.4",
 		"golang.org/x/crypto v0.33.0",
 		"golang.org/x/sync v0.11.0",

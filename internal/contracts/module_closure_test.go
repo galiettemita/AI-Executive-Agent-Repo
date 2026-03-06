@@ -13,6 +13,6 @@ func TestGoModuleClosure(t *testing.T) {
 
 	assertFileContainsTokens(t, goModPath, []string{
 		"module github.com/brevio/brevio",
-		"go 1.22",
+		"go 1.23",
 	})
 }
