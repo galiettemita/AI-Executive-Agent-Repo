@@ -101,9 +101,8 @@ func loadFleetServersOrExit(path string) []string {
 }
 
 func runCommandOrExit(root string, command mcp.ShellCommand) {
-	// nosemgrep: go.lang.security.audit.dangerous-exec-command.dangerous-exec-command
 	// Program is always a compile-time constant ("docker" or "helm"), not user input.
-	cmd := exec.Command(command.Program, command.Args...)
+	cmd := exec.Command(command.Program, command.Args...) // nosemgrep: go.lang.security.audit.dangerous-exec-command.dangerous-exec-command
 	cmd.Dir = root
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
