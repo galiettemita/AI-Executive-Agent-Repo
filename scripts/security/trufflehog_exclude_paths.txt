@@ -1,5 +1,6 @@
 ^\.git/
 (^|/)\.terraform/
+(^|/)node_modules/
 ^classmate-ai/
 ^artifacts/
 ^sbom\.spdx\.json$
