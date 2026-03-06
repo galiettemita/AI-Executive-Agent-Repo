@@ -2496,3 +2496,77 @@
 4. Fail fast with explicit message if kubeconfig requires AWS exec auth and credentials are absent.  
 **Risk:** Misconfigured IAM role or missing assume-role trust will still block deploys, but failures become deterministic and actionable at credential setup step.  
 **Rollback:** Remove AWS credential bootstrap steps and preflight checks, reverting to kubeconfig-only behavior.
+
+## DECISION-138: Replace Invalid `secrets.*` `if` Expressions to Restore Workflow Queueing
+
+**Date:** 2026-03-05  
+**Blueprint Section:** §9.1 pipeline operability, §14 deployment runbook execution reliability  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/.github/workflows/deploy-production.yml`, `/Users/galiettemita/Downloads/Executive AI Agent/backend/.github/workflows/deploy-staging.yml`, `/Users/galiettemita/Downloads/Executive AI Agent/backend/.github/workflows/ci.yml`  
+**Conflict:** Step-level `if:` expressions referenced `secrets.*` directly, which is not allowed in that expression context. GitHub rejected queueing with generic "Failed to queue workflow run" and config-check runs failed before execution.  
+**Options Considered:**  
+1. Remove conditional AWS credential steps and always require one auth mode.  
+2. Keep `secrets.*` in `if` and rely on UI retries.  
+3. Project secrets to job-level `env` and use `env.*` in `if` expressions.  
+**Decision:** Option 3. Added job-level env mapping (`AWS_ROLE_TO_ASSUME`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`) and switched all step conditionals/with-fields to `env.*` references.  
+**Migration Plan:**  
+1. Update all affected workflow jobs.  
+2. Validate with `actionlint` and contract tests.  
+3. Push and merge before re-running dispatch workflows.  
+**Risk:** Empty secret values still skip their associated credential path, but queueing remains valid and fallback behavior is explicit.  
+**Rollback:** Revert to pre-auth-bootstrap workflow revision and restore manual credential setup outside workflows.
+
+## DECISION-139: Enforce Snyk in Core CI Security Stage
+
+**Superseded By:** DECISION-141
+
+**Date:** 2026-03-05  
+**Blueprint Section:** §0.3, §9.1 Stage 6, §20.12  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/.github/workflows/ci.yml`, `/Users/galiettemita/Downloads/Executive AI Agent/backend/.github/workflows/security-scan.yml`  
+**Conflict:** Security gates covered Semgrep/Trivy/TruffleHog but did not enforce Snyk in the core CI security stage, which deviated from required `Trivy + Snyk + semgrep` pipeline semantics.  
+**Options Considered:**  
+1. Keep current scans and rely on periodic security workflow only.  
+2. Add best-effort Snyk step that silently skips when token is missing.  
+3. Add strict Snyk dependency scan in both CI and security workflows and fail clearly when token is not configured.  
+**Decision:** Option 3. Added deterministic Snyk scan steps using `pnpm dlx snyk ...` with explicit `SNYK_TOKEN` requirement, plus artifact persistence under `artifacts/security/`.  
+**Migration Plan:**  
+1. Extend security jobs with Node/pnpm bootstrap and dependency install where needed.  
+2. Add `SNYK_TOKEN` job env and strict missing-token guard.  
+3. Publish Snyk JSON report in workflow artifacts.  
+**Risk:** Security jobs will fail until `SNYK_TOKEN` is provisioned in repository/environment secrets.  
+**Rollback:** Remove Snyk steps/env from the workflows and return to pre-change scanner set.
+
+## DECISION-140: Seed Per-Skill Registry Metadata from Canonical Skill Readmes
+
+**Date:** 2026-03-05  
+**Blueprint Section:** §3.3, §A.7, §A.9  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/migrations/006_seed_skills.up.sql`, `/Users/galiettemita/Downloads/Executive AI Agent/backend/services/brevio-hands/src/skills/*/README.md`  
+**Conflict:** `006_seed_skills.up.sql` previously inserted generic descriptions/use-cases (`initcap(id)`, `Execute ... workflow`) rather than per-skill metadata quality required for production registry fidelity.  
+**Options Considered:**  
+1. Keep generic seeded text and rely on docs/readmes for detail.  
+2. Manually hardcode 153 rows by hand in migration.  
+3. Add deterministic per-skill metadata update block keyed by skill ID using canonical skill readme summaries/use-case lines.  
+**Decision:** Option 3. Added a `skill_metadata` `VALUES` block for all 153 seeded IDs and post-seed update join to set concrete `description` and `brevio_use_case` values.  
+**Migration Plan:**  
+1. Preserve existing seed CTE/insert behavior for compatibility.  
+2. Apply metadata normalization update immediately after plane/deployment-mode updates.  
+3. Keep future metadata refinement centralized in skill readmes and migration updates.  
+**Risk:** Metadata quality now depends on README consistency; weak readme text can degrade seed quality.  
+**Rollback:** Remove the `skill_metadata` update block and revert to prior generic generated metadata.
+
+## DECISION-141: Drop Snyk as a Required Workflow Dependency
+
+**Date:** 2026-03-05  
+**Blueprint Section:** §0.3, §9.1 Stage 6  
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/.github/workflows/ci.yml`, `/Users/galiettemita/Downloads/Executive AI Agent/backend/.github/workflows/security-scan.yml`  
+**Conflict:** The prior hardening wave added a mandatory `SNYK_TOKEN` dependency to security jobs. The current operating preference is to avoid Snyk entirely and keep the pipeline runnable without a third-party Snyk account.  
+**Options Considered:**  
+1. Keep Snyk mandatory and require account/token setup.  
+2. Make Snyk optional and silently skip when token is absent.  
+3. Remove Snyk from workflow gates and rely on Semgrep, `pnpm audit`, Trivy, TruffleHog, Syft, and govulncheck.  
+**Decision:** Option 3. Removed Snyk-specific env/steps from workflow security gates and retained the rest of the enforced scanner stack.  
+**Migration Plan:**  
+1. Delete `SNYK_TOKEN` env bindings from CI/security workflows.  
+2. Remove Snyk scan steps from workflow execution.  
+3. Re-run workflow lint to verify queueable workflow configuration.  
+**Risk:** Dependency scanning no longer includes Snyk's advisory dataset; residual coverage relies on `pnpm audit`, Trivy, and govulncheck.  
+**Rollback:** Reintroduce the prior Snyk steps and provision `SNYK_TOKEN`.

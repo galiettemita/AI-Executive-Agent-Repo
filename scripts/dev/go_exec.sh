@@ -45,4 +45,4 @@ exec "$docker_bin" run --rm \
   -v "${go_mod_cache}":/go/pkg/mod \
   -v "${go_build_cache}":/root/.cache/go-build \
   -w /src golang:1.22 sh -lc \
-  "export PATH=\"/usr/local/go/bin:/go/bin:\$PATH\"; go ${joined_args}"
+  "export PATH=\"/usr/local/go/bin:/go/bin:\$PATH\"; git config --global --add safe.directory /src >/dev/null 2>&1 || true; export GOFLAGS=\"\${GOFLAGS:-} -buildvcs=false\"; go ${joined_args}"
