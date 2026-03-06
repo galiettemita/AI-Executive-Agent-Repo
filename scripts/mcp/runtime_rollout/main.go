@@ -101,8 +101,16 @@ func loadFleetServersOrExit(path string) []string {
 }
 
 func runCommandOrExit(root string, command mcp.ShellCommand) {
-	// Program is always a compile-time constant ("docker" or "helm"), not user input.
-	cmd := exec.Command(command.Program, command.Args...) // nosemgrep: go.lang.security.audit.dangerous-exec-command.dangerous-exec-command
+	var cmd *exec.Cmd
+	switch command.Program {
+	case "docker":
+		cmd = exec.Command("docker", command.Args...)
+	case "helm":
+		cmd = exec.Command("helm", command.Args...)
+	default:
+		fmt.Fprintf(os.Stderr, "refused to execute disallowed program: %s\n", command.Program)
+		os.Exit(1)
+	}
 	cmd.Dir = root
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
