@@ -39,5 +39,5 @@ for arg in "$@"; do
 done
 joined_args="${quoted_args[*]}"
 
-exec "$docker_bin" run --rm -v "$ROOT_DIR":/src -w /src golang:1.22 sh -lc \
+exec "$docker_bin" run --rm -v "$ROOT_DIR":/src -w /src golang:1.23 sh -lc \
   "export PATH=\"/usr/local/go/bin:/go/bin:\$PATH\"; gofmt ${joined_args}"

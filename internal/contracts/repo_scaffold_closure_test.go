@@ -70,7 +70,7 @@ func TestPhase1RepoScaffoldClosure(t *testing.T) {
 	})
 
 	assertFileContainsTokens(t, filepath.Join(root, "Dockerfile"), []string{
-		"FROM golang:1.22 AS build",
+		"FROM golang:1.23 AS build",
 		"FROM gcr.io/distroless/static:nonroot",
 		"USER 65532:65532",
 		"ENTRYPOINT [\"/app/service\"]",

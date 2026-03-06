@@ -33,7 +33,7 @@ func TestInfraDockerLayoutClosure(t *testing.T) {
 	for _, name := range requiredDockerfiles {
 		path := filepath.Join(dockerRoot, name)
 		assertFileContainsTokens(t, path, []string{
-			"FROM golang:1.22 AS build",
+			"FROM golang:1.23 AS build",
 			"go mod download",
 			"go build -trimpath",
 			"FROM gcr.io/distroless/static:nonroot",
