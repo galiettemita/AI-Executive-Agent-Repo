@@ -38,7 +38,7 @@ policy-validate:
 	bash scripts/policies/run_opa_tests.sh
 
 docker-build:
-	@for svc in gateway brain control executor canvas temporal-worker; do \
+	@for svc in gateway brain control executor canvas temporal-worker browser marketing agents memory router cron; do \
 		echo "building $$svc"; \
 		docker build --build-arg SERVICE=$$svc -t brevio-$$svc:local .; \
 	done
