@@ -242,4 +242,3 @@ func findMigrationFile(t *testing.T, dir string, num int, direction string) stri
 	}
 	return ""
 }
-

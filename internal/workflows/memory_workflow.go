@@ -5,14 +5,14 @@ import "strings"
 type MemoryOperationState string
 
 const (
-	MemoryStateInit       MemoryOperationState = "INIT"
-	MemoryStateChunking   MemoryOperationState = "CHUNKING"
-	MemoryStateEmbedding  MemoryOperationState = "EMBEDDING"
-	MemoryStateIndexing   MemoryOperationState = "INDEXING"
-	MemoryStateSearching  MemoryOperationState = "SEARCHING"
-	MemoryStateRanking    MemoryOperationState = "RANKING"
-	MemoryStateCompleted  MemoryOperationState = "COMPLETED"
-	MemoryStateFailed     MemoryOperationState = "FAILED"
+	MemoryStateInit      MemoryOperationState = "INIT"
+	MemoryStateChunking  MemoryOperationState = "CHUNKING"
+	MemoryStateEmbedding MemoryOperationState = "EMBEDDING"
+	MemoryStateIndexing  MemoryOperationState = "INDEXING"
+	MemoryStateSearching MemoryOperationState = "SEARCHING"
+	MemoryStateRanking   MemoryOperationState = "RANKING"
+	MemoryStateCompleted MemoryOperationState = "COMPLETED"
+	MemoryStateFailed    MemoryOperationState = "FAILED"
 )
 
 type MemoryStoreWorkflowInput struct {
@@ -33,11 +33,11 @@ type MemoryStoreWorkflowResult struct {
 }
 
 type MemoryRecallWorkflowInput struct {
-	QueryID       string
-	UserID        string
-	SearchError   bool
-	RankError     bool
-	ResultCount   int
+	QueryID     string
+	UserID      string
+	SearchError bool
+	RankError   bool
+	ResultCount int
 }
 
 type MemoryRecallWorkflowResult struct {
@@ -108,4 +108,3 @@ func (s *Service) MemoryRecallWorkflowV1(input MemoryRecallWorkflowInput) Memory
 	result.TerminalState = MemoryStateCompleted
 	return result
 }
-

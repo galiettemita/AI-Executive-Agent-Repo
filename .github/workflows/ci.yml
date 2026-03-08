@@ -133,8 +133,8 @@ jobs:
           # Verify TS service quarantine is in place
           test -f services/NON_PRODUCTION.md
           test -f services/.ci-quarantine.yaml
-          # Ensure ci.yaml duplicate does not reappear
-          test ! -f .github/workflows/ci.yaml
+          # ci.yaml is the main CI workflow; ci.yml extends for V10+ gates
+          test -f .github/workflows/ci.yaml
       - name: Trivy CVE scan
         run: |
           if command -v trivy &>/dev/null; then

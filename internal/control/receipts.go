@@ -28,21 +28,21 @@ var (
 
 // Receipt represents a durable authorization receipt issued by Control.
 type Receipt struct {
-	ID              string
-	WorkspaceID     string
-	WorkflowRunID   string
-	PlanID          string
-	Decision        string // "allow", "deny", "require_approval"
+	ID               string
+	WorkspaceID      string
+	WorkflowRunID    string
+	PlanID           string
+	Decision         string // "allow", "deny", "require_approval"
 	PolicyBundleHash string
-	EvaluatedGates  []string
-	GateResults     map[string]string
-	ToolKeys        []string
-	RiskLevel       string
-	IssuedBy        string
-	IssuedAt        time.Time
-	ExpiresAt       time.Time
-	ConsumedAt      *time.Time
-	RevokedAt       *time.Time
+	EvaluatedGates   []string
+	GateResults      map[string]string
+	ToolKeys         []string
+	RiskLevel        string
+	IssuedBy         string
+	IssuedAt         time.Time
+	ExpiresAt        time.Time
+	ConsumedAt       *time.Time
+	RevokedAt        *time.Time
 }
 
 // GateEvaluation captures the result of a single gate check.
@@ -65,10 +65,10 @@ type ReceiptRequest struct {
 
 // ReceiptService manages authorization receipts.
 type ReceiptService struct {
-	mu       sync.Mutex
-	receipts map[string]*Receipt
+	mu           sync.Mutex
+	receipts     map[string]*Receipt
 	killSwitches map[string]bool
-	hmacKey  []byte
+	hmacKey      []byte
 }
 
 // NewReceiptService creates a new ReceiptService.
@@ -349,16 +349,16 @@ func (rs *ReceiptService) GetReceipt(receiptID string) (*Receipt, bool) {
 func FormatReceiptAuditEntry(receipt *Receipt, action string) map[string]any {
 	return map[string]any{
 		"receipt_id":      receipt.ID,
-		"workspace_id":   receipt.WorkspaceID,
+		"workspace_id":    receipt.WorkspaceID,
 		"workflow_run_id": receipt.WorkflowRunID,
-		"plan_id":        receipt.PlanID,
-		"decision":       receipt.Decision,
-		"risk_level":     receipt.RiskLevel,
-		"tool_keys":      receipt.ToolKeys,
+		"plan_id":         receipt.PlanID,
+		"decision":        receipt.Decision,
+		"risk_level":      receipt.RiskLevel,
+		"tool_keys":       receipt.ToolKeys,
 		"gates_evaluated": receipt.EvaluatedGates,
-		"action":         action,
-		"issued_at":      receipt.IssuedAt.Format(time.RFC3339),
-		"expires_at":     receipt.ExpiresAt.Format(time.RFC3339),
+		"action":          action,
+		"issued_at":       receipt.IssuedAt.Format(time.RFC3339),
+		"expires_at":      receipt.ExpiresAt.Format(time.RFC3339),
 	}
 }
 

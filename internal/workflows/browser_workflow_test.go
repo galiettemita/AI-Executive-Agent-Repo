@@ -9,13 +9,13 @@ func TestBrowserWorkflowHappyPath(t *testing.T) {
 	t.Parallel()
 	svc := NewService()
 	result := svc.BrowserSessionWorkflowV1(BrowserWorkflowInput{
-		SessionID:   "session-001",
-		UserID:      "user-001",
-		SkillID:     "browser.stealth_session",
-		SessionType: "stealth",
-		UseProxy:    true,
+		SessionID:    "session-001",
+		UserID:       "user-001",
+		SkillID:      "browser.stealth_session",
+		SessionType:  "stealth",
+		UseProxy:     true,
 		ProxyHealthy: true,
-		TaskCount:   3,
+		TaskCount:    3,
 	})
 
 	if result.WorkflowID != "browser-session-001" {

@@ -9,11 +9,11 @@ const CopyVersion = "1.0.0"
 // Source: extracted-blueprints/brevio-onboarding-copy.jsx
 var OnboardingCopy = map[string]string{
 	// Stage 1 — First Message (welcome)
-	"welcome_title":    "Stage 1 — First Message",
-	"welcome_subtitle": "User messages Brevio for the first time",
-	"welcome_greeting": "Hey! I'm so glad you're here.\n\nI'm Brevio — your personal AI assistant. I can help you manage your schedule, handle emails, book things, research anything, and a whole lot more. All right here in this chat.\n\nNo apps. No dashboards. Just message me like you would a friend.",
+	"welcome_title":        "Stage 1 — First Message",
+	"welcome_subtitle":     "User messages Brevio for the first time",
+	"welcome_greeting":     "Hey! I'm so glad you're here.\n\nI'm Brevio — your personal AI assistant. I can help you manage your schedule, handle emails, book things, research anything, and a whole lot more. All right here in this chat.\n\nNo apps. No dashboards. Just message me like you would a friend.",
 	"welcome_setup_prompt": "Before I dive in, I'd love to set things up so I can actually be useful to you. It'll take about 2 minutes — and I'll make it worth it.\n\nLet's start simple: what's your name?",
-	"welcome_name_ack": "Great to meet you, {{name}}! Let's get you set up.",
+	"welcome_name_ack":     "Great to meet you, {{name}}! Let's get you set up.",
 
 	// Stage 2 — Discovery (5 Questions)
 	"discovery_title":    "Stage 2 — Discovery (5 Questions)",
@@ -110,26 +110,26 @@ var ErrorStateCopy = map[string]string{
 	"budget_exceeded":      "Heads up — we've reached the daily usage limit for your plan. I can still help with basic questions, but actions like sending emails or making bookings will resume tomorrow.\n\nWant to upgrade? Just ask!",
 
 	// System limit copy notes
-	"rate_limited_note":    "Keep it light. Never say 'rate limit' or anything technical. Make it feel like you're just busy, not broken.",
-	"llm_timeout_note":     "Send a progress message if response will take >5s. Never go silent. A 'still working' message dramatically reduces perceived wait time.",
+	"rate_limited_note": "Keep it light. Never say 'rate limit' or anything technical. Make it feel like you're just busy, not broken.",
+	"llm_timeout_note":  "Send a progress message if response will take >5s. Never go silent. A 'still working' message dramatically reduces perceived wait time.",
 }
 
 // InteractionCopy contains interaction flow copy strings.
 // Source: extracted-blueprints/brevio-copy-part2.jsx and brevio-copy-part3.jsx
 var InteractionCopy = map[string]string{
 	// === Morning Briefing ===
-	"proactive_morning":            "Good morning, {{name}}\n\nHere's your day at a glance — {{date}}.",
-	"briefing_standard_calendar":   "Calendar\n{{meeting_count}} meetings today\n\n{{meeting_list}}\n\nHeads up: {{conflict_note}}",
-	"briefing_standard_inbox":      "Inbox\n{{email_count}} new emails since yesterday\n\n{{urgent_count}} need you today\n{{fyi_count}} FYIs — I'll hold these unless you ask\n{{noise_count}} noise — archived",
-	"briefing_standard_tasks":      "Tasks\n{{task_count}} open from yesterday\n{{task_list}}\n\nWhat would you like to tackle first today?",
-	"briefing_standard_note":       "Lead with calendar — it's time-sensitive. Then inbox, then tasks. Always surface conflicts proactively. End with an open invitation, not a full stop.",
-	"briefing_light":               "Good morning, {{name}}\n\nYou've got a clear one today — no meetings, nothing urgent in your inbox.\n\nPerfect day to make progress on something that matters. You mentioned wanting to get ahead on the Q1 report — want me to pull up where you left off?",
-	"briefing_light_note":          "When there's nothing urgent, don't pad it out. A short, energizing message is better than a long one with nothing to say. Use it to nudge toward a goal.",
-	"briefing_heavy":               "Morning, {{name}} — heads up, today's a full one.\n\n{{meeting_count}} meetings — back to back from 9am to 5pm\n{{urgent_email_count}} emails need action before your first call\n{{conflict_count}} conflict — {{conflict_detail}}\n\nI'd suggest handling the emails now and I can reschedule the conflict. Want me to do that?",
-	"briefing_heavy_confirm":       "Done — moved your {{old_time}} to {{new_time}}, confirmed with the other attendees.\n\nHere are the emails to handle before {{first_meeting_time}}",
-	"briefing_heavy_note":          "Heavy days need triage, not a list. Lead with the conflict, propose a fix, get buy-in, execute. Don't overwhelm — sequence it.",
-	"briefing_missed":              "Good morning, {{name}}\n\nLooks like yesterday got away from you — no worries. Here's what carried over:\n\n{{carryover_count}} things from yesterday still need attention\n{{carryover_list}}\n\nWant to handle those first before today's rundown?",
-	"briefing_missed_note":         "Never make them feel bad about going dark. Lead with what's still outstanding and what you didn't do without their approval. Builds trust.",
+	"proactive_morning":          "Good morning, {{name}}\n\nHere's your day at a glance — {{date}}.",
+	"briefing_standard_calendar": "Calendar\n{{meeting_count}} meetings today\n\n{{meeting_list}}\n\nHeads up: {{conflict_note}}",
+	"briefing_standard_inbox":    "Inbox\n{{email_count}} new emails since yesterday\n\n{{urgent_count}} need you today\n{{fyi_count}} FYIs — I'll hold these unless you ask\n{{noise_count}} noise — archived",
+	"briefing_standard_tasks":    "Tasks\n{{task_count}} open from yesterday\n{{task_list}}\n\nWhat would you like to tackle first today?",
+	"briefing_standard_note":     "Lead with calendar — it's time-sensitive. Then inbox, then tasks. Always surface conflicts proactively. End with an open invitation, not a full stop.",
+	"briefing_light":             "Good morning, {{name}}\n\nYou've got a clear one today — no meetings, nothing urgent in your inbox.\n\nPerfect day to make progress on something that matters. You mentioned wanting to get ahead on the Q1 report — want me to pull up where you left off?",
+	"briefing_light_note":        "When there's nothing urgent, don't pad it out. A short, energizing message is better than a long one with nothing to say. Use it to nudge toward a goal.",
+	"briefing_heavy":             "Morning, {{name}} — heads up, today's a full one.\n\n{{meeting_count}} meetings — back to back from 9am to 5pm\n{{urgent_email_count}} emails need action before your first call\n{{conflict_count}} conflict — {{conflict_detail}}\n\nI'd suggest handling the emails now and I can reschedule the conflict. Want me to do that?",
+	"briefing_heavy_confirm":     "Done — moved your {{old_time}} to {{new_time}}, confirmed with the other attendees.\n\nHere are the emails to handle before {{first_meeting_time}}",
+	"briefing_heavy_note":        "Heavy days need triage, not a list. Lead with the conflict, propose a fix, get buy-in, execute. Don't overwhelm — sequence it.",
+	"briefing_missed":            "Good morning, {{name}}\n\nLooks like yesterday got away from you — no worries. Here's what carried over:\n\n{{carryover_count}} things from yesterday still need attention\n{{carryover_list}}\n\nWant to handle those first before today's rundown?",
+	"briefing_missed_note":       "Never make them feel bad about going dark. Lead with what's still outstanding and what you didn't do without their approval. Builds trust.",
 
 	// === Approval Requests ===
 	"approval_prompt":         "Before I send this, here's exactly what will go out:\n\nTo: {{recipient}}\nSubject: {{subject}}\n\n\"{{body}}\"\n\nSend it?\n\n- \"Send\"\n- \"Edit\"\n- \"Cancel\"",
@@ -160,20 +160,20 @@ var InteractionCopy = map[string]string{
 	"skip_preference_note": "When they decline a suggested preference update, confirm what the new behavior IS (keep asking), not what it ISN'T. Clarity prevents confusion later.",
 
 	// === Proactive Suggestions ===
-	"proactive_conflict":         "Hey — quick heads up\n\nYour {{event_1}} and {{event_2}} overlap. Looks like {{reason}}.\n\nWant me to move {{movable_event}} to {{suggested_time}}? I checked — you're free at the same time.",
-	"proactive_conflict_done":    "Done. {{event}} moved to {{new_time}}. I'll remind you {{reminder_time}}.",
-	"proactive_conflict_note":    "Lead with the problem, immediately follow with a proposed fix. Never just report — always suggest. One tap to resolve.",
-	"proactive_charge":           "Just noticed something on your {{service}} account:\n\n{{amount}} charge from {{vendor}} — does that look right to you? It's about {{multiple}}x your usual monthly amount.\n\n- \"Yes, that's fine\"\n- \"Show me more\"\n- \"Flag it\"",
-	"proactive_charge_detail":    "Here's what I see:\n\n{{vendor_detail}} — {{description}}\n{{amount}}\nCharged {{date}}\n{{payment_method}}\n\n{{analysis}}",
-	"proactive_charge_note":      "Flag it fast, show the specifics, give them options. Don't dramatize — stay matter-of-fact.",
-	"proactive_followup":         "Just noticed — {{sender}} emailed you {{days_ago}} days ago about {{subject}} and hasn't heard back.\n\nWant me to draft a quick reply? Or should I remind you again tomorrow?",
-	"proactive_reminder":         "Quick heads up — {{reminder_content}}",
-	"proactive_followup_note":    "Surface the specific thread, not a vague reminder. Make it one-tap actionable.",
-	"proactive_weather":          "You've got a {{event}} at {{time}}. {{weather_detail}}\n\n{{travel_advice}}",
-	"proactive_weather_note":     "Only surface this when there's actually something to flag — don't become noise. Timing is everything.",
-	"proactive_goal_nudge":       "Hey — you set a goal to {{goal}} by {{deadline}}. It's {{current_day}} and I haven't seen any activity on it yet.\n\nWant me to pull up where you left off, or block some time on your calendar today?",
-	"proactive_goal_nudge_done":  "Done — I've blocked {{time_block}} today as {{goal_name}} focus time. I'll hold your notifications during that window unless something urgent comes in.",
-	"proactive_goal_nudge_note":  "Goals are sensitive — don't nag. One gentle nudge with a concrete offer to help is all you get.",
+	"proactive_conflict":        "Hey — quick heads up\n\nYour {{event_1}} and {{event_2}} overlap. Looks like {{reason}}.\n\nWant me to move {{movable_event}} to {{suggested_time}}? I checked — you're free at the same time.",
+	"proactive_conflict_done":   "Done. {{event}} moved to {{new_time}}. I'll remind you {{reminder_time}}.",
+	"proactive_conflict_note":   "Lead with the problem, immediately follow with a proposed fix. Never just report — always suggest. One tap to resolve.",
+	"proactive_charge":          "Just noticed something on your {{service}} account:\n\n{{amount}} charge from {{vendor}} — does that look right to you? It's about {{multiple}}x your usual monthly amount.\n\n- \"Yes, that's fine\"\n- \"Show me more\"\n- \"Flag it\"",
+	"proactive_charge_detail":   "Here's what I see:\n\n{{vendor_detail}} — {{description}}\n{{amount}}\nCharged {{date}}\n{{payment_method}}\n\n{{analysis}}",
+	"proactive_charge_note":     "Flag it fast, show the specifics, give them options. Don't dramatize — stay matter-of-fact.",
+	"proactive_followup":        "Just noticed — {{sender}} emailed you {{days_ago}} days ago about {{subject}} and hasn't heard back.\n\nWant me to draft a quick reply? Or should I remind you again tomorrow?",
+	"proactive_reminder":        "Quick heads up — {{reminder_content}}",
+	"proactive_followup_note":   "Surface the specific thread, not a vague reminder. Make it one-tap actionable.",
+	"proactive_weather":         "You've got a {{event}} at {{time}}. {{weather_detail}}\n\n{{travel_advice}}",
+	"proactive_weather_note":    "Only surface this when there's actually something to flag — don't become noise. Timing is everything.",
+	"proactive_goal_nudge":      "Hey — you set a goal to {{goal}} by {{deadline}}. It's {{current_day}} and I haven't seen any activity on it yet.\n\nWant me to pull up where you left off, or block some time on your calendar today?",
+	"proactive_goal_nudge_done": "Done — I've blocked {{time_block}} today as {{goal_name}} focus time. I'll hold your notifications during that window unless something urgent comes in.",
+	"proactive_goal_nudge_note": "Goals are sensitive — don't nag. One gentle nudge with a concrete offer to help is all you get.",
 
 	// === Correction Handling ===
 	"correction_ack":           "Thanks for the correction — I've updated my understanding. I'll get it right next time.",
@@ -209,14 +209,14 @@ var InteractionCopy = map[string]string{
 	"autonomy_milestone_note":     "Don't make this a big deal — it should feel like a natural check-in, not a celebration of yourself. Brief, warm, specific.",
 
 	// === Billing & Plans ===
-	"billing_upgrade_prompt":  "I'd love to set that up — {{feature}} is on the {{required_plan}} plan and above. You're currently on {{current_plan}}.\n\n{{required_plan}} is {{price}}/month and unlocks {{feature_list}}.\n\nWant to upgrade?\n- \"Yes, upgrade me\"\n- \"What else does {{required_plan}} include?\"\n- \"Not right now\"",
-	"billing_trial_ending":    "Hey {{name}} — your free trial ends in {{days_left}} days ({{end_date}}).\n\nSince we started, I've:\n{{usage_summary}}\n\nAfter the trial, I'll switch to read-only mode — I can still answer questions but won't be able to take action for you.\n\n{{plan_name}} is {{price}}/month. Want to continue?\n- \"Yes, subscribe\"\n- \"Remind me on {{end_date}}\"\n- \"No thanks\"",
-	"billing_trial_note":      "Don't hard-sell. Show what they'd lose, make it one tap to continue. No urgency theater.",
-	"billing_upgrade_note":    "Don't block them abruptly. Show what they tried to do, explain the limit clearly, offer the upgrade as a natural next step.",
-	"billing_payment_failed":  "Heads up — your payment didn't go through this month.\n\nThe charge of {{amount}} to your {{payment_method}} was declined. Your account is still active for now, but I'll need a working payment method within {{grace_days}} days to keep things running.\n\nWant to update your card?\n- \"Yes, update it\" — brevio.app/billing\n- \"Remind me in 2 days\"",
-	"billing_payment_note":    "Calm and practical. Tell them what failed, what happens next, and give them one clear action. No shame.",
-	"billing_limit_reached":   "Just a note — you've hit your monthly task limit on the {{current_plan}} plan.\n\nI can still chat and answer questions, but I won't be able to take actions (emails, calendar, etc.) until {{reset_date}} when your limit resets — or if you upgrade.\n\n{{upgrade_plan}} removes the limit entirely.\n\n- \"Upgrade to {{upgrade_plan}}\"\n- \"I'll wait until next month\"",
-	"billing_limit_note":      "Be honest about why you're slowing down. Offer the upgrade, but don't be pushy — also give a 'wait it out' option.",
+	"billing_upgrade_prompt": "I'd love to set that up — {{feature}} is on the {{required_plan}} plan and above. You're currently on {{current_plan}}.\n\n{{required_plan}} is {{price}}/month and unlocks {{feature_list}}.\n\nWant to upgrade?\n- \"Yes, upgrade me\"\n- \"What else does {{required_plan}} include?\"\n- \"Not right now\"",
+	"billing_trial_ending":   "Hey {{name}} — your free trial ends in {{days_left}} days ({{end_date}}).\n\nSince we started, I've:\n{{usage_summary}}\n\nAfter the trial, I'll switch to read-only mode — I can still answer questions but won't be able to take action for you.\n\n{{plan_name}} is {{price}}/month. Want to continue?\n- \"Yes, subscribe\"\n- \"Remind me on {{end_date}}\"\n- \"No thanks\"",
+	"billing_trial_note":     "Don't hard-sell. Show what they'd lose, make it one tap to continue. No urgency theater.",
+	"billing_upgrade_note":   "Don't block them abruptly. Show what they tried to do, explain the limit clearly, offer the upgrade as a natural next step.",
+	"billing_payment_failed": "Heads up — your payment didn't go through this month.\n\nThe charge of {{amount}} to your {{payment_method}} was declined. Your account is still active for now, but I'll need a working payment method within {{grace_days}} days to keep things running.\n\nWant to update your card?\n- \"Yes, update it\" — brevio.app/billing\n- \"Remind me in 2 days\"",
+	"billing_payment_note":   "Calm and practical. Tell them what failed, what happens next, and give them one clear action. No shame.",
+	"billing_limit_reached":  "Just a note — you've hit your monthly task limit on the {{current_plan}} plan.\n\nI can still chat and answer questions, but I won't be able to take actions (emails, calendar, etc.) until {{reset_date}} when your limit resets — or if you upgrade.\n\n{{upgrade_plan}} removes the limit entirely.\n\n- \"Upgrade to {{upgrade_plan}}\"\n- \"I'll wait until next month\"",
+	"billing_limit_note":     "Be honest about why you're slowing down. Offer the upgrade, but don't be pushy — also give a 'wait it out' option.",
 
 	// === Re-authentication ===
 	"reauth_needed":        "Hey — my connection to {{service}} expired.\n\nI can't access your {{capabilities}} until you reconnect. It happens every {{expiry_period}} for security.\n\nTakes 30 seconds:\nbrevio.app/connect/{{provider_key}}\n\nI'll pick up right where I left off once you're back in.",
@@ -248,18 +248,18 @@ var InteractionCopy = map[string]string{
 	"learning_lesson_note":      "From V9.1 — lessons require explicit user confirmation before they become active rules. Always show exactly what the rule will be.",
 
 	// === Recurring Tasks ===
-	"recurring_setup":            "Done — I'll {{action}} every {{schedule}}. It'll cover:\n{{details}}\n\nStarting {{start_date}}. You can pause this anytime by saying \"pause {{task_name}}\".",
-	"recurring_confirmation":     "Done! I'll {{recurring_action}} {{schedule}}. You can change or cancel anytime by just telling me.",
-	"recurring_setup_note":       "Confirm the schedule precisely — day, time, and exactly what you'll do. Give them an easy way to pause or change it.",
-	"recurring_weekly":           "Got it — every {{day}} at {{time}} I'll {{action}}.\n\nWant me to draft it for you automatically, or just remind you to do it yourself?",
-	"recurring_weekly_confirm":   "Perfect — every {{day}} at {{time}} I'll pull together what you worked on that week and draft the update for your review. You send it, I write it.\n\nFirst one lands this {{day}}.",
-	"recurring_weekly_note":      "For weekly tasks, confirm the day clearly and what triggers it. If there's a prep action needed, surface it.",
-	"recurring_modify":           "Updated — {{task}} moves from {{old_time}} to {{new_time}} starting tomorrow. Everything else stays the same.",
-	"recurring_modify_note":      "Confirm what's changing, what's staying the same. Never silently modify a schedule.",
-	"recurring_pause":            "Paused — no {{task}} until you're back.\n\nWhen do you return? I can automatically resume it, or you can just say \"resume {{task}}\" whenever you're ready.",
-	"recurring_pause_confirm":    "Got it — {{task}} resumes {{resume_date}}. Enjoy the break!",
-	"recurring_pause_note":       "Pause is different from delete — make sure they know it'll resume. Give them control over when.",
-	"recurring_conflict":         "Heads up — your {{task}} will conflict with your {{conflicting_event}}.\n\nWant me to:\n1. Do it at {{alt_time}} instead that day\n2. Skip that occurrence\n3. Do it anyway after the meeting",
-	"recurring_conflict_done":    "Done — {{task}} moves to {{alt_time}} next {{day}} only. Back to {{normal_time}} the week after.",
-	"recurring_conflict_note":    "Surface conflicts proactively. Give them options — don't just silently skip or override.",
+	"recurring_setup":          "Done — I'll {{action}} every {{schedule}}. It'll cover:\n{{details}}\n\nStarting {{start_date}}. You can pause this anytime by saying \"pause {{task_name}}\".",
+	"recurring_confirmation":   "Done! I'll {{recurring_action}} {{schedule}}. You can change or cancel anytime by just telling me.",
+	"recurring_setup_note":     "Confirm the schedule precisely — day, time, and exactly what you'll do. Give them an easy way to pause or change it.",
+	"recurring_weekly":         "Got it — every {{day}} at {{time}} I'll {{action}}.\n\nWant me to draft it for you automatically, or just remind you to do it yourself?",
+	"recurring_weekly_confirm": "Perfect — every {{day}} at {{time}} I'll pull together what you worked on that week and draft the update for your review. You send it, I write it.\n\nFirst one lands this {{day}}.",
+	"recurring_weekly_note":    "For weekly tasks, confirm the day clearly and what triggers it. If there's a prep action needed, surface it.",
+	"recurring_modify":         "Updated — {{task}} moves from {{old_time}} to {{new_time}} starting tomorrow. Everything else stays the same.",
+	"recurring_modify_note":    "Confirm what's changing, what's staying the same. Never silently modify a schedule.",
+	"recurring_pause":          "Paused — no {{task}} until you're back.\n\nWhen do you return? I can automatically resume it, or you can just say \"resume {{task}}\" whenever you're ready.",
+	"recurring_pause_confirm":  "Got it — {{task}} resumes {{resume_date}}. Enjoy the break!",
+	"recurring_pause_note":     "Pause is different from delete — make sure they know it'll resume. Give them control over when.",
+	"recurring_conflict":       "Heads up — your {{task}} will conflict with your {{conflicting_event}}.\n\nWant me to:\n1. Do it at {{alt_time}} instead that day\n2. Skip that occurrence\n3. Do it anyway after the meeting",
+	"recurring_conflict_done":  "Done — {{task}} moves to {{alt_time}} next {{day}} only. Back to {{normal_time}} the week after.",
+	"recurring_conflict_note":  "Surface conflicts proactively. Give them options — don't just silently skip or override.",
 }

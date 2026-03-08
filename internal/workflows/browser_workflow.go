@@ -5,32 +5,32 @@ import "strings"
 type BrowserSessionState string
 
 const (
-	BrowserStateInit        BrowserSessionState = "INIT"
+	BrowserStateInit         BrowserSessionState = "INIT"
 	BrowserStateProvisioning BrowserSessionState = "PROVISIONING"
-	BrowserStateConfiguring BrowserSessionState = "CONFIGURING"
-	BrowserStateExecuting   BrowserSessionState = "EXECUTING"
-	BrowserStateCapturing   BrowserSessionState = "CAPTURING"
-	BrowserStateCleanup     BrowserSessionState = "CLEANUP"
-	BrowserStateCompleted   BrowserSessionState = "COMPLETED"
-	BrowserStateFailed      BrowserSessionState = "FAILED"
-	BrowserStateTimedOut    BrowserSessionState = "TIMED_OUT"
+	BrowserStateConfiguring  BrowserSessionState = "CONFIGURING"
+	BrowserStateExecuting    BrowserSessionState = "EXECUTING"
+	BrowserStateCapturing    BrowserSessionState = "CAPTURING"
+	BrowserStateCleanup      BrowserSessionState = "CLEANUP"
+	BrowserStateCompleted    BrowserSessionState = "COMPLETED"
+	BrowserStateFailed       BrowserSessionState = "FAILED"
+	BrowserStateTimedOut     BrowserSessionState = "TIMED_OUT"
 )
 
 type BrowserWorkflowInput struct {
-	SessionID        string
-	UserID           string
-	SkillID          string
-	SessionType      string
-	UseProxy         bool
-	UseFingerprint   bool
-	ProxyHealthy     bool
-	ProvisionError   bool
-	ConfigError      bool
-	ExecuteError     bool
-	CaptchaRequired  bool
-	CaptchaSolved    bool
-	TimeoutExceeded  bool
-	TaskCount        int
+	SessionID       string
+	UserID          string
+	SkillID         string
+	SessionType     string
+	UseProxy        bool
+	UseFingerprint  bool
+	ProxyHealthy    bool
+	ProvisionError  bool
+	ConfigError     bool
+	ExecuteError    bool
+	CaptchaRequired bool
+	CaptchaSolved   bool
+	TimeoutExceeded bool
+	TaskCount       int
 }
 
 type BrowserWorkflowResult struct {
