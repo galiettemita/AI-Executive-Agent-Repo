@@ -1,14 +1,7 @@
-# CI quarantine gate: TS services under services/ are NON_PRODUCTION duplicates
-# of the authoritative Go plane services under cmd/ + internal/.
+# CI quarantine gate: TS duplicate services have been moved to /deprecated/.
+# Only services/hands-runtime/ remains in services/ as a production-allowed TS service.
 # This file is checked by CI to prevent production deployment of quarantined services.
-quarantined_services:
-  - brevio-gateway
-  - brevio-brain
-  - brevio-temporal-worker
-  - brevio-metrics
-  - brevio-scheduler
-  - brevio-edge-relay
-  - brevio-profile
-  - brevio-auth
-reason: "TS plane duplicates of authoritative Go services. Kept for reference only."
-production_deploy_allowed: false
+quarantined_services_moved_to: "deprecated/"
+production_allowed:
+  - hands-runtime  # OpenClaw skill runtime (D8)
+reason: "TS plane duplicates moved to deprecated/ per D1. Only hands-runtime is production TS."

@@ -1,0 +1,121 @@
+[
+  {
+    "blueprint_id": "BP01",
+    "filename": "Brevio_4Features_Blueprint.docx",
+    "sha256": "f52fec83bfac0ecc4a3773ac0b24aca5c0cee216f1723aedaf56dfaf2008b431",
+    "line_count": 38,
+    "path": "extracted-blueprints/Brevio_4Features_Blueprint.docx"
+  },
+  {
+    "blueprint_id": "BP02",
+    "filename": "Brevio_V101_Admin_Blueprint.docx",
+    "sha256": "1f0323d503060bb860c9638963cf74c7aea65be4cd81299d562c1f9ac705e2ea",
+    "line_count": 136,
+    "path": "extracted-blueprints/Brevio_V101_Admin_Blueprint.docx"
+  },
+  {
+    "blueprint_id": "BP03",
+    "filename": "Brevio_V102_Intelligence_Addendum.docx",
+    "sha256": "dd9c7af3db49cef4cd1cf765f528a5b366908cf079877ca9b92e87e3066d210b",
+    "line_count": 224,
+    "path": "extracted-blueprints/Brevio_V102_Intelligence_Addendum.docx"
+  },
+  {
+    "blueprint_id": "BP04",
+    "filename": "Brevio_V103_Cognitive_Intelligence.docx",
+    "sha256": "0e5300b817989d076748b766dc0c65f3d74c59c19ace878ec7c6b181ac79f14a",
+    "line_count": 387,
+    "path": "extracted-blueprints/Brevio_V103_Cognitive_Intelligence.docx"
+  },
+  {
+    "blueprint_id": "BP05",
+    "filename": "Brevio_V104_Blueprint.docx",
+    "sha256": "4f011dd95a6e1c38f254b7cf9e474f35610a68654d6ea387bdf6642e07b0e441",
+    "line_count": 64,
+    "path": "extracted-blueprints/Brevio_V104_Blueprint.docx"
+  },
+  {
+    "blueprint_id": "BP06",
+    "filename": "Brevio_V10_Complete.docx",
+    "sha256": "385b1a9817e3160442940ef292e1fdfb654d284272f7e7931e74a14e1f8d2a98",
+    "line_count": 3996,
+    "path": "extracted-blueprints/Brevio_V10_Complete.docx"
+  },
+  {
+    "blueprint_id": "BP07",
+    "filename": "Brevio_V91_Addendum_Soft_Intelligence_Layer.docx",
+    "sha256": "4bfac012f5d7fac2b16321b55d8d3e6030740a1a89280501521e3da4a1a3d0b6",
+    "line_count": 122,
+    "path": "extracted-blueprints/Brevio_V91_Addendum_Soft_Intelligence_Layer.docx"
+  },
+  {
+    "blueprint_id": "BP08",
+    "filename": "Brevio_V92_Addendum_blueprint.docx",
+    "sha256": "444b1efe4b6a78fe03fe621fd279845c8a81423a6ae0d84d439c747564cbd1b1",
+    "line_count": 164,
+    "path": "extracted-blueprints/Brevio_V92_Addendum_blueprint.docx"
+  },
+  {
+    "blueprint_id": "BP09",
+    "filename": "Brevio_V9_Consolidated_Blueprint.docx",
+    "sha256": "a382ffce15c18da15f7396b0f5c4dd200b7782e7bee75f98a05c98a19392b926",
+    "line_count": 215,
+    "path": "extracted-blueprints/Brevio_V9_Consolidated_Blueprint.docx"
+  },
+  {
+    "blueprint_id": "BP10",
+    "filename": "Brevio_addendum.docx",
+    "sha256": "40a085d6071a6fe0e6276e8d1fc887a23621a01825c40c9dcae273d57f7bebdd",
+    "line_count": 143,
+    "path": "extracted-blueprints/Brevio_addendum.docx"
+  },
+  {
+    "blueprint_id": "BP11",
+    "filename": "brevio-blueprint-addendum.docx",
+    "sha256": "9c5ff0924e0e6cb0ede0fc4178731340a4d547b247eb61c497d989835f698a51",
+    "line_count": 1431,
+    "path": "extracted-blueprints/brevio-blueprint-addendum.docx"
+  },
+  {
+    "blueprint_id": "BP12",
+    "filename": "brevio-copy-part2.jsx",
+    "sha256": "574d86ad959ae2edb831578b593d8c70c77dc4cda7c2df43867db23f2816099f",
+    "line_count": 436,
+    "path": "extracted-blueprints/brevio-copy-part2.jsx"
+  },
+  {
+    "blueprint_id": "BP13",
+    "filename": "brevio-copy-part3.jsx",
+    "sha256": "e606c8d242352f16476c03c591dfb3adb154e4675cf205a5862c88d2020b5e07",
+    "line_count": 593,
+    "path": "extracted-blueprints/brevio-copy-part3.jsx"
+  },
+  {
+    "blueprint_id": "BP14",
+    "filename": "brevio-error-states-copy.jsx",
+    "sha256": "296f63a802e2ac2d193a1c23a8113507ed0389ed97ab569f289e57a0c45bdaf0",
+    "line_count": 397,
+    "path": "extracted-blueprints/brevio-error-states-copy.jsx"
+  },
+  {
+    "blueprint_id": "BP15",
+    "filename": "brevio-onboarding-copy.jsx",
+    "sha256": "9b0cec5ad7c6447fd9c6c0cd016ad21fa8881d36d138f98e8d7fb4bb4a14d001",
+    "line_count": 427,
+    "path": "extracted-blueprints/brevio-onboarding-copy.jsx"
+  },
+  {
+    "blueprint_id": "BP16",
+    "filename": "brevio-openclaw-blueprint.docx",
+    "sha256": "8bdacc165b09dc48055a6856764c590ba0cf9b1197f0a9e3b101e76cfbd3eeca",
+    "line_count": 451,
+    "path": "extracted-blueprints/brevio-openclaw-blueprint.docx"
+  },
+  {
+    "blueprint_id": "BP17",
+    "filename": "brevio_openclaw_blueprint_v1.0.1_unified.docx",
+    "sha256": "4a798e3879cd7f513bd864d636d679b63f4463f392c77d670cdb4d620df76412",
+    "line_count": 2272,
+    "path": "extracted-blueprints/brevio_openclaw_blueprint_v1.0.1_unified.docx"
+  }
+]

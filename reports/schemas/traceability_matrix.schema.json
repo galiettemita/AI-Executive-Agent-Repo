@@ -1,35 +1,29 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Traceability Matrix",
+  "title": "TraceabilityMatrix",
   "type": "object",
-  "required": ["version", "entries"],
+  "required": ["version", "generated_at", "rows"],
   "properties": {
     "version": { "type": "string" },
-    "generated_at": { "type": "string", "format": "date-time" },
-    "entries": {
+    "generated_at": { "type": "string" },
+    "rows": {
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["requirement_id", "blueprint_id", "implementation_status"],
+        "required": ["requirement_id", "source_blueprints", "canonical_intent", "mapped_implementation_artifacts", "implementation_status", "conformance_notes", "required_action", "code_to_blueprint_labels"],
         "properties": {
           "requirement_id": { "type": "string" },
-          "blueprint_id": { "type": "string" },
-          "source_line_ids": { "type": "array", "items": { "type": "string" } },
-          "implementation_status": { "type": "string", "enum": ["complete", "partial", "missing"] },
-          "implementation_files": { "type": "array", "items": { "type": "string" } },
-          "test_files": { "type": "array", "items": { "type": "string" } },
-          "notes": { "type": "string" }
+          "source_blueprints": { "type": "array", "items": { "type": "string" } },
+          "canonical_intent": { "type": "string" },
+          "mapped_implementation_artifacts": { "type": "array", "items": { "type": "string" } },
+          "implementation_status": { "enum": ["IMPLEMENTED", "PARTIALLY_IMPLEMENTED", "INCORRECTLY_IMPLEMENTED", "IMPLEMENTED_BUT_DRIFTED", "NOT_IMPLEMENTED", "AMBIGUOUS_MAPPING"] },
+          "conformance_notes": { "type": "string" },
+          "required_action": { "type": "string" },
+          "code_to_blueprint_labels": {
+            "type": "array",
+            "items": { "enum": ["BLUEPRINT_ALIGNED", "BLUEPRINT_PARTIAL", "ORPHANED", "CONFLICTING", "DEPRECATED", "DEAD_CODE", "UNCERTAIN"] }
+          }
         }
-      }
-    },
-    "summary": {
-      "type": "object",
-      "properties": {
-        "total_requirements": { "type": "integer" },
-        "complete": { "type": "integer" },
-        "partial": { "type": "integer" },
-        "missing": { "type": "integer" },
-        "coverage_percent": { "type": "number" }
       }
     }
   }

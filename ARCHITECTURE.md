@@ -66,11 +66,61 @@ Domain Package (e.g., internal/cognition/)
 └── service_test.go   — Tests with test doubles
 ```
 
+## Workflow State Diagram
+
+```mermaid
+stateDiagram-v2
+  [*] --> IngressValidated
+  IngressValidated --> Planned
+  Planned --> Simulated
+  Simulated --> Authorized: receipts issued
+  Authorized --> Executing: activities only
+  Executing --> Compensating: partial failure
+  Executing --> Responded: success
+  Compensating --> Responded
+  Responded --> [*]
+```
+
 ## Key Infrastructure
 
-- **Database**: PostgreSQL 15+ with pgvector extension, pgxpool connection pooling
-- **Orchestration**: Temporal Server with Go SDK workflows/activities
-- **Search**: pgvector cosine similarity with IVFFlat indexes + BM25 hybrid
+- **Database**: PostgreSQL 16+ with pgvector extension, pgxpool connection pooling
+- **Orchestration**: Temporal Server 1.30.1 with Go SDK workflows/activities
+- **Search**: pgvector cosine similarity with IVFFlat/HNSW indexes + BM25 hybrid
 - **Auth**: OPA policies, RBAC, durable authorization receipts
 - **IDs**: UUIDv7 (RFC 9562) for all primary keys
 - **RLS**: Row-level security via `SET app.workspace_id` on every DB session
+- **Observability**: OpenTelemetry traces (W3C propagation), structured JSON logs, Prometheus metrics
+- **Deployment**: Kubernetes with nginx ingress, Helm charts, mTLS for service-to-service auth
+- **Supply Chain**: CycloneDX SBOM, dependency vulnerability scanning, container hardening
+
+## Repository Structure
+
+```
+cmd/{gateway,brain,control,executor,canvas,temporal-worker,brevioctl}/
+internal/{gateway,brain,control,executor,canvas,workflows,policy,database,observability,contracts,audit,config,security,edge,testing}/
+db/migrations/                    — Forward-only production migrations
+api/openapi/                      — v10.yaml canonical OpenAPI spec
+schemas/                          — Strict JSON schemas
+policies/                         — OPA policies + tests
+infra/{terraform,helm}/           — Single canonical infra
+tests/{unit,integration,e2e,contract,algorithm_fidelity}/
+services/hands-runtime/           — OpenClaw TS skill runtime
+edge/                             — Edge agent
+apps/web-demo/                    — Demo UI
+reports/                          — Generated artifacts (committed)
+```
+
+## Binding Decisions Reference
+
+| Decision | Summary |
+|----------|---------|
+| D1 | Go for cloud planes; TS only for Hands/edge/frontend |
+| D2 | Temporal-only orchestration with per-plane task queues |
+| D3 | Control is sole PDP; durable authorization receipts |
+| D4 | workspace_id RLS on all tables; fail closed |
+| D5 | UUIDv7 (RFC 9562) for all primary keys |
+| D6 | Forward-only migrations; rollback = snapshot + forward fix |
+| D7 | FNV-1a 64-bit deterministic jitter for Temporal retries |
+| D8 | OpenClaw Hands runtime with strict versioned contract |
+| D9 | PostgreSQL-only production persistence (S1) |
+| D10 | OpenAI embeddings + pgvector; no lexical Jaccard in prod |

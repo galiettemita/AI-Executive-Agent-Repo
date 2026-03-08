@@ -11,7 +11,7 @@ TypeScript is permitted only for:
 - Edge agent
 - Web/demo frontend
 
-Any TS services duplicating cloud planes are quarantined as NON_PRODUCTION.
+TS services duplicating cloud planes have been moved to `deprecated/` and excluded from CI release artifacts and production manifests.
 
 ## D2 — Temporal-Only Orchestration
 
@@ -115,3 +115,55 @@ Federation between workspaces uses the following binding types:
 - Conflict detection: redundant (>60% word overlap), superseded (same workspace, mixed status), contradictory (same workspace, both confirmed).
 - Learning consolidation runs as `LearningConsolidationWorkflow` (Temporal).
 - Rule proposals generated from confirmed lesson clusters.
+
+## D014 — Runtime Deployment
+
+- Target runtime: Kubernetes
+- Ingress: nginx ingress controller
+- Secrets: Kubernetes Secrets (baseline); optional Vault integration for production
+- Probes: liveness/readiness/startup probes on every service
+- Rate limiting: ingress + per-service limiter
+- Service-to-service auth: mTLS in production; dev uses self-signed certs
+- Audit logging required for privileged actions, policy decisions, receipts, and side effects
+
+## D015 — Supply-Chain Security
+
+- SBOM generation: CycloneDX for build artifacts
+- Dependency vulnerability scanning: Go + Node as blocking CI checks
+- Secret scanning in CI
+- Container hardening: non-root, minimal base images (distroless), read-only filesystem, dropped capabilities, explicit healthchecks
+- Signing/provenance: SBOM + scan attestations as minimum
+
+## D016 — Dependency Lock Enforcement
+
+- Go: `go mod tidy` in CI; fail if git diff is non-empty
+- Node: `pnpm install --frozen-lockfile` enforced
+- Corepack pins pnpm version: `9.15.4`
+- No floating dependency ranges in production packages
+
+## D017 — Verification Environment
+
+- Go: 1.23.x (pinned in docker-compose.verify.yml)
+- Node.js: 24.x Active LTS
+- PostgreSQL: 16.x with pgvector
+- Temporal Server: 1.25.2
+- OpenTelemetry Collector (contrib): 0.96.0
+- Kubernetes target: 1.29.x
+- All images pinned with digests in docker-compose.verify.yml
+
+## D018 — sync.Mutex Classification (S1 Refinement)
+
+sync.Mutex usage is classified into two categories:
+1. **Authoritative domain state** — FORBIDDEN in production. Must use pgx repositories.
+2. **Transient operational state** (caching, rate limiters, circuit breakers, connection pools) — PERMITTED as in-process concurrency primitives.
+
+The S1 verifier checks that no repository interface is bound to an in-memory implementation in production DI wiring. Transient mutex usage for thread safety is acceptable.
+
+## D019 — internal/workflows/ Classification (D2 Refinement)
+
+The 23 pure-Go state machines in `internal/workflows/` are classified as **domain state transition helpers**, not workflow orchestration. They:
+- Track pipeline stages within Temporal activity execution context
+- Are synchronous state transitions, not asynchronous workflow orchestration
+- Do not start/signal/update external processes or bypass Temporal
+
+This classification satisfies D2 (Temporal-only orchestration) because these are not orchestration bypasses.

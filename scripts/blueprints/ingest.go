@@ -1,3 +1,8 @@
+// scripts/blueprints/ingest.go
+// Blueprint Ingestion + Coverage Matrix generator (T01).
+// Reads .docx and .jsx files from extracted-blueprints/, assigns BP IDs,
+// and produces deterministic manifest, line index, extract inventory,
+// and coverage matrix reports.
 package main
 
 import (
@@ -5,186 +10,286 @@ import (
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 )
 
-// BlueprintManifestEntry is one entry in the manifest.
-type BlueprintManifestEntry struct {
+// ManifestEntry represents one blueprint in the manifest.
+type ManifestEntry struct {
 	BlueprintID string `json:"blueprint_id"`
 	Filename    string `json:"filename"`
 	SHA256      string `json:"sha256"`
 	LineCount   int    `json:"line_count"`
+	Path        string `json:"path"`
 }
 
-// BlueprintManifest is the top-level manifest.
-type BlueprintManifest struct {
-	Version    string                   `json:"version"`
-	Blueprints []BlueprintManifestEntry `json:"blueprints"`
+// ExtractEntry represents an extract from a blueprint.
+type ExtractEntry struct {
+	ExtractID      string `json:"extract_id"`
+	Type           string `json:"type"`
+	ContentPreview string `json:"content_preview"`
 }
 
-// LineIndexEntry maps a line to its blueprint.
-type LineIndexEntry struct {
-	LineID      string `json:"line_id"`
-	BlueprintID string `json:"blueprint_id"`
-	Content     string `json:"content"`
+// InventoryEntry represents a blueprint's extracts in the inventory.
+type InventoryEntry struct {
+	BlueprintID string         `json:"blueprint_id"`
+	Extracts    []ExtractEntry `json:"extracts"`
 }
 
 func main() {
-	if len(os.Args) < 2 {
-		fmt.Println("Usage: ingest <blueprint-directory>")
-		fmt.Println("Ingests blueprint documents and generates manifest, line index, and coverage matrix.")
-		os.Exit(1)
+	repoRoot := findRepoRoot()
+	blueprintsDir := filepath.Join(repoRoot, "extracted-blueprints")
+	reportsDir := filepath.Join(repoRoot, "reports", "blueprints")
+
+	if err := os.MkdirAll(reportsDir, 0o755); err != nil {
+		fatal("creating reports dir: %v", err)
 	}
 
-	blueprintDir := os.Args[1]
-	outputDir := "reports/blueprints"
-
-	if err := os.MkdirAll(outputDir, 0o755); err != nil {
-		fmt.Fprintf(os.Stderr, "cannot create output dir: %v\n", err)
-		os.Exit(1)
-	}
-
-	// Find all blueprint files (sorted)
-	files, err := findBlueprintFiles(blueprintDir)
+	// Collect the 17 original files (.docx and .jsx), sorted stably.
+	entries, err := os.ReadDir(blueprintsDir)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "error finding blueprints: %v\n", err)
-		os.Exit(1)
+		fatal("reading blueprints dir: %v", err)
 	}
 
-	if len(files) == 0 {
-		fmt.Fprintln(os.Stderr, "no blueprint files found")
-		os.Exit(1)
-	}
-
-	sort.Strings(files)
-
-	manifest := BlueprintManifest{Version: "1.0"}
-	var allLines []LineIndexEntry
-
-	for i, file := range files {
-		bpID := fmt.Sprintf("BP%02d", i+1)
-		data, readErr := os.ReadFile(file)
-		if readErr != nil {
-			fmt.Fprintf(os.Stderr, "cannot read %s: %v\n", file, readErr)
+	var originals []string
+	for _, e := range entries {
+		if e.IsDir() {
 			continue
 		}
+		ext := strings.ToLower(filepath.Ext(e.Name()))
+		if ext == ".docx" || ext == ".jsx" {
+			originals = append(originals, e.Name())
+		}
+	}
+	sort.Strings(originals)
 
-		hash := sha256.Sum256(data)
-		hashStr := fmt.Sprintf("%x", hash)
+	if len(originals) != 17 {
+		fatal("expected 17 blueprint files, found %d", len(originals))
+	}
 
-		lines := strings.Split(string(data), "\n")
-		nonEmpty := 0
-		for lineNum, line := range lines {
-			trimmed := strings.TrimSpace(line)
-			if trimmed == "" {
-				continue
-			}
-			nonEmpty++
-			lineID := fmt.Sprintf("%s:%05d", bpID, nonEmpty)
-			allLines = append(allLines, LineIndexEntry{
-				LineID:      lineID,
-				BlueprintID: bpID,
-				Content:     trimmed,
-			})
-			_ = lineNum
+	var manifest []ManifestEntry
+	var inventory []InventoryEntry
+	var lineIndexRows [][]string
+	var coverageRows [][]string
+
+	for i, filename := range originals {
+		bpID := fmt.Sprintf("BP%02d", i+1)
+		ext := strings.ToLower(filepath.Ext(filename))
+		origPath := filepath.Join(blueprintsDir, filename)
+
+		// SHA-256 of the original file.
+		hash, err := fileSHA256(origPath)
+		if err != nil {
+			fatal("hashing %s: %v", filename, err)
 		}
 
-		manifest.Blueprints = append(manifest.Blueprints, BlueprintManifestEntry{
+		// Parse lines from content source.
+		var lines []string
+		if ext == ".docx" {
+			// Read the .txt sibling.
+			txtName := strings.TrimSuffix(filename, filepath.Ext(filename)) + ".txt"
+			txtPath := filepath.Join(blueprintsDir, txtName)
+			lines, err = readNonEmptyLines(txtPath)
+			if err != nil {
+				fatal("reading txt for %s: %v", filename, err)
+			}
+		} else {
+			// .jsx -- read directly, non-empty lines.
+			lines, err = readNonEmptyLines(origPath)
+			if err != nil {
+				fatal("reading jsx %s: %v", filename, err)
+			}
+		}
+
+		manifest = append(manifest, ManifestEntry{
 			BlueprintID: bpID,
-			Filename:    filepath.Base(file),
-			SHA256:      hashStr,
-			LineCount:   nonEmpty,
+			Filename:    filename,
+			SHA256:      hash,
+			LineCount:   len(lines),
+			Path:        "extracted-blueprints/" + filename,
 		})
 
-		fmt.Printf("  %s: %s (%d lines, sha256:%s)\n", bpID, filepath.Base(file), nonEmpty, hashStr[:16])
+		// Build extracts -- treat each non-empty line as an extract.
+		var extracts []ExtractEntry
+		for j, line := range lines {
+			lineNum := j + 1
+			lineID := fmt.Sprintf("%s:%05d", bpID, lineNum)
+			preview := truncate(line, 200)
+
+			lineIndexRows = append(lineIndexRows, []string{
+				lineID, bpID, fmt.Sprintf("%d", lineNum), preview,
+			})
+
+			coverageRows = append(coverageRows, []string{
+				lineID, bpID, "UNMAPPED",
+			})
+
+			extractID := fmt.Sprintf("%s:E%05d", bpID, lineNum)
+			extractType := "paragraph"
+			if ext == ".jsx" {
+				extractType = "code_line"
+			}
+			extracts = append(extracts, ExtractEntry{
+				ExtractID:      extractID,
+				Type:           extractType,
+				ContentPreview: preview,
+			})
+		}
+
+		inventory = append(inventory, InventoryEntry{
+			BlueprintID: bpID,
+			Extracts:    extracts,
+		})
+
+		fmt.Printf("  %s: %s (%d lines)\n", bpID, filename, len(lines))
 	}
 
-	// Write manifest
-	writeJSON(filepath.Join(outputDir, "blueprint_manifest.json"), manifest)
+	// Write manifest JSON.
+	writeJSON(filepath.Join(reportsDir, "blueprint_manifest.json"), manifest)
 
-	// Write line index CSV
-	writeLineIndexCSV(filepath.Join(outputDir, "blueprint_line_index.csv"), allLines)
+	// Write line index CSV.
+	writeCSV(filepath.Join(reportsDir, "blueprint_line_index.csv"),
+		[]string{"line_id", "blueprint_id", "line_number", "content"},
+		lineIndexRows,
+	)
 
-	// Write extract inventory
-	inventory := map[string]any{
-		"total_blueprints": len(manifest.Blueprints),
-		"total_lines":      len(allLines),
-		"blueprints":       manifest.Blueprints,
-	}
-	writeJSON(filepath.Join(outputDir, "blueprint_extract_inventory.json"), inventory)
+	// Write extract inventory JSON.
+	writeJSON(filepath.Join(reportsDir, "blueprint_extract_inventory.json"), inventory)
 
-	// Write coverage matrix CSV
-	writeCoverageMatrixCSV(filepath.Join(outputDir, "blueprint_coverage_matrix.csv"), allLines)
+	// Write coverage matrix CSV.
+	writeCSV(filepath.Join(reportsDir, "blueprint_coverage_matrix.csv"),
+		[]string{"line_id", "blueprint_id", "requirement_id"},
+		coverageRows,
+	)
 
-	fmt.Printf("\nIngested %d blueprints, %d lines\n", len(manifest.Blueprints), len(allLines))
-	fmt.Printf("Output: %s/\n", outputDir)
+	// Write line index JSONL.
+	writeLineIndexJSONL(filepath.Join(reportsDir, "blueprint_line_index.jsonl"), lineIndexRows)
+
+	fmt.Printf("\nIngested %d blueprints, %d lines total\n", len(manifest), len(lineIndexRows))
+	fmt.Printf("Reports written to %s\n", reportsDir)
 }
 
-func findBlueprintFiles(dir string) ([]string, error) {
-	var files []string
-	entries, err := os.ReadDir(dir)
+// findRepoRoot walks up from cwd to find the directory containing go.mod.
+func findRepoRoot() string {
+	dir, err := os.Getwd()
+	if err != nil {
+		fatal("getwd: %v", err)
+	}
+	for {
+		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
+			return dir
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			fatal("could not find repo root (no go.mod found)")
+		}
+		dir = parent
+	}
+}
+
+func fileSHA256(path string) (string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%x", h.Sum(nil)), nil
+}
+
+// readNonEmptyLines reads a text file and returns all non-empty lines.
+func readNonEmptyLines(path string) ([]string, error) {
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
-	for _, entry := range entries {
-		if entry.IsDir() {
-			continue
-		}
-		name := entry.Name()
-		ext := strings.ToLower(filepath.Ext(name))
-		if ext == ".docx" || ext == ".md" || ext == ".txt" || ext == ".jsx" || ext == ".tsx" {
-			files = append(files, filepath.Join(dir, name))
+	raw := strings.Split(string(data), "\n")
+	var lines []string
+	for _, l := range raw {
+		l = strings.TrimRight(l, "\r")
+		if strings.TrimSpace(l) != "" {
+			lines = append(lines, l)
 		}
 	}
-	return files, nil
+	return lines, nil
 }
 
-func writeJSON(path string, v any) {
+func truncate(s string, maxLen int) string {
+	runes := []rune(s)
+	if len(runes) <= maxLen {
+		return s
+	}
+	return string(runes[:maxLen])
+}
+
+func writeJSON(path string, v interface{}) {
 	data, err := json.MarshalIndent(v, "", "  ")
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "cannot marshal JSON for %s: %v\n", path, err)
-		return
+		fatal("marshal json: %v", err)
 	}
+	data = append(data, '\n')
 	if err := os.WriteFile(path, data, 0o644); err != nil {
-		fmt.Fprintf(os.Stderr, "cannot write %s: %v\n", path, err)
+		fatal("writing %s: %v", path, err)
 	}
 }
 
-func writeLineIndexCSV(path string, lines []LineIndexEntry) {
+func writeCSV(path string, header []string, rows [][]string) {
 	f, err := os.Create(path)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "cannot create %s: %v\n", path, err)
-		return
+		fatal("creating %s: %v", path, err)
 	}
 	defer f.Close()
-
 	w := csv.NewWriter(f)
-	defer w.Flush()
-
-	w.Write([]string{"line_id", "blueprint_id", "content"})
-	for _, line := range lines {
-		w.Write([]string{line.LineID, line.BlueprintID, line.Content})
+	if err := w.Write(header); err != nil {
+		fatal("writing csv header: %v", err)
+	}
+	for _, row := range rows {
+		if err := w.Write(row); err != nil {
+			fatal("writing csv row: %v", err)
+		}
+	}
+	w.Flush()
+	if err := w.Error(); err != nil {
+		fatal("csv flush: %v", err)
 	}
 }
 
-func writeCoverageMatrixCSV(path string, lines []LineIndexEntry) {
+// LineIndexJSONLEntry is one record in the JSONL output.
+type LineIndexJSONLEntry struct {
+	LineID      string `json:"line_id"`
+	BlueprintID string `json:"blueprint_id"`
+	LineNumber  string `json:"line_number"`
+	Content     string `json:"content"`
+}
+
+func writeLineIndexJSONL(path string, rows [][]string) {
 	f, err := os.Create(path)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "cannot create %s: %v\n", path, err)
-		return
+		fatal("creating %s: %v", path, err)
 	}
 	defer f.Close()
-
-	w := csv.NewWriter(f)
-	defer w.Flush()
-
-	w.Write([]string{"line_id", "blueprint_id", "requirement_id", "status"})
-	for _, line := range lines {
-		// Map each line to a requirement ID derived from its blueprint
-		reqID := fmt.Sprintf("REQ_%s", line.LineID)
-		w.Write([]string{line.LineID, line.BlueprintID, reqID, "mapped"})
+	enc := json.NewEncoder(f)
+	enc.SetEscapeHTML(false)
+	for _, row := range rows {
+		entry := LineIndexJSONLEntry{
+			LineID:      row[0],
+			BlueprintID: row[1],
+			LineNumber:  row[2],
+			Content:     row[3],
+		}
+		if err := enc.Encode(entry); err != nil {
+			fatal("writing jsonl row: %v", err)
+		}
 	}
+}
+
+func fatal(format string, args ...interface{}) {
+	fmt.Fprintf(os.Stderr, "FATAL: "+format+"\n", args...)
+	os.Exit(1)
 }

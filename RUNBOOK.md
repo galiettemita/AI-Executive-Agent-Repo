@@ -177,3 +177,58 @@ brevioctl doctor
 | TEMPORAL_HOST | No | Temporal server address (default: localhost:7233) |
 | TEMPORAL_WORKER_LISTEN_ADDR | No | Worker health endpoint (default: :18084) |
 | OTEL_EXPORTER_OTLP_ENDPOINT | No | OpenTelemetry collector endpoint |
+
+## Verification Environment
+
+### Running the deterministic verify environment
+```bash
+# Start infrastructure
+docker compose -f docker-compose.verify.yml up -d postgres temporal otel-collector
+
+# Run Go verification (one-shot)
+docker compose -f docker-compose.verify.yml run --rm verify-go
+
+# Run Node verification (one-shot)
+docker compose -f docker-compose.verify.yml run --rm verify-node
+
+# Teardown
+docker compose -f docker-compose.verify.yml down -v
+```
+
+### Pinned Versions (D017)
+| Component | Version |
+|-----------|---------|
+| Go | 1.23.x |
+| Node.js | 24.x (Active LTS) |
+| PostgreSQL | 16.x + pgvector |
+| Temporal Server | 1.25.2 |
+| OTel Collector | 0.96.0 |
+| pnpm | 9.15.4 (via Corepack) |
+
+### brevioctl verify commands
+```bash
+# Gate A — Blueprint Coverage
+brevioctl verify blueprint-coverage
+brevioctl verify requirements-graph
+brevioctl verify traceability-matrix
+
+# Gate B — Architecture Coherence
+brevioctl verify no-inmemory-prod
+
+# Gate C — Data and Contract Integrity
+brevioctl verify schema-closure
+brevioctl verify contract-closure
+
+# Gate D — Security and Policy Integrity
+brevioctl verify policy-closure
+brevioctl verify receipt-enforcement
+brevioctl verify workspace-rls
+brevioctl verify uuidv7
+
+# Gate E — Workflow/Runtime Integrity
+brevioctl verify temporal-replay
+
+# Gate F — Build/Test/Verification
+brevioctl verify provider-contract-tests
+brevioctl verify algorithm-fidelity
+```

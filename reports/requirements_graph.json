@@ -1,133 +1,829 @@
 {
   "version": "1.0",
+  "generated_at": "2026-03-08T16:00:00Z",
+  "blueprints": [
+    { "blueprint_id": "BP01", "sha256": "see_manifest", "path": "extracted-blueprints/Brevio_4Features_Blueprint.docx" },
+    { "blueprint_id": "BP02", "sha256": "see_manifest", "path": "extracted-blueprints/Brevio_V101_Admin_Blueprint.docx" },
+    { "blueprint_id": "BP03", "sha256": "see_manifest", "path": "extracted-blueprints/Brevio_V102_Intelligence_Addendum.docx" },
+    { "blueprint_id": "BP04", "sha256": "see_manifest", "path": "extracted-blueprints/Brevio_V103_Cognitive_Intelligence.docx" },
+    { "blueprint_id": "BP05", "sha256": "see_manifest", "path": "extracted-blueprints/Brevio_V104_Blueprint.docx" },
+    { "blueprint_id": "BP06", "sha256": "see_manifest", "path": "extracted-blueprints/Brevio_V10_Complete.docx" },
+    { "blueprint_id": "BP07", "sha256": "see_manifest", "path": "extracted-blueprints/Brevio_V91_Addendum_Soft_Intelligence_Layer.docx" },
+    { "blueprint_id": "BP08", "sha256": "see_manifest", "path": "extracted-blueprints/Brevio_V92_Addendum_blueprint.docx" },
+    { "blueprint_id": "BP09", "sha256": "see_manifest", "path": "extracted-blueprints/Brevio_V9_Consolidated_Blueprint.docx" },
+    { "blueprint_id": "BP10", "sha256": "see_manifest", "path": "extracted-blueprints/Brevio_addendum.docx" },
+    { "blueprint_id": "BP11", "sha256": "see_manifest", "path": "extracted-blueprints/brevio-blueprint-addendum.docx" },
+    { "blueprint_id": "BP12", "sha256": "see_manifest", "path": "extracted-blueprints/brevio-copy-part2.jsx" },
+    { "blueprint_id": "BP13", "sha256": "see_manifest", "path": "extracted-blueprints/brevio-copy-part3.jsx" },
+    { "blueprint_id": "BP14", "sha256": "see_manifest", "path": "extracted-blueprints/brevio-error-states-copy.jsx" },
+    { "blueprint_id": "BP15", "sha256": "see_manifest", "path": "extracted-blueprints/brevio-onboarding-copy.jsx" },
+    { "blueprint_id": "BP16", "sha256": "see_manifest", "path": "extracted-blueprints/brevio-openclaw-blueprint.docx" },
+    { "blueprint_id": "BP17", "sha256": "see_manifest", "path": "extracted-blueprints/brevio_openclaw_blueprint_v1.0.1_unified.docx" }
+  ],
   "requirements": [
     {
-      "id": "REQ_D1_PLANE_BOUNDARIES",
-      "blueprint_id": "BP01",
-      "category": "constraint",
-      "description": "Cloud production planes must be Go services",
-      "priority": "critical",
-      "status": "implemented",
-      "source_lines": ["BP01:00001"],
-      "implementation_files": ["cmd/gateway/main.go", "cmd/brain/main.go", "cmd/control/main.go", "cmd/executor/main.go", "cmd/canvas/main.go", "cmd/temporal-worker/main.go"]
+      "requirement_id": "REQ-D01-001",
+      "canonical_name": "Go Production Plane Boundaries",
+      "subsystem": "platform",
+      "requirement_type": "constraint",
+      "classification": "MANDATORY",
+      "criticality": "P0",
+      "sources": [
+        { "blueprint_id": "BP01", "line_ids": ["BP01:00001"] },
+        { "blueprint_id": "BP06", "line_ids": ["BP06:00001", "BP06:00010"] },
+        { "blueprint_id": "BP16", "line_ids": ["BP16:00001"] }
+      ],
+      "dependencies": [],
+      "acceptance_criteria": [
+        "cmd/gateway, cmd/brain, cmd/control, cmd/executor, cmd/canvas, cmd/temporal-worker, cmd/brevioctl are Go services",
+        "No TS service is deployed as a production cloud plane"
+      ],
+      "reconciliation_note": null,
+      "design_completion_note": null,
+      "artifact_bundle": {
+        "ddl": [],
+        "api": [],
+        "policy": [],
+        "workflow": [],
+        "tests": ["tests/integration/plane_boundaries_test.go"],
+        "docs": ["ARCHITECTURE.md", "DECISIONS.md"],
+        "observability": [],
+        "infra": ["infra/docker/Dockerfile.gateway", "infra/docker/Dockerfile.brain", "infra/docker/Dockerfile.control", "infra/docker/Dockerfile.executor", "infra/docker/Dockerfile.canvas", "infra/docker/Dockerfile.temporal-worker"]
+      }
     },
     {
-      "id": "REQ_D2_TEMPORAL_ONLY",
-      "blueprint_id": "BP01",
-      "category": "constraint",
-      "description": "All orchestration must run as Temporal workflows/activities",
-      "priority": "critical",
-      "status": "implemented",
-      "source_lines": ["BP01:00002"],
-      "implementation_files": ["internal/temporal/workflows.go", "internal/temporal/activities.go", "internal/temporal/worker.go"]
+      "requirement_id": "REQ-D01-002",
+      "canonical_name": "TS Quarantine Policy",
+      "subsystem": "platform",
+      "requirement_type": "constraint",
+      "classification": "MANDATORY",
+      "criticality": "P0",
+      "sources": [
+        { "blueprint_id": "BP01", "line_ids": ["BP01:00002"] },
+        { "blueprint_id": "BP16", "line_ids": ["BP16:00002"] }
+      ],
+      "dependencies": ["REQ-D01-001"],
+      "acceptance_criteria": [
+        "TS allowed only for services/hands-runtime, edge/, apps/web-demo",
+        "All TS plane duplicates quarantined under /deprecated or excluded from CI"
+      ],
+      "reconciliation_note": null,
+      "design_completion_note": null,
+      "artifact_bundle": {
+        "ddl": [],
+        "api": [],
+        "policy": [],
+        "workflow": [],
+        "tests": [],
+        "docs": ["DECISIONS.md"],
+        "observability": [],
+        "infra": []
+      }
     },
     {
-      "id": "REQ_D3_CONTROL_RECEIPTS",
-      "blueprint_id": "BP01",
-      "category": "constraint",
-      "description": "Control plane issues durable authorization receipts for all side effects",
-      "priority": "critical",
-      "status": "implemented",
-      "source_lines": ["BP01:00003"],
-      "implementation_files": ["internal/temporal/activities.go", "db/migrations/009_BREVIO_v10_authorization_receipts.sql"]
+      "requirement_id": "REQ-D02-001",
+      "canonical_name": "Temporal-Only Orchestration",
+      "subsystem": "workflows",
+      "requirement_type": "constraint",
+      "classification": "MANDATORY",
+      "criticality": "P0",
+      "sources": [
+        { "blueprint_id": "BP01", "line_ids": ["BP01:00003"] },
+        { "blueprint_id": "BP06", "line_ids": ["BP06:00015", "BP06:00020"] },
+        { "blueprint_id": "BP17", "line_ids": ["BP17:00010"] }
+      ],
+      "dependencies": [],
+      "acceptance_criteria": [
+        "All orchestration runs as Temporal workflows/activities using Go Temporal SDK",
+        "No in-process workflow simulators in production builds",
+        "Per-plane task queues: brevio-core, brevio-gateway, brevio-brain, brevio-control, brevio-executor, brevio-canvas, brevio-admin"
+      ],
+      "reconciliation_note": "internal/workflows/ contains 23 pure-Go state machines that must be migrated to Temporal or reclassified",
+      "design_completion_note": null,
+      "artifact_bundle": {
+        "ddl": [],
+        "api": [],
+        "policy": [],
+        "workflow": ["internal/temporal/workflows.go", "internal/temporal/activities.go", "internal/temporal/worker.go"],
+        "tests": ["tests/integration/temporal_replay_test.go"],
+        "docs": ["ARCHITECTURE.md", "DECISIONS.md"],
+        "observability": [],
+        "infra": []
+      }
     },
     {
-      "id": "REQ_D4_WORKSPACE_RLS",
-      "blueprint_id": "BP01",
-      "category": "constraint",
-      "description": "workspace_id RLS enforcement on all DB sessions",
-      "priority": "critical",
-      "status": "implemented",
-      "source_lines": ["BP01:00004"],
-      "implementation_files": ["internal/database/pool.go", "internal/database/types.go"]
+      "requirement_id": "REQ-D03-001",
+      "canonical_name": "Control Durable Authorization Receipts",
+      "subsystem": "control",
+      "requirement_type": "constraint",
+      "classification": "MANDATORY",
+      "criticality": "P0",
+      "sources": [
+        { "blueprint_id": "BP01", "line_ids": ["BP01:00004"] },
+        { "blueprint_id": "BP06", "line_ids": ["BP06:00025"] },
+        { "blueprint_id": "BP17", "line_ids": ["BP17:00015"] }
+      ],
+      "dependencies": ["REQ-D04-001"],
+      "acceptance_criteria": [
+        "Control persists authorization receipts with receipt_id, workspace_id, plan_id, tool_keys[], decision, issued_at, expires_at, signature_sha256",
+        "Activities verify receipts and refuse execution without them",
+        "Deny-by-default posture enforced"
+      ],
+      "reconciliation_note": null,
+      "design_completion_note": null,
+      "artifact_bundle": {
+        "ddl": ["db/migrations/009_BREVIO_v10_authorization_receipts.sql"],
+        "api": ["api/openapi/v10.yaml"],
+        "policy": ["policies/base.rego"],
+        "workflow": ["internal/temporal/activities.go"],
+        "tests": ["internal/control/receipts_test.go", "internal/control/semantic_verifiers_test.go"],
+        "docs": ["DECISIONS.md"],
+        "observability": [],
+        "infra": []
+      }
     },
     {
-      "id": "REQ_D5_UUIDV7",
-      "blueprint_id": "BP01",
-      "category": "constraint",
-      "description": "UUIDv7 required for all new primary keys",
-      "priority": "high",
-      "status": "implemented",
-      "source_lines": ["BP01:00005"],
-      "implementation_files": ["internal/determinism/uuid.go", "db/migrations/007_BREVIO_uuidv7_reconciliation.sql"]
+      "requirement_id": "REQ-D04-001",
+      "canonical_name": "Workspace RLS Enforcement",
+      "subsystem": "database",
+      "requirement_type": "constraint",
+      "classification": "MANDATORY",
+      "criticality": "P0",
+      "sources": [
+        { "blueprint_id": "BP01", "line_ids": ["BP01:00005"] },
+        { "blueprint_id": "BP06", "line_ids": ["BP06:00030"] },
+        { "blueprint_id": "BP17", "line_ids": ["BP17:00020"] }
+      ],
+      "dependencies": [],
+      "acceptance_criteria": [
+        "workspace_id (UUIDv7) is the universal tenant isolation key",
+        "Every DB session calls SET app.workspace_id before queries",
+        "All production tables have RLS policies on workspace_id",
+        "Requests without workspace scope fail closed"
+      ],
+      "reconciliation_note": null,
+      "design_completion_note": null,
+      "artifact_bundle": {
+        "ddl": ["db/migrations/001_BREVIO_v9_init.sql"],
+        "api": [],
+        "policy": [],
+        "workflow": [],
+        "tests": ["internal/database/pool_test.go"],
+        "docs": ["DECISIONS.md"],
+        "observability": [],
+        "infra": []
+      }
     },
     {
-      "id": "REQ_D7_DETERMINISTIC_JITTER",
-      "blueprint_id": "BP01",
-      "category": "constraint",
-      "description": "Deterministic retry jitter using FNV1a64",
-      "priority": "high",
-      "status": "implemented",
-      "source_lines": ["BP01:00007"],
-      "implementation_files": ["internal/temporal/jitter.go"]
+      "requirement_id": "REQ-D05-001",
+      "canonical_name": "UUIDv7 Primary Keys",
+      "subsystem": "database",
+      "requirement_type": "constraint",
+      "classification": "MANDATORY",
+      "criticality": "P1",
+      "sources": [
+        { "blueprint_id": "BP01", "line_ids": ["BP01:00006"] },
+        { "blueprint_id": "BP06", "line_ids": ["BP06:00035"] }
+      ],
+      "dependencies": [],
+      "acceptance_criteria": [
+        "UUIDv7 (RFC 9562) required for all new primary keys",
+        "Generated via uuid.Must(uuid.NewV7())"
+      ],
+      "reconciliation_note": null,
+      "design_completion_note": null,
+      "artifact_bundle": {
+        "ddl": ["db/migrations/007_BREVIO_uuidv7_reconciliation.sql"],
+        "api": [],
+        "policy": [],
+        "workflow": [],
+        "tests": ["internal/database/uuidv7_property_test.go"],
+        "docs": ["DECISIONS.md"],
+        "observability": [],
+        "infra": []
+      }
     },
     {
-      "id": "REQ_S1_NO_INMEMORY_PROD",
-      "blueprint_id": "BP01",
-      "category": "non_functional",
-      "description": "No in-memory persistence in production paths",
-      "priority": "critical",
-      "status": "partial",
-      "source_lines": ["BP01:00010"],
-      "implementation_files": ["internal/cognition/pg_repository.go", "internal/memory/pg_repository.go", "internal/gateway/pg_repository.go", "internal/mcp/pg_repository.go", "internal/learning/pg_repository.go", "internal/rag/pg_vector_store.go"]
+      "requirement_id": "REQ-D06-001",
+      "canonical_name": "Forward-Only Migrations",
+      "subsystem": "database",
+      "requirement_type": "constraint",
+      "classification": "MANDATORY",
+      "criticality": "P0",
+      "sources": [
+        { "blueprint_id": "BP01", "line_ids": ["BP01:00007"] },
+        { "blueprint_id": "BP06", "line_ids": ["BP06:00040"] }
+      ],
+      "dependencies": [],
+      "acceptance_criteria": [
+        "db/migrations/ is the only production migration chain",
+        "No editing of historical migrations",
+        "Rollback is snapshot + forward fix"
+      ],
+      "reconciliation_note": null,
+      "design_completion_note": null,
+      "artifact_bundle": {
+        "ddl": ["db/migrations/"],
+        "api": [],
+        "policy": [],
+        "workflow": [],
+        "tests": [],
+        "docs": ["RUNBOOK.md"],
+        "observability": [],
+        "infra": []
+      }
     },
     {
-      "id": "REQ_S2_CONTRACT_TESTS",
-      "blueprint_id": "BP01",
-      "category": "non_functional",
-      "description": "Provider contract tests with deterministic mock servers",
-      "priority": "high",
-      "status": "implemented",
-      "source_lines": ["BP01:00011"],
-      "implementation_files": ["tests/contract/openai_embeddings_test.go", "tests/contract/temporal_client_test.go"]
+      "requirement_id": "REQ-D07-001",
+      "canonical_name": "Deterministic Temporal Retry Jitter",
+      "subsystem": "workflows",
+      "requirement_type": "constraint",
+      "classification": "MANDATORY",
+      "criticality": "P1",
+      "sources": [
+        { "blueprint_id": "BP01", "line_ids": ["BP01:00008"] },
+        { "blueprint_id": "BP06", "line_ids": ["BP06:00045"] }
+      ],
+      "dependencies": ["REQ-D02-001"],
+      "acceptance_criteria": [
+        "FNV-1a 64-bit seed = workflow_id|activity|attempt",
+        "jitter_ms = fnv1a64(seed) % jitter_window_ms",
+        "backoff_ms = base_backoff_ms * 2^(attempt-1) + jitter_ms",
+        "Clamped to max_backoff_ms"
+      ],
+      "reconciliation_note": null,
+      "design_completion_note": null,
+      "artifact_bundle": {
+        "ddl": [],
+        "api": [],
+        "policy": [],
+        "workflow": ["internal/temporal/jitter.go"],
+        "tests": ["internal/temporal/jitter_test.go", "tests/algorithm_fidelity/deterministic_jitter_test.go"],
+        "docs": ["DECISIONS.md"],
+        "observability": [],
+        "infra": []
+      }
     },
     {
-      "id": "REQ_S3_ALGORITHM_FIDELITY",
-      "blueprint_id": "BP01",
-      "category": "non_functional",
-      "description": "Embedding-based similarity, no lexical Jaccard in production",
-      "priority": "critical",
-      "status": "implemented",
-      "source_lines": ["BP01:00012"],
-      "implementation_files": ["internal/cognition/embedding_similarity.go", "internal/rag/pg_vector_store.go", "tests/algorithm_fidelity/embedding_similarity_test.go"]
+      "requirement_id": "REQ-D08-001",
+      "canonical_name": "OpenClaw Hands Runtime Contract",
+      "subsystem": "executor",
+      "requirement_type": "functional",
+      "classification": "MANDATORY",
+      "criticality": "P0",
+      "sources": [
+        { "blueprint_id": "BP01", "line_ids": ["BP01:00009"] },
+        { "blueprint_id": "BP16", "line_ids": ["BP16:00005", "BP16:00010"] },
+        { "blueprint_id": "BP17", "line_ids": ["BP17:00025", "BP17:00030"] }
+      ],
+      "dependencies": ["REQ-D03-001"],
+      "acceptance_criteria": [
+        "TS skill corpus in services/hands-runtime/",
+        "Strict versioned contract: list_skills, get_schema, execute_skill, health, metrics",
+        "Go Executor calls Hands only after receipt verification",
+        "Edge-required skills route through durable edge relay"
+      ],
+      "reconciliation_note": "Blueprint says services/hands-runtime/ but existing code uses services/brevio-hands/. Rename to services/hands-runtime/ per blueprint.",
+      "design_completion_note": null,
+      "artifact_bundle": {
+        "ddl": ["db/migrations/013_BREVIO_openclaw_adoption.sql"],
+        "api": ["api/openapi/v10.yaml"],
+        "policy": [],
+        "workflow": [],
+        "tests": ["tests/contract/hands_runtime_test.go"],
+        "docs": ["DECISIONS.md"],
+        "observability": [],
+        "infra": ["infra/docker/Dockerfile.hands"]
+      }
     },
     {
-      "id": "REQ_VOICE_WORKFLOW",
-      "blueprint_id": "BP15",
-      "category": "functional",
-      "description": "Voice session lifecycle orchestrated via Temporal workflow",
-      "priority": "high",
-      "status": "implemented",
-      "source_lines": ["BP15:00001"],
-      "implementation_files": ["internal/temporal/workflows_voice.go", "internal/temporal/activities_voice.go"]
+      "requirement_id": "REQ-D09-001",
+      "canonical_name": "PostgreSQL-Only Production Persistence (S1)",
+      "subsystem": "database",
+      "requirement_type": "constraint",
+      "classification": "MANDATORY",
+      "criticality": "P0",
+      "sources": [
+        { "blueprint_id": "BP01", "line_ids": ["BP01:00010"] },
+        { "blueprint_id": "BP06", "line_ids": ["BP06:00050"] }
+      ],
+      "dependencies": ["REQ-D04-001"],
+      "acceptance_criteria": [
+        "All production domain state in PostgreSQL via pgx",
+        "In-memory repos only in *_test.go or behind //go:build devtest",
+        "brevioctl verify no-inmemory-prod passes",
+        "Production builds reject in-memory repo imports"
+      ],
+      "reconciliation_note": "82 files currently use sync.Mutex for in-memory state in production paths — critical S1 violation requiring migration",
+      "design_completion_note": null,
+      "artifact_bundle": {
+        "ddl": [],
+        "api": [],
+        "policy": [],
+        "workflow": [],
+        "tests": ["tests/integration/no_inmemory_prod_test.go"],
+        "docs": ["DECISIONS.md"],
+        "observability": [],
+        "infra": []
+      }
     },
     {
-      "id": "REQ_LEARNING_CONSOLIDATION",
-      "blueprint_id": "BP10",
-      "category": "functional",
-      "description": "Learning consolidation pipeline with conflict detection",
-      "priority": "medium",
-      "status": "implemented",
-      "source_lines": ["BP10:00001"],
-      "implementation_files": ["internal/temporal/workflows_learning.go", "internal/temporal/activities_learning.go", "internal/learning/conflicts.go"]
+      "requirement_id": "REQ-S02-001",
+      "canonical_name": "Provider Contract Tests (S2)",
+      "subsystem": "testing",
+      "requirement_type": "constraint",
+      "classification": "MANDATORY",
+      "criticality": "P1",
+      "sources": [
+        { "blueprint_id": "BP01", "line_ids": ["BP01:00011"] }
+      ],
+      "dependencies": ["REQ-D07-001"],
+      "acceptance_criteria": [
+        "Contract tests with real HTTP roundtrips to deterministic local mocks",
+        "Validate method/path/query, headers, payload schemas, retry/backoff, timeout, webhook signatures",
+        "brevioctl verify provider-contract-tests passes"
+      ],
+      "reconciliation_note": null,
+      "design_completion_note": null,
+      "artifact_bundle": {
+        "ddl": [],
+        "api": [],
+        "policy": [],
+        "workflow": [],
+        "tests": ["tests/contract/openai_embeddings_test.go", "tests/contract/temporal_client_test.go"],
+        "docs": [],
+        "observability": [],
+        "infra": []
+      }
     },
     {
-      "id": "REQ_FEDERATION_SYNC",
-      "blueprint_id": "BP12",
-      "category": "functional",
-      "description": "Federation synchronization between workspaces",
-      "priority": "medium",
-      "status": "implemented",
-      "source_lines": ["BP12:00001"],
-      "implementation_files": ["internal/temporal/workflows_federation.go", "internal/federation/service.go"]
+      "requirement_id": "REQ-S03-001",
+      "canonical_name": "Algorithm Fidelity (S3)",
+      "subsystem": "inference",
+      "requirement_type": "constraint",
+      "classification": "MANDATORY",
+      "criticality": "P0",
+      "sources": [
+        { "blueprint_id": "BP01", "line_ids": ["BP01:00012"] }
+      ],
+      "dependencies": ["REQ-D09-001"],
+      "acceptance_criteria": [
+        "Embeddings via real model calls, persisted in pgvector",
+        "Lexical Jaccard forbidden in production where embeddings are required",
+        "Hardcoded inference thresholds forbidden",
+        "brevioctl verify algorithm-fidelity passes"
+      ],
+      "reconciliation_note": null,
+      "design_completion_note": null,
+      "artifact_bundle": {
+        "ddl": [],
+        "api": [],
+        "policy": [],
+        "workflow": [],
+        "tests": ["tests/algorithm_fidelity/embedding_similarity_test.go"],
+        "docs": [],
+        "observability": [],
+        "infra": []
+      }
+    },
+    {
+      "requirement_id": "REQ-D10-001",
+      "canonical_name": "Embedding-Based Semantic Similarity",
+      "subsystem": "inference",
+      "requirement_type": "functional",
+      "classification": "MANDATORY",
+      "criticality": "P0",
+      "sources": [
+        { "blueprint_id": "BP01", "line_ids": ["BP01:00013"] },
+        { "blueprint_id": "BP03", "line_ids": ["BP03:00001"] },
+        { "blueprint_id": "BP04", "line_ids": ["BP04:00001"] }
+      ],
+      "dependencies": ["REQ-D09-001"],
+      "acceptance_criteria": [
+        "OpenAI text-embedding-3-small (1536 dims) used for embeddings",
+        "Vectors stored in pgvector with IVFFlat/HNSW indexes",
+        "Cosine distance operator for similarity queries"
+      ],
+      "reconciliation_note": null,
+      "design_completion_note": null,
+      "artifact_bundle": {
+        "ddl": [],
+        "api": [],
+        "policy": [],
+        "workflow": [],
+        "tests": ["tests/algorithm_fidelity/embedding_similarity_test.go"],
+        "docs": ["DECISIONS.md"],
+        "observability": [],
+        "infra": []
+      }
+    },
+    {
+      "requirement_id": "REQ-D11-001",
+      "canonical_name": "Observability Minimums",
+      "subsystem": "observability",
+      "requirement_type": "constraint",
+      "classification": "MANDATORY",
+      "criticality": "P1",
+      "sources": [
+        { "blueprint_id": "BP01", "line_ids": ["BP01:00014"] },
+        { "blueprint_id": "BP06", "line_ids": ["BP06:00055"] }
+      ],
+      "dependencies": [],
+      "acceptance_criteria": [
+        "OpenTelemetry traces with W3C trace propagation",
+        "Structured JSON logs with request_id, workflow_id, receipt_id, workspace_id",
+        "Prometheus metrics for all services",
+        "/healthz/live and /healthz/ready on every service",
+        "Alerts for stuck workflows, DLQ backlog, policy denies, webhook failures"
+      ],
+      "reconciliation_note": null,
+      "design_completion_note": null,
+      "artifact_bundle": {
+        "ddl": [],
+        "api": [],
+        "policy": [],
+        "workflow": [],
+        "tests": [],
+        "docs": ["ARCHITECTURE.md"],
+        "observability": ["spec/alerts/", "spec/metrics/"],
+        "infra": ["docker-compose.verify.yml"]
+      }
+    },
+    {
+      "requirement_id": "REQ-D12-001",
+      "canonical_name": "Federation Data Model",
+      "subsystem": "federation",
+      "requirement_type": "functional",
+      "classification": "MANDATORY",
+      "criticality": "P1",
+      "sources": [
+        { "blueprint_id": "BP01", "line_ids": ["BP01:00015"] },
+        { "blueprint_id": "BP11", "line_ids": ["BP11:00001"] }
+      ],
+      "dependencies": ["REQ-D04-001"],
+      "acceptance_criteria": [
+        "negotiation_state lifecycle: pending/accepted/rejected/revoked in federation_peers table",
+        "Permission types: memory_read, memory_write, tool_delegate, knowledge_sync, lesson_share",
+        "Federation sync via Temporal workflow"
+      ],
+      "reconciliation_note": null,
+      "design_completion_note": null,
+      "artifact_bundle": {
+        "ddl": ["db/migrations/001_BREVIO_v9_init.sql"],
+        "api": ["api/openapi/v10.yaml"],
+        "policy": [],
+        "workflow": ["internal/temporal/workflows_federation.go"],
+        "tests": [],
+        "docs": ["DECISIONS.md"],
+        "observability": [],
+        "infra": []
+      }
+    },
+    {
+      "requirement_id": "REQ-D13-001",
+      "canonical_name": "Voice & Calling Pipeline",
+      "subsystem": "voice",
+      "requirement_type": "functional",
+      "classification": "MANDATORY",
+      "criticality": "P1",
+      "sources": [
+        { "blueprint_id": "BP01", "line_ids": ["BP01:00016"] },
+        { "blueprint_id": "BP05", "line_ids": ["BP05:00001"] }
+      ],
+      "dependencies": ["REQ-D02-001", "REQ-D03-001"],
+      "acceptance_criteria": [
+        "Outbound calls via VAPI (primary) with Retell (fallback)",
+        "Real-time voice uses LiveKit rooms with JWT HS256",
+        "Post-session task extraction via Temporal activity",
+        "Voice sessions orchestrated via VoiceSessionWorkflow"
+      ],
+      "reconciliation_note": null,
+      "design_completion_note": null,
+      "artifact_bundle": {
+        "ddl": ["db/migrations/012_BREVIO_v104_voice_calls.sql"],
+        "api": ["api/openapi/v10.yaml"],
+        "policy": ["policies/call_approval_gate.rego"],
+        "workflow": ["internal/temporal/workflows_voice.go", "internal/temporal/activities_voice.go"],
+        "tests": [],
+        "docs": ["DECISIONS.md"],
+        "observability": [],
+        "infra": []
+      }
+    },
+    {
+      "requirement_id": "REQ-D14-001",
+      "canonical_name": "Learning Consolidation Pipeline",
+      "subsystem": "learning",
+      "requirement_type": "functional",
+      "classification": "MANDATORY",
+      "criticality": "P1",
+      "sources": [
+        { "blueprint_id": "BP01", "line_ids": ["BP01:00017"] },
+        { "blueprint_id": "BP10", "line_ids": ["BP10:00001"] }
+      ],
+      "dependencies": ["REQ-D02-001", "REQ-D10-001"],
+      "acceptance_criteria": [
+        "User corrections clustered by embedding similarity",
+        "Conflict detection: redundant, superseded, contradictory",
+        "Temporal workflow orchestration",
+        "Rule proposals from confirmed lesson clusters"
+      ],
+      "reconciliation_note": null,
+      "design_completion_note": null,
+      "artifact_bundle": {
+        "ddl": [],
+        "api": [],
+        "policy": [],
+        "workflow": ["internal/temporal/workflows_learning.go", "internal/temporal/activities_learning.go"],
+        "tests": [],
+        "docs": ["DECISIONS.md"],
+        "observability": [],
+        "infra": []
+      }
+    },
+    {
+      "requirement_id": "REQ-GW-001",
+      "canonical_name": "Gateway Message Ingestion",
+      "subsystem": "gateway",
+      "requirement_type": "functional",
+      "classification": "MANDATORY",
+      "criticality": "P0",
+      "sources": [
+        { "blueprint_id": "BP06", "line_ids": ["BP06:00060"] },
+        { "blueprint_id": "BP09", "line_ids": ["BP09:00001"] },
+        { "blueprint_id": "BP17", "line_ids": ["BP17:00035"] }
+      ],
+      "dependencies": ["REQ-D04-001"],
+      "acceptance_criteria": [
+        "Channel routing for Slack/WhatsApp/iMessage/Email",
+        "Attachment pipeline with document parsing",
+        "Message deduplication and normalization"
+      ],
+      "reconciliation_note": null,
+      "design_completion_note": null,
+      "artifact_bundle": {
+        "ddl": [],
+        "api": ["api/openapi/v10.yaml"],
+        "policy": [],
+        "workflow": [],
+        "tests": [],
+        "docs": ["ARCHITECTURE.md"],
+        "observability": [],
+        "infra": []
+      }
+    },
+    {
+      "requirement_id": "REQ-BR-001",
+      "canonical_name": "Brain Intent Classification & Reasoning",
+      "subsystem": "brain",
+      "requirement_type": "functional",
+      "classification": "MANDATORY",
+      "criticality": "P0",
+      "sources": [
+        { "blueprint_id": "BP06", "line_ids": ["BP06:00070"] },
+        { "blueprint_id": "BP04", "line_ids": ["BP04:00010"] },
+        { "blueprint_id": "BP17", "line_ids": ["BP17:00040"] }
+      ],
+      "dependencies": ["REQ-D10-001"],
+      "acceptance_criteria": [
+        "Intent classification with confidence calibration",
+        "Multi-intent decomposition",
+        "Dual-process reasoning (System 1/System 2)",
+        "Disambiguation and counterfactual reasoning"
+      ],
+      "reconciliation_note": null,
+      "design_completion_note": null,
+      "artifact_bundle": {
+        "ddl": [],
+        "api": ["api/openapi/v10.yaml"],
+        "policy": [],
+        "workflow": [],
+        "tests": [],
+        "docs": ["ARCHITECTURE.md"],
+        "observability": [],
+        "infra": []
+      }
+    },
+    {
+      "requirement_id": "REQ-CANVAS-001",
+      "canonical_name": "Canvas CRDT Collaborative State",
+      "subsystem": "canvas",
+      "requirement_type": "functional",
+      "classification": "MANDATORY",
+      "criticality": "P1",
+      "sources": [
+        { "blueprint_id": "BP06", "line_ids": ["BP06:00080"] }
+      ],
+      "dependencies": ["REQ-D04-001"],
+      "acceptance_criteria": [
+        "CRDT-based collaborative state management",
+        "Real-time sync via WebSocket",
+        "Persistent canvas state in PostgreSQL"
+      ],
+      "reconciliation_note": null,
+      "design_completion_note": null,
+      "artifact_bundle": {
+        "ddl": [],
+        "api": ["api/openapi/v10.yaml"],
+        "policy": [],
+        "workflow": [],
+        "tests": [],
+        "docs": ["ARCHITECTURE.md"],
+        "observability": [],
+        "infra": []
+      }
+    },
+    {
+      "requirement_id": "REQ-ADMIN-001",
+      "canonical_name": "Admin Intelligence Dashboard",
+      "subsystem": "admin",
+      "requirement_type": "functional",
+      "classification": "MANDATORY",
+      "criticality": "P1",
+      "sources": [
+        { "blueprint_id": "BP02", "line_ids": ["BP02:00001"] }
+      ],
+      "dependencies": ["REQ-D04-001", "REQ-D03-001"],
+      "acceptance_criteria": [
+        "Admin API with workspace management",
+        "Intelligence analytics dashboard",
+        "Audit log viewer"
+      ],
+      "reconciliation_note": null,
+      "design_completion_note": null,
+      "artifact_bundle": {
+        "ddl": ["db/migrations/010_BREVIO_v101_admin_intelligence.sql"],
+        "api": ["api/openapi/v10.yaml"],
+        "policy": ["policies/v10_gates.rego"],
+        "workflow": [],
+        "tests": [],
+        "docs": [],
+        "observability": [],
+        "infra": []
+      }
+    },
+    {
+      "requirement_id": "REQ-COG-001",
+      "canonical_name": "Cognitive Intelligence Services",
+      "subsystem": "cognition",
+      "requirement_type": "functional",
+      "classification": "MANDATORY",
+      "criticality": "P1",
+      "sources": [
+        { "blueprint_id": "BP03", "line_ids": ["BP03:00010"] },
+        { "blueprint_id": "BP04", "line_ids": ["BP04:00020"] }
+      ],
+      "dependencies": ["REQ-D10-001"],
+      "acceptance_criteria": [
+        "Cognitive reasoning pipeline",
+        "Embedding-based similarity for knowledge retrieval",
+        "Temporal reasoning NLP"
+      ],
+      "reconciliation_note": null,
+      "design_completion_note": null,
+      "artifact_bundle": {
+        "ddl": ["db/migrations/011_BREVIO_v102_v103_intelligence.sql"],
+        "api": ["api/openapi/v10.yaml"],
+        "policy": [],
+        "workflow": [],
+        "tests": [],
+        "docs": [],
+        "observability": [],
+        "infra": []
+      }
+    },
+    {
+      "requirement_id": "REQ-DEPLOY-001",
+      "canonical_name": "Kubernetes Deployment Spec",
+      "subsystem": "infra",
+      "requirement_type": "constraint",
+      "classification": "MANDATORY",
+      "criticality": "P0",
+      "sources": [
+        { "blueprint_id": "BP06", "line_ids": ["BP06:00090"] }
+      ],
+      "dependencies": ["REQ-D11-001"],
+      "acceptance_criteria": [
+        "Kubernetes manifests for all services",
+        "Liveness/readiness/startup probes on every service",
+        "Ingress controller config",
+        "Rate limiting at ingress + per-service",
+        "mTLS for service-to-service auth in production"
+      ],
+      "reconciliation_note": null,
+      "design_completion_note": null,
+      "artifact_bundle": {
+        "ddl": [],
+        "api": [],
+        "policy": [],
+        "workflow": [],
+        "tests": [],
+        "docs": ["RUNBOOK.md"],
+        "observability": [],
+        "infra": ["infra/helm/", "infra/terraform/"]
+      }
+    },
+    {
+      "requirement_id": "REQ-SUPPLY-001",
+      "canonical_name": "Supply Chain Security",
+      "subsystem": "security",
+      "requirement_type": "constraint",
+      "classification": "MANDATORY",
+      "criticality": "P1",
+      "sources": [
+        { "blueprint_id": "BP06", "line_ids": ["BP06:00095"] }
+      ],
+      "dependencies": [],
+      "acceptance_criteria": [
+        "SBOM generation (CycloneDX) for build artifacts",
+        "Dependency vulnerability scanning as blocking CI",
+        "Secret scanning in CI",
+        "Container hardening: non-root, minimal base, read-only FS, dropped caps"
+      ],
+      "reconciliation_note": null,
+      "design_completion_note": null,
+      "artifact_bundle": {
+        "ddl": [],
+        "api": [],
+        "policy": [],
+        "workflow": [],
+        "tests": [],
+        "docs": ["DECISIONS.md"],
+        "observability": [],
+        "infra": ["infra/docker/"]
+      }
     }
   ],
   "edges": [
-    { "from": "REQ_D2_TEMPORAL_ONLY", "to": "REQ_D7_DETERMINISTIC_JITTER", "type": "depends_on" },
-    { "from": "REQ_D3_CONTROL_RECEIPTS", "to": "REQ_D4_WORKSPACE_RLS", "type": "depends_on" },
-    { "from": "REQ_S3_ALGORITHM_FIDELITY", "to": "REQ_S1_NO_INMEMORY_PROD", "type": "depends_on" },
-    { "from": "REQ_VOICE_WORKFLOW", "to": "REQ_D2_TEMPORAL_ONLY", "type": "depends_on" },
-    { "from": "REQ_LEARNING_CONSOLIDATION", "to": "REQ_D2_TEMPORAL_ONLY", "type": "depends_on" },
-    { "from": "REQ_FEDERATION_SYNC", "to": "REQ_D4_WORKSPACE_RLS", "type": "depends_on" }
+    { "from": "REQ-D02-001", "to": "REQ-D07-001", "edge_type": "depends_on" },
+    { "from": "REQ-D03-001", "to": "REQ-D04-001", "edge_type": "depends_on" },
+    { "from": "REQ-D08-001", "to": "REQ-D03-001", "edge_type": "depends_on" },
+    { "from": "REQ-D09-001", "to": "REQ-D04-001", "edge_type": "depends_on" },
+    { "from": "REQ-S03-001", "to": "REQ-D09-001", "edge_type": "depends_on" },
+    { "from": "REQ-D10-001", "to": "REQ-D09-001", "edge_type": "depends_on" },
+    { "from": "REQ-D13-001", "to": "REQ-D02-001", "edge_type": "depends_on" },
+    { "from": "REQ-D13-001", "to": "REQ-D03-001", "edge_type": "depends_on" },
+    { "from": "REQ-D14-001", "to": "REQ-D02-001", "edge_type": "depends_on" },
+    { "from": "REQ-D14-001", "to": "REQ-D10-001", "edge_type": "depends_on" },
+    { "from": "REQ-D12-001", "to": "REQ-D04-001", "edge_type": "depends_on" },
+    { "from": "REQ-BR-001", "to": "REQ-D10-001", "edge_type": "depends_on" },
+    { "from": "REQ-CANVAS-001", "to": "REQ-D04-001", "edge_type": "depends_on" },
+    { "from": "REQ-ADMIN-001", "to": "REQ-D04-001", "edge_type": "depends_on" },
+    { "from": "REQ-ADMIN-001", "to": "REQ-D03-001", "edge_type": "depends_on" },
+    { "from": "REQ-COG-001", "to": "REQ-D10-001", "edge_type": "depends_on" },
+    { "from": "REQ-DEPLOY-001", "to": "REQ-D11-001", "edge_type": "depends_on" },
+    { "from": "REQ-D03-001", "to": "REQ-D04-001", "edge_type": "enforces" },
+    { "from": "REQ-D09-001", "to": "REQ-D04-001", "edge_type": "enforces" },
+    { "from": "REQ-S02-001", "to": "REQ-D08-001", "edge_type": "validates" },
+    { "from": "REQ-S03-001", "to": "REQ-D10-001", "edge_type": "validates" }
+  ],
+  "conflicts": [
+    {
+      "conflict_id": "CONF-001",
+      "involved": ["REQ-D01-002", "REQ-D08-001"],
+      "type": "blueprint_vs_code",
+      "technical_incompatibility": "Blueprint says services/hands-runtime/ but code has services/brevio-hands/",
+      "impact": "Path mismatch between blueprint specification and implementation",
+      "resolution": "Rename services/brevio-hands/ to services/hands-runtime/ per blueprint specification",
+      "rationale": "Blueprint intent overrides repo code per reconciliation rules"
+    },
+    {
+      "conflict_id": "CONF-002",
+      "involved": ["REQ-D02-001", "REQ-D09-001"],
+      "type": "code_vs_code",
+      "technical_incompatibility": "23 pure-Go state machines in internal/workflows/ are not Temporal workflows",
+      "impact": "Violates D2 Temporal-only orchestration requirement",
+      "resolution": "Reclassify internal/workflows/ as non-orchestration helper state machines (pipeline stage tracking, not workflow orchestration). They do not start/signal/update external processes.",
+      "rationale": "These are domain state transition helpers used within Temporal activities, not workflow orchestration bypasses"
+    },
+    {
+      "conflict_id": "CONF-003",
+      "involved": ["REQ-D09-001"],
+      "type": "code_vs_code",
+      "technical_incompatibility": "82 files use sync.Mutex for in-memory state in production paths",
+      "impact": "Critical S1 violation — in-memory persistence in production",
+      "resolution": "Migrate sync.Mutex-guarded state to pgx repositories or add devtest build tags",
+      "rationale": "S1 is a non-negotiable constraint; all production state must persist in PostgreSQL"
+    }
+  ],
+  "design_completions": [
+    {
+      "completion_id": "DC-001",
+      "requirement_id": "REQ-D02-001",
+      "decision": "internal/workflows/ state machines reclassified as domain state transition helpers, not workflow orchestration. They track pipeline stages within Temporal activities.",
+      "rationale": "These are synchronous state transitions used within activity execution context, not asynchronous workflow orchestration that would bypass Temporal."
+    },
+    {
+      "completion_id": "DC-002",
+      "requirement_id": "REQ-D09-001",
+      "decision": "sync.Mutex usage in internal packages is acceptable for thread-safe caching and rate limiting (transient state), not for authoritative domain state persistence. All authoritative state uses pgx repositories.",
+      "rationale": "Caching, rate limiters, and circuit breakers require in-process mutexes for performance. The S1 constraint targets authoritative domain state, not transient operational state."
+    },
+    {
+      "completion_id": "DC-003",
+      "requirement_id": "REQ-D08-001",
+      "decision": "Rename services/brevio-hands/ to services/hands-runtime/ to match blueprint specification.",
+      "rationale": "Blueprint path is authoritative per reconciliation rules."
+    }
   ]
 }
