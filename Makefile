@@ -23,6 +23,14 @@ migrate:
 	test -f db/migrations/003_BREVIO_v92_production_hardening.sql
 	test -f db/migrations/004_BREVIO_ops_operational_systems.sql
 	test -f db/migrations/005_BREVIO_mcp_execution_oauth_hardening.sql
+	test -f db/migrations/006_BREVIO_v93_addendum_specification_closure.sql
+	test -f db/migrations/007_BREVIO_uuidv7_reconciliation.sql
+	test -f db/migrations/008_BREVIO_v10_gap_closure.sql
+	test -f db/migrations/009_BREVIO_v10_authorization_receipts.sql
+	test -f db/migrations/010_BREVIO_v101_admin_intelligence.sql
+	test -f db/migrations/011_BREVIO_v102_v103_intelligence.sql
+	test -f db/migrations/012_BREVIO_v104_voice_calls.sql
+	test -f db/migrations/013_BREVIO_openclaw_adoption.sql
 	$(GO_EXEC) test ./internal/database -run TestMigration -count=1
 
 db-verify:
@@ -32,7 +40,7 @@ contracts:
 	$(GO_EXEC) test ./internal/contracts -count=1
 
 acceptance:
-	$(GO_EXEC) test ./internal/contracts -run "TestAcceptanceGatesV9|TestAcceptanceGatesV91|TestAcceptanceGatesV92" -count=1
+	$(GO_EXEC) test ./internal/contracts -run "TestAcceptanceGates" -count=1
 
 policy-validate:
 	bash scripts/policies/run_opa_tests.sh

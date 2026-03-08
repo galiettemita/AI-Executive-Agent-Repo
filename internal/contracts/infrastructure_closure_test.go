@@ -167,11 +167,17 @@ func TestV92InfrastructureArtifactsExist(t *testing.T) {
 
 	root := repositoryRoot(t)
 	allHelmCharts := []string{
-		"BREVIO-gateway",
+		"BREVIO-agents",
 		"BREVIO-brain",
-		"BREVIO-control",
-		"BREVIO-executor",
+		"BREVIO-browser",
 		"BREVIO-canvas",
+		"BREVIO-control",
+		"BREVIO-cron",
+		"BREVIO-executor",
+		"BREVIO-gateway",
+		"BREVIO-marketing",
+		"BREVIO-memory",
+		"BREVIO-router",
 		"BREVIO-temporal-worker",
 		"BREVIO-admin-api",
 		"BREVIO-admin-frontend",
@@ -181,11 +187,17 @@ func TestV92InfrastructureArtifactsExist(t *testing.T) {
 	}
 	assertExactDirectorySet(t, filepath.Join(root, "helm"), allHelmCharts)
 	expectedHelmImages := map[string]string{
-		"BREVIO-gateway":         "ghcr.io/brevio/gateway",
+		"BREVIO-agents":          "ghcr.io/brevio/agents",
 		"BREVIO-brain":           "ghcr.io/brevio/brain",
-		"BREVIO-control":         "ghcr.io/brevio/control",
-		"BREVIO-executor":        "ghcr.io/brevio/executor",
+		"BREVIO-browser":         "ghcr.io/brevio/browser",
 		"BREVIO-canvas":          "ghcr.io/brevio/canvas",
+		"BREVIO-control":         "ghcr.io/brevio/control",
+		"BREVIO-cron":            "ghcr.io/brevio/cron",
+		"BREVIO-executor":        "ghcr.io/brevio/executor",
+		"BREVIO-gateway":         "ghcr.io/brevio/gateway",
+		"BREVIO-marketing":       "ghcr.io/brevio/marketing",
+		"BREVIO-memory":          "ghcr.io/brevio/memory",
+		"BREVIO-router":          "ghcr.io/brevio/router",
 		"BREVIO-temporal-worker": "ghcr.io/brevio/temporal-worker",
 		"BREVIO-admin-api":       "ghcr.io/brevio/admin-api",
 		"BREVIO-admin-frontend":  "ghcr.io/brevio/admin-frontend",

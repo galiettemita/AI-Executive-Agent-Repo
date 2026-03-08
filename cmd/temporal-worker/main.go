@@ -11,6 +11,7 @@ import (
 
 	"github.com/brevio/brevio/internal/compliance"
 	runtimeserver "github.com/brevio/brevio/internal/runtime"
+	breviotemporal "github.com/brevio/brevio/internal/temporal"
 )
 
 func main() {
@@ -22,6 +23,35 @@ func main() {
 	if err != nil {
 		log.Fatalf("temporal-worker config validation failed: %v", err)
 	}
+
+	logger := runtimeserver.NewJSONLogger("temporal-worker", cfg.Environment)
+	logger.SetOutput(os.Stdout)
+
+	// Start Temporal worker
+	temporalClient, err := breviotemporal.NewClient()
+	if err != nil {
+		logger.Info("temporal_client_failed", map[string]any{
+			"error": err.Error(),
+		})
+		log.Fatalf("failed to create temporal client: %v", err)
+	}
+	defer temporalClient.Close()
+
+	w := breviotemporal.NewWorker(temporalClient, breviotemporal.TaskQueueCore)
+
+	go func() {
+		if runErr := w.Run(nil); runErr != nil {
+			logger.Info("temporal_worker_stopped", map[string]any{
+				"error": runErr.Error(),
+			})
+			log.Fatalf("temporal worker failed: %v", runErr)
+		}
+	}()
+
+	logger.Info("temporal_worker_started", map[string]any{
+		"task_queue": breviotemporal.TaskQueueCore,
+	})
+
 	mux := http.NewServeMux()
 	startedAt := time.Now().UTC()
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, _ *http.Request) {
@@ -32,13 +62,15 @@ func main() {
 			"version":   cfg.ServiceVersion,
 			"uptime_ms": time.Since(startedAt).Milliseconds(),
 			"checks": map[string]string{
-				"process": "ok",
+				"process":  "ok",
+				"temporal": "polling",
 			},
 		})
 	})
 	mux.HandleFunc("GET /health/deep", func(w http.ResponseWriter, _ *http.Request) {
 		checks := map[string]string{
-			"process": "ok",
+			"process":  "ok",
+			"temporal": "polling",
 		}
 		for key, status := range runtimeserver.DeepDependencyChecks(os.Getenv) {
 			checks[key] = status
@@ -60,8 +92,7 @@ func main() {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok"))
 	})
-	logger := runtimeserver.NewJSONLogger("temporal-worker", cfg.Environment)
-	logger.SetOutput(os.Stdout)
+
 	handler := logger.Middleware(mux)
 
 	logger.Info("service_start", map[string]any{

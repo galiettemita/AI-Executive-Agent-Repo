@@ -1,0 +1,14 @@
+# CI quarantine gate: TS services under services/ are NON_PRODUCTION duplicates
+# of the authoritative Go plane services under cmd/ + internal/.
+# This file is checked by CI to prevent production deployment of quarantined services.
+quarantined_services:
+  - brevio-gateway
+  - brevio-brain
+  - brevio-temporal-worker
+  - brevio-metrics
+  - brevio-scheduler
+  - brevio-edge-relay
+  - brevio-profile
+  - brevio-auth
+reason: "TS plane duplicates of authoritative Go services. Kept for reference only."
+production_deploy_allowed: false
