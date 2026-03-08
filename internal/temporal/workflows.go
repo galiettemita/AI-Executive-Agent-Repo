@@ -45,13 +45,7 @@ func MessageProcessingWorkflow(ctx workflow.Context, input MessageProcessingWork
 
 	// Step 1: Validate envelope
 	var validateResult ValidateEnvelopeResult
-	err := workflow.ExecuteActivity(ctx, ValidateEnvelopeActivity, ValidateEnvelopeInput{
-		MessageID:      input.MessageID,
-		WorkspaceID:    input.WorkspaceID,
-		ChannelType:    input.ChannelType,
-		RawPayload:     input.RawPayload,
-		IdempotencyKey: input.IdempotencyKey,
-	}).Get(ctx, &validateResult)
+	err := workflow.ExecuteActivity(ctx, ValidateEnvelopeActivity, ValidateEnvelopeInput(input)).Get(ctx, &validateResult)
 	if err != nil {
 		return &MessageProcessingWorkflowResult{
 			WorkflowID:    "msg-" + input.MessageID,
