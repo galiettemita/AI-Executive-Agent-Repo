@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Requirements Graph",
+  "type": "object",
+  "required": ["version", "requirements", "edges"],
+  "properties": {
+    "version": { "type": "string" },
+    "requirements": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "blueprint_id", "category", "description", "priority"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^REQ_" },
+          "blueprint_id": { "type": "string", "pattern": "^BP\\d{2}$" },
+          "category": { "type": "string", "enum": ["functional", "non_functional", "constraint", "decision"] },
+          "description": { "type": "string" },
+          "priority": { "type": "string", "enum": ["critical", "high", "medium", "low"] },
+          "status": { "type": "string", "enum": ["implemented", "partial", "pending", "deferred"] },
+          "source_lines": { "type": "array", "items": { "type": "string" } },
+          "implementation_files": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    },
+    "edges": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["from", "to", "type"],
+        "properties": {
+          "from": { "type": "string" },
+          "to": { "type": "string" },
+          "type": { "type": "string", "enum": ["depends_on", "conflicts_with", "supersedes", "implements"] }
+        }
+      }
+    }
+  }
+}

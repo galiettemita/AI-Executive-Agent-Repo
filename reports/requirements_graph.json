@@ -1,0 +1,133 @@
+{
+  "version": "1.0",
+  "requirements": [
+    {
+      "id": "REQ_D1_PLANE_BOUNDARIES",
+      "blueprint_id": "BP01",
+      "category": "constraint",
+      "description": "Cloud production planes must be Go services",
+      "priority": "critical",
+      "status": "implemented",
+      "source_lines": ["BP01:00001"],
+      "implementation_files": ["cmd/gateway/main.go", "cmd/brain/main.go", "cmd/control/main.go", "cmd/executor/main.go", "cmd/canvas/main.go", "cmd/temporal-worker/main.go"]
+    },
+    {
+      "id": "REQ_D2_TEMPORAL_ONLY",
+      "blueprint_id": "BP01",
+      "category": "constraint",
+      "description": "All orchestration must run as Temporal workflows/activities",
+      "priority": "critical",
+      "status": "implemented",
+      "source_lines": ["BP01:00002"],
+      "implementation_files": ["internal/temporal/workflows.go", "internal/temporal/activities.go", "internal/temporal/worker.go"]
+    },
+    {
+      "id": "REQ_D3_CONTROL_RECEIPTS",
+      "blueprint_id": "BP01",
+      "category": "constraint",
+      "description": "Control plane issues durable authorization receipts for all side effects",
+      "priority": "critical",
+      "status": "implemented",
+      "source_lines": ["BP01:00003"],
+      "implementation_files": ["internal/temporal/activities.go", "db/migrations/009_BREVIO_v10_authorization_receipts.sql"]
+    },
+    {
+      "id": "REQ_D4_WORKSPACE_RLS",
+      "blueprint_id": "BP01",
+      "category": "constraint",
+      "description": "workspace_id RLS enforcement on all DB sessions",
+      "priority": "critical",
+      "status": "implemented",
+      "source_lines": ["BP01:00004"],
+      "implementation_files": ["internal/database/pool.go", "internal/database/types.go"]
+    },
+    {
+      "id": "REQ_D5_UUIDV7",
+      "blueprint_id": "BP01",
+      "category": "constraint",
+      "description": "UUIDv7 required for all new primary keys",
+      "priority": "high",
+      "status": "implemented",
+      "source_lines": ["BP01:00005"],
+      "implementation_files": ["internal/determinism/uuid.go", "db/migrations/007_BREVIO_uuidv7_reconciliation.sql"]
+    },
+    {
+      "id": "REQ_D7_DETERMINISTIC_JITTER",
+      "blueprint_id": "BP01",
+      "category": "constraint",
+      "description": "Deterministic retry jitter using FNV1a64",
+      "priority": "high",
+      "status": "implemented",
+      "source_lines": ["BP01:00007"],
+      "implementation_files": ["internal/temporal/jitter.go"]
+    },
+    {
+      "id": "REQ_S1_NO_INMEMORY_PROD",
+      "blueprint_id": "BP01",
+      "category": "non_functional",
+      "description": "No in-memory persistence in production paths",
+      "priority": "critical",
+      "status": "partial",
+      "source_lines": ["BP01:00010"],
+      "implementation_files": ["internal/cognition/pg_repository.go", "internal/memory/pg_repository.go", "internal/gateway/pg_repository.go", "internal/mcp/pg_repository.go", "internal/learning/pg_repository.go", "internal/rag/pg_vector_store.go"]
+    },
+    {
+      "id": "REQ_S2_CONTRACT_TESTS",
+      "blueprint_id": "BP01",
+      "category": "non_functional",
+      "description": "Provider contract tests with deterministic mock servers",
+      "priority": "high",
+      "status": "implemented",
+      "source_lines": ["BP01:00011"],
+      "implementation_files": ["tests/contract/openai_embeddings_test.go", "tests/contract/temporal_client_test.go"]
+    },
+    {
+      "id": "REQ_S3_ALGORITHM_FIDELITY",
+      "blueprint_id": "BP01",
+      "category": "non_functional",
+      "description": "Embedding-based similarity, no lexical Jaccard in production",
+      "priority": "critical",
+      "status": "implemented",
+      "source_lines": ["BP01:00012"],
+      "implementation_files": ["internal/cognition/embedding_similarity.go", "internal/rag/pg_vector_store.go", "tests/algorithm_fidelity/embedding_similarity_test.go"]
+    },
+    {
+      "id": "REQ_VOICE_WORKFLOW",
+      "blueprint_id": "BP15",
+      "category": "functional",
+      "description": "Voice session lifecycle orchestrated via Temporal workflow",
+      "priority": "high",
+      "status": "implemented",
+      "source_lines": ["BP15:00001"],
+      "implementation_files": ["internal/temporal/workflows_voice.go", "internal/temporal/activities_voice.go"]
+    },
+    {
+      "id": "REQ_LEARNING_CONSOLIDATION",
+      "blueprint_id": "BP10",
+      "category": "functional",
+      "description": "Learning consolidation pipeline with conflict detection",
+      "priority": "medium",
+      "status": "implemented",
+      "source_lines": ["BP10:00001"],
+      "implementation_files": ["internal/temporal/workflows_learning.go", "internal/temporal/activities_learning.go", "internal/learning/conflicts.go"]
+    },
+    {
+      "id": "REQ_FEDERATION_SYNC",
+      "blueprint_id": "BP12",
+      "category": "functional",
+      "description": "Federation synchronization between workspaces",
+      "priority": "medium",
+      "status": "implemented",
+      "source_lines": ["BP12:00001"],
+      "implementation_files": ["internal/temporal/workflows_federation.go", "internal/federation/service.go"]
+    }
+  ],
+  "edges": [
+    { "from": "REQ_D2_TEMPORAL_ONLY", "to": "REQ_D7_DETERMINISTIC_JITTER", "type": "depends_on" },
+    { "from": "REQ_D3_CONTROL_RECEIPTS", "to": "REQ_D4_WORKSPACE_RLS", "type": "depends_on" },
+    { "from": "REQ_S3_ALGORITHM_FIDELITY", "to": "REQ_S1_NO_INMEMORY_PROD", "type": "depends_on" },
+    { "from": "REQ_VOICE_WORKFLOW", "to": "REQ_D2_TEMPORAL_ONLY", "type": "depends_on" },
+    { "from": "REQ_LEARNING_CONSOLIDATION", "to": "REQ_D2_TEMPORAL_ONLY", "type": "depends_on" },
+    { "from": "REQ_FEDERATION_SYNC", "to": "REQ_D4_WORKSPACE_RLS", "type": "depends_on" }
+  ]
+}

@@ -1,90 +1,117 @@
-# BREVIO Architecture Decisions
+# Binding Architectural Decisions
 
-This document records binding architectural decisions made during blueprint reconciliation.
+This document records all binding design decisions for the Brevio Executive AI Agent platform.
 
-## D001: V10 Enum Completion — negotiation_state
+## D1 — Plane Runtime Boundaries
 
-**Context:** BP06 includes ellipses in the negotiation_state enum definition.
-**Decision:** Implement minimal complete deterministic set:
+Cloud production planes are Go services: Gateway, Brain, Control, Executor/Hands, Canvas, Temporal Worker, and brevioctl CLI.
+
+TypeScript is permitted only for:
+- Hands skill runtime (to run existing TS OpenClaw skills)
+- Edge agent
+- Web/demo frontend
+
+Any TS services duplicating cloud planes are quarantined as NON_PRODUCTION.
+
+## D2 — Temporal-Only Orchestration
+
+All orchestration runs as Temporal workflows/activities using the Go Temporal SDK (`go.temporal.io/sdk`).
+No in-process workflow simulators in production builds. Task queues:
+- `brevio-core` — primary worker queue
+- `brevio-gateway`, `brevio-brain`, `brevio-control`, `brevio-executor`, `brevio-canvas`, `brevio-admin` — per-plane queues
+
+## D3 — Control-Plane Non-Bypassability
+
+Control is the sole authorizer and commit orchestrator of side effects:
+1. Control persists execution gate decisions in `authorization_receipts` table.
+2. Control issues durable authorization receipts (signed, time-limited).
+3. Activities verify receipts and refuse to execute without them.
+4. Deny-by-default policy posture everywhere.
+
+Receipt format: `{receipt_id, workspace_id, plan_id, tool_keys[], decision, issued_at, expires_at, signature_sha256}`.
+
+## D4 — Tenancy and RLS
+
+- `workspace_id` (UUIDv7) is the universal tenant isolation key.
+- Every request must resolve workspace_id or fail (no "default workspace").
+- Every DB session calls `SET app.workspace_id = $1` before queries.
+- All production tables have RLS policies filtering on `workspace_id`.
+- Implemented in `internal/database/pool.go` via `setWorkspaceIDOnSession`.
+
+## D5 — IDs
+
+- UUIDv7 (RFC 9562) required for all new primary keys.
+- Generated via `uuid.Must(uuid.NewV7())` from `github.com/google/uuid`.
+- Existing UUIDs accepted on reads only.
+- Forward-only reconciliation migration at `db/migrations/007_BREVIO_uuidv7_reconciliation.sql`.
+
+## D6 — Forward-Only Migrations
+
+- `db/migrations/` is the only production migration chain.
+- Legacy `migrations/` directory is quarantined as pre-v9 schema.
+- Rollback strategy: snapshot + forward fix (no down migrations in production).
+
+## D7 — Deterministic Temporal Retry Jitter
+
+All retry logic uses this deterministic formula:
 ```
-negotiation_state = ('proposed','evaluating','accepted','rejected','expired','executing','executed','failed','compensating')
+seed = workflow_id | activity | attempt
+jitter_ms = fnv1a64(seed) % jitter_window_ms
+backoff_ms = base_backoff_ms * 2^(attempt-1) + jitter_ms
+clamped to max_backoff_ms
 ```
-**Rationale:** These states cover the full lifecycle of a federation negotiation including error and compensation paths. The `compensating` state is required for Temporal saga-pattern rollback. Locked by schema migration 008 and contract tests.
+Implemented in `internal/temporal/jitter.go`.
 
-## D002: V10 Enum Completion — federation_permission_type
+## D8 — OpenClaw Skill Runtime
 
-**Context:** BP06 includes ellipses in the federation_permission_type enum.
-**Decision:** Implement minimal complete deterministic set:
-```
-federation_permission_type = ('calendar_query','calendar_write','routing_negotiate','task_delegate','knowledge_share','status_query')
-```
-**Rationale:** These cover the core cross-workspace interactions defined in the federation blueprint. Additional permissions can be added via forward migration. Locked by schema migration 008 and contract tests.
+- TS skill corpus kept in `services/hands-runtime/`.
+- Node Hands runtime exposes strict versioned contract: `list_skills`, `get_schema`, `execute_skill`, `health`, `metrics`.
+- Go Executor activities call Hands runtime only after receipt verification.
 
-## D003: V10.1 Table Count Reconciliation
+## D9 — Persistence Strategy
 
-**Context:** BP02 states "16 new tables" but the body defines 18 CREATE TABLE statements.
-**Decision:** Implement ALL 18 tables. Treat "16" as outdated count.
-**Rationale:** The body content is authoritative per blueprint interpretation rules. All 18 tables are required for complete admin functionality.
+All production domain state persists in PostgreSQL via pgx connection pool.
+In-memory repositories exist only:
+- In `*_test.go` files
+- Behind `//go:build devtest` build tags under `internal/testing/`
 
-## D004: Temporal as ONLY Workflow Runtime
+Repository interfaces defined per domain package; pgx implementations injected at service startup.
 
-**Context:** Existing codebase has in-memory workflow state machines in `internal/workflows/service.go`.
-**Decision:** Preserve existing in-memory implementations as business logic reference, wrap with real Temporal SDK workflow/activity definitions in `internal/temporal/`.
-**Rationale:** The in-memory implementations contain tested business logic (plan scoring, trust evaluation, etc.) that should not be discarded. The Temporal wrapper provides durability, replay safety, and distributed execution.
+## D10 — Similarity & Inference
 
-## D005: UUIDv7 Reconciliation Strategy
+- Semantic similarity uses OpenAI embeddings (`text-embedding-3-small`, 1536 dims) persisted in pgvector.
+- Vector search uses `<=>` cosine distance operator with IVFFlat indexes.
+- Lexical Jaccard similarity forbidden in production paths — only used in test fallbacks.
+- Inference endpoints use real model calls (OpenAI, Anthropic) — hardcoded thresholds forbidden.
 
-**Context:** `uuid_v7_generate()` in migration 001 returns `gen_random_uuid()` (random UUIDs, not UUIDv7).
-**Decision:** Forward-only reconciliation migration (007) redefines the function to produce real RFC 9562 UUIDv7. Existing PKs remain valid; new PKs are time-ordered.
-**Rationale:** Changing existing PKs would require cascading foreign key updates across all tables. Forward-only approach is safe and preserves data integrity.
+## D11 — Observability
 
-## D006: Go for Cloud Plane Services
+- Structured JSON logging via `internal/runtime/logger.go`.
+- Health checks: `/health`, `/health/deep`, `/healthz/ready`, `/healthz/live`.
+- Metrics exposed at `/metrics` (Prometheus format when enabled).
 
-**Context:** Repo contains both Go (cmd/*, internal/*) and TypeScript (services/*) implementations of plane services.
-**Decision:** Go is authoritative for all five planes. TypeScript plane duplicates are quarantined as NON_PRODUCTION.
-**Rationale:** Blueprint mandates Go for cloud plane services. TS is allowed only for Hands Skill Runtime sidecar, Edge Agent, and Web Demo Frontend.
+## D001 — Federation Data Model
 
-## D007: Canonical Infrastructure Sources
+Federation between workspaces uses the following binding types:
 
-**Context:** Duplicate infrastructure exists (terraform/ vs infra/terraform/, helm/ vs infra/helm/, ci.yml vs ci.yaml).
-**Decision:**
-- Canonical infra: `infra/` (infra/terraform + infra/helm)
-- Canonical CI: `.github/workflows/ci.yml`
-- Removed: `.github/workflows/ci.yaml` (duplicate)
-**Rationale:** Single source of truth prevents deployment drift and CI redundancy.
+- `negotiation_state`: Tracks the lifecycle of federation agreements between workspace pairs.
+  States: `pending` → `accepted` | `rejected` | `revoked`. Stored in `federation_peers` table.
+- `federation_permission_type`: Defines what data categories can be shared across federated workspaces.
+  Types: `memory_read`, `memory_write`, `tool_delegate`, `knowledge_sync`, `lesson_share`.
+- Federation sync is orchestrated via `FederationSyncWorkflow` (Temporal).
+- All cross-workspace queries enforce RLS on both source and target workspace_id.
 
-## D008: Authorization Receipt Chain
+## D012 — Voice & Calling Pipeline
 
-**Context:** Blueprints mandate non-bypassable authorization but existing code has in-memory approval tokens.
-**Decision:** Implement durable authorization receipts with DB persistence. Gate evaluation order: kill_switch (highest precedence) → sandbox → skills → dm_pairing → call_approval → budget → rate_limit.
-**Rationale:** Durable receipts provide audit evidence and replay protection. Gate ordering ensures highest-impact blocks are checked first.
+- Outbound calls use VAPI (primary) with Retell (fallback) provider pattern.
+- Real-time voice uses LiveKit rooms with JWT token signing (HS256).
+- STT/TTS use primary/fallback failover with 3-error threshold for circuit breaking.
+- Post-session task extraction runs as a Temporal activity (`ExtractVoiceTasksActivity`).
+- Voice sessions orchestrated via `VoiceSessionWorkflow` with heartbeat monitoring.
 
-## D009: Forward-Only Migration Strategy
+## D013 — Learning Consolidation Pipeline
 
-**Context:** db/migrations/ contains numbered .sql files. Some earlier versions had up/down pairs.
-**Decision:** Forward-only migrations are the production toolchain. Rollback is via database snapshot + forward fix. Down migrations are not executed in production.
-**Rationale:** Down migrations are inherently risky in production. Snapshot + forward fix is the safest rollback strategy.
-
-## D010: Transcript-Only Voice Persistence
-
-**Context:** BP05 defines voice/call capabilities with transcript persistence.
-**Decision:** Never persist raw audio. Only transcripts (text segments with timing) are stored.
-**Rationale:** Raw audio storage introduces significant compliance burden (GDPR, CCPA). Transcripts provide the necessary audit trail.
-
-## D011: Cost Values as NUMERIC(18,8)
-
-**Context:** BP06 mandates cost values as NUMERIC(18,8) USD.
-**Decision:** All cost/financial columns use `numeric(18,8)` with USD denomination.
-**Rationale:** Sufficient precision for sub-cent calculations while avoiding floating-point rounding issues.
-
-## D012: workspace_id Universal Tenant Scope
-
-**Context:** Blueprints mandate workspace_id as universal tenant boundary.
-**Decision:** No "default workspace" fallback in production. Gateway fails closed when workspace scope is missing/invalid. All DB sessions SET app.workspace_id for RLS enforcement.
-**Rationale:** Fail-closed prevents accidental cross-tenant data access. RLS enforcement at the database level provides defense-in-depth.
-
-## D013: Kill Switch Non-Bypassable
-
-**Context:** Kill switch must halt all workspace operations.
-**Decision:** Kill switch check is the FIRST gate evaluated (highest precedence). When active, no receipts can be issued, no workflows can execute, no tools can be invoked.
-**Rationale:** Emergency shutdown capability requires absolute precedence over all other gates.
+- User corrections clustered by embedding similarity into lesson candidates.
+- Conflict detection: redundant (>60% word overlap), superseded (same workspace, mixed status), contradictory (same workspace, both confirmed).
+- Learning consolidation runs as `LearningConsolidationWorkflow` (Temporal).
+- Rule proposals generated from confirmed lesson clusters.

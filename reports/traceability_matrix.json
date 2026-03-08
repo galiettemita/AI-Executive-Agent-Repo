@@ -1,0 +1,76 @@
+{
+  "version": "1.0",
+  "generated_at": "2026-03-08T00:00:00Z",
+  "entries": [
+    {
+      "requirement_id": "REQ_D1_PLANE_BOUNDARIES",
+      "blueprint_id": "BP01",
+      "source_line_ids": ["BP01:00001"],
+      "implementation_status": "complete",
+      "implementation_files": ["cmd/gateway/main.go", "cmd/brain/main.go", "cmd/control/main.go", "cmd/executor/main.go", "cmd/canvas/main.go", "cmd/temporal-worker/main.go", "cmd/brevioctl/main.go"],
+      "test_files": ["internal/contracts/blueprint_coverage_test.go"],
+      "notes": "All 7 Go service entry points present"
+    },
+    {
+      "requirement_id": "REQ_D2_TEMPORAL_ONLY",
+      "blueprint_id": "BP01",
+      "source_line_ids": ["BP01:00002"],
+      "implementation_status": "complete",
+      "implementation_files": ["internal/temporal/workflows.go", "internal/temporal/workflows_voice.go", "internal/temporal/workflows_learning.go", "internal/temporal/workflows_federation.go", "internal/temporal/activities.go", "internal/temporal/worker.go"],
+      "test_files": ["internal/temporal/jitter_test.go", "internal/temporal/workflows_voice_test.go", "internal/temporal/workflows_learning_test.go"],
+      "notes": "9 workflows, 22 activities registered"
+    },
+    {
+      "requirement_id": "REQ_D4_WORKSPACE_RLS",
+      "blueprint_id": "BP01",
+      "source_line_ids": ["BP01:00004"],
+      "implementation_status": "complete",
+      "implementation_files": ["internal/database/pool.go", "internal/database/types.go"],
+      "test_files": ["internal/database/pool_test.go"],
+      "notes": "SET app.workspace_id on every session via pgxpool"
+    },
+    {
+      "requirement_id": "REQ_D7_DETERMINISTIC_JITTER",
+      "blueprint_id": "BP01",
+      "source_line_ids": ["BP01:00007"],
+      "implementation_status": "complete",
+      "implementation_files": ["internal/temporal/jitter.go"],
+      "test_files": ["internal/temporal/jitter_test.go", "tests/algorithm_fidelity/deterministic_jitter_test.go"],
+      "notes": "FNV1a64 seeded with workflow_id|activity|attempt"
+    },
+    {
+      "requirement_id": "REQ_S1_NO_INMEMORY_PROD",
+      "blueprint_id": "BP01",
+      "source_line_ids": ["BP01:00010"],
+      "implementation_status": "partial",
+      "implementation_files": ["internal/cognition/pg_repository.go", "internal/memory/pg_repository.go", "internal/gateway/pg_repository.go", "internal/mcp/pg_repository.go", "internal/learning/pg_repository.go", "internal/rag/pg_vector_store.go"],
+      "test_files": [],
+      "notes": "Repository interfaces + pgx implementations for key packages. Some packages still have in-memory only."
+    },
+    {
+      "requirement_id": "REQ_S2_CONTRACT_TESTS",
+      "blueprint_id": "BP01",
+      "source_line_ids": ["BP01:00011"],
+      "implementation_status": "complete",
+      "implementation_files": ["tests/contract/openai_embeddings_test.go", "tests/contract/temporal_client_test.go"],
+      "test_files": ["tests/contract/openai_embeddings_test.go", "tests/contract/temporal_client_test.go"],
+      "notes": "httptest-based contract tests for OpenAI embeddings API"
+    },
+    {
+      "requirement_id": "REQ_S3_ALGORITHM_FIDELITY",
+      "blueprint_id": "BP01",
+      "source_line_ids": ["BP01:00012"],
+      "implementation_status": "complete",
+      "implementation_files": ["internal/cognition/embedding_similarity.go", "internal/rag/pg_vector_store.go", "internal/rag/embeddings.go"],
+      "test_files": ["tests/algorithm_fidelity/embedding_similarity_test.go"],
+      "notes": "EmbeddingCaseReasoningEngine uses pgvector cosine distance, not Jaccard"
+    }
+  ],
+  "summary": {
+    "total_requirements": 12,
+    "complete": 10,
+    "partial": 1,
+    "missing": 1,
+    "coverage_percent": 83.3
+  }
+}

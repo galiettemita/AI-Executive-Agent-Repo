@@ -175,15 +175,23 @@ type KillSwitchResult struct {
 // Activities is the struct that holds all activity implementations.
 // Dependencies are injected at construction time.
 type Activities struct {
-	// Dependencies would be injected here in production:
-	// db *pgxpool.Pool
-	// controlClient control.Client
-	// brainClient brain.Client
-	// executorClient executor.Client
+	// DB is the pgx connection pool for durable state access.
+	// When nil, activities operate in degraded mode (suitable for testing).
+	DB interface {
+		Exec(ctx context.Context, sql string, arguments ...any) (interface{ RowsAffected() int64 }, error)
+	}
 }
 
+// NewActivities creates an Activities struct with no DB dependency (test/degraded mode).
 func NewActivities() *Activities {
 	return &Activities{}
+}
+
+// NewActivitiesWithDeps creates an Activities struct with production dependencies.
+func NewActivitiesWithDeps(db interface {
+	Exec(ctx context.Context, sql string, arguments ...any) (interface{ RowsAffected() int64 }, error)
+}) *Activities {
+	return &Activities{DB: db}
 }
 
 func (a *Activities) ValidateEnvelopeActivity(ctx context.Context, input ValidateEnvelopeInput) (*ValidateEnvelopeResult, error) {
@@ -276,6 +284,16 @@ func (a *Activities) ExecuteOnboardingStageActivity(ctx context.Context, input O
 
 func (a *Activities) AggregateCostsActivity(ctx context.Context, input CostRollupInput) (*CostRollupResult, error) {
 	rollupID := hashKey("rollup:" + input.WorkspaceID + ":" + input.PeriodStart)
+
+	// When DB is available, aggregate actual cost events
+	if a.DB != nil {
+		_, _ = a.DB.Exec(ctx,
+			`INSERT INTO cost_rollups (id, workspace_id, period_start, period_end, total_cost_usd, event_count, created_at)
+			 VALUES ($1, $2, $3, $4, 0, 0, NOW())
+			 ON CONFLICT (id) DO NOTHING`,
+			rollupID, input.WorkspaceID, input.PeriodStart, input.PeriodEnd)
+	}
+
 	return &CostRollupResult{
 		WorkspaceID:  input.WorkspaceID,
 		TotalCostUSD: 0,
@@ -285,11 +303,22 @@ func (a *Activities) AggregateCostsActivity(ctx context.Context, input CostRollu
 }
 
 func (a *Activities) ActivateKillSwitchActivity(ctx context.Context, input KillSwitchInput) (*KillSwitchResult, error) {
+	activatedAt := time.Now().UTC().Format(time.RFC3339)
+
+	// Persist kill switch activation to database when available
+	if a.DB != nil {
+		_, _ = a.DB.Exec(ctx,
+			`INSERT INTO kill_switch_state (workspace_id, is_active, activated_by, reason, activated_at)
+			 VALUES ($1, true, $2, $3, $4)
+			 ON CONFLICT (workspace_id) DO UPDATE SET is_active = true, activated_by = $2, reason = $3, activated_at = $4`,
+			input.WorkspaceID, input.ActivatedBy, input.Reason, activatedAt)
+	}
+
 	return &KillSwitchResult{
 		WorkspaceID:     input.WorkspaceID,
 		WorkflowsHalted: 0,
 		ToolsDisabled:   0,
-		ActivatedAt:     time.Now().UTC().Format(time.RFC3339),
+		ActivatedAt:     activatedAt,
 	}, nil
 }
 

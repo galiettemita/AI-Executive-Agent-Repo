@@ -20,6 +20,7 @@ type Case struct {
 	SuccessScore float64           `json:"success_score"`
 	Domain       string            `json:"domain"`
 	Features     map[string]string `json:"features"`
+	Embedding    []float32         `json:"embedding,omitempty"`
 	CreatedAt    time.Time         `json:"created_at"`
 	ReuseCount   int               `json:"reuse_count"`
 }

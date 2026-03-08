@@ -21,6 +21,9 @@ func NewWorker(c client.Client, taskQueue string) worker.Worker {
 	w.RegisterWorkflow(OnboardingWorkflow)
 	w.RegisterWorkflow(CostRollupWorkflow)
 	w.RegisterWorkflow(KillSwitchWorkflow)
+	w.RegisterWorkflow(VoiceSessionWorkflow)
+	w.RegisterWorkflow(LearningConsolidationWorkflow)
+	w.RegisterWorkflow(FederationSyncWorkflow)
 
 	// Register activities
 	activities := NewActivities()
@@ -36,6 +39,19 @@ func NewWorker(c client.Client, taskQueue string) worker.Worker {
 	w.RegisterActivity(activities.ExecuteOnboardingStageActivity)
 	w.RegisterActivity(activities.AggregateCostsActivity)
 	w.RegisterActivity(activities.ActivateKillSwitchActivity)
+
+	// Voice activities
+	w.RegisterActivity(InitVoiceSessionActivity)
+	w.RegisterActivity(ExtractVoiceTasksActivity)
+
+	// Learning activities
+	w.RegisterActivity(ClusterCorrectionsActivity)
+	w.RegisterActivity(DetectConflictsActivity)
+	w.RegisterActivity(ResolveConflictActivity)
+	w.RegisterActivity(ProposeRulesActivity)
+
+	// Federation activities
+	w.RegisterActivity(ExecuteFederationSyncActivity)
 
 	return w
 }

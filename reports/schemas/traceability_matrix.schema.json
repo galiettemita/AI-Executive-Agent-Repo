@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Traceability Matrix",
+  "type": "object",
+  "required": ["version", "entries"],
+  "properties": {
+    "version": { "type": "string" },
+    "generated_at": { "type": "string", "format": "date-time" },
+    "entries": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["requirement_id", "blueprint_id", "implementation_status"],
+        "properties": {
+          "requirement_id": { "type": "string" },
+          "blueprint_id": { "type": "string" },
+          "source_line_ids": { "type": "array", "items": { "type": "string" } },
+          "implementation_status": { "type": "string", "enum": ["complete", "partial", "missing"] },
+          "implementation_files": { "type": "array", "items": { "type": "string" } },
+          "test_files": { "type": "array", "items": { "type": "string" } },
+          "notes": { "type": "string" }
+        }
+      }
+    },
+    "summary": {
+      "type": "object",
+      "properties": {
+        "total_requirements": { "type": "integer" },
+        "complete": { "type": "integer" },
+        "partial": { "type": "integer" },
+        "missing": { "type": "integer" },
+        "coverage_percent": { "type": "number" }
+      }
+    }
+  }
+}
