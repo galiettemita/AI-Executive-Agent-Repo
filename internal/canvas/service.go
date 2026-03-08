@@ -52,23 +52,123 @@ func (i *InMemoryInjector) Count() int {
 	return len(i.toolCalls)
 }
 
+// Priority levels for A2UI messages.
+const (
+	PriorityCritical = "critical"
+	PriorityHigh     = "high"
+	PriorityNormal   = "normal"
+	PriorityLow      = "low"
+)
+
+// Supported A2UI message types.
+const (
+	MsgTypeMissionControlUpdate = "mission_control_update"
+	MsgTypeApprovalRequest      = "approval_request"
+	MsgTypeNotification         = "notification"
+	MsgTypeProgressUpdate       = "progress_update"
+	MsgTypeToolResult           = "tool_result"
+)
+
+// A2UIMessage represents an agent-to-UI message pushed over WebSocket.
+type A2UIMessage struct {
+	Type        string         `json:"type"`
+	WorkspaceID string         `json:"workspace_id"`
+	Payload     map[string]any `json:"payload"`
+	Timestamp   time.Time      `json:"timestamp"`
+	Priority    string         `json:"priority"`
+}
+
+// Widget represents a mission control dashboard widget.
+type Widget struct {
+	ID        string         `json:"id"`
+	Type      string         `json:"type"` // metric, chart, list, status
+	Title     string         `json:"title"`
+	Data      map[string]any `json:"data"`
+	UpdatedAt time.Time      `json:"updated_at"`
+}
+
+// ApprovalRequest describes an action requiring operator approval.
+type ApprovalRequest struct {
+	ID          string    `json:"id"`
+	Action      string    `json:"action"`
+	RiskLevel   string    `json:"risk_level"`
+	Description string    `json:"description"`
+	ExpiresAt   time.Time `json:"expires_at"`
+}
+
+// ApprovalResponse is the operator's decision on an approval request.
+type ApprovalResponse struct {
+	Approved    bool   `json:"approved"`
+	Reason      string `json:"reason"`
+	RespondedBy string `json:"responded_by"`
+}
+
+// connEntry tracks a WebSocket connection with its workspace and session.
+type connEntry struct {
+	sessionID   string
+	workspaceID string
+}
+
+// surfaceRegistration tracks a registered UI surface.
+type surfaceRegistration struct {
+	WorkspaceID string `json:"workspace_id"`
+	SurfaceType string `json:"surface_type"`
+}
+
 type Service struct {
 	upgrader  websocket.Upgrader
 	injector  Injector
 	startedAt time.Time
 	mu        sync.Mutex
 	sessions  map[*websocket.Conn]string
+	conns     map[*websocket.Conn]connEntry
 	logs      []Interaction
+
+	surfaces    map[string][]surfaceRegistration // workspaceID -> surfaces
+	approvalsMu sync.Mutex
+	approvals   map[string]chan ApprovalResponse // approvalID -> response channel
+	messageHandlers map[string]func(sessionID string, payload map[string]any)
 }
 
 func NewService(injector Injector) *Service {
-	return &Service{
-		upgrader:  websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }},
-		injector:  injector,
-		startedAt: time.Now().UTC(),
-		sessions:  map[*websocket.Conn]string{},
-		logs:      []Interaction{},
+	s := &Service{
+		upgrader:        websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }},
+		injector:        injector,
+		startedAt:       time.Now().UTC(),
+		sessions:        map[*websocket.Conn]string{},
+		conns:           map[*websocket.Conn]connEntry{},
+		logs:            []Interaction{},
+		surfaces:        map[string][]surfaceRegistration{},
+		approvals:       map[string]chan ApprovalResponse{},
+		messageHandlers: map[string]func(sessionID string, payload map[string]any){},
 	}
+	s.registerDefaultHandlers()
+	return s
+}
+
+func (s *Service) registerDefaultHandlers() {
+	s.messageHandlers[MsgTypeMissionControlUpdate] = func(sessionID string, payload map[string]any) {}
+	s.messageHandlers[MsgTypeApprovalRequest] = func(sessionID string, payload map[string]any) {
+		approvalID, _ := payload["id"].(string)
+		if approvalID == "" {
+			return
+		}
+		approved, _ := payload["approved"].(bool)
+		reason, _ := payload["reason"].(string)
+		respondedBy, _ := payload["responded_by"].(string)
+		s.approvalsMu.Lock()
+		ch, ok := s.approvals[approvalID]
+		s.approvalsMu.Unlock()
+		if ok {
+			select {
+			case ch <- ApprovalResponse{Approved: approved, Reason: reason, RespondedBy: respondedBy}:
+			default:
+			}
+		}
+	}
+	s.messageHandlers[MsgTypeNotification] = func(sessionID string, payload map[string]any) {}
+	s.messageHandlers[MsgTypeProgressUpdate] = func(sessionID string, payload map[string]any) {}
+	s.messageHandlers[MsgTypeToolResult] = func(sessionID string, payload map[string]any) {}
 }
 
 func (s *Service) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
@@ -84,8 +184,17 @@ func (s *Service) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 		sessionID = time.Now().UTC().Format(time.RFC3339Nano)
 	}
 
+	workspaceID := r.URL.Query().Get("workspace_id")
+	if workspaceID == "" {
+		workspaceID = r.Header.Get("X-Workspace-ID")
+	}
+	if workspaceID == "" {
+		workspaceID = "default"
+	}
+
 	s.mu.Lock()
 	s.sessions[conn] = sessionID
+	s.conns[conn] = connEntry{sessionID: sessionID, workspaceID: workspaceID}
 	s.mu.Unlock()
 
 	for {
@@ -118,7 +227,138 @@ func (s *Service) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 
 	s.mu.Lock()
 	delete(s.sessions, conn)
+	delete(s.conns, conn)
 	s.mu.Unlock()
+}
+
+// BroadcastToWorkspace sends an A2UIMessage to all WebSocket connections for a workspace.
+func (s *Service) BroadcastToWorkspace(workspaceID string, msg A2UIMessage) {
+	if msg.Timestamp.IsZero() {
+		msg.Timestamp = time.Now().UTC()
+	}
+	if msg.Priority == "" {
+		msg.Priority = PriorityNormal
+	}
+	msg.WorkspaceID = workspaceID
+
+	data, err := json.Marshal(msg)
+	if err != nil {
+		return
+	}
+
+	s.mu.Lock()
+	targets := make([]*websocket.Conn, 0)
+	for conn, entry := range s.conns {
+		if entry.workspaceID == workspaceID {
+			targets = append(targets, conn)
+		}
+	}
+	s.mu.Unlock()
+
+	for _, conn := range targets {
+		_ = conn.WriteMessage(websocket.TextMessage, data)
+	}
+}
+
+// HandleIncoming parses a raw incoming WebSocket message and routes it to the
+// appropriate message handler based on the message type.
+func (s *Service) HandleIncoming(sessionID string, raw []byte) {
+	var envelope struct {
+		Type    string         `json:"type"`
+		Payload map[string]any `json:"payload"`
+	}
+	if err := json.Unmarshal(raw, &envelope); err != nil {
+		return
+	}
+	if envelope.Type == "" {
+		return
+	}
+	if envelope.Payload == nil {
+		envelope.Payload = map[string]any{}
+	}
+
+	s.mu.Lock()
+	handler, ok := s.messageHandlers[envelope.Type]
+	s.mu.Unlock()
+	if ok {
+		handler(sessionID, envelope.Payload)
+	}
+}
+
+// RegisterSurface registers a UI surface type for a workspace.
+func (s *Service) RegisterSurface(workspaceID, surfaceType string) {
+	if workspaceID == "" {
+		workspaceID = "default"
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// Prevent duplicates.
+	for _, reg := range s.surfaces[workspaceID] {
+		if reg.SurfaceType == surfaceType {
+			return
+		}
+	}
+	s.surfaces[workspaceID] = append(s.surfaces[workspaceID], surfaceRegistration{
+		WorkspaceID: workspaceID,
+		SurfaceType: surfaceType,
+	})
+}
+
+// RegisteredSurfaces returns the surface types registered for a workspace.
+func (s *Service) RegisteredSurfaces(workspaceID string) []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	regs := s.surfaces[workspaceID]
+	out := make([]string, len(regs))
+	for i, r := range regs {
+		out[i] = r.SurfaceType
+	}
+	return out
+}
+
+// PushMissionControlUpdate pushes dashboard widget data to all workspace connections.
+func (s *Service) PushMissionControlUpdate(workspaceID string, widgets []Widget) {
+	widgetMaps := make([]map[string]any, len(widgets))
+	for i, w := range widgets {
+		widgetMaps[i] = map[string]any{
+			"id":         w.ID,
+			"type":       w.Type,
+			"title":      w.Title,
+			"data":       w.Data,
+			"updated_at": w.UpdatedAt,
+		}
+	}
+	s.BroadcastToWorkspace(workspaceID, A2UIMessage{
+		Type:     MsgTypeMissionControlUpdate,
+		Payload:  map[string]any{"widgets": widgetMaps},
+		Priority: PriorityNormal,
+	})
+}
+
+// RequestApproval sends an approval request to the workspace UI and returns a
+// channel that will receive the operator's response. The caller is responsible
+// for reading the response or handling a timeout.
+func (s *Service) RequestApproval(workspaceID string, req ApprovalRequest) chan ApprovalResponse {
+	ch := make(chan ApprovalResponse, 1)
+
+	s.approvalsMu.Lock()
+	s.approvals[req.ID] = ch
+	s.approvalsMu.Unlock()
+
+	s.BroadcastToWorkspace(workspaceID, A2UIMessage{
+		Type: MsgTypeApprovalRequest,
+		Payload: map[string]any{
+			"id":          req.ID,
+			"action":      req.Action,
+			"risk_level":  req.RiskLevel,
+			"description": req.Description,
+			"expires_at":  req.ExpiresAt,
+		},
+		Priority: PriorityHigh,
+	})
+
+	return ch
 }
 
 func (s *Service) HandleA2UISurface(w http.ResponseWriter, r *http.Request) {

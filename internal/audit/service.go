@@ -2,6 +2,7 @@ package audit
 
 import (
 	"context"
+	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -49,6 +50,7 @@ type Service struct {
 	sinks               []MutationSink
 	persistErrors       []string
 	now                 func() time.Time
+	hmacSecret          []byte
 }
 
 func NewService(opts ...Option) *Service {
@@ -71,6 +73,17 @@ func WithSink(sink MutationSink) Option {
 			return
 		}
 		s.sinks = append(s.sinks, sink)
+	}
+}
+
+func WithHMACSecret(secret []byte) Option {
+	return func(s *Service) {
+		if len(secret) == 0 {
+			return
+		}
+		cp := make([]byte, len(secret))
+		copy(cp, secret)
+		s.hmacSecret = cp
 	}
 }
 
@@ -113,8 +126,7 @@ func (s *Service) AppendMutation(input MutationInput) MutationEntry {
 	if err != nil {
 		encoded = []byte(workspaceID + ":" + actor + ":" + action + ":" + resource + ":" + timestamp + ":" + prevHash)
 	}
-	sum := sha256.Sum256(encoded)
-	hash := hex.EncodeToString(sum[:])
+	hash := s.computeHash(encoded)
 
 	entry := MutationEntry{
 		ID:          entryID.String(),
@@ -196,6 +208,64 @@ func (s *Service) Close() error {
 		parts = append(parts, err.Error())
 	}
 	return fmt.Errorf("close mutation sinks: %s", strings.Join(parts, "; "))
+}
+
+// computeHash returns an HMAC-SHA256 hex digest when an hmacSecret is configured,
+// otherwise falls back to plain SHA256.
+func (s *Service) computeHash(data []byte) string {
+	if len(s.hmacSecret) > 0 {
+		mac := hmac.New(sha256.New, s.hmacSecret)
+		mac.Write(data)
+		return hex.EncodeToString(mac.Sum(nil))
+	}
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:])
+}
+
+// VerifyChain re-computes every hash in a workspace's audit log and verifies
+// chain integrity. It returns valid=true if the full chain is intact. If
+// tampered, brokenAt indicates the zero-based index of the first broken entry.
+func (s *Service) VerifyChain(workspaceID string) (valid bool, brokenAt int, err error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	workspaceID = strings.TrimSpace(workspaceID)
+	if workspaceID == "" {
+		workspaceID = "default"
+	}
+
+	entries := s.entriesByWorkspace[workspaceID]
+	if len(entries) == 0 {
+		return true, -1, nil
+	}
+
+	prevHash := ""
+	for i, entry := range entries {
+		if entry.PrevHash != prevHash {
+			return false, i, nil
+		}
+		payload := map[string]any{
+			"id":           entry.ID,
+			"workspace_id": entry.WorkspaceID,
+			"actor":        entry.Actor,
+			"action":       entry.Action,
+			"resource":     entry.Resource,
+			"timestamp":    entry.Timestamp,
+			"before":       entry.Before,
+			"after":        entry.After,
+			"prev_hash":    entry.PrevHash,
+		}
+		encoded, jsonErr := json.Marshal(payload)
+		if jsonErr != nil {
+			encoded = []byte(entry.WorkspaceID + ":" + entry.Actor + ":" + entry.Action + ":" + entry.Resource + ":" + entry.Timestamp + ":" + entry.PrevHash)
+		}
+		computed := s.computeHash(encoded)
+		if computed != entry.Hash {
+			return false, i, nil
+		}
+		prevHash = entry.Hash
+	}
+	return true, -1, nil
 }
 
 func (s *Service) recordPersistErrorLocked(entryID string, err error) {

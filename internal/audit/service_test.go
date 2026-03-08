@@ -134,3 +134,133 @@ func TestCloseClosesSink(t *testing.T) {
 		t.Fatal("expected sink to be closed")
 	}
 }
+
+func TestHMACChainProducesDifferentHashes(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 3, 3, 15, 0, 0, 0, time.UTC)
+
+	plain := NewService()
+	plain.now = func() time.Time { return now }
+
+	hmacSvc := NewService(WithHMACSecret([]byte("test-secret-key-32bytes-long!!")))
+	hmacSvc.now = func() time.Time { return now }
+
+	input := MutationInput{
+		WorkspaceID: "ws_hmac",
+		Actor:       "user_1",
+		Action:      "token.rotate",
+		Resource:    "oauth_token",
+	}
+
+	plainEntry := plain.AppendMutation(input)
+	hmacEntry := hmacSvc.AppendMutation(input)
+
+	if plainEntry.Hash == hmacEntry.Hash {
+		t.Fatal("HMAC hash should differ from plain SHA256 hash")
+	}
+	if hmacEntry.Hash == "" {
+		t.Fatal("HMAC entry should have a hash")
+	}
+}
+
+func TestVerifyChainIntact(t *testing.T) {
+	t.Parallel()
+
+	svc := NewService(WithHMACSecret([]byte("chain-verify-secret")))
+	now := time.Date(2026, 3, 3, 15, 0, 0, 0, time.UTC)
+	svc.now = func() time.Time { return now }
+
+	for i := 0; i < 5; i++ {
+		svc.AppendMutation(MutationInput{
+			WorkspaceID: "ws_verify",
+			Actor:       "user_1",
+			Action:      "record.create",
+			Resource:    "record",
+		})
+	}
+
+	valid, brokenAt, err := svc.VerifyChain("ws_verify")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !valid {
+		t.Fatalf("chain should be valid, brokenAt=%d", brokenAt)
+	}
+}
+
+func TestVerifyChainDetectsTampering(t *testing.T) {
+	t.Parallel()
+
+	svc := NewService(WithHMACSecret([]byte("tamper-detect-secret")))
+	now := time.Date(2026, 3, 3, 15, 0, 0, 0, time.UTC)
+	svc.now = func() time.Time { return now }
+
+	for i := 0; i < 5; i++ {
+		svc.AppendMutation(MutationInput{
+			WorkspaceID: "ws_tamper",
+			Actor:       "user_1",
+			Action:      "record.create",
+			Resource:    "record",
+		})
+	}
+
+	// Tamper with the third entry's hash.
+	svc.mu.Lock()
+	svc.entriesByWorkspace["ws_tamper"][2].Hash = "tampered_hash_value"
+	svc.mu.Unlock()
+
+	valid, brokenAt, err := svc.VerifyChain("ws_tamper")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if valid {
+		t.Fatal("chain should be invalid after tampering")
+	}
+	if brokenAt != 2 {
+		t.Fatalf("expected brokenAt=2 got=%d", brokenAt)
+	}
+}
+
+func TestVerifyChainDetectsPrevHashTampering(t *testing.T) {
+	t.Parallel()
+
+	svc := NewService(WithHMACSecret([]byte("prev-hash-tamper")))
+	now := time.Date(2026, 3, 3, 15, 0, 0, 0, time.UTC)
+	svc.now = func() time.Time { return now }
+
+	for i := 0; i < 3; i++ {
+		svc.AppendMutation(MutationInput{
+			WorkspaceID: "ws_prev",
+			Actor:       "user_1",
+			Action:      "record.create",
+			Resource:    "record",
+		})
+	}
+
+	// Tamper with prev_hash of the second entry.
+	svc.mu.Lock()
+	svc.entriesByWorkspace["ws_prev"][1].PrevHash = "wrong_prev_hash"
+	svc.mu.Unlock()
+
+	valid, brokenAt, _ := svc.VerifyChain("ws_prev")
+	if valid {
+		t.Fatal("chain should be invalid after prev_hash tampering")
+	}
+	if brokenAt != 1 {
+		t.Fatalf("expected brokenAt=1 got=%d", brokenAt)
+	}
+}
+
+func TestVerifyChainEmptyWorkspace(t *testing.T) {
+	t.Parallel()
+
+	svc := NewService()
+	valid, brokenAt, err := svc.VerifyChain("nonexistent")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !valid {
+		t.Fatalf("empty chain should be valid, brokenAt=%d", brokenAt)
+	}
+}
