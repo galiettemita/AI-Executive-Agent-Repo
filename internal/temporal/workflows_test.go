@@ -6,17 +6,27 @@ import (
 	"go.temporal.io/sdk/testsuite"
 )
 
-func TestMessageProcessingWorkflow_HappyPath(t *testing.T) {
-	testSuite := &testsuite.WorkflowTestSuite{}
-	env := testSuite.NewTestWorkflowEnvironment()
-
-	activities := NewActivities()
+func registerAllMessageActivities(env *testsuite.TestWorkflowEnvironment, activities *Activities) {
 	env.RegisterActivity(activities.ValidateEnvelopeActivity)
 	env.RegisterActivity(activities.ClassifyIntentActivity)
 	env.RegisterActivity(activities.GeneratePlanActivity)
 	env.RegisterActivity(activities.AuthorizePlanActivity)
 	env.RegisterActivity(activities.ExecuteToolActivity)
 	env.RegisterActivity(activities.SynthesizeResponseActivity)
+	env.RegisterActivity(activities.RetrieveMemoryActivity)
+	env.RegisterActivity(activities.SearchRAGActivity)
+	env.RegisterActivity(activities.ExecuteReasoningLoopActivity)
+	env.RegisterActivity(activities.AssessCognitiveStateActivity)
+	env.RegisterActivity(activities.EvaluateCouncilActivity)
+	env.RegisterActivity(activities.EnqueueOutboxActivity)
+}
+
+func TestMessageProcessingWorkflow_HappyPath(t *testing.T) {
+	testSuite := &testsuite.WorkflowTestSuite{}
+	env := testSuite.NewTestWorkflowEnvironment()
+
+	activities := NewActivities()
+	registerAllMessageActivities(env, activities)
 
 	input := MessageProcessingWorkflowInput{
 		MessageID:      "test-msg-001",
@@ -49,12 +59,7 @@ func TestMessageProcessingWorkflow_InvalidEnvelope(t *testing.T) {
 	env := testSuite.NewTestWorkflowEnvironment()
 
 	activities := NewActivities()
-	env.RegisterActivity(activities.ValidateEnvelopeActivity)
-	env.RegisterActivity(activities.ClassifyIntentActivity)
-	env.RegisterActivity(activities.GeneratePlanActivity)
-	env.RegisterActivity(activities.AuthorizePlanActivity)
-	env.RegisterActivity(activities.ExecuteToolActivity)
-	env.RegisterActivity(activities.SynthesizeResponseActivity)
+	registerAllMessageActivities(env, activities)
 
 	input := MessageProcessingWorkflowInput{
 		MessageID:   "test-msg-002",

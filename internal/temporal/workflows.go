@@ -22,30 +22,45 @@ type MessageProcessingWorkflowResult struct {
 	ResponsePayload    string   `json:"response_payload,omitempty"`
 	Fallbacks          []string `json:"fallbacks,omitempty"`
 	CompensationNeeded bool     `json:"compensation_needed"`
+	EvidenceHash       string   `json:"evidence_hash,omitempty"`
+	MemoryItemCount    int      `json:"memory_item_count,omitempty"`
+	RAGChunkCount      int      `json:"rag_chunk_count,omitempty"`
+	ReasoningIterations int     `json:"reasoning_iterations,omitempty"`
+	CouncilConvened    bool     `json:"council_convened,omitempty"`
+	OutboxEntryID      string   `json:"outbox_entry_id,omitempty"`
 }
 
-// MessageProcessingWorkflow orchestrates the full message lifecycle:
-// ingress -> validate -> plan -> authorize -> execute -> respond
+// MessageProcessingWorkflow orchestrates the full message lifecycle with
+// intelligence pipeline integration:
+// validate → retrieve memory/RAG → reasoning loop → cognitive assess →
+// council eval → control gate → executor simulate → executor commit →
+// synthesize → outbox enqueue
+//
+// Determinism guarantees (D7):
+// - All activity inputs are deterministic from workflow input + prior results
+// - Tool keys sorted lexically, context items stable-sorted
+// - Deterministic jitter via ComputeDeterministicBackoff
+// - No nondeterministic LLM invocations; fixed parameters throughout
 func MessageProcessingWorkflow(ctx workflow.Context, input MessageProcessingWorkflowInput) (*MessageProcessingWorkflowResult, error) {
 	logger := workflow.GetLogger(ctx)
 	logger.Info("MessageProcessingWorkflow started", "messageID", input.MessageID)
 
-	retryPolicy := &temporal.RetryPolicy{
-		InitialInterval:    time.Second,
-		BackoffCoefficient: 2.0,
-		MaximumInterval:    60 * time.Second,
-		MaximumAttempts:    3,
-	}
+	var a *Activities
 
-	ao := workflow.ActivityOptions{
+	defaultAO := workflow.ActivityOptions{
 		StartToCloseTimeout: 30 * time.Second,
-		RetryPolicy:         retryPolicy,
+		RetryPolicy: &temporal.RetryPolicy{
+			InitialInterval:    time.Second,
+			BackoffCoefficient: 2.0,
+			MaximumInterval:    60 * time.Second,
+			MaximumAttempts:    3,
+		},
 	}
-	ctx = workflow.WithActivityOptions(ctx, ao)
+	ctx = workflow.WithActivityOptions(ctx, defaultAO)
 
 	// Step 1: Validate envelope
 	var validateResult ValidateEnvelopeResult
-	err := workflow.ExecuteActivity(ctx, ValidateEnvelopeActivity, ValidateEnvelopeInput(input)).Get(ctx, &validateResult)
+	err := workflow.ExecuteActivity(ctx, a.ValidateEnvelopeActivity, ValidateEnvelopeInput(input)).Get(ctx, &validateResult)
 	if err != nil {
 		return &MessageProcessingWorkflowResult{
 			WorkflowID:    "msg-" + input.MessageID,
@@ -60,7 +75,7 @@ func MessageProcessingWorkflow(ctx workflow.Context, input MessageProcessingWork
 		}, nil
 	}
 
-	// Step 2: Classify intent
+	// Step 2: Classify intent (deterministic parameters, fixed temperature)
 	classifyAO := workflow.ActivityOptions{
 		StartToCloseTimeout: 120 * time.Second,
 		RetryPolicy: &temporal.RetryPolicy{
@@ -71,9 +86,9 @@ func MessageProcessingWorkflow(ctx workflow.Context, input MessageProcessingWork
 			NonRetryableErrorTypes: []string{"ATTENTION_BUDGET_EXHAUSTED", "SCHEMA_VALIDATION_FAILED"},
 		},
 	}
-	ctx2 := workflow.WithActivityOptions(ctx, classifyAO)
+	ctxClassify := workflow.WithActivityOptions(ctx, classifyAO)
 	var classifyResult ClassifyIntentResult
-	err = workflow.ExecuteActivity(ctx2, ClassifyIntentActivity, ClassifyIntentInput{
+	err = workflow.ExecuteActivity(ctxClassify, a.ClassifyIntentActivity, ClassifyIntentInput{
 		MessageID:   input.MessageID,
 		WorkspaceID: input.WorkspaceID,
 		Payload:     validateResult.NormalizedPayload,
@@ -86,23 +101,101 @@ func MessageProcessingWorkflow(ctx workflow.Context, input MessageProcessingWork
 		}, nil
 	}
 
-	// Step 3: Generate plan
-	var planResult GeneratePlanResult
-	err = workflow.ExecuteActivity(ctx2, GeneratePlanActivity, GeneratePlanInput{
+	// Step 3: Retrieve memory (deterministic ordering: score DESC, ID ASC)
+	var memResult MemoryRetrieveResult
+	err = workflow.ExecuteActivity(ctx, a.RetrieveMemoryActivity, MemoryRetrieveInput{
 		MessageID:   input.MessageID,
 		WorkspaceID: input.WorkspaceID,
-		Intent:      classifyResult.Intent,
-		Confidence:  classifyResult.Confidence,
-	}).Get(ctx, &planResult)
+		Query:       validateResult.NormalizedPayload,
+		MaxItems:    10,
+	}).Get(ctx, &memResult)
+	if err != nil {
+		logger.Warn("memory retrieval failed, continuing without memory", "error", err)
+		memResult = MemoryRetrieveResult{Items: []MemoryItem{}}
+	}
+
+	// Step 4: RAG search (deterministic ordering: score DESC, ChunkID ASC)
+	var ragResult RAGSearchResult
+	err = workflow.ExecuteActivity(ctx, a.SearchRAGActivity, RAGSearchInput{
+		MessageID:   input.MessageID,
+		WorkspaceID: input.WorkspaceID,
+		Query:       validateResult.NormalizedPayload,
+		TopK:        5,
+	}).Get(ctx, &ragResult)
+	if err != nil {
+		logger.Warn("RAG search failed, continuing without RAG", "error", err)
+		ragResult = RAGSearchResult{Chunks: []RAGChunk{}}
+	}
+
+	// Step 5: Reasoning loop (PLANNER → EXECUTOR → CRITIC → REFLECTOR)
+	// Tool keys sorted lexically for replay determinism.
+	var reasoningResult ReasoningLoopResult
+	err = workflow.ExecuteActivity(ctxClassify, a.ExecuteReasoningLoopActivity, ReasoningLoopInput{
+		MessageID:     input.MessageID,
+		WorkspaceID:   input.WorkspaceID,
+		Intent:        classifyResult.Intent,
+		Confidence:    classifyResult.Confidence,
+		MemoryItems:   memResult.Items,
+		RAGChunks:     ragResult.Chunks,
+		ContextBudget: 4096,
+	}).Get(ctx, &reasoningResult)
 	if err != nil {
 		return &MessageProcessingWorkflowResult{
 			WorkflowID:    "msg-" + input.MessageID,
 			TerminalState: "FAILED",
-			Fallbacks:     []string{"plan_generation_failed"},
+			Fallbacks:     []string{"reasoning_loop_failed"},
 		}, nil
 	}
 
-	// Step 4: Authorize via Control plane (get receipt)
+	// Step 6: Cognitive assessment (metacognitive monitoring)
+	var cogResult CognitiveAssessResult
+	err = workflow.ExecuteActivity(ctx, a.AssessCognitiveStateActivity, CognitiveAssessInput{
+		MessageID:    input.MessageID,
+		WorkspaceID:  input.WorkspaceID,
+		TaskTokens:   reasoningResult.Iterations * 1024,
+		StepCount:    len(reasoningResult.ToolKeys),
+		ErrorCount:   0,
+		QualityScore: reasoningResult.QualityScore,
+	}).Get(ctx, &cogResult)
+	if err != nil {
+		logger.Warn("cognitive assessment failed, proceeding", "error", err)
+		cogResult = CognitiveAssessResult{Strategy: "proceed"}
+	}
+
+	// Step 7: Council evaluation (convenes for CRITICAL risk or high complexity)
+	complexity := float64(len(reasoningResult.ToolKeys)) / 5.0
+	if complexity > 1.0 {
+		complexity = 1.0
+	}
+	var councilResult CouncilEvalResult
+	err = workflow.ExecuteActivity(ctx, a.EvaluateCouncilActivity, CouncilEvalInput{
+		MessageID:   input.MessageID,
+		WorkspaceID: input.WorkspaceID,
+		PlanID:      reasoningResult.PlanID,
+		ToolKeys:    reasoningResult.ToolKeys,
+		RiskLevel:   reasoningResult.RiskLevel,
+		Complexity:  complexity,
+	}).Get(ctx, &councilResult)
+	if err != nil {
+		logger.Warn("council evaluation failed, proceeding with default", "error", err)
+		councilResult = CouncilEvalResult{Decision: "approve"}
+	}
+
+	// If cognitive assessment suggests abort, terminate.
+	if cogResult.Strategy == "abort" {
+		return &MessageProcessingWorkflowResult{
+			WorkflowID:          "msg-" + input.MessageID,
+			TerminalState:       "FAILED",
+			Fallbacks:           []string{"cognitive_abort"},
+			EvidenceHash:        reasoningResult.EvidenceHash,
+			MemoryItemCount:     len(memResult.Items),
+			RAGChunkCount:       len(ragResult.Chunks),
+			ReasoningIterations: reasoningResult.Iterations,
+			CouncilConvened:     councilResult.Convened,
+		}, nil
+	}
+
+	// Step 8: Authorize via Control plane (get receipt)
 	authorizeAO := workflow.ActivityOptions{
 		StartToCloseTimeout: 5 * time.Second,
 		RetryPolicy: &temporal.RetryPolicy{
@@ -113,24 +206,29 @@ func MessageProcessingWorkflow(ctx workflow.Context, input MessageProcessingWork
 			NonRetryableErrorTypes: []string{"POLICY_DENY", "KILL_SWITCH_ACTIVE"},
 		},
 	}
-	ctx3 := workflow.WithActivityOptions(ctx, authorizeAO)
+	ctxAuth := workflow.WithActivityOptions(ctx, authorizeAO)
 	var authResult AuthorizePlanResult
-	err = workflow.ExecuteActivity(ctx3, AuthorizePlanActivity, AuthorizePlanInput{
+	err = workflow.ExecuteActivity(ctxAuth, a.AuthorizePlanActivity, AuthorizePlanInput{
 		MessageID:   input.MessageID,
 		WorkspaceID: input.WorkspaceID,
-		PlanID:      planResult.PlanID,
-		ToolKeys:    planResult.ToolKeys,
-		RiskLevel:   planResult.RiskLevel,
+		PlanID:      reasoningResult.PlanID,
+		ToolKeys:    reasoningResult.ToolKeys,
+		RiskLevel:   reasoningResult.RiskLevel,
 	}).Get(ctx, &authResult)
 	if err != nil || authResult.Decision == "deny" {
 		return &MessageProcessingWorkflowResult{
-			WorkflowID:    "msg-" + input.MessageID,
-			TerminalState: "FAILED",
-			Fallbacks:     []string{"authorization_denied"},
+			WorkflowID:          "msg-" + input.MessageID,
+			TerminalState:       "FAILED",
+			Fallbacks:           []string{"authorization_denied"},
+			EvidenceHash:        reasoningResult.EvidenceHash,
+			MemoryItemCount:     len(memResult.Items),
+			RAGChunkCount:       len(ragResult.Chunks),
+			ReasoningIterations: reasoningResult.Iterations,
+			CouncilConvened:     councilResult.Convened,
 		}, nil
 	}
 
-	// Step 5: Execute tools (simulate -> commit)
+	// Step 9: Execute tools (simulate → commit per tool, lexically ordered)
 	executeAO := workflow.ActivityOptions{
 		StartToCloseTimeout: 30 * time.Second,
 		RetryPolicy: &temporal.RetryPolicy{
@@ -141,13 +239,29 @@ func MessageProcessingWorkflow(ctx workflow.Context, input MessageProcessingWork
 			NonRetryableErrorTypes: []string{"IDEMPOTENCY_CONFLICT", "AUTH_EXPIRED", "BUDGET_EXHAUSTED"},
 		},
 	}
-	ctx4 := workflow.WithActivityOptions(ctx, executeAO)
+	ctxExec := workflow.WithActivityOptions(ctx, executeAO)
 
 	var execResults []ToolExecutionActivityResult
 	compensationNeeded := false
-	for _, toolKey := range planResult.ToolKeys {
+	for i, toolKey := range reasoningResult.ToolKeys {
+		// Deterministic jitter between tool executions for replay safety.
+		if i > 0 {
+			wfInfo := workflow.GetInfo(ctx)
+			jitter := ComputeDeterministicBackoff(
+				DeterministicJitterConfig{
+					BaseBackoff:    50 * time.Millisecond,
+					MaxBackoff:     500 * time.Millisecond,
+					JitterWindowMs: 200,
+				},
+				wfInfo.WorkflowExecution.ID,
+				"ExecuteToolActivity",
+				i,
+			)
+			_ = workflow.Sleep(ctx, jitter)
+		}
+
 		var execResult ToolExecutionActivityResult
-		err = workflow.ExecuteActivity(ctx4, ExecuteToolActivity, ExecuteToolInput{
+		err = workflow.ExecuteActivity(ctxExec, a.ExecuteToolActivity, ExecuteToolInput{
 			MessageID:      input.MessageID,
 			WorkspaceID:    input.WorkspaceID,
 			ToolKey:        toolKey,
@@ -161,7 +275,7 @@ func MessageProcessingWorkflow(ctx workflow.Context, input MessageProcessingWork
 		execResults = append(execResults, execResult)
 	}
 
-	// Step 6: Synthesize response
+	// Step 10: Synthesize response
 	synthesizeAO := workflow.ActivityOptions{
 		StartToCloseTimeout: 60 * time.Second,
 		RetryPolicy: &temporal.RetryPolicy{
@@ -172,35 +286,62 @@ func MessageProcessingWorkflow(ctx workflow.Context, input MessageProcessingWork
 			NonRetryableErrorTypes: []string{"ATTENTION_BUDGET_EXHAUSTED"},
 		},
 	}
-	ctx5 := workflow.WithActivityOptions(ctx, synthesizeAO)
+	ctxSynth := workflow.WithActivityOptions(ctx, synthesizeAO)
 	var synthResult SynthesizeResponseResult
-	err = workflow.ExecuteActivity(ctx5, SynthesizeResponseActivity, SynthesizeResponseInput{
+	err = workflow.ExecuteActivity(ctxSynth, a.SynthesizeResponseActivity, SynthesizeResponseInput{
 		MessageID:   input.MessageID,
 		WorkspaceID: input.WorkspaceID,
 		ToolResults: execResults,
 	}).Get(ctx, &synthResult)
 	if err != nil {
 		return &MessageProcessingWorkflowResult{
-			WorkflowID:         "msg-" + input.MessageID,
-			TerminalState:      "FAILED",
-			CompensationNeeded: compensationNeeded,
+			WorkflowID:          "msg-" + input.MessageID,
+			TerminalState:       "FAILED",
+			CompensationNeeded:  compensationNeeded,
+			EvidenceHash:        reasoningResult.EvidenceHash,
+			MemoryItemCount:     len(memResult.Items),
+			RAGChunkCount:       len(ragResult.Chunks),
+			ReasoningIterations: reasoningResult.Iterations,
+			CouncilConvened:     councilResult.Convened,
 		}, nil
 	}
 
+	// Step 11: Enqueue outbox event for downstream consumption
+	var outboxResult OutboxEnqueueResult
+	err = workflow.ExecuteActivity(ctx, a.EnqueueOutboxActivity, OutboxEnqueueInput{
+		WorkspaceID: input.WorkspaceID,
+		EventType:   "BREVIO.message.processed.v1",
+		Payload:     synthResult.ResponsePayload,
+		Target:      input.ChannelType,
+	}).Get(ctx, &outboxResult)
+	if err != nil {
+		logger.Warn("outbox enqueue failed", "error", err)
+	}
+
 	return &MessageProcessingWorkflowResult{
-		WorkflowID:         "msg-" + input.MessageID,
-		TerminalState:      "COMPLETED",
-		ResponsePayload:    synthResult.ResponsePayload,
-		CompensationNeeded: compensationNeeded,
+		WorkflowID:          "msg-" + input.MessageID,
+		TerminalState:       "COMPLETED",
+		ResponsePayload:     synthResult.ResponsePayload,
+		CompensationNeeded:  compensationNeeded,
+		EvidenceHash:        reasoningResult.EvidenceHash,
+		MemoryItemCount:     len(memResult.Items),
+		RAGChunkCount:       len(ragResult.Chunks),
+		ReasoningIterations: reasoningResult.Iterations,
+		CouncilConvened:     councilResult.Convened,
+		OutboxEntryID:       outboxResult.EntryID,
 	}, nil
 }
 
-// OutboxDispatchWorkflow processes pending outbox entries.
+// OutboxDispatchWorkflow processes pending outbox entries with DLQ semantics.
+// Failed entries that exceed max_attempts are moved to the dead-letter queue.
+// Uses deterministic jitter (D07) for retry backoff timing.
 func OutboxDispatchWorkflow(ctx workflow.Context, input OutboxDispatchInput) (*OutboxDispatchResult, error) {
 	logger := workflow.GetLogger(ctx)
 	logger.Info("OutboxDispatchWorkflow started", "batchSize", input.BatchSize)
 
-	ao := workflow.ActivityOptions{
+	var a *Activities
+
+	fetchAO := workflow.ActivityOptions{
 		StartToCloseTimeout: 30 * time.Second,
 		RetryPolicy: &temporal.RetryPolicy{
 			InitialInterval:    time.Second,
@@ -209,33 +350,70 @@ func OutboxDispatchWorkflow(ctx workflow.Context, input OutboxDispatchInput) (*O
 			MaximumAttempts:    5,
 		},
 	}
-	ctx = workflow.WithActivityOptions(ctx, ao)
+	ctx = workflow.WithActivityOptions(ctx, fetchAO)
 
 	var fetchResult OutboxFetchResult
-	err := workflow.ExecuteActivity(ctx, FetchPendingOutboxActivity, input).Get(ctx, &fetchResult)
+	err := workflow.ExecuteActivity(ctx, a.FetchPendingOutboxActivity, input).Get(ctx, &fetchResult)
 	if err != nil {
 		return nil, err
 	}
 
+	// Dispatch each entry individually. The activity handles mark-dispatched/mark-failed
+	// and DLQ promotion internally via the outbox service.
+	dispatchAO := workflow.ActivityOptions{
+		StartToCloseTimeout: 30 * time.Second,
+		RetryPolicy: &temporal.RetryPolicy{
+			InitialInterval:    time.Second,
+			BackoffCoefficient: 2.0,
+			MaximumInterval:    30 * time.Second,
+			MaximumAttempts:    1, // No Temporal-level retry; outbox service manages retries.
+		},
+	}
+	dispatchCtx := workflow.WithActivityOptions(ctx, dispatchAO)
+
 	dispatched := 0
-	for _, entry := range fetchResult.Entries {
+	dlqCount := 0
+	for i, entry := range fetchResult.Entries {
+		// Apply deterministic jitter between dispatches to avoid thundering herd.
+		if i > 0 {
+			wfInfo := workflow.GetInfo(ctx)
+			jitterDuration := ComputeDeterministicBackoff(
+				DeterministicJitterConfig{
+					BaseBackoff:    100 * time.Millisecond,
+					MaxBackoff:     2 * time.Second,
+					JitterWindowMs: 500,
+				},
+				wfInfo.WorkflowExecution.ID,
+				"DispatchOutboxEntryActivity",
+				i,
+			)
+			_ = workflow.Sleep(ctx, jitterDuration)
+		}
+
 		var dispatchResult OutboxEntryDispatchResult
-		err = workflow.ExecuteActivity(ctx, DispatchOutboxEntryActivity, entry).Get(ctx, &dispatchResult)
+		err = workflow.ExecuteActivity(dispatchCtx, a.DispatchOutboxEntryActivity, entry).Get(ctx, &dispatchResult)
 		if err != nil {
 			logger.Warn("outbox entry dispatch failed", "entryID", entry.ID, "error", err)
 			continue
 		}
-		dispatched++
+		if dispatchResult.DLQ {
+			dlqCount++
+			logger.Warn("outbox entry moved to DLQ", "entryID", entry.ID)
+		} else if dispatchResult.Success {
+			dispatched++
+		}
 	}
 
 	return &OutboxDispatchResult{
 		TotalFetched:    len(fetchResult.Entries),
 		TotalDispatched: dispatched,
+		TotalDLQ:        dlqCount,
 	}, nil
 }
 
 // ToolHealthEvaluationWorkflow evaluates tool health scores periodically.
 func ToolHealthEvaluationWorkflow(ctx workflow.Context, input ToolHealthEvalInput) (*ToolHealthEvalResult, error) {
+	var a *Activities
 	ao := workflow.ActivityOptions{
 		StartToCloseTimeout: 15 * time.Second,
 		RetryPolicy: &temporal.RetryPolicy{
@@ -248,7 +426,7 @@ func ToolHealthEvaluationWorkflow(ctx workflow.Context, input ToolHealthEvalInpu
 	ctx = workflow.WithActivityOptions(ctx, ao)
 
 	var result ToolHealthEvalResult
-	err := workflow.ExecuteActivity(ctx, EvaluateToolHealthActivity, input).Get(ctx, &result)
+	err := workflow.ExecuteActivity(ctx, a.EvaluateToolHealthActivity, input).Get(ctx, &result)
 	if err != nil {
 		return nil, err
 	}
@@ -260,6 +438,7 @@ func OnboardingWorkflow(ctx workflow.Context, input OnboardingWorkflowInput) (*O
 	logger := workflow.GetLogger(ctx)
 	logger.Info("OnboardingWorkflow started", "workspaceID", input.WorkspaceID)
 
+	var a *Activities
 	ao := workflow.ActivityOptions{
 		StartToCloseTimeout: 120 * time.Second,
 		RetryPolicy: &temporal.RetryPolicy{
@@ -281,7 +460,7 @@ func OnboardingWorkflow(ctx workflow.Context, input OnboardingWorkflowInput) (*O
 	completedStages := make([]string, 0, len(stages))
 	for _, stage := range stages {
 		var stageResult OnboardingStageResult
-		err := workflow.ExecuteActivity(ctx, ExecuteOnboardingStageActivity, OnboardingStageInput{
+		err := workflow.ExecuteActivity(ctx, a.ExecuteOnboardingStageActivity, OnboardingStageInput{
 			WorkspaceID: input.WorkspaceID,
 			Stage:       stage,
 			Answers:     input.Answers,
@@ -303,6 +482,7 @@ func OnboardingWorkflow(ctx workflow.Context, input OnboardingWorkflowInput) (*O
 
 // CostRollupWorkflow aggregates cost events into rollups.
 func CostRollupWorkflow(ctx workflow.Context, input CostRollupInput) (*CostRollupResult, error) {
+	var a *Activities
 	ao := workflow.ActivityOptions{
 		StartToCloseTimeout: 60 * time.Second,
 		RetryPolicy: &temporal.RetryPolicy{
@@ -315,7 +495,7 @@ func CostRollupWorkflow(ctx workflow.Context, input CostRollupInput) (*CostRollu
 	ctx = workflow.WithActivityOptions(ctx, ao)
 
 	var result CostRollupResult
-	err := workflow.ExecuteActivity(ctx, AggregateCostsActivity, input).Get(ctx, &result)
+	err := workflow.ExecuteActivity(ctx, a.AggregateCostsActivity, input).Get(ctx, &result)
 	if err != nil {
 		return nil, err
 	}
@@ -324,6 +504,7 @@ func CostRollupWorkflow(ctx workflow.Context, input CostRollupInput) (*CostRollu
 
 // KillSwitchWorkflow halts all workspace workflows when kill switch is activated.
 func KillSwitchWorkflow(ctx workflow.Context, input KillSwitchInput) (*KillSwitchResult, error) {
+	var a *Activities
 	ao := workflow.ActivityOptions{
 		StartToCloseTimeout: 10 * time.Second,
 		RetryPolicy: &temporal.RetryPolicy{
@@ -336,7 +517,7 @@ func KillSwitchWorkflow(ctx workflow.Context, input KillSwitchInput) (*KillSwitc
 	ctx = workflow.WithActivityOptions(ctx, ao)
 
 	var result KillSwitchResult
-	err := workflow.ExecuteActivity(ctx, ActivateKillSwitchActivity, input).Get(ctx, &result)
+	err := workflow.ExecuteActivity(ctx, a.ActivateKillSwitchActivity, input).Get(ctx, &result)
 	if err != nil {
 		return nil, err
 	}

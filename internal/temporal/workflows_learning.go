@@ -38,9 +38,11 @@ func LearningConsolidationWorkflow(ctx workflow.Context, input LearningConsolida
 	}
 	ctx = workflow.WithActivityOptions(ctx, ao)
 
+	var a *Activities
+
 	// Step 1: Cluster corrections into lesson candidates
 	var clusterResult ClusterCorrectionsResult
-	err := workflow.ExecuteActivity(ctx, ClusterCorrectionsActivity, ClusterCorrectionsInput{
+	err := workflow.ExecuteActivity(ctx, a.ClusterCorrectionsActivity, ClusterCorrectionsInput{
 		WorkspaceID: input.WorkspaceID,
 		BatchSize:   input.BatchSize,
 	}).Get(ctx, &clusterResult)
@@ -50,7 +52,7 @@ func LearningConsolidationWorkflow(ctx workflow.Context, input LearningConsolida
 
 	// Step 2: Detect conflicts among lessons
 	var detectResult DetectConflictsResult
-	err = workflow.ExecuteActivity(ctx, DetectConflictsActivity, DetectConflictsInput{
+	err = workflow.ExecuteActivity(ctx, a.DetectConflictsActivity, DetectConflictsInput{
 		WorkspaceID: input.WorkspaceID,
 	}).Get(ctx, &detectResult)
 	if err != nil {
@@ -61,7 +63,7 @@ func LearningConsolidationWorkflow(ctx workflow.Context, input LearningConsolida
 	resolved := 0
 	for _, conflictID := range detectResult.RedundantConflictIDs {
 		var resolveResult ResolveConflictResult
-		err = workflow.ExecuteActivity(ctx, ResolveConflictActivity, ResolveConflictInput{
+		err = workflow.ExecuteActivity(ctx, a.ResolveConflictActivity, ResolveConflictInput{
 			ConflictID: conflictID,
 			Resolution: "keep_a",
 		}).Get(ctx, &resolveResult)
@@ -72,7 +74,7 @@ func LearningConsolidationWorkflow(ctx workflow.Context, input LearningConsolida
 
 	// Step 4: Propose rules from confirmed lessons
 	var proposeResult ProposeRulesResult
-	err = workflow.ExecuteActivity(ctx, ProposeRulesActivity, ProposeRulesInput{
+	err = workflow.ExecuteActivity(ctx, a.ProposeRulesActivity, ProposeRulesInput{
 		WorkspaceID: input.WorkspaceID,
 	}).Get(ctx, &proposeResult)
 	if err != nil {

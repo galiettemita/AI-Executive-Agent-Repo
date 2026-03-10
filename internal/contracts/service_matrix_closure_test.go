@@ -34,9 +34,9 @@ func TestServiceBuildMatrixClosure(t *testing.T) {
 		"docker build",
 	})
 
-	ciPath := filepath.Join(root, ".github", "workflows", "ci.yaml")
+	ciPath := filepath.Join(root, ".github", "workflows", "ci.yml")
 	assertFileContainsTokens(t, ciPath, []string{
-		"docker build",
+		"make docker-build",
 	})
 
 	dockerfilePath := filepath.Join(root, "Dockerfile")

@@ -235,45 +235,5 @@ func (a *V91Activities) AnalyzeCapabilityGapsActivity(_ context.Context, input A
 	}, nil
 }
 
-// Standalone activity functions that delegate to the V91Activities struct methods.
-// These are used as activity references in workflow registrations.
-
-func CollectTrustMetricsActivity(ctx context.Context, input CollectTrustMetricsInput) (*CollectTrustMetricsResult, error) {
-	return NewV91Activities().CollectTrustMetricsActivity(ctx, input)
-}
-
-func ComputeTrustScoreActivity(ctx context.Context, input ComputeTrustScoreInput) (*ComputeTrustScoreResult, error) {
-	return NewV91Activities().ComputeTrustScoreActivity(ctx, input)
-}
-
-func ReviewGoalsActivity(ctx context.Context, input ReviewGoalsInput) (*ReviewGoalsResult, error) {
-	return NewV91Activities().ReviewGoalsActivity(ctx, input)
-}
-
-func ConsolidateFeedbackActivity(ctx context.Context, input ConsolidateFeedbackInput) (*ConsolidateFeedbackResult, error) {
-	return NewV91Activities().ConsolidateFeedbackActivity(ctx, input)
-}
-
-func SummarizeDailyActivity(ctx context.Context, input SummarizeDailyInput) (*SummarizeDailyResult, error) {
-	return NewV91Activities().SummarizeDailyActivity(ctx, input)
-}
-
-func AppendDailyLogActivity(ctx context.Context, input AppendDailyLogInput) (*AppendDailyLogResult, error) {
-	return NewV91Activities().AppendDailyLogActivity(ctx, input)
-}
-
-func CollectDependencyGraphActivity(ctx context.Context, input CollectDependencyGraphInput) (*CollectDependencyGraphResult, error) {
-	return NewV91Activities().CollectDependencyGraphActivity(ctx, input)
-}
-
-func DetectSharedPatternsActivity(ctx context.Context, input DetectSharedPatternsInput) (*DetectSharedPatternsResult, error) {
-	return NewV91Activities().DetectSharedPatternsActivity(ctx, input)
-}
-
-func RefreshWidgetsActivity(ctx context.Context, input RefreshWidgetsInput) (*RefreshWidgetsResult, error) {
-	return NewV91Activities().RefreshWidgetsActivity(ctx, input)
-}
-
-func AnalyzeCapabilityGapsActivity(ctx context.Context, input AnalyzeCapabilityGapsInput) (*AnalyzeCapabilityGapsResult, error) {
-	return NewV91Activities().AnalyzeCapabilityGapsActivity(ctx, input)
-}
+// Standalone wrapper functions have been removed.
+// Activities are registered as methods on V91Activities via the worker.

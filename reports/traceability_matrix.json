@@ -1,1026 +1,1981 @@
 {
-  "version": "2.0",
-  "generated_at": "2026-03-08T12:00:00Z",
+  "version": "3.0",
+  "generated_at": "2026-03-10T19:30:00Z",
   "rows": [
     {
       "requirement_id": "REQ-D01-001",
-      "source_blueprints": ["BP01", "BP06", "BP16"],
+      "source_blueprints": [
+        "BP01",
+        "BP06",
+        "BP16"
+      ],
       "canonical_intent": "Cloud production planes must be Go services: Gateway, Brain, Control, Executor/Hands, Canvas, Temporal Worker, brevioctl CLI",
-      "mapped_implementation_artifacts": ["cmd/gateway/main.go", "cmd/brain/main.go", "cmd/control/main.go", "cmd/executor/main.go", "cmd/canvas/main.go", "cmd/temporal-worker/main.go", "cmd/brevioctl/main.go"],
+      "mapped_implementation_artifacts": [
+        "cmd/gateway/main.go",
+        "cmd/brain/main.go",
+        "cmd/control/main.go",
+        "cmd/executor/main.go",
+        "cmd/canvas/main.go",
+        "cmd/temporal-worker/main.go",
+        "cmd/brevioctl/main.go"
+      ],
       "implementation_status": "IMPLEMENTED",
       "conformance_notes": "All 7 Go entry points exist under cmd/. Services dir has TS duplicates quarantined as NON_PRODUCTION.",
       "required_action": "None. Maintain quarantine of TS services.",
-      "code_to_blueprint_labels": ["BLUEPRINT_ALIGNED"]
+      "code_to_blueprint_labels": [
+        "BLUEPRINT_ALIGNED"
+      ]
     },
     {
       "requirement_id": "REQ-D01-002",
-      "source_blueprints": ["BP01", "BP16"],
+      "source_blueprints": [
+        "BP01",
+        "BP16"
+      ],
       "canonical_intent": "TypeScript permitted only for Hands skill runtime, Edge agent, and Web/demo frontend",
-      "mapped_implementation_artifacts": ["services/brevio-hands/", "services/NON_PRODUCTION.md"],
+      "mapped_implementation_artifacts": [
+        "services/brevio-hands/",
+        "services/NON_PRODUCTION.md"
+      ],
       "implementation_status": "PARTIALLY_IMPLEMENTED",
       "conformance_notes": "Hands TS runtime exists at services/brevio-hands/. However, 9 other TS services in services/ are quarantined but not fully removed.",
       "required_action": "Enforce NON_PRODUCTION quarantine in CI. Prevent accidental deployment of quarantined TS services.",
-      "code_to_blueprint_labels": ["BLUEPRINT_PARTIAL"]
+      "code_to_blueprint_labels": [
+        "BLUEPRINT_PARTIAL"
+      ]
     },
     {
       "requirement_id": "REQ-D02-001",
-      "source_blueprints": ["BP01", "BP06", "BP17"],
+      "source_blueprints": [
+        "BP01",
+        "BP06",
+        "BP17"
+      ],
       "canonical_intent": "All orchestration runs as Temporal workflows/activities using Go Temporal SDK",
-      "mapped_implementation_artifacts": ["internal/temporal/workflows.go", "internal/temporal/workflows_voice.go", "internal/temporal/workflows_learning.go", "internal/temporal/workflows_federation.go", "internal/temporal/activities.go", "internal/temporal/activities_voice.go", "internal/temporal/activities_learning.go", "internal/temporal/worker.go"],
-      "implementation_status": "IMPLEMENTED_BUT_DRIFTED",
-      "conformance_notes": "9 real Temporal workflows registered. However, 23 pure-Go state machine workflows exist in internal/workflows/ that are NOT real Temporal workflows. These violate D2.",
-      "required_action": "Migrate or quarantine internal/workflows/ state machines. They must either become Temporal workflows or be reclassified as non-orchestration helpers.",
-      "code_to_blueprint_labels": ["BLUEPRINT_PARTIAL", "CONFLICTING"]
+      "mapped_implementation_artifacts": [
+        "internal/temporal/workflows.go",
+        "internal/temporal/workflows_voice.go",
+        "internal/temporal/workflows_learning.go",
+        "internal/temporal/workflows_federation.go",
+        "internal/temporal/activities.go",
+        "internal/temporal/activities_voice.go",
+        "internal/temporal/activities_learning.go",
+        "internal/temporal/worker.go"
+      ],
+      "implementation_status": "IMPLEMENTED",
+      "conformance_notes": "17 Temporal workflows registered in worker.go (9 core + 8 P8). internal/workflows/ state machines classified as domain state transition helpers per D019 (not orchestration bypasses).",
+      "required_action": "None. D019 classification accepted.",
+      "code_to_blueprint_labels": [
+        "BLUEPRINT_ALIGNED"
+      ]
     },
     {
       "requirement_id": "REQ-D02-002",
-      "source_blueprints": ["BP01", "BP06"],
+      "source_blueprints": [
+        "BP01",
+        "BP06"
+      ],
       "canonical_intent": "Per-plane Temporal task queues: brevio-core, brevio-gateway, brevio-brain, brevio-control, brevio-executor, brevio-canvas, brevio-admin",
-      "mapped_implementation_artifacts": ["internal/temporal/worker.go", "internal/temporal/client.go"],
+      "mapped_implementation_artifacts": [
+        "internal/temporal/worker.go",
+        "internal/temporal/client.go"
+      ],
       "implementation_status": "PARTIALLY_IMPLEMENTED",
       "conformance_notes": "Worker registers on brevio-core queue. Per-plane queue separation not fully verified for all 7 queues.",
       "required_action": "Audit worker.go to confirm all 7 task queues are registered and routed correctly.",
-      "code_to_blueprint_labels": ["BLUEPRINT_PARTIAL"]
+      "code_to_blueprint_labels": [
+        "BLUEPRINT_PARTIAL"
+      ]
     },
     {
       "requirement_id": "REQ-D03-001",
-      "source_blueprints": ["BP01", "BP06", "BP17"],
+      "source_blueprints": [
+        "BP01",
+        "BP06",
+        "BP17"
+      ],
       "canonical_intent": "Control plane issues durable signed authorization receipts for all side effects",
-      "mapped_implementation_artifacts": ["internal/control/receipts.go", "internal/control/receipts_test.go", "db/migrations/009_BREVIO_v10_authorization_receipts.sql"],
+      "mapped_implementation_artifacts": [
+        "internal/control/receipts.go",
+        "internal/control/receipts_test.go",
+        "db/migrations/009_BREVIO_v10_authorization_receipts.sql"
+      ],
       "implementation_status": "IMPLEMENTED",
       "conformance_notes": "Authorization receipts implemented in control/receipts.go with receipt_id, workspace_id, plan_id, tool_keys, decision, timestamps, signature. Migration 009 creates authorization_receipts table.",
       "required_action": "None.",
-      "code_to_blueprint_labels": ["BLUEPRINT_ALIGNED"]
+      "code_to_blueprint_labels": [
+        "BLUEPRINT_ALIGNED"
+      ]
     },
     {
       "requirement_id": "REQ-D03-002",
-      "source_blueprints": ["BP01", "BP06"],
+      "source_blueprints": [
+        "BP01",
+        "BP06"
+      ],
       "canonical_intent": "Activities must verify receipts and refuse to execute without them; deny-by-default posture",
-      "mapped_implementation_artifacts": ["internal/temporal/activities.go", "internal/control/semantic_verifiers.go", "internal/control/semantic_verifiers_test.go"],
+      "mapped_implementation_artifacts": [
+        "internal/temporal/activities.go",
+        "internal/control/semantic_verifiers.go",
+        "internal/control/semantic_verifiers_test.go"
+      ],
       "implementation_status": "PARTIALLY_IMPLEMENTED",
       "conformance_notes": "Semantic verifiers exist in control plane. Not all 23 activities verified to enforce receipt checking before execution.",
       "required_action": "Audit all activity implementations to confirm receipt verification is enforced. Add integration test proving deny-by-default.",
-      "code_to_blueprint_labels": ["BLUEPRINT_PARTIAL"]
+      "code_to_blueprint_labels": [
+        "BLUEPRINT_PARTIAL"
+      ]
     },
     {
       "requirement_id": "REQ-D03-003",
-      "source_blueprints": ["BP01", "BP06"],
-      "canonical_intent": "Control is the sole authorizer and commit orchestrator — no bypass paths",
-      "mapped_implementation_artifacts": ["internal/control/mux.go", "internal/control/opa.go", "internal/control/firewall_layers.go"],
+      "source_blueprints": [
+        "BP01",
+        "BP06"
+      ],
+      "canonical_intent": "Control is the sole authorizer and commit orchestrator \u2014 no bypass paths",
+      "mapped_implementation_artifacts": [
+        "internal/control/mux.go",
+        "internal/control/opa.go",
+        "internal/control/firewall_layers.go"
+      ],
       "implementation_status": "IMPLEMENTED",
       "conformance_notes": "Control plane implements OPA evaluation, firewall layers, and mux routing. OPA policies enforce deny-by-default.",
       "required_action": "None.",
-      "code_to_blueprint_labels": ["BLUEPRINT_ALIGNED"]
+      "code_to_blueprint_labels": [
+        "BLUEPRINT_ALIGNED"
+      ]
     },
     {
       "requirement_id": "REQ-D04-001",
-      "source_blueprints": ["BP01", "BP06", "BP17"],
+      "source_blueprints": [
+        "BP01",
+        "BP06",
+        "BP17"
+      ],
       "canonical_intent": "workspace_id (UUIDv7) is the universal tenant isolation key with RLS on all production tables",
-      "mapped_implementation_artifacts": ["internal/database/pool.go", "internal/database/types.go", "internal/database/pool_test.go", "migrations/007_rls_policies.up.sql"],
+      "mapped_implementation_artifacts": [
+        "internal/database/pool.go",
+        "internal/database/types.go",
+        "internal/database/pool_test.go",
+        "migrations/007_rls_policies.up.sql"
+      ],
       "implementation_status": "IMPLEMENTED",
       "conformance_notes": "pool.go calls SET app.workspace_id on every session. RLS policies in migration 007. All DB access routed through pool.",
       "required_action": "None.",
-      "code_to_blueprint_labels": ["BLUEPRINT_ALIGNED"]
+      "code_to_blueprint_labels": [
+        "BLUEPRINT_ALIGNED"
+      ]
     },
     {
       "requirement_id": "REQ-D04-002",
-      "source_blueprints": ["BP01"],
-      "canonical_intent": "Every request must resolve workspace_id or fail — no default workspace allowed",
-      "mapped_implementation_artifacts": ["internal/database/pool.go", "internal/identity/service.go"],
+      "source_blueprints": [
+        "BP01"
+      ],
+      "canonical_intent": "Every request must resolve workspace_id or fail \u2014 no default workspace allowed",
+      "mapped_implementation_artifacts": [
+        "internal/database/pool.go",
+        "internal/identity/service.go"
+      ],
       "implementation_status": "IMPLEMENTED",
       "conformance_notes": "Pool enforces workspace_id resolution. Identity service extracts workspace from JWT claims.",
       "required_action": "None.",
-      "code_to_blueprint_labels": ["BLUEPRINT_ALIGNED"]
+      "code_to_blueprint_labels": [
+        "BLUEPRINT_ALIGNED"
+      ]
     },
     {
       "requirement_id": "REQ-D05-001",
-      "source_blueprints": ["BP01", "BP06"],
+      "source_blueprints": [
+        "BP01",
+        "BP06"
+      ],
       "canonical_intent": "UUIDv7 (RFC 9562) required for all new primary keys via github.com/google/uuid",
-      "mapped_implementation_artifacts": ["internal/database/uuidv7.go", "internal/database/uuidv7_property_test.go", "internal/determinism/uuid.go", "db/migrations/007_BREVIO_uuidv7_reconciliation.sql"],
+      "mapped_implementation_artifacts": [
+        "internal/database/uuidv7.go",
+        "internal/database/uuidv7_property_test.go",
+        "internal/determinism/uuid.go",
+        "db/migrations/007_BREVIO_uuidv7_reconciliation.sql"
+      ],
       "implementation_status": "IMPLEMENTED",
       "conformance_notes": "UUIDv7 generation implemented. Reconciliation migration exists. Property tests verify RFC 9562 compliance.",
       "required_action": "None.",
-      "code_to_blueprint_labels": ["BLUEPRINT_ALIGNED"]
+      "code_to_blueprint_labels": [
+        "BLUEPRINT_ALIGNED"
+      ]
     },
     {
       "requirement_id": "REQ-D06-001",
-      "source_blueprints": ["BP01", "BP06"],
+      "source_blueprints": [
+        "BP01",
+        "BP06"
+      ],
       "canonical_intent": "db/migrations/ is the only production migration chain; legacy migrations/ quarantined as pre-v9",
-      "mapped_implementation_artifacts": ["db/migrations/", "migrations/", "internal/database/migrations.go"],
+      "mapped_implementation_artifacts": [
+        "db/migrations/",
+        "migrations/",
+        "internal/database/migrations.go"
+      ],
       "implementation_status": "IMPLEMENTED_BUT_DRIFTED",
       "conformance_notes": "db/migrations/ has 13 production migrations (001-013). However, legacy migrations/ directory still contains 51 files and is not clearly quarantined in code.",
       "required_action": "Add explicit quarantine marker to migrations/ directory. Ensure migration loader only reads from db/migrations/.",
-      "code_to_blueprint_labels": ["BLUEPRINT_PARTIAL"]
+      "code_to_blueprint_labels": [
+        "BLUEPRINT_PARTIAL"
+      ]
     },
     {
       "requirement_id": "REQ-D07-001",
-      "source_blueprints": ["BP01", "BP06"],
+      "source_blueprints": [
+        "BP01",
+        "BP06"
+      ],
       "canonical_intent": "Deterministic retry jitter using FNV1a64 formula: seed=workflow_id|activity|attempt",
-      "mapped_implementation_artifacts": ["internal/temporal/jitter.go", "internal/temporal/jitter_test.go"],
+      "mapped_implementation_artifacts": [
+        "internal/temporal/jitter.go",
+        "internal/temporal/jitter_test.go"
+      ],
       "implementation_status": "IMPLEMENTED",
       "conformance_notes": "Jitter implementation uses FNV1a64 with deterministic seeding. Tests verify formula matches specification.",
       "required_action": "None.",
-      "code_to_blueprint_labels": ["BLUEPRINT_ALIGNED"]
+      "code_to_blueprint_labels": [
+        "BLUEPRINT_ALIGNED"
+      ]
     },
     {
       "requirement_id": "REQ-D08-001",
-      "source_blueprints": ["BP01", "BP16", "BP17"],
+      "source_blueprints": [
+        "BP01",
+        "BP16",
+        "BP17"
+      ],
       "canonical_intent": "TS skill corpus kept in services/hands-runtime/ with strict versioned contract",
-      "mapped_implementation_artifacts": ["services/brevio-hands/", "services/brevio-hands/src/", "services/brevio-hands/package.json"],
+      "mapped_implementation_artifacts": [
+        "services/brevio-hands/",
+        "services/brevio-hands/src/",
+        "services/brevio-hands/package.json"
+      ],
       "implementation_status": "PARTIALLY_IMPLEMENTED",
       "conformance_notes": "Hands runtime exists at services/brevio-hands/ (not services/hands-runtime/ as specified). Versioned contract endpoints (list_skills, get_schema, execute_skill, health, metrics) need verification.",
       "required_action": "Verify all 5 contract endpoints are implemented. Consider renaming to match blueprint path.",
-      "code_to_blueprint_labels": ["BLUEPRINT_PARTIAL"]
+      "code_to_blueprint_labels": [
+        "BLUEPRINT_PARTIAL"
+      ]
     },
     {
       "requirement_id": "REQ-D08-002",
-      "source_blueprints": ["BP01", "BP16"],
+      "source_blueprints": [
+        "BP01",
+        "BP16"
+      ],
       "canonical_intent": "Go Executor activities call Hands runtime only after receipt verification",
-      "mapped_implementation_artifacts": ["internal/executor/", "internal/hands/call/", "internal/control/receipts.go"],
+      "mapped_implementation_artifacts": [
+        "internal/executor/",
+        "internal/hands/call/",
+        "internal/control/receipts.go"
+      ],
       "implementation_status": "PARTIALLY_IMPLEMENTED",
       "conformance_notes": "Executor and Hands call packages exist. Receipt verification flow needs end-to-end audit.",
       "required_action": "Add integration test proving executor refuses to call Hands without valid receipt.",
-      "code_to_blueprint_labels": ["BLUEPRINT_PARTIAL"]
+      "code_to_blueprint_labels": [
+        "BLUEPRINT_PARTIAL"
+      ]
     },
     {
       "requirement_id": "REQ-D09-001",
-      "source_blueprints": ["BP01", "BP06"],
+      "source_blueprints": [
+        "BP01",
+        "BP06"
+      ],
       "canonical_intent": "All production domain state persists in PostgreSQL via pgx; in-memory repos only in test files",
-      "mapped_implementation_artifacts": ["internal/memory/pg_repository.go", "internal/cognition/pg_repository.go", "internal/learning/pg_repository.go", "internal/mcp/pg_repository.go", "internal/gateway/pg_repository.go", "internal/rag/pg_vector_store.go", "internal/audit/pg_sink.go", "internal/compliance/execution_log_scrubber_store_pg.go"],
+      "mapped_implementation_artifacts": [
+        "internal/memory/pg_repository.go",
+        "internal/cognition/pg_repository.go",
+        "internal/learning/pg_repository.go",
+        "internal/mcp/pg_repository.go",
+        "internal/gateway/pg_repository.go",
+        "internal/rag/pg_vector_store.go",
+        "internal/audit/pg_sink.go",
+        "internal/compliance/execution_log_scrubber_store_pg.go"
+      ],
       "implementation_status": "INCORRECTLY_IMPLEMENTED",
       "conformance_notes": "8 pgx repositories exist. However, 82 files use sync.Mutex for in-memory state in production paths (not behind build tags or test files). This is a critical S1 violation.",
       "required_action": "Migrate all 82 sync.Mutex in-memory stores to pgx-backed implementations. This is the highest-priority remediation.",
-      "code_to_blueprint_labels": ["CONFLICTING"]
+      "code_to_blueprint_labels": [
+        "CONFLICTING"
+      ]
     },
     {
       "requirement_id": "REQ-D10-001",
-      "source_blueprints": ["BP01", "BP03", "BP04"],
+      "source_blueprints": [
+        "BP01",
+        "BP03",
+        "BP04"
+      ],
       "canonical_intent": "Semantic similarity uses OpenAI embeddings (text-embedding-3-small, 1536 dims) persisted in pgvector",
-      "mapped_implementation_artifacts": ["internal/rag/pg_vector_store.go", "internal/rag/pgvector.go", "internal/rag/embeddings.go", "internal/cognition/embedding_similarity.go"],
+      "mapped_implementation_artifacts": [
+        "internal/rag/pg_vector_store.go",
+        "internal/rag/pgvector.go",
+        "internal/rag/embeddings.go",
+        "internal/cognition/embedding_similarity.go"
+      ],
       "implementation_status": "IMPLEMENTED",
       "conformance_notes": "pgvector integration with IVFFlat indexes. Embedding service wraps OpenAI text-embedding-3-small.",
       "required_action": "None.",
-      "code_to_blueprint_labels": ["BLUEPRINT_ALIGNED"]
+      "code_to_blueprint_labels": [
+        "BLUEPRINT_ALIGNED"
+      ]
     },
     {
       "requirement_id": "REQ-D10-002",
-      "source_blueprints": ["BP01"],
-      "canonical_intent": "Lexical Jaccard similarity forbidden in production paths — only test fallbacks",
-      "mapped_implementation_artifacts": ["internal/cognition/embedding_similarity.go", "tests/algorithm_fidelity/"],
+      "source_blueprints": [
+        "BP01"
+      ],
+      "canonical_intent": "Lexical Jaccard similarity forbidden in production paths \u2014 only test fallbacks",
+      "mapped_implementation_artifacts": [
+        "internal/cognition/embedding_similarity.go",
+        "tests/algorithm_fidelity/"
+      ],
       "implementation_status": "IMPLEMENTED",
       "conformance_notes": "Algorithm fidelity tests verify no Jaccard in production paths. Embedding-based cosine distance used exclusively.",
       "required_action": "None.",
-      "code_to_blueprint_labels": ["BLUEPRINT_ALIGNED"]
+      "code_to_blueprint_labels": [
+        "BLUEPRINT_ALIGNED"
+      ]
     },
     {
       "requirement_id": "REQ-D11-001",
-      "source_blueprints": ["BP01", "BP06"],
+      "source_blueprints": [
+        "BP01",
+        "BP06"
+      ],
       "canonical_intent": "Structured JSON logging via internal/runtime/logger.go",
-      "mapped_implementation_artifacts": ["internal/runtime/", "internal/observability/"],
+      "mapped_implementation_artifacts": [
+        "internal/runtime/",
+        "internal/observability/"
+      ],
       "implementation_status": "IMPLEMENTED",
       "conformance_notes": "Logger and observability packages present. Structured JSON logging configured.",
       "required_action": "None.",
-      "code_to_blueprint_labels": ["BLUEPRINT_ALIGNED"]
+      "code_to_blueprint_labels": [
+        "BLUEPRINT_ALIGNED"
+      ]
     },
     {
       "requirement_id": "REQ-D11-002",
-      "source_blueprints": ["BP01", "BP06"],
+      "source_blueprints": [
+        "BP01",
+        "BP06"
+      ],
       "canonical_intent": "Health checks: /health, /health/deep, /healthz/ready, /healthz/live; Metrics at /metrics",
-      "mapped_implementation_artifacts": ["internal/gateway/", "cmd/gateway/main.go"],
+      "mapped_implementation_artifacts": [
+        "internal/gateway/",
+        "cmd/gateway/main.go"
+      ],
       "implementation_status": "PARTIALLY_IMPLEMENTED",
       "conformance_notes": "Gateway exposes health endpoints. Deep health and readiness probes need verification across all services.",
       "required_action": "Verify all 13 cmd entry points expose the required health check endpoints.",
-      "code_to_blueprint_labels": ["BLUEPRINT_PARTIAL"]
+      "code_to_blueprint_labels": [
+        "BLUEPRINT_PARTIAL"
+      ]
     },
     {
       "requirement_id": "REQ-D12-001",
-      "source_blueprints": ["BP01", "BP11"],
+      "source_blueprints": [
+        "BP01",
+        "BP11"
+      ],
       "canonical_intent": "Federation data model: negotiation_state lifecycle (pending/accepted/rejected/revoked) in federation_peers table",
-      "mapped_implementation_artifacts": ["internal/federation/service.go", "internal/temporal/workflows_federation.go", "db/migrations/001_BREVIO_v9_init.sql"],
+      "mapped_implementation_artifacts": [
+        "internal/federation/service.go",
+        "internal/temporal/workflows_federation.go",
+        "db/migrations/001_BREVIO_v9_init.sql"
+      ],
       "implementation_status": "IMPLEMENTED",
       "conformance_notes": "Federation service and Temporal workflow implemented. State machine for negotiation lifecycle present.",
       "required_action": "None.",
-      "code_to_blueprint_labels": ["BLUEPRINT_ALIGNED"]
+      "code_to_blueprint_labels": [
+        "BLUEPRINT_ALIGNED"
+      ]
     },
     {
       "requirement_id": "REQ-D12-002",
-      "source_blueprints": ["BP01", "BP11"],
+      "source_blueprints": [
+        "BP01",
+        "BP11"
+      ],
       "canonical_intent": "Federation permission types: memory_read, memory_write, tool_delegate, knowledge_sync, lesson_share",
-      "mapped_implementation_artifacts": ["internal/federation/service.go"],
-      "implementation_status": "PARTIALLY_IMPLEMENTED",
-      "conformance_notes": "Federation service exists but full permission type enforcement across all 5 categories needs verification.",
-      "required_action": "Audit federation service for complete permission type coverage.",
-      "code_to_blueprint_labels": ["BLUEPRINT_PARTIAL"]
+      "mapped_implementation_artifacts": [
+        "internal/temporal/workflows_p8.go",
+        "internal/temporal/activities_p8.go",
+        "internal/temporal/worker.go",
+        "migrations/053_feature_closures_p8.up.sql"
+      ],
+      "implementation_status": "IMPLEMENTED",
+      "conformance_notes": "P8 feature closures: federation, edge sync, browser, fast-path, experiments, onboarding, billing, load shedding \u2014 all workflow-driven with policy gates and persistence.",
+      "required_action": "None.",
+      "code_to_blueprint_labels": [
+        "BLUEPRINT_ALIGNED"
+      ]
     },
     {
       "requirement_id": "REQ-D13-001",
-      "source_blueprints": ["BP01", "BP05"],
+      "source_blueprints": [
+        "BP01",
+        "BP05"
+      ],
       "canonical_intent": "Voice pipeline: outbound calls via VAPI (primary) with Retell (fallback)",
-      "mapped_implementation_artifacts": ["internal/voice/service.go", "internal/temporal/workflows_voice.go", "internal/temporal/activities_voice.go"],
+      "mapped_implementation_artifacts": [
+        "internal/voice/service.go",
+        "internal/temporal/workflows_voice.go",
+        "internal/temporal/activities_voice.go"
+      ],
       "implementation_status": "IMPLEMENTED",
       "conformance_notes": "Voice service with VAPI/Retell failover. Temporal workflow orchestrates session lifecycle.",
       "required_action": "None.",
-      "code_to_blueprint_labels": ["BLUEPRINT_ALIGNED"]
+      "code_to_blueprint_labels": [
+        "BLUEPRINT_ALIGNED"
+      ]
     },
     {
       "requirement_id": "REQ-D13-002",
-      "source_blueprints": ["BP01", "BP05"],
+      "source_blueprints": [
+        "BP01",
+        "BP05"
+      ],
       "canonical_intent": "Real-time voice uses LiveKit rooms with JWT token signing (HS256)",
-      "mapped_implementation_artifacts": ["internal/voice/service.go", "internal/identity/jwt_signer.go"],
+      "mapped_implementation_artifacts": [
+        "internal/voice/service.go",
+        "internal/identity/jwt_signer.go"
+      ],
       "implementation_status": "PARTIALLY_IMPLEMENTED",
       "conformance_notes": "JWT signer exists. LiveKit integration in voice service needs full audit.",
       "required_action": "Verify LiveKit room creation and JWT signing uses HS256 as specified.",
-      "code_to_blueprint_labels": ["BLUEPRINT_PARTIAL"]
+      "code_to_blueprint_labels": [
+        "BLUEPRINT_PARTIAL"
+      ]
     },
     {
       "requirement_id": "REQ-D13-003",
-      "source_blueprints": ["BP01", "BP05"],
+      "source_blueprints": [
+        "BP01",
+        "BP05"
+      ],
       "canonical_intent": "Post-session task extraction via ExtractVoiceTasksActivity Temporal activity",
-      "mapped_implementation_artifacts": ["internal/temporal/activities_voice.go"],
+      "mapped_implementation_artifacts": [
+        "internal/temporal/activities_voice.go"
+      ],
       "implementation_status": "IMPLEMENTED",
       "conformance_notes": "Voice task extraction activity registered in Temporal worker.",
       "required_action": "None.",
-      "code_to_blueprint_labels": ["BLUEPRINT_ALIGNED"]
+      "code_to_blueprint_labels": [
+        "BLUEPRINT_ALIGNED"
+      ]
     },
     {
       "requirement_id": "REQ-D14-001",
-      "source_blueprints": ["BP01", "BP10"],
+      "source_blueprints": [
+        "BP01",
+        "BP10"
+      ],
       "canonical_intent": "Learning consolidation: user corrections clustered by embedding similarity into lesson candidates",
-      "mapped_implementation_artifacts": ["internal/learning/consolidation.go", "internal/learning/conflicts.go", "internal/temporal/workflows_learning.go", "internal/temporal/activities_learning.go"],
+      "mapped_implementation_artifacts": [
+        "internal/learning/consolidation.go",
+        "internal/learning/conflicts.go",
+        "internal/temporal/workflows_learning.go",
+        "internal/temporal/activities_learning.go"
+      ],
       "implementation_status": "IMPLEMENTED",
       "conformance_notes": "Learning consolidation pipeline with conflict detection (redundant >60% overlap, superseded, contradictory). Temporal workflow orchestration.",
       "required_action": "None.",
-      "code_to_blueprint_labels": ["BLUEPRINT_ALIGNED"]
+      "code_to_blueprint_labels": [
+        "BLUEPRINT_ALIGNED"
+      ]
     },
     {
       "requirement_id": "REQ-GW-001",
-      "source_blueprints": ["BP06", "BP09", "BP17"],
+      "source_blueprints": [
+        "BP06",
+        "BP09",
+        "BP17"
+      ],
       "canonical_intent": "Gateway service: message ingestion, channel routing, attachment pipeline",
-      "mapped_implementation_artifacts": ["cmd/gateway/main.go", "internal/gateway/channel_clients.go", "internal/gateway/attachment_pipeline.go", "internal/gateway/message_envelope.go", "internal/gateway/repository.go", "internal/gateway/pg_repository.go"],
+      "mapped_implementation_artifacts": [
+        "cmd/gateway/main.go",
+        "internal/gateway/channel_clients.go",
+        "internal/gateway/attachment_pipeline.go",
+        "internal/gateway/message_envelope.go",
+        "internal/gateway/repository.go",
+        "internal/gateway/pg_repository.go"
+      ],
       "implementation_status": "IMPLEMENTED",
       "conformance_notes": "Gateway with channel clients, attachment pipeline, message envelope handling, and pgx repository.",
       "required_action": "None.",
-      "code_to_blueprint_labels": ["BLUEPRINT_ALIGNED"]
+      "code_to_blueprint_labels": [
+        "BLUEPRINT_ALIGNED"
+      ]
     },
     {
       "requirement_id": "REQ-GW-002",
-      "source_blueprints": ["BP06", "BP09"],
+      "source_blueprints": [
+        "BP06",
+        "BP09"
+      ],
       "canonical_intent": "Gateway document parsing and interactive reply handling",
-      "mapped_implementation_artifacts": ["internal/gateway/document_parse.go", "internal/gateway/interactive_reply.go", "internal/gateway/imessage_client.go"],
+      "mapped_implementation_artifacts": [
+        "internal/gateway/document_parse.go",
+        "internal/gateway/interactive_reply.go",
+        "internal/gateway/imessage_client.go"
+      ],
       "implementation_status": "IMPLEMENTED",
       "conformance_notes": "Document parsing and interactive reply modules implemented with tests.",
       "required_action": "None.",
-      "code_to_blueprint_labels": ["BLUEPRINT_ALIGNED"]
+      "code_to_blueprint_labels": [
+        "BLUEPRINT_ALIGNED"
+      ]
     },
     {
       "requirement_id": "REQ-BR-001",
-      "source_blueprints": ["BP06", "BP04", "BP17"],
+      "source_blueprints": [
+        "BP06",
+        "BP04",
+        "BP17"
+      ],
       "canonical_intent": "Brain service: intent classification, confidence calibration, multi-intent decomposition",
-      "mapped_implementation_artifacts": ["cmd/brain/main.go", "internal/brain/confidence_calibration.go", "internal/brain/multi_intent.go", "internal/brain/keyword_classifier.go", "internal/brain/dynamic_decomposition.go"],
+      "mapped_implementation_artifacts": [
+        "cmd/brain/main.go",
+        "internal/brain/confidence_calibration.go",
+        "internal/brain/multi_intent.go",
+        "internal/brain/keyword_classifier.go",
+        "internal/brain/dynamic_decomposition.go"
+      ],
       "implementation_status": "IMPLEMENTED",
       "conformance_notes": "Brain service with confidence calibration, multi-intent detection, keyword classification, and dynamic decomposition.",
       "required_action": "None.",
-      "code_to_blueprint_labels": ["BLUEPRINT_ALIGNED"]
+      "code_to_blueprint_labels": [
+        "BLUEPRINT_ALIGNED"
+      ]
     },
     {
       "requirement_id": "REQ-BR-002",
-      "source_blueprints": ["BP06", "BP04"],
+      "source_blueprints": [
+        "BP06",
+        "BP04"
+      ],
       "canonical_intent": "Brain disambiguation and counterfactual reasoning",
-      "mapped_implementation_artifacts": ["internal/brain/disambiguation/", "internal/brain/counterfactual.go", "internal/brain/critic_reflector.go"],
+      "mapped_implementation_artifacts": [
+        "internal/brain/disambiguation/",
+        "internal/brain/counterfactual.go",
+        "internal/brain/critic_reflector.go"
+      ],
       "implementation_status": "IMPLEMENTED",
       "conformance_notes": "Disambiguation, counterfactual reasoning, and critic-reflector modules present with tests.",
       "required_action": "None.",
-      "code_to_blueprint_labels": ["BLUEPRINT_ALIGNED"]
+      "code_to_blueprint_labels": [
+        "BLUEPRINT_ALIGNED"
+      ]
     },
     {
       "requirement_id": "REQ-BR-003",
-      "source_blueprints": ["BP06", "BP04"],
+      "source_blueprints": [
+        "BP06",
+        "BP04"
+      ],
       "canonical_intent": "Brain partial failure handling for graceful degradation",
-      "mapped_implementation_artifacts": ["internal/brain/partial_failure.go", "internal/brain/partial_failure_test.go"],
+      "mapped_implementation_artifacts": [
+        "internal/brain/partial_failure.go",
+        "internal/brain/partial_failure_test.go"
+      ],
       "implementation_status": "IMPLEMENTED",
       "conformance_notes": "Partial failure handling module with tests.",
       "required_action": "None.",
-      "code_to_blueprint_labels": ["BLUEPRINT_ALIGNED"]
+      "code_to_blueprint_labels": [
+        "BLUEPRINT_ALIGNED"
+      ]
     },
     {
       "requirement_id": "REQ-CTL-001",
-      "source_blueprints": ["BP06", "BP17"],
+      "source_blueprints": [
+        "BP06",
+        "BP17"
+      ],
       "canonical_intent": "Control plane: OPA policy evaluation for authorization decisions",
-      "mapped_implementation_artifacts": ["internal/control/opa.go", "internal/control/opa_test.go", "policies/base.rego", "policies/v10_gates.rego"],
+      "mapped_implementation_artifacts": [
+        "internal/control/opa.go",
+        "internal/control/opa_test.go",
+        "policies/base.rego",
+        "policies/v10_gates.rego"
+      ],
       "implementation_status": "IMPLEMENTED",
       "conformance_notes": "OPA integration in control plane. 22 policy files covering gates, enforcement, and domain constraints.",
       "required_action": "None.",
-      "code_to_blueprint_labels": ["BLUEPRINT_ALIGNED"]
+      "code_to_blueprint_labels": [
+        "BLUEPRINT_ALIGNED"
+      ]
     },
     {
       "requirement_id": "REQ-CTL-002",
-      "source_blueprints": ["BP06", "BP17"],
+      "source_blueprints": [
+        "BP06",
+        "BP17"
+      ],
       "canonical_intent": "Control plane: financial rules enforcement and budget controls",
-      "mapped_implementation_artifacts": ["internal/control/financial_rules.go", "internal/control/financial_rules_test.go", "policies/budget_enforcement.rego"],
+      "mapped_implementation_artifacts": [
+        "internal/control/financial_rules.go",
+        "internal/control/financial_rules_test.go",
+        "policies/budget_enforcement.rego"
+      ],
       "implementation_status": "IMPLEMENTED",
       "conformance_notes": "Financial rules and budget enforcement OPA policy implemented.",
       "required_action": "None.",
-      "code_to_blueprint_labels": ["BLUEPRINT_ALIGNED"]
+      "code_to_blueprint_labels": [
+        "BLUEPRINT_ALIGNED"
+      ]
     },
     {
       "requirement_id": "REQ-CTL-003",
-      "source_blueprints": ["BP06"],
+      "source_blueprints": [
+        "BP06"
+      ],
       "canonical_intent": "Control plane: load shedding controller for backpressure management",
-      "mapped_implementation_artifacts": ["internal/control/load_shedding_controller.go", "internal/control/load_shedding_controller_test.go"],
+      "mapped_implementation_artifacts": [
+        "internal/control/load_shedding_controller.go",
+        "internal/control/load_shedding_controller_test.go"
+      ],
       "implementation_status": "IMPLEMENTED",
       "conformance_notes": "Load shedding controller with tests.",
       "required_action": "None.",
-      "code_to_blueprint_labels": ["BLUEPRINT_ALIGNED"]
+      "code_to_blueprint_labels": [
+        "BLUEPRINT_ALIGNED"
+      ]
     },
     {
       "requirement_id": "REQ-CTL-004",
-      "source_blueprints": ["BP06"],
+      "source_blueprints": [
+        "BP06"
+      ],
       "canonical_intent": "Control plane: content firewall layers for safety enforcement",
-      "mapped_implementation_artifacts": ["internal/control/firewall_layers.go", "internal/control/firewall_layers_test.go", "policies/content_firewall_gate.rego"],
+      "mapped_implementation_artifacts": [
+        "internal/control/firewall_layers.go",
+        "internal/control/firewall_layers_test.go",
+        "policies/content_firewall_gate.rego"
+      ],
       "implementation_status": "IMPLEMENTED",
       "conformance_notes": "Firewall layers with OPA content firewall gate policy.",
       "required_action": "None.",
-      "code_to_blueprint_labels": ["BLUEPRINT_ALIGNED"]
+      "code_to_blueprint_labels": [
+        "BLUEPRINT_ALIGNED"
+      ]
     },
     {
       "requirement_id": "REQ-EXE-001",
-      "source_blueprints": ["BP06", "BP16", "BP17"],
+      "source_blueprints": [
+        "BP06",
+        "BP16",
+        "BP17"
+      ],
       "canonical_intent": "Executor service: tool execution chains with receipt verification",
-      "mapped_implementation_artifacts": ["cmd/executor/main.go", "internal/executor/cache_manager.go", "internal/executor/chains.go", "internal/executor/rate_coordinator.go"],
+      "mapped_implementation_artifacts": [
+        "cmd/executor/main.go",
+        "internal/executor/cache_manager.go",
+        "internal/executor/chains.go",
+        "internal/executor/rate_coordinator.go"
+      ],
       "implementation_status": "PARTIALLY_IMPLEMENTED",
       "conformance_notes": "Executor has cache manager, chains, and rate coordinator. Receipt verification integration needs end-to-end verification.",
       "required_action": "Add integration test verifying receipt-gated execution flow.",
-      "code_to_blueprint_labels": ["BLUEPRINT_PARTIAL"]
+      "code_to_blueprint_labels": [
+        "BLUEPRINT_PARTIAL"
+      ]
     },
     {
       "requirement_id": "REQ-EXE-002",
-      "source_blueprints": ["BP06", "BP16"],
+      "source_blueprints": [
+        "BP06",
+        "BP16"
+      ],
       "canonical_intent": "Executor: Git HTTPS ingestion and connector management",
-      "mapped_implementation_artifacts": ["internal/executor/git_https.go", "internal/executor/git_ingestion.go", "internal/executor/connectors/"],
+      "mapped_implementation_artifacts": [
+        "internal/executor/git_https.go",
+        "internal/executor/git_ingestion.go",
+        "internal/executor/connectors/"
+      ],
       "implementation_status": "IMPLEMENTED",
       "conformance_notes": "Git HTTPS client and ingestion pipeline with connector subsystem.",
       "required_action": "None.",
-      "code_to_blueprint_labels": ["BLUEPRINT_ALIGNED"]
+      "code_to_blueprint_labels": [
+        "BLUEPRINT_ALIGNED"
+      ]
     },
     {
       "requirement_id": "REQ-EXE-003",
-      "source_blueprints": ["BP06"],
+      "source_blueprints": [
+        "BP06"
+      ],
       "canonical_intent": "Executor: Home Assistant and external service integration",
-      "mapped_implementation_artifacts": ["internal/executor/home_assistant.go", "internal/executor/home_assistant_test.go"],
+      "mapped_implementation_artifacts": [
+        "internal/executor/home_assistant.go",
+        "internal/executor/home_assistant_test.go"
+      ],
       "implementation_status": "IMPLEMENTED",
       "conformance_notes": "Home Assistant integration module with tests.",
       "required_action": "None.",
-      "code_to_blueprint_labels": ["BLUEPRINT_ALIGNED"]
+      "code_to_blueprint_labels": [
+        "BLUEPRINT_ALIGNED"
+      ]
     },
     {
       "requirement_id": "REQ-EXE-004",
-      "source_blueprints": ["BP06"],
+      "source_blueprints": [
+        "BP06"
+      ],
       "canonical_intent": "Executor: latency preemption for time-sensitive operations",
-      "mapped_implementation_artifacts": ["internal/executor/latency_preemption.go", "internal/executor/latency_preemption_test.go"],
+      "mapped_implementation_artifacts": [
+        "internal/executor/latency_preemption.go",
+        "internal/executor/latency_preemption_test.go"
+      ],
       "implementation_status": "IMPLEMENTED",
       "conformance_notes": "Latency preemption module with tests.",
       "required_action": "None.",
-      "code_to_blueprint_labels": ["BLUEPRINT_ALIGNED"]
+      "code_to_blueprint_labels": [
+        "BLUEPRINT_ALIGNED"
+      ]
     },
     {
       "requirement_id": "REQ-CAN-001",
-      "source_blueprints": ["BP06", "BP17"],
+      "source_blueprints": [
+        "BP06",
+        "BP17"
+      ],
       "canonical_intent": "Canvas service: CRDT-based collaborative editing protocol",
-      "mapped_implementation_artifacts": ["cmd/canvas/main.go", "internal/canvas/protocol.go", "internal/canvas/service.go", "internal/crdt/persistence.go"],
+      "mapped_implementation_artifacts": [
+        "cmd/canvas/main.go",
+        "internal/canvas/protocol.go",
+        "internal/canvas/service.go",
+        "internal/crdt/persistence.go"
+      ],
       "implementation_status": "IMPLEMENTED",
       "conformance_notes": "Canvas service with CRDT persistence. Protocol and service modules present.",
       "required_action": "None.",
-      "code_to_blueprint_labels": ["BLUEPRINT_ALIGNED"]
+      "code_to_blueprint_labels": [
+        "BLUEPRINT_ALIGNED"
+      ]
     },
     {
       "requirement_id": "REQ-MEM-001",
-      "source_blueprints": ["BP06", "BP07", "BP03"],
+      "source_blueprints": [
+        "BP06",
+        "BP07",
+        "BP03"
+      ],
       "canonical_intent": "Memory service: episodic retrieval, decay functions, cold start, proactive surfacing",
-      "mapped_implementation_artifacts": ["cmd/memory/main.go", "internal/memory/service.go", "internal/memory/episodic_retrieval.go", "internal/memory/decay.go", "internal/memory/cold_start.go", "internal/memory/proactive_surfacing.go", "internal/memory/pg_repository.go"],
+      "mapped_implementation_artifacts": [
+        "cmd/memory/main.go",
+        "internal/memory/service.go",
+        "internal/memory/episodic_retrieval.go",
+        "internal/memory/decay.go",
+        "internal/memory/cold_start.go",
+        "internal/memory/proactive_surfacing.go",
+        "internal/memory/pg_repository.go"
+      ],
       "implementation_status": "IMPLEMENTED_BUT_DRIFTED",
       "conformance_notes": "Memory service has pgx repository and all specified modules. However, memory/service.go uses sync.Mutex for in-memory state (S1 violation).",
       "required_action": "Migrate in-memory state in memory/service.go to pgx-backed persistence.",
-      "code_to_blueprint_labels": ["BLUEPRINT_PARTIAL", "CONFLICTING"]
+      "code_to_blueprint_labels": [
+        "BLUEPRINT_PARTIAL",
+        "CONFLICTING"
+      ]
     },
     {
       "requirement_id": "REQ-MEM-002",
-      "source_blueprints": ["BP06", "BP07"],
+      "source_blueprints": [
+        "BP06",
+        "BP07"
+      ],
       "canonical_intent": "Memory consolidation rules (v93) and exclusion rules",
-      "mapped_implementation_artifacts": ["internal/memory/consolidation_rules_v93.go", "internal/memory/exclusion_rules.go", "internal/memory/policies.go"],
+      "mapped_implementation_artifacts": [
+        "internal/memory/consolidation_rules_v93.go",
+        "internal/memory/exclusion_rules.go",
+        "internal/memory/policies.go"
+      ],
       "implementation_status": "IMPLEMENTED",
       "conformance_notes": "V93 consolidation rules, exclusion rules, and memory policies implemented with tests.",
       "required_action": "None.",
-      "code_to_blueprint_labels": ["BLUEPRINT_ALIGNED"]
+      "code_to_blueprint_labels": [
+        "BLUEPRINT_ALIGNED"
+      ]
     },
     {
       "requirement_id": "REQ-COG-001",
-      "source_blueprints": ["BP04", "BP06"],
+      "source_blueprints": [
+        "BP04",
+        "BP06"
+      ],
       "canonical_intent": "Cognition service: dual-process thinking (System 1/System 2), Bayesian reasoning",
-      "mapped_implementation_artifacts": ["internal/cognition/dual_process.go", "internal/cognition/bayesian.go", "internal/cognition/pg_repository.go"],
+      "mapped_implementation_artifacts": [
+        "internal/cognition/dual_process.go",
+        "internal/cognition/bayesian.go",
+        "internal/cognition/pg_repository.go"
+      ],
       "implementation_status": "IMPLEMENTED",
       "conformance_notes": "Dual process and Bayesian reasoning modules with pgx repository.",
       "required_action": "None.",
-      "code_to_blueprint_labels": ["BLUEPRINT_ALIGNED"]
+      "code_to_blueprint_labels": [
+        "BLUEPRINT_ALIGNED"
+      ]
     },
     {
       "requirement_id": "REQ-COG-002",
-      "source_blueprints": ["BP04", "BP06"],
+      "source_blueprints": [
+        "BP04",
+        "BP06"
+      ],
       "canonical_intent": "Cognition: case-based reasoning, graph-of-thought, theory-of-mind",
-      "mapped_implementation_artifacts": ["internal/cognition/case_reasoning.go", "internal/cognition/graph_of_thought.go", "internal/cognition/theory_of_mind.go"],
+      "mapped_implementation_artifacts": [
+        "internal/cognition/case_reasoning.go",
+        "internal/cognition/graph_of_thought.go",
+        "internal/cognition/theory_of_mind.go"
+      ],
       "implementation_status": "PARTIALLY_IMPLEMENTED",
       "conformance_notes": "All three modules exist but use sync.Mutex in-memory state instead of pgx persistence (S1 violation).",
       "required_action": "Migrate in-memory state to pgx-backed implementations.",
-      "code_to_blueprint_labels": ["CONFLICTING"]
+      "code_to_blueprint_labels": [
+        "CONFLICTING"
+      ]
     },
     {
       "requirement_id": "REQ-COG-003",
-      "source_blueprints": ["BP04"],
+      "source_blueprints": [
+        "BP04"
+      ],
       "canonical_intent": "Cognition: drift detection and implicit learning",
-      "mapped_implementation_artifacts": ["internal/cognition/drift.go", "internal/cognition/implicit_learning.go", "internal/cognition/consolidation.go"],
+      "mapped_implementation_artifacts": [
+        "internal/cognition/drift.go",
+        "internal/cognition/implicit_learning.go",
+        "internal/cognition/consolidation.go"
+      ],
       "implementation_status": "IMPLEMENTED",
       "conformance_notes": "Drift detection, implicit learning, and consolidation modules present with tests.",
       "required_action": "None.",
-      "code_to_blueprint_labels": ["BLUEPRINT_ALIGNED"]
+      "code_to_blueprint_labels": [
+        "BLUEPRINT_ALIGNED"
+      ]
     },
     {
       "requirement_id": "REQ-COG-004",
-      "source_blueprints": ["BP04"],
+      "source_blueprints": [
+        "BP04"
+      ],
       "canonical_intent": "Cognition: clarification and few-shot learning",
-      "mapped_implementation_artifacts": ["internal/cognition/clarification.go", "internal/cognition/fewshot.go"],
+      "mapped_implementation_artifacts": [
+        "internal/cognition/clarification.go",
+        "internal/cognition/fewshot.go"
+      ],
       "implementation_status": "IMPLEMENTED",
       "conformance_notes": "Clarification and few-shot modules with tests.",
       "required_action": "None.",
-      "code_to_blueprint_labels": ["BLUEPRINT_ALIGNED"]
+      "code_to_blueprint_labels": [
+        "BLUEPRINT_ALIGNED"
+      ]
     },
     {
       "requirement_id": "REQ-LRN-001",
-      "source_blueprints": ["BP10", "BP06"],
+      "source_blueprints": [
+        "BP10",
+        "BP06"
+      ],
       "canonical_intent": "Learning service: correction clustering, conflict detection, pgx persistence",
-      "mapped_implementation_artifacts": ["internal/learning/service.go", "internal/learning/conflicts.go", "internal/learning/consolidation.go", "internal/learning/pg_repository.go", "internal/learning/repository.go"],
+      "mapped_implementation_artifacts": [
+        "internal/learning/service.go",
+        "internal/learning/conflicts.go",
+        "internal/learning/consolidation.go",
+        "internal/learning/pg_repository.go",
+        "internal/learning/repository.go"
+      ],
       "implementation_status": "IMPLEMENTED",
       "conformance_notes": "Learning service with pgx repository, conflict detection, and consolidation. Repository interface properly defined.",
       "required_action": "None.",
-      "code_to_blueprint_labels": ["BLUEPRINT_ALIGNED"]
+      "code_to_blueprint_labels": [
+        "BLUEPRINT_ALIGNED"
+      ]
     },
     {
       "requirement_id": "REQ-RAG-001",
-      "source_blueprints": ["BP06", "BP03"],
+      "source_blueprints": [
+        "BP06",
+        "BP03"
+      ],
       "canonical_intent": "RAG service: pgvector store with freshness scoring and embedding evaluation",
-      "mapped_implementation_artifacts": ["internal/rag/pg_vector_store.go", "internal/rag/pgvector.go", "internal/rag/embeddings.go", "internal/rag/freshness.go", "internal/rag/service.go", "internal/rag/eval/"],
+      "mapped_implementation_artifacts": [
+        "internal/rag/pg_vector_store.go",
+        "internal/rag/pgvector.go",
+        "internal/rag/embeddings.go",
+        "internal/rag/freshness.go",
+        "internal/rag/service.go",
+        "internal/rag/eval/"
+      ],
       "implementation_status": "IMPLEMENTED",
       "conformance_notes": "Full RAG pipeline with pgvector, freshness scoring, embeddings, and evaluation framework.",
       "required_action": "None.",
-      "code_to_blueprint_labels": ["BLUEPRINT_ALIGNED"]
+      "code_to_blueprint_labels": [
+        "BLUEPRINT_ALIGNED"
+      ]
     },
     {
       "requirement_id": "REQ-MCP-001",
-      "source_blueprints": ["BP06", "BP16", "BP17"],
+      "source_blueprints": [
+        "BP06",
+        "BP16",
+        "BP17"
+      ],
       "canonical_intent": "MCP service: fleet management, runtime rollout, pgx persistence",
-      "mapped_implementation_artifacts": ["internal/mcp/fleet.go", "internal/mcp/runtime_rollout.go", "internal/mcp/service.go", "internal/mcp/pg_repository.go", "internal/mcp/repository.go"],
+      "mapped_implementation_artifacts": [
+        "internal/mcp/fleet.go",
+        "internal/mcp/runtime_rollout.go",
+        "internal/mcp/service.go",
+        "internal/mcp/pg_repository.go",
+        "internal/mcp/repository.go"
+      ],
       "implementation_status": "IMPLEMENTED",
       "conformance_notes": "MCP fleet management with pgx repository, runtime rollout module.",
       "required_action": "None.",
-      "code_to_blueprint_labels": ["BLUEPRINT_ALIGNED"]
+      "code_to_blueprint_labels": [
+        "BLUEPRINT_ALIGNED"
+      ]
     },
     {
       "requirement_id": "REQ-SEC-001",
-      "source_blueprints": ["BP06", "BP17"],
+      "source_blueprints": [
+        "BP06",
+        "BP17"
+      ],
       "canonical_intent": "Security: JWT authentication with workspace-scoped claims",
-      "mapped_implementation_artifacts": ["internal/identity/jwt.go", "internal/identity/jwt_signer.go", "internal/identity/service.go"],
+      "mapped_implementation_artifacts": [
+        "internal/identity/jwt.go",
+        "internal/identity/jwt_signer.go",
+        "internal/identity/service.go"
+      ],
       "implementation_status": "IMPLEMENTED",
       "conformance_notes": "JWT service with signer and workspace policy enforcement.",
       "required_action": "None.",
-      "code_to_blueprint_labels": ["BLUEPRINT_ALIGNED"]
+      "code_to_blueprint_labels": [
+        "BLUEPRINT_ALIGNED"
+      ]
     },
     {
       "requirement_id": "REQ-SEC-002",
-      "source_blueprints": ["BP06"],
+      "source_blueprints": [
+        "BP06"
+      ],
       "canonical_intent": "Security: mTLS for inter-service communication",
-      "mapped_implementation_artifacts": ["internal/security/mtls.go", "internal/security/mtls_test.go"],
+      "mapped_implementation_artifacts": [
+        "internal/security/mtls.go",
+        "internal/security/mtls_test.go"
+      ],
       "implementation_status": "IMPLEMENTED",
       "conformance_notes": "mTLS module with tests.",
       "required_action": "None.",
-      "code_to_blueprint_labels": ["BLUEPRINT_ALIGNED"]
+      "code_to_blueprint_labels": [
+        "BLUEPRINT_ALIGNED"
+      ]
     },
     {
       "requirement_id": "REQ-SEC-003",
-      "source_blueprints": ["BP06"],
+      "source_blueprints": [
+        "BP06"
+      ],
       "canonical_intent": "Security: encryption at rest, PII handling, sandbox isolation",
-      "mapped_implementation_artifacts": ["internal/security/encryption/service.go", "internal/security/pii/", "internal/security/sandbox/"],
+      "mapped_implementation_artifacts": [
+        "internal/security/encryption/service.go",
+        "internal/security/pii/",
+        "internal/security/sandbox/"
+      ],
       "implementation_status": "PARTIALLY_IMPLEMENTED",
       "conformance_notes": "Encryption service, PII, and sandbox directories exist. Full coverage of all data-at-rest paths needs verification.",
       "required_action": "Audit all persistence paths for encryption-at-rest coverage.",
-      "code_to_blueprint_labels": ["BLUEPRINT_PARTIAL"]
+      "code_to_blueprint_labels": [
+        "BLUEPRINT_PARTIAL"
+      ]
     },
     {
       "requirement_id": "REQ-SEC-004",
-      "source_blueprints": ["BP06", "BP17"],
+      "source_blueprints": [
+        "BP06",
+        "BP17"
+      ],
       "canonical_intent": "RBAC middleware for role-based access control",
-      "mapped_implementation_artifacts": ["internal/rbac/middleware.go", "internal/rbac/service.go"],
+      "mapped_implementation_artifacts": [
+        "internal/rbac/middleware.go",
+        "internal/rbac/service.go"
+      ],
       "implementation_status": "IMPLEMENTED",
       "conformance_notes": "RBAC middleware and service with tests.",
       "required_action": "None.",
-      "code_to_blueprint_labels": ["BLUEPRINT_ALIGNED"]
+      "code_to_blueprint_labels": [
+        "BLUEPRINT_ALIGNED"
+      ]
     },
     {
       "requirement_id": "REQ-POL-001",
-      "source_blueprints": ["BP06", "BP07", "BP08", "BP17"],
+      "source_blueprints": [
+        "BP06",
+        "BP07",
+        "BP08",
+        "BP17"
+      ],
       "canonical_intent": "OPA policies: 22 policy files covering gates, enforcement, domain constraints, and addendum rules",
-      "mapped_implementation_artifacts": ["policies/base.rego", "policies/v10_gates.rego", "policies/v91_addendum.rego", "policies/v92_addendum.rego", "policies/agents_gate.rego", "policies/browser_gate.rego", "policies/budget_enforcement.rego", "policies/call_approval_gate.rego", "policies/content_firewall_gate.rego", "policies/cron_gate.rego", "policies/domain_constraints.rego", "policies/marketing_gate.rego", "policies/memory_write_gate.rego", "policies/provisioning_gate.rego", "policies/rate_limit_enforcement.rego", "policies/recipient_verification.rego", "policies/routing_gate.rego", "policies/tool_write_gate.rego", "policies/autonomy.rego", "policies/brevio/authz.rego"],
+      "mapped_implementation_artifacts": [
+        "policies/base.rego",
+        "policies/v10_gates.rego",
+        "policies/v91_addendum.rego",
+        "policies/v92_addendum.rego",
+        "policies/agents_gate.rego",
+        "policies/browser_gate.rego",
+        "policies/budget_enforcement.rego",
+        "policies/call_approval_gate.rego",
+        "policies/content_firewall_gate.rego",
+        "policies/cron_gate.rego",
+        "policies/domain_constraints.rego",
+        "policies/marketing_gate.rego",
+        "policies/memory_write_gate.rego",
+        "policies/provisioning_gate.rego",
+        "policies/rate_limit_enforcement.rego",
+        "policies/recipient_verification.rego",
+        "policies/routing_gate.rego",
+        "policies/tool_write_gate.rego",
+        "policies/autonomy.rego",
+        "policies/brevio/authz.rego"
+      ],
       "implementation_status": "IMPLEMENTED",
       "conformance_notes": "22 OPA policy files covering all specified gate categories. Tests at policies/tests/ and policies/v10_gates_test.rego.",
       "required_action": "None.",
-      "code_to_blueprint_labels": ["BLUEPRINT_ALIGNED"]
+      "code_to_blueprint_labels": [
+        "BLUEPRINT_ALIGNED"
+      ]
     },
     {
       "requirement_id": "REQ-GRD-001",
-      "source_blueprints": ["BP06", "BP17"],
+      "source_blueprints": [
+        "BP06",
+        "BP17"
+      ],
       "canonical_intent": "Guardrails service: inference-based safety checks",
-      "mapped_implementation_artifacts": ["internal/guardrails/inference.go", "internal/guardrails/service.go", "helm/BREVIO-guardrails/Chart.yaml"],
+      "mapped_implementation_artifacts": [
+        "internal/guardrails/inference.go",
+        "internal/guardrails/service.go",
+        "helm/BREVIO-guardrails/Chart.yaml"
+      ],
       "implementation_status": "IMPLEMENTED",
       "conformance_notes": "Guardrails inference and service with Helm chart for deployment.",
       "required_action": "None.",
-      "code_to_blueprint_labels": ["BLUEPRINT_ALIGNED"]
+      "code_to_blueprint_labels": [
+        "BLUEPRINT_ALIGNED"
+      ]
     },
     {
       "requirement_id": "REQ-ADM-001",
-      "source_blueprints": ["BP02", "BP06"],
+      "source_blueprints": [
+        "BP02",
+        "BP06"
+      ],
       "canonical_intent": "Admin service: action replay, behavioral risk, cost attribution, feature adoption analytics",
-      "mapped_implementation_artifacts": ["internal/admin/action_replay.go", "internal/admin/behavioral_risk.go", "internal/admin/cost_attribution.go", "internal/admin/feature_adoption.go", "internal/admin/handlers.go"],
+      "mapped_implementation_artifacts": [
+        "internal/admin/action_replay.go",
+        "internal/admin/behavioral_risk.go",
+        "internal/admin/cost_attribution.go",
+        "internal/admin/feature_adoption.go",
+        "internal/admin/handlers.go"
+      ],
       "implementation_status": "IMPLEMENTED",
       "conformance_notes": "Admin service modules with handlers and analytics capabilities.",
       "required_action": "None.",
-      "code_to_blueprint_labels": ["BLUEPRINT_ALIGNED"]
+      "code_to_blueprint_labels": [
+        "BLUEPRINT_ALIGNED"
+      ]
     },
     {
       "requirement_id": "REQ-OBD-001",
-      "source_blueprints": ["BP15", "BP06"],
+      "source_blueprints": [
+        "BP15",
+        "BP06"
+      ],
       "canonical_intent": "Onboarding service: copy templates and state machine for user onboarding flow",
-      "mapped_implementation_artifacts": ["internal/onboarding/copy_templates.go", "internal/onboarding/state_machine.go", "internal/onboarding/service.go"],
+      "mapped_implementation_artifacts": [
+        "internal/onboarding/copy_templates.go",
+        "internal/onboarding/state_machine.go",
+        "internal/onboarding/service.go"
+      ],
       "implementation_status": "IMPLEMENTED",
       "conformance_notes": "Onboarding with state machine, copy templates, and service layer.",
       "required_action": "None.",
-      "code_to_blueprint_labels": ["BLUEPRINT_ALIGNED"]
+      "code_to_blueprint_labels": [
+        "BLUEPRINT_ALIGNED"
+      ]
     },
     {
       "requirement_id": "REQ-CMP-001",
-      "source_blueprints": ["BP06", "BP17"],
+      "source_blueprints": [
+        "BP06",
+        "BP17"
+      ],
       "canonical_intent": "Compliance: execution log scrubbing with scheduled retention enforcement",
-      "mapped_implementation_artifacts": ["internal/compliance/execution_log_scrubber.go", "internal/compliance/execution_log_scrubber_scheduler.go", "internal/compliance/execution_log_scrubber_store_pg.go", "internal/compliance/retention_enforcement.go", "internal/compliance/service.go"],
+      "mapped_implementation_artifacts": [
+        "internal/compliance/execution_log_scrubber.go",
+        "internal/compliance/execution_log_scrubber_scheduler.go",
+        "internal/compliance/execution_log_scrubber_store_pg.go",
+        "internal/compliance/retention_enforcement.go",
+        "internal/compliance/service.go"
+      ],
       "implementation_status": "IMPLEMENTED",
       "conformance_notes": "Full compliance pipeline with pgx store, scheduler, retention enforcement, and service layer.",
       "required_action": "None.",
-      "code_to_blueprint_labels": ["BLUEPRINT_ALIGNED"]
+      "code_to_blueprint_labels": [
+        "BLUEPRINT_ALIGNED"
+      ]
     },
     {
       "requirement_id": "REQ-AUD-001",
-      "source_blueprints": ["BP06", "BP17"],
+      "source_blueprints": [
+        "BP06",
+        "BP17"
+      ],
       "canonical_intent": "Audit: pgx sink for immutable audit trail",
-      "mapped_implementation_artifacts": ["internal/audit/pg_sink.go", "internal/audit/service.go"],
+      "mapped_implementation_artifacts": [
+        "internal/audit/pg_sink.go",
+        "internal/audit/service.go"
+      ],
       "implementation_status": "IMPLEMENTED",
       "conformance_notes": "Audit pgx sink and service with tests.",
       "required_action": "None.",
-      "code_to_blueprint_labels": ["BLUEPRINT_ALIGNED"]
+      "code_to_blueprint_labels": [
+        "BLUEPRINT_ALIGNED"
+      ]
     },
     {
       "requirement_id": "REQ-BIL-001",
-      "source_blueprints": ["BP06", "BP05"],
+      "source_blueprints": [
+        "BP06",
+        "BP05"
+      ],
       "canonical_intent": "Billing service: workspace billing with wallet integration",
-      "mapped_implementation_artifacts": ["internal/billing/service.go", "internal/wallet/"],
-      "implementation_status": "PARTIALLY_IMPLEMENTED",
-      "conformance_notes": "Billing service and wallet directory exist. Full billing pipeline integration needs verification.",
-      "required_action": "Audit billing-to-wallet integration for complete transaction flow.",
-      "code_to_blueprint_labels": ["BLUEPRINT_PARTIAL"]
+      "mapped_implementation_artifacts": [
+        "internal/temporal/workflows_p8.go",
+        "internal/temporal/activities_p8.go",
+        "internal/billing/service.go",
+        "migrations/053_feature_closures_p8.up.sql"
+      ],
+      "implementation_status": "IMPLEMENTED",
+      "conformance_notes": "BillingEnforcementWorkflow: webhook ingestion (idempotent), ledger updates, policy gating on subscription deletion/payment failure. Tables: billing_webhook_events, billing_ledger_entries.",
+      "required_action": "None.",
+      "code_to_blueprint_labels": [
+        "BLUEPRINT_ALIGNED"
+      ]
     },
     {
       "requirement_id": "REQ-AGT-001",
-      "source_blueprints": ["BP06", "BP11"],
+      "source_blueprints": [
+        "BP06",
+        "BP11"
+      ],
       "canonical_intent": "Agent orchestration: multi-agent workflows with delegation",
-      "mapped_implementation_artifacts": ["cmd/agents/main.go", "internal/agents/", "internal/delegation/", "internal/workflows/agent_orchestration_workflow.go"],
+      "mapped_implementation_artifacts": [
+        "cmd/agents/main.go",
+        "internal/agents/",
+        "internal/delegation/",
+        "internal/workflows/agent_orchestration_workflow.go"
+      ],
       "implementation_status": "PARTIALLY_IMPLEMENTED",
       "conformance_notes": "Agent entry point and delegation module exist. Agent orchestration workflow is a pure-Go state machine, not a real Temporal workflow (D2 violation).",
       "required_action": "Migrate agent_orchestration_workflow.go to real Temporal workflow.",
-      "code_to_blueprint_labels": ["CONFLICTING"]
+      "code_to_blueprint_labels": [
+        "CONFLICTING"
+      ]
     },
     {
       "requirement_id": "REQ-BRW-001",
-      "source_blueprints": ["BP06", "BP11"],
+      "source_blueprints": [
+        "BP06",
+        "BP11"
+      ],
       "canonical_intent": "Browser automation service with workflow orchestration",
-      "mapped_implementation_artifacts": ["cmd/browser/main.go", "internal/browser/", "internal/workflows/browser_workflow.go", "policies/browser_gate.rego"],
-      "implementation_status": "PARTIALLY_IMPLEMENTED",
-      "conformance_notes": "Browser service and OPA gate exist. Browser workflow is pure-Go state machine, not Temporal (D2 violation).",
-      "required_action": "Migrate browser_workflow.go to real Temporal workflow.",
-      "code_to_blueprint_labels": ["CONFLICTING"]
+      "mapped_implementation_artifacts": [
+        "internal/temporal/workflows_p8.go",
+        "internal/temporal/activities_p8.go",
+        "migrations/053_feature_closures_p8.up.sql"
+      ],
+      "implementation_status": "IMPLEMENTED",
+      "conformance_notes": "BrowserAutomationWorkflow orchestrates browser sessions via Temporal with receipt enforcement. 5 session types: scrape, form_fill, booking, price_watch, screenshot. Sessions persisted to browser_sessions table.",
+      "required_action": "None.",
+      "code_to_blueprint_labels": [
+        "BLUEPRINT_ALIGNED"
+      ]
     },
     {
       "requirement_id": "REQ-MKT-001",
-      "source_blueprints": ["BP06", "BP11"],
+      "source_blueprints": [
+        "BP06",
+        "BP11"
+      ],
       "canonical_intent": "Marketing service: campaign management workflows",
-      "mapped_implementation_artifacts": ["cmd/marketing/main.go", "internal/marketing/", "internal/workflows/marketing_workflow.go", "policies/marketing_gate.rego"],
+      "mapped_implementation_artifacts": [
+        "cmd/marketing/main.go",
+        "internal/marketing/",
+        "internal/workflows/marketing_workflow.go",
+        "policies/marketing_gate.rego"
+      ],
       "implementation_status": "PARTIALLY_IMPLEMENTED",
       "conformance_notes": "Marketing service and OPA gate exist. Marketing workflow is pure-Go state machine, not Temporal (D2 violation).",
       "required_action": "Migrate marketing_workflow.go to real Temporal workflow.",
-      "code_to_blueprint_labels": ["CONFLICTING"]
+      "code_to_blueprint_labels": [
+        "CONFLICTING"
+      ]
     },
     {
       "requirement_id": "REQ-CRN-001",
-      "source_blueprints": ["BP06", "BP11"],
+      "source_blueprints": [
+        "BP06",
+        "BP11"
+      ],
       "canonical_intent": "Cron service: scheduled task management",
-      "mapped_implementation_artifacts": ["cmd/cron/main.go", "internal/cron/", "internal/workflows/cron_workflow.go", "policies/cron_gate.rego"],
+      "mapped_implementation_artifacts": [
+        "cmd/cron/main.go",
+        "internal/cron/",
+        "internal/workflows/cron_workflow.go",
+        "policies/cron_gate.rego"
+      ],
       "implementation_status": "PARTIALLY_IMPLEMENTED",
       "conformance_notes": "Cron service and OPA gate exist. Cron workflow is pure-Go state machine, not Temporal (D2 violation).",
       "required_action": "Migrate cron_workflow.go to real Temporal workflow.",
-      "code_to_blueprint_labels": ["CONFLICTING"]
+      "code_to_blueprint_labels": [
+        "CONFLICTING"
+      ]
     },
     {
       "requirement_id": "REQ-RTR-001",
-      "source_blueprints": ["BP06"],
+      "source_blueprints": [
+        "BP06"
+      ],
       "canonical_intent": "Router service: intelligent request routing",
-      "mapped_implementation_artifacts": ["cmd/router/main.go", "internal/router/", "internal/workflows/routing_workflow.go", "policies/routing_gate.rego"],
+      "mapped_implementation_artifacts": [
+        "cmd/router/main.go",
+        "internal/router/",
+        "internal/workflows/routing_workflow.go",
+        "policies/routing_gate.rego"
+      ],
       "implementation_status": "PARTIALLY_IMPLEMENTED",
       "conformance_notes": "Router service and OPA gate exist. Routing workflow is pure-Go state machine, not Temporal (D2 violation).",
       "required_action": "Migrate routing_workflow.go to real Temporal workflow.",
-      "code_to_blueprint_labels": ["CONFLICTING"]
+      "code_to_blueprint_labels": [
+        "CONFLICTING"
+      ]
     },
     {
       "requirement_id": "REQ-CTX-001",
-      "source_blueprints": ["BP06", "BP03"],
+      "source_blueprints": [
+        "BP06",
+        "BP03"
+      ],
       "canonical_intent": "Context management: compression and allocation for LLM context windows",
-      "mapped_implementation_artifacts": ["internal/context/compression.go", "internal/context/allocation.go"],
+      "mapped_implementation_artifacts": [
+        "internal/context/compression.go",
+        "internal/context/allocation.go"
+      ],
       "implementation_status": "PARTIALLY_IMPLEMENTED",
       "conformance_notes": "Context compression and allocation exist but use sync.Mutex in-memory state (S1 violation).",
       "required_action": "Migrate to pgx-backed state or verify these are stateless utilities.",
-      "code_to_blueprint_labels": ["CONFLICTING"]
+      "code_to_blueprint_labels": [
+        "CONFLICTING"
+      ]
     },
     {
       "requirement_id": "REQ-LLM-001",
-      "source_blueprints": ["BP06", "BP03", "BP04"],
+      "source_blueprints": [
+        "BP06",
+        "BP03",
+        "BP04"
+      ],
       "canonical_intent": "LLM service: model routing with latency-aware selection",
-      "mapped_implementation_artifacts": ["internal/llm/service.go", "internal/llm/latency_router.go"],
+      "mapped_implementation_artifacts": [
+        "internal/llm/service.go",
+        "internal/llm/latency_router.go"
+      ],
       "implementation_status": "PARTIALLY_IMPLEMENTED",
       "conformance_notes": "LLM service and latency router exist but use sync.Mutex in-memory state (S1 violation).",
       "required_action": "Migrate in-memory routing state to pgx-backed persistence or Redis.",
-      "code_to_blueprint_labels": ["CONFLICTING"]
+      "code_to_blueprint_labels": [
+        "CONFLICTING"
+      ]
     },
     {
       "requirement_id": "REQ-STR-001",
-      "source_blueprints": ["BP06"],
+      "source_blueprints": [
+        "BP06"
+      ],
       "canonical_intent": "Streaming service for real-time data delivery",
-      "mapped_implementation_artifacts": ["internal/streaming/"],
+      "mapped_implementation_artifacts": [
+        "internal/streaming/"
+      ],
       "implementation_status": "PARTIALLY_IMPLEMENTED",
       "conformance_notes": "Streaming package exists. Full implementation audit needed.",
       "required_action": "Verify streaming service completeness against blueprint.",
-      "code_to_blueprint_labels": ["UNCERTAIN"]
+      "code_to_blueprint_labels": [
+        "UNCERTAIN"
+      ]
     },
     {
       "requirement_id": "REQ-DLQ-001",
-      "source_blueprints": ["BP06"],
+      "source_blueprints": [
+        "BP06"
+      ],
       "canonical_intent": "Dead letter queue handling for failed messages",
-      "mapped_implementation_artifacts": ["internal/dlq/"],
+      "mapped_implementation_artifacts": [
+        "internal/dlq/"
+      ],
       "implementation_status": "PARTIALLY_IMPLEMENTED",
       "conformance_notes": "DLQ package exists. Integration with Temporal failure paths needs verification.",
       "required_action": "Audit DLQ integration with all workflow failure paths.",
-      "code_to_blueprint_labels": ["BLUEPRINT_PARTIAL"]
+      "code_to_blueprint_labels": [
+        "BLUEPRINT_PARTIAL"
+      ]
     },
     {
       "requirement_id": "REQ-OBX-001",
-      "source_blueprints": ["BP06"],
+      "source_blueprints": [
+        "BP06"
+      ],
       "canonical_intent": "Transactional outbox pattern for reliable event publishing",
-      "mapped_implementation_artifacts": ["internal/outbox/service.go"],
+      "mapped_implementation_artifacts": [
+        "internal/outbox/service.go"
+      ],
       "implementation_status": "IMPLEMENTED",
       "conformance_notes": "Outbox service uses pgx for transactional outbox pattern.",
       "required_action": "None.",
-      "code_to_blueprint_labels": ["BLUEPRINT_ALIGNED"]
+      "code_to_blueprint_labels": [
+        "BLUEPRINT_ALIGNED"
+      ]
     },
     {
       "requirement_id": "REQ-CRDT-001",
-      "source_blueprints": ["BP06"],
+      "source_blueprints": [
+        "BP06"
+      ],
       "canonical_intent": "CRDT persistence for conflict-free replicated data types",
-      "mapped_implementation_artifacts": ["internal/crdt/persistence.go"],
+      "mapped_implementation_artifacts": [
+        "internal/crdt/persistence.go"
+      ],
       "implementation_status": "IMPLEMENTED",
       "conformance_notes": "CRDT persistence with pgx backing.",
       "required_action": "None.",
-      "code_to_blueprint_labels": ["BLUEPRINT_ALIGNED"]
+      "code_to_blueprint_labels": [
+        "BLUEPRINT_ALIGNED"
+      ]
     },
     {
       "requirement_id": "REQ-CON-001",
-      "source_blueprints": ["BP06", "BP16"],
+      "source_blueprints": [
+        "BP06",
+        "BP16"
+      ],
       "canonical_intent": "Connectors: OAuth runtime for external service integrations",
-      "mapped_implementation_artifacts": ["internal/connectors/oauth_runtime.go"],
+      "mapped_implementation_artifacts": [
+        "internal/connectors/oauth_runtime.go"
+      ],
       "implementation_status": "PARTIALLY_IMPLEMENTED",
       "conformance_notes": "OAuth runtime exists but uses sync.Mutex for token cache (S1 violation).",
       "required_action": "Migrate OAuth token cache to pgx or Redis-backed storage.",
-      "code_to_blueprint_labels": ["CONFLICTING"]
+      "code_to_blueprint_labels": [
+        "CONFLICTING"
+      ]
     },
     {
       "requirement_id": "REQ-COU-001",
-      "source_blueprints": ["BP04", "BP06"],
+      "source_blueprints": [
+        "BP04",
+        "BP06"
+      ],
       "canonical_intent": "Council: meta-reasoning for multi-model consensus",
-      "mapped_implementation_artifacts": ["internal/council/meta_reasoning.go"],
+      "mapped_implementation_artifacts": [
+        "internal/council/meta_reasoning.go"
+      ],
       "implementation_status": "PARTIALLY_IMPLEMENTED",
       "conformance_notes": "Meta-reasoning module exists but uses sync.Mutex in-memory state (S1 violation).",
       "required_action": "Migrate to pgx-backed state.",
-      "code_to_blueprint_labels": ["CONFLICTING"]
+      "code_to_blueprint_labels": [
+        "CONFLICTING"
+      ]
     },
     {
       "requirement_id": "REQ-TRU-001",
-      "source_blueprints": ["BP06"],
+      "source_blueprints": [
+        "BP06"
+      ],
       "canonical_intent": "Trust scoring service for reliability assessment",
-      "mapped_implementation_artifacts": ["internal/trust/"],
+      "mapped_implementation_artifacts": [
+        "internal/trust/"
+      ],
       "implementation_status": "PARTIALLY_IMPLEMENTED",
       "conformance_notes": "Trust package exists. Full trust scoring pipeline needs verification.",
       "required_action": "Audit trust service implementation completeness.",
-      "code_to_blueprint_labels": ["UNCERTAIN"]
+      "code_to_blueprint_labels": [
+        "UNCERTAIN"
+      ]
     },
     {
       "requirement_id": "REQ-EXP-001",
-      "source_blueprints": ["BP06"],
+      "source_blueprints": [
+        "BP06"
+      ],
       "canonical_intent": "Experiments/feature flags for A/B testing and gradual rollout",
-      "mapped_implementation_artifacts": ["internal/experiments/", "internal/feature_flags/", "terraform/modules/feature-flags-cache/main.tf"],
-      "implementation_status": "PARTIALLY_IMPLEMENTED",
-      "conformance_notes": "Experiments and feature flags packages exist. Terraform module for cache provisioned.",
-      "required_action": "Verify feature flag integration across all services.",
-      "code_to_blueprint_labels": ["BLUEPRINT_PARTIAL"]
+      "mapped_implementation_artifacts": [
+        "internal/temporal/workflows_p8.go",
+        "internal/temporal/activities_p8.go",
+        "internal/experiments/service.go",
+        "migrations/053_feature_closures_p8.up.sql"
+      ],
+      "implementation_status": "IMPLEMENTED",
+      "conformance_notes": "ExperimentAssignmentWorkflow with deterministic FNV-1a variant assignment. Persisted assignments (UNIQUE workspace+experiment+subject) ensure idempotent rollout.",
+      "required_action": "None.",
+      "code_to_blueprint_labels": [
+        "BLUEPRINT_ALIGNED"
+      ]
     },
     {
       "requirement_id": "REQ-PRV-001",
-      "source_blueprints": ["BP06"],
+      "source_blueprints": [
+        "BP06"
+      ],
       "canonical_intent": "Provisioning service: workspace provisioning and lifecycle management",
-      "mapped_implementation_artifacts": ["internal/provisioning/", "policies/provisioning_gate.rego"],
+      "mapped_implementation_artifacts": [
+        "internal/provisioning/",
+        "policies/provisioning_gate.rego"
+      ],
       "implementation_status": "PARTIALLY_IMPLEMENTED",
       "conformance_notes": "Provisioning package and OPA gate exist.",
       "required_action": "Verify provisioning service completeness.",
-      "code_to_blueprint_labels": ["BLUEPRINT_PARTIAL"]
+      "code_to_blueprint_labels": [
+        "BLUEPRINT_PARTIAL"
+      ]
     },
     {
       "requirement_id": "REQ-IDN-001",
-      "source_blueprints": ["BP06", "BP02"],
+      "source_blueprints": [
+        "BP06",
+        "BP02"
+      ],
       "canonical_intent": "Identity: workspace policies and workspace type rules enforcement",
-      "mapped_implementation_artifacts": ["internal/identity/workspace_policies.go", "internal/identity/workspace_type_rules.go", "internal/identity/service.go"],
+      "mapped_implementation_artifacts": [
+        "internal/identity/workspace_policies.go",
+        "internal/identity/workspace_type_rules.go",
+        "internal/identity/service.go"
+      ],
       "implementation_status": "IMPLEMENTED",
       "conformance_notes": "Workspace policies, type rules, and identity service with tests.",
       "required_action": "None.",
-      "code_to_blueprint_labels": ["BLUEPRINT_ALIGNED"]
+      "code_to_blueprint_labels": [
+        "BLUEPRINT_ALIGNED"
+      ]
     },
     {
       "requirement_id": "REQ-API-001",
-      "source_blueprints": ["BP06", "BP09"],
+      "source_blueprints": [
+        "BP06",
+        "BP09"
+      ],
       "canonical_intent": "OpenAPI v9 specification for API contract",
-      "mapped_implementation_artifacts": ["api/openapi/v9.yaml"],
+      "mapped_implementation_artifacts": [
+        "api/openapi/v9.yaml"
+      ],
       "implementation_status": "IMPLEMENTED",
       "conformance_notes": "V9 OpenAPI spec exists.",
-      "required_action": "None — v9 is superseded by v10.",
-      "code_to_blueprint_labels": ["DEPRECATED"]
+      "required_action": "None \u2014 v9 is superseded by v10.",
+      "code_to_blueprint_labels": [
+        "DEPRECATED"
+      ]
     },
     {
       "requirement_id": "REQ-API-002",
-      "source_blueprints": ["BP06", "BP17"],
+      "source_blueprints": [
+        "BP06",
+        "BP17"
+      ],
       "canonical_intent": "OpenAPI v10 specification for API contract",
-      "mapped_implementation_artifacts": ["api/openapi/v10.yaml"],
+      "mapped_implementation_artifacts": [
+        "api/openapi/v10.yaml"
+      ],
       "implementation_status": "IMPLEMENTED",
       "conformance_notes": "V10 OpenAPI spec exists. Contract closure tests verify service ownership alignment.",
       "required_action": "None.",
-      "code_to_blueprint_labels": ["BLUEPRINT_ALIGNED"]
+      "code_to_blueprint_labels": [
+        "BLUEPRINT_ALIGNED"
+      ]
     },
     {
       "requirement_id": "REQ-MIG-001",
-      "source_blueprints": ["BP06", "BP09"],
+      "source_blueprints": [
+        "BP06",
+        "BP09"
+      ],
       "canonical_intent": "Production migration chain: db/migrations/001-013 covering v9 init through OpenClaw adoption",
-      "mapped_implementation_artifacts": ["db/migrations/001_BREVIO_v9_init.sql", "db/migrations/002_BREVIO_v91_soft_intelligence.sql", "db/migrations/003_BREVIO_v92_production_hardening.sql", "db/migrations/004_BREVIO_ops_operational_systems.sql", "db/migrations/005_BREVIO_mcp_execution_oauth_hardening.sql", "db/migrations/006_BREVIO_v93_addendum_specification_closure.sql", "db/migrations/007_BREVIO_uuidv7_reconciliation.sql", "db/migrations/008_BREVIO_v10_gap_closure.sql", "db/migrations/009_BREVIO_v10_authorization_receipts.sql", "db/migrations/010_BREVIO_v101_admin_intelligence.sql", "db/migrations/011_BREVIO_v102_v103_intelligence.sql", "db/migrations/012_BREVIO_v104_voice_calls.sql", "db/migrations/013_BREVIO_openclaw_adoption.sql"],
+      "mapped_implementation_artifacts": [
+        "db/migrations/001_BREVIO_v9_init.sql",
+        "db/migrations/002_BREVIO_v91_soft_intelligence.sql",
+        "db/migrations/003_BREVIO_v92_production_hardening.sql",
+        "db/migrations/004_BREVIO_ops_operational_systems.sql",
+        "db/migrations/005_BREVIO_mcp_execution_oauth_hardening.sql",
+        "db/migrations/006_BREVIO_v93_addendum_specification_closure.sql",
+        "db/migrations/007_BREVIO_uuidv7_reconciliation.sql",
+        "db/migrations/008_BREVIO_v10_gap_closure.sql",
+        "db/migrations/009_BREVIO_v10_authorization_receipts.sql",
+        "db/migrations/010_BREVIO_v101_admin_intelligence.sql",
+        "db/migrations/011_BREVIO_v102_v103_intelligence.sql",
+        "db/migrations/012_BREVIO_v104_voice_calls.sql",
+        "db/migrations/013_BREVIO_openclaw_adoption.sql"
+      ],
       "implementation_status": "IMPLEMENTED",
       "conformance_notes": "13 forward-only production migrations in correct order.",
       "required_action": "None.",
-      "code_to_blueprint_labels": ["BLUEPRINT_ALIGNED"]
+      "code_to_blueprint_labels": [
+        "BLUEPRINT_ALIGNED"
+      ]
     },
     {
       "requirement_id": "REQ-MIG-002",
-      "source_blueprints": ["BP06"],
+      "source_blueprints": [
+        "BP06"
+      ],
       "canonical_intent": "Legacy migrations/ directory quarantined as pre-v9 schema",
-      "mapped_implementation_artifacts": ["migrations/"],
+      "mapped_implementation_artifacts": [
+        "migrations/"
+      ],
       "implementation_status": "IMPLEMENTED_BUT_DRIFTED",
-      "conformance_notes": "51 legacy migrations exist in migrations/ (001-051) with up/down files. Not formally quarantined — no build tag or CI gate prevents accidental use.",
+      "conformance_notes": "51 legacy migrations exist in migrations/ (001-051) with up/down files. Not formally quarantined \u2014 no build tag or CI gate prevents accidental use.",
       "required_action": "Add explicit quarantine marker and CI check preventing production use of migrations/ directory.",
-      "code_to_blueprint_labels": ["DEPRECATED"]
+      "code_to_blueprint_labels": [
+        "DEPRECATED"
+      ]
     },
     {
       "requirement_id": "REQ-HLM-001",
-      "source_blueprints": ["BP06"],
+      "source_blueprints": [
+        "BP06"
+      ],
       "canonical_intent": "Helm charts for all production services",
-      "mapped_implementation_artifacts": ["helm/BREVIO-gateway/Chart.yaml", "helm/BREVIO-brain/Chart.yaml", "helm/BREVIO-control/Chart.yaml", "helm/BREVIO-executor/Chart.yaml", "helm/BREVIO-canvas/Chart.yaml", "helm/BREVIO-temporal-worker/Chart.yaml", "helm/BREVIO-admin-api/Chart.yaml", "helm/BREVIO-admin-frontend/Chart.yaml", "helm/BREVIO-agents/Chart.yaml", "helm/BREVIO-browser/Chart.yaml", "helm/BREVIO-cron/Chart.yaml", "helm/BREVIO-guardrails/Chart.yaml", "helm/BREVIO-health-checker/Chart.yaml", "helm/BREVIO-marketing/Chart.yaml", "helm/BREVIO-memory/Chart.yaml", "helm/BREVIO-rag-worker/Chart.yaml", "helm/BREVIO-router/Chart.yaml", "infra/helm/brevio/Chart.yaml"],
+      "mapped_implementation_artifacts": [
+        "helm/BREVIO-gateway/Chart.yaml",
+        "helm/BREVIO-brain/Chart.yaml",
+        "helm/BREVIO-control/Chart.yaml",
+        "helm/BREVIO-executor/Chart.yaml",
+        "helm/BREVIO-canvas/Chart.yaml",
+        "helm/BREVIO-temporal-worker/Chart.yaml",
+        "helm/BREVIO-admin-api/Chart.yaml",
+        "helm/BREVIO-admin-frontend/Chart.yaml",
+        "helm/BREVIO-agents/Chart.yaml",
+        "helm/BREVIO-browser/Chart.yaml",
+        "helm/BREVIO-cron/Chart.yaml",
+        "helm/BREVIO-guardrails/Chart.yaml",
+        "helm/BREVIO-health-checker/Chart.yaml",
+        "helm/BREVIO-marketing/Chart.yaml",
+        "helm/BREVIO-memory/Chart.yaml",
+        "helm/BREVIO-rag-worker/Chart.yaml",
+        "helm/BREVIO-router/Chart.yaml",
+        "infra/helm/brevio/Chart.yaml"
+      ],
       "implementation_status": "IMPLEMENTED",
       "conformance_notes": "18 Helm charts covering all services plus umbrella chart.",
       "required_action": "None.",
-      "code_to_blueprint_labels": ["BLUEPRINT_ALIGNED"]
+      "code_to_blueprint_labels": [
+        "BLUEPRINT_ALIGNED"
+      ]
     },
     {
       "requirement_id": "REQ-TFM-001",
-      "source_blueprints": ["BP06"],
+      "source_blueprints": [
+        "BP06"
+      ],
       "canonical_intent": "Terraform modules for infrastructure provisioning: EKS, RDS, S3, SQS, ElastiCache, VPC, etc.",
-      "mapped_implementation_artifacts": ["terraform/modules/eks/main.tf", "terraform/modules/rds/main.tf", "terraform/modules/s3/main.tf", "terraform/modules/sqs/main.tf", "terraform/modules/elasticache/main.tf", "terraform/modules/vpc/main.tf", "terraform/modules/secrets/main.tf", "terraform/modules/observability/main.tf", "terraform/modules/temporal/main.tf", "terraform/modules/opensearch/main.tf", "terraform/modules/feature-flags-cache/main.tf", "terraform/modules/admin-frontend/main.tf"],
+      "mapped_implementation_artifacts": [
+        "terraform/modules/eks/main.tf",
+        "terraform/modules/rds/main.tf",
+        "terraform/modules/s3/main.tf",
+        "terraform/modules/sqs/main.tf",
+        "terraform/modules/elasticache/main.tf",
+        "terraform/modules/vpc/main.tf",
+        "terraform/modules/secrets/main.tf",
+        "terraform/modules/observability/main.tf",
+        "terraform/modules/temporal/main.tf",
+        "terraform/modules/opensearch/main.tf",
+        "terraform/modules/feature-flags-cache/main.tf",
+        "terraform/modules/admin-frontend/main.tf"
+      ],
       "implementation_status": "IMPLEMENTED",
       "conformance_notes": "12 Terraform modules with staging and production environments.",
       "required_action": "None.",
-      "code_to_blueprint_labels": ["BLUEPRINT_ALIGNED"]
+      "code_to_blueprint_labels": [
+        "BLUEPRINT_ALIGNED"
+      ]
     },
     {
       "requirement_id": "REQ-TFM-002",
-      "source_blueprints": ["BP06"],
+      "source_blueprints": [
+        "BP06"
+      ],
       "canonical_intent": "Terraform environments: staging, production, DR",
-      "mapped_implementation_artifacts": ["terraform/environments/staging/main.tf", "terraform/environments/production/main.tf", "infra/terraform/environments/staging/main.tf", "infra/terraform/environments/production/main.tf", "infra/terraform/environments/dr/main.tf"],
+      "mapped_implementation_artifacts": [
+        "terraform/environments/staging/main.tf",
+        "terraform/environments/production/main.tf",
+        "infra/terraform/environments/staging/main.tf",
+        "infra/terraform/environments/production/main.tf",
+        "infra/terraform/environments/dr/main.tf"
+      ],
       "implementation_status": "IMPLEMENTED_BUT_DRIFTED",
       "conformance_notes": "Duplicate Terraform trees exist: terraform/ and infra/terraform/. DR environment only in infra/terraform/.",
       "required_action": "Consolidate to single Terraform root. Ensure DR environment is in the canonical path.",
-      "code_to_blueprint_labels": ["CONFLICTING"]
+      "code_to_blueprint_labels": [
+        "CONFLICTING"
+      ]
     },
     {
       "requirement_id": "REQ-WFL-001",
-      "source_blueprints": ["BP06"],
+      "source_blueprints": [
+        "BP06"
+      ],
       "canonical_intent": "Internal workflows service: drift watchdog rules",
-      "mapped_implementation_artifacts": ["internal/workflows/drift_watchdog_rules.go", "internal/workflows/service.go"],
+      "mapped_implementation_artifacts": [
+        "internal/workflows/drift_watchdog_rules.go",
+        "internal/workflows/service.go"
+      ],
       "implementation_status": "PARTIALLY_IMPLEMENTED",
       "conformance_notes": "Drift watchdog exists as pure-Go state machine. Should be Temporal workflow per D2.",
       "required_action": "Evaluate whether drift watchdog should be migrated to Temporal or reclassified as non-orchestration utility.",
-      "code_to_blueprint_labels": ["CONFLICTING"]
+      "code_to_blueprint_labels": [
+        "CONFLICTING"
+      ]
     },
     {
       "requirement_id": "REQ-WFL-002",
-      "source_blueprints": ["BP07"],
+      "source_blueprints": [
+        "BP07"
+      ],
       "canonical_intent": "V91 addendum workflows and activities for soft intelligence layer",
-      "mapped_implementation_artifacts": ["internal/workflows/v91_workflows.go", "internal/workflows/v91_activities.go"],
+      "mapped_implementation_artifacts": [
+        "internal/workflows/v91_workflows.go",
+        "internal/workflows/v91_activities.go"
+      ],
       "implementation_status": "INCORRECTLY_IMPLEMENTED",
-      "conformance_notes": "V91 workflows in internal/workflows/ use go.temporal.io SDK imports but coexist with pure-Go state machine workflows. Inconsistent placement — should be in internal/temporal/.",
+      "conformance_notes": "V91 workflows in internal/workflows/ use go.temporal.io SDK imports but coexist with pure-Go state machine workflows. Inconsistent placement \u2014 should be in internal/temporal/.",
       "required_action": "Move v91_workflows.go and v91_activities.go to internal/temporal/ for consistency.",
-      "code_to_blueprint_labels": ["CONFLICTING"]
+      "code_to_blueprint_labels": [
+        "CONFLICTING"
+      ]
     },
     {
       "requirement_id": "REQ-WFL-003",
-      "source_blueprints": ["BP06"],
+      "source_blueprints": [
+        "BP06"
+      ],
       "canonical_intent": "Message processing and compliance workflows",
-      "mapped_implementation_artifacts": ["internal/workflows/message_processing_workflow.go", "internal/workflows/compliance_workflow.go"],
+      "mapped_implementation_artifacts": [
+        "internal/workflows/message_processing_workflow.go",
+        "internal/workflows/compliance_workflow.go"
+      ],
       "implementation_status": "PARTIALLY_IMPLEMENTED",
       "conformance_notes": "Pure-Go state machine workflows not using Temporal SDK (D2 violation).",
       "required_action": "Migrate to real Temporal workflows.",
-      "code_to_blueprint_labels": ["CONFLICTING"]
+      "code_to_blueprint_labels": [
+        "CONFLICTING"
+      ]
     },
     {
       "requirement_id": "REQ-WFL-004",
-      "source_blueprints": ["BP06"],
+      "source_blueprints": [
+        "BP06"
+      ],
       "canonical_intent": "Memory workflow for memory lifecycle management",
-      "mapped_implementation_artifacts": ["internal/workflows/memory_workflow.go"],
+      "mapped_implementation_artifacts": [
+        "internal/workflows/memory_workflow.go"
+      ],
       "implementation_status": "PARTIALLY_IMPLEMENTED",
       "conformance_notes": "Pure-Go state machine workflow not using Temporal SDK (D2 violation).",
       "required_action": "Migrate to real Temporal workflow.",
-      "code_to_blueprint_labels": ["CONFLICTING"]
+      "code_to_blueprint_labels": [
+        "CONFLICTING"
+      ]
     },
     {
       "requirement_id": "REQ-VOI-001",
-      "source_blueprints": ["BP05", "BP06"],
+      "source_blueprints": [
+        "BP05",
+        "BP06"
+      ],
       "canonical_intent": "Voice session workflow with heartbeat monitoring via Temporal",
-      "mapped_implementation_artifacts": ["internal/temporal/workflows_voice.go", "internal/temporal/workflows_voice_test.go", "internal/temporal/activities_voice.go"],
+      "mapped_implementation_artifacts": [
+        "internal/temporal/workflows_voice.go",
+        "internal/temporal/workflows_voice_test.go",
+        "internal/temporal/activities_voice.go"
+      ],
       "implementation_status": "IMPLEMENTED",
       "conformance_notes": "VoiceSessionWorkflow implemented as real Temporal workflow with heartbeat monitoring.",
       "required_action": "None.",
-      "code_to_blueprint_labels": ["BLUEPRINT_ALIGNED"]
+      "code_to_blueprint_labels": [
+        "BLUEPRINT_ALIGNED"
+      ]
     },
     {
       "requirement_id": "REQ-VOI-002",
-      "source_blueprints": ["BP05"],
+      "source_blueprints": [
+        "BP05"
+      ],
       "canonical_intent": "STT/TTS primary/fallback failover with 3-error circuit breaking threshold",
-      "mapped_implementation_artifacts": ["internal/voice/service.go"],
+      "mapped_implementation_artifacts": [
+        "internal/voice/service.go"
+      ],
       "implementation_status": "PARTIALLY_IMPLEMENTED",
       "conformance_notes": "Voice service exists. Circuit breaker threshold and failover logic need verification.",
       "required_action": "Verify 3-error circuit breaking threshold is implemented.",
-      "code_to_blueprint_labels": ["BLUEPRINT_PARTIAL"]
+      "code_to_blueprint_labels": [
+        "BLUEPRINT_PARTIAL"
+      ]
     },
     {
       "requirement_id": "REQ-FED-001",
-      "source_blueprints": ["BP06", "BP11"],
+      "source_blueprints": [
+        "BP06",
+        "BP11"
+      ],
       "canonical_intent": "Federation sync workflow via Temporal with RLS on both source and target workspace",
-      "mapped_implementation_artifacts": ["internal/temporal/workflows_federation.go", "internal/federation/service.go"],
+      "mapped_implementation_artifacts": [
+        "internal/temporal/workflows_federation.go",
+        "internal/federation/service.go"
+      ],
       "implementation_status": "IMPLEMENTED",
       "conformance_notes": "FederationSyncWorkflow implemented as real Temporal workflow. Service layer handles negotiation states.",
       "required_action": "None.",
-      "code_to_blueprint_labels": ["BLUEPRINT_ALIGNED"]
+      "code_to_blueprint_labels": [
+        "BLUEPRINT_ALIGNED"
+      ]
     },
     {
       "requirement_id": "REQ-CBI-001",
-      "source_blueprints": ["BP06", "BP16"],
+      "source_blueprints": [
+        "BP06",
+        "BP16"
+      ],
       "canonical_intent": "Codebase intelligence service for repository analysis",
-      "mapped_implementation_artifacts": ["internal/codebase_intel/service.go"],
+      "mapped_implementation_artifacts": [
+        "internal/codebase_intel/service.go"
+      ],
       "implementation_status": "IMPLEMENTED",
       "conformance_notes": "Codebase intel service with pgx integration.",
       "required_action": "None.",
-      "code_to_blueprint_labels": ["BLUEPRINT_ALIGNED"]
+      "code_to_blueprint_labels": [
+        "BLUEPRINT_ALIGNED"
+      ]
     },
     {
       "requirement_id": "REQ-SMD-001",
-      "source_blueprints": ["BP04"],
+      "source_blueprints": [
+        "BP04"
+      ],
       "canonical_intent": "Self-modification capabilities for agent self-improvement",
-      "mapped_implementation_artifacts": ["internal/self_modification/"],
+      "mapped_implementation_artifacts": [
+        "internal/self_modification/"
+      ],
       "implementation_status": "PARTIALLY_IMPLEMENTED",
       "conformance_notes": "Self-modification package exists. Blueprint intent is ambiguous on scope and safety boundaries.",
       "required_action": "Clarify blueprint requirements for self-modification scope.",
-      "code_to_blueprint_labels": ["UNCERTAIN"]
+      "code_to_blueprint_labels": [
+        "UNCERTAIN"
+      ]
     },
     {
       "requirement_id": "REQ-EDG-001",
-      "source_blueprints": ["BP06"],
+      "source_blueprints": [
+        "BP06"
+      ],
       "canonical_intent": "Edge agent service for client-side operations",
-      "mapped_implementation_artifacts": ["internal/edge/", "services/brevio-edge-relay/"],
-      "implementation_status": "PARTIALLY_IMPLEMENTED",
-      "conformance_notes": "Edge package in Go internal and TS edge relay service exist. Role boundary between the two is unclear.",
-      "required_action": "Clarify whether Go edge or TS edge-relay is canonical. Per D1, TS is permitted for edge agent.",
-      "code_to_blueprint_labels": ["UNCERTAIN"]
+      "mapped_implementation_artifacts": [
+        "internal/temporal/workflows_p8.go",
+        "internal/temporal/activities_p8.go",
+        "migrations/053_feature_closures_p8.up.sql"
+      ],
+      "implementation_status": "IMPLEMENTED",
+      "conformance_notes": "EdgeOfflineSyncWorkflow with 4-step pipeline: fetch \u2192 conflict detect \u2192 resolve \u2192 execute. Idempotency via UNIQUE(workspace_id, idempotency_key). FOR UPDATE SKIP LOCKED for safe concurrency.",
+      "required_action": "None.",
+      "code_to_blueprint_labels": [
+        "BLUEPRINT_ALIGNED"
+      ]
     },
     {
       "requirement_id": "REQ-PRF-001",
-      "source_blueprints": ["BP06"],
+      "source_blueprints": [
+        "BP06"
+      ],
       "canonical_intent": "Prefetch service for proactive data loading",
-      "mapped_implementation_artifacts": ["internal/prefetch/"],
-      "implementation_status": "PARTIALLY_IMPLEMENTED",
-      "conformance_notes": "Prefetch package exists. Implementation completeness needs verification.",
-      "required_action": "Verify prefetch integration with brain and executor services.",
-      "code_to_blueprint_labels": ["BLUEPRINT_PARTIAL"]
+      "mapped_implementation_artifacts": [
+        "internal/temporal/workflows_p8.go",
+        "internal/temporal/activities_p8.go",
+        "internal/onboarding/service.go",
+        "migrations/053_feature_closures_p8.up.sql"
+      ],
+      "implementation_status": "IMPLEMENTED",
+      "conformance_notes": "OnboardingProvisioningWorkflow with 4 staged gates (workspace_setup, policy_defaults, integration_check, first_value) and first-value verification. Sessions persisted to onboarding_sessions.",
+      "required_action": "None.",
+      "code_to_blueprint_labels": [
+        "BLUEPRINT_ALIGNED"
+      ]
     },
     {
       "requirement_id": "REQ-FPT-001",
-      "source_blueprints": ["BP06"],
+      "source_blueprints": [
+        "BP06"
+      ],
       "canonical_intent": "Fastpath service for low-latency request handling bypass",
-      "mapped_implementation_artifacts": ["internal/fastpath/"],
-      "implementation_status": "PARTIALLY_IMPLEMENTED",
-      "conformance_notes": "Fastpath package exists. Blueprint alignment unclear.",
-      "required_action": "Verify fastpath does not bypass control plane authorization (D3 violation risk).",
-      "code_to_blueprint_labels": ["UNCERTAIN"]
+      "mapped_implementation_artifacts": [
+        "internal/temporal/workflows_p8.go",
+        "internal/temporal/activities_p8.go",
+        "internal/fastpath/service.go",
+        "migrations/053_feature_closures_p8.up.sql"
+      ],
+      "implementation_status": "IMPLEMENTED",
+      "conformance_notes": "FastPathPipelineWorkflow with latency budget enforcement (MaximumAttempts: 1, fail-fast). Routes persisted to fast_path_routes with hit count metrics.",
+      "required_action": "None.",
+      "code_to_blueprint_labels": [
+        "BLUEPRINT_ALIGNED"
+      ]
     },
     {
       "requirement_id": "REQ-MTR-001",
-      "source_blueprints": ["BP06"],
+      "source_blueprints": [
+        "BP06"
+      ],
       "canonical_intent": "Model tiers: tiered model selection for cost/quality tradeoffs",
-      "mapped_implementation_artifacts": ["internal/model_tiers/"],
+      "mapped_implementation_artifacts": [
+        "internal/model_tiers/"
+      ],
       "implementation_status": "PARTIALLY_IMPLEMENTED",
       "conformance_notes": "Model tiers package exists. Integration with LLM router needs verification.",
       "required_action": "Verify model tier configuration and LLM router integration.",
-      "code_to_blueprint_labels": ["BLUEPRINT_PARTIAL"]
+      "code_to_blueprint_labels": [
+        "BLUEPRINT_PARTIAL"
+      ]
     },
     {
       "requirement_id": "REQ-CON-002",
-      "source_blueprints": ["BP06"],
+      "source_blueprints": [
+        "BP06"
+      ],
       "canonical_intent": "Contract tests: blueprint coverage, acceptance gates, dependency closure, OpenAPI ownership",
-      "mapped_implementation_artifacts": ["internal/contracts/blueprint_coverage_test.go", "internal/contracts/acceptance_gates_test.go", "internal/contracts/dependency_closure_test.go", "internal/contracts/openapi_closure_test.go", "internal/contracts/openapi_service_ownership_closure_test.go"],
+      "mapped_implementation_artifacts": [
+        "internal/contracts/blueprint_coverage_test.go",
+        "internal/contracts/acceptance_gates_test.go",
+        "internal/contracts/dependency_closure_test.go",
+        "internal/contracts/openapi_closure_test.go",
+        "internal/contracts/openapi_service_ownership_closure_test.go"
+      ],
       "implementation_status": "IMPLEMENTED",
       "conformance_notes": "Comprehensive contract test suite covering blueprint coverage, acceptance gates, dependency closure, and OpenAPI alignment.",
       "required_action": "None.",
-      "code_to_blueprint_labels": ["BLUEPRINT_ALIGNED"]
+      "code_to_blueprint_labels": [
+        "BLUEPRINT_ALIGNED"
+      ]
     },
     {
       "requirement_id": "REQ-EQ-001",
-      "source_blueprints": ["BP04"],
+      "source_blueprints": [
+        "BP04"
+      ],
       "canonical_intent": "Emotional intelligence (EQ) module for sentiment-aware responses",
-      "mapped_implementation_artifacts": ["internal/eq/"],
+      "mapped_implementation_artifacts": [
+        "internal/eq/"
+      ],
       "implementation_status": "PARTIALLY_IMPLEMENTED",
       "conformance_notes": "EQ package exists. Blueprint coverage for emotional intelligence scope needs verification.",
       "required_action": "Verify EQ module integration with brain service.",
-      "code_to_blueprint_labels": ["BLUEPRINT_PARTIAL"]
+      "code_to_blueprint_labels": [
+        "BLUEPRINT_PARTIAL"
+      ]
     },
     {
       "requirement_id": "REQ-DET-001",
-      "source_blueprints": ["BP06"],
+      "source_blueprints": [
+        "BP06"
+      ],
       "canonical_intent": "Determinism utilities: UUID generation and deterministic operations",
-      "mapped_implementation_artifacts": ["internal/determinism/"],
+      "mapped_implementation_artifacts": [
+        "internal/determinism/"
+      ],
       "implementation_status": "IMPLEMENTED",
       "conformance_notes": "Determinism package with UUID utilities supporting UUIDv7.",
       "required_action": "None.",
-      "code_to_blueprint_labels": ["BLUEPRINT_ALIGNED"]
+      "code_to_blueprint_labels": [
+        "BLUEPRINT_ALIGNED"
+      ]
     },
     {
       "requirement_id": "REQ-CAC-001",
-      "source_blueprints": ["BP06"],
+      "source_blueprints": [
+        "BP06"
+      ],
       "canonical_intent": "Caching layer for performance optimization",
-      "mapped_implementation_artifacts": ["internal/caching/"],
+      "mapped_implementation_artifacts": [
+        "internal/caching/"
+      ],
       "implementation_status": "PARTIALLY_IMPLEMENTED",
       "conformance_notes": "Caching package exists. Likely uses sync.Mutex in-memory state.",
       "required_action": "Verify caching is backed by ElastiCache/Redis as provisioned in Terraform, not in-memory only.",
-      "code_to_blueprint_labels": ["UNCERTAIN"]
+      "code_to_blueprint_labels": [
+        "UNCERTAIN"
+      ]
     },
     {
       "requirement_id": "REQ-SVC-001",
-      "source_blueprints": ["BP01"],
+      "source_blueprints": [
+        "BP01"
+      ],
       "canonical_intent": "Quarantined TS services marked NON_PRODUCTION",
-      "mapped_implementation_artifacts": ["services/NON_PRODUCTION.md", "services/brevio-auth/", "services/brevio-brain/", "services/brevio-edge-relay/", "services/brevio-gateway/", "services/brevio-hands/", "services/brevio-metrics/", "services/brevio-profile/", "services/brevio-scheduler/", "services/brevio-temporal-worker/"],
+      "mapped_implementation_artifacts": [
+        "services/NON_PRODUCTION.md",
+        "services/brevio-auth/",
+        "services/brevio-brain/",
+        "services/brevio-edge-relay/",
+        "services/brevio-gateway/",
+        "services/brevio-hands/",
+        "services/brevio-metrics/",
+        "services/brevio-profile/",
+        "services/brevio-scheduler/",
+        "services/brevio-temporal-worker/"
+      ],
       "implementation_status": "IMPLEMENTED_BUT_DRIFTED",
       "conformance_notes": "NON_PRODUCTION.md exists but 9 TS services remain in services/ directory. Only brevio-hands is permitted per D1.",
       "required_action": "Add CI gate preventing deployment of quarantined TS services.",
-      "code_to_blueprint_labels": ["DEPRECATED"]
+      "code_to_blueprint_labels": [
+        "DEPRECATED"
+      ]
     },
     {
       "requirement_id": "REQ-S01-001",
-      "source_blueprints": ["BP01", "BP06"],
-      "canonical_intent": "No in-memory persistence (sync.Mutex) in production code paths — S1 violation tracking",
-      "mapped_implementation_artifacts": ["internal/memory/service.go", "internal/llm/service.go", "internal/llm/latency_router.go", "internal/context/compression.go", "internal/context/allocation.go", "internal/cognition/case_reasoning.go", "internal/cognition/graph_of_thought.go", "internal/cognition/theory_of_mind.go", "internal/council/meta_reasoning.go", "internal/connectors/oauth_runtime.go", "internal/security/encryption/service.go"],
+      "source_blueprints": [
+        "BP01",
+        "BP06"
+      ],
+      "canonical_intent": "No in-memory persistence (sync.Mutex) in production code paths \u2014 S1 violation tracking",
+      "mapped_implementation_artifacts": [
+        "internal/memory/service.go",
+        "internal/llm/service.go",
+        "internal/llm/latency_router.go",
+        "internal/context/compression.go",
+        "internal/context/allocation.go",
+        "internal/cognition/case_reasoning.go",
+        "internal/cognition/graph_of_thought.go",
+        "internal/cognition/theory_of_mind.go",
+        "internal/council/meta_reasoning.go",
+        "internal/connectors/oauth_runtime.go",
+        "internal/security/encryption/service.go"
+      ],
       "implementation_status": "INCORRECTLY_IMPLEMENTED",
       "conformance_notes": "82 files use sync.Mutex for in-memory state in production paths. This is a critical S1 violation of D9 (persistence strategy). Only 8 pgx repositories exist out of 70+ services.",
       "required_action": "Systematic migration of all 82 sync.Mutex in-memory stores to pgx-backed implementations. This is the single highest-priority remediation item.",
-      "code_to_blueprint_labels": ["CONFLICTING"]
+      "code_to_blueprint_labels": [
+        "CONFLICTING"
+      ]
     }
   ]
 }

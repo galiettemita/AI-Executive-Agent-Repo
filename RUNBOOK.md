@@ -89,6 +89,84 @@ curl http://localhost:18793/health/deep  # Canvas
 5. Test fix on staging first
 6. Apply fix migration: `make migrate`
 
+### INC-006: OPA Sidecar Unavailable
+**Severity:** P1
+**Impact:** All policy decisions denied (deny-by-default posture D025)
+
+1. Check OPA sidecar: `curl http://localhost:8181/health`
+2. Check circuit breaker status in Control logs: search for `opa_circuit_open`
+3. OPA down → all new tool executions are DENIED (no fallback in production)
+4. To restore:
+   ```bash
+   kubectl rollout restart deployment/opa -n brevio
+   curl http://localhost:8181/v1/data/brevio/control/allow
+   ```
+5. Circuit breaker auto-recovers after 30s cooldown once OPA responds
+6. Post-incident: review why OPA crashed; check policy bundle syntax
+
+### INC-007: Temporal Stuck Workflows
+**Severity:** P2
+**Impact:** Messages stuck in processing
+
+1. Open Temporal UI: http://localhost:8088
+2. Filter workflows by status: Running with age > 10 minutes
+3. Check if worker is polling: `curl http://localhost:18084/health/deep`
+4. Common causes:
+   - Activity timeout too short → check `StartToCloseTimeout` in workflow code
+   - Activity panicking → check worker logs for stack traces
+   - Database lock contention → check `pg_stat_activity` for blocked queries
+5. For truly stuck workflows (rare):
+   ```bash
+   tctl workflow terminate -w <workflow_id> -r <run_id> --reason "stuck_workflow_recovery"
+   ```
+6. After fix, affected messages will be reprocessed from ingress queue
+
+### INC-008: Outbox DLQ Overflow
+**Severity:** P2
+**Impact:** Outbound messages not delivered
+
+1. Check DLQ depth:
+   ```sql
+   SELECT COUNT(*) FROM outbox_items WHERE status = 'dlq';
+   ```
+2. Inspect recent failures:
+   ```sql
+   SELECT id, event_type, target, attempts, created_at
+   FROM outbox_items WHERE status = 'dlq'
+   ORDER BY created_at DESC LIMIT 20;
+   ```
+3. Common causes:
+   - Target channel unreachable (Slack/WhatsApp API down)
+   - Malformed payload → inspect `payload` column
+   - Rate limited by provider → check tool health scores
+4. To reprocess after fixing root cause:
+   ```sql
+   UPDATE outbox_items SET status = 'pending', attempts = 0
+   WHERE status = 'dlq' AND created_at > now() - interval '1 hour';
+   ```
+5. `OutboxDispatchWorkflow` will pick up requeued items automatically
+
+### INC-009: Load Shedding Tier Escalation
+**Severity:** P1 (D4/D5)
+**Impact:** System shedding work; some requests rejected
+
+1. Check current tier:
+   ```sql
+   SELECT * FROM load_shedding_state;
+   ```
+2. D1-D3: Auto-recovery after 5+ minutes of healthy metrics
+3. D4: Requires operator confirmation to recover
+4. D5: Manual-only (activated by operator, not automated)
+5. Investigate cause: CPU? Error rate? DB pool?
+   ```sql
+   SELECT count(*), state FROM pg_stat_activity GROUP BY state;
+   ```
+6. D4 recovery:
+   ```sql
+   UPDATE load_shedding_state SET current_tier = 'D0', reason = 'operator_recovery'
+   WHERE workspace_id = '<ws_id>';
+   ```
+
 ## Deployment Procedures
 
 ### Standard Deployment

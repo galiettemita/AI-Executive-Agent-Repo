@@ -110,7 +110,6 @@ func TestBlueprintCoverage(t *testing.T) {
 		assertFileNonEmpty(t, filepath.Join(root, "Dockerfile"))
 		assertFileNonEmpty(t, filepath.Join(root, "docker-compose.yml"))
 		assertFileNonEmpty(t, filepath.Join(root, ".github", "workflows", "ci.yml"))
-		assertFileNonEmpty(t, filepath.Join(root, ".github", "workflows", "ci.yaml"))
 	})
 
 	// Gate G: Deployability

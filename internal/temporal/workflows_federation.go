@@ -1,7 +1,6 @@
 package temporal
 
 import (
-	"context"
 	"time"
 
 	"go.temporal.io/sdk/temporal"
@@ -40,19 +39,11 @@ func FederationSyncWorkflow(ctx workflow.Context, input FederationSyncInput) (*F
 	}
 	ctx = workflow.WithActivityOptions(ctx, ao)
 
+	var a *Activities
 	var result FederationSyncResult
-	err := workflow.ExecuteActivity(ctx, ExecuteFederationSyncActivity, input).Get(ctx, &result)
+	err := workflow.ExecuteActivity(ctx, a.ExecuteFederationSyncActivity, input).Get(ctx, &result)
 	if err != nil {
 		return &FederationSyncResult{Status: "FAILED"}, nil
 	}
 	return &result, nil
-}
-
-// ExecuteFederationSyncActivity performs the actual federation sync.
-func ExecuteFederationSyncActivity(_ context.Context, _ FederationSyncInput) (*FederationSyncResult, error) {
-	return &FederationSyncResult{
-		ItemsSynced:    0,
-		ConflictsFound: 0,
-		Status:         "COMPLETED",
-	}, nil
 }

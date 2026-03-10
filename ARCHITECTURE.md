@@ -43,17 +43,35 @@ flowchart LR
 | Temporal Worker | `cmd/temporal-worker` | Workflow/activity execution engine |
 | brevioctl | `cmd/brevioctl` | CLI admin tool, verification commands |
 
-## Data Flow
+## Data Flow — Intelligence Pipeline (P7)
 
 1. **Ingress**: User message arrives at Gateway via channel webhook
 2. **Normalization**: Gateway validates, deduplicates, normalizes envelope
 3. **Workflow Start**: Gateway starts `MessageProcessingWorkflow` via Temporal
 4. **Classification**: Brain activity classifies intent with confidence scoring
-5. **Planning**: Brain generates execution plan with tool keys and risk level
-6. **Authorization**: Control activity issues authorization receipt (deny-by-default)
-7. **Execution**: Executor activities run tools with receipt verification
-8. **Synthesis**: Brain synthesizes response from tool results
-9. **Delivery**: Response delivered back through originating channel
+5. **Memory Retrieval**: FNV-1a scored, stable-sorted memory items
+6. **RAG Search**: FNV-1a scored, stable-sorted retrieval chunks
+7. **Reasoning Loop**: Brain generates plan with deterministic tool keys and evidence hash
+8. **Cognitive Assessment**: Metacognitive load/quality/uncertainty evaluation
+9. **Council Evaluation**: Multi-agent eval for CRITICAL risk or complexity > 0.7
+10. **Authorization**: Control activity issues receipt (deny-by-default, 7-gate chain)
+11. **Execution**: Executor runs tools with deterministic jitter and receipt verification
+12. **Synthesis**: Brain synthesizes response from tool results
+13. **Outbox Enqueue**: Transactional outbox entry for delivery
+14. **Delivery**: Response delivered back through originating channel
+
+## Feature Closures (P8)
+
+| Feature | Workflow | Policy Gate | Persistence |
+|---------|----------|-------------|-------------|
+| Federation | `FederationNegotiationWorkflow` | Permission type validation | `federation_sync_log` |
+| Edge Sync | `EdgeOfflineSyncWorkflow` | Idempotency + conflict resolution | `edge_sync_tasks` |
+| Browser | `BrowserAutomationWorkflow` | Receipt enforcement | `browser_sessions` |
+| Fast-Path | `FastPathPipelineWorkflow` | Latency budget (fail-fast) | `fast_path_routes` |
+| Experiments | `ExperimentAssignmentWorkflow` | Deterministic FNV-1a rollout | `experiment_*` tables |
+| Onboarding | `OnboardingProvisioningWorkflow` | First-value verification | `onboarding_sessions` |
+| Billing | `BillingEnforcementWorkflow` | Webhook idempotency + policy gate | `billing_*` tables |
+| Load Shedding | `LoadSheddingTierWorkflow` | D0-D4 tier propagation | `load_shedding_state` |
 
 ## Repository Pattern
 

@@ -264,12 +264,10 @@ func TestAcceptanceGateRuntimeCoverageV9(t *testing.T) {
 
 	t.Run("cve_scanning", func(t *testing.T) {
 		root := repositoryRoot(t)
-		ciPath := filepath.Join(root, ".github", "workflows", "ci.yaml")
+		ciPath := filepath.Join(root, ".github", "workflows", "ci.yml")
 		assertFileContainsTokens(t, ciPath, []string{
-			"trivy",
-			"trufflehog",
-			"govulncheck baseline",
-			"bash scripts/security/run_govulncheck.sh",
+			"Security Scan",
+			"run_security_validation.sh",
 		})
 		assertFileContainsTokens(t, filepath.Join(root, "scripts", "security", "run_security_validation.sh"), []string{
 			"run_govulncheck.sh",

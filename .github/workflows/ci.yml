@@ -1,4 +1,4 @@
-name: ci-openclaw
+name: ci
 
 on:
   pull_request:
@@ -150,6 +150,42 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: make docker-build
+      - name: Generate SBOM (CycloneDX)
+        run: |
+          if command -v cyclonedx-gomod &>/dev/null; then
+            cyclonedx-gomod mod -json -output sbom.cyclonedx.json
+          else
+            echo "cyclonedx-gomod not found; using existing SPDX SBOM"
+          fi
+      - name: Enforce SBOM exists
+        run: |
+          if [ ! -f sbom.spdx.json ] && [ ! -f sbom.cyclonedx.json ]; then
+            echo "FATAL: No SBOM artifact found. Build cannot proceed without SBOM."
+            exit 1
+          fi
+          echo "SBOM artifact verified."
+      - name: Sign container image (cosign)
+        if: ${{ env.COSIGN_KEY != '' }}
+        env:
+          COSIGN_KEY: ${{ secrets.COSIGN_KEY }}
+        run: |
+          cosign sign --key env://COSIGN_KEY brevio/backend:${{ github.sha }}
+      - name: Attest SBOM provenance
+        if: ${{ env.COSIGN_KEY != '' }}
+        env:
+          COSIGN_KEY: ${{ secrets.COSIGN_KEY }}
+        run: |
+          SBOM_FILE="sbom.cyclonedx.json"
+          [ ! -f "$SBOM_FILE" ] && SBOM_FILE="sbom.spdx.json"
+          cosign attest --predicate "$SBOM_FILE" --type cyclonedx --key env://COSIGN_KEY brevio/backend:${{ github.sha }}
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-artifacts-${{ github.run_id }}
+          if-no-files-found: warn
+          path: |
+            sbom.spdx.json
+            sbom.cyclonedx.json
 
   deploy_staging:
     name: 9. Deploy Staging

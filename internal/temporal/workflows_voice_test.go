@@ -6,7 +6,8 @@ import (
 )
 
 func TestInitVoiceSessionActivity_Valid(t *testing.T) {
-	result, err := InitVoiceSessionActivity(context.Background(), VoiceInitInput{
+	a := NewActivities()
+	result, err := a.InitVoiceSessionActivity(context.Background(), VoiceInitInput{
 		SessionID:   "sess-12345678-abcd",
 		WorkspaceID: "ws-1",
 		UserID:      "u-1",
@@ -24,14 +25,16 @@ func TestInitVoiceSessionActivity_Valid(t *testing.T) {
 }
 
 func TestInitVoiceSessionActivity_MissingFields(t *testing.T) {
-	_, err := InitVoiceSessionActivity(context.Background(), VoiceInitInput{})
+	a := NewActivities()
+	_, err := a.InitVoiceSessionActivity(context.Background(), VoiceInitInput{})
 	if err == nil {
 		t.Fatal("expected error for missing fields")
 	}
 }
 
 func TestExtractVoiceTasksActivity_WithTasks(t *testing.T) {
-	result, err := ExtractVoiceTasksActivity(context.Background(), VoiceTaskExtractInput{
+	a := NewActivities()
+	result, err := a.ExtractVoiceTasksActivity(context.Background(), VoiceTaskExtractInput{
 		SessionID:   "sess-1",
 		WorkspaceID: "ws-1",
 		Transcript:  "Please remind me to call John tomorrow. Also schedule a meeting with the team.",
@@ -45,7 +48,8 @@ func TestExtractVoiceTasksActivity_WithTasks(t *testing.T) {
 }
 
 func TestExtractVoiceTasksActivity_Empty(t *testing.T) {
-	result, err := ExtractVoiceTasksActivity(context.Background(), VoiceTaskExtractInput{
+	a := NewActivities()
+	result, err := a.ExtractVoiceTasksActivity(context.Background(), VoiceTaskExtractInput{
 		SessionID:   "sess-1",
 		WorkspaceID: "ws-1",
 		Transcript:  "",

@@ -22,8 +22,8 @@ type TrustScoringWorkflowResult struct {
 }
 
 type GoalProgressWorkflowInput struct {
-	WorkspaceID    string `json:"workspace_id"`
-	StalledAfterH  int    `json:"stalled_after_hours"`
+	WorkspaceID   string `json:"workspace_id"`
+	StalledAfterH int    `json:"stalled_after_hours"`
 }
 
 type GoalProgressWorkflowResult struct {
@@ -39,10 +39,10 @@ type LearningConsolidationWorkflowInput struct {
 }
 
 type LearningConsolidationWorkflowResult struct {
-	WorkspaceID        string `json:"workspace_id"`
-	ConsolidatedCount  int    `json:"consolidated_count"`
-	ConfirmedLessons   int    `json:"confirmed_lessons"`
-	Status             string `json:"status"`
+	WorkspaceID       string `json:"workspace_id"`
+	ConsolidatedCount int    `json:"consolidated_count"`
+	ConfirmedLessons  int    `json:"confirmed_lessons"`
+	Status            string `json:"status"`
 }
 
 type DailyIntrospectionWorkflowInput struct {
@@ -58,14 +58,14 @@ type DailyIntrospectionWorkflowResult struct {
 }
 
 type DailyLogCaptureWorkflowInput struct {
-	WorkspaceID      string `json:"workspace_id"`
+	WorkspaceID       string `json:"workspace_id"`
 	InteractiveTurnID string `json:"interactive_turn_id"`
-	CaptureDate      string `json:"capture_date"`
+	CaptureDate       string `json:"capture_date"`
 }
 
 type DailyLogCaptureWorkflowResult struct {
-	WorkspaceID string `json:"workspace_id"`
-	EntriesLogged int  `json:"entries_logged"`
+	WorkspaceID   string `json:"workspace_id"`
+	EntriesLogged int    `json:"entries_logged"`
 	Status        string `json:"status"`
 }
 
@@ -87,14 +87,14 @@ type MissionControlRefreshWorkflowInput struct {
 }
 
 type MissionControlRefreshWorkflowResult struct {
-	WorkspaceID     string `json:"workspace_id"`
-	WidgetsRefreshed int   `json:"widgets_refreshed"`
+	WorkspaceID      string `json:"workspace_id"`
+	WidgetsRefreshed int    `json:"widgets_refreshed"`
 	Status           string `json:"status"`
 }
 
 type CapabilityExplorationWorkflowInput struct {
-	WorkspaceID             string `json:"workspace_id"`
-	CapabilityGapEventsLast7d int  `json:"capability_gap_events_last_7d"`
+	WorkspaceID               string `json:"workspace_id"`
+	CapabilityGapEventsLast7d int    `json:"capability_gap_events_last_7d"`
 }
 
 type CapabilityExplorationWorkflowResult struct {
@@ -110,6 +110,7 @@ func TrustScoringWorkflow(ctx workflow.Context, input TrustScoringWorkflowInput)
 	logger := workflow.GetLogger(ctx)
 	logger.Info("TrustScoringWorkflow started", "workspaceID", input.WorkspaceID)
 
+	var a *V91Activities
 	ao := workflow.ActivityOptions{
 		StartToCloseTimeout: 60 * time.Second,
 		RetryPolicy: &temporal.RetryPolicy{
@@ -122,7 +123,7 @@ func TrustScoringWorkflow(ctx workflow.Context, input TrustScoringWorkflowInput)
 	ctx = workflow.WithActivityOptions(ctx, ao)
 
 	var collectResult CollectTrustMetricsResult
-	err := workflow.ExecuteActivity(ctx, CollectTrustMetricsActivity, CollectTrustMetricsInput{
+	err := workflow.ExecuteActivity(ctx, a.CollectTrustMetricsActivity, CollectTrustMetricsInput{
 		WorkspaceID: input.WorkspaceID,
 	}).Get(ctx, &collectResult)
 	if err != nil {
@@ -132,7 +133,7 @@ func TrustScoringWorkflow(ctx workflow.Context, input TrustScoringWorkflowInput)
 	}
 
 	var scoreResult ComputeTrustScoreResult
-	err = workflow.ExecuteActivity(ctx, ComputeTrustScoreActivity, ComputeTrustScoreInput{
+	err = workflow.ExecuteActivity(ctx, a.ComputeTrustScoreActivity, ComputeTrustScoreInput{
 		WorkspaceID:      input.WorkspaceID,
 		SuccessCount30d:  collectResult.SuccessCount30d,
 		FailureCount30d:  collectResult.FailureCount30d,
@@ -155,6 +156,7 @@ func GoalProgressWorkflow(ctx workflow.Context, input GoalProgressWorkflowInput)
 	logger := workflow.GetLogger(ctx)
 	logger.Info("GoalProgressWorkflow started", "workspaceID", input.WorkspaceID)
 
+	var a *V91Activities
 	ao := workflow.ActivityOptions{
 		StartToCloseTimeout: 30 * time.Second,
 		RetryPolicy: &temporal.RetryPolicy{
@@ -167,7 +169,7 @@ func GoalProgressWorkflow(ctx workflow.Context, input GoalProgressWorkflowInput)
 	ctx = workflow.WithActivityOptions(ctx, ao)
 
 	var reviewResult ReviewGoalsResult
-	err := workflow.ExecuteActivity(ctx, ReviewGoalsActivity, ReviewGoalsInput{
+	err := workflow.ExecuteActivity(ctx, a.ReviewGoalsActivity, ReviewGoalsInput{
 		WorkspaceID:   input.WorkspaceID,
 		StalledAfterH: input.StalledAfterH,
 	}).Get(ctx, &reviewResult)
@@ -200,6 +202,7 @@ func LearningConsolidationWorkflow(ctx workflow.Context, input LearningConsolida
 		}, nil
 	}
 
+	var a *V91Activities
 	ao := workflow.ActivityOptions{
 		StartToCloseTimeout: 120 * time.Second,
 		RetryPolicy: &temporal.RetryPolicy{
@@ -212,7 +215,7 @@ func LearningConsolidationWorkflow(ctx workflow.Context, input LearningConsolida
 	ctx = workflow.WithActivityOptions(ctx, ao)
 
 	var consolidateResult ConsolidateFeedbackResult
-	err := workflow.ExecuteActivity(ctx, ConsolidateFeedbackActivity, ConsolidateFeedbackInput{
+	err := workflow.ExecuteActivity(ctx, a.ConsolidateFeedbackActivity, ConsolidateFeedbackInput{
 		WorkspaceID:     input.WorkspaceID,
 		PendingFeedback: input.PendingFeedback,
 	}).Get(ctx, &consolidateResult)
@@ -233,6 +236,7 @@ func DailyIntrospectionWorkflow(ctx workflow.Context, input DailyIntrospectionWo
 	logger := workflow.GetLogger(ctx)
 	logger.Info("DailyIntrospectionWorkflow started", "workspaceID", input.WorkspaceID, "date", input.CaptureDate)
 
+	var a *V91Activities
 	ao := workflow.ActivityOptions{
 		StartToCloseTimeout: 60 * time.Second,
 		RetryPolicy: &temporal.RetryPolicy{
@@ -245,7 +249,7 @@ func DailyIntrospectionWorkflow(ctx workflow.Context, input DailyIntrospectionWo
 	ctx = workflow.WithActivityOptions(ctx, ao)
 
 	var summarizeResult SummarizeDailyResult
-	err := workflow.ExecuteActivity(ctx, SummarizeDailyActivity, SummarizeDailyInput{
+	err := workflow.ExecuteActivity(ctx, a.SummarizeDailyActivity, SummarizeDailyInput{
 		WorkspaceID: input.WorkspaceID,
 		CaptureDate: input.CaptureDate,
 	}).Get(ctx, &summarizeResult)
@@ -273,6 +277,7 @@ func DailyLogCaptureWorkflow(ctx workflow.Context, input DailyLogCaptureWorkflow
 		}, nil
 	}
 
+	var a *V91Activities
 	ao := workflow.ActivityOptions{
 		StartToCloseTimeout: 15 * time.Second,
 		RetryPolicy: &temporal.RetryPolicy{
@@ -285,10 +290,10 @@ func DailyLogCaptureWorkflow(ctx workflow.Context, input DailyLogCaptureWorkflow
 	ctx = workflow.WithActivityOptions(ctx, ao)
 
 	var appendResult AppendDailyLogResult
-	err := workflow.ExecuteActivity(ctx, AppendDailyLogActivity, AppendDailyLogInput{
-		WorkspaceID:      input.WorkspaceID,
+	err := workflow.ExecuteActivity(ctx, a.AppendDailyLogActivity, AppendDailyLogInput{
+		WorkspaceID:       input.WorkspaceID,
 		InteractiveTurnID: input.InteractiveTurnID,
-		CaptureDate:      input.CaptureDate,
+		CaptureDate:       input.CaptureDate,
 	}).Get(ctx, &appendResult)
 	if err != nil {
 		return nil, err
@@ -313,6 +318,7 @@ func CrossRepoAnalysisWorkflow(ctx workflow.Context, input CrossRepoAnalysisWork
 		}, nil
 	}
 
+	var a *V91Activities
 	ao := workflow.ActivityOptions{
 		StartToCloseTimeout: 120 * time.Second,
 		RetryPolicy: &temporal.RetryPolicy{
@@ -325,7 +331,7 @@ func CrossRepoAnalysisWorkflow(ctx workflow.Context, input CrossRepoAnalysisWork
 	ctx = workflow.WithActivityOptions(ctx, ao)
 
 	var collectResult CollectDependencyGraphResult
-	err := workflow.ExecuteActivity(ctx, CollectDependencyGraphActivity, CollectDependencyGraphInput{
+	err := workflow.ExecuteActivity(ctx, a.CollectDependencyGraphActivity, CollectDependencyGraphInput{
 		WorkspaceID: input.WorkspaceID,
 	}).Get(ctx, &collectResult)
 	if err != nil {
@@ -333,7 +339,7 @@ func CrossRepoAnalysisWorkflow(ctx workflow.Context, input CrossRepoAnalysisWork
 	}
 
 	var detectResult DetectSharedPatternsResult
-	err = workflow.ExecuteActivity(ctx, DetectSharedPatternsActivity, DetectSharedPatternsInput{
+	err = workflow.ExecuteActivity(ctx, a.DetectSharedPatternsActivity, DetectSharedPatternsInput{
 		WorkspaceID: input.WorkspaceID,
 	}).Get(ctx, &detectResult)
 	if err != nil {
@@ -360,6 +366,7 @@ func MissionControlRefreshWorkflow(ctx workflow.Context, input MissionControlRef
 		}, nil
 	}
 
+	var a *V91Activities
 	ao := workflow.ActivityOptions{
 		StartToCloseTimeout: 30 * time.Second,
 		RetryPolicy: &temporal.RetryPolicy{
@@ -372,7 +379,7 @@ func MissionControlRefreshWorkflow(ctx workflow.Context, input MissionControlRef
 	ctx = workflow.WithActivityOptions(ctx, ao)
 
 	var refreshResult RefreshWidgetsResult
-	err := workflow.ExecuteActivity(ctx, RefreshWidgetsActivity, RefreshWidgetsInput{
+	err := workflow.ExecuteActivity(ctx, a.RefreshWidgetsActivity, RefreshWidgetsInput{
 		WorkspaceID: input.WorkspaceID,
 		WidgetCount: input.WidgetCount,
 	}).Get(ctx, &refreshResult)
@@ -392,6 +399,7 @@ func CapabilityExplorationWorkflow(ctx workflow.Context, input CapabilityExplora
 	logger := workflow.GetLogger(ctx)
 	logger.Info("CapabilityExplorationWorkflow started", "workspaceID", input.WorkspaceID)
 
+	var a *V91Activities
 	ao := workflow.ActivityOptions{
 		StartToCloseTimeout: 60 * time.Second,
 		RetryPolicy: &temporal.RetryPolicy{
@@ -404,7 +412,7 @@ func CapabilityExplorationWorkflow(ctx workflow.Context, input CapabilityExplora
 	ctx = workflow.WithActivityOptions(ctx, ao)
 
 	var analyzeResult AnalyzeCapabilityGapsResult
-	err := workflow.ExecuteActivity(ctx, AnalyzeCapabilityGapsActivity, AnalyzeCapabilityGapsInput{
+	err := workflow.ExecuteActivity(ctx, a.AnalyzeCapabilityGapsActivity, AnalyzeCapabilityGapsInput{
 		WorkspaceID:               input.WorkspaceID,
 		CapabilityGapEventsLast7d: input.CapabilityGapEventsLast7d,
 	}).Get(ctx, &analyzeResult)

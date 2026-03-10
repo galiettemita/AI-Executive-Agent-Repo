@@ -1,13 +1,18 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"log"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
+	"github.com/brevio/brevio/internal/control"
+	"github.com/brevio/brevio/internal/executor"
 	runtimeserver "github.com/brevio/brevio/internal/runtime"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 func main() {
@@ -19,6 +24,47 @@ func main() {
 	if err != nil {
 		log.Fatalf("executor config validation failed: %v", err)
 	}
+
+	logger := runtimeserver.NewJSONLogger("executor", cfg.Environment)
+	logger.SetOutput(os.Stdout)
+
+	// Build production executor when DATABASE_URL is available.
+	dbURL := strings.TrimSpace(os.Getenv("DATABASE_URL"))
+	var prodSvc *executor.ProdService
+
+	if dbURL != "" {
+		ctx := context.Background()
+		pool, poolErr := pgxpool.New(ctx, dbURL)
+		if poolErr != nil {
+			log.Fatalf("failed to create pgx pool: %v", poolErr)
+		}
+		defer pool.Close()
+
+		repo := executor.NewPgToolExecutionRepository(pool)
+		receiptRepo := control.NewPgReceiptRepository(pool)
+
+		hmacKey := []byte(os.Getenv("HMAC_KEY"))
+		if len(hmacKey) == 0 {
+			hmacKey = []byte("executor-default-hmac-key")
+		}
+		receiptSvc := control.NewReceiptService(hmacKey)
+		durableReceipts := control.NewDurableReceiptService(receiptSvc, receiptRepo)
+
+		prodSvc = executor.NewProdService(repo, durableReceipts)
+
+		logger.Info("executor_production_deps", map[string]any{
+			"database":  "pgxpool",
+			"receipts":  "durable",
+			"executor":  "persistent",
+		})
+	} else {
+		logger.Info("executor_devtest_mode", map[string]any{
+			"executor": "in-memory",
+		})
+	}
+
+	_ = prodSvc // used by future route handlers
+
 	mux := http.NewServeMux()
 	startedAt := time.Now().UTC()
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, _ *http.Request) {
@@ -29,13 +75,15 @@ func main() {
 			"version":   cfg.ServiceVersion,
 			"uptime_ms": time.Since(startedAt).Milliseconds(),
 			"checks": map[string]string{
-				"process": "ok",
+				"process":  "ok",
+				"database": boolToStatus(dbURL != ""),
 			},
 		})
 	})
 	mux.HandleFunc("GET /health/deep", func(w http.ResponseWriter, _ *http.Request) {
 		checks := map[string]string{
-			"process": "ok",
+			"process":  "ok",
+			"database": boolToStatus(dbURL != ""),
 		}
 		for key, status := range runtimeserver.DeepDependencyChecks(os.Getenv) {
 			checks[key] = status
@@ -57,15 +105,22 @@ func main() {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok"))
 	})
-	logger := runtimeserver.NewJSONLogger("executor", cfg.Environment)
-	logger.SetOutput(os.Stdout)
+
 	handler := logger.Middleware(mux)
 
 	logger.Info("service_start", map[string]any{
 		"listen_addr": cfg.ListenAddr,
 		"version":     cfg.ServiceVersion,
+		"production":  dbURL != "",
 	})
 	if err := runtimeserver.ServeWithGracefulShutdown("executor", cfg.ListenAddr, handler); err != nil {
 		log.Fatalf("executor server failed: %v", err)
 	}
+}
+
+func boolToStatus(b bool) string {
+	if b {
+		return "connected"
+	}
+	return "unavailable"
 }

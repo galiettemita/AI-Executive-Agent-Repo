@@ -25,9 +25,9 @@ func TestSecurityVulnBaselineClosure(t *testing.T) {
 		"TRIVY_ALLOWLIST_PATH",
 		"python3 scripts/security/check_trivy_report.py",
 	})
-	assertFileContainsTokens(t, filepath.Join(root, ".github", "workflows", "ci.yaml"), []string{
-		"govulncheck baseline",
-		"bash scripts/security/run_govulncheck.sh",
+	assertFileContainsTokens(t, filepath.Join(root, ".github", "workflows", "ci.yml"), []string{
+		"Security Scan",
+		"run_security_validation.sh",
 	})
 	assertGovulnAllowlistFormat(t, filepath.Join(root, "scripts", "security", "govuln_allowlist.txt"))
 	assertTrivyAllowlistFormat(t, filepath.Join(root, "scripts", "security", "trivy_allowlist.txt"))

@@ -48,19 +48,43 @@ type PolicyRule struct {
 }
 
 // OPAEvaluator provides policy-based decision making.
+// In production, it delegates to an OPA HTTP sidecar via OPAClient.
+// When opaClient is nil (devtest), it uses embedded Go gate logic.
 type OPAEvaluator struct {
-	mu      sync.RWMutex
-	rules   []PolicyRule
-	service *Service
+	mu        sync.RWMutex
+	rules     []PolicyRule
+	service   *Service
+	opaClient *OPAClient
+
+	// DefaultPackage is the OPA package path queried for policy decisions.
+	// Defaults to "brevio.v9" if unset.
+	DefaultPackage string
 }
 
 // NewOPAEvaluator creates a new OPA evaluator, optionally backed by a control Service
-// for fallback to hardcoded gate logic.
+// for fallback to hardcoded gate logic. In production, call SetOPAClient to enable
+// real OPA evaluation; without it, embedded gates are used (devtest mode).
 func NewOPAEvaluator(service *Service) *OPAEvaluator {
 	return &OPAEvaluator{
-		rules:   make([]PolicyRule, 0),
-		service: service,
+		rules:          make([]PolicyRule, 0),
+		service:        service,
+		DefaultPackage: "brevio.v9",
 	}
+}
+
+// SetOPAClient attaches a live OPA HTTP client for production evaluation.
+// When set, EvaluatePolicy delegates to the OPA sidecar instead of embedded gates.
+func (e *OPAEvaluator) SetOPAClient(client *OPAClient) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.opaClient = client
+}
+
+// HasOPAClient returns true if a live OPA HTTP client is configured.
+func (e *OPAEvaluator) HasOPAClient() bool {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	return e.opaClient != nil
 }
 
 // LoadPolicies reads all .rego files from the given directory and stores them
@@ -122,13 +146,36 @@ func (e *OPAEvaluator) PolicyCount() int {
 	return len(e.rules)
 }
 
-// EvaluatePolicy runs all built-in policy gates against the given input.
-// Gates are evaluated in order; the first deny or require_approval stops evaluation.
-func (e *OPAEvaluator) EvaluatePolicy(_ context.Context, input PolicyInput) (*PolicyDecision, error) {
+// EvaluatePolicy evaluates a policy decision. If an OPA client is configured,
+// it delegates to the OPA sidecar. Otherwise, it uses embedded Go gate logic
+// (devtest mode only — production builds must have an OPA client).
+//
+// Deny-by-default: if OPA is configured but unavailable (circuit open, timeout,
+// error), the decision is DENY. The embedded fallback is only used when no OPA
+// client is set (i.e., devtest/unit-test contexts).
+func (e *OPAEvaluator) EvaluatePolicy(ctx context.Context, input PolicyInput) (*PolicyDecision, error) {
 	if input.Timestamp == 0 {
 		input.Timestamp = time.Now().Unix()
 	}
 
+	e.mu.RLock()
+	client := e.opaClient
+	pkg := e.DefaultPackage
+	e.mu.RUnlock()
+
+	// Production path: delegate to OPA sidecar.
+	if client != nil {
+		return client.EvaluatePolicy(ctx, pkg, input)
+	}
+
+	// Devtest/unit-test path: embedded gate logic.
+	return e.evaluateEmbeddedGates(input)
+}
+
+// evaluateEmbeddedGates runs all built-in policy gates against the given input.
+// This is the devtest fallback — not used when an OPA client is configured.
+// Gates are evaluated in order; the first deny or require_approval stops evaluation.
+func (e *OPAEvaluator) evaluateEmbeddedGates(input PolicyInput) (*PolicyDecision, error) {
 	// Gate 1: Content firewall
 	if decision := e.evaluateContentFirewallGate(input); decision != nil {
 		return decision, nil
@@ -333,13 +380,22 @@ func (e *OPAEvaluator) evaluateAutonomyGate(input PolicyInput) *PolicyDecision {
 	}
 }
 
-// EvaluateGateWithOPA tries OPA policy evaluation first, then falls back to
-// the hardcoded EvaluateGate logic if OPA returns an error or if no policies
-// are loaded.
+// EvaluateGateWithOPA evaluates a gate decision via OPA.
+//
+// Deny-by-default behavior:
+//   - If OPA client is configured and OPA is unavailable, returns DENY (no fallback).
+//   - If no OPA client is configured (devtest), falls back to embedded Service.EvaluateGate.
 func (e *OPAEvaluator) EvaluateGateWithOPA(ctx context.Context, input PolicyInput) DecisionOutput {
 	decision, err := e.EvaluatePolicy(ctx, input)
 	if err != nil {
-		// Fall back to hardcoded gate logic
+		// When OPA client is configured, deny-by-default on failure.
+		if e.HasOPAClient() {
+			return DecisionOutput{
+				Decision:   "deny",
+				ReasonCode: "OPA_UNAVAILABLE_DENY_BY_DEFAULT",
+			}
+		}
+		// Devtest only: fall back to embedded gate logic.
 		return e.fallbackGate(input)
 	}
 
@@ -362,7 +418,7 @@ func (e *OPAEvaluator) EvaluateGateWithOPA(ctx context.Context, input PolicyInpu
 }
 
 // fallbackGate converts PolicyInput to DecisionInput and delegates to the
-// hardcoded Service.EvaluateGate.
+// hardcoded Service.EvaluateGate. Only used in devtest mode (no OPA client).
 func (e *OPAEvaluator) fallbackGate(input PolicyInput) DecisionOutput {
 	if e.service == nil {
 		return DecisionOutput{Decision: "deny", ReasonCode: "NO_SERVICE_FALLBACK"}

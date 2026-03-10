@@ -40,9 +40,11 @@ func VoiceSessionWorkflow(ctx workflow.Context, input VoiceSessionWorkflowInput)
 	}
 	ctx = workflow.WithActivityOptions(ctx, ao)
 
+	var a *Activities
+
 	// Step 1: Initialize voice session (get token, connect to provider)
 	var initResult VoiceInitResult
-	err := workflow.ExecuteActivity(ctx, InitVoiceSessionActivity, VoiceInitInput{
+	err := workflow.ExecuteActivity(ctx, a.InitVoiceSessionActivity, VoiceInitInput{
 		SessionID:   input.SessionID,
 		WorkspaceID: input.WorkspaceID,
 		UserID:      input.UserID,
@@ -72,7 +74,7 @@ func VoiceSessionWorkflow(ctx workflow.Context, input VoiceSessionWorkflowInput)
 	}
 	ctx2 := workflow.WithActivityOptions(ctx, extractAO)
 	var extractResult VoiceTaskExtractResult
-	err = workflow.ExecuteActivity(ctx2, ExtractVoiceTasksActivity, VoiceTaskExtractInput{
+	err = workflow.ExecuteActivity(ctx2, a.ExtractVoiceTasksActivity, VoiceTaskExtractInput{
 		SessionID:   input.SessionID,
 		WorkspaceID: input.WorkspaceID,
 		Transcript:  endSignal.Transcript,

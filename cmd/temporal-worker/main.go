@@ -7,11 +7,14 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/brevio/brevio/internal/compliance"
+	"github.com/brevio/brevio/internal/outbox"
 	runtimeserver "github.com/brevio/brevio/internal/runtime"
 	breviotemporal "github.com/brevio/brevio/internal/temporal"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 func main() {
@@ -37,7 +40,29 @@ func main() {
 	}
 	defer temporalClient.Close()
 
-	w := breviotemporal.NewWorker(temporalClient, breviotemporal.TaskQueueCore)
+	// Build activity dependencies based on runtime environment.
+	// When DATABASE_URL is set, activities use pgx-backed repositories and
+	// the transactional outbox service. Otherwise, degraded/test mode.
+	deps := breviotemporal.ActivityDeps{}
+	dbURL := strings.TrimSpace(os.Getenv("DATABASE_URL"))
+	if dbURL != "" {
+		ctx := context.Background()
+		pool, poolErr := pgxpool.New(ctx, dbURL)
+		if poolErr != nil {
+			log.Fatalf("failed to create pgx pool: %v", poolErr)
+		}
+		defer pool.Close()
+
+		deps.Pool = pool
+		deps.OutboxSvc = outbox.NewService(pool)
+
+		logger.Info("temporal_worker_production_deps", map[string]any{
+			"database": "pgxpool",
+			"outbox":   "db-backed",
+		})
+	}
+
+	w := breviotemporal.NewWorkerWithDeps(temporalClient, breviotemporal.TaskQueueCore, deps)
 
 	go func() {
 		if runErr := w.Run(nil); runErr != nil {
@@ -50,6 +75,7 @@ func main() {
 
 	logger.Info("temporal_worker_started", map[string]any{
 		"task_queue": breviotemporal.TaskQueueCore,
+		"production": dbURL != "",
 	})
 
 	mux := http.NewServeMux()

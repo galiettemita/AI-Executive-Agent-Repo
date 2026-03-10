@@ -6,7 +6,8 @@ import (
 )
 
 func TestClusterCorrectionsActivity_Valid(t *testing.T) {
-	result, err := ClusterCorrectionsActivity(context.Background(), ClusterCorrectionsInput{
+	a := NewActivities()
+	result, err := a.ClusterCorrectionsActivity(context.Background(), ClusterCorrectionsInput{
 		WorkspaceID: "ws-1",
 		BatchSize:   50,
 	})
@@ -19,14 +20,16 @@ func TestClusterCorrectionsActivity_Valid(t *testing.T) {
 }
 
 func TestClusterCorrectionsActivity_MissingWorkspace(t *testing.T) {
-	_, err := ClusterCorrectionsActivity(context.Background(), ClusterCorrectionsInput{})
+	a := NewActivities()
+	_, err := a.ClusterCorrectionsActivity(context.Background(), ClusterCorrectionsInput{})
 	if err == nil {
 		t.Fatal("expected error")
 	}
 }
 
 func TestDetectConflictsActivity_Valid(t *testing.T) {
-	result, err := DetectConflictsActivity(context.Background(), DetectConflictsInput{
+	a := NewActivities()
+	result, err := a.DetectConflictsActivity(context.Background(), DetectConflictsInput{
 		WorkspaceID: "ws-1",
 	})
 	if err != nil {
@@ -38,7 +41,8 @@ func TestDetectConflictsActivity_Valid(t *testing.T) {
 }
 
 func TestResolveConflictActivity_ValidResolution(t *testing.T) {
-	result, err := ResolveConflictActivity(context.Background(), ResolveConflictInput{
+	a := NewActivities()
+	result, err := a.ResolveConflictActivity(context.Background(), ResolveConflictInput{
 		ConflictID: "c-1",
 		Resolution: "keep_a",
 	})
@@ -51,7 +55,8 @@ func TestResolveConflictActivity_ValidResolution(t *testing.T) {
 }
 
 func TestResolveConflictActivity_InvalidResolution(t *testing.T) {
-	_, err := ResolveConflictActivity(context.Background(), ResolveConflictInput{
+	a := NewActivities()
+	_, err := a.ResolveConflictActivity(context.Background(), ResolveConflictInput{
 		ConflictID: "c-1",
 		Resolution: "invalid",
 	})
@@ -61,7 +66,8 @@ func TestResolveConflictActivity_InvalidResolution(t *testing.T) {
 }
 
 func TestProposeRulesActivity_Valid(t *testing.T) {
-	result, err := ProposeRulesActivity(context.Background(), ProposeRulesInput{
+	a := NewActivities()
+	result, err := a.ProposeRulesActivity(context.Background(), ProposeRulesInput{
 		WorkspaceID: "ws-1",
 	})
 	if err != nil {

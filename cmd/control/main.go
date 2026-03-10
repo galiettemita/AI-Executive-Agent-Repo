@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -52,7 +53,48 @@ func main() {
 		}
 	}
 
-	mux := control.NewMuxWithDependencies(control.NewService(secret), control.MuxDependencies{
+	// Initialize OPA evaluator with optional sidecar client.
+	svc := control.NewService(secret)
+	evaluator := control.NewOPAEvaluator(svc)
+
+	opaURL := strings.TrimSpace(os.Getenv("OPA_URL"))
+	if opaURL != "" {
+		opaCfg := control.DefaultOPAClientConfig()
+		opaCfg.BaseURL = opaURL
+		if v := os.Getenv("OPA_TIMEOUT_MS"); v != "" {
+			if ms, err := strconv.Atoi(v); err == nil && ms > 0 {
+				opaCfg.Timeout = time.Duration(ms) * time.Millisecond
+			}
+		}
+		opaClient := control.NewOPAClient(opaCfg)
+		evaluator.SetOPAClient(opaClient)
+
+		logger.Info("opa_client_enabled", map[string]any{
+			"url":     opaURL,
+			"timeout": opaCfg.Timeout.String(),
+		})
+	} else {
+		logger.Info("opa_client_disabled", map[string]any{
+			"reason": "OPA_URL not set, using embedded gate logic",
+		})
+	}
+
+	// Load Rego policies (for audit/debugging — actual evaluation via OPA sidecar).
+	policiesDir := strings.TrimSpace(os.Getenv("OPA_POLICIES_DIR"))
+	if policiesDir == "" {
+		policiesDir = "policies"
+	}
+	if err := evaluator.LoadPolicies(policiesDir); err != nil {
+		logger.Info("opa_policies_load_skipped", map[string]any{
+			"reason": err.Error(),
+		})
+	} else {
+		logger.Info("opa_policies_loaded", map[string]any{
+			"count": evaluator.PolicyCount(),
+		})
+	}
+
+	mux := control.NewMuxWithDependencies(svc, control.MuxDependencies{
 		AuditService: auditSvc,
 	})
 	handler := logger.Middleware(mux)
@@ -60,6 +102,7 @@ func main() {
 	logger.Info("service_start", map[string]any{
 		"listen_addr": cfg.ListenAddr,
 		"version":     cfg.ServiceVersion,
+		"opa_enabled": evaluator.HasOPAClient(),
 	})
 	if err := runtimeserver.ServeWithGracefulShutdown("control", cfg.ListenAddr, handler); err != nil {
 		log.Fatalf("control server failed: %v", err)
