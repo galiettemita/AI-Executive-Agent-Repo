@@ -124,9 +124,28 @@ infra/{terraform,helm}/           — Single canonical infra
 tests/{unit,integration,e2e,contract,algorithm_fidelity}/
 services/hands-runtime/           — OpenClaw TS skill runtime
 edge/                             — Edge agent
-apps/web-demo/                    — Demo UI
 reports/                          — Generated artifacts (committed)
 ```
+
+## Production Boundary
+
+The repository is production-bounded. The following artifacts are explicitly excluded:
+
+- **Demo UI** (`apps/web-demo/`): Removed. BP01 (4 Features Blueprint) is demo-only and must not ship. CI enforces absence via `internal/contracts/demo_exclusion_closure_test.go`.
+- **In-memory production wiring**: Forbidden outside `*_test.go` and `//go:build devtest` tagged files (D9).
+
+Enforcement:
+- Contract test `TestDemoExclusionClosure` fails CI if demo paths reappear.
+- Contract test `TestBlueprintRequirementMapping/BP01_demo_excluded` asserts demo directory does not exist.
+
+## 12-Prompt Execution Plan
+
+This repository follows a 12-prompt staged implementation pipeline as operational doctrine. Each prompt is executed sequentially with acceptance gates, self-audit, and git checkpoints. The pipeline covers:
+
+| Prompt | Scope |
+|--------|-------|
+| P1 | Production boundary canonicalization (demo removal, governance) |
+| P2-P12 | Blueprint implementation (V10.1 admin, V10.2 intelligence, V10.3 cognitive, V10.4 voice, infrastructure, tests) |
 
 ## Binding Decisions Reference
 

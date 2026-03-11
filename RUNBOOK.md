@@ -167,6 +167,19 @@ curl http://localhost:18793/health/deep  # Canvas
    WHERE workspace_id = '<ws_id>';
    ```
 
+## Production Boundary
+
+The repository enforces a strict production boundary. The following artifacts are **excluded** and must never reappear:
+
+- **Demo UI** (`apps/web-demo/`): BP01 (4 Features Blueprint) is demo-only and excluded from production.
+- **In-memory production wiring**: Forbidden outside `*_test.go` and `//go:build devtest` tagged files (D9).
+
+**CI enforcement:**
+- `TestDemoExclusionClosure` (`internal/contracts/demo_exclusion_closure_test.go`) — fails if demo paths exist or if Go source references demo artifacts.
+- `TestBlueprintRequirementMapping/BP01_demo_excluded` (`internal/contracts/blueprint_coverage_test.go`) — fails if `apps/web-demo` directory exists.
+
+**Operational doctrine:** This repository follows a **12-prompt staged implementation pipeline**. Each prompt is executed sequentially with acceptance gates, self-audit, and git checkpoints. Adding demo code or bypassing the production boundary violates D12.
+
 ## Deployment Procedures
 
 ### Standard Deployment

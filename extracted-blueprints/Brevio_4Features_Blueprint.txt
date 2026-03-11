@@ -1,0 +1,58 @@
+BREVIO
+4 Consumer Delight Features
+Complete Production Blueprint — V3.0 FINAL
+2026-03-04  ·  Single Authoritative Document  ·  Agent-Executable
+
+Table of Contents
+A   Architecture & Data Flows
+B   Complete Component File  (brevio-live-demo.jsx — full implementation)
+C   Supporting Files  (constants, utils — if you prefer split files)
+D   API Contracts & Error Taxonomy
+E   LLM Contracts
+F   Observability
+G   Security
+H   Test Files  (vitest unit tests + Playwright E2E — runnable)
+I   Config Files  (vite, vitest, playwright, eslint, tsconfig, package.json)
+J   CI/CD Pipeline
+K   Failure & Recovery
+L   Runbooks
+M   Deployment Assembly Order  (28 steps, machine-verifiable gates)
+
+SECTION A  Architecture & Data Flows
+A.1  Scope — Formally Bounded
+
+A.2  Complete Data Flow — Standard Send
+
+A.3  Data Flow — Scenario Chip
+
+A.4  State Machine — Complete Component
+
+SECTION B  Complete Component File
+
+File: apps/web-demo/src/brevio-live-demo.jsx
+
+SECTION C  Supporting Config Files
+C.1  File: apps/web-demo/vite.config.ts
+
+C.2  File: apps/web-demo/tsconfig.json
+
+C.3  File: apps/web-demo/vitest.config.ts
+
+C.4  File: apps/web-demo/playwright.config.ts
+
+C.5  File: apps/web-demo/eslint.config.js
+
+C.6  File: apps/web-demo/package.json — scripts & devDeps
+
+SECTION H  Test Files — Runnable
+H.1  File: apps/web-demo/src/__tests__/utils.test.ts
+
+H.2  File: apps/web-demo/src/__tests__/deliverInBubbles.test.ts
+
+H.3  File: apps/web-demo/tests/demo.spec.ts
+
+SECTION M  Deployment Assembly Order
+Execute steps sequentially. Each has a machine-verifiable gate. Zero architectural decisions.
+
+
+

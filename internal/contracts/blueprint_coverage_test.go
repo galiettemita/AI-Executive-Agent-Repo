@@ -160,12 +160,13 @@ func TestBlueprintRequirementMapping(t *testing.T) {
 	t.Parallel()
 	root := repositoryRoot(t)
 
-	// BP01: 4 Features Blueprint → demo app
-	t.Run("BP01_demo_app", func(t *testing.T) {
-		if _, err := os.Stat(filepath.Join(root, "apps", "web-demo")); os.IsNotExist(err) {
-			t.Skip("demo app not present")
+	// BP01: 4 Features Blueprint — demo-only, excluded from production boundary.
+	// Demo artifacts must NOT exist in the repository.
+	t.Run("BP01_demo_excluded", func(t *testing.T) {
+		demoPath := filepath.Join(root, "apps", "web-demo")
+		if _, err := os.Stat(demoPath); err == nil {
+			t.Fatalf("demo artifact must not exist in production repo: %s", demoPath)
 		}
-		assertFileNonEmpty(t, filepath.Join(root, "apps", "web-demo", "package.json"))
 	})
 
 	// BP02: Admin Blueprint → V10.1 migration

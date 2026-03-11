@@ -1,0 +1,362 @@
+
+
+1. Preamble & Non-Negotiable Rules
+This addendum is purely additive to V10. It closes all 12 gaps identified in the Admin Backend analysis. Every identifier defined here is unique. Every table, endpoint, workflow, policy, and metric is implementation-complete. No TODOs. No stubs.
+
+
+
+
+
+
+
+
+
+
+
+2. Executive Architecture Overview
+2.1  New Component Map
+The following components are added by this addendum. All integrate into the existing 5-service architecture without structural modification.
+
+
+2.2  Data Flow — Cost Attribution Pipeline
+
+2.3  Data Flow — Revenue Operations Pipeline
+
+3. Database Layer — Full DDL
+Migration file: db/migrations/004_brevio_v101_admin_intelligence.sql
+Applies after: 003_BREVIO_v92_production_hardening.sql
+All tables: UUIDv7 PKs, workspace_id RLS, forward-only. 16 new tables defined below.
+
+
+llm_cost_ledger
+Token-level cost record for every LLM call. Written by Brain via outbox. Never queried from dashboard — only aggregated by Temporal workflows.
+
+task_cost_rollup
+One row per Temporal workflow execution. Written exclusively by CostRollupWorkflow.
+
+connector_cost_ledger
+Per-call cost for paid external connectors (e.g., Twilio, Google Maps API, data providers). Written by Executor via outbox.
+
+user_cost_daily_rollup
+Pre-aggregated daily cost per user. Written by DailyUserCostRollup workflow at 01:00 UTC. Admin dashboard reads ONLY this table — never llm_cost_ledger directly.
+
+operator_margin_report
+Daily operator P&L snapshot. Revenue from mrr_snapshots, COGS from user_cost_daily_rollup. Written by MarginSnapshotWorkflow at 02:00 UTC.
+
+
+agent_kill_switches
+Per-user kill switch state. ExecutionGate checks this table first, before any other gate. One row per user (upsert on activation, delete on deactivation).
+
+skill_acl_overrides
+Per-user, per-skill enable/disable overrides. Default behavior (no row) follows workspace-level feature flags. A row here overrides for the specific user.
+
+
+subscription_events
+Raw events from Stripe webhooks. Append-only. Source of truth for all revenue calculations.
+
+mrr_snapshots
+Daily MRR/ARR snapshot computed by MRRSnapshotWorkflow from subscription_events.
+
+user_cohorts
+Cohort assignment: every user is assigned to a signup_week cohort at registration. Retention rows are computed weekly by CohortComputeWorkflow.
+
+
+oauth_token_registry
+
+behavioral_risk_scores
+
+feature_adoption_events
+
+tool_mttr_log
+
+agent_action_replay_log
+
+
+4. API Contracts (OpenAPI 3.1 Extension)
+All endpoints extend the V10 OpenAPI spec (api/openapi/v10.yaml). Auth: AdminJWT unless noted. Base path: /v1. All responses: application/json. All errors: V9 error contract.
+
+
+GET /admin/costs/summary
+
+GET /admin/costs/users
+
+GET /admin/costs/users/{user_id}/breakdown
+
+GET /admin/costs/margin
+
+GET /admin/costs/projections
+
+
+GET /admin/revenue/mrr
+
+GET /admin/revenue/cohorts
+
+GET /admin/revenue/ltv
+
+PUT /admin/revenue/cac
+
+
+POST /admin/users/{user_id}/kill-switch
+
+DELETE /admin/users/{user_id}/kill-switch
+
+PUT /admin/users/{user_id}/skill-acl
+
+POST /admin/agent/replay
+
+
+GET /admin/oauth/expiry
+
+GET /admin/tools/mttr
+
+GET /admin/features/adoption
+
+GET /admin/users/{user_id}/risk
+
+5. Temporal Workflow Specifications
+All workflows run in Temporal namespace: brevio-prod. All are workspace-agnostic system workflows (no workspace_id scope — they process all workspaces). All activities write to Postgres via the outbox or direct INSERT (as noted). All use deterministic jitter formula: jitter_ms = base_delay_ms * (0.5 + rand(0,1)*0.5).
+
+5.1  CostRollupWorkflow
+
+
+5.2  DailyUserCostRollup
+
+5.3  MarginSnapshotWorkflow
+
+5.4  MRRSnapshotWorkflow
+
+5.5  CohortComputeWorkflow
+
+5.6  BehavioralRiskWorkflow
+
+5.7  OAuthExpiryCheckWorkflow
+
+6. OPA Policy Definitions
+New policy files added to policies/ directory. All integrate with the existing V9 ExecutionGate PDP. Auth: AdminJWT required for all admin endpoints — enforced at Gateway, not OPA.
+
+6.1  policies/agent_kill_switch.rego
+
+6.2  policies/skill_acl.rego
+
+6.3  ExecutionGate Integration — Updated Gate Chain
+The ExecutionGate PDP evaluates policies in this exact order. First denial wins.
+
+
+7. Observability — Metrics, Logs, Alerts, SLOs
+
+7.1  New Prometheus Metrics
+All registered at service startup. CI validates registration via go vet plugin. Prefix: BREVIO_.
+
+
+7.2  New Canonical Events
+
+7.3  Alert Rules (Prometheus / Alertmanager)
+
+7.4  SLO Definitions
+
+8. Infrastructure as Code
+
+8.1  New Temporal Cron Workflow Registrations (Helm)
+
+8.2  New Kubernetes Deployments
+
+8.3  New Environment Variables
+
+9. CI/CD Pipeline Extensions
+
+9.1  New CI Steps (.github/workflows/ci.yaml extension)
+
+10. Testing Suite
+
+10.1  Unit Tests
+
+10.2  Integration Tests
+
+10.3  OPA Policy Tests
+
+10.4  Workflow Replay Tests
+
+11. Security & Governance
+
+11.1  Threat Model Additions
+
+11.2  Database Role Grants
+
+12. Failure & Recovery Model
+
+12.1  Failure Taxonomy — New Failure Classes
+
+12.2  Dead Letter Queue — Cost Outbox
+
+13. Operational Runbooks
+
+Runbook R-101: Daily Cost Rollup SLO Breach
+
+Runbook R-102: Kill Switch Activation
+
+Runbook R-103: MRR Snapshot Recovery
+
+14. Acceptance Gates & Deployment Assembly Order
+
+14.1  Machine-Verifiable Acceptance Gates
+
+
+
+
+
+
+
+
+
+
+
+
+
+14.2  Deterministic Deployment Assembly Order
+Steps are dependency-closed. Do not proceed to step N+1 if step N fails. Steps 1-14 are V9/V9.1/V9.2/V10. Steps 15-28 are V10.1.
+
+
+14.3  Repository File Structure — New Files
+
+14.4  Closure Statement
+
+
+
+1. Architecture — Gap Closures
+
+
+Brevio decomposes into four bounded contexts. Context boundaries are enforced by service ownership. No cross-context direct DB reads — all inter-context communication is via events or API.
+
+
+
+
+
+SEQ-1: Kill Switch Activation & Enforcement
+
+SEQ-2: LLM Cost Attribution (Hot Path — Zero Latency)
+
+SEQ-3: Daily Rollup → Margin → Admin Dashboard
+
+
+State Machine: CostRollupWorkflow
+
+State Machine: Agent Kill Switch
+
+State Machine: MRR Snapshot
+
+2. Services & APIs — Gap Closures
+
+
+Go Types (internal/sdk/admin_types.go)
+
+TypeScript Types (packages/admin-sdk/src/types.ts)
+
+
+
+3. Database Layer — Gap Closures
+
+
+File: db/migrations/004_brevio_v101_admin_intelligence.down.sql
+INVARIANT: Apply DOWN only in reverse order of UP. Never apply DOWN in production without explicit approval. Down migration is provided for local dev and staging rollback only.
+
+
+File: db/seeds/004_brevio_v101_seed.sql — seeds for local development and integration test environments only. Production: empty (no seed data applied).
+
+
+File: db/invariants/004_brevio_v101_invariants.sql — run as part of schema-validator in CI.
+
+4. Workflow Specifications — Gap Closures
+
+
+
+
+
+
+Compensation applies to workflows that have multi-step writes. If any step fails after prior steps succeeded, the workflow compensates in reverse order.
+
+
+
+
+5. Policy & Governance — Gap Closures
+
+
+Rows = roles. Columns = resources/actions. ✓ = allowed, ✗ = denied, own = own workspace only.
+
+
+App Role Definitions (OPA role data bundle)
+
+
+
+7. Infrastructure as Code — Gap Closures
+
+
+terraform/modules/cost-rollup-worker/main.tf
+
+Networking Topology
+
+Environment Isolation Strategy
+
+Complete Helm Chart Templates (cost-rollup-worker)
+
+
+
+8. CI/CD — Gap Closures
+
+
+
+
+
+
+
+
+
+9. Observability — Gap Closures
+
+
+All V10.1 services emit JSON-structured logs. Every log line is a valid JSON object matching the schema below. Log aggregation: Datadog (or CloudWatch Logs if Datadog unavailable).
+
+
+
+
+
+10. Testing Suite — Gap Closures
+
+
+
+
+
+
+
+
+
+11. Security & Governance — Gap Closures
+
+
+
+
+
+
+
+
+
+12. Failure & Recovery — Gap Closures
+
+
+
+
+
+
+
+13. Operational Runbooks — Full Suite
+
+
+
+
+
+
+
+
+
+
+
+

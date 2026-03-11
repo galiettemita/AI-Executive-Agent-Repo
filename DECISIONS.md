@@ -9,9 +9,8 @@ Cloud production planes are Go services: Gateway, Brain, Control, Executor/Hands
 TypeScript is permitted only for:
 - Hands skill runtime (to run existing TS OpenClaw skills)
 - Edge agent
-- Web/demo frontend
 
-TS services duplicating cloud planes have been moved to `deprecated/` and excluded from CI release artifacts and production manifests.
+TS services duplicating cloud planes have been moved to `deprecated/` and excluded from CI release artifacts and production manifests. Demo frontend (`apps/web-demo/`) has been removed per production boundary (see D12).
 
 ## D2 — Temporal-Only Orchestration
 
@@ -89,6 +88,13 @@ Repository interfaces defined per domain package; pgx implementations injected a
 - Structured JSON logging via `internal/runtime/logger.go`.
 - Health checks: `/health`, `/health/deep`, `/healthz/ready`, `/healthz/live`.
 - Metrics exposed at `/metrics` (Prometheus format when enabled).
+
+## D12 — Production Boundary & Demo Exclusion
+
+- BP01 (4 Features Blueprint) is classified as demo-only. All demo artifacts (`apps/web-demo/`) are excluded from the production repository.
+- CI enforces demo absence via `internal/contracts/demo_exclusion_closure_test.go`.
+- No demo UI, server, endpoint, workflow, or infrastructure may exist in the production build.
+- The repository follows a 12-prompt staged implementation pipeline as operational doctrine. Each prompt is gated by acceptance criteria, self-audit, and git checkpoint.
 
 ## D001 — Federation Data Model
 

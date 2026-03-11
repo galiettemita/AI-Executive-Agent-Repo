@@ -1,0 +1,113 @@
+{
+  "_meta": {
+    "title": "BREVIO Authoritative Blueprint Manifest",
+    "version": "1.0.0",
+    "generated": "2026-03-10",
+    "description": "Enumerates the 7 mandatory blueprints that define the BREVIO platform target state. Filenames and document titles are non-authoritative; only blueprint_id and content hash are binding.",
+    "authority": "Blueprint intent overrides current code per pipeline execution rules.",
+    "ingestion_protocol": "docs/BLUEPRINT_INGEST_PROTOCOL.md"
+  },
+  "blueprints": [
+    {
+      "blueprint_id": "BP06",
+      "label": "V9 Consolidated Master Blueprint",
+      "description": "Core platform architecture: services, schemas, workflows, policies, persistence, observability.",
+      "repo_path": "extracted-blueprints/Brevio_V9_Consolidated_Blueprint.docx",
+      "sha256": "a382ffce15c18da15f7396b0f5c4dd200b7782e7bee75f98a05c98a19392b926",
+      "authority_rank": 1,
+      "version_scope": "V9"
+    },
+    {
+      "blueprint_id": "BP07",
+      "label": "V9.1 Soft Intelligence Layer Addendum",
+      "description": "Learning consolidation, autonomy trust scoring, daily capture, mission control, soft intelligence features.",
+      "repo_path": "extracted-blueprints/Brevio_V91_Addendum_Soft_Intelligence_Layer.docx",
+      "sha256": "4bfac012f5d7fac2b16321b55d8d3e6030740a1a89280501521e3da4a1a3d0b6",
+      "authority_rank": 2,
+      "version_scope": "V9.1"
+    },
+    {
+      "blueprint_id": "BP08",
+      "label": "V9.2 Production Hardening Addendum",
+      "description": "Production hardening, security, supply-chain, deployment, observability, infrastructure closure.",
+      "repo_path": "extracted-blueprints/Brevio_V92_Addendum_blueprint.docx",
+      "sha256": "444b1efe4b6a78fe03fe621fd279845c8a81423a6ae0d84d439c747564cbd1b1",
+      "authority_rank": 3,
+      "version_scope": "V9.2"
+    },
+    {
+      "blueprint_id": "BP09",
+      "label": "V10 Complete Blueprint",
+      "description": "Federation, wallet, cost tracking, capability registry, authorization receipts, gap closure.",
+      "repo_path": "extracted-blueprints/Brevio_V10_Complete.docx",
+      "sha256": "385b1a9817e3160442940ef292e1fdfb654d284272f7e7931e74a14e1f8d2a98",
+      "authority_rank": 4,
+      "version_scope": "V10"
+    },
+    {
+      "blueprint_id": "BP11",
+      "label": "V10.1 Admin Intelligence Blueprint",
+      "description": "Admin dashboard, workspace health, KPI reporting, alert rules, operations monitoring.",
+      "repo_path": "extracted-blueprints/Brevio_V101_Admin_Blueprint.docx",
+      "sha256": "1f0323d503060bb860c9638963cf74c7aea65be4cd81299d562c1f9ac705e2ea",
+      "authority_rank": 5,
+      "version_scope": "V10.1"
+    },
+    {
+      "blueprint_id": "BP16",
+      "label": "OpenClaw Skills Integration Blueprint",
+      "description": "OpenClaw Hands runtime adoption, skill corpus migration, TS skill execution contract.",
+      "repo_path": "extracted-blueprints/brevio-openclaw-blueprint.docx",
+      "sha256": "8bdacc165b09dc48055a6856764c590ba0cf9b1197f0a9e3b101e76cfbd3eeca",
+      "authority_rank": 6,
+      "version_scope": "OpenClaw-v1.0"
+    },
+    {
+      "blueprint_id": "BP17",
+      "label": "OpenClaw Unified Blueprint v1.0.1",
+      "description": "Unified OpenClaw specification consolidating skill runtime, versioned contract, and integration tests.",
+      "repo_path": "extracted-blueprints/brevio_openclaw_blueprint_v1.0.1_unified.docx",
+      "sha256": "4a798e3879cd7f513bd864d636d679b63f4463f392c77d670cdb4d620df76412",
+      "authority_rank": 7,
+      "version_scope": "OpenClaw-v1.0.1"
+    }
+  ],
+  "non_mandatory_supplemental": [
+    {
+      "file": "extracted-blueprints/Brevio_V102_Intelligence_Addendum.docx",
+      "sha256": "dd9c7af3db49cef4cd1cf765f528a5b366908cf079877ca9b92e87e3066d210b",
+      "status": "supplemental",
+      "note": "V10.2 Intelligence addendum — informs BP09 but not independently mandatory."
+    },
+    {
+      "file": "extracted-blueprints/Brevio_V103_Cognitive_Intelligence.docx",
+      "sha256": "0e5300b817989d076748b766dc0c65f3d74c59c19ace878ec7c6b181ac79f14a",
+      "status": "supplemental",
+      "note": "V10.3 Cognitive Intelligence — informs BP09 but not independently mandatory."
+    },
+    {
+      "file": "extracted-blueprints/Brevio_V104_Blueprint.docx",
+      "sha256": "4f011dd95a6e1c38f254b7cf9e474f35610a68654d6ea387bdf6642e07b0e441",
+      "status": "supplemental",
+      "note": "V10.4 Voice & Calling — informs BP09 but not independently mandatory."
+    },
+    {
+      "file": "extracted-blueprints/Brevio_4Features_Blueprint.docx",
+      "sha256": "f52fec83bfac0ecc4a3773ac0b24aca5c0cee216f1723aedaf56dfaf2008b431",
+      "status": "supplemental",
+      "note": "4-Features addendum — subsumed by V10 gap closure."
+    },
+    {
+      "file": "extracted-blueprints/Brevio_addendum.docx",
+      "sha256": "40a085d6071a6fe0e6276e8d1fc887a23621a01825c40c9dcae273d57f7bebdd",
+      "status": "supplemental",
+      "note": "General addendum — subsumed by version-specific blueprints."
+    },
+    {
+      "file": "extracted-blueprints/brevio-blueprint-addendum.docx",
+      "sha256": "9c5ff0924e0e6cb0ede0fc4178731340a4d547b247eb61c497d989835f698a51",
+      "status": "supplemental",
+      "note": "Blueprint addendum (42 skills) — subsumed by OpenClaw blueprints."
+    }
+  ]
+}
