@@ -42,6 +42,9 @@ func NewWorkerWithDeps(c client.Client, taskQueue string, deps ActivityDeps) wor
 	w.RegisterWorkflow(LearningConsolidationWorkflow)
 	w.RegisterWorkflow(FederationSyncWorkflow)
 
+	// Register V10.1 cost/revenue workflows.
+	w.RegisterWorkflow(SubscriptionReconciliationWorkflow)
+
 	// Register P8 feature closure workflows.
 	w.RegisterWorkflow(FederationNegotiationWorkflow)
 	w.RegisterWorkflow(EdgeOfflineSyncWorkflow)
@@ -134,6 +137,13 @@ func NewWorkerWithDeps(c client.Client, taskQueue string, deps ActivityDeps) wor
 	// Load shedding activities (P8).
 	w.RegisterActivity(activities.EvaluateLoadSheddingTierActivity)
 	w.RegisterActivity(activities.PropagateLoadSheddingTierActivity)
+
+	// V10.1 cost/revenue intelligence activities.
+	w.RegisterActivity(activities.EnqueueLLMCostActivity)
+	w.RegisterActivity(activities.EnqueueConnectorCostActivity)
+	w.RegisterActivity(activities.IngestSubscriptionEventActivity)
+	w.RegisterActivity(activities.ReconcileMRRActivity)
+	w.RegisterActivity(activities.WriteLedgerFromOutboxActivity)
 
 	// V9.1 soft intelligence activities (method-based).
 	v91 := workflows.NewV91Activities()

@@ -444,11 +444,59 @@ func (a *Activities) AggregateCostsActivity(ctx context.Context, input CostRollu
 	rollupID := hashKey("rollup:" + input.WorkspaceID + ":" + input.PeriodStart)
 
 	if a.pool != nil {
+		// Aggregate from llm_cost_ledger + connector_cost_ledger into user_cost_daily_rollup (NNR-105).
+		// This is the ONLY code path that writes rollup tables.
 		_, _ = a.pool.Exec(ctx,
-			`INSERT INTO cost_rollups (id, workspace_id, period_start, period_end, total_cost_usd, event_count, created_at)
-			 VALUES ($1, $2, $3, $4, 0, 0, NOW())
-			 ON CONFLICT (id) DO NOTHING`,
-			rollupID, input.WorkspaceID, input.PeriodStart, input.PeriodEnd)
+			`INSERT INTO user_cost_daily_rollup (workspace_id, user_id, rollup_date, llm_cost_usd, connector_cost_usd, total_cost_usd, task_count, llm_calls, connector_calls)
+			 SELECT
+			   l.workspace_id, l.user_id, $3::date AS rollup_date,
+			   COALESCE(SUM(l.cost_usd), 0),
+			   0, COALESCE(SUM(l.cost_usd), 0),
+			   COUNT(DISTINCT l.workflow_run_id), COUNT(*), 0
+			 FROM llm_cost_ledger l
+			 WHERE l.workspace_id = $1::uuid
+			   AND l.created_at >= $3::timestamptz AND l.created_at < $4::timestamptz
+			 GROUP BY l.workspace_id, l.user_id
+			 ON CONFLICT (workspace_id, user_id, rollup_date) DO UPDATE SET
+			   llm_cost_usd = EXCLUDED.llm_cost_usd,
+			   total_cost_usd = EXCLUDED.llm_cost_usd + user_cost_daily_rollup.connector_cost_usd,
+			   task_count = EXCLUDED.task_count,
+			   llm_calls = EXCLUDED.llm_calls`,
+			input.WorkspaceID, rollupID, input.PeriodStart, input.PeriodEnd)
+
+		// Merge connector costs into the same rollup rows.
+		_, _ = a.pool.Exec(ctx,
+			`INSERT INTO user_cost_daily_rollup (workspace_id, user_id, rollup_date, llm_cost_usd, connector_cost_usd, total_cost_usd, task_count, llm_calls, connector_calls)
+			 SELECT
+			   c.workspace_id, c.user_id, $3::date, 0,
+			   COALESCE(SUM(c.cost_usd), 0), COALESCE(SUM(c.cost_usd), 0),
+			   COUNT(DISTINCT c.workflow_run_id), 0, COUNT(*)
+			 FROM connector_cost_ledger c
+			 WHERE c.workspace_id = $1::uuid
+			   AND c.created_at >= $3::timestamptz AND c.created_at < $4::timestamptz
+			 GROUP BY c.workspace_id, c.user_id
+			 ON CONFLICT (workspace_id, user_id, rollup_date) DO UPDATE SET
+			   connector_cost_usd = EXCLUDED.connector_cost_usd,
+			   total_cost_usd = user_cost_daily_rollup.llm_cost_usd + EXCLUDED.connector_cost_usd,
+			   connector_calls = EXCLUDED.connector_calls`,
+			input.WorkspaceID, rollupID, input.PeriodStart, input.PeriodEnd)
+
+		// Read back aggregated totals.
+		var totalCost float64
+		var eventCount int
+		err := a.pool.QueryRow(ctx,
+			`SELECT COALESCE(SUM(total_cost_usd), 0), COALESCE(SUM(task_count), 0)
+			 FROM user_cost_daily_rollup
+			 WHERE workspace_id = $1::uuid AND rollup_date = $2::date`,
+			input.WorkspaceID, input.PeriodStart).Scan(&totalCost, &eventCount)
+		if err == nil {
+			return &CostRollupResult{
+				WorkspaceID:  input.WorkspaceID,
+				TotalCostUSD: totalCost,
+				EventCount:   eventCount,
+				RollupID:     rollupID,
+			}, nil
+		}
 	}
 
 	return &CostRollupResult{

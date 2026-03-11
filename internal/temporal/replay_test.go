@@ -772,6 +772,7 @@ func TestWorkflowDeterminismAudit(t *testing.T) {
 		"internal/temporal/workflows_learning.go",
 		"internal/temporal/workflows_federation.go",
 		"internal/temporal/workflows_p8.go",
+		"internal/temporal/workflows_v101.go",
 	}
 
 	forbiddenPatterns := []string{
