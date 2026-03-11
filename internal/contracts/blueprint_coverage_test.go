@@ -62,6 +62,9 @@ func TestBlueprintCoverage(t *testing.T) {
 			"011_BREVIO_v102_v103_intelligence.sql",
 			"012_BREVIO_v104_voice_calls.sql",
 			"013_BREVIO_openclaw_adoption.sql",
+			"014_BREVIO_gateway_production_hardening.sql",
+			"015_BREVIO_v101_cost_revenue_intelligence.sql",
+			"016_BREVIO_v103_cognitive_architecture.sql",
 		}
 		for _, m := range migrations {
 			assertFileNonEmpty(t, filepath.Join(root, "db", "migrations", m))

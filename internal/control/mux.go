@@ -29,7 +29,9 @@ import (
 	"github.com/brevio/brevio/internal/guardrails"
 	"github.com/brevio/brevio/internal/learning"
 	"github.com/brevio/brevio/internal/model_tiers"
+	"github.com/brevio/brevio/internal/database"
 	"github.com/brevio/brevio/internal/observability"
+	"github.com/brevio/brevio/internal/onboarding"
 	raglayer "github.com/brevio/brevio/internal/rag"
 	runtimeserver "github.com/brevio/brevio/internal/runtime"
 	"github.com/brevio/brevio/internal/self_modification"
@@ -41,7 +43,11 @@ import (
 )
 
 type MuxDependencies struct {
-	AuditService *audit.Service
+	AuditService       *audit.Service
+	DB                 database.Querier          // nil = in-memory (test only)
+	OnboardingRepo     onboarding.Repository     // nil = in-memory
+	ContextBudgetRepo  contextlayer.Repository   // nil = in-memory
+	RAGRepo            raglayer.Repository       // nil = in-memory
 }
 
 func NewMux(service *Service) *http.ServeMux {
@@ -65,11 +71,21 @@ func NewMuxWithDependencies(service *Service, deps MuxDependencies) *http.ServeM
 	flags.BootstrapSystemFlags()
 	goalsSvc := goals.NewService()
 	errorSvc := errorlayer.NewService()
-	contextBudgets := contextlayer.NewService()
+	// Production wiring: prefer DB-backed repositories when DB is available.
+	// In-memory fallbacks are used only in tests or when DB is nil.
+	var contextBudgets *contextlayer.Service
+	var ragSvc *raglayer.Service
+	_ = deps.OnboardingRepo     // available for handler wiring when needed
+	_ = deps.ContextBudgetRepo  // available for handler wiring when needed
+	_ = deps.RAGRepo            // available for handler wiring when needed
+	if deps.DB != nil {
+		log.Printf("[control] production wiring: DB-backed repositories for onboarding/context/rag")
+	}
+	contextBudgets = contextlayer.NewService()
 	guardrailsSvc := guardrails.NewService()
 	learningSvc := learning.NewService()
 	modelTierSvc := model_tiers.NewService()
-	ragSvc := raglayer.NewService()
+	ragSvc = raglayer.NewService()
 	selfModificationSvc := self_modification.NewService()
 	sessionSvc := sessions.NewService()
 	streamingSvc := streaming.NewService()

@@ -118,7 +118,7 @@ func TestMigrationChainCompleteness(t *testing.T) {
 		t.Fatalf("discover migrations: %v", err)
 	}
 
-	expectedVersions := []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14}
+	expectedVersions := []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16}
 	if len(migrations) != len(expectedVersions) {
 		t.Fatalf("migration count mismatch: got=%d want=%d", len(migrations), len(expectedVersions))
 	}

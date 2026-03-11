@@ -1,6 +1,9 @@
 package temporal
 
 import (
+	"fmt"
+	"os"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/mock"
@@ -452,5 +455,384 @@ func TestAssessCognitiveStateActivity_Escalation(t *testing.T) {
 	}
 	if result.Strategy == "proceed" {
 		t.Error("expected non-proceed strategy")
+	}
+}
+
+// --- v10.x Replay Tests (Prompt 4) ---
+
+// TestOnboardingWorkflowReplay verifies the onboarding workflow replays
+// deterministically through all 4 stages.
+func TestOnboardingWorkflowReplay(t *testing.T) {
+	suite := &testsuite.WorkflowTestSuite{}
+	env := suite.NewTestWorkflowEnvironment()
+	env.RegisterWorkflow(OnboardingWorkflow)
+
+	var a *Activities
+	env.OnActivity(a.ExecuteOnboardingStageActivity, mock.Anything, mock.Anything).Return(
+		&OnboardingStageResult{Stage: "any", Success: true}, nil,
+	)
+
+	env.ExecuteWorkflow(OnboardingWorkflow, OnboardingWorkflowInput{
+		WorkspaceID: "ws-onboard-001",
+		Answers: map[string]string{
+			"operator_profile_intake_v1":       "done",
+			"behavior_policy_calibration_v1":   "done",
+			"codebase_map_ingestion_v1":        "done",
+			"system_map_ingestion_v1":          "done",
+		},
+	})
+
+	if !env.IsWorkflowCompleted() {
+		t.Fatal("onboarding workflow did not complete")
+	}
+	if err := env.GetWorkflowError(); err != nil {
+		t.Fatalf("onboarding workflow failed: %v", err)
+	}
+
+	var result OnboardingWorkflowResult
+	if err := env.GetWorkflowResult(&result); err != nil {
+		t.Fatalf("failed to get onboarding result: %v", err)
+	}
+
+	if result.Status != "completed" {
+		t.Errorf("expected status 'completed', got %q", result.Status)
+	}
+	if len(result.CompletedStages) != 4 {
+		t.Errorf("expected 4 completed stages, got %d", len(result.CompletedStages))
+	}
+}
+
+// TestOnboardingWorkflowReplay_PartialFailure verifies graceful degradation
+// when an onboarding stage fails mid-workflow.
+func TestOnboardingWorkflowReplay_PartialFailure(t *testing.T) {
+	suite := &testsuite.WorkflowTestSuite{}
+	env := suite.NewTestWorkflowEnvironment()
+	env.RegisterWorkflow(OnboardingWorkflow)
+
+	var a *Activities
+	// First call succeeds, second fails — workflow should return "incomplete" with 1 stage.
+	env.OnActivity(a.ExecuteOnboardingStageActivity, mock.Anything, OnboardingStageInput{
+		WorkspaceID: "ws-onboard-002", Stage: "operator_profile_intake_v1",
+		Answers: map[string]string{"operator_profile_intake_v1": "done"},
+	}).Return(&OnboardingStageResult{Stage: "operator_profile_intake_v1", Success: true}, nil)
+	env.OnActivity(a.ExecuteOnboardingStageActivity, mock.Anything, OnboardingStageInput{
+		WorkspaceID: "ws-onboard-002", Stage: "behavior_policy_calibration_v1",
+		Answers: map[string]string{"operator_profile_intake_v1": "done"},
+	}).Return(nil, fmt.Errorf("STAGE_INCOMPLETE: missing answer for stage behavior_policy_calibration_v1"))
+
+	env.ExecuteWorkflow(OnboardingWorkflow, OnboardingWorkflowInput{
+		WorkspaceID: "ws-onboard-002",
+		Answers:     map[string]string{"operator_profile_intake_v1": "done"},
+	})
+
+	if !env.IsWorkflowCompleted() {
+		t.Fatal("workflow did not complete")
+	}
+
+	var result OnboardingWorkflowResult
+	if err := env.GetWorkflowResult(&result); err != nil {
+		t.Fatalf("failed to get result: %v", err)
+	}
+
+	if result.Status != "incomplete" {
+		t.Errorf("expected status 'incomplete', got %q", result.Status)
+	}
+	if len(result.CompletedStages) != 1 {
+		t.Errorf("expected 1 completed stage, got %d", len(result.CompletedStages))
+	}
+}
+
+// TestCostRollupWorkflowReplay verifies the cost rollup workflow is replay-safe.
+func TestCostRollupWorkflowReplay(t *testing.T) {
+	suite := &testsuite.WorkflowTestSuite{}
+	env := suite.NewTestWorkflowEnvironment()
+	env.RegisterWorkflow(CostRollupWorkflow)
+
+	var a *Activities
+	env.OnActivity(a.AggregateCostsActivity, mock.Anything, mock.Anything).Return(
+		&CostRollupResult{
+			WorkspaceID:  "ws-cost-001",
+			TotalCostUSD: 42.50,
+			EventCount:   127,
+			RollupID:     "rollup-001",
+		}, nil,
+	)
+
+	env.ExecuteWorkflow(CostRollupWorkflow, CostRollupInput{
+		WorkspaceID: "ws-cost-001",
+		PeriodStart: "2026-03-01",
+		PeriodEnd:   "2026-03-31",
+	})
+
+	if !env.IsWorkflowCompleted() {
+		t.Fatal("cost rollup workflow did not complete")
+	}
+	if err := env.GetWorkflowError(); err != nil {
+		t.Fatalf("cost rollup workflow failed: %v", err)
+	}
+
+	var result CostRollupResult
+	if err := env.GetWorkflowResult(&result); err != nil {
+		t.Fatalf("failed to get cost rollup result: %v", err)
+	}
+	if result.RollupID != "rollup-001" {
+		t.Errorf("expected rollup ID 'rollup-001', got %q", result.RollupID)
+	}
+	if result.TotalCostUSD != 42.50 {
+		t.Errorf("expected cost 42.50, got %f", result.TotalCostUSD)
+	}
+}
+
+// TestKillSwitchWorkflowReplay verifies the kill switch workflow is replay-safe.
+func TestKillSwitchWorkflowReplay(t *testing.T) {
+	suite := &testsuite.WorkflowTestSuite{}
+	env := suite.NewTestWorkflowEnvironment()
+	env.RegisterWorkflow(KillSwitchWorkflow)
+
+	var a *Activities
+	env.OnActivity(a.ActivateKillSwitchActivity, mock.Anything, mock.Anything).Return(
+		&KillSwitchResult{
+			WorkspaceID:     "ws-kill-001",
+			WorkflowsHalted: 3,
+			ToolsDisabled:   5,
+			ActivatedAt:     "2026-03-11T10:00:00Z",
+		}, nil,
+	)
+
+	env.ExecuteWorkflow(KillSwitchWorkflow, KillSwitchInput{
+		WorkspaceID: "ws-kill-001",
+		ActivatedBy: "admin@brevio.ai",
+		Reason:      "security_incident",
+	})
+
+	if !env.IsWorkflowCompleted() {
+		t.Fatal("kill switch workflow did not complete")
+	}
+	if err := env.GetWorkflowError(); err != nil {
+		t.Fatalf("kill switch workflow failed: %v", err)
+	}
+
+	var result KillSwitchResult
+	if err := env.GetWorkflowResult(&result); err != nil {
+		t.Fatalf("failed to get kill switch result: %v", err)
+	}
+	if result.WorkflowsHalted != 3 {
+		t.Errorf("expected 3 halted workflows, got %d", result.WorkflowsHalted)
+	}
+}
+
+// TestMessageProcessingWorkflow_CognitiveAbort verifies the workflow terminates
+// when the cognitive assessment strategy is "abort".
+func TestMessageProcessingWorkflow_CognitiveAbort(t *testing.T) {
+	suite := &testsuite.WorkflowTestSuite{}
+	env := suite.NewTestWorkflowEnvironment()
+	env.RegisterWorkflow(MessageProcessingWorkflow)
+
+	var a *Activities
+	env.OnActivity(a.ValidateEnvelopeActivity, mock.Anything, mock.Anything).Return(
+		&ValidateEnvelopeResult{Valid: true, NormalizedPayload: `{"text":"complex request"}`}, nil,
+	)
+	env.OnActivity(a.ClassifyIntentActivity, mock.Anything, mock.Anything).Return(
+		&ClassifyIntentResult{Intent: "complex_analysis", Confidence: 0.6}, nil,
+	)
+	env.OnActivity(a.RetrieveMemoryActivity, mock.Anything, mock.Anything).Return(
+		&MemoryRetrieveResult{Items: []MemoryItem{}, TotalScored: 0}, nil,
+	)
+	env.OnActivity(a.SearchRAGActivity, mock.Anything, mock.Anything).Return(
+		&RAGSearchResult{Chunks: []RAGChunk{}, TotalScored: 0}, nil,
+	)
+	env.OnActivity(a.ExecuteReasoningLoopActivity, mock.Anything, mock.Anything).Return(
+		&ReasoningLoopResult{
+			PlanID: "plan-abort", ToolKeys: []string{"search.knowledge"},
+			RiskLevel: "LOW", QualityScore: 0.15, Iterations: 3,
+			EvidenceHash: "ev-abort", Deterministic: true,
+		}, nil,
+	)
+	// Cognitive assessment triggers abort strategy.
+	env.OnActivity(a.AssessCognitiveStateActivity, mock.Anything, mock.Anything).Return(
+		&CognitiveAssessResult{
+			CognitiveLoad: 0.95, ReasoningQuality: 0.1, UncertaintyLevel: 0.9,
+			ShouldEscalate: true, Strategy: "abort",
+		}, nil,
+	)
+	env.OnActivity(a.EvaluateCouncilActivity, mock.Anything, mock.Anything).Return(
+		&CouncilEvalResult{Convened: false, Decision: "approve", Reason: "within_policy"}, nil,
+	)
+
+	env.ExecuteWorkflow(MessageProcessingWorkflow, MessageProcessingWorkflowInput{
+		MessageID: "msg-abort", WorkspaceID: "ws-abort", ChannelType: "web",
+		RawPayload: `{"text":"complex request"}`, IdempotencyKey: "idem-abort",
+	})
+
+	if !env.IsWorkflowCompleted() {
+		t.Fatal("workflow did not complete")
+	}
+
+	var result MessageProcessingWorkflowResult
+	if err := env.GetWorkflowResult(&result); err != nil {
+		t.Fatalf("failed to get result: %v", err)
+	}
+	if result.TerminalState != "FAILED" {
+		t.Errorf("expected FAILED terminal state for abort, got %q", result.TerminalState)
+	}
+	if len(result.Fallbacks) == 0 || result.Fallbacks[0] != "cognitive_abort" {
+		t.Errorf("expected cognitive_abort fallback, got %v", result.Fallbacks)
+	}
+	if result.EvidenceHash == "" {
+		t.Error("expected evidence hash even on abort")
+	}
+}
+
+// TestOutboxDispatchWorkflowReplay_Empty verifies that the outbox dispatch
+// workflow handles an empty batch gracefully (no entries to process).
+func TestOutboxDispatchWorkflowReplay_Empty(t *testing.T) {
+	suite := &testsuite.WorkflowTestSuite{}
+	env := suite.NewTestWorkflowEnvironment()
+	env.RegisterWorkflow(OutboxDispatchWorkflow)
+
+	var a *Activities
+	env.OnActivity(a.FetchPendingOutboxActivity, mock.Anything, mock.Anything).Return(
+		&OutboxFetchResult{Entries: []OutboxEntry{}}, nil,
+	)
+
+	env.ExecuteWorkflow(OutboxDispatchWorkflow, OutboxDispatchInput{BatchSize: 10})
+
+	if !env.IsWorkflowCompleted() {
+		t.Fatal("workflow did not complete")
+	}
+	if err := env.GetWorkflowError(); err != nil {
+		t.Fatalf("workflow error: %v", err)
+	}
+
+	var result OutboxDispatchResult
+	if err := env.GetWorkflowResult(&result); err != nil {
+		t.Fatalf("failed to get result: %v", err)
+	}
+	if result.TotalFetched != 0 {
+		t.Errorf("expected 0 fetched for empty batch, got %d", result.TotalFetched)
+	}
+}
+
+// TestEnqueueOutboxActivity_Idempotent verifies deterministic entry IDs
+// for the same inputs (idempotency key derivation).
+func TestEnqueueOutboxActivity_Idempotent(t *testing.T) {
+	a := NewActivities()
+	input := OutboxEnqueueInput{
+		WorkspaceID: "ws-idem",
+		EventType:   "BREVIO.message.processed.v1",
+		Payload:     `{"body":"hello"}`,
+		Target:      "slack",
+	}
+
+	r1, err := a.EnqueueOutboxActivity(nil, input)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	r2, err := a.EnqueueOutboxActivity(nil, input)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if r1.EntryID != r2.EntryID {
+		t.Errorf("non-deterministic entry IDs: %q vs %q", r1.EntryID, r2.EntryID)
+	}
+	if r1.EntryID == "" {
+		t.Error("expected non-empty entry ID")
+	}
+}
+
+// TestOnboardingStageActivity_DegradedMode verifies the onboarding stage
+// activity works without a DB repository (degraded/test mode).
+func TestOnboardingStageActivity_DegradedMode(t *testing.T) {
+	a := NewActivities()
+	result, err := a.ExecuteOnboardingStageActivity(nil, OnboardingStageInput{
+		WorkspaceID: "ws-test",
+		Stage:       "operator_profile_intake_v1",
+		Answers:     map[string]string{"operator_profile_intake_v1": "done"},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !result.Success {
+		t.Error("expected success in degraded mode")
+	}
+	if result.Stage != "operator_profile_intake_v1" {
+		t.Errorf("expected stage 'operator_profile_intake_v1', got %q", result.Stage)
+	}
+}
+
+// TestWorkflowDeterminismAudit scans workflow code for nondeterministic patterns.
+// Workflow functions must not call time.Now(), rand, uuid.New(), or os.* directly.
+func TestWorkflowDeterminismAudit(t *testing.T) {
+	t.Parallel()
+	root := findRepoRoot(t)
+
+	workflowFiles := []string{
+		"internal/temporal/workflows.go",
+		"internal/temporal/workflows_voice.go",
+		"internal/temporal/workflows_learning.go",
+		"internal/temporal/workflows_federation.go",
+		"internal/temporal/workflows_p8.go",
+	}
+
+	forbiddenPatterns := []string{
+		"time.Now()",
+		"rand.Int",
+		"rand.Float",
+		"uuid.New()",
+		"uuid.Must(uuid.NewV7())",
+		"os.Getenv(",
+	}
+
+	for _, relPath := range workflowFiles {
+		path := relPath
+		t.Run(path, func(t *testing.T) {
+			fullPath := root + "/" + path
+			body, err := os.ReadFile(fullPath)
+			if err != nil {
+				if os.IsNotExist(err) {
+					t.Skipf("file not found: %s", fullPath)
+				}
+				t.Fatalf("read %s: %v", fullPath, err)
+			}
+			content := string(body)
+			for _, pattern := range forbiddenPatterns {
+				if containsOutsideComment(content, pattern) {
+					t.Errorf("NONDETERMINISTIC: %s contains %q in workflow code", path, pattern)
+				}
+			}
+		})
+	}
+}
+
+// containsOutsideComment checks if pattern appears in non-comment lines.
+func containsOutsideComment(content, pattern string) bool {
+	for _, line := range strings.Split(content, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "//") || strings.HasPrefix(trimmed, "/*") {
+			continue
+		}
+		if strings.Contains(line, pattern) {
+			return true
+		}
+	}
+	return false
+}
+
+// findRepoRoot locates the repository root by walking up from the test file.
+func findRepoRoot(t *testing.T) string {
+	t.Helper()
+	dir, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	for {
+		if _, err := os.Stat(dir + "/go.mod"); err == nil {
+			return dir
+		}
+		parent := dir[:strings.LastIndex(dir, "/")]
+		if parent == dir || parent == "" {
+			t.Fatal("could not find repository root (go.mod)")
+		}
+		dir = parent
 	}
 }

@@ -11,7 +11,10 @@ import (
 	"time"
 
 	"github.com/brevio/brevio/internal/compliance"
+	memorypkg "github.com/brevio/brevio/internal/memory"
+	onboardingpkg "github.com/brevio/brevio/internal/onboarding"
 	"github.com/brevio/brevio/internal/outbox"
+	ragpkg "github.com/brevio/brevio/internal/rag"
 	runtimeserver "github.com/brevio/brevio/internal/runtime"
 	breviotemporal "github.com/brevio/brevio/internal/temporal"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -55,10 +58,16 @@ func main() {
 
 		deps.Pool = pool
 		deps.OutboxSvc = outbox.NewService(pool)
+		deps.MemoryRepo = memorypkg.NewPgItemRepository(pool)
+		deps.OnboardingRepo = onboardingpkg.NewPgRepository(pool)
+		deps.RAGRepo = ragpkg.NewPgRepository(pool)
 
 		logger.Info("temporal_worker_production_deps", map[string]any{
-			"database": "pgxpool",
-			"outbox":   "db-backed",
+			"database":   "pgxpool",
+			"outbox":     "db-backed",
+			"memory":     "pg-repository",
+			"onboarding": "pg-repository",
+			"rag":        "pg-repository",
 		})
 	}
 

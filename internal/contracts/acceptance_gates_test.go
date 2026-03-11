@@ -214,6 +214,117 @@ func TestAcceptanceGatesV101(t *testing.T) {
 	})
 }
 
+func TestAcceptanceGatesV101CostRevenue(t *testing.T) {
+	t.Parallel()
+	root := repositoryRoot(t)
+
+	t.Run("cost_revenue_18_tables", func(t *testing.T) {
+		migrationPath := filepath.Join(root, "db", "migrations", "015_BREVIO_v101_cost_revenue_intelligence.sql")
+		assertFileNonEmpty(t, migrationPath)
+		requiredTables := []string{
+			"llm_cost_ledger", "task_cost_rollup", "connector_cost_ledger",
+			"user_cost_daily_rollup", "operator_margin_report",
+			"agent_kill_switches", "agent_kill_switch_log", "skill_acl_overrides",
+			"subscription_events", "mrr_snapshots",
+			"user_cohorts", "cohort_retention",
+			"oauth_token_registry", "behavioral_risk_scores", "behavioral_risk_history",
+			"feature_adoption_events", "tool_mttr_log", "agent_action_replay_log",
+		}
+		assertFileContainsTokens(t, migrationPath, requiredTables)
+	})
+	t.Run("cost_numeric_18_8", func(t *testing.T) {
+		migrationPath := filepath.Join(root, "db", "migrations", "015_BREVIO_v101_cost_revenue_intelligence.sql")
+		assertFileContainsTokens(t, migrationPath, []string{
+			"numeric(18,8)",
+		})
+	})
+	t.Run("cost_rls_enforcement", func(t *testing.T) {
+		migrationPath := filepath.Join(root, "db", "migrations", "015_BREVIO_v101_cost_revenue_intelligence.sql")
+		assertFileContainsTokens(t, migrationPath, []string{
+			"ENABLE ROW LEVEL SECURITY",
+			"current_setting('app.workspace_id')::uuid",
+		})
+	})
+	t.Run("cost_uuidv7_pks", func(t *testing.T) {
+		migrationPath := filepath.Join(root, "db", "migrations", "015_BREVIO_v101_cost_revenue_intelligence.sql")
+		assertFileContainsTokens(t, migrationPath, []string{
+			"uuid_v7_generate()",
+		})
+	})
+	t.Run("kill_switch_scope_enum", func(t *testing.T) {
+		assertFileContainsTokens(t, filepath.Join(root, "db", "migrations", "015_BREVIO_v101_cost_revenue_intelligence.sql"), []string{
+			"kill_switch_scope",
+			"risk_severity",
+			"adoption_event_type",
+			"mttr_status",
+		})
+	})
+}
+
+func TestAcceptanceGatesV103Cognitive(t *testing.T) {
+	t.Parallel()
+	root := repositoryRoot(t)
+
+	t.Run("cognitive_11_tables", func(t *testing.T) {
+		migrationPath := filepath.Join(root, "db", "migrations", "016_BREVIO_v103_cognitive_architecture.sql")
+		assertFileNonEmpty(t, migrationPath)
+		requiredTables := []string{
+			"system1_heuristics", "thought_graphs", "thought_nodes",
+			"domain_performance_history", "user_knowledge_model",
+			"belief_distributions", "implicit_behavior_signals",
+			"case_library", "clarification_candidates",
+			"consolidation_runs", "behavioral_baselines",
+		}
+		assertFileContainsTokens(t, migrationPath, requiredTables)
+	})
+	t.Run("cognitive_enums", func(t *testing.T) {
+		migrationPath := filepath.Join(root, "db", "migrations", "016_BREVIO_v103_cognitive_architecture.sql")
+		assertFileContainsTokens(t, migrationPath, []string{
+			"thought_node_type",
+			"thought_graph_status",
+			"knowledge_type",
+			"user_awareness",
+			"implicit_signal_type",
+			"consolidation_status",
+			"prospective_trigger_type",
+		})
+	})
+	t.Run("cognitive_rls_enforcement", func(t *testing.T) {
+		migrationPath := filepath.Join(root, "db", "migrations", "016_BREVIO_v103_cognitive_architecture.sql")
+		assertFileContainsTokens(t, migrationPath, []string{
+			"ENABLE ROW LEVEL SECURITY",
+			"current_setting('app.workspace_id')::uuid",
+		})
+	})
+	t.Run("cognitive_uuidv7_pks", func(t *testing.T) {
+		migrationPath := filepath.Join(root, "db", "migrations", "016_BREVIO_v103_cognitive_architecture.sql")
+		assertFileContainsTokens(t, migrationPath, []string{
+			"uuid_v7_generate()",
+		})
+	})
+	t.Run("cognitive_vector_indexes", func(t *testing.T) {
+		migrationPath := filepath.Join(root, "db", "migrations", "016_BREVIO_v103_cognitive_architecture.sql")
+		assertFileContainsTokens(t, migrationPath, []string{
+			"vector(1536)",
+			"ivfflat",
+			"vector_cosine_ops",
+		})
+	})
+	t.Run("prospective_memory_compatibility_view", func(t *testing.T) {
+		assertFileContainsTokens(t, filepath.Join(root, "db", "migrations", "016_BREVIO_v103_cognitive_architecture.sql"), []string{
+			"prospective_memories",
+			"prospective_memory",
+		})
+	})
+	t.Run("memory_items_consolidation_columns", func(t *testing.T) {
+		assertFileContainsTokens(t, filepath.Join(root, "db", "migrations", "016_BREVIO_v103_cognitive_architecture.sql"), []string{
+			"source_episode_ids",
+			"consolidation_run_id",
+			"pattern_frequency",
+		})
+	})
+}
+
 func TestAcceptanceGatesV102V103(t *testing.T) {
 	t.Parallel()
 	root := repositoryRoot(t)

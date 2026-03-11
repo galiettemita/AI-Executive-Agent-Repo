@@ -96,6 +96,23 @@ Repository interfaces defined per domain package; pgx implementations injected a
 - No demo UI, server, endpoint, workflow, or infrastructure may exist in the production build.
 - The repository follows a 12-prompt staged implementation pipeline as operational doctrine. Each prompt is gated by acceptance criteria, self-audit, and git checkpoint.
 
+## D13 — Prospective Memory Naming Reconciliation
+
+- Blueprint BP04 (V10.3 COG-06) defines `prospective_memories` (plural).
+- Migration 011 already created `prospective_memory` (singular), which is the canonical table name.
+- Decision: **`prospective_memory` is the canonical table name** (singular, consistent with the existing migration and Go code references).
+- A compatibility view `prospective_memories` is created in migration 016 as `CREATE OR REPLACE VIEW prospective_memories AS SELECT * FROM prospective_memory`.
+- All new Go code must reference `prospective_memory`. Blueprint references to `prospective_memories` map to this canonical table.
+
+## D14 — BP02/BP04 Schema Gap Closure via Forward-Only Migrations
+
+- Migration 010 implements 18 admin/billing tables but does not include the 18 cost/revenue intelligence tables specified in BP02 (V10.1).
+- Migration 011 implements 10 EQ/cognitive tables but does not include the 11 cognitive architecture tables from BP04 (V10.3 COG-01 through COG-12).
+- Decision: **Two additive forward-only migrations** close these gaps:
+  - `015_BREVIO_v101_cost_revenue_intelligence.sql` — 18 tables (llm_cost_ledger, task_cost_rollup, agent_kill_switches, mrr_snapshots, etc.)
+  - `016_BREVIO_v103_cognitive_architecture.sql` — 11 tables (system1_heuristics, thought_graphs, case_library, belief_distributions, etc.) + ALTER TABLE for memory_items columns + compatibility view.
+- All tables follow D5 (UUIDv7 PKs), D4 (workspace_id RLS), D-NNR-103 (NUMERIC(18,8) for money), D6 (forward-only).
+
 ## D001 — Federation Data Model
 
 Federation between workspaces uses the following binding types:
