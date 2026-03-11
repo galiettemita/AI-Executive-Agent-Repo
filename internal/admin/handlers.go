@@ -39,11 +39,36 @@ func RegisterRoutes(mux *http.ServeMux, svc *Service) {
 
 	// MCP
 	mux.HandleFunc("GET /v1/admin/mcp-servers", adminOnly(handleMCPServers(svc)))
+
+	// V10.1: Kill switch
+	killSwitchSvc := NewKillSwitchService()
+	mux.HandleFunc("POST /v1/admin/kill-switch/activate", adminOnly(handleKillSwitchActivate(killSwitchSvc)))
+	mux.HandleFunc("POST /v1/admin/kill-switch/deactivate", adminOnly(handleKillSwitchDeactivate(killSwitchSvc)))
+	mux.HandleFunc("GET /v1/admin/kill-switch", adminOnly(handleKillSwitchList(killSwitchSvc)))
+
+	// V10.1: Skill ACL
+	skillACLSvc := NewSkillACLOverrideService()
+	mux.HandleFunc("POST /v1/admin/skill-acl/override", adminOnly(handleSkillACLSet(skillACLSvc)))
+	mux.HandleFunc("DELETE /v1/admin/skill-acl/override", adminOnly(handleSkillACLRemove(skillACLSvc)))
+	mux.HandleFunc("GET /v1/admin/skill-acl/overrides", adminOnly(handleSkillACLList(skillACLSvc)))
 }
 
-// adminOnly wraps a handler and rejects requests that lack X-User-Role: admin.
+// adminOnly wraps a handler and rejects requests without admin authorization.
+// Checks session-based auth first (via AdminAuthMiddleware context), then falls
+// back to X-User-Role header for backwards compatibility during migration.
 func adminOnly(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		// Check session-based auth first (injected by AdminAuthMiddleware).
+		if session := SessionFromContext(r.Context()); session != nil {
+			if session.Role == "admin" || session.Role == "owner" {
+				next(w, r)
+				return
+			}
+			writeJSON(w, http.StatusForbidden, map[string]string{"error": "admin role required"})
+			return
+		}
+
+		// Fallback: X-User-Role header (legacy, will be removed).
 		role := r.Header.Get("X-User-Role")
 		if role != "admin" {
 			writeJSON(w, http.StatusForbidden, map[string]string{"error": "admin role required"})
@@ -224,6 +249,93 @@ func handleListUsers(svc *Service) http.HandlerFunc {
 func handleMCPServers(svc *Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, svc.ListMCPServerHealth())
+	}
+}
+
+// --- Kill Switch (V10.1) ---
+
+func handleKillSwitchActivate(svc *KillSwitchService) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			WorkspaceID string `json:"workspace_id"`
+			UserID      string `json:"user_id,omitempty"`
+			ActivatedBy string `json:"activated_by"`
+			Reason      string `json:"reason"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+			return
+		}
+		ks, err := svc.Activate(req.WorkspaceID, req.UserID, req.ActivatedBy, req.Reason)
+		if err != nil {
+			writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": err.Error()})
+			return
+		}
+		writeJSON(w, http.StatusOK, ks)
+	}
+}
+
+func handleKillSwitchDeactivate(svc *KillSwitchService) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			WorkspaceID string `json:"workspace_id"`
+			UserID      string `json:"user_id,omitempty"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+			return
+		}
+		if err := svc.Deactivate(req.WorkspaceID, req.UserID); err != nil {
+			writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": err.Error()})
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]string{"status": "deactivated"})
+	}
+}
+
+func handleKillSwitchList(svc *KillSwitchService) http.HandlerFunc {
+	return func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(w, http.StatusOK, map[string]any{"kill_switches": svc.GetAll()})
+	}
+}
+
+// --- Skill ACL (V10.1) ---
+
+func handleSkillACLSet(svc *SkillACLOverrideService) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var override SkillACLOverride
+		if err := json.NewDecoder(r.Body).Decode(&override); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+			return
+		}
+		created, err := svc.SetOverride(override)
+		if err != nil {
+			writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": err.Error()})
+			return
+		}
+		writeJSON(w, http.StatusCreated, created)
+	}
+}
+
+func handleSkillACLRemove(svc *SkillACLOverrideService) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		workspaceID := r.URL.Query().Get("workspace_id")
+		userID := r.URL.Query().Get("user_id")
+		skillID := r.URL.Query().Get("skill_id")
+		if err := svc.RemoveOverride(workspaceID, userID, skillID); err != nil {
+			writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": err.Error()})
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]string{"status": "removed"})
+	}
+}
+
+func handleSkillACLList(svc *SkillACLOverrideService) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		workspaceID := r.URL.Query().Get("workspace_id")
+		userID := r.URL.Query().Get("user_id")
+		overrides := svc.GetUserOverrides(workspaceID, userID)
+		writeJSON(w, http.StatusOK, map[string]any{"overrides": overrides})
 	}
 }
 

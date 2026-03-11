@@ -145,6 +145,65 @@ func NewWorkerWithDeps(c client.Client, taskQueue string, deps ActivityDeps) wor
 	w.RegisterActivity(activities.ReconcileMRRActivity)
 	w.RegisterActivity(activities.WriteLedgerFromOutboxActivity)
 
+	// V10.2 intelligence gap closure workflows.
+	w.RegisterWorkflow(IntelligenceProcessingWorkflow)
+	w.RegisterWorkflow(AutonomyDemotionWorkflow)
+
+	// V10.2 intelligence activities.
+	w.RegisterActivity(activities.ApplyEQStrategyActivity)
+	w.RegisterActivity(activities.EvaluateAutonomyDemotionActivity)
+	w.RegisterActivity(activities.PersistCriticReflectorActivity)
+	w.RegisterActivity(activities.RecordCalibrationOutcomeActivity)
+	w.RegisterActivity(activities.ClassifyMultiIntentActivity)
+	w.RegisterActivity(activities.AssessUncertaintyActivity)
+	w.RegisterActivity(activities.EvaluateInterruptionsActivity)
+	w.RegisterActivity(activities.PersistReasoningStepActivity)
+	w.RegisterActivity(activities.V102ReasoningLoopActivity)
+
+	// V10.2 P8 memory/context/RAG/latency workflows.
+	w.RegisterWorkflow(MemoryContextMaintenanceWorkflow)
+
+	// V10.3 cognitive intelligence workflows.
+	w.RegisterWorkflow(NightlyConsolidationWorkflow)
+	w.RegisterWorkflow(WeeklyDriftDetectionWorkflow)
+	w.RegisterWorkflow(HeuristicUpdateWorkflow)
+	w.RegisterWorkflow(BeliefMaintenanceWorkflow)
+	w.RegisterWorkflow(CognitiveSignalProcessingWorkflow)
+
+	// V10.3 cognitive intelligence activities.
+	w.RegisterActivity(activities.UpdateHeuristicActivity)
+	w.RegisterActivity(activities.RecalculateMetacognitiveActivity)
+	w.RegisterActivity(activities.UpdateBeliefActivity)
+	w.RegisterActivity(activities.DecayBeliefsActivity)
+	w.RegisterActivity(activities.RunConsolidationActivity)
+	w.RegisterActivity(activities.DetectDriftActivity)
+	w.RegisterActivity(activities.RecordImplicitSignalActivity)
+	w.RegisterActivity(activities.PersistClarificationActivity)
+	w.RegisterActivity(activities.EvaluateCognitiveSignalsActivity)
+
+	// V10.4 outbound call workflows.
+	w.RegisterWorkflow(OutboundCallWorkflow)
+	w.RegisterWorkflow(CallWebhookProcessingWorkflow)
+
+	// V10.4 outbound call activities.
+	w.RegisterActivity(activities.RequestCallApprovalActivity)
+	w.RegisterActivity(activities.VerifyPhoneActivity)
+	w.RegisterActivity(activities.MakeCallActivity)
+	w.RegisterActivity(activities.ProcessCallWebhookActivity)
+	w.RegisterActivity(activities.PersistTranscriptSegmentActivity)
+	w.RegisterActivity(activities.CheckProviderHealthActivity)
+
+	// V10.2 P8 memory/context/RAG/latency activities.
+	w.RegisterActivity(activities.ApplyMemoryDecayActivity)
+	w.RegisterActivity(activities.DetectLessonConflictActivity)
+	w.RegisterActivity(activities.ResolveLessonConflictActivity)
+	w.RegisterActivity(activities.EmbedAndChunkActivity)
+	w.RegisterActivity(activities.RankWithFreshnessActivity)
+	w.RegisterActivity(activities.PersistCompressionActivity)
+	w.RegisterActivity(activities.EnforceContextBudgetActivity)
+	w.RegisterActivity(activities.EvaluateLatencyBudgetActivity)
+	w.RegisterActivity(activities.WarmFastPathCacheActivity)
+
 	// V9.1 soft intelligence activities (method-based).
 	v91 := workflows.NewV91Activities()
 	w.RegisterActivity(v91.CollectTrustMetricsActivity)

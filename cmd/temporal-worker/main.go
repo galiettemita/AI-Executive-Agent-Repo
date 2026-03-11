@@ -10,13 +10,21 @@ import (
 	"strings"
 	"time"
 
+	adminpkg "github.com/brevio/brevio/internal/admin"
+	brainpkg "github.com/brevio/brevio/internal/brain"
+	callpkg "github.com/brevio/brevio/internal/hands/call"
+	cognitionpkg "github.com/brevio/brevio/internal/cognition"
 	"github.com/brevio/brevio/internal/compliance"
+	contextpkg "github.com/brevio/brevio/internal/context"
+	eqpkg "github.com/brevio/brevio/internal/eq"
+	executorpkg "github.com/brevio/brevio/internal/executor"
 	memorypkg "github.com/brevio/brevio/internal/memory"
 	onboardingpkg "github.com/brevio/brevio/internal/onboarding"
 	"github.com/brevio/brevio/internal/outbox"
 	ragpkg "github.com/brevio/brevio/internal/rag"
 	runtimeserver "github.com/brevio/brevio/internal/runtime"
 	breviotemporal "github.com/brevio/brevio/internal/temporal"
+	trustpkg "github.com/brevio/brevio/internal/trust"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -61,13 +69,43 @@ func main() {
 		deps.MemoryRepo = memorypkg.NewPgItemRepository(pool)
 		deps.OnboardingRepo = onboardingpkg.NewPgRepository(pool)
 		deps.RAGRepo = ragpkg.NewPgRepository(pool)
+		deps.KillSwitchCheck = adminpkg.NewPgKillSwitchRepository(pool)
+		deps.SkillACLCheck = adminpkg.NewPgSkillACLRepository(pool)
+		deps.EQRepo = eqpkg.NewPgEQStrategyRepository(pool)
+		deps.DemotionRepo = trustpkg.NewPgDemotionRepository(pool)
+		deps.IntelligenceRepo = brainpkg.NewPgIntelligenceRepository(pool)
+		deps.DecayRepo = memorypkg.NewPgDecayRepository(pool)
+		deps.ConflictRepo = memorypkg.NewPgConflictRepository(pool)
+		deps.ChunkSpecRepo = ragpkg.NewPgChunkSpecRepository(pool)
+		deps.CompressionRepo = contextpkg.NewPgCompressionRepository(pool)
+		deps.ContextRepo = contextpkg.NewPgRepository(pool)
+		deps.LatencyRepo = executorpkg.NewPgLatencyRepository(pool)
+		deps.EmbeddingProvider = ragpkg.NewOpenAIEmbeddingProvider("", os.Getenv("OPENAI_API_KEY"))
+		deps.CognitiveRepo = cognitionpkg.NewPgCognitiveRepository(pool)
+		deps.CallRepo = callpkg.NewPgCallRepository(pool)
+		deps.PhoneVerifier = callpkg.NewGooglePlacesClient(os.Getenv("GOOGLE_PLACES_API_KEY"))
 
 		logger.Info("temporal_worker_production_deps", map[string]any{
-			"database":   "pgxpool",
-			"outbox":     "db-backed",
-			"memory":     "pg-repository",
-			"onboarding": "pg-repository",
-			"rag":        "pg-repository",
+			"database":        "pgxpool",
+			"outbox":          "db-backed",
+			"memory":          "pg-repository",
+			"onboarding":      "pg-repository",
+			"rag":             "pg-repository",
+			"kill_switch":     "pg-repository",
+			"skill_acl":       "pg-repository",
+			"eq_strategy":     "pg-repository",
+			"demotion":        "pg-repository",
+			"intelligence":    "pg-repository",
+			"decay":           "pg-repository",
+			"conflict":        "pg-repository",
+			"chunk_spec":      "pg-repository",
+			"compression":     "pg-repository",
+			"context_budget":  "pg-repository",
+			"latency":         "pg-repository",
+			"embedding":       "openai",
+			"cognitive":       "pg-repository",
+			"call":            "pg-repository",
+			"phone_verifier":  "google-places",
 		})
 	}
 

@@ -127,7 +127,7 @@ jobs:
         with:
           go-version: '1.23'
       - name: V10+ acceptance gates
-        run: go test ./internal/contracts -run "TestAcceptanceGatesV10|TestAcceptanceGatesV101|TestAcceptanceGatesV102V103|TestAcceptanceGatesV104|TestAcceptanceGatesOpenClaw" -count=1
+        run: go test ./internal/contracts -run "TestAcceptanceGatesV10|TestAcceptanceGatesV101|TestAcceptanceGatesV102V103|TestAcceptanceGatesV104|TestAcceptanceGatesOpenClaw|TestV11" -count=1
       - name: Quarantine enforcement
         run: |
           # Verify TS service quarantine is in place

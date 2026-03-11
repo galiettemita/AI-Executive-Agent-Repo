@@ -11,10 +11,17 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/brevio/brevio/internal/brain"
+	"github.com/brevio/brevio/internal/cognition"
+	contextlayer "github.com/brevio/brevio/internal/context"
+	"github.com/brevio/brevio/internal/eq"
+	"github.com/brevio/brevio/internal/executor"
+	"github.com/brevio/brevio/internal/hands/call"
 	"github.com/brevio/brevio/internal/memory"
 	"github.com/brevio/brevio/internal/onboarding"
 	"github.com/brevio/brevio/internal/outbox"
 	"github.com/brevio/brevio/internal/rag"
+	"github.com/brevio/brevio/internal/trust"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -193,6 +200,17 @@ type OutboxDispatcher interface {
 	Dispatch(ctx context.Context, target string, payload []byte) error
 }
 
+// KillSwitchChecker checks if a kill switch is active for a workspace/user.
+// Kill switch evaluation precedes ALL other gates (NNR-107).
+type KillSwitchChecker interface {
+	IsActive(ctx context.Context, workspaceID, userID string) (bool, error)
+}
+
+// SkillACLChecker checks if a skill is allowed for a user.
+type SkillACLChecker interface {
+	IsSkillAllowed(ctx context.Context, workspaceID, userID, skillID string) (bool, bool, error)
+}
+
 // ActivityDeps holds production dependencies for Temporal activities.
 type ActivityDeps struct {
 	Pool             *pgxpool.Pool
@@ -201,6 +219,30 @@ type ActivityDeps struct {
 	MemoryRepo       memory.ItemRepository
 	OnboardingRepo   onboarding.Repository
 	RAGRepo          rag.Repository
+	KillSwitchCheck  KillSwitchChecker
+	SkillACLCheck    SkillACLChecker
+
+	// V10.2 intelligence dependencies.
+	EQRepo           eq.EQStrategyRepository
+	DemotionRepo     trust.DemotionRepository
+	IntelligenceRepo brain.IntelligenceRepository
+
+	// V10.2 P8 memory/context/RAG/latency dependencies.
+	DecayRepo         memory.DecayRepository
+	ConflictRepo      memory.ConflictRepository
+	ChunkSpecRepo     rag.ChunkSpecRepository
+	CompressionRepo   contextlayer.CompressionRepository
+	ContextRepo       contextlayer.Repository
+	LatencyRepo       executor.LatencyRepository
+	EmbeddingProvider rag.EmbeddingProvider
+
+	// V10.3 cognitive intelligence dependencies.
+	CognitiveRepo cognition.CognitiveRepository
+
+	// V10.4 outbound call dependencies.
+	CallRepo      call.CallRepository
+	CallService   *call.CallService
+	PhoneVerifier call.PhoneVerifier
 }
 
 // Activities is the struct that holds all activity implementations.
@@ -212,6 +254,30 @@ type Activities struct {
 	memoryRepo       memory.ItemRepository
 	onboardingRepo   onboarding.Repository
 	ragRepo          rag.Repository
+	killSwitchCheck  KillSwitchChecker
+	skillACLCheck    SkillACLChecker
+
+	// V10.2 intelligence dependencies.
+	eqRepo           eq.EQStrategyRepository
+	demotionRepo     trust.DemotionRepository
+	intelligenceRepo brain.IntelligenceRepository
+
+	// V10.2 P8 memory/context/RAG/latency dependencies.
+	decayRepo         memory.DecayRepository
+	conflictRepo      memory.ConflictRepository
+	chunkSpecRepo     rag.ChunkSpecRepository
+	compressionRepo   contextlayer.CompressionRepository
+	contextRepo       contextlayer.Repository
+	latencyRepo       executor.LatencyRepository
+	embeddingProvider rag.EmbeddingProvider
+
+	// V10.3 cognitive intelligence dependencies.
+	cognitiveRepo cognition.CognitiveRepository
+
+	// V10.4 outbound call dependencies.
+	callRepo      call.CallRepository
+	callService   *call.CallService
+	phoneVerifier call.PhoneVerifier
 
 	// Observability counters for outbox dispatch.
 	outboxDispatched atomic.Int64
@@ -233,6 +299,22 @@ func NewActivitiesWithProdDeps(deps ActivityDeps) *Activities {
 		memoryRepo:       deps.MemoryRepo,
 		onboardingRepo:   deps.OnboardingRepo,
 		ragRepo:          deps.RAGRepo,
+		killSwitchCheck:  deps.KillSwitchCheck,
+		skillACLCheck:    deps.SkillACLCheck,
+		eqRepo:           deps.EQRepo,
+		demotionRepo:     deps.DemotionRepo,
+		intelligenceRepo: deps.IntelligenceRepo,
+		decayRepo:         deps.DecayRepo,
+		conflictRepo:      deps.ConflictRepo,
+		chunkSpecRepo:     deps.ChunkSpecRepo,
+		compressionRepo:   deps.CompressionRepo,
+		contextRepo:       deps.ContextRepo,
+		latencyRepo:       deps.LatencyRepo,
+		embeddingProvider: deps.EmbeddingProvider,
+		cognitiveRepo:    deps.CognitiveRepo,
+		callRepo:         deps.CallRepo,
+		callService:      deps.CallService,
+		phoneVerifier:    deps.PhoneVerifier,
 	}
 }
 
@@ -274,6 +356,33 @@ func (a *Activities) GeneratePlanActivity(ctx context.Context, input GeneratePla
 }
 
 func (a *Activities) AuthorizePlanActivity(ctx context.Context, input AuthorizePlanInput) (*AuthorizePlanResult, error) {
+	// NNR-107: Kill switch evaluation precedes ALL other gates.
+	if a.killSwitchCheck != nil {
+		active, err := a.killSwitchCheck.IsActive(ctx, input.WorkspaceID, "")
+		if err != nil {
+			return &AuthorizePlanResult{Decision: "deny", Reason: "KILL_SWITCH_CHECK_FAILED"}, nil
+		}
+		if active {
+			return &AuthorizePlanResult{Decision: "deny", Reason: "KILL_SWITCH_ACTIVE"}, nil
+		}
+	}
+
+	// Skill ACL checks for each tool key.
+	if a.skillACLCheck != nil {
+		for _, toolKey := range input.ToolKeys {
+			allowed, hasOverride, err := a.skillACLCheck.IsSkillAllowed(ctx, input.WorkspaceID, "", toolKey)
+			if err != nil {
+				continue // graceful degradation on ACL check failure
+			}
+			if hasOverride && !allowed {
+				return &AuthorizePlanResult{
+					Decision: "deny",
+					Reason:   fmt.Sprintf("SKILL_ACL_DENIED:%s", toolKey),
+				}, nil
+			}
+		}
+	}
+
 	receiptID := hashKey("receipt:" + input.PlanID + ":" + input.WorkspaceID)
 	return &AuthorizePlanResult{
 		Decision:  "allow",
@@ -285,6 +394,15 @@ func (a *Activities) ExecuteToolActivity(ctx context.Context, input ExecuteToolI
 	if input.ReceiptID == "" {
 		return nil, fmt.Errorf("AUTHORIZATION_REQUIRED: no receipt provided")
 	}
+
+	// NNR-107: Kill switch check before executor commit — unbypassable.
+	if a.killSwitchCheck != nil {
+		active, err := a.killSwitchCheck.IsActive(ctx, input.WorkspaceID, "")
+		if err != nil || active {
+			return nil, fmt.Errorf("KILL_SWITCH_ACTIVE: execution blocked for workspace %s", input.WorkspaceID)
+		}
+	}
+
 	payloadHash := hashKey(input.WorkspaceID + "::" + input.ToolKey + "::" + input.IdempotencyKey)
 	return &ToolExecutionActivityResult{
 		ToolKey:        input.ToolKey,

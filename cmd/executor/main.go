@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -11,6 +13,7 @@ import (
 
 	"github.com/brevio/brevio/internal/control"
 	"github.com/brevio/brevio/internal/executor"
+	callpkg "github.com/brevio/brevio/internal/hands/call"
 	runtimeserver "github.com/brevio/brevio/internal/runtime"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -31,6 +34,7 @@ func main() {
 	// Build production executor when DATABASE_URL is available.
 	dbURL := strings.TrimSpace(os.Getenv("DATABASE_URL"))
 	var prodSvc *executor.ProdService
+	var callRepo callpkg.CallRepository
 
 	if dbURL != "" {
 		ctx := context.Background()
@@ -51,19 +55,19 @@ func main() {
 		durableReceipts := control.NewDurableReceiptService(receiptSvc, receiptRepo)
 
 		prodSvc = executor.NewProdService(repo, durableReceipts)
+		callRepo = callpkg.NewPgCallRepository(pool)
 
 		logger.Info("executor_production_deps", map[string]any{
 			"database":  "pgxpool",
 			"receipts":  "durable",
 			"executor":  "persistent",
+			"call_repo": "pgx",
 		})
 	} else {
 		logger.Info("executor_devtest_mode", map[string]any{
 			"executor": "in-memory",
 		})
 	}
-
-	_ = prodSvc // used by future route handlers
 
 	mux := http.NewServeMux()
 	startedAt := time.Now().UTC()
@@ -106,6 +110,232 @@ func main() {
 		_, _ = w.Write([]byte("ok"))
 	})
 
+	// T11.2: Tool execution endpoint — simulate or commit tool execution via ProdService.
+	mux.HandleFunc("POST /v1/executor/tool/execute", func(w http.ResponseWriter, r *http.Request) {
+		if prodSvc == nil {
+			writeJSONError(w, http.StatusServiceUnavailable, "executor not configured (no DATABASE_URL)")
+			return
+		}
+
+		var req struct {
+			WorkspaceID       string `json:"workspace_id"`
+			ToolKey           string `json:"tool_key"`
+			Action            string `json:"action"`
+			Provider          string `json:"provider,omitempty"`
+			TargetURL         string `json:"target_url,omitempty"`
+			IsMCP             bool   `json:"is_mcp,omitempty"`
+			MCPServerID       string `json:"mcp_server_id,omitempty"`
+			ContentProvenance string `json:"content_provenance,omitempty"`
+			PIIContent        bool   `json:"pii_content,omitempty"`
+			Phase             string `json:"phase"`
+			ReceiptID         string `json:"receipt_id,omitempty"`
+		}
+		if err := readJSON(r, &req); err != nil {
+			writeJSONError(w, http.StatusBadRequest, fmt.Sprintf("invalid request: %v", err))
+			return
+		}
+
+		execReq := executor.ExecutionRequest{
+			WorkspaceID:       req.WorkspaceID,
+			ToolKey:           req.ToolKey,
+			Action:            req.Action,
+			Provider:          req.Provider,
+			TargetURL:         req.TargetURL,
+			IsMCP:             req.IsMCP,
+			MCPServerID:       req.MCPServerID,
+			ContentProvenance: req.ContentProvenance,
+			PIIContent:        req.PIIContent,
+		}
+
+		switch req.Phase {
+		case "simulate":
+			exec, err := prodSvc.Simulate(r.Context(), execReq)
+			if err != nil {
+				writeJSONError(w, http.StatusUnprocessableEntity, err.Error())
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"execution_id":      exec.ID.String(),
+				"phase":             string(exec.Phase),
+				"idempotency_key":   exec.IdempotencyKey,
+				"content_provenance": exec.ContentProvenance,
+			})
+
+		case "commit":
+			if req.ReceiptID == "" {
+				writeJSONError(w, http.StatusBadRequest, "receipt_id is required for commit phase")
+				return
+			}
+			exec, receipt, err := prodSvc.Commit(r.Context(), execReq, req.ReceiptID)
+			if err != nil {
+				writeJSONError(w, http.StatusUnprocessableEntity, err.Error())
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"execution_id":      exec.ID.String(),
+				"phase":             string(exec.Phase),
+				"trust_receipt_id":  receipt.ID.String(),
+				"idempotency_key":   exec.IdempotencyKey,
+				"content_provenance": exec.ContentProvenance,
+			})
+
+		default:
+			writeJSONError(w, http.StatusBadRequest, "phase must be 'simulate' or 'commit'")
+		}
+	})
+
+	// T11.2: Call approval request endpoint.
+	mux.HandleFunc("POST /v1/executor/call/approve", func(w http.ResponseWriter, r *http.Request) {
+		if callRepo == nil {
+			writeJSONError(w, http.StatusServiceUnavailable, "call subsystem not configured")
+			return
+		}
+
+		var req struct {
+			ApprovalID string `json:"approval_id"`
+			Decision   string `json:"decision"` // approve, deny
+			DecidedBy  string `json:"decided_by"`
+			Reason     string `json:"reason,omitempty"`
+		}
+		if err := readJSON(r, &req); err != nil {
+			writeJSONError(w, http.StatusBadRequest, fmt.Sprintf("invalid request: %v", err))
+			return
+		}
+
+		approvalSvc := callpkg.NewApprovalService(callRepo)
+		switch req.Decision {
+		case "approve":
+			if err := approvalSvc.Approve(r.Context(), req.ApprovalID, req.DecidedBy, req.Reason); err != nil {
+				writeJSONError(w, http.StatusUnprocessableEntity, err.Error())
+				return
+			}
+		case "deny":
+			if err := approvalSvc.Deny(r.Context(), req.ApprovalID, req.DecidedBy, req.Reason); err != nil {
+				writeJSONError(w, http.StatusUnprocessableEntity, err.Error())
+				return
+			}
+		default:
+			writeJSONError(w, http.StatusBadRequest, "decision must be 'approve' or 'deny'")
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"approval_id": req.ApprovalID,
+			"decision":    req.Decision,
+			"status":      "processed",
+		})
+	})
+
+	// T11.2: Get call by ID.
+	mux.HandleFunc("GET /v1/executor/call/{id}", func(w http.ResponseWriter, r *http.Request) {
+		if callRepo == nil {
+			writeJSONError(w, http.StatusServiceUnavailable, "call subsystem not configured")
+			return
+		}
+
+		callID := r.PathValue("id")
+		if callID == "" {
+			writeJSONError(w, http.StatusBadRequest, "call id required")
+			return
+		}
+
+		callRow, err := callRepo.GetCall(r.Context(), callID)
+		if err != nil {
+			writeJSONError(w, http.StatusNotFound, fmt.Sprintf("call not found: %v", err))
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"id":                  callRow.ID,
+			"workspace_id":       callRow.WorkspaceID,
+			"status":             callRow.Status,
+			"direction":          callRow.Direction,
+			"provider_call_id":   callRow.ProviderCallID,
+			"duration_seconds":   callRow.DurationSeconds,
+			"failover_count":     callRow.FailoverCount,
+		})
+	})
+
+	// T11.2: List calls for a workspace.
+	mux.HandleFunc("GET /v1/executor/calls", func(w http.ResponseWriter, r *http.Request) {
+		if callRepo == nil {
+			writeJSONError(w, http.StatusServiceUnavailable, "call subsystem not configured")
+			return
+		}
+
+		workspaceID := r.URL.Query().Get("workspace_id")
+		if workspaceID == "" {
+			writeJSONError(w, http.StatusBadRequest, "workspace_id query parameter required")
+			return
+		}
+
+		calls, err := callRepo.ListCalls(r.Context(), workspaceID, 50)
+		if err != nil {
+			writeJSONError(w, http.StatusInternalServerError, fmt.Sprintf("list calls: %v", err))
+			return
+		}
+
+		items := make([]map[string]any, 0, len(calls))
+		for _, c := range calls {
+			items = append(items, map[string]any{
+				"id":              c.ID,
+				"status":          c.Status,
+				"direction":       c.Direction,
+				"duration_seconds": c.DurationSeconds,
+			})
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(map[string]any{"calls": items})
+	})
+
+	// T11.2: Get call transcript segments.
+	mux.HandleFunc("GET /v1/executor/call/{id}/transcript", func(w http.ResponseWriter, r *http.Request) {
+		if callRepo == nil {
+			writeJSONError(w, http.StatusServiceUnavailable, "call subsystem not configured")
+			return
+		}
+
+		callID := r.PathValue("id")
+		if callID == "" {
+			writeJSONError(w, http.StatusBadRequest, "call id required")
+			return
+		}
+
+		segments, err := callRepo.GetTranscriptSegments(r.Context(), callID)
+		if err != nil {
+			writeJSONError(w, http.StatusInternalServerError, fmt.Sprintf("get transcript: %v", err))
+			return
+		}
+
+		items := make([]map[string]any, 0, len(segments))
+		for _, s := range segments {
+			items = append(items, map[string]any{
+				"segment_index": s.SegmentIndex,
+				"segment_type":  s.SegmentType,
+				"speaker":       s.Speaker,
+				"content":       s.Content,
+				"started_at_ms": s.StartedAtMs,
+				"duration_ms":   s.DurationMs,
+				"confidence":    s.Confidence,
+				"language":      s.Language,
+			})
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(map[string]any{"segments": items})
+	})
+
 	handler := logger.Middleware(mux)
 
 	logger.Info("service_start", map[string]any{
@@ -116,6 +346,20 @@ func main() {
 	if err := runtimeserver.ServeWithGracefulShutdown("executor", cfg.ListenAddr, handler); err != nil {
 		log.Fatalf("executor server failed: %v", err)
 	}
+}
+
+func readJSON(r *http.Request, v any) error {
+	body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
+	if err != nil {
+		return err
+	}
+	return json.Unmarshal(body, v)
+}
+
+func writeJSONError(w http.ResponseWriter, status int, message string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(map[string]string{"error": message})
 }
 
 func boolToStatus(b bool) string {
