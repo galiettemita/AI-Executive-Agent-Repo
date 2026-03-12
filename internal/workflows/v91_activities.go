@@ -235,5 +235,17 @@ func (a *V91Activities) AnalyzeCapabilityGapsActivity(_ context.Context, input A
 	}, nil
 }
 
-// Standalone wrapper functions have been removed.
-// Activities are registered as methods on V91Activities via the worker.
+// Standalone wrapper functions delegate to a default V91Activities instance.
+// These are used by tests and by the Temporal worker registration (method references).
+
+func CollectTrustMetricsActivity(ctx context.Context, input CollectTrustMetricsInput) (*CollectTrustMetricsResult, error) {
+	return NewV91Activities().CollectTrustMetricsActivity(ctx, input)
+}
+
+func ComputeTrustScoreActivity(ctx context.Context, input ComputeTrustScoreInput) (*ComputeTrustScoreResult, error) {
+	return NewV91Activities().ComputeTrustScoreActivity(ctx, input)
+}
+
+func ReviewGoalsActivity(ctx context.Context, input ReviewGoalsInput) (*ReviewGoalsResult, error) {
+	return NewV91Activities().ReviewGoalsActivity(ctx, input)
+}

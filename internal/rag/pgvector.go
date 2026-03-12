@@ -12,6 +12,7 @@ import (
 // ChunkWithEmbedding represents a chunk stored with its embedding vector.
 type ChunkWithEmbedding struct {
 	ChunkID      string         `json:"chunk_id"`
+	WorkspaceID  string         `json:"workspace_id"`
 	CollectionID string         `json:"collection_id"`
 	Content      string         `json:"content"`
 	Embedding    []float32      `json:"embedding"`

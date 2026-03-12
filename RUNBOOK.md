@@ -180,6 +180,136 @@ The repository enforces a strict production boundary. The following artifacts ar
 
 **Operational doctrine:** This repository follows a **12-prompt staged implementation pipeline**. Each prompt is executed sequentially with acceptance gates, self-audit, and git checkpoints. Adding demo code or bypassing the production boundary violates D12.
 
+## Required Environment Variables
+
+### Core Infrastructure
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `BREVIO_ENV` | Yes | — | Environment: `development`, `staging`, `production` |
+| `DATABASE_URL` | Yes | — | PostgreSQL connection string (e.g. `postgres://user:pass@localhost:5432/brevio`) |
+| `REDIS_URL` | Yes | — | Redis connection string (e.g. `redis://localhost:6379/0`) |
+| `TEMPORAL_HOST` | Yes | `localhost:7233` | Temporal server gRPC address |
+| `TEMPORAL_NAMESPACE` | Yes | `default` | Temporal namespace |
+
+### LLM Provider Keys
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `ANTHROPIC_API_KEY` | Yes (prod) | Anthropic Messages API key (primary LLM provider) |
+| `OPENAI_API_KEY` | Yes (prod) | OpenAI API key (failover provider) |
+
+### OPA Policy Engine
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `OPA_URL` | No | — | OPA sidecar HTTP URL (e.g. `http://localhost:8181`). When set, all /v1/ control routes are gated. When unset, embedded gate logic is used (devtest only). |
+| `OPA_TIMEOUT_MS` | No | `2000` | OPA request timeout in milliseconds |
+| `OPA_POLICIES_DIR` | No | `policies` | Directory containing .rego policy files |
+
+### Hands Runtime
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `HANDS_LISTEN_ADDR` | No | `:18090` | Hands runtime HTTP listen address |
+
+### Messaging & Channels
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `SQS_INTERACTIVE_TURNS_URL` | Yes | SQS queue URL for ingress |
+| `S3_ATTACHMENTS_BUCKET` | Yes | S3 bucket for attachments |
+| `S3_SBOMS_BUCKET` | Yes | S3 bucket for SBOMs |
+| `WHATSAPP_PHONE_NUMBER_ID` | Yes | WhatsApp phone number ID |
+| `WHATSAPP_API_VERSION` | Yes | WhatsApp API version |
+| `IMESSAGE_MSP_BASE_URL` | Yes | iMessage MSP base URL |
+| `IMESSAGE_BUSINESS_ID` | Yes | iMessage business ID |
+
+### Observability
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | Yes | — | OpenTelemetry collector endpoint |
+| `LOG_LEVEL` | No | `info` | Log level: `debug`, `info`, `warn`, `error` |
+
+## Local Development
+
+### Prerequisites
+- Go 1.23+
+- Docker & Docker Compose
+- PostgreSQL 16+ (via Docker or local install)
+- Redis 7+ (via Docker or local install)
+
+### Quick Start
+```bash
+# 1. Start infrastructure
+docker compose up -d postgres redis temporal temporal-ui
+
+# 2. Apply database migrations
+make migrate
+
+# 3. Seed the tool registry
+go run ./cmd/brevioctl seed tools
+
+# 4. Run the build + test suite
+make local-verify
+
+# 5. Start individual services (separate terminals)
+go run ./cmd/gateway          # :18080
+go run ./cmd/control          # :18082
+go run ./cmd/hands            # :18090
+go run ./cmd/temporal-worker  # :18084
+```
+
+### Minimal .env for Local Dev
+```env
+BREVIO_ENV=development
+DATABASE_URL=postgres://brevio:brevio@localhost:5432/brevio?sslmode=disable
+REDIS_URL=redis://localhost:6379/0
+TEMPORAL_HOST=localhost:7233
+TEMPORAL_NAMESPACE=default
+ANTHROPIC_API_KEY=sk-ant-...   # Required for real LLM calls
+OPENAI_API_KEY=sk-...          # Required for failover
+OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317
+LOG_LEVEL=debug
+```
+
+Note: Without `ANTHROPIC_API_KEY`/`OPENAI_API_KEY`, the LLM layer falls back to deterministic keyword-based classification and plan generation. This is sufficient for testing the execution pipeline but does not exercise real LLM inference.
+
+## Troubleshooting
+
+### Replay Cache Behavior
+The LLM service uses a Redis-backed replay cache (`replay:{hash}`) with 24h TTL to deduplicate identical requests.
+
+- **Cache hit:** Returns stored result instantly (no LLM call, no token cost).
+- **Cache miss:** Calls LLM, stores result in both Redis and in-memory cache.
+- **Redis down:** Falls back to in-memory cache (per-instance only, no cross-instance dedup).
+- **Clearing cache:** `redis-cli DEL $(redis-cli KEYS 'replay:*')` or wait for TTL expiry.
+- **Diagnosis:** Check `replay_hit_count` in service metrics or log lines with `replay_cache_hit`.
+
+### Rate Limiting Behavior
+The LLM service enforces per-workspace, per-provider rate limits via Redis fixed-window counters.
+
+- **Keys:** `rl:llm:{provider}:{workspace}:req:{window}` (requests/min), `rl:llm:{provider}:{workspace}:tok:{window}` (tokens/min).
+- **Default limits:** 60 requests/min, 100K tokens/min per workspace per provider.
+- **When limited:** Returns `RateLimitError` which Temporal classifies as retryable (auto-retry with backoff).
+- **Redis down:** Rate limiting is effectively disabled (fail-open) — requests proceed.
+- **Window reset:** Counters expire automatically at window boundary (1 minute).
+
+### OPA Policy Enforcement
+When `OPA_URL` is set, the control service gates all `/v1/` API routes through OPA middleware.
+
+- **OPA reachable:** Policy evaluated normally (allow/deny/require_approval).
+- **OPA unreachable:** Deny-by-default (403 Forbidden with `OPA_UNAVAILABLE_DENY_BY_DEFAULT`).
+- **Circuit breaker:** Opens after 3-5 consecutive failures; auto-recovers after 30s cooldown.
+- **Health exempt:** `/health`, `/healthz/live`, `/healthz/ready`, `/docs` are never gated.
+- **Devtest mode:** When `OPA_URL` is not set, embedded Go gate logic is used (no OPA dependency).
+
+### pgvector / Embedding Layer
+The memory and RAG subsystems use PostgreSQL's pgvector extension for vector similarity search.
+
+- **Extension:** `CREATE EXTENSION vector` is in migration 001. Requires PostgreSQL compiled with pgvector.
+- **Dimensions:** All embeddings are 1536-dimensional (`text-embedding-3-small`).
+- **Indexes:** HNSW indexes on `rag_chunks.embedding` (migration 003) and `memory_items.embedding` (migration 019) using `vector_cosine_ops`.
+- **Type registration:** pgvector types are registered via `AfterConnect` callback in `internal/database/pool.go`.
+- **Embedding cache:** In-memory TTL cache (default 24h, max 10K entries) in `EmbeddingService`. No cross-instance sharing.
+- **Degraded mode:** Without `OPENAI_API_KEY`, embeddings fall back to deterministic provider (fixed-dimension zero vectors). RAG search will return no results but pipeline does not error.
+- **Schema alignment:** Migration 019 adds `user_id`, `embedding_version`, `expires_at` to `memory_items` and `metadata` to `rag_chunks`.
+
 ## Deployment Procedures
 
 ### Standard Deployment

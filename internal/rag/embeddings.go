@@ -9,6 +9,7 @@ import (
 	"math"
 	"net/http"
 	"sync"
+	"time"
 )
 
 // EmbeddingProvider abstracts a text-embedding backend.
@@ -113,28 +114,57 @@ func (p *OpenAIEmbeddingProvider) Embed(ctx context.Context, texts []string) ([]
 // EmbeddingService — caching wrapper
 // -----------------------------------------------------------------------
 
-// EmbeddingService wraps an EmbeddingProvider and adds a simple in-memory
-// cache for repeated texts.
+// embeddingCacheEntry stores a cached embedding with its expiry time.
+type embeddingCacheEntry struct {
+	embedding []float32
+	expiresAt time.Time
+}
+
+// EmbeddingService wraps an EmbeddingProvider and adds an in-memory cache
+// with TTL eviction for repeated texts.
 type EmbeddingService struct {
 	provider EmbeddingProvider
 	mu       sync.RWMutex
-	cache    map[string][]float32
+	cache    map[string]embeddingCacheEntry
+	ttl      time.Duration
+	maxSize  int
+}
+
+// EmbeddingServiceOption configures an EmbeddingService.
+type EmbeddingServiceOption func(*EmbeddingService)
+
+// WithCacheTTL sets the cache entry time-to-live. Default is 24 hours.
+func WithCacheTTL(ttl time.Duration) EmbeddingServiceOption {
+	return func(s *EmbeddingService) { s.ttl = ttl }
+}
+
+// WithCacheMaxSize sets the maximum number of cached entries. Default is 10000.
+func WithCacheMaxSize(n int) EmbeddingServiceOption {
+	return func(s *EmbeddingService) { s.maxSize = n }
 }
 
 // NewEmbeddingService creates an EmbeddingService around the given provider.
-func NewEmbeddingService(provider EmbeddingProvider) *EmbeddingService {
-	return &EmbeddingService{
+func NewEmbeddingService(provider EmbeddingProvider, opts ...EmbeddingServiceOption) *EmbeddingService {
+	s := &EmbeddingService{
 		provider: provider,
-		cache:    make(map[string][]float32),
+		cache:    make(map[string]embeddingCacheEntry),
+		ttl:      24 * time.Hour,
+		maxSize:  10000,
 	}
+	for _, opt := range opts {
+		opt(s)
+	}
+	return s
 }
 
 // EmbedDocument embeds a document string, using the cache when available.
 func (s *EmbeddingService) EmbedDocument(ctx context.Context, text string) ([]float32, error) {
+	now := time.Now()
+
 	s.mu.RLock()
-	if cached, ok := s.cache[text]; ok {
+	if entry, ok := s.cache[text]; ok && now.Before(entry.expiresAt) {
 		s.mu.RUnlock()
-		return cached, nil
+		return entry.embedding, nil
 	}
 	s.mu.RUnlock()
 
@@ -147,10 +177,35 @@ func (s *EmbeddingService) EmbedDocument(ctx context.Context, text string) ([]fl
 	}
 
 	s.mu.Lock()
-	s.cache[text] = vecs[0]
+	// Evict expired entries if cache is at capacity.
+	if len(s.cache) >= s.maxSize {
+		for k, v := range s.cache {
+			if now.After(v.expiresAt) {
+				delete(s.cache, k)
+			}
+		}
+	}
+	// If still at capacity after eviction, drop one entry.
+	if len(s.cache) >= s.maxSize {
+		for k := range s.cache {
+			delete(s.cache, k)
+			break
+		}
+	}
+	s.cache[text] = embeddingCacheEntry{
+		embedding: vecs[0],
+		expiresAt: now.Add(s.ttl),
+	}
 	s.mu.Unlock()
 
 	return vecs[0], nil
+}
+
+// CacheLen returns the current number of cached entries (for observability).
+func (s *EmbeddingService) CacheLen() int {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return len(s.cache)
 }
 
 // EmbedQuery embeds a query string (no caching — queries tend to be unique).

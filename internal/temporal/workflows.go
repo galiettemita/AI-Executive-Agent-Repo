@@ -1,6 +1,7 @@
 package temporal
 
 import (
+	"fmt"
 	"time"
 
 	"go.temporal.io/sdk/temporal"
@@ -228,7 +229,7 @@ func MessageProcessingWorkflow(ctx workflow.Context, input MessageProcessingWork
 		}, nil
 	}
 
-	// Step 9: Execute tools (simulate → commit per tool, lexically ordered)
+	// Step 9 + 9.5: Execute tools then verify, with up to 1 replan iteration (max 2 total).
 	executeAO := workflow.ActivityOptions{
 		StartToCloseTimeout: 30 * time.Second,
 		RetryPolicy: &temporal.RetryPolicy{
@@ -241,38 +242,114 @@ func MessageProcessingWorkflow(ctx workflow.Context, input MessageProcessingWork
 	}
 	ctxExec := workflow.WithActivityOptions(ctx, executeAO)
 
+	verifyAO := workflow.ActivityOptions{
+		StartToCloseTimeout: 120 * time.Second,
+		RetryPolicy: &temporal.RetryPolicy{
+			InitialInterval:        time.Second,
+			BackoffCoefficient:     2.0,
+			MaximumInterval:        60 * time.Second,
+			MaximumAttempts:        2,
+			NonRetryableErrorTypes: []string{"SCHEMA_VALIDATION_FAILED"},
+		},
+	}
+	ctxVerify := workflow.WithActivityOptions(ctx, verifyAO)
+
+	const maxVerifyIterations = 2
 	var execResults []ToolExecutionActivityResult
 	compensationNeeded := false
-	for i, toolKey := range reasoningResult.ToolKeys {
-		// Deterministic jitter between tool executions for replay safety.
-		if i > 0 {
-			wfInfo := workflow.GetInfo(ctx)
-			jitter := ComputeDeterministicBackoff(
-				DeterministicJitterConfig{
-					BaseBackoff:    50 * time.Millisecond,
-					MaxBackoff:     500 * time.Millisecond,
-					JitterWindowMs: 200,
-				},
-				wfInfo.WorkflowExecution.ID,
-				"ExecuteToolActivity",
-				i,
-			)
-			_ = workflow.Sleep(ctx, jitter)
+	currentToolKeys := reasoningResult.ToolKeys
+	currentPlanID := reasoningResult.PlanID
+	currentRiskLevel := reasoningResult.RiskLevel
+	currentFinalAnswerReqs := ""
+	retryHints := ""
+
+	for iteration := 0; iteration < maxVerifyIterations; iteration++ {
+		// Execute tools for this iteration.
+		execResults = nil
+		for i, toolKey := range currentToolKeys {
+			if i > 0 {
+				wfInfo := workflow.GetInfo(ctx)
+				jitter := ComputeDeterministicBackoff(
+					DeterministicJitterConfig{
+						BaseBackoff:    50 * time.Millisecond,
+						MaxBackoff:     500 * time.Millisecond,
+						JitterWindowMs: 200,
+					},
+					wfInfo.WorkflowExecution.ID,
+					"ExecuteToolActivity",
+					i+iteration*100, // offset by iteration to vary jitter
+				)
+				_ = workflow.Sleep(ctx, jitter)
+			}
+
+			var execResult ToolExecutionActivityResult
+			err = workflow.ExecuteActivity(ctxExec, a.ExecuteToolActivity, ExecuteToolInput{
+				MessageID:      input.MessageID,
+				WorkspaceID:    input.WorkspaceID,
+				ToolKey:        toolKey,
+				ReceiptID:      authResult.ReceiptID,
+				IdempotencyKey: input.IdempotencyKey + ":" + toolKey + fmt.Sprintf(":iter%d", iteration),
+			}).Get(ctx, &execResult)
+			if err != nil {
+				compensationNeeded = true
+				break
+			}
+			execResults = append(execResults, execResult)
 		}
 
-		var execResult ToolExecutionActivityResult
-		err = workflow.ExecuteActivity(ctxExec, a.ExecuteToolActivity, ExecuteToolInput{
-			MessageID:      input.MessageID,
-			WorkspaceID:    input.WorkspaceID,
-			ToolKey:        toolKey,
-			ReceiptID:      authResult.ReceiptID,
-			IdempotencyKey: input.IdempotencyKey + ":" + toolKey,
-		}).Get(ctx, &execResult)
+		// Step 9.5: Verify execution via LLM critic.
+		var verifyResult VerifyExecutionResult
+		err = workflow.ExecuteActivity(ctxVerify, a.VerifyExecutionActivity, VerifyExecutionInput{
+			MessageID:       input.MessageID,
+			WorkspaceID:     input.WorkspaceID,
+			OriginalPayload: validateResult.NormalizedPayload,
+			PlanID:          currentPlanID,
+			PlanToolKeys:    currentToolKeys,
+			PlanRiskLevel:   currentRiskLevel,
+			FinalAnswerReqs: currentFinalAnswerReqs,
+			ToolResults:     execResults,
+			RetryHints:      retryHints,
+		}).Get(ctx, &verifyResult)
 		if err != nil {
-			compensationNeeded = true
+			logger.Warn("verify activity failed, proceeding with current results", "error", err)
+			break // treat as pass — don't block on verify failures
+		}
+
+		if verifyResult.Verdict == "pass" {
+			break // satisfied, proceed to synthesis
+		}
+
+		// Verdict is "fail" — if we have iterations remaining, replan.
+		if iteration+1 >= maxVerifyIterations {
+			logger.Warn("verify failed after max iterations, proceeding", "reasons", verifyResult.Reasons)
 			break
 		}
-		execResults = append(execResults, execResult)
+
+		// Replan with verifier hints.
+		retryHints = verifyResult.RetryHints
+		logger.Info("verify failed, replanning", "iteration", iteration, "hints", retryHints)
+
+		var replanResult GeneratePlanResult
+		err = workflow.ExecuteActivity(ctxClassify, a.GeneratePlanActivity, GeneratePlanInput{
+			MessageID:     input.MessageID,
+			WorkspaceID:   input.WorkspaceID,
+			Intent:        classifyResult.Intent,
+			Confidence:    classifyResult.Confidence,
+			Payload:       validateResult.NormalizedPayload,
+			MemoryContext: fmt.Sprintf("%d items", len(memResult.Items)),
+			RAGContext:    fmt.Sprintf("%d chunks", len(ragResult.Chunks)),
+			RetryHints:    retryHints,
+		}).Get(ctx, &replanResult)
+		if err != nil {
+			logger.Warn("replan failed, proceeding with original results", "error", err)
+			break
+		}
+
+		// Update plan state for next iteration.
+		currentToolKeys = replanResult.ToolKeys
+		currentPlanID = replanResult.PlanID
+		currentRiskLevel = replanResult.RiskLevel
+		currentFinalAnswerReqs = replanResult.FinalAnswerReqs
 	}
 
 	// Step 10: Synthesize response

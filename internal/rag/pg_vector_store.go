@@ -6,6 +6,7 @@ import (
 
 	"github.com/brevio/brevio/internal/database"
 	"github.com/jackc/pgx/v5"
+	pgvector "github.com/pgvector/pgvector-go"
 )
 
 // PgVectorProdStore implements vector-similarity search using PostgreSQL with
@@ -29,6 +30,7 @@ func NewPgVectorProdStore(db database.Querier) *PgVectorProdStore {
 }
 
 // UpsertChunk inserts or updates a chunk with its embedding in PostgreSQL.
+// Column mapping: id=ChunkID, rag_collection_id=CollectionID, chunk_text=Content.
 func (s *PgVectorProdStore) UpsertChunk(ctx context.Context, chunk ChunkWithEmbedding) error {
 	if chunk.ChunkID == "" {
 		return fmt.Errorf("chunk_id is required")
@@ -37,14 +39,15 @@ func (s *PgVectorProdStore) UpsertChunk(ctx context.Context, chunk ChunkWithEmbe
 		return fmt.Errorf("embedding is required")
 	}
 
+	vec := pgvector.NewVector(chunk.Embedding)
 	_, err := s.db.Exec(ctx, `
-		INSERT INTO rag_chunks (chunk_id, collection_id, content, embedding, metadata)
-		VALUES ($1, $2, $3, $4::vector, $5)
-		ON CONFLICT (chunk_id) DO UPDATE SET
-			content = EXCLUDED.content,
+		INSERT INTO rag_chunks (id, workspace_id, rag_collection_id, chunk_text, embedding, metadata)
+		VALUES ($1, $2, $3, $4, $5, $6)
+		ON CONFLICT (id) DO UPDATE SET
+			chunk_text = EXCLUDED.chunk_text,
 			embedding = EXCLUDED.embedding,
 			metadata = EXCLUDED.metadata`,
-		chunk.ChunkID, chunk.CollectionID, chunk.Content, chunk.Embedding, chunk.Metadata)
+		chunk.ChunkID, chunk.WorkspaceID, chunk.CollectionID, chunk.Content, vec, chunk.Metadata)
 	if err != nil {
 		return fmt.Errorf("upsert chunk: %w", err)
 	}
@@ -61,14 +64,15 @@ func (s *PgVectorProdStore) SearchSimilar(ctx context.Context, queryEmbedding []
 		limit = 10
 	}
 
+	qvec := pgvector.NewVector(queryEmbedding)
 	rows, err := s.db.Query(ctx, `
-		SELECT chunk_id, collection_id, content, embedding, metadata,
-		       1 - (embedding <=> $1::vector) AS score
+		SELECT id, workspace_id, rag_collection_id, chunk_text, embedding, metadata,
+		       1 - (embedding <=> $1) AS score
 		FROM rag_chunks
-		WHERE 1 - (embedding <=> $1::vector) >= $2
-		ORDER BY embedding <=> $1::vector
+		WHERE 1 - (embedding <=> $1) >= $2
+		ORDER BY embedding <=> $1
 		LIMIT $3`,
-		queryEmbedding, minScore, limit)
+		qvec, minScore, limit)
 	if err != nil {
 		return nil, fmt.Errorf("search similar: %w", err)
 	}
@@ -98,16 +102,17 @@ func (s *PgVectorProdStore) HybridSearch(ctx context.Context, queryEmbedding []f
 	denseW /= total
 	bm25W /= total
 
+	qvec := pgvector.NewVector(queryEmbedding)
 	rows, err := s.db.Query(ctx, `
-		SELECT chunk_id, collection_id, content, embedding, metadata,
-		       ($4 * (1 - (embedding <=> $1::vector))) +
-		       ($5 * ts_rank(to_tsvector('english', content), plainto_tsquery('english', $2))) AS score
+		SELECT id, workspace_id, rag_collection_id, chunk_text, embedding, metadata,
+		       ($4 * (1 - (embedding <=> $1))) +
+		       ($5 * ts_rank(to_tsvector('english', chunk_text), plainto_tsquery('english', $2))) AS score
 		FROM rag_chunks
-		WHERE ($4 * (1 - (embedding <=> $1::vector))) +
-		      ($5 * ts_rank(to_tsvector('english', content), plainto_tsquery('english', $2))) >= $3
+		WHERE ($4 * (1 - (embedding <=> $1))) +
+		      ($5 * ts_rank(to_tsvector('english', chunk_text), plainto_tsquery('english', $2))) >= $3
 		ORDER BY score DESC
 		LIMIT $6`,
-		queryEmbedding, queryText, minScore, denseW, bm25W, limit)
+		qvec, queryText, minScore, denseW, bm25W, limit)
 	if err != nil {
 		return nil, fmt.Errorf("hybrid search: %w", err)
 	}
@@ -118,7 +123,7 @@ func (s *PgVectorProdStore) HybridSearch(ctx context.Context, queryEmbedding []f
 
 // DeleteChunk removes a chunk by ID from PostgreSQL.
 func (s *PgVectorProdStore) DeleteChunk(ctx context.Context, chunkID string) (bool, error) {
-	tag, err := s.db.Exec(ctx, `DELETE FROM rag_chunks WHERE chunk_id = $1`, chunkID)
+	tag, err := s.db.Exec(ctx, `DELETE FROM rag_chunks WHERE id = $1`, chunkID)
 	if err != nil {
 		return false, fmt.Errorf("delete chunk: %w", err)
 	}
@@ -131,6 +136,7 @@ func scanScoredChunks(rows pgx.Rows) ([]ScoredChunk, error) {
 		var sc ScoredChunk
 		err := rows.Scan(
 			&sc.Chunk.ChunkID,
+			&sc.Chunk.WorkspaceID,
 			&sc.Chunk.CollectionID,
 			&sc.Chunk.Content,
 			&sc.Chunk.Embedding,

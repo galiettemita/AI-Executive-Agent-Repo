@@ -35,13 +35,15 @@ func TestActivityTypes_ReceiptRequired(t *testing.T) {
 		ReceiptID:      "",
 		IdempotencyKey: "idem-1",
 	}
-	_, err := temporal.ExecuteToolActivity(context.Background(), input)
+	a := temporal.NewActivities()
+	_, err := a.ExecuteToolActivity(context.Background(), input)
 	if err == nil {
 		t.Fatal("expected error when receipt is empty")
 	}
 }
 
 func TestValidateEnvelopeActivity_Contract(t *testing.T) {
+	a := temporal.NewActivities()
 	tests := []struct {
 		name  string
 		input temporal.ValidateEnvelopeInput
@@ -66,7 +68,7 @@ func TestValidateEnvelopeActivity_Contract(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := temporal.ValidateEnvelopeActivity(context.Background(), tt.input)
+			result, err := a.ValidateEnvelopeActivity(context.Background(), tt.input)
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}

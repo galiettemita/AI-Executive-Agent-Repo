@@ -1,4 +1,4 @@
-.PHONY: dev build test lint migrate db-verify docker-build docker-build-infra contracts acceptance policy-validate ci ci-full load-test security-validate infra-validate api-docs api-docs-check tools-md tools-md-check skills-scaffolds-check proto-validate evals generate-remote-catalog-keys mcp-wave1-checklist mcp-wave56-checklist mcp-fleet-validate mcp-runtime-rollout deploy-helm staging-smoke-tests external-closeout-check external-closeout-regression-check external-phase-transition-check production-deployment-signoff-check production-canary-check production-deployment-todo production-post-deploy-validation production-phase-sync phase-closure-manifest phase-handoff-bundle phase-status go-live-signoff go-live-approval-packet go-live-approval-confirm manual-closeout-todo manual-provider-steps manual-closeout-batch-commands manual-closeout-confirm manual-closeout-unconfirm external-phase-sync
+.PHONY: dev build test lint migrate db-verify docker-build docker-build-infra contracts acceptance policy-validate ci ci-full load-test security-validate infra-validate api-docs api-docs-check tools-md tools-md-check skills-scaffolds-check proto-validate evals generate-remote-catalog-keys mcp-wave1-checklist mcp-wave56-checklist mcp-fleet-validate mcp-runtime-rollout deploy-helm staging-smoke-tests external-closeout-check external-closeout-regression-check external-phase-transition-check production-deployment-signoff-check production-canary-check production-deployment-todo production-post-deploy-validation production-phase-sync phase-closure-manifest phase-handoff-bundle phase-status go-live-signoff go-live-approval-packet go-live-approval-confirm manual-closeout-todo manual-provider-steps manual-closeout-batch-commands manual-closeout-confirm manual-closeout-unconfirm external-phase-sync local-verify
 
 GO_EXEC := ./scripts/dev/go_exec.sh
 GOFMT_EXEC := ./scripts/dev/gofmt_exec.sh
@@ -64,6 +64,18 @@ docker-build-infra:
 ci: proto-validate lint build test migrate api-docs-check tools-md-check skills-scaffolds-check mcp-wave1-checklist mcp-wave56-checklist mcp-fleet-validate mcp-runtime-rollout policy-validate contracts acceptance evals
 
 ci-full: ci security-validate infra-validate db-verify
+
+# local-verify: fast pre-push gate — vet, build, test (includes contracts).
+# No Docker, no external services, no staticcheck download required.
+# For full lint (gofmt + staticcheck), use `make lint`.
+local-verify:
+	@echo "==> [1/3] go vet"
+	$(GO_EXEC) vet ./...
+	@echo "==> [2/3] build"
+	$(GO_EXEC) build ./...
+	@echo "==> [3/3] tests + contracts"
+	$(GO_EXEC) test ./... -count=1
+	@echo "==> local-verify passed"
 
 load-test:
 	@echo "Run: k6 run evals/load/k6_interactive_turn.js"

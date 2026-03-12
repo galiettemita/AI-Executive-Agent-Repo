@@ -8,6 +8,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
+	pgxvector "github.com/pgvector/pgvector-go/pgx"
 )
 
 type Pool struct {
@@ -30,6 +31,12 @@ func NewPool(ctx context.Context, cfg Config) (*Pool, error) {
 
 	// PgBouncer session-mode compatible setting: avoid prepared statement cache.
 	poolConfig.ConnConfig.DefaultQueryExecMode = pgx.QueryExecModeSimpleProtocol
+
+	// Register pgvector types (vector, halfvec, sparsevec) on each new connection
+	// so pgx can encode/decode pgvector.Vector natively without ::vector casts.
+	poolConfig.AfterConnect = func(ctx context.Context, conn *pgx.Conn) error {
+		return pgxvector.RegisterTypes(ctx, conn)
+	}
 
 	pool, err := pgxpool.NewWithConfig(ctx, poolConfig)
 	if err != nil {

@@ -57,9 +57,10 @@ type EmbedAndChunkInput struct {
 }
 
 type EmbedAndChunkResult struct {
-	ChunkCount    int  `json:"chunk_count"`
-	Dimensions    int  `json:"dimensions"`
-	SpecPersisted bool `json:"spec_persisted"`
+	ChunkCount      int  `json:"chunk_count"`
+	Dimensions      int  `json:"dimensions"`
+	ChunksPersisted int  `json:"chunks_persisted"`
+	SpecPersisted   bool `json:"spec_persisted"`
 }
 
 type RankWithFreshnessInput struct {
@@ -229,14 +230,36 @@ func (a *Activities) EmbedAndChunkActivity(ctx context.Context, input EmbedAndCh
 
 	// Embed chunks.
 	svc := rag.NewEmbeddingService(provider)
-	_, err := svc.BatchEmbed(ctx, chunks, 64)
+	embeddings, err := svc.BatchEmbed(ctx, chunks, 64)
 	if err != nil {
 		return nil, fmt.Errorf("embed chunks: %w", err)
 	}
 
+	// Persist chunks with embeddings to pgvector store when available.
+	chunksPersisted := 0
+	if a.vectorStore != nil {
+		for i, chunkText := range chunks {
+			if i >= len(embeddings) || len(embeddings[i]) == 0 {
+				continue
+			}
+			chunkID := fmt.Sprintf("%s:%s:%d", input.WorkspaceID, input.CollectionID, i)
+			upsertErr := a.vectorStore.UpsertChunk(ctx, rag.ChunkWithEmbedding{
+				ChunkID:      chunkID,
+				WorkspaceID:  input.WorkspaceID,
+				CollectionID: input.CollectionID,
+				Content:      chunkText,
+				Embedding:    embeddings[i],
+			})
+			if upsertErr == nil {
+				chunksPersisted++
+			}
+		}
+	}
+
 	result := &EmbedAndChunkResult{
-		ChunkCount: len(chunks),
-		Dimensions: provider.Dimensions(),
+		ChunkCount:      len(chunks),
+		Dimensions:      provider.Dimensions(),
+		ChunksPersisted: chunksPersisted,
 	}
 
 	if a.pool != nil && a.chunkSpecRepo != nil {

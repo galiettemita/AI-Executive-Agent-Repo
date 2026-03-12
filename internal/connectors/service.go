@@ -283,6 +283,33 @@ func normalizeTool(tool ConnectorTool) ConnectorTool {
 	return tool
 }
 
+// SeedToRepository loads the seed file and upserts all connectors and tools
+// into the given ConnectorRegistryRepository (DB-backed).
+func (s *Service) SeedToRepository(ctx context.Context, repo ConnectorRegistryRepository) (int, int, error) {
+	s.mu.RLock()
+	connectors := make([]Connector, 0, len(s.connectors))
+	for _, c := range s.connectors {
+		connectors = append(connectors, c)
+	}
+	tools := make([]ConnectorTool, 0, len(s.tools))
+	for _, t := range s.tools {
+		tools = append(tools, t)
+	}
+	s.mu.RUnlock()
+
+	for _, c := range connectors {
+		if err := repo.UpsertConnector(ctx, c); err != nil {
+			return 0, 0, fmt.Errorf("seed connector %s: %w", c.Key, err)
+		}
+	}
+	for _, t := range tools {
+		if err := repo.UpsertTool(ctx, t); err != nil {
+			return 0, 0, fmt.Errorf("seed tool %s: %w", t.ToolKey, err)
+		}
+	}
+	return len(connectors), len(tools), nil
+}
+
 func (s *Service) ConnectorCount() int {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -308,6 +335,42 @@ func (s *Service) ListConnectors() []Connector {
 		connectors = append(connectors, s.connectors[key])
 	}
 	return connectors
+}
+
+// ListAllTools returns all tools sorted by tool_key.
+func (s *Service) ListAllTools() []ConnectorTool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	keys := make([]string, 0, len(s.tools))
+	for key := range s.tools {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	tools := make([]ConnectorTool, 0, len(keys))
+	for _, key := range keys {
+		tools = append(tools, s.tools[key])
+	}
+	return tools
+}
+
+// ToolKeys returns a sorted list of all tool keys.
+func (s *Service) ToolKeys() []string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	keys := make([]string, 0, len(s.tools))
+	for key := range s.tools {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+// HasTool returns true if the tool_key exists in the registry.
+func (s *Service) HasTool(toolKey string) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	_, ok := s.tools[toolKey]
+	return ok
 }
 
 func (s *Service) ListToolsByConnector(connectorKey string) []ConnectorTool {

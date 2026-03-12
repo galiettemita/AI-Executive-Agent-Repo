@@ -71,6 +71,7 @@ func NewWorkerWithDeps(c client.Client, taskQueue string, deps ActivityDeps) wor
 	w.RegisterActivity(activities.GeneratePlanActivity)
 	w.RegisterActivity(activities.AuthorizePlanActivity)
 	w.RegisterActivity(activities.ExecuteToolActivity)
+	w.RegisterActivity(activities.VerifyExecutionActivity)
 	w.RegisterActivity(activities.SynthesizeResponseActivity)
 	w.RegisterActivity(activities.FetchPendingOutboxActivity)
 	w.RegisterActivity(activities.DispatchOutboxEntryActivity)

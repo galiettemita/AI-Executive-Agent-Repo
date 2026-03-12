@@ -96,6 +96,7 @@ func main() {
 
 	mux := control.NewMuxWithDependencies(svc, control.MuxDependencies{
 		AuditService: auditSvc,
+		OPAEvaluator: evaluator,
 	})
 	handler := logger.Middleware(mux)
 

@@ -17,6 +17,7 @@ import (
 	"github.com/brevio/brevio/internal/eq"
 	"github.com/brevio/brevio/internal/executor"
 	"github.com/brevio/brevio/internal/hands/call"
+	"github.com/brevio/brevio/internal/llm"
 	"github.com/brevio/brevio/internal/memory"
 	"github.com/brevio/brevio/internal/onboarding"
 	"github.com/brevio/brevio/internal/outbox"
@@ -48,22 +49,29 @@ type ClassifyIntentInput struct {
 }
 
 type ClassifyIntentResult struct {
-	Intent     string  `json:"intent"`
-	Confidence float64 `json:"confidence"`
-	Fallback   string  `json:"fallback,omitempty"`
+	Intent        string  `json:"intent"`
+	Confidence    float64 `json:"confidence"`
+	Fallback      string  `json:"fallback,omitempty"`
+	Deterministic bool    `json:"deterministic"` // true if keyword fallback was used
 }
 
 type GeneratePlanInput struct {
-	MessageID   string  `json:"message_id"`
-	WorkspaceID string  `json:"workspace_id"`
-	Intent      string  `json:"intent"`
-	Confidence  float64 `json:"confidence"`
+	MessageID      string  `json:"message_id"`
+	WorkspaceID    string  `json:"workspace_id"`
+	Intent         string  `json:"intent"`
+	Confidence     float64 `json:"confidence"`
+	Payload        string  `json:"payload,omitempty"`
+	MemoryContext  string  `json:"memory_context,omitempty"`
+	RAGContext     string  `json:"rag_context,omitempty"`
+	RetryHints     string  `json:"retry_hints,omitempty"` // populated on re-plan after verify fail
 }
 
 type GeneratePlanResult struct {
-	PlanID    string   `json:"plan_id"`
-	ToolKeys  []string `json:"tool_keys"`
-	RiskLevel string   `json:"risk_level"`
+	PlanID              string   `json:"plan_id"`
+	ToolKeys            []string `json:"tool_keys"`
+	RiskLevel           string   `json:"risk_level"`
+	Deterministic       bool     `json:"deterministic"`       // true if fallback/keyword path was used
+	FinalAnswerReqs     string   `json:"final_answer_requirements,omitempty"`
 }
 
 type AuthorizePlanInput struct {
@@ -94,6 +102,7 @@ type ToolExecutionActivityResult struct {
 	Success        bool   `json:"success"`
 	IdempotencyKey string `json:"idempotency_key"`
 	PayloadHash    string `json:"payload_hash"`
+	ToolOutput     any    `json:"tool_output,omitempty"`
 }
 
 type SynthesizeResponseInput struct {
@@ -104,6 +113,26 @@ type SynthesizeResponseInput struct {
 
 type SynthesizeResponseResult struct {
 	ResponsePayload string `json:"response_payload"`
+}
+
+// VerifyExecutionInput carries context for the LLM-based critic/verifier.
+type VerifyExecutionInput struct {
+	MessageID       string                        `json:"message_id"`
+	WorkspaceID     string                        `json:"workspace_id"`
+	OriginalPayload string                        `json:"original_payload"`
+	PlanID          string                        `json:"plan_id"`
+	PlanToolKeys    []string                      `json:"plan_tool_keys"`
+	PlanRiskLevel   string                        `json:"plan_risk_level"`
+	FinalAnswerReqs string                        `json:"final_answer_requirements"`
+	ToolResults     []ToolExecutionActivityResult `json:"tool_results"`
+	RetryHints      string                        `json:"retry_hints,omitempty"`
+}
+
+// VerifyExecutionResult is the critic's verdict on tool execution quality.
+type VerifyExecutionResult struct {
+	Verdict    string   `json:"verdict"`      // "pass" or "fail"
+	Reasons    []string `json:"reasons"`
+	RetryHints string   `json:"retry_hints"`
 }
 
 type OutboxDispatchInput struct {
@@ -211,6 +240,11 @@ type SkillACLChecker interface {
 	IsSkillAllowed(ctx context.Context, workspaceID, userID, skillID string) (bool, bool, error)
 }
 
+// HandsExecutor executes a tool via the Go hands runtime.
+type HandsExecutor interface {
+	ExecuteTool(ctx context.Context, skillID, workspaceID, receiptID, idempotencyKey, mode string, args map[string]interface{}) (success bool, output any, err error)
+}
+
 // ActivityDeps holds production dependencies for Temporal activities.
 type ActivityDeps struct {
 	Pool             *pgxpool.Pool
@@ -221,6 +255,9 @@ type ActivityDeps struct {
 	RAGRepo          rag.Repository
 	KillSwitchCheck  KillSwitchChecker
 	SkillACLCheck    SkillACLChecker
+
+	// Intelligence layer: LLM service for real provider-backed inference.
+	LLMService *llm.Service
 
 	// V10.2 intelligence dependencies.
 	EQRepo           eq.EQStrategyRepository
@@ -235,6 +272,7 @@ type ActivityDeps struct {
 	ContextRepo       contextlayer.Repository
 	LatencyRepo       executor.LatencyRepository
 	EmbeddingProvider rag.EmbeddingProvider
+	VectorStore       *rag.PgVectorProdStore
 
 	// V10.3 cognitive intelligence dependencies.
 	CognitiveRepo cognition.CognitiveRepository
@@ -243,6 +281,9 @@ type ActivityDeps struct {
 	CallRepo      call.CallRepository
 	CallService   *call.CallService
 	PhoneVerifier call.PhoneVerifier
+
+	// Hands runtime: Go-native tool execution service.
+	HandsExecutor HandsExecutor
 }
 
 // Activities is the struct that holds all activity implementations.
@@ -257,6 +298,9 @@ type Activities struct {
 	killSwitchCheck  KillSwitchChecker
 	skillACLCheck    SkillACLChecker
 
+	// Intelligence layer: LLM service for real provider-backed inference.
+	llmService *llm.Service
+
 	// V10.2 intelligence dependencies.
 	eqRepo           eq.EQStrategyRepository
 	demotionRepo     trust.DemotionRepository
@@ -270,6 +314,7 @@ type Activities struct {
 	contextRepo       contextlayer.Repository
 	latencyRepo       executor.LatencyRepository
 	embeddingProvider rag.EmbeddingProvider
+	vectorStore       *rag.PgVectorProdStore
 
 	// V10.3 cognitive intelligence dependencies.
 	cognitiveRepo cognition.CognitiveRepository
@@ -278,6 +323,9 @@ type Activities struct {
 	callRepo      call.CallRepository
 	callService   *call.CallService
 	phoneVerifier call.PhoneVerifier
+
+	// Hands runtime: Go-native tool execution service.
+	handsExecutor HandsExecutor
 
 	// Observability counters for outbox dispatch.
 	outboxDispatched atomic.Int64
@@ -301,6 +349,7 @@ func NewActivitiesWithProdDeps(deps ActivityDeps) *Activities {
 		ragRepo:          deps.RAGRepo,
 		killSwitchCheck:  deps.KillSwitchCheck,
 		skillACLCheck:    deps.SkillACLCheck,
+		llmService:       deps.LLMService,
 		eqRepo:           deps.EQRepo,
 		demotionRepo:     deps.DemotionRepo,
 		intelligenceRepo: deps.IntelligenceRepo,
@@ -311,10 +360,12 @@ func NewActivitiesWithProdDeps(deps ActivityDeps) *Activities {
 		contextRepo:       deps.ContextRepo,
 		latencyRepo:       deps.LatencyRepo,
 		embeddingProvider: deps.EmbeddingProvider,
+		vectorStore:      deps.VectorStore,
 		cognitiveRepo:    deps.CognitiveRepo,
 		callRepo:         deps.CallRepo,
 		callService:      deps.CallService,
 		phoneVerifier:    deps.PhoneVerifier,
+		handsExecutor:    deps.HandsExecutor,
 	}
 }
 
@@ -340,19 +391,165 @@ func (a *Activities) ClassifyIntentActivity(ctx context.Context, input ClassifyI
 	if input.Payload == "" {
 		return nil, fmt.Errorf("SCHEMA_VALIDATION_FAILED: empty payload")
 	}
+
+	// Production path: use LLM-backed intent classification.
+	if a.llmService != nil && a.llmService.Intelligence() != nil {
+		classification, _, err := a.llmService.ClassifyIntent(ctx, input.Payload, input.WorkspaceID)
+		if err != nil {
+			log.Printf("[ClassifyIntent] LLM classification failed, using keyword fallback: %v", err)
+			fb := a.keywordFallbackClassification(input.Payload)
+			fb.Deterministic = true
+			return fb, nil
+		}
+		result := &ClassifyIntentResult{
+			Intent:        classification.Intent,
+			Confidence:    classification.Confidence,
+			Deterministic: false,
+		}
+		if classification.Confidence < 0.7 {
+			result.Fallback = "keyword_classifier"
+			fallback := a.keywordFallbackClassification(input.Payload)
+			if fallback.Confidence > classification.Confidence {
+				result.Intent = fallback.Intent
+				result.Confidence = fallback.Confidence
+				result.Deterministic = true
+			}
+		}
+		return result, nil
+	}
+
+	// Degraded path: keyword-based classification (deterministic).
+	fb := a.keywordFallbackClassification(input.Payload)
+	fb.Deterministic = true
+	log.Printf("[ClassifyIntent] Deterministic=true: no LLM configured, using keyword fallback")
+	return fb, nil
+}
+
+// keywordFallbackClassification provides deterministic keyword-based intent classification
+// used when the LLM is unavailable or when LLM confidence is below threshold.
+func (a *Activities) keywordFallbackClassification(payload string) *ClassifyIntentResult {
+	lower := strings.ToLower(payload)
+	type intentRule struct {
+		keywords   []string
+		intent     string
+		confidence float64
+	}
+	rules := []intentRule{
+		{[]string{"email", "mail", "inbox", "send email", "reply"}, "email_management", 0.80},
+		{[]string{"calendar", "meeting", "schedule", "event", "appointment"}, "calendar_management", 0.80},
+		{[]string{"search", "find", "look up", "google", "web"}, "web_search", 0.75},
+		{[]string{"document", "file", "note", "doc", "write"}, "document_management", 0.75},
+		{[]string{"task", "todo", "remind", "create task"}, "task_creation", 0.75},
+		{[]string{"call", "phone", "dial", "ring"}, "outbound_call", 0.80},
+	}
+	for _, rule := range rules {
+		for _, kw := range rule.keywords {
+			if strings.Contains(lower, kw) {
+				return &ClassifyIntentResult{
+					Intent:     rule.intent,
+					Confidence: rule.confidence,
+					Fallback:   "keyword_classifier",
+				}
+			}
+		}
+	}
 	return &ClassifyIntentResult{
 		Intent:     "general_query",
-		Confidence: 0.85,
-	}, nil
+		Confidence: 0.60,
+		Fallback:   "keyword_classifier",
+	}
 }
 
 func (a *Activities) GeneratePlanActivity(ctx context.Context, input GeneratePlanInput) (*GeneratePlanResult, error) {
 	planID := hashKey("plan:" + input.MessageID + ":" + input.WorkspaceID)
+
+	// Build payload for LLM — use explicit payload if available, fall back to intent.
+	payload := input.Payload
+	if payload == "" {
+		payload = input.Intent
+	}
+
+	// If re-planning after a verify failure, append retry hints to the payload.
+	if input.RetryHints != "" {
+		payload = payload + "\n\n[VERIFIER FEEDBACK — previous attempt was rejected]\n" + input.RetryHints
+	}
+
+	// Production path: use LLM-backed plan generation.
+	if a.llmService != nil && a.llmService.Intelligence() != nil {
+		plan, _, err := a.llmService.GeneratePlan(ctx, input.Intent, input.Confidence, payload, input.MemoryContext, input.RAGContext)
+		if err != nil {
+			log.Printf("[GeneratePlan] LLM plan generation failed, using deterministic fallback: %v", err)
+			return a.deterministicPlanFallback(planID, input.Intent), nil
+		}
+
+		// Plan was already validated by IntelligenceService.GeneratePlan
+		// which calls validatePlan + canonicalizePlan internally.
+
+		toolKeys := make([]string, len(plan.Tools))
+		copy(toolKeys, plan.Tools)
+		sort.Strings(toolKeys)
+
+		return &GeneratePlanResult{
+			PlanID:          planID,
+			ToolKeys:        toolKeys,
+			RiskLevel:       strings.ToUpper(plan.RiskLevel),
+			Deterministic:   false,
+			FinalAnswerReqs: plan.FinalAnswerRequirements,
+		}, nil
+	}
+
+	// Degraded path: deterministic plan based on intent keywords.
+	log.Printf("[GeneratePlan] Deterministic=true: no LLM configured")
+	return a.deterministicPlanFallback(planID, input.Intent), nil
+}
+
+// deterministicPlanFallback generates a predictable plan from intent keywords
+// when the LLM is unavailable. This provides a testable, non-empty plan structure.
+func (a *Activities) deterministicPlanFallback(planID, intent string) *GeneratePlanResult {
+	lower := strings.ToLower(intent)
+	var toolKeys []string
+	riskLevel := "LOW"
+	finalReqs := "Verify that the requested information was retrieved successfully."
+
+	switch {
+	case strings.Contains(lower, "email"):
+		toolKeys = []string{"email.read"}
+		if strings.Contains(lower, "send") || strings.Contains(lower, "reply") {
+			toolKeys = append(toolKeys, "email.send")
+			riskLevel = "ELEVATED"
+			finalReqs = "Confirm the email was sent and the recipient address is correct."
+		}
+	case strings.Contains(lower, "calendar") || strings.Contains(lower, "meeting") || strings.Contains(lower, "schedule"):
+		toolKeys = []string{"calendar.read"}
+		if strings.Contains(lower, "create") || strings.Contains(lower, "schedule") {
+			toolKeys = append(toolKeys, "calendar.write")
+			riskLevel = "ELEVATED"
+			finalReqs = "Confirm the calendar event was created with correct time and participants."
+		}
+	case strings.Contains(lower, "search") || strings.Contains(lower, "find") || strings.Contains(lower, "look"):
+		toolKeys = []string{"web.search"}
+		finalReqs = "Verify that search results are relevant to the query."
+	case strings.Contains(lower, "task") || strings.Contains(lower, "todo"):
+		toolKeys = []string{"task.create"}
+		riskLevel = "LOW"
+		finalReqs = "Confirm the task was created with the correct title and description."
+	case strings.Contains(lower, "call") || strings.Contains(lower, "phone"):
+		toolKeys = []string{"phone.dial"}
+		riskLevel = "CRITICAL"
+		finalReqs = "Confirm the call was initiated to the correct number."
+	default:
+		toolKeys = []string{"echo"}
+		finalReqs = "Verify the echo response was returned."
+	}
+
+	sort.Strings(toolKeys)
 	return &GeneratePlanResult{
-		PlanID:    planID,
-		ToolKeys:  []string{},
-		RiskLevel: "LOW",
-	}, nil
+		PlanID:          planID,
+		ToolKeys:        toolKeys,
+		RiskLevel:       riskLevel,
+		Deterministic:   true,
+		FinalAnswerReqs: finalReqs,
+	}
 }
 
 func (a *Activities) AuthorizePlanActivity(ctx context.Context, input AuthorizePlanInput) (*AuthorizePlanResult, error) {
@@ -404,6 +601,34 @@ func (a *Activities) ExecuteToolActivity(ctx context.Context, input ExecuteToolI
 	}
 
 	payloadHash := hashKey(input.WorkspaceID + "::" + input.ToolKey + "::" + input.IdempotencyKey)
+
+	// Production path: call Go hands runtime for real execution.
+	if a.handsExecutor != nil {
+		success, output, err := a.handsExecutor.ExecuteTool(
+			ctx, input.ToolKey, input.WorkspaceID, input.ReceiptID,
+			input.IdempotencyKey, "commit", nil,
+		)
+		if err != nil {
+			log.Printf("[ExecuteTool] hands execution failed for %s: %v", input.ToolKey, err)
+			return &ToolExecutionActivityResult{
+				ToolKey:        input.ToolKey,
+				Phase:          "commit",
+				Success:        false,
+				IdempotencyKey: input.IdempotencyKey,
+				PayloadHash:    payloadHash,
+			}, nil
+		}
+		return &ToolExecutionActivityResult{
+			ToolKey:        input.ToolKey,
+			Phase:          "commit",
+			Success:        success,
+			IdempotencyKey: input.IdempotencyKey,
+			PayloadHash:    payloadHash,
+			ToolOutput:     output,
+		}, nil
+	}
+
+	// Fallback: deterministic stub when hands runtime is not configured.
 	return &ToolExecutionActivityResult{
 		ToolKey:        input.ToolKey,
 		Phase:          "commit",
@@ -414,9 +639,121 @@ func (a *Activities) ExecuteToolActivity(ctx context.Context, input ExecuteToolI
 }
 
 func (a *Activities) SynthesizeResponseActivity(ctx context.Context, input SynthesizeResponseInput) (*SynthesizeResponseResult, error) {
+	// Production path: use LLM-backed response synthesis.
+	if a.llmService != nil && a.llmService.Intelligence() != nil {
+		// Build tool results summary for the LLM.
+		var toolSummary strings.Builder
+		for _, tr := range input.ToolResults {
+			status := "failed"
+			if tr.Success {
+				status = "success"
+			}
+			fmt.Fprintf(&toolSummary, "- %s [%s]: phase=%s hash=%s\n", tr.ToolKey, status, tr.Phase, tr.PayloadHash)
+		}
+
+		synthesized, _, err := a.llmService.SynthesizeResponse(ctx, input.MessageID, toolSummary.String())
+		if err != nil {
+			log.Printf("[Synthesize] LLM synthesis failed, using template fallback: %v", err)
+			return &SynthesizeResponseResult{
+				ResponsePayload: fmt.Sprintf("Processed message %s with %d tool results", input.MessageID, len(input.ToolResults)),
+			}, nil
+		}
+		return &SynthesizeResponseResult{
+			ResponsePayload: synthesized.ResponseText,
+		}, nil
+	}
+
+	// Degraded path: template-based response.
 	return &SynthesizeResponseResult{
 		ResponsePayload: fmt.Sprintf("Processed message %s with %d tool results", input.MessageID, len(input.ToolResults)),
 	}, nil
+}
+
+// VerifyExecutionActivity is the LLM-based critic that evaluates whether tool
+// execution results satisfy the plan's goals. It returns pass/fail with reasons
+// and retry hints that can be fed back into the planner on re-attempt.
+func (a *Activities) VerifyExecutionActivity(ctx context.Context, input VerifyExecutionInput) (*VerifyExecutionResult, error) {
+	// Check if all tools succeeded — fast path for obvious failures.
+	allSucceeded := true
+	for _, tr := range input.ToolResults {
+		if !tr.Success {
+			allSucceeded = false
+			break
+		}
+	}
+
+	// If no tools executed at all, fail immediately without calling LLM.
+	if len(input.ToolResults) == 0 {
+		return &VerifyExecutionResult{
+			Verdict:    "fail",
+			Reasons:    []string{"no tool executions were completed"},
+			RetryHints: "Ensure the plan includes at least one executable tool step.",
+		}, nil
+	}
+
+	// Production path: use LLM-backed verification.
+	if a.llmService != nil && a.llmService.Intelligence() != nil {
+		toolOutputs := make([]llm.ToolOutputForVerify, len(input.ToolResults))
+		for i, tr := range input.ToolResults {
+			toolOutputs[i] = llm.ToolOutputForVerify{
+				ToolKey:     tr.ToolKey,
+				Success:     tr.Success,
+				PayloadHash: tr.PayloadHash,
+				Phase:       tr.Phase,
+			}
+		}
+
+		verifyInput := llm.VerifyInput{
+			OriginalRequest: input.OriginalPayload,
+			Plan: &llm.GeneratedPlan{
+				Intent:                  input.PlanID,
+				Tools:                   input.PlanToolKeys,
+				RiskLevel:               strings.ToLower(input.PlanRiskLevel),
+				FinalAnswerRequirements: input.FinalAnswerReqs,
+			},
+			ToolOutputs: toolOutputs,
+			RetryHints:  input.RetryHints,
+		}
+
+		result, _, err := a.llmService.VerifyExecution(ctx, verifyInput)
+		if err != nil {
+			log.Printf("[VerifyExecution] LLM verification failed, using deterministic fallback: %v", err)
+			return a.deterministicVerifyFallback(input.ToolResults, allSucceeded), nil
+		}
+
+		return &VerifyExecutionResult{
+			Verdict:    result.Verdict,
+			Reasons:    result.Reasons,
+			RetryHints: result.RetryHints,
+		}, nil
+	}
+
+	// Degraded path: deterministic verification based on success/failure counts.
+	log.Printf("[VerifyExecution] Deterministic=true: no LLM configured")
+	return a.deterministicVerifyFallback(input.ToolResults, allSucceeded), nil
+}
+
+// deterministicVerifyFallback provides a rule-based verification when the LLM
+// is unavailable. Passes if all tools succeeded; fails otherwise.
+func (a *Activities) deterministicVerifyFallback(results []ToolExecutionActivityResult, allSucceeded bool) *VerifyExecutionResult {
+	if allSucceeded {
+		return &VerifyExecutionResult{
+			Verdict:    "pass",
+			Reasons:    []string{"all tool executions succeeded"},
+			RetryHints: "",
+		}
+	}
+	var failedTools []string
+	for _, tr := range results {
+		if !tr.Success {
+			failedTools = append(failedTools, tr.ToolKey)
+		}
+	}
+	return &VerifyExecutionResult{
+		Verdict:    "fail",
+		Reasons:    []string{fmt.Sprintf("tool execution failures: %s", strings.Join(failedTools, ", "))},
+		RetryHints: fmt.Sprintf("Retry failed tools: %s. Consider alternative tools if available.", strings.Join(failedTools, ", ")),
+	}
 }
 
 // FetchPendingOutboxActivity fetches pending outbox entries from the database.
@@ -990,31 +1327,59 @@ func (a *Activities) ExecuteReasoningLoopActivity(ctx context.Context, input Rea
 	// Build deterministic context from memory + RAG (stable-sorted inputs).
 	contextHash := buildContextHash(input.WorkspaceID, input.MessageID, input.MemoryItems, input.RAGChunks)
 
-	// Deterministic plan generation based on intent + context.
-	toolKeys := deterministicPlanTools(input.Intent, input.MemoryItems, input.RAGChunks)
-
-	// Lexical sort of tool keys for replay determinism.
-	sort.Strings(toolKeys)
-
-	// Risk assessment: deterministic from tool set.
-	riskLevel := deterministicRiskAssess(toolKeys)
-
-	// Critic quality score: deterministic from context completeness.
-	qualityScore := deterministicQualityScore(input.Confidence, len(input.MemoryItems), len(input.RAGChunks))
-
-	planID := hashKey("plan:" + input.MessageID + ":" + input.WorkspaceID + ":" + contextHash)
-
 	// Evidence hash for audit trail: deterministic from all inputs.
 	evidenceHash := hashKey(fmt.Sprintf("evidence:%s:%s:%s:%d:%d",
 		input.MessageID, input.WorkspaceID, input.Intent,
 		len(input.MemoryItems), len(input.RAGChunks)))
+
+	// Production path: use LLM-backed plan generation.
+	if a.llmService != nil && a.llmService.Intelligence() != nil {
+		// Build context summaries for the planner.
+		var memoryCtx strings.Builder
+		for _, item := range input.MemoryItems {
+			fmt.Fprintf(&memoryCtx, "- [%s] %s (score: %.2f)\n", item.MemoryType, item.Body, item.Score)
+		}
+		var ragCtx strings.Builder
+		for _, chunk := range input.RAGChunks {
+			fmt.Fprintf(&ragCtx, "- %s (score: %.2f, source: %s)\n", chunk.Snippet, chunk.Score, chunk.Source)
+		}
+
+		plan, _, err := a.llmService.GeneratePlan(ctx, input.Intent, input.Confidence, input.Intent, memoryCtx.String(), ragCtx.String())
+		if err != nil {
+			log.Printf("[ReasoningLoop] LLM plan generation failed, falling back to deterministic: %v", err)
+		} else {
+			toolKeys := make([]string, len(plan.Tools))
+			copy(toolKeys, plan.Tools)
+			sort.Strings(toolKeys)
+
+			planID := hashKey("plan:" + input.MessageID + ":" + input.WorkspaceID + ":" + contextHash)
+
+			return &ReasoningLoopResult{
+				PlanID:        planID,
+				ToolKeys:      toolKeys,
+				RiskLevel:     strings.ToUpper(plan.RiskLevel),
+				QualityScore:  plan.Confidence,
+				Iterations:    1,
+				EvidenceHash:  evidenceHash,
+				Deterministic: false,
+			}, nil
+		}
+	}
+
+	// Deterministic fallback: rule-based plan generation.
+	toolKeys := deterministicPlanTools(input.Intent, input.MemoryItems, input.RAGChunks)
+	sort.Strings(toolKeys)
+
+	riskLevel := deterministicRiskAssess(toolKeys)
+	qualityScore := deterministicQualityScore(input.Confidence, len(input.MemoryItems), len(input.RAGChunks))
+	planID := hashKey("plan:" + input.MessageID + ":" + input.WorkspaceID + ":" + contextHash)
 
 	return &ReasoningLoopResult{
 		PlanID:        planID,
 		ToolKeys:      toolKeys,
 		RiskLevel:     riskLevel,
 		QualityScore:  qualityScore,
-		Iterations:    1, // Single pass when quality meets threshold.
+		Iterations:    1,
 		EvidenceHash:  evidenceHash,
 		Deterministic: true,
 	}, nil

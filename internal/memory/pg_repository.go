@@ -8,6 +8,7 @@ import (
 	"github.com/brevio/brevio/internal/database"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	pgvector "github.com/pgvector/pgvector-go"
 )
 
 // PgItemRepository implements ItemRepository using PostgreSQL with pgvector.
@@ -123,15 +124,16 @@ func (r *PgItemRepository) FindSimilarByEmbedding(ctx context.Context, workspace
 	if limit <= 0 {
 		limit = 10
 	}
+	vec := pgvector.NewVector(embedding)
 	rows, err := r.db.Query(ctx, `
 		SELECT id, workspace_id, user_id, memory_type, status, body,
 			data_class, sensitivity_label, retention_policy_id, allowed_processors,
 			content_trust, embedding_version, expires_at, created_at, updated_at,
-			1 - (embedding <=> $1::vector) AS similarity
+			1 - (embedding <=> $1) AS similarity
 		FROM memory_items
-		WHERE workspace_id = $2 AND 1 - (embedding <=> $1::vector) >= $3
-		ORDER BY embedding <=> $1::vector
-		LIMIT $4`, embedding, workspaceID, minScore, limit)
+		WHERE workspace_id = $2 AND 1 - (embedding <=> $1) >= $3
+		ORDER BY embedding <=> $1
+		LIMIT $4`, vec, workspaceID, minScore, limit)
 	if err != nil {
 		return nil, fmt.Errorf("find similar memory items: %w", err)
 	}

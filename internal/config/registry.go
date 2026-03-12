@@ -33,7 +33,7 @@ func RequiredEnvVars() []string {
 		"IMESSAGE_MSP_BASE_URL",
 		"IMESSAGE_BUSINESS_ID",
 		"OTEL_EXPORTER_OTLP_ENDPOINT",
-		"OPA_ENDPOINT",
+		"OPA_URL",
 		"CANVAS_WS_PORT",
 		"LOG_LEVEL",
 	}

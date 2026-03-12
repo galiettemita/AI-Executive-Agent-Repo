@@ -48,6 +48,7 @@ type MuxDependencies struct {
 	OnboardingRepo     onboarding.Repository     // nil = in-memory
 	ContextBudgetRepo  contextlayer.Repository   // nil = in-memory
 	RAGRepo            raglayer.Repository       // nil = in-memory
+	OPAEvaluator       *OPAEvaluator             // nil = no policy enforcement
 }
 
 func NewMux(service *Service) *http.ServeMux {
@@ -305,6 +306,28 @@ func NewMuxWithDependencies(service *Service, deps MuxDependencies) *http.ServeM
 
 		http.NotFound(w, r)
 	})
+
+	// Wrap /v1/ API routes with OPA policy middleware when evaluator is provided.
+	// Health and docs endpoints are exempt from policy enforcement.
+	if deps.OPAEvaluator != nil {
+		inner := mux
+		outer := http.NewServeMux()
+		policyMW := OPAPolicyMiddleware(deps.OPAEvaluator)
+
+		// Exempt endpoints: health, docs, healthz.
+		outer.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) { inner.ServeHTTP(w, r) })
+		outer.HandleFunc("GET /health/deep", func(w http.ResponseWriter, r *http.Request) { inner.ServeHTTP(w, r) })
+		outer.HandleFunc("GET /healthz/ready", func(w http.ResponseWriter, r *http.Request) { inner.ServeHTTP(w, r) })
+		outer.HandleFunc("GET /healthz/live", func(w http.ResponseWriter, r *http.Request) { inner.ServeHTTP(w, r) })
+		outer.HandleFunc("GET /docs", func(w http.ResponseWriter, r *http.Request) { inner.ServeHTTP(w, r) })
+		outer.HandleFunc("GET /docs/openapi", func(w http.ResponseWriter, r *http.Request) { inner.ServeHTTP(w, r) })
+
+		// All other routes go through OPA middleware.
+		outer.Handle("/", policyMW(inner))
+
+		_ = service
+		return outer
+	}
 
 	_ = service
 	return mux

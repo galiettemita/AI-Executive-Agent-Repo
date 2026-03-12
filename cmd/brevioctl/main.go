@@ -7,9 +7,11 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/brevio/brevio/internal/connectors"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -35,6 +37,7 @@ func main() {
 		fmt.Println("Commands:")
 		fmt.Println("  doctor    Run system health diagnostics")
 		fmt.Println("  export    Generate report exports")
+		fmt.Println("  seed      Seed data into the database")
 		fmt.Println("  verify    Run production constraint checks")
 		os.Exit(1)
 	}
@@ -44,6 +47,14 @@ func main() {
 		runDoctor()
 	case "export":
 		runExport()
+	case "seed":
+		if len(os.Args) < 3 {
+			fmt.Println("Usage: brevioctl seed <target>")
+			fmt.Println("Targets:")
+			fmt.Println("  tools    Seed connector registry from connectors.yaml into PostgreSQL")
+			os.Exit(1)
+		}
+		runSeed(os.Args[2])
 	case "verify":
 		if len(os.Args) < 3 {
 			fmt.Println("Usage: brevioctl verify <check>")
@@ -1367,4 +1378,64 @@ func runExport() {
 		os.Exit(1)
 	}
 	fmt.Printf("\nExports verified in %s\n", exportsDir)
+}
+
+// ---------------------------------------------------------------------------
+// brevioctl seed — seed data into the database
+// ---------------------------------------------------------------------------
+
+func runSeed(target string) {
+	switch target {
+	case "tools":
+		seedTools()
+	default:
+		fmt.Fprintf(os.Stderr, "Unknown seed target: %s\n", target)
+		os.Exit(1)
+	}
+}
+
+func seedTools() {
+	dbURL := os.Getenv("DATABASE_URL")
+	if dbURL == "" {
+		fmt.Println("FAIL: DATABASE_URL not set")
+		os.Exit(1)
+	}
+
+	seedPath := os.Getenv("SEED_FILE")
+	if seedPath == "" {
+		// Default: internal/connectors/seeds/connectors.yaml relative to working dir.
+		seedPath = filepath.Join("internal", "connectors", "seeds", "connectors.yaml")
+	}
+
+	fmt.Printf("Loading seed file: %s\n", seedPath)
+
+	// Build in-memory service and load seed.
+	kp := connectors.NewInMemoryKeyProvider("v0", make([]byte, 32))
+	svc := connectors.NewService(kp)
+	if err := svc.LoadSeedFile(seedPath); err != nil {
+		fmt.Printf("FAIL: load seed file: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("Parsed %d connectors, %d tools\n", svc.ConnectorCount(), svc.ToolCount())
+
+	// Connect to database.
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	conn, err := pgx.Connect(ctx, dbURL)
+	if err != nil {
+		fmt.Printf("FAIL: database connection: %v\n", err)
+		os.Exit(1)
+	}
+	defer conn.Close(ctx)
+
+	repo := connectors.NewPgConnectorRegistryRepository(conn)
+	nConn, nTools, err := svc.SeedToRepository(ctx, repo)
+	if err != nil {
+		fmt.Printf("FAIL: seed to database: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("SEED COMPLETE: %d connectors, %d tools upserted\n", nConn, nTools)
 }

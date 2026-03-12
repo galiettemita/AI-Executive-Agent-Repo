@@ -18,6 +18,7 @@ import (
 	contextpkg "github.com/brevio/brevio/internal/context"
 	eqpkg "github.com/brevio/brevio/internal/eq"
 	executorpkg "github.com/brevio/brevio/internal/executor"
+	llmpkg "github.com/brevio/brevio/internal/llm"
 	memorypkg "github.com/brevio/brevio/internal/memory"
 	onboardingpkg "github.com/brevio/brevio/internal/onboarding"
 	"github.com/brevio/brevio/internal/outbox"
@@ -51,10 +52,15 @@ func main() {
 	}
 	defer temporalClient.Close()
 
+	// Bootstrap LLM intelligence layer from environment variables.
+	llmSvc := llmpkg.BootstrapService()
+
 	// Build activity dependencies based on runtime environment.
 	// When DATABASE_URL is set, activities use pgx-backed repositories and
 	// the transactional outbox service. Otherwise, degraded/test mode.
-	deps := breviotemporal.ActivityDeps{}
+	deps := breviotemporal.ActivityDeps{
+		LLMService: llmSvc,
+	}
 	dbURL := strings.TrimSpace(os.Getenv("DATABASE_URL"))
 	if dbURL != "" {
 		ctx := context.Background()
@@ -85,6 +91,10 @@ func main() {
 		deps.CallRepo = callpkg.NewPgCallRepository(pool)
 		deps.PhoneVerifier = callpkg.NewGooglePlacesClient(os.Getenv("GOOGLE_PLACES_API_KEY"))
 
+		llmStatus := "disabled"
+		if llmSvc.Intelligence() != nil {
+			llmStatus = "active"
+		}
 		logger.Info("temporal_worker_production_deps", map[string]any{
 			"database":        "pgxpool",
 			"outbox":          "db-backed",
@@ -106,6 +116,7 @@ func main() {
 			"cognitive":       "pg-repository",
 			"call":            "pg-repository",
 			"phone_verifier":  "google-places",
+			"llm_intelligence": llmStatus,
 		})
 	}
 
