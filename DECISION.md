@@ -1852,7 +1852,7 @@
 **Risk:** If source external artifact is stale, go-live signoff status can be stale too.  
 **Rollback:** Remove `generate_go_live_signoff.sh`/Make target and revert to direct manual interpretation of `external_closeout_status.json`.
 
-## DECISION-103: Generate Manual Closeout TODO from Go-Live Signoff State
+## DECISION-103: Generate Manual Closeout Checklist from Go-Live Signoff State
 
 **Date:** 2026-03-05  
 **Blueprint Section:** §14, §18, §21  
@@ -1861,14 +1861,14 @@
 **Options Considered:**  
 1. Keep manual interpretation of signoff JSON and runbook sections.  
 2. Maintain a hand-edited markdown checklist.  
-3. Generate a deterministic markdown TODO directly from signoff artifact with runbook section mapping.  
-**Decision:** Option 3. Added `scripts/deploy/generate_manual_closeout_todo.sh` and `make manual-closeout-todo`, producing `artifacts/deploy/manual_closeout_todo.md` with pending required items and mapped section references (`Section 1`-`Section 7`) to reduce manual translation overhead in the external closeout phase.  
+3. Generate a deterministic markdown checklist directly from signoff artifact with runbook section mapping.
+**Decision:** Option 3. Added `scripts/deploy/generate_manual_closeout_checklist.sh` and `make manual-closeout-checklist`, producing `artifacts/deploy/manual_closeout_checklist.md` with pending required items and mapped section references (`Section 1`-`Section 7`) to reduce manual translation overhead in the external closeout phase.
 **Migration Plan:**  
 1. Run `make go-live-signoff` before `make manual-closeout-todo` at each checkpoint.  
 2. Use generated markdown as active manual closure checklist.  
 3. Regenerate after each provider/account update until status transitions to `READY`.  
 **Risk:** Mapping table must stay synced if blocker IDs are renamed in the closeout checker.  
-**Rollback:** Remove manual TODO generator and revert to direct runbook + JSON artifact interpretation.
+**Rollback:** Remove manual checklist generator and revert to direct runbook + JSON artifact interpretation.
 
 ## DECISION-104: Keep Go 1.22 and Cap Security Dependency Upgrades at Compatible Maximums
 
@@ -1898,7 +1898,7 @@
 1. Keep manual three-command sequence in runbook.  
 2. Move logic into one large script and remove individual commands.  
 3. Keep existing commands and add a thin orchestration wrapper + Make target.  
-**Decision:** Option 3. Added `scripts/deploy/sync_external_phase_artifacts.sh` and `make external-phase-sync` to run closeout, signoff, and manual TODO generation sequentially while preserving standalone commands.  
+**Decision:** Option 3. Added `scripts/deploy/sync_external_phase_artifacts.sh` and `make external-phase-sync` to run closeout, signoff, and manual checklist generation sequentially while preserving standalone commands.
 **Migration Plan:**  
 1. Use `make external-phase-sync` as default checkpoint command.  
 2. Keep individual commands for debugging/partial reruns.  
@@ -1939,7 +1939,7 @@
 **Migration Plan:**  
 1. Maintain required item IDs in the catalog file.  
 2. Use `make manual-closeout-confirm` for all evidence writes (validated against catalog).  
-3. Keep external status/manual TODO tooling consuming evidence as-is; no further schema migration required.  
+3. Keep external status/manual checklist tooling consuming evidence as-is; no further schema migration required.
 **Risk:** Catalog drift could block valid IDs if new blockers are introduced without updating the file.  
 **Rollback:** Remove catalog validation and revert to free-form IDs if emergency flexibility is required.
 
@@ -1957,7 +1957,7 @@
 **Migration Plan:**  
 1. Use `make manual-closeout-confirm` for valid confirmations.  
 2. If entered incorrectly, run `make manual-closeout-unconfirm ITEM_ID=... REVOKED_BY=... NOTE=...`.  
-3. Run `make external-phase-sync` to propagate corrected status into closeout/signoff/TODO artifacts.  
+3. Run `make external-phase-sync` to propagate corrected status into closeout/signoff/checklist artifacts.
 **Risk:** Frequent toggling can reduce confidence in manual evidence integrity without operator discipline.  
 **Rollback:** Remove revocation script/target and return to confirmation-only evidence records.
 
@@ -2051,23 +2051,23 @@
 **Risk:** Override mode could be misused to bypass unresolved manual tasks.  
 **Rollback:** Remove transition-check override behavior and enforce strict `READY`-only phase progression.
 
-## DECISION-114: Add Per-Item Confirm/Revoke Command Templates to Manual Closeout TODO
+## DECISION-114: Add Per-Item Confirm/Revoke Command Templates to Manual Closeout Checklist
 
-**Date:** 2026-03-05  
-**Blueprint Section:** §14, §18, §21  
-**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/scripts/deploy/generate_manual_closeout_todo.sh`, `/Users/galiettemita/Downloads/Executive AI Agent/backend/artifacts/deploy/manual_closeout_todo.md`  
-**Conflict:** The manual TODO listed pending items but still required operators to remember command syntax, increasing command-entry errors and slowing closure.  
-**Options Considered:**  
-1. Keep checklist-only TODO items without command guidance.  
-2. Add one global command example at top of file.  
-3. Emit per-item copy/paste command templates for both confirm and revoke actions.  
-**Decision:** Option 3. Updated `generate_manual_closeout_todo.sh` to add item-specific `manual-closeout-confirm` and `manual-closeout-unconfirm` command templates directly under each pending manual item.  
-**Migration Plan:**  
-1. Continue generating TODO via `make external-phase-sync`.  
-2. Use per-item commands from the artifact during manual closeout execution.  
-3. Keep command templates aligned with Make target names if command interfaces change.  
-**Risk:** If command interfaces change and templates are not updated, generated instructions could drift.  
-**Rollback:** Remove per-item command lines and revert to high-level TODO output.
+**Date:** 2026-03-05
+**Blueprint Section:** §14, §18, §21
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/scripts/deploy/generate_manual_closeout_checklist.sh`, `/Users/galiettemita/Downloads/Executive AI Agent/backend/artifacts/deploy/manual_closeout_checklist.md`
+**Conflict:** The manual checklist listed pending items but still required operators to remember command syntax, increasing command-entry errors and slowing closure.
+**Options Considered:**
+1. Keep checklist-only items without command guidance.
+2. Add one global command example at top of file.
+3. Emit per-item copy/paste command templates for both confirm and revoke actions.
+**Decision:** Option 3. Updated `generate_manual_closeout_checklist.sh` to add item-specific `manual-closeout-confirm` and `manual-closeout-unconfirm` command templates directly under each pending manual item.
+**Migration Plan:**
+1. Continue generating checklist via `make external-phase-sync`.
+2. Use per-item commands from the artifact during manual closeout execution.
+3. Keep command templates aligned with Make target names if command interfaces change.
+**Risk:** If command interfaces change and templates are not updated, generated instructions could drift.
+**Rollback:** Remove per-item command lines and revert to high-level checklist output.
 
 ## DECISION-115: Generate Batch Manual Closeout Command Script from Signoff Artifact
 
@@ -2107,23 +2107,23 @@
 **Risk:** Conditional-manual override flow can still mask incomplete manual confirmations if operators misuse override mode.  
 **Rollback:** Remove production signoff checker and rely on existing transition-check + manual runbook interpretation.
 
-## DECISION-117: Generate Production Deployment TODO Artifact from Signoff Gate
+## DECISION-117: Generate Production Deployment Checklist Artifact from Signoff Gate
 
-**Date:** 2026-03-05  
-**Blueprint Section:** §9.2, §14, §18, §21  
-**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/scripts/deploy/helm_rollout.sh`, `/Users/galiettemita/Downloads/Executive AI Agent/backend/docs/runbooks/deployment-runbook.md`  
-**Conflict:** Production signoff could pass, but execution still depended on manual translation of runbook prose into a concrete, timestamped action list tied to the latest gate artifact.  
-**Options Considered:**  
-1. Keep runbook-only execution with no generated task artifact.  
-2. Hardcode deployment commands in documentation only.  
-3. Generate a deployment TODO artifact directly from production signoff status.  
-**Decision:** Option 3. Added `scripts/deploy/generate_production_deployment_todo.sh` and `make production-deployment-todo`, which generate `artifacts/deploy/production_deployment_todo.md` with deterministic rollout steps, canary thresholds, rollback triggers, and evidence-capture instructions anchored to the latest signoff artifact state.  
-**Migration Plan:**  
-1. Run `make production-deployment-signoff-check` to ensure signoff gate status is current.  
-2. Run `make production-deployment-todo` to generate operator-ready deployment checklist.  
-3. Execute deployment runbook commands from generated artifact and capture evidence.  
-**Risk:** If signoff artifact is stale, generated TODO can reflect outdated readiness context.  
-**Rollback:** Remove deployment TODO generator and use manual runbook execution directly.
+**Date:** 2026-03-05
+**Blueprint Section:** §9.2, §14, §18, §21
+**Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/scripts/deploy/helm_rollout.sh`, `/Users/galiettemita/Downloads/Executive AI Agent/backend/docs/runbooks/deployment-runbook.md`
+**Conflict:** Production signoff could pass, but execution still depended on manual translation of runbook prose into a concrete, timestamped action list tied to the latest gate artifact.
+**Options Considered:**
+1. Keep runbook-only execution with no generated task artifact.
+2. Hardcode deployment commands in documentation only.
+3. Generate a deployment checklist artifact directly from production signoff status.
+**Decision:** Option 3. Added `scripts/deploy/generate_production_deployment_checklist.sh` and `make production-deployment-checklist`, which generate `artifacts/deploy/production_deployment_checklist.md` with deterministic rollout steps, canary thresholds, rollback triggers, and evidence-capture instructions anchored to the latest signoff artifact state.
+**Migration Plan:**
+1. Run `make production-deployment-signoff-check` to ensure signoff gate status is current.
+2. Run `make production-deployment-checklist` to generate operator-ready deployment checklist.
+3. Execute deployment runbook commands from generated artifact and capture evidence.
+**Risk:** If signoff artifact is stale, generated checklist can reflect outdated readiness context.
+**Rollback:** Remove deployment checklist generator and use manual runbook execution directly.
 
 ## DECISION-118: Add Post-Deployment Validation Artifact Gate for Health/SLO Closure
 
@@ -2137,7 +2137,7 @@
 3. Add deterministic post-deploy validation script with strict and conditional-manual modes.  
 **Decision:** Option 3. Added `scripts/deploy/check_production_post_deploy_validation.sh` and `make production-post-deploy-validation`, producing `artifacts/deploy/production_post_deploy_validation.json` with endpoint checks, canary metric checks (`CANARY_ERROR_RATE_PCT`, `CANARY_P99_RATIO`), and phase status (`READY`/`CONDITIONAL_MANUAL`/`BLOCKED`).  
 **Migration Plan:**  
-1. Complete deployment using generated production TODO.  
+1. Complete deployment using generated production checklist.
 2. Run `make production-post-deploy-validation` with environment URLs and canary metrics when available.  
 3. Use strict mode (`ALLOW_CONDITIONAL_MANUAL=0`) for fully instrumented environments.  
 4. Track and resolve any `BLOCKED` output before declaring deployment complete.  
@@ -2154,7 +2154,7 @@
 1. Keep manual per-command execution.  
 2. Fold all logic into one large script and remove standalone gates.  
 3. Keep standalone gates and add a thin orchestrator for deterministic sync.  
-**Decision:** Option 3. Added `scripts/deploy/sync_production_phase_artifacts.sh` and `make production-phase-sync` to run transition, signoff, deployment TODO generation, and post-deploy validation in sequence while preserving standalone command paths.  
+**Decision:** Option 3. Added `scripts/deploy/sync_production_phase_artifacts.sh` and `make production-phase-sync` to run transition, signoff, deployment checklist generation, and post-deploy validation in sequence while preserving standalone command paths.
 **Migration Plan:**  
 1. Use `make production-phase-sync` for routine production-phase checkpoints.  
 2. Continue running individual commands when debugging specific gate behavior.  
@@ -2259,12 +2259,12 @@
 **Date:** 2026-03-05  
 **Blueprint Section:** §9.2, §10.2, §14, §18  
 **Existing Code:** `/Users/galiettemita/Downloads/Executive AI Agent/backend/scripts/deploy/sync_production_phase_artifacts.sh`, `/Users/galiettemita/Downloads/Executive AI Agent/backend/scripts/deploy/generate_phase_closure_manifest.sh`, `/Users/galiettemita/Downloads/Executive AI Agent/backend/scripts/deploy/create_phase_handoff_bundle.sh`  
-**Conflict:** Canary requirements existed in runbooks/TODO text, but there was no dedicated machine gate artifact evaluating traffic/duration/SLO thresholds before promotion.  
+**Conflict:** Canary requirements existed in runbook checklists, but there was no dedicated machine gate artifact evaluating traffic/duration/SLO thresholds before promotion.
 **Options Considered:**  
 1. Keep canary evaluation manual-only in runbook.  
 2. Reuse post-deploy validation as implicit canary check.  
 3. Add separate canary gate with explicit inputs/thresholds and integrate it into phase-sync/manifest/handoff status aggregation.  
-**Decision:** Option 3. Added `scripts/deploy/check_production_canary_window.sh` and `make production-canary-check` (`production_canary_check.json`), wired canary gate execution into `.github/workflows/ci.yml` deploy-production stage and `.github/workflows/deploy-production.yml`, then integrated canary status into production-phase sync, phase closure manifest, handoff bundle, phase-status output, and production deployment TODO guidance.  
+**Decision:** Option 3. Added `scripts/deploy/check_production_canary_window.sh` and `make production-canary-check` (`production_canary_check.json`), wired canary gate execution into `.github/workflows/ci.yml` deploy-production stage and `.github/workflows/deploy-production.yml`, then integrated canary status into production-phase sync, phase closure manifest, handoff bundle, phase-status output, and production deployment checklist guidance.
 **Migration Plan:**  
 1. Run canary window at 10% for 15m.  
 2. Execute `make production-canary-check` with observed metrics.  

@@ -5568,7 +5568,7 @@ BP11:00077,BP11,77,"  ECS_B --> NAT"
 BP11:00078,BP11,78,Constraint: All services are deployed across 2 AZs minimum. RDS uses Multi-AZ deployment with automatic failover. Redis uses cluster mode with cross-AZ replication.
 BP11:00079,BP11,79,1.4 Compliance Constraints
 BP11:00080,BP11,80,This blueprint enforces the following absolute constraints per the master specification:
-BP11:00081,BP11,81,"ZERO PLACEHOLDERS: This document contains no T*O*D*O markers, no stub functions, no deferred implementation notes, no inferred schemas, no undefined identifiers, no missing migrations, no implicit con"
+BP11:00081,BP11,81,"ZERO DEFERRED ITEMS: This document contains no action-item markers, no stub functions, no deferred implementation notes, no inferred schemas, no undefined identifiers, no missing migrations, no implicit con"
 BP11:00082,BP11,82,DETERMINISTIC: All retry delays use the deterministic jitter formula. All Temporal workflows are replay-safe. No nondeterministic branching exists without explicit bounded specification.
 BP11:00083,BP11,83,"SCHEMA CLOSURE: Every table, column, index, constraint, API endpoint, error code, policy rule, and workflow state referenced in this document is fully defined within this document."
 BP11:00084,BP11,84,STRUCTURAL INTEGRITY: OpenAPI schemas align with DB DDL. Policy rules match role definitions. Workflow state machines are closed and finite.

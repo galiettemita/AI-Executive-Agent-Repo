@@ -8,8 +8,8 @@
     "start": "node dist/server.js",
     "dev": "node dist/server.js",
     "lint": "eslint src --ext .ts",
-    "test": "vitest run",
-    "test:watch": "vitest"
+    "test": "npx tsx --test src/__tests__/*.test.ts",
+    "test:watch": "npx tsx --test --watch src/__tests__/*.test.ts"
   },
   "dependencies": {
     "@brevio/shared": "workspace:*",

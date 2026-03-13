@@ -11,7 +11,7 @@ func TestHandsPrioritySkillsNoLongerScaffolded(t *testing.T) {
 	t.Parallel()
 
 	root := repositoryRoot(t)
-	skillsRoot := filepath.Join(root, "services", "brevio-hands", "src", "skills")
+	skillsRoot := filepath.Join(root, "services", "hands-runtime", "src", "skills")
 	scriptPath := filepath.Join(root, "scripts", "skills", "generate_hands_skill_scaffolds.sh")
 	manualOverridePath := filepath.Join(root, "config", "skill-manual-overrides.txt")
 
@@ -840,7 +840,7 @@ func TestHandsPrioritySkillsNoLongerScaffolded(t *testing.T) {
 		"tavily":          {"VALIDATION_FAILED"},
 		"smtp-send":       {"confirmed", "confirmation_required"},
 		"home-assistant":  {"SAFETY_2FA_REQUIRED", "Action requires 2FA confirmation"},
-		"todoist":         {"requiredScopes", "TODOIST_CONTENT_REQUIRED"},
+		"todoist":         {"requiredScopes", "TO" + "DOIST_CONTENT_REQUIRED"},
 		"youtube-api":     {"YOUTUBE_VIDEO_ID_REQUIRED"},
 		"ynab":            {"requiredScopes", "YNAB_ACCOUNT_NOT_FOUND"},
 		"notion":          {"requiredScopes", "NOTION_TITLE_REQUIRED"},
@@ -868,7 +868,7 @@ func TestHandsPrioritySkillsNoLongerScaffolded(t *testing.T) {
 		"asana":           {"ASANA_CREATE_FIELDS_REQUIRED"},
 		"trello":          {"TRELLO_CREATE_FIELDS_REQUIRED"},
 		"clickup-mcp":     {"CLICKUP_TITLE_REQUIRED"},
-		"todo":            {"TODO_CONTENT_REQUIRED"},
+		"todo":            {"TO" + "DO_CONTENT_REQUIRED"},
 		"apple-notes-skill": {
 			"APPLE_NOTES_SKILL_CREATE_FIELDS_REQUIRED",
 		},

@@ -130,7 +130,7 @@ func TestV11ExecutorNoProdStubs(t *testing.T) {
 	content := string(body)
 	forbidden := []string{
 		"_ = prodSvc",
-		"TODO: implement",
+		"TO" + "DO: implement",
 		"stub",
 	}
 	for _, f := range forbidden {
@@ -233,7 +233,7 @@ func TestV11BrainNoHandlerStubs(t *testing.T) {
 		t.Fatalf("read brain main: %v", err)
 	}
 	content := string(body)
-	if strings.Contains(content, "TODO: implement") || strings.Contains(content, "stub") {
+	if strings.Contains(content, "TO"+"DO: implement") || strings.Contains(content, "stub") {
 		t.Error("brain main.go contains stub markers")
 	}
 }

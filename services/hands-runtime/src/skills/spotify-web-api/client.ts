@@ -45,13 +45,13 @@ export async function runClient(input: SpotifyWebInput): Promise<SpotifyWebOutpu
     return {
       provider: 'spotify-web-api',
       action: 'history',
-      results: [TRACKS[1], TRACKS[0]]
+      results: [TRACKS[1] as SpotifyTrack, TRACKS[0] as SpotifyTrack]
     };
   }
 
   return {
     provider: 'spotify-web-api',
     action: 'top_tracks',
-    results: [TRACKS[1], TRACKS[2], TRACKS[0]]
+    results: [TRACKS[1] as SpotifyTrack, TRACKS[2] as SpotifyTrack, TRACKS[0] as SpotifyTrack]
   };
 }

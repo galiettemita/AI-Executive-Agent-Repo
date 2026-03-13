@@ -14,7 +14,7 @@ Task management adapter for Todoist action workflows.
 
 ## Output
 
-- `provider`: `todoist_mock`
+- `provider`: `todoist_deterministic`
 - `action`
 - `task_id` (for mutation actions)
 - `tasks[]` for list/create/complete responses

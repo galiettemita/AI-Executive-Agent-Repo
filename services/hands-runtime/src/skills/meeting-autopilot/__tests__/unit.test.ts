@@ -15,7 +15,7 @@ describe('meeting-autopilot adapter', () => {
       {
         action: 'extract_actions',
         transcript:
-          'We decided to finalize pricing by Friday. TODO: Send revised pricing grid. TODO: Book legal review.',
+          'We decided to finalize pricing by Friday. ACTION: Send revised pricing grid. ACTION: Book legal review.',
         participants: ['Ari', 'Jordan']
       },
       {} as never

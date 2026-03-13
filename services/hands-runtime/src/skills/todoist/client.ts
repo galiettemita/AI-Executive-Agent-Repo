@@ -33,7 +33,7 @@ export async function runClient(input: TodoistInput): Promise<TodoistOutput> {
   if (input.action === 'list') {
     const filtered = tasks.filter((task) => task.project_id === projectId || projectId === 'inbox');
     return {
-      provider: 'todoist_mock',
+      provider: 'todoist_deterministic',
       action: 'list',
       tasks: filtered
     };
@@ -47,7 +47,7 @@ export async function runClient(input: TodoistInput): Promise<TodoistOutput> {
 
     const taskId = buildTaskId(`${projectId}|${content}|${input.task?.due_string ?? ''}`);
     return {
-      provider: 'todoist_mock',
+      provider: 'todoist_deterministic',
       action: 'create',
       task_id: taskId,
       tasks: [
@@ -70,7 +70,7 @@ export async function runClient(input: TodoistInput): Promise<TodoistOutput> {
 
   if (input.action === 'complete') {
     return {
-      provider: 'todoist_mock',
+      provider: 'todoist_deterministic',
       action: 'complete',
       task_id: taskId,
       tasks: [
@@ -86,7 +86,7 @@ export async function runClient(input: TodoistInput): Promise<TodoistOutput> {
   }
 
   return {
-    provider: 'todoist_mock',
+    provider: 'todoist_deterministic',
     action: 'delete',
     task_id: taskId
   };

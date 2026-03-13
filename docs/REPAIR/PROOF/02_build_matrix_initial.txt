@@ -1,0 +1,186 @@
+=== BUILD MATRIX — INITIAL ===
+Date: 2026-03-13T16:22:37Z
+
+--- go test ./... ---
+?   	github.com/brevio/brevio/cmd/brain	[no test files]
+?   	github.com/brevio/brevio/cmd/brevioctl	[no test files]
+?   	github.com/brevio/brevio/cmd/canvas	[no test files]
+?   	github.com/brevio/brevio/cmd/control	[no test files]
+?   	github.com/brevio/brevio/cmd/executor	[no test files]
+?   	github.com/brevio/brevio/cmd/gateway	[no test files]
+?   	github.com/brevio/brevio/cmd/hands	[no test files]
+?   	github.com/brevio/brevio/cmd/temporal-worker	[no test files]
+ok  	github.com/brevio/brevio/internal/admin	0.273s
+ok  	github.com/brevio/brevio/internal/audit	0.727s
+ok  	github.com/brevio/brevio/internal/billing	0.434s
+ok  	github.com/brevio/brevio/internal/brain	1.001s
+ok  	github.com/brevio/brevio/internal/brain/disambiguation	1.211s
+ok  	github.com/brevio/brevio/internal/cache	3.573s
+ok  	github.com/brevio/brevio/internal/caching	(cached)
+ok  	github.com/brevio/brevio/internal/canvas	1.787s
+ok  	github.com/brevio/brevio/internal/capture	(cached)
+ok  	github.com/brevio/brevio/internal/channels	1.879s
+ok  	github.com/brevio/brevio/internal/codebase_intel	(cached)
+ok  	github.com/brevio/brevio/internal/cognition	2.110s
+ok  	github.com/brevio/brevio/internal/cognitive	2.190s
+ok  	github.com/brevio/brevio/internal/compliance	2.323s
+ok  	github.com/brevio/brevio/internal/config	(cached)
+ok  	github.com/brevio/brevio/internal/connectors	2.357s
+ok  	github.com/brevio/brevio/internal/context	2.549s
+--- FAIL: TestOpenClawHandsSkillRegistryContainsAllSeededSkills (0.00s)
+    openclaw_seed_migration_closure_test.go:105: read file /Users/galiettemita/Downloads/Executive AI Agent/backend/services/brevio-hands/src/skills/index.ts: open /Users/galiettemita/Downloads/Executive AI Agent/backend/services/brevio-hands/src/skills/index.ts: no such file or directory
+--- FAIL: TestOpenClawHandsSkillScaffoldsExistForAllSeededSkills (0.00s)
+    openclaw_seed_migration_closure_test.go:87: missing skill scaffold file for literature-review: /Users/galiettemita/Downloads/Executive AI Agent/backend/services/brevio-hands/src/skills/literature-review/index.ts (stat /Users/galiettemita/Downloads/Executive AI Agent/backend/services/brevio-hands/src/skills/literature-review/index.ts: no such file or directory)
+--- FAIL: TestTemporalWorkerServiceRuntimeClosure (0.00s)
+    temporal_worker_service_runtime_closure_test.go:17: read file /Users/galiettemita/Downloads/Executive AI Agent/backend/services/brevio-temporal-worker/src/index.ts: open /Users/galiettemita/Downloads/Executive AI Agent/backend/services/brevio-temporal-worker/src/index.ts: no such file or directory
+--- FAIL: TestV91StandaloneWrappersRemoved (0.00s)
+    temporal_production_hardening_test.go:126: v91_activities.go still contains standalone wrapper: 
+        func CollectTrustMetricsActivity(
+--- FAIL: TestShoppingTransportationSkillIntegrationFixturesClosure (0.00s)
+    shopping_transportation_skill_integration_closure_test.go:38: read shopping/transportation integration test for shopping-expert: open /Users/galiettemita/Downloads/Executive AI Agent/backend/services/brevio-hands/src/skills/shopping-expert/__tests__/integration.test.ts: no such file or directory
+--- FAIL: TestSearchResearchSkillIntegrationFixturesClosure (0.00s)
+    search_research_skill_integration_closure_test.go:33: read search/research integration test for brave-search: open /Users/galiettemita/Downloads/Executive AI Agent/backend/services/brevio-hands/src/skills/brave-search/__tests__/integration.test.ts: no such file or directory
+--- FAIL: TestSchedulerServiceRuntimeClosure (0.00s)
+    scheduler_service_runtime_closure_test.go:17: read file /Users/galiettemita/Downloads/Executive AI Agent/backend/services/brevio-scheduler/src/index.ts: open /Users/galiettemita/Downloads/Executive AI Agent/backend/services/brevio-scheduler/src/index.ts: no such file or directory
+--- FAIL: TestProductivitySkillIntegrationFixturesClosure (0.00s)
+    productivity_skill_integration_closure_test.go:34: read productivity integration test for asana: open /Users/galiettemita/Downloads/Executive AI Agent/backend/services/brevio-hands/src/skills/asana/__tests__/integration.test.ts: no such file or directory
+--- FAIL: TestProfileServiceRuntimeClosure (0.00s)
+    profile_service_runtime_closure_test.go:17: read file /Users/galiettemita/Downloads/Executive AI Agent/backend/services/brevio-profile/src/index.ts: open /Users/galiettemita/Downloads/Executive AI Agent/backend/services/brevio-profile/src/index.ts: no such file or directory
+--- FAIL: TestMetricsServiceRuntimeClosure (0.00s)
+    metrics_service_runtime_closure_test.go:17: read file /Users/galiettemita/Downloads/Executive AI Agent/backend/services/brevio-metrics/src/index.ts: open /Users/galiettemita/Downloads/Executive AI Agent/backend/services/brevio-metrics/src/index.ts: no such file or directory
+--- FAIL: TestMediaStreamingSkillIntegrationFixturesClosure (0.00s)
+    media_streaming_skill_integration_closure_test.go:37: read media integration test for spotify: open /Users/galiettemita/Downloads/Executive AI Agent/backend/services/brevio-hands/src/skills/spotify/__tests__/integration.test.ts: no such file or directory
+2026/03/13 12:22:42 {"ts":"2026-03-13T16:22:42.333153Z","service":"control","env":"dev","workspace_id":"default","user_id":"","ingress_turn_id":"","trace_id":"trace_unset","span_id":"span_unset","event":"BREVIO.control.error.response.v1","severity":"error","attrs":{"error_code":"RATE_LIMIT_EXCEEDED","http_status":429,"message":"feedback content is required","retry_after_ms":1000,"retryable":true}}
+2026/03/13 12:22:42 {"ts":"2026-03-13T16:22:42.335913Z","service":"control","env":"dev","workspace_id":"default","user_id":"","ingress_turn_id":"","trace_id":"trace_unset","span_id":"span_unset","event":"BREVIO.control.error.response.v1","severity":"error","attrs":{"error_code":"INVALID_REQUEST","http_status":400,"message":"template or error_message payload required","retry_after_ms":0,"retryable":false}}
+--- FAIL: TestHandsSkillIntegrationFixturesGlobalClosure (0.00s)
+    hands_skill_integration_global_closure_test.go:18: read skills root: open /Users/galiettemita/Downloads/Executive AI Agent/backend/services/brevio-hands/src/skills: no such file or directory
+--- FAIL: TestHandsServiceRuntimeClosure (0.00s)
+    hands_service_runtime_closure_test.go:17: read file /Users/galiettemita/Downloads/Executive AI Agent/backend/services/brevio-hands/src/index.ts: open /Users/galiettemita/Downloads/Executive AI Agent/backend/services/brevio-hands/src/index.ts: no such file or directory
+--- FAIL: TestHandsSkillScaffoldCompletionClosure (0.00s)
+    hands_scaffold_completion_closure_test.go:20: read skills directory: open /Users/galiettemita/Downloads/Executive AI Agent/backend/services/brevio-hands/src/skills: no such file or directory
+--- FAIL: TestGatewaySkillIntegrationFixturesClosure (0.00s)
+    gateway_skill_integration_closure_test.go:30: read gateway integration test for asr: open /Users/galiettemita/Downloads/Executive AI Agent/backend/services/brevio-hands/src/skills/asr/__tests__/integration.test.ts: no such file or directory
+--- FAIL: TestGatewayServiceRuntimeClosure (0.00s)
+    gateway_service_runtime_closure_test.go:18: read file /Users/galiettemita/Downloads/Executive AI Agent/backend/services/brevio-gateway/src/index.ts: open /Users/galiettemita/Downloads/Executive AI Agent/backend/services/brevio-gateway/src/index.ts: no such file or directory
+--- FAIL: TestHandsPrioritySkillsNoLongerScaffolded (0.00s)
+    hands_priority_skills_closure_test.go:1225: read file /Users/galiettemita/Downloads/Executive AI Agent/backend/services/brevio-hands/src/skills/bear-notes/index.ts: open /Users/galiettemita/Downloads/Executive AI Agent/backend/services/brevio-hands/src/skills/bear-notes/index.ts: no such file or directory
+--- FAIL: TestFinanceDocumentsSkillIntegrationFixturesClosure (0.00s)
+    finance_documents_skill_integration_closure_test.go:35: read finance/doc integration test for copilot-money: open /Users/galiettemita/Downloads/Executive AI Agent/backend/services/brevio-hands/src/skills/copilot-money/__tests__/integration.test.ts: no such file or directory
+2026/03/13 12:22:42 {"ts":"2026-03-13T16:22:42.337342Z","service":"control","env":"dev","workspace_id":"default","user_id":"","ingress_turn_id":"","trace_id":"trace_unset","span_id":"span_unset","event":"BREVIO.control.error.response.v1","severity":"error","attrs":{"error_code":"INVALID_REQUEST","http_status":400,"message":"key is required","retry_after_ms":0,"retryable":false}}
+--- FAIL: TestFinalSkillIntegrationFixturesClosure (0.00s)
+    final_skill_integration_closure_test.go:56: read final integration test for content-advisory: open /Users/galiettemita/Downloads/Executive AI Agent/backend/services/brevio-hands/src/skills/content-advisory/__tests__/integration.test.ts: no such file or directory
+--- FAIL: TestEdgeAgentRelayClosure (0.00s)
+    edge_agent_relay_closure_test.go:21: read file /Users/galiettemita/Downloads/Executive AI Agent/backend/services/brevio-edge-relay/src/index.ts: open /Users/galiettemita/Downloads/Executive AI Agent/backend/services/brevio-edge-relay/src/index.ts: no such file or directory
+--- FAIL: TestCustomBuildSkillScaffoldsExist (0.00s)
+    custom_build_skills_closure_test.go:43: missing custom-build skill scaffold file for restaurant-reservations: /Users/galiettemita/Downloads/Executive AI Agent/backend/services/brevio-hands/src/skills/restaurant-reservations/index.ts (stat /Users/galiettemita/Downloads/Executive AI Agent/backend/services/brevio-hands/src/skills/restaurant-reservations/index.ts: no such file or directory)
+--- FAIL: TestCommunicationSkillIntegrationFixturesClosure (0.00s)
+    communication_skill_integration_closure_test.go:33: read communication integration test for smtp-send: open /Users/galiettemita/Downloads/Executive AI Agent/backend/services/brevio-hands/src/skills/smtp-send/__tests__/integration.test.ts: no such file or directory
+--- FAIL: TestBrainSkillIntegrationFixturesClosure (0.00s)
+    brain_skill_integration_closure_test.go:38: read brain integration test for doing-tasks: open /Users/galiettemita/Downloads/Executive AI Agent/backend/services/brevio-hands/src/skills/doing-tasks/__tests__/integration.test.ts: no such file or directory
+--- FAIL: TestBrainServiceRuntimeClosure (0.00s)
+    brain_service_runtime_closure_test.go:20: read file /Users/galiettemita/Downloads/Executive AI Agent/backend/services/brevio-brain/src/index.ts: open /Users/galiettemita/Downloads/Executive AI Agent/backend/services/brevio-brain/src/index.ts: no such file or directory
+--- FAIL: TestBlueprintDocsTracked (0.00s)
+    blueprint_docs_test.go:21: blueprint docx file-set mismatch: missing=[Brevio_V91_Addendum_Soft_Intelligence_Layer.docx Brevio_V92_Addendum_Production_Hardening.docx] extra=[]
+--- FAIL: TestAuthServiceRuntimeClosure (0.00s)
+    auth_service_runtime_closure_test.go:16: read file /Users/galiettemita/Downloads/Executive AI Agent/backend/services/brevio-auth/src/server.ts: open /Users/galiettemita/Downloads/Executive AI Agent/backend/services/brevio-auth/src/server.ts: no such file or directory
+--- FAIL: TestAppleNotesLocalSkillIntegrationFixturesClosure (0.00s)
+    apple_notes_local_skill_integration_closure_test.go:39: read apple/notes/local integration test for alter-actions: open /Users/galiettemita/Downloads/Executive AI Agent/backend/services/brevio-hands/src/skills/alter-actions/__tests__/integration.test.ts: no such file or directory
+FAIL
+FAIL	github.com/brevio/brevio/internal/contracts	2.862s
+ok  	github.com/brevio/brevio/internal/control	2.599s
+ok  	github.com/brevio/brevio/internal/council	(cached)
+ok  	github.com/brevio/brevio/internal/crdt	2.286s
+ok  	github.com/brevio/brevio/internal/database	2.545s
+ok  	github.com/brevio/brevio/internal/delegation	2.586s
+ok  	github.com/brevio/brevio/internal/delivery	2.588s
+ok  	github.com/brevio/brevio/internal/determinism	2.489s
+ok  	github.com/brevio/brevio/internal/dlq	2.497s
+ok  	github.com/brevio/brevio/internal/edge	2.492s
+ok  	github.com/brevio/brevio/internal/eq	2.354s
+ok  	github.com/brevio/brevio/internal/errors	(cached)
+ok  	github.com/brevio/brevio/internal/event_schemas	(cached)
+ok  	github.com/brevio/brevio/internal/executor	2.193s
+ok  	github.com/brevio/brevio/internal/executor/connectors	(cached)
+ok  	github.com/brevio/brevio/internal/executor/connectors/mcp	(cached)
+ok  	github.com/brevio/brevio/internal/experiments	2.292s
+ok  	github.com/brevio/brevio/internal/exploration	(cached)
+ok  	github.com/brevio/brevio/internal/fastpath	2.388s
+ok  	github.com/brevio/brevio/internal/feature_flags	2.296s
+ok  	github.com/brevio/brevio/internal/federation	2.330s
+ok  	github.com/brevio/brevio/internal/gateway	2.297s
+ok  	github.com/brevio/brevio/internal/goals	(cached)
+ok  	github.com/brevio/brevio/internal/guardrails	(cached)
+ok  	github.com/brevio/brevio/internal/hands	2.134s
+ok  	github.com/brevio/brevio/internal/hands/call	2.359s
+ok  	github.com/brevio/brevio/internal/identity	2.405s
+ok  	github.com/brevio/brevio/internal/integration	2.170s
+ok  	github.com/brevio/brevio/internal/knowledge	2.377s
+ok  	github.com/brevio/brevio/internal/learning	2.591s
+ok  	github.com/brevio/brevio/internal/llm	5.356s
+ok  	github.com/brevio/brevio/internal/mcp	2.565s
+ok  	github.com/brevio/brevio/internal/memory	2.634s
+ok  	github.com/brevio/brevio/internal/model_tiers	(cached)
+ok  	github.com/brevio/brevio/internal/multimodal	2.532s
+ok  	github.com/brevio/brevio/internal/observability	2.631s
+ok  	github.com/brevio/brevio/internal/onboarding	2.620s
+ok  	github.com/brevio/brevio/internal/outbox	2.577s
+ok  	github.com/brevio/brevio/internal/prefetch	(cached)
+ok  	github.com/brevio/brevio/internal/provisioning	2.463s
+ok  	github.com/brevio/brevio/internal/rag	2.532s
+ok  	github.com/brevio/brevio/internal/rag/eval	(cached)
+ok  	github.com/brevio/brevio/internal/rbac	2.471s
+ok  	github.com/brevio/brevio/internal/runtime	2.224s
+ok  	github.com/brevio/brevio/internal/security	(cached)
+ok  	github.com/brevio/brevio/internal/security/encryption	(cached)
+ok  	github.com/brevio/brevio/internal/security/pii	(cached)
+ok  	github.com/brevio/brevio/internal/security/sandbox	(cached)
+ok  	github.com/brevio/brevio/internal/self_modification	(cached)
+ok  	github.com/brevio/brevio/internal/sessions	(cached)
+ok  	github.com/brevio/brevio/internal/streaming	(cached)
+ok  	github.com/brevio/brevio/internal/structured_generation	1.802s
+ok  	github.com/brevio/brevio/internal/temporal	1.889s
+ok  	github.com/brevio/brevio/internal/temporal_reasoning	(cached)
+ok  	github.com/brevio/brevio/internal/tool_health	(cached)
+ok  	github.com/brevio/brevio/internal/trust	2.072s
+ok  	github.com/brevio/brevio/internal/voice/worker	2.178s
+ok  	github.com/brevio/brevio/internal/wallet	2.321s
+ok  	github.com/brevio/brevio/internal/workflows	2.564s
+?   	github.com/brevio/brevio/scripts/blueprints	[no test files]
+?   	github.com/brevio/brevio/scripts/docs	[no test files]
+?   	github.com/brevio/brevio/scripts/mcp/fleet_validation	[no test files]
+?   	github.com/brevio/brevio/scripts/mcp/runtime_rollout	[no test files]
+?   	github.com/brevio/brevio/scripts/mcp/wave1_checklist	[no test files]
+?   	github.com/brevio/brevio/scripts/mcp/wave56_checklist	[no test files]
+?   	github.com/brevio/brevio/scripts/tools	[no test files]
+?   	github.com/brevio/brevio/scripts/tools/remote_catalog_keys	[no test files]
+ok  	github.com/brevio/brevio/tests/algorithm_fidelity	2.788s
+ok  	github.com/brevio/brevio/tests/contract	2.400s
+ok  	github.com/brevio/brevio/tests/integration	2.512s
+FAIL
+
+--- go vet ./... ---
+
+--- pnpm -r test ---
+Scope: 4 of 5 workspace projects
+packages/shared test$ echo "no tests yet"
+packages/shared test: no tests yet
+packages/shared test: Done
+services/hands-runtime test$ vitest run
+services/hands-runtime test: sh: vitest: command not found
+/Users/galiettemita/Downloads/Executive AI Agent/backend/services/hands-runtime:
+ ERR_PNPM_RECURSIVE_RUN_FIRST_FAIL  @brevio/hands-runtime@1.0.0 test: `vitest run`
+spawn ENOENT
+ WARN   Local package.json exists, but node_modules missing, did you mean to install?
+
+--- pnpm -r build ---
+Scope: 4 of 5 workspace projects
+edge/brevio-edge-agent build$ tsc -p tsconfig.json
+packages/proto build$ bash ./scripts/generate.sh
+packages/shared build$ tsc -p tsconfig.json
+edge/brevio-edge-agent build: sh: tsc: command not found
+/Users/galiettemita/Downloads/Executive AI Agent/backend/edge/brevio-edge-agent:
+ ERR_PNPM_RECURSIVE_RUN_FIRST_FAIL  @brevio/edge-agent@0.1.0 build: `tsc -p tsconfig.json`
+spawn ENOENT
+ WARN   Local package.json exists, but node_modules missing, did you mean to install?
+packages/shared build: sh: tsc: command not found
+ WARN   Local package.json exists, but node_modules missing, did you mean to install?

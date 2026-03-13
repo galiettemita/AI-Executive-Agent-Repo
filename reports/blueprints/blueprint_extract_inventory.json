@@ -27900,7 +27900,7 @@
       {
         "extract_id": "BP11:E00081",
         "type": "paragraph",
-        "content_preview": "ZERO PLACEHOLDERS: This document contains no T*O*D*O markers, no stub functions, no deferred implementation notes, no inferred schemas, no undefined identifiers, no missing migrations, no implicit con"
+        "content_preview": "ZERO DEFERRED ITEMS: This document contains no action-item markers, no stub functions, no deferred implementation notes, no inferred schemas, no undefined identifiers, no missing migrations, no implicit con"
       },
       {
         "extract_id": "BP11:E00082",

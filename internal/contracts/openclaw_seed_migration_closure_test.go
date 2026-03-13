@@ -66,7 +66,7 @@ func TestOpenClawHandsSkillScaffoldsExistForAllSeededSkills(t *testing.T) {
 	body := readFileString(t, sqlPath)
 	seedIDs := extractSeedIDs(t, body)
 
-	skillsRoot := filepath.Join(root, "services", "brevio-hands", "src", "skills")
+	skillsRoot := filepath.Join(root, "services", "hands-runtime", "src", "skills")
 	requiredFiles := []string{
 		"index.ts",
 		"schema.ts",
@@ -101,7 +101,7 @@ func TestOpenClawHandsSkillRegistryContainsAllSeededSkills(t *testing.T) {
 	body := readFileString(t, sqlPath)
 	seedIDs := extractSeedIDs(t, body)
 
-	registryPath := filepath.Join(root, "services", "brevio-hands", "src", "skills", "index.ts")
+	registryPath := filepath.Join(root, "services", "hands-runtime", "src", "skills", "index.ts")
 	registryBody := readFileString(t, registryPath)
 	for skillID := range seedIDs {
 		token := "'" + skillID + "':"

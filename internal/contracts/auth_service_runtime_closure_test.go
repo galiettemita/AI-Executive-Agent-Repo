@@ -9,9 +9,9 @@ func TestAuthServiceRuntimeClosure(t *testing.T) {
 	t.Parallel()
 
 	root := repositoryRoot(t)
-	serverPath := filepath.Join(root, "services", "brevio-auth", "src", "server.ts")
-	indexPath := filepath.Join(root, "services", "brevio-auth", "src", "index.ts")
-	readmePath := filepath.Join(root, "services", "brevio-auth", "README.md")
+	serverPath := filepath.Join(root, "deprecated", "brevio-auth", "src", "server.ts")
+	indexPath := filepath.Join(root, "deprecated", "brevio-auth", "src", "index.ts")
+	readmePath := filepath.Join(root, "deprecated", "brevio-auth", "README.md")
 
 	assertFileContainsTokens(t, serverPath, []string{
 		"/health",

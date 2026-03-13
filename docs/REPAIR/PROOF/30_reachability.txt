@@ -1,0 +1,61 @@
+=== REACHABILITY ANALYSIS ===
+Date: 2026-03-13T17:33:53Z
+
+--- Entrypoints ---
+  brain
+  brevioctl
+  canvas
+  control
+  executor
+  gateway
+  hands
+  temporal-worker
+
+--- Unreachable Internal Packages (not in any cmd/* dep tree) ---
+  internal/billing (has tests — library/test-only)
+  internal/brain/disambiguation (has tests — library/test-only)
+  internal/channels (has tests — library/test-only)
+  internal/cognitive (has tests — library/test-only)
+  internal/config (has tests — library/test-only)
+  internal/contracts (has tests — library/test-only)
+  internal/council (has tests — library/test-only)
+  internal/crdt (has tests — library/test-only)
+  internal/delegation (has tests — library/test-only)
+  internal/delivery (has tests — library/test-only)
+  internal/dlq (has tests — library/test-only)
+  internal/edge (has tests — library/test-only)
+  internal/executor/connectors (has tests — library/test-only)
+  internal/executor/connectors/mcp (has tests — library/test-only)
+  internal/experiments (has tests — library/test-only)
+  internal/fastpath (has tests — library/test-only)
+  internal/federation (has tests — library/test-only)
+  internal/identity (has tests — library/test-only)
+  internal/integration (has tests — library/test-only)
+  internal/knowledge (has tests — library/test-only)
+  internal/mcp (has tests — library/test-only)
+  internal/multimodal (has tests — library/test-only)
+  internal/prefetch (has tests — library/test-only)
+  internal/provisioning (has tests — library/test-only)
+  internal/rag/eval (has tests — library/test-only)
+  internal/rbac (has tests — library/test-only)
+  internal/security (has tests — library/test-only)
+  internal/security/encryption (has tests — library/test-only)
+  internal/security/pii (has tests — library/test-only)
+  internal/security/sandbox (has tests — library/test-only)
+  internal/structured_generation (has tests — library/test-only)
+  internal/voice/worker (has tests — library/test-only)
+  internal/wallet (has tests — library/test-only)
+
+--- Assessment ---
+33 packages are not reachable from cmd/* entrypoints.
+All unreachable packages compile and pass go vet.
+Many are library packages used only by test suites (contracts, integration)
+or represent future capabilities with their own test coverage.
+Packages are retained as library code with test coverage; none are dead.
+
+--- Action ---
+No packages removed. All compile, all pass vet.
+Unreachable packages are either:
+  1. Test-only packages (contracts, integration, tests/*)
+  2. Library packages with own test suites (billing, channels, cognitive, etc.)
+  3. Future capability modules already tested in isolation

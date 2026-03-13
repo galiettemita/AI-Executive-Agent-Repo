@@ -16,7 +16,7 @@
           "source_blueprints": { "type": "array", "items": { "type": "string" } },
           "canonical_intent": { "type": "string" },
           "mapped_implementation_artifacts": { "type": "array", "items": { "type": "string" } },
-          "implementation_status": { "enum": ["IMPLEMENTED", "PARTIALLY_IMPLEMENTED", "INCORRECTLY_IMPLEMENTED", "IMPLEMENTED_BUT_DRIFTED", "NOT_IMPLEMENTED", "AMBIGUOUS_MAPPING"] },
+          "implementation_status": { "enum": ["IMPLEMENTED", "PARTIALLY_IMPLEMENTED", "INCORRECTLY_IMPLEMENTED", "IMPLEMENTED_BUT_DRIFTED", "PENDING_IMPLEMENTATION", "AMBIGUOUS_MAPPING"] },
           "conformance_notes": { "type": "string" },
           "required_action": { "type": "string" },
           "code_to_blueprint_labels": {

@@ -1,0 +1,37 @@
+=== REPAIR MANIFEST SUMMARY ===
+Date: 2026-03-13T16:22:37Z
+Baseline Commit: b19198f447011a77df2801f6391e45d8ea2282e5
+Branch: repair/production-closure-2026-03-12
+
+--- ISSUE INDEX (10 issues, all OPEN) ---
+
+1. MARKER-BAN-001         [determinism]    Banned marker tokens across 25+ files (docs, scripts, Go, TS)
+2. CONSOLE-LOG-001        [observability]  console.log in services/hands-runtime production sources
+3. CONTRACT-TEST-PATH-001 [tests]          25+ closure tests reference deprecated services/brevio-* paths
+4. CONTRACT-TEST-SKILLS-001 [tests]        13+ skill integration tests use wrong base path (brevio-hands vs hands-runtime)
+5. V91-STANDALONE-WRAPPERS-001 [architecture] Standalone activity wrappers violate Temporal determinism
+6. BLUEPRINT-DOCS-001     [architecture]   Blueprint doc test expects files at wrong locations
+7. PNPM-DEPS-001          [deployability]  Node.js workspaces missing node_modules (vitest/tsc unavailable)
+8. ENV-FAIL-CLOSED-001    [security]       Config loading paths may silently default security-critical values
+9. DEPRECATED-CLEANUP-001 [dead_code]      8 deprecated TS services need verification as fully unreachable
+10. TEMPORAL-DETERMINISM-001 [determinism]  Workflow determinism audit required
+
+--- GATE SCRIPT RESULTS ---
+
+scan_markers.sh:     FAILED (8 banned token types found across multiple files)
+scan_console_log.sh: FAILED (11 console.log instances in services/hands-runtime)
+go test ./...:       FAILED (internal/contracts — 25+ test failures due to path mismatches)
+go vet ./...:        PASSED
+pnpm -r test:        FAILED (vitest not found — node_modules missing)
+pnpm -r build:       FAILED (tsc not found — node_modules missing)
+
+--- EXECUTION ORDER FOR SUBSEQUENT PROMPTS ---
+
+Priority 1 (Prompt 2): MARKER-BAN-001, CONSOLE-LOG-001, ENV-FAIL-CLOSED-001, V91-STANDALONE-WRAPPERS-001
+  Rationale: Eliminate all banned tokens, enforce fail-closed security, fix determinism violations
+
+Priority 2 (Prompt 3): CONTRACT-TEST-PATH-001, CONTRACT-TEST-SKILLS-001, BLUEPRINT-DOCS-001, PNPM-DEPS-001
+  Rationale: Fix test infrastructure, restore observability, add missing tests
+
+Priority 3 (Prompt 4): DEPRECATED-CLEANUP-001, TEMPORAL-DETERMINISM-001, architecture closure, deployability proof
+  Rationale: Remove dead code, verify determinism, produce final proof bundle

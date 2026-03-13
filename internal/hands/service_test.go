@@ -191,6 +191,98 @@ func TestExecute_MCPError_Retryable(t *testing.T) {
 	}
 }
 
+func TestExecute_PayloadTooLarge(t *testing.T) {
+	t.Parallel()
+	svc, _ := newTestHandsService(t)
+
+	skills := svc.ListSkills()
+	if len(skills) == 0 {
+		t.Skip("no skills")
+	}
+
+	// Build args larger than 512KB.
+	bigValue := strings.Repeat("x", 600*1024)
+	result := svc.Execute(context.Background(), ExecuteRequest{
+		SkillID:     skills[0].ID,
+		WorkspaceID: "ws-test",
+		ReceiptID:   "receipt-001",
+		Mode:        "commit",
+		Args:        map[string]interface{}{"data": bigValue},
+	})
+
+	if result.Status != "FAILED" {
+		t.Fatalf("expected FAILED, got %s", result.Status)
+	}
+	if result.Error == nil || result.Error.Code != "PAYLOAD_TOO_LARGE" {
+		t.Errorf("expected PAYLOAD_TOO_LARGE error, got %+v", result.Error)
+	}
+}
+
+func TestExecute_TimeoutErrorCode(t *testing.T) {
+	t.Parallel()
+	svc, fakeMCP := newTestHandsService(t)
+
+	skills := svc.ListSkills()
+	if len(skills) == 0 {
+		t.Skip("no skills")
+	}
+
+	// Simulate a timeout error from the MCP client.
+	fakeMCP.SetError(errors.New("context deadline exceeded (timeout)"))
+
+	// Use an already-cancelled context to trigger deadline exceeded.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	result := svc.Execute(ctx, ExecuteRequest{
+		SkillID:     skills[0].ID,
+		WorkspaceID: "ws-test",
+		ReceiptID:   "receipt-001",
+		Mode:        "commit",
+		Args:        map[string]interface{}{"query": "test"},
+	})
+
+	if result.Status != "FAILED" {
+		t.Fatalf("expected FAILED, got %s", result.Status)
+	}
+	if result.Error == nil {
+		t.Fatal("expected error")
+	}
+	// The error should be retryable (contains "timeout").
+	if !result.Error.Retryable {
+		t.Error("expected timeout error to be retryable")
+	}
+}
+
+func TestExecute_MCPError_NonRetryable(t *testing.T) {
+	t.Parallel()
+	svc, fakeMCP := newTestHandsService(t)
+
+	skills := svc.ListSkills()
+	if len(skills) == 0 {
+		t.Skip("no skills")
+	}
+
+	fakeMCP.SetError(errors.New("invalid tool configuration"))
+
+	result := svc.Execute(context.Background(), ExecuteRequest{
+		SkillID:     skills[0].ID,
+		WorkspaceID: "ws-test",
+		ReceiptID:   "receipt-001",
+		Mode:        "commit",
+	})
+
+	if result.Status != "FAILED" {
+		t.Fatalf("expected FAILED, got %s", result.Status)
+	}
+	if result.Error == nil || result.Error.Code != "MCP_EXECUTION_FAILED" {
+		t.Errorf("expected MCP_EXECUTION_FAILED, got %+v", result.Error)
+	}
+	if result.Error.Retryable {
+		t.Error("expected non-retryable error")
+	}
+}
+
 // ---------------------------------------------------------------------------
 // ExecutorAdapter
 // ---------------------------------------------------------------------------

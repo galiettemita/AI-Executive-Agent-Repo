@@ -28,7 +28,10 @@ func LoadServiceEnvConfig(getenv func(string) string, options ServiceEnvOptions)
 		return ServiceEnvConfig{}, fmt.Errorf("service name is required")
 	}
 
-	env := normalizeEnv(getenv("BREVIO_ENV"))
+	env, err := resolveEnv(getenv)
+	if err != nil {
+		return ServiceEnvConfig{}, fmt.Errorf("environment resolution failed for %s: %w", serviceName, err)
+	}
 	listenEnvKey := strings.TrimSpace(options.ListenAddrEnvKey)
 	if listenEnvKey == "" {
 		listenEnvKey = strings.ToUpper(strings.ReplaceAll(serviceName, "-", "_")) + "_LISTEN_ADDR"
@@ -69,7 +72,7 @@ func ResolveSecretWithLocalDefault(getenv func(string) string, key, env, localDe
 	if secret != "" {
 		return secret, nil
 	}
-	if isLocalLikeEnv(env) {
+	if isLocalLikeEnv(env) && strings.TrimSpace(getenv("ALLOW_DEFAULT_BREVIO_ENV")) == "1" {
 		return localDefault, nil
 	}
 	return "", fmt.Errorf("%s is required when BREVIO_ENV=%s", key, env)
@@ -80,6 +83,17 @@ func EnvStatus(key string) string {
 		return "not_configured"
 	}
 	return "configured"
+}
+
+func resolveEnv(getenv func(string) string) (string, error) {
+	raw := strings.ToLower(strings.TrimSpace(getenv("BREVIO_ENV")))
+	if raw != "" {
+		return raw, nil
+	}
+	if strings.TrimSpace(getenv("ALLOW_DEFAULT_BREVIO_ENV")) == "1" {
+		return "local", nil
+	}
+	return "", fmt.Errorf("BREVIO_ENV is required; set ALLOW_DEFAULT_BREVIO_ENV=1 to default to local for development")
 }
 
 func normalizeEnv(raw string) string {

@@ -1,0 +1,64 @@
+=== ENV FAIL-CLOSED PROOF ===
+Date: 2026-03-13T16:36:20Z
+
+--- Changes Made ---
+1. internal/runtime/env_config.go: Added resolveEnv() that fails when BREVIO_ENV unset unless ALLOW_DEFAULT_BREVIO_ENV=1
+2. internal/runtime/env_config.go: ResolveSecretWithLocalDefault now requires ALLOW_DEFAULT_BREVIO_ENV=1 for local defaults
+3. internal/gateway/env_config.go: Same resolveEnv() fail-closed pattern applied
+4. Tests rewritten to cover all fail-closed scenarios
+
+--- Test Results: internal/runtime ---
+=== RUN   TestLoadServiceEnvConfigUnsetEnvWithoutOverrideErrors
+=== PAUSE TestLoadServiceEnvConfigUnsetEnvWithoutOverrideErrors
+=== RUN   TestLoadServiceEnvConfigUnsetEnvWithOverrideDefaultsToLocal
+=== PAUSE TestLoadServiceEnvConfigUnsetEnvWithOverrideDefaultsToLocal
+=== RUN   TestLoadServiceEnvConfigExplicitProdNotLocal
+=== PAUSE TestLoadServiceEnvConfigExplicitProdNotLocal
+=== RUN   TestLoadServiceEnvConfigExplicitStagingNotLocal
+=== PAUSE TestLoadServiceEnvConfigExplicitStagingNotLocal
+=== RUN   TestResolveSecretWithLocalDefaultRequiresOverride
+=== PAUSE TestResolveSecretWithLocalDefaultRequiresOverride
+=== RUN   TestResolveSecretWithLocalDefaultWithOverride
+=== PAUSE TestResolveSecretWithLocalDefaultWithOverride
+=== RUN   TestResolveSecretProductionRequiresSecret
+=== PAUSE TestResolveSecretProductionRequiresSecret
+=== RUN   TestResolveSecretExplicitValueAlwaysUsed
+=== PAUSE TestResolveSecretExplicitValueAlwaysUsed
+=== CONT  TestLoadServiceEnvConfigUnsetEnvWithoutOverrideErrors
+=== CONT  TestResolveSecretWithLocalDefaultRequiresOverride
+--- PASS: TestLoadServiceEnvConfigUnsetEnvWithoutOverrideErrors (0.00s)
+=== CONT  TestLoadServiceEnvConfigExplicitStagingNotLocal
+--- PASS: TestLoadServiceEnvConfigExplicitStagingNotLocal (0.00s)
+=== CONT  TestLoadServiceEnvConfigExplicitProdNotLocal
+--- PASS: TestLoadServiceEnvConfigExplicitProdNotLocal (0.00s)
+=== CONT  TestLoadServiceEnvConfigUnsetEnvWithOverrideDefaultsToLocal
+--- PASS: TestLoadServiceEnvConfigUnsetEnvWithOverrideDefaultsToLocal (0.00s)
+--- PASS: TestResolveSecretWithLocalDefaultRequiresOverride (0.00s)
+=== CONT  TestResolveSecretExplicitValueAlwaysUsed
+--- PASS: TestResolveSecretExplicitValueAlwaysUsed (0.00s)
+=== CONT  TestResolveSecretWithLocalDefaultWithOverride
+--- PASS: TestResolveSecretWithLocalDefaultWithOverride (0.00s)
+=== CONT  TestResolveSecretProductionRequiresSecret
+--- PASS: TestResolveSecretProductionRequiresSecret (0.00s)
+PASS
+ok  	github.com/brevio/brevio/internal/runtime	(cached)
+
+--- Test Results: internal/gateway ---
+=== RUN   TestLoadEnvConfigUnsetEnvWithoutOverrideErrors
+=== PAUSE TestLoadEnvConfigUnsetEnvWithoutOverrideErrors
+=== RUN   TestLoadEnvConfigUnsetEnvWithOverrideDefaultsToLocal
+=== PAUSE TestLoadEnvConfigUnsetEnvWithOverrideDefaultsToLocal
+=== RUN   TestLoadEnvConfigProductionRequiresSecrets
+=== PAUSE TestLoadEnvConfigProductionRequiresSecrets
+=== RUN   TestLoadEnvConfigProductionWithSecrets
+=== PAUSE TestLoadEnvConfigProductionWithSecrets
+=== CONT  TestLoadEnvConfigUnsetEnvWithoutOverrideErrors
+--- PASS: TestLoadEnvConfigUnsetEnvWithoutOverrideErrors (0.00s)
+=== CONT  TestLoadEnvConfigUnsetEnvWithOverrideDefaultsToLocal
+--- PASS: TestLoadEnvConfigUnsetEnvWithOverrideDefaultsToLocal (0.00s)
+=== CONT  TestLoadEnvConfigProductionRequiresSecrets
+=== CONT  TestLoadEnvConfigProductionWithSecrets
+--- PASS: TestLoadEnvConfigProductionRequiresSecrets (0.00s)
+--- PASS: TestLoadEnvConfigProductionWithSecrets (0.00s)
+PASS
+ok  	github.com/brevio/brevio/internal/gateway	(cached)

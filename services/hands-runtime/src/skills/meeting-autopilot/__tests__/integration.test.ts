@@ -25,7 +25,7 @@ describe('meeting-autopilot integration', () => {
         action: 'draft_follow_up',
         meeting_title: 'Weekly Staff',
         transcript:
-          'We decided to launch the pilot next week. TODO: Send launch checklist to all teams. Next we reviewed dependencies.',
+          'We decided to launch the pilot next week. ACTION: Send launch checklist to all teams. Next we reviewed dependencies.',
         participants: ['Avery', 'Jordan']
       },
       {} as never

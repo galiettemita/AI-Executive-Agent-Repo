@@ -1,7 +1,9 @@
 import type { PlanMyDayInput, PlanMyDayOutput, PlanMyDayTask, PlanMyDayTimeBlock } from './types.js';
 
 function toMinutes(value: string): number {
-  const [hours, minutes] = value.split(':').map((part) => Number(part));
+  const parts = value.split(':').map((part) => Number(part));
+  const hours = parts[0] ?? 0;
+  const minutes = parts[1] ?? 0;
   return hours * 60 + minutes;
 }
 
@@ -48,7 +50,7 @@ function allocateBlocks(input: PlanMyDayInput): { time_blocks: PlanMyDayTimeBloc
     const windowEnd = toMinutes(window.end_local);
 
     while (taskIndex < tasks.length) {
-      const task = tasks[taskIndex];
+      const task = tasks[taskIndex] as PlanMyDayTask;
       if (cursor + task.duration_minutes > windowEnd) {
         break;
       }
@@ -87,7 +89,7 @@ function allocateBlocks(input: PlanMyDayInput): { time_blocks: PlanMyDayTimeBloc
   }
 
   for (; taskIndex < tasks.length; taskIndex += 1) {
-    overflow.push(tasks[taskIndex].title);
+    overflow.push((tasks[taskIndex] as PlanMyDayTask).title);
   }
 
   return { time_blocks: blocks.slice(0, 30), overflow_tasks: overflow.slice(0, 20) };

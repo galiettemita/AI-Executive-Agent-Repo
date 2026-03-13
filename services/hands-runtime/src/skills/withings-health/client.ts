@@ -63,12 +63,10 @@ function buildMeasurements(type: WithingsMeasureType): WithingsMeasurement[] {
 export async function runClient(input: WithingsHealthInput): Promise<WithingsHealthOutput> {
   const measure_type = input.measure_type ?? 'weight';
   const measurements = buildMeasurements(measure_type);
+  const first = (measurements[0] as WithingsMeasurement).value;
+  const last = (measurements[2] as WithingsMeasurement).value;
   const trend: WithingsHealthOutput['trend'] =
-    measurements[2].value > measurements[0].value
-      ? 'up'
-      : measurements[2].value < measurements[0].value
-        ? 'down'
-        : 'stable';
+    last > first ? 'up' : last < first ? 'down' : 'stable';
 
   return {
     provider: 'withings-health',

@@ -6,7 +6,9 @@ import type {
 } from './types.js';
 
 function toMinutes(clock: string): number {
-  const [hours, minutes] = clock.split(':').map((value) => Number(value));
+  const parts = clock.split(':').map((value) => Number(value));
+  const hours = parts[0] ?? 0;
+  const minutes = parts[1] ?? 0;
   return hours * 60 + minutes;
 }
 

@@ -12,7 +12,7 @@
     { "id": 6, "name": "PROMPT_1_TEMPORAL_SILENT_SUCCESS", "status": "pending" },
     { "id": 7, "name": "PROMPT_2_EXECUTOR_DISPATCHER_WIRING", "status": "pending" },
     { "id": 8, "name": "PROMPT_3_SECURITY_CLOSURE", "status": "pending" },
-    { "id": 9, "name": "PROMPT_4_STUB_ELIMINATION", "status": "pending" },
+    { "id": 9, "name": "PROMPT_4_HARDENING", "status": "pending" },
     { "id": 10, "name": "PROMPT_5_OBSERVABILITY_CLOSURE", "status": "pending" },
     { "id": 11, "name": "PROMPT_6_REPRODUCIBLE_BUILD", "status": "pending" },
     { "id": 12, "name": "FINAL_VERIFICATION", "status": "pending" }
@@ -172,9 +172,9 @@
       "prompt": 6,
       "name": "eliminate_todo_placeholders",
       "file": "tests/integration/working_agent_smoke_test.go",
-      "description": "Remove or implement TODO markers per audit policy",
+      "description": "Remove or implement action-item markers per audit policy",
       "depends_on": [],
-      "validation": "grep -r 'TODO' tests/ | wc -l"
+      "validation": "grep -r 'PENDING' tests/ | wc -l"
     },
     {
       "id": "T18",

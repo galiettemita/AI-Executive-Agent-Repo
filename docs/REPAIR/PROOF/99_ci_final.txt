@@ -1,0 +1,209 @@
+=== GATE: scan_markers ===
+GATE PASSED: No banned marker tokens found.
+
+=== GATE: scan_console_log ===
+GATE PASSED: No console.log in production sources.
+
+=== GATE: go_test ===
+?   	github.com/brevio/brevio/cmd/brain	[no test files]
+?   	github.com/brevio/brevio/cmd/brevioctl	[no test files]
+?   	github.com/brevio/brevio/cmd/canvas	[no test files]
+?   	github.com/brevio/brevio/cmd/control	[no test files]
+?   	github.com/brevio/brevio/cmd/executor	[no test files]
+?   	github.com/brevio/brevio/cmd/gateway	[no test files]
+?   	github.com/brevio/brevio/cmd/hands	[no test files]
+?   	github.com/brevio/brevio/cmd/temporal-worker	[no test files]
+ok  	github.com/brevio/brevio/internal/admin	(cached)
+ok  	github.com/brevio/brevio/internal/audit	(cached)
+ok  	github.com/brevio/brevio/internal/billing	(cached)
+ok  	github.com/brevio/brevio/internal/brain	(cached)
+ok  	github.com/brevio/brevio/internal/brain/disambiguation	(cached)
+ok  	github.com/brevio/brevio/internal/cache	(cached)
+ok  	github.com/brevio/brevio/internal/caching	(cached)
+ok  	github.com/brevio/brevio/internal/canvas	(cached)
+ok  	github.com/brevio/brevio/internal/capture	(cached)
+ok  	github.com/brevio/brevio/internal/channels	(cached)
+ok  	github.com/brevio/brevio/internal/codebase_intel	(cached)
+ok  	github.com/brevio/brevio/internal/cognition	(cached)
+ok  	github.com/brevio/brevio/internal/cognitive	(cached)
+ok  	github.com/brevio/brevio/internal/compliance	(cached)
+ok  	github.com/brevio/brevio/internal/config	(cached)
+ok  	github.com/brevio/brevio/internal/connectors	(cached)
+ok  	github.com/brevio/brevio/internal/context	(cached)
+ok  	github.com/brevio/brevio/internal/contracts	0.720s
+ok  	github.com/brevio/brevio/internal/control	(cached)
+ok  	github.com/brevio/brevio/internal/council	(cached)
+ok  	github.com/brevio/brevio/internal/crdt	(cached)
+ok  	github.com/brevio/brevio/internal/database	(cached)
+ok  	github.com/brevio/brevio/internal/delegation	(cached)
+ok  	github.com/brevio/brevio/internal/delivery	(cached)
+ok  	github.com/brevio/brevio/internal/determinism	(cached)
+ok  	github.com/brevio/brevio/internal/dlq	(cached)
+ok  	github.com/brevio/brevio/internal/edge	(cached)
+ok  	github.com/brevio/brevio/internal/eq	(cached)
+ok  	github.com/brevio/brevio/internal/errors	(cached)
+ok  	github.com/brevio/brevio/internal/event_schemas	(cached)
+ok  	github.com/brevio/brevio/internal/executor	(cached)
+ok  	github.com/brevio/brevio/internal/executor/connectors	(cached)
+ok  	github.com/brevio/brevio/internal/executor/connectors/mcp	(cached)
+ok  	github.com/brevio/brevio/internal/experiments	(cached)
+ok  	github.com/brevio/brevio/internal/exploration	(cached)
+ok  	github.com/brevio/brevio/internal/fastpath	(cached)
+ok  	github.com/brevio/brevio/internal/feature_flags	(cached)
+ok  	github.com/brevio/brevio/internal/federation	(cached)
+ok  	github.com/brevio/brevio/internal/gateway	(cached)
+ok  	github.com/brevio/brevio/internal/goals	(cached)
+ok  	github.com/brevio/brevio/internal/guardrails	(cached)
+ok  	github.com/brevio/brevio/internal/hands	(cached)
+ok  	github.com/brevio/brevio/internal/hands/call	(cached)
+ok  	github.com/brevio/brevio/internal/identity	(cached)
+ok  	github.com/brevio/brevio/internal/integration	(cached)
+ok  	github.com/brevio/brevio/internal/knowledge	(cached)
+ok  	github.com/brevio/brevio/internal/learning	(cached)
+ok  	github.com/brevio/brevio/internal/llm	(cached)
+ok  	github.com/brevio/brevio/internal/mcp	(cached)
+ok  	github.com/brevio/brevio/internal/memory	(cached)
+ok  	github.com/brevio/brevio/internal/model_tiers	(cached)
+ok  	github.com/brevio/brevio/internal/multimodal	(cached)
+ok  	github.com/brevio/brevio/internal/observability	(cached)
+ok  	github.com/brevio/brevio/internal/onboarding	(cached)
+ok  	github.com/brevio/brevio/internal/outbox	(cached)
+ok  	github.com/brevio/brevio/internal/prefetch	(cached)
+ok  	github.com/brevio/brevio/internal/provisioning	(cached)
+ok  	github.com/brevio/brevio/internal/rag	(cached)
+ok  	github.com/brevio/brevio/internal/rag/eval	(cached)
+ok  	github.com/brevio/brevio/internal/rbac	(cached)
+ok  	github.com/brevio/brevio/internal/runtime	(cached)
+ok  	github.com/brevio/brevio/internal/security	(cached)
+ok  	github.com/brevio/brevio/internal/security/encryption	(cached)
+ok  	github.com/brevio/brevio/internal/security/pii	(cached)
+ok  	github.com/brevio/brevio/internal/security/sandbox	(cached)
+ok  	github.com/brevio/brevio/internal/self_modification	(cached)
+ok  	github.com/brevio/brevio/internal/sessions	(cached)
+ok  	github.com/brevio/brevio/internal/streaming	(cached)
+ok  	github.com/brevio/brevio/internal/structured_generation	(cached)
+ok  	github.com/brevio/brevio/internal/temporal	(cached)
+ok  	github.com/brevio/brevio/internal/temporal_reasoning	(cached)
+ok  	github.com/brevio/brevio/internal/tool_health	(cached)
+ok  	github.com/brevio/brevio/internal/trust	(cached)
+ok  	github.com/brevio/brevio/internal/voice/worker	(cached)
+ok  	github.com/brevio/brevio/internal/wallet	(cached)
+ok  	github.com/brevio/brevio/internal/workflows	(cached)
+?   	github.com/brevio/brevio/scripts/blueprints	[no test files]
+?   	github.com/brevio/brevio/scripts/docs	[no test files]
+?   	github.com/brevio/brevio/scripts/mcp/fleet_validation	[no test files]
+?   	github.com/brevio/brevio/scripts/mcp/runtime_rollout	[no test files]
+?   	github.com/brevio/brevio/scripts/mcp/wave1_checklist	[no test files]
+?   	github.com/brevio/brevio/scripts/mcp/wave56_checklist	[no test files]
+?   	github.com/brevio/brevio/scripts/tools	[no test files]
+?   	github.com/brevio/brevio/scripts/tools/remote_catalog_keys	[no test files]
+ok  	github.com/brevio/brevio/tests/algorithm_fidelity	(cached)
+ok  	github.com/brevio/brevio/tests/contract	(cached)
+ok  	github.com/brevio/brevio/tests/integration	(cached)
+
+=== GATE: go_vet ===
+
+=== GATE: pnpm_test ===
+Scope: 4 of 5 workspace projects
+packages/shared test$ npx tsx --test src/__tests__/*.test.ts
+packages/shared test: npm warn Unknown env config "recursive". This will stop working in the next major version of npm.
+packages/shared test: ▶ SERVICE_NAMES
+packages/shared test:   ✔ is a non-null object (0.477584ms)
+packages/shared test:   ✔ has at least one entry (0.581792ms)
+packages/shared test:   ✔ contains the gateway service (0.084542ms)
+packages/shared test:   ✔ contains the brain service (0.055625ms)
+packages/shared test:   ✔ contains the hands service (0.05225ms)
+packages/shared test:   ✔ all values are non-empty strings (0.082125ms)
+packages/shared test: ✔ SERVICE_NAMES (2.006042ms)
+packages/shared test: ▶ BrevioError
+packages/shared test:   ✔ is an instance of Error (0.477208ms)
+packages/shared test:   ✔ is an instance of BrevioError (0.068459ms)
+packages/shared test:   ✔ has the correct message (0.069959ms)
+packages/shared test:   ✔ has the correct code (0.583166ms)
+packages/shared test:   ✔ code is readonly (0.096625ms)
+packages/shared test:   ✔ has a stack trace (0.921084ms)
+packages/shared test:   ✔ name defaults to the constructor name (0.085125ms)
+packages/shared test: ✔ BrevioError (2.9835ms)
+packages/shared test: ▶ MessageEnvelopeSchema
+packages/shared test:   ✔ accepts a valid envelope (1.58475ms)
+packages/shared test:   ✔ accepts an envelope with optional routing (0.3805ms)
+packages/shared test:   ✔ rejects when id is missing (0.366292ms)
+packages/shared test:   ✔ rejects when id is not a uuid (0.145458ms)
+packages/shared test:   ✔ rejects an invalid channel (0.138917ms)
+packages/shared test:   ✔ rejects when content is missing (0.151791ms)
+packages/shared test:   ✔ rejects when metadata is missing (0.16475ms)
+packages/shared test:   ✔ rejects when context.user_profile_hash is wrong length (0.1965ms)
+packages/shared test:   ✔ rejects an invalid content type (0.140917ms)
+packages/shared test:   ✔ rejects when timestamp is not ISO datetime (0.189125ms)
+packages/shared test: ✔ MessageEnvelopeSchema (4.239708ms)
+packages/shared test: ▶ SkillResultSchema
+packages/shared test:   ✔ accepts a valid skill result (0.340916ms)
+packages/shared test:   ✔ accepts a result with optional error block (0.098042ms)
+packages/shared test:   ✔ accepts optional tokens_used and cost_cents (0.080875ms)
+packages/shared test:   ✔ rejects an invalid status value (0.083333ms)
+packages/shared test:   ✔ rejects when skill_id is missing (0.100375ms)
+packages/shared test:   ✔ rejects when latency_ms is missing (0.077042ms)
+packages/shared test:   ✔ rejects when metadata is missing (0.054958ms)
+packages/shared test:   ✔ rejects an invalid circuit_breaker_state (0.063167ms)
+packages/shared test:   ✔ rejects an invalid error code (0.057875ms)
+packages/shared test: ✔ SkillResultSchema (1.107208ms)
+packages/shared test: ▶ JSON schema exports
+packages/shared test:   ✔ MessageEnvelopeJsonSchema is a valid JSON Schema object (0.089334ms)
+packages/shared test:   ✔ SkillResultJsonSchema is a valid JSON Schema object (0.036ms)
+packages/shared test:   ✔ MessageEnvelopeJsonSchema lists expected required fields (0.719333ms)
+packages/shared test:   ✔ SkillResultJsonSchema lists expected required fields (0.085792ms)
+packages/shared test: ✔ JSON schema exports (1.011333ms)
+packages/shared test: ▶ sha256Hex
+packages/shared test:   ✔ returns a 64-character hex string (0.681834ms)
+packages/shared test:   ✔ produces consistent output for the same input (0.089291ms)
+packages/shared test:   ✔ produces different output for different inputs (0.080875ms)
+packages/shared test:   ✔ matches known SHA-256 for empty string (0.05425ms)
+packages/shared test:   ✔ matches known SHA-256 for "hello" (0.176333ms)
+packages/shared test: ✔ sha256Hex (2.17875ms)
+packages/shared test: ℹ tests 41
+packages/shared test: ℹ suites 6
+packages/shared test: ℹ pass 41
+packages/shared test: ℹ fail 0
+packages/shared test: ℹ cancelled 0
+packages/shared test: ℹ skipped 0
+packages/shared test: ℹ todo 0
+packages/shared test: ℹ duration_ms 167.331125
+packages/shared test: Done
+services/hands-runtime test$ npx tsx --test src/__tests__/*.test.ts
+services/hands-runtime test: npm warn Unknown env config "recursive". This will stop working in the next major version of npm.
+services/hands-runtime test: ▶ logger
+services/hands-runtime test:   ✔ emits valid JSON with required fields (1.430584ms)
+services/hands-runtime test:   ✔ writes errors to stderr (0.101833ms)
+services/hands-runtime test: ✔ logger (2.066ms)
+services/hands-runtime test: ℹ tests 2
+services/hands-runtime test: ℹ suites 1
+services/hands-runtime test: ℹ pass 2
+services/hands-runtime test: ℹ fail 0
+services/hands-runtime test: ℹ cancelled 0
+services/hands-runtime test: ℹ skipped 0
+services/hands-runtime test: ℹ todo 0
+services/hands-runtime test: ℹ duration_ms 174.192208
+services/hands-runtime test: Done
+
+=== GATE: pnpm_build ===
+Scope: 4 of 5 workspace projects
+edge/brevio-edge-agent build$ tsc -p tsconfig.json
+packages/proto build$ bash ./scripts/generate.sh
+packages/shared build$ tsc -p tsconfig.json
+edge/brevio-edge-agent build: Done
+packages/proto build: Done
+packages/shared build: Done
+services/hands-runtime build$ tsc -p tsconfig.json
+services/hands-runtime build: Done
+
+
+=== CI GATE SUMMARY ===
+
+  PASS: scan_markers
+  PASS: scan_console_log
+  PASS: go_test
+  PASS: go_vet
+  PASS: pnpm_test
+  PASS: pnpm_build
+
+CI GATE RESULT: PASSED

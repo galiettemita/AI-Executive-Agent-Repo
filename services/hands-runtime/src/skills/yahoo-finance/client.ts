@@ -33,7 +33,7 @@ const NEWS: YahooFinanceNewsItem[] = [
 
 export async function runClient(input: YahooFinanceInput): Promise<YahooFinanceOutput> {
   if (input.action === 'quotes') {
-    const quotes = (input.symbols ?? []).map((symbol) => QUOTES[symbol]).filter(Boolean);
+    const quotes = (input.symbols ?? []).map((symbol) => QUOTES[symbol]).filter((q): q is YahooQuote => Boolean(q));
     return {
       provider: 'yahoo-finance',
       action: 'quotes',
@@ -43,7 +43,7 @@ export async function runClient(input: YahooFinanceInput): Promise<YahooFinanceO
   }
 
   if (input.action === 'fundamentals') {
-    const fundamentals = (input.symbols ?? []).map((symbol) => FUNDAMENTALS[symbol]).filter(Boolean);
+    const fundamentals = (input.symbols ?? []).map((symbol) => FUNDAMENTALS[symbol]).filter((f): f is YahooFundamental => Boolean(f));
     return {
       provider: 'yahoo-finance',
       action: 'fundamentals',

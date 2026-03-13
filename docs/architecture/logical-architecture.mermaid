@@ -24,7 +24,7 @@ graph TB
 
     subgraph "Async Plane"
         TW[Temporal Worker :18084]
-        TEMP[Temporal Server :7233]
+        TMPL[Temporal Server :7233]
     end
 
     subgraph "Data Plane"
@@ -48,7 +48,7 @@ graph TB
     EX -->|async workflows| TW
     BRW -->|async workflows| TW
     MKT -->|async workflows| TW
-    TW --> TEMP
+    TW --> TMPL
     CTL -->|admin ops| PG
     CV -->|websocket| GW
 

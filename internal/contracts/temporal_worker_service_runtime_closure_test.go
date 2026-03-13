@@ -11,8 +11,8 @@ func TestTemporalWorkerServiceRuntimeClosure(t *testing.T) {
 	t.Parallel()
 
 	root := repositoryRoot(t)
-	workerSource := filepath.Join(root, "services", "brevio-temporal-worker", "src", "index.ts")
-	workerReadme := filepath.Join(root, "services", "brevio-temporal-worker", "README.md")
+	workerSource := filepath.Join(root, "deprecated", "brevio-temporal-worker", "src", "index.ts")
+	workerReadme := filepath.Join(root, "deprecated", "brevio-temporal-worker", "README.md")
 
 	assertFileContainsTokens(t, workerSource, []string{
 		"RECEIVED",

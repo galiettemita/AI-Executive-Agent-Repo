@@ -11,8 +11,8 @@ func TestSchedulerServiceRuntimeClosure(t *testing.T) {
 	t.Parallel()
 
 	root := repositoryRoot(t)
-	schedulerSource := filepath.Join(root, "services", "brevio-scheduler", "src", "index.ts")
-	schedulerReadme := filepath.Join(root, "services", "brevio-scheduler", "README.md")
+	schedulerSource := filepath.Join(root, "deprecated", "brevio-scheduler", "src", "index.ts")
+	schedulerReadme := filepath.Join(root, "deprecated", "brevio-scheduler", "README.md")
 
 	assertFileContainsTokens(t, schedulerSource, []string{
 		"segments[1] === 'jobs'",

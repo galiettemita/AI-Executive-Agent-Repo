@@ -47,7 +47,7 @@ Verification requirements:
 • repository builds
 • tests pass if present
 • acceptance gates satisfied
-• no TODO placeholders remain
+• no unresolved action-item placeholders remain
 
 Completion protocol:
 

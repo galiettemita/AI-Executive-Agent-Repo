@@ -11,11 +11,11 @@ func TestEdgeAgentRelayClosure(t *testing.T) {
 	t.Parallel()
 
 	root := repositoryRoot(t)
-	relaySource := filepath.Join(root, "services", "brevio-edge-relay", "src", "index.ts")
+	relaySource := filepath.Join(root, "deprecated", "brevio-edge-relay", "src", "index.ts")
 	agentSource := filepath.Join(root, "edge", "brevio-edge-agent", "src", "index.ts")
-	relayPackage := filepath.Join(root, "services", "brevio-edge-relay", "package.json")
+	relayPackage := filepath.Join(root, "deprecated", "brevio-edge-relay", "package.json")
 	agentPackage := filepath.Join(root, "edge", "brevio-edge-agent", "package.json")
-	relayReadme := filepath.Join(root, "services", "brevio-edge-relay", "README.md")
+	relayReadme := filepath.Join(root, "deprecated", "brevio-edge-relay", "README.md")
 	agentReadme := filepath.Join(root, "edge", "brevio-edge-agent", "README.md")
 
 	assertFileContainsTokens(t, relaySource, []string{

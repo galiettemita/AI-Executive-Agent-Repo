@@ -11,7 +11,7 @@ func TestMediaStreamingSkillIntegrationFixturesClosure(t *testing.T) {
 	t.Parallel()
 
 	root := repositoryRoot(t)
-	skillsRoot := filepath.Join(root, "services", "brevio-hands", "src", "skills")
+	skillsRoot := filepath.Join(root, "services", "hands-runtime", "src", "skills")
 	skillIDs := []string{
 		"spotify",
 		"spotify-player",

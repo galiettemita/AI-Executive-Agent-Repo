@@ -1,0 +1,92 @@
+=== BASELINE ENVIRONMENT SNAPSHOT ===
+Date: 2026-03-13T16:22:26Z
+
+--- pwd ---
+/Users/galiettemita/Downloads/Executive AI Agent/backend
+
+--- ls ---
+AI Agent (3).zip
+AI Agent (5).zip
+ARCHITECTURE.md
+Brevio_V9_Consolidated_Master_Blueprint.docx
+CHECKLIST.md
+CODEBASE_INVENTORY.md
+DECISION.md
+DECISIONS.md
+Deterministic Architecture Audit and Repository Repair Plan for Brevio Repo.pdf
+Deterministic Production Architecture Audit and Repair Plan for Brevio Repo.pdf
+Dockerfile
+GAP_ANALYSIS.md
+Makefile
+README.md
+REQUIREMENTS.md
+RUNBOOK.md
+TOOLS.md
+TRACEABILITY.md
+admin
+agents
+api
+artifacts
+blueprint_pipeline_v3.md
+blueprints
+brevioctl
+browser
+canvas
+cmd
+config
+control
+cron
+db
+deprecated
+docker-compose.verify.yml
+docker-compose.yml
+docs
+edge
+evals
+extracted-blueprints
+go.mod
+go.sum
+hands
+helm
+infra
+internal
+marketing
+memory
+migrations
+node_modules
+package.json
+packages
+pnpm-lock.yaml
+pnpm-workspace.yaml
+policies
+prompts
+reports
+router
+runbooks
+sbom.spdx.json
+schemas
+scripts
+services
+spec
+temporal-worker
+terraform
+tests
+tools
+tsconfig.base.json
+turbo.json
+vendor
+
+--- git rev-parse HEAD ---
+b19198f447011a77df2801f6391e45d8ea2282e5
+
+--- go version ---
+go version go1.26.1 darwin/arm64
+
+--- node -v ---
+v24.13.0
+
+--- pnpm -v ---
+9.12.3
+
+--- uname -a ---
+Darwin MacBook-Pro-429.local 25.2.0 Darwin Kernel Version 25.2.0: Tue Nov 18 21:09:49 PST 2025; root:xnu-12377.61.12~1/RELEASE_ARM64_T8142 arm64

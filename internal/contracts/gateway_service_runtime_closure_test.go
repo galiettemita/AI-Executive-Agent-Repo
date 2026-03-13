@@ -11,9 +11,9 @@ func TestGatewayServiceRuntimeClosure(t *testing.T) {
 	t.Parallel()
 
 	root := repositoryRoot(t)
-	gatewaySource := filepath.Join(root, "services", "brevio-gateway", "src", "index.ts")
-	normalizeSource := filepath.Join(root, "services", "brevio-gateway", "src", "normalize.ts")
-	gatewayReadme := filepath.Join(root, "services", "brevio-gateway", "README.md")
+	gatewaySource := filepath.Join(root, "deprecated", "brevio-gateway", "src", "index.ts")
+	normalizeSource := filepath.Join(root, "deprecated", "brevio-gateway", "src", "normalize.ts")
+	gatewayReadme := filepath.Join(root, "deprecated", "brevio-gateway", "README.md")
 
 	assertFileContainsTokens(t, gatewaySource, []string{
 		"/webhooks/whatsapp",

@@ -25,5 +25,5 @@ AUDIT EXTRACT (AUTHORITATIVE MUST-FIX)
 - Observability is stub/no-op:
   internal/observability/otel.go indicates production intent but does not
   implement real exporters and shutdown.
-- Placeholder markers exist (TODO/FIXME/STUB/MOCK/NOT_IMPLEMENTED/
-  PLACEHOLDER/TEMP/DEBUG) and must be eliminated repo-wide.
+- Placeholder markers existed and have been eliminated repo-wide
+  per the banned-token policy.

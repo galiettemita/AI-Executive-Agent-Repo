@@ -237,23 +237,24 @@ func TestAnalyzeCapabilityGapsActivity(t *testing.T) {
 	}
 }
 
-func TestStandaloneTrustActivities(t *testing.T) {
+func TestMethodBasedTrustActivities(t *testing.T) {
 	t.Parallel()
-	// Verify standalone functions delegate correctly.
-	result, err := CollectTrustMetricsActivity(context.Background(), CollectTrustMetricsInput{
+	acts := NewV91Activities()
+	result, err := acts.CollectTrustMetricsActivity(context.Background(), CollectTrustMetricsInput{
 		WorkspaceID: "ws-1",
 	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if result.SuccessCount30d <= 0 {
-		t.Fatal("expected positive success count from standalone function")
+		t.Fatal("expected positive success count from method-based activity")
 	}
 }
 
-func TestStandaloneComputeTrustScore(t *testing.T) {
+func TestMethodBasedComputeTrustScore(t *testing.T) {
 	t.Parallel()
-	result, err := ComputeTrustScoreActivity(context.Background(), ComputeTrustScoreInput{
+	acts := NewV91Activities()
+	result, err := acts.ComputeTrustScoreActivity(context.Background(), ComputeTrustScoreInput{
 		WorkspaceID:      "ws-1",
 		SuccessCount30d:  20,
 		FailureCount30d:  0,
@@ -267,9 +268,10 @@ func TestStandaloneComputeTrustScore(t *testing.T) {
 	}
 }
 
-func TestStandaloneReviewGoals(t *testing.T) {
+func TestMethodBasedReviewGoals(t *testing.T) {
 	t.Parallel()
-	result, err := ReviewGoalsActivity(context.Background(), ReviewGoalsInput{
+	acts := NewV91Activities()
+	result, err := acts.ReviewGoalsActivity(context.Background(), ReviewGoalsInput{
 		WorkspaceID:   "ws-1",
 		StalledAfterH: 168,
 	})
@@ -277,7 +279,7 @@ func TestStandaloneReviewGoals(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if result.GoalsReviewed <= 0 {
-		t.Fatal("expected positive goals reviewed from standalone")
+		t.Fatal("expected positive goals reviewed from method-based activity")
 	}
 }
 

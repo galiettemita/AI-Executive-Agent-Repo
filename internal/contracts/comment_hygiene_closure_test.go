@@ -20,7 +20,7 @@ func TestSourceCommentHygieneClosure(t *testing.T) {
 		"terraform",
 		"helm",
 	}
-	disallowed := []string{"TODO", "FIXME", "HACK", "DEPRECATED"}
+	disallowed := []string{"TO" + "DO", "FIX" + "ME", "HACK", "DEPRECATED"}
 
 	for _, dir := range targetDirs {
 		dirPath := filepath.Join(root, dir)

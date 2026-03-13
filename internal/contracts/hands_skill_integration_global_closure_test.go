@@ -11,7 +11,7 @@ func TestHandsSkillIntegrationFixturesGlobalClosure(t *testing.T) {
 	t.Parallel()
 
 	root := repositoryRoot(t)
-	skillsRoot := filepath.Join(root, "services", "brevio-hands", "src", "skills")
+	skillsRoot := filepath.Join(root, "services", "hands-runtime", "src", "skills")
 
 	entries, err := os.ReadDir(skillsRoot)
 	if err != nil {

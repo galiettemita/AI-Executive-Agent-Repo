@@ -8,10 +8,13 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "lint": "eslint src --ext .ts",
-    "test": "echo \"no tests yet\""
+    "test": "npx tsx --test src/__tests__/*.test.ts"
   },
   "dependencies": {
     "json-schema": "0.4.0",
     "zod": "3.24.1"
+  },
+  "devDependencies": {
+    "@types/json-schema": "^7.0.15"
   }
 }

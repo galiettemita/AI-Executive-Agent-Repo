@@ -37,7 +37,9 @@ export async function runClient(input: AlterActionsInput): Promise<AlterActionsO
     };
   }
 
-  const selected = ACTIONS.find((item) => item.action_key === input.action_key) ?? ACTIONS[0];
+  const selected: AlterActionDescriptor =
+    ACTIONS.find((item) => item.action_key === input.action_key) ??
+    (ACTIONS[0] as AlterActionDescriptor);
   const callback_url = applyTemplate(selected.callback_url_template, input.parameters ?? {});
 
   return {

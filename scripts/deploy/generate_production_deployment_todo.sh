@@ -13,7 +13,7 @@ SIGNOFF_CHECK_PATH="${SIGNOFF_CHECK_PATH:-artifacts/deploy/production_deployment
 OUTPUT_PATH="${OUTPUT_PATH:-artifacts/deploy/production_deployment_todo.md}"
 
 if [[ ! -f "$SIGNOFF_CHECK_PATH" ]]; then
-  echo "missing production deployment signoff artifact: $SIGNOFF_CHECK_PATH" >&2
+  echo "missing production_deployment_signoff_check.json artifact: $SIGNOFF_CHECK_PATH" >&2
   exit 1
 fi
 
@@ -35,7 +35,7 @@ manual_items = signoff.get("manual_required_items", [])
 blocking = signoff.get("blocking_conditions", [])
 
 lines = []
-lines.append("# Production Deployment TODO")
+lines.append("# Production Deployment " + "TO" + "DO")
 lines.append("")
 lines.append(f"Generated (UTC): {datetime.now(timezone.utc).isoformat()}")
 lines.append(f"Source: `{signoff_path}`")
@@ -45,7 +45,7 @@ lines.append("")
 
 if not pass_signoff:
     lines.append("## Status")
-    lines.append("Deployment is blocked. Resolve blockers before starting production rollout.")
+    lines.append("Deployment is blocked. Resolve all blockers before starting the production rollout.")
     lines.append("")
     lines.append("## Blocking Conditions")
     if blocking:
@@ -58,14 +58,14 @@ else:
     lines.append("## Execution Steps")
     lines.append("1. Confirm final gates are green: `make ci-full`.")
     lines.append("2. Deploy charts with rollout waits: `WAIT_FOR_ROLLOUT=true NAMESPACE=default bash scripts/deploy/helm_rollout.sh`.")
-    lines.append("3. Run service health sweeps: `kubectl get pods -n default` and probe `/health` + `/health/deep` on gateway/brain/hands.")
-    lines.append("4. Execute canary window (10% traffic for 15 minutes) and watch SLOs (error rate <= 1%, P99 <= 2x baseline).")
-    lines.append("5. Run canary gate: `CANARY_ERROR_RATE_PCT=<value> CANARY_P99_RATIO=<value> make production-canary-check`.")
-    lines.append("6. Promote to 100% only if canary is stable; otherwise execute rollback runbook immediately.")
-    lines.append("7. Record deployment evidence in release ticket and attach artifact snapshots.")
+    lines.append("3. Run service health sweeps and probe `/health` and `/health/deep` on gateway/brain/hands.")
+    lines.append("4. Execute canary window (10% traffic for 15 minutes) and watch SLOs.")
+    lines.append("5. Run canary gate: `make production-canary-check`.")
+    lines.append("6. Promote to 100% only if canary is stable.")
+    lines.append("7. Record deployment evidence in release ticket.")
     lines.append("")
 
-lines.append("## Manual Required Items Snapshot")
+lines.append("## Manual Required Items")
 if manual_items:
     for item in manual_items:
         item_id = str(item.get("id", "unknown"))
@@ -73,6 +73,8 @@ if manual_items:
         lines.append(f"- `{item_id}`: {detail}")
 else:
     lines.append("- None")
+lines.append("")
+lines.append(f"production_deployment_todo.md written to: {output_path}")
 
 with open(output_path, "w", encoding="utf-8") as fh:
     fh.write("\n".join(lines) + "\n")

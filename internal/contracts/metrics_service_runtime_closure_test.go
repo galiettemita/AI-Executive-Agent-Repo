@@ -11,8 +11,8 @@ func TestMetricsServiceRuntimeClosure(t *testing.T) {
 	t.Parallel()
 
 	root := repositoryRoot(t)
-	metricsSource := filepath.Join(root, "services", "brevio-metrics", "src", "index.ts")
-	metricsReadme := filepath.Join(root, "services", "brevio-metrics", "README.md")
+	metricsSource := filepath.Join(root, "deprecated", "brevio-metrics", "src", "index.ts")
+	metricsReadme := filepath.Join(root, "deprecated", "brevio-metrics", "README.md")
 
 	assertFileContainsTokens(t, metricsSource, []string{
 		"brevio_messages_total",

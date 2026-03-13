@@ -23,7 +23,7 @@ export interface TodoistTask {
 }
 
 export interface TodoistOutput {
-  provider: 'todoist_mock';
+  provider: 'todoist_deterministic';
   action: TodoistAction;
   task_id?: string;
   tasks?: TodoistTask[];

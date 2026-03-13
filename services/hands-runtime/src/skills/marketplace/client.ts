@@ -4,9 +4,9 @@ function median(values: number[]): number {
   const sorted = [...values].sort((left, right) => left - right);
   const mid = Math.floor(sorted.length / 2);
   if (sorted.length % 2 === 0) {
-    return Math.round((sorted[mid - 1] + sorted[mid]) / 2);
+    return Math.round(((sorted[mid - 1] as number) + (sorted[mid] as number)) / 2);
   }
-  return sorted[mid];
+  return sorted[mid] as number;
 }
 
 function conditionMultiplier(condition: MarketplaceInput['condition']): number {

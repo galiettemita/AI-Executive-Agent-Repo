@@ -2,6 +2,7 @@ package workflows
 
 import (
 	"context"
+	"errors"
 	"regexp"
 	"slices"
 	"testing"
@@ -548,5 +549,64 @@ func TestDriftCadenceAndDelegationPairingSteps(t *testing.T) {
 	}
 	if steps[0] != "owner_requests_delegate_pairing" || steps[len(steps)-1] != "emit_paired_event_and_mark_consumed" {
 		t.Fatalf("unexpected pairing flow boundaries: %v", steps)
+	}
+}
+
+func TestVerifyPolicyHighRiskErrorFailsClosed(t *testing.T) {
+	t.Parallel()
+
+	outcome := EvaluateVerificationPolicy(RiskHigh, errors.New("artifact checksum mismatch"))
+	if outcome.Passed {
+		t.Fatal("expected HIGH risk verification error to fail closed")
+	}
+	if outcome.Error == nil {
+		t.Fatal("expected error in outcome")
+	}
+	if outcome.Unverified {
+		t.Fatal("failed outcome should not be marked unverified")
+	}
+}
+
+func TestVerifyPolicyLowRiskErrorProceedsWithWarning(t *testing.T) {
+	t.Parallel()
+
+	outcome := EvaluateVerificationPolicy(RiskLow, errors.New("non-critical check failed"))
+	if !outcome.Passed {
+		t.Fatal("expected LOW risk verification error to proceed")
+	}
+	if !outcome.Unverified {
+		t.Fatal("expected outcome to be marked unverified")
+	}
+	if len(outcome.Warnings) == 0 {
+		t.Fatal("expected warning in outcome")
+	}
+}
+
+func TestVerifyPolicyMediumRiskErrorProceedsWithWarning(t *testing.T) {
+	t.Parallel()
+
+	outcome := EvaluateVerificationPolicy(RiskMedium, errors.New("secondary check failed"))
+	if !outcome.Passed {
+		t.Fatal("expected MEDIUM risk verification error to proceed")
+	}
+	if !outcome.Unverified {
+		t.Fatal("expected outcome to be marked unverified")
+	}
+	if len(outcome.Warnings) == 0 {
+		t.Fatal("expected warning in outcome")
+	}
+}
+
+func TestVerifyPolicyNoErrorAlwaysPasses(t *testing.T) {
+	t.Parallel()
+
+	for _, risk := range []RiskLevel{RiskLow, RiskMedium, RiskHigh} {
+		outcome := EvaluateVerificationPolicy(risk, nil)
+		if !outcome.Passed {
+			t.Fatalf("expected pass with no error at risk=%d", risk)
+		}
+		if outcome.Unverified {
+			t.Fatalf("expected verified with no error at risk=%d", risk)
+		}
 	}
 }

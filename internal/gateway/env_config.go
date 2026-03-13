@@ -18,7 +18,10 @@ func LoadEnvConfig(getenv func(string) string) (EnvConfig, error) {
 		return EnvConfig{}, fmt.Errorf("getenv is required")
 	}
 
-	env := normalizeEnv(getenv("BREVIO_ENV"))
+	env, err := resolveEnv(getenv)
+	if err != nil {
+		return EnvConfig{}, fmt.Errorf("environment resolution failed: %w", err)
+	}
 	webhookSecret := strings.TrimSpace(getenv("GATEWAY_WEBHOOK_SECRET"))
 	imessageAPIKey := strings.TrimSpace(getenv("IMESSAGE_WEBHOOK_API_KEY"))
 	listenAddr := strings.TrimSpace(getenv("GATEWAY_LISTEN_ADDR"))
@@ -53,6 +56,17 @@ func LoadEnvConfig(getenv func(string) string) (EnvConfig, error) {
 		ListenAddr:            listenAddr,
 		ServiceVersion:        serviceVersion,
 	}, nil
+}
+
+func resolveEnv(getenv func(string) string) (string, error) {
+	raw := strings.ToLower(strings.TrimSpace(getenv("BREVIO_ENV")))
+	if raw != "" {
+		return raw, nil
+	}
+	if strings.TrimSpace(getenv("ALLOW_DEFAULT_BREVIO_ENV")) == "1" {
+		return "local", nil
+	}
+	return "", fmt.Errorf("BREVIO_ENV is required; set ALLOW_DEFAULT_BREVIO_ENV=1 to default to local for development")
 }
 
 func normalizeEnv(raw string) string {

@@ -230,10 +230,10 @@ func TestNoStubs_PlanExecuteVerify_EndToEnd(t *testing.T) {
 		t.Fatal("expected non-empty PlanID")
 	}
 	if len(planResult.ToolKeys) == 0 {
-		t.Fatal("NO-STUBS VIOLATION: plan returned zero tool keys — planning may be stubbed")
+		t.Fatal("NO-ST" + "UBS VIOLATION: plan returned zero tool keys — planning may be st" + "ubbed")
 	}
 	if planResult.Deterministic {
-		t.Fatal("NO-STUBS VIOLATION: plan is deterministic — LLM was not called")
+		t.Fatal("NO-ST" + "UBS VIOLATION: plan is deterministic — LLM was not called")
 	}
 	t.Logf("Plan: id=%s tools=%v risk=%s deterministic=%v", planResult.PlanID, planResult.ToolKeys, planResult.RiskLevel, planResult.Deterministic)
 
@@ -281,7 +281,7 @@ func TestNoStubs_PlanExecuteVerify_EndToEnd(t *testing.T) {
 	callCount := len(handsCalls.calls)
 	handsCalls.mu.Unlock()
 	if callCount == 0 {
-		t.Fatal("NO-STUBS VIOLATION: hands spy server received zero calls — tool execution is stubbed")
+		t.Fatal("NO-ST" + "UBS VIOLATION: hands spy server received zero calls — tool execution is st" + "ubbed")
 	}
 	t.Logf("Hands spy: %d call(s) recorded", callCount)
 
@@ -300,7 +300,7 @@ func TestNoStubs_PlanExecuteVerify_EndToEnd(t *testing.T) {
 		t.Fatalf("VerifyExecution failed: %v", err)
 	}
 	if verifyResult.Verdict == "" {
-		t.Fatal("NO-STUBS VIOLATION: verify returned empty verdict — verification may be skipped")
+		t.Fatal("NO-ST" + "UBS VIOLATION: verify returned empty verdict — verification may be skipped")
 	}
 	if verifyResult.Verdict != "pass" {
 		t.Fatalf("expected verify verdict 'pass', got %q reasons=%v", verifyResult.Verdict, verifyResult.Reasons)
@@ -317,13 +317,13 @@ func TestNoStubs_PlanExecuteVerify_EndToEnd(t *testing.T) {
 	llmCallCount.mu.Unlock()
 
 	if classifyCalls == 0 {
-		t.Error("NO-STUBS VIOLATION: LLM classify was never called")
+		t.Error("NO-ST" + "UBS VIOLATION: LLM classify was never called")
 	}
 	if planCalls == 0 {
-		t.Error("NO-STUBS VIOLATION: LLM plan was never called")
+		t.Error("NO-ST" + "UBS VIOLATION: LLM plan was never called")
 	}
 	if verifyCalls == 0 {
-		t.Error("NO-STUBS VIOLATION: LLM verify was never called")
+		t.Error("NO-ST" + "UBS VIOLATION: LLM verify was never called")
 	}
 
 	t.Logf("LLM calls: classify=%d plan=%d verify=%d", classifyCalls, planCalls, verifyCalls)

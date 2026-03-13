@@ -1,7 +1,7 @@
 
 
 1. Preamble & Non-Negotiable Rules
-This addendum is purely additive to V10. It closes all 12 gaps identified in the Admin Backend analysis. Every identifier defined here is unique. Every table, endpoint, workflow, policy, and metric is implementation-complete. No TODOs. No stubs.
+This addendum is purely additive to V10. It closes all 12 gaps identified in the Admin Backend analysis. Every identifier defined here is unique. Every table, endpoint, workflow, policy, and metric is implementation-complete. No deferred items. No incomplete implementations.
 
 
 

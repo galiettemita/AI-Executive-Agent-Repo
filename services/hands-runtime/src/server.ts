@@ -1,6 +1,7 @@
 import express, { Request, Response, NextFunction } from "express";
 import { collectDefaultMetrics, register } from "prom-client";
 import { loadSkillRegistry, SkillRegistry } from "./registry.js";
+import { logger } from "./logger.js";
 
 const app = express();
 app.use(express.json({ limit: "1mb" }));
@@ -21,7 +22,7 @@ app.get("/v1/skills", (_req: Request, res: Response) => {
 
 // 2. get_schema — returns the JSON schema for a specific skill
 app.get("/v1/skills/:skillId/schema", (req: Request, res: Response) => {
-  const { skillId } = req.params;
+  const skillId = req.params["skillId"] as string;
   const schema = registry.getSchema(skillId);
   if (!schema) {
     res.status(404).json({ error: "skill_not_found", skill_id: skillId });
@@ -32,7 +33,7 @@ app.get("/v1/skills/:skillId/schema", (req: Request, res: Response) => {
 
 // 3. execute_skill — execute a skill with validated input
 app.post("/v1/skills/:skillId/execute", async (req: Request, res: Response) => {
-  const { skillId } = req.params;
+  const skillId = req.params["skillId"] as string;
   const { input, receipt_id, workspace_id } = req.body;
 
   if (!receipt_id) {
@@ -62,6 +63,7 @@ app.post("/v1/skills/:skillId/execute", async (req: Request, res: Response) => {
     res.json({ skill_id: skillId, status: "success", result });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
+    logger.error("skill execution failed", { skill_id: skillId, error: message });
     res.status(500).json({
       skill_id: skillId,
       status: "error",
@@ -96,7 +98,7 @@ app.get("/metrics", async (_req: Request, res: Response) => {
 
 // Error handler
 app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
-  console.error("Unhandled error:", err);
+  logger.error("unhandled error", { error: err.message });
   res.status(500).json({ error: "internal_error", message: err.message });
 });
 
@@ -108,23 +110,24 @@ const PORT = parseInt(process.env.HANDS_RUNTIME_PORT || "18089", 10);
 
 async function main() {
   registry = await loadSkillRegistry();
-  console.log(
-    `[hands-runtime] Loaded ${registry.listSkills().length} skills`
-  );
+  logger.info("skills loaded", { count: registry.listSkills().length });
 
   app.listen(PORT, () => {
-    console.log(`[hands-runtime] Listening on :${PORT}`);
-    console.log(`[hands-runtime] Contract endpoints:`);
-    console.log(`  GET  /v1/skills              — list_skills`);
-    console.log(`  GET  /v1/skills/:id/schema   — get_schema`);
-    console.log(`  POST /v1/skills/:id/execute  — execute_skill`);
-    console.log(`  GET  /healthz/live           — health (liveness)`);
-    console.log(`  GET  /healthz/ready          — health (readiness)`);
-    console.log(`  GET  /metrics                — metrics`);
+    logger.info("server started", {
+      port: PORT,
+      endpoints: [
+        "GET  /v1/skills",
+        "GET  /v1/skills/:id/schema",
+        "POST /v1/skills/:id/execute",
+        "GET  /healthz/live",
+        "GET  /healthz/ready",
+        "GET  /metrics",
+      ],
+    });
   });
 }
 
 main().catch((err) => {
-  console.error("[hands-runtime] Fatal:", err);
+  logger.error("fatal startup error", { error: err instanceof Error ? err.message : String(err) });
   process.exit(1);
 });

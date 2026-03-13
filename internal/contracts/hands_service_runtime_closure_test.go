@@ -11,8 +11,8 @@ func TestHandsServiceRuntimeClosure(t *testing.T) {
 	t.Parallel()
 
 	root := repositoryRoot(t)
-	handsSource := filepath.Join(root, "services", "brevio-hands", "src", "index.ts")
-	handsReadme := filepath.Join(root, "services", "brevio-hands", "README.md")
+	handsSource := filepath.Join(root, "services", "hands-runtime", "src", "index.ts")
+	handsReadme := filepath.Join(root, "services", "hands-runtime", "README.md")
 
 	assertFileContainsTokens(t, handsSource, []string{
 		"/api/v1/hands/execute",

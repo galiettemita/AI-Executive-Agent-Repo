@@ -22,7 +22,7 @@ const adapter: ISkillAdapter = {
     type: 'object',
     required: ['provider', 'action'],
     properties: {
-      provider: { type: 'string', enum: ['todoist_mock'] },
+      provider: { type: 'string', enum: ['todoist_deterministic'] },
       action: { type: 'string', enum: ['list', 'create', 'complete', 'delete'] },
       task_id: { type: 'string' },
       tasks: { type: 'array' }

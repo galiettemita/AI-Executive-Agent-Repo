@@ -107,8 +107,8 @@ Head: `0f4ccfc`
 - Production deployment signoff gate is active:
   - `make production-deployment-signoff-check` emits `production_deployment_signoff_check.json` and enforces transition + regression + signoff invariants before deployment runbook execution
   - supports `signoff_mode=conditional_manual_override` when manual acceptance is explicitly enabled at transition check time
-- Production deployment execution TODO artifact is active:
-  - `make production-deployment-todo` emits `production_deployment_todo.md` from the signoff gate artifact with rollout, canary, rollback, and evidence-capture steps
+- Production deployment execution checklist artifact is active:
+  - `make production-deployment-checklist` emits `production_deployment_checklist.md` from the signoff gate artifact with rollout, canary, rollback, and evidence-capture steps
 - Post-deployment validation gate is active:
   - `make production-post-deploy-validation` emits `production_post_deploy_validation.json` with endpoint health + canary SLO checks + explicit 1-hour SLO metric gate (`SLO_WINDOW_MINUTES`, `SLO_P50_LATENCY_SECONDS`, `SLO_P99_LATENCY_SECONDS`, `SLO_SKILL_SUCCESS_RATE_PCT`, `SLO_DELIVERY_SUCCESS_RATE_PCT`) and strict/conditional-manual mode semantics
   - production deploy workflows now execute external transition + deployment signoff + post-deploy validation scripts directly after canary and upload gate artifacts for run evidence
@@ -134,8 +134,8 @@ Head: `0f4ccfc`
   - staging deploy workflows upload `staging_smoke_test_report.json` as a workflow artifact for deterministic deployment evidence retention
 - Production canary gate is active:
   - `make production-canary-check` emits `production_canary_check.json` with explicit traffic/duration/SLO checks, is wired into production deploy workflows, and is included in production phase sync + closure manifest + handoff bundle
-- Manual closeout TODO execution commands are embedded:
-  - `manual_closeout_todo.md` includes per-item confirm and revoke command templates
+- Manual closeout checklist execution commands are embedded:
+  - `manual_closeout_checklist.md` includes per-item confirm and revoke command templates
 - Manual closeout batch command generation is active:
   - `make manual-closeout-batch-commands` generates `artifacts/deploy/manual_closeout_batch_commands.sh` from current signoff pending-manual items
   - generated script accepts `<actor>` and executes per-item confirmations plus final `make external-phase-sync`

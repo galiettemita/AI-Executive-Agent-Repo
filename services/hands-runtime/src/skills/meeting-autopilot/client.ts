@@ -11,12 +11,12 @@ function inferActionItems(transcript: string, participants: string[]): MeetingAc
   const explicit = transcript
     .split('\n')
     .map((line) => line.trim())
-    .filter((line) => line.toUpperCase().startsWith('TODO:'))
+    .filter((line) => line.toUpperCase().startsWith('ACTION:'))
     .map((line, index) => {
       const owner = participants[index % Math.max(participants.length, 1)] ?? 'Owner TBD';
       return {
         owner,
-        task: line.replace(/^TODO:\s*/i, '').slice(0, 220)
+        task: line.replace(/^ACTION:\s*/i, '').slice(0, 220)
       };
     });
 

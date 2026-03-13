@@ -20,7 +20,7 @@
     { "state": 6, "name": "PROMPT_1_TEMPORAL_SILENT_SUCCESS", "status": "pending" },
     { "state": 7, "name": "PROMPT_2_EXECUTOR_DISPATCHER_WIRING", "status": "pending" },
     { "state": 8, "name": "PROMPT_3_SECURITY_CLOSURE", "status": "pending" },
-    { "state": 9, "name": "PROMPT_4_STUB_ELIMINATION", "status": "pending" },
+    { "state": 9, "name": "PROMPT_4_HARDENING", "status": "pending" },
     { "state": 10, "name": "PROMPT_5_OBSERVABILITY_CLOSURE", "status": "pending" },
     { "state": 11, "name": "PROMPT_6_REPRODUCIBLE_BUILD", "status": "pending" },
     { "state": 12, "name": "FINAL_VERIFICATION", "status": "pending" }

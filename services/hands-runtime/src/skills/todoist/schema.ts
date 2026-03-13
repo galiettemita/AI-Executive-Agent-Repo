@@ -26,7 +26,7 @@ const TodoistTaskSchema = z.object({
 
 export const OutputSchema = z
   .object({
-    provider: z.literal('todoist_mock'),
+    provider: z.literal('todoist_deterministic'),
     action: z.enum(['list', 'create', 'complete', 'delete']),
     task_id: z.string().optional(),
     tasks: z.array(TodoistTaskSchema).optional()

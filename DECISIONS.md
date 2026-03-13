@@ -643,7 +643,7 @@ Ten terminal acceptance gates in `acceptance_gates_final_test.go` validate produ
 
 | Gate | Name | Validates |
 |------|------|-----------|
-| A | Blueprint Coverage | No NOT_IMPLEMENTED in traceability matrix; ≥50 IMPLEMENTED |
+| A | Blueprint Coverage | No PENDING_IMPLEMENTATION in traceability matrix; >=50 IMPLEMENTED |
 | B | Architecture Coherence | Temporal-only orchestration; all P8 workflows registered |
 | C | Data & Contract Integrity | All migrations exist with RLS; schemas present |
 | D | Security & Policy Integrity | OPA policies; deny-by-default; authorization receipts; kill switch |

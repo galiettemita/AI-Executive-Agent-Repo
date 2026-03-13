@@ -89,6 +89,38 @@ type PlanScoreWeights struct {
 	CapabilityConfidenceScoreWeight float64
 }
 
+type RiskLevel int
+
+const (
+	RiskLow    RiskLevel = 1
+	RiskMedium RiskLevel = 2
+	RiskHigh   RiskLevel = 3
+)
+
+type VerificationOutcome struct {
+	Passed     bool
+	Unverified bool
+	Warnings   []string
+	Error      error
+}
+
+func EvaluateVerificationPolicy(risk RiskLevel, verifyErr error) VerificationOutcome {
+	if verifyErr == nil {
+		return VerificationOutcome{Passed: true}
+	}
+	if risk >= RiskHigh {
+		return VerificationOutcome{
+			Passed: false,
+			Error:  fmt.Errorf("verification failed at risk=HIGH: %w", verifyErr),
+		}
+	}
+	return VerificationOutcome{
+		Passed:     true,
+		Unverified: true,
+		Warnings:   []string{fmt.Sprintf("verification error at risk=%d (proceeding as unverified): %v", risk, verifyErr)},
+	}
+}
+
 type ActivityRetryPolicy struct {
 	StartToCloseTimeout time.Duration
 	MaxAttempts         int

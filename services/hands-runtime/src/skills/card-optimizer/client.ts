@@ -21,7 +21,7 @@ export async function runClient(input: CardOptimizerInput): Promise<CardOptimize
     }))
     .sort((left, right) => right.estimated_reward_cents - left.estimated_reward_cents);
 
-  const top = ranked[0];
+  const top = ranked[0] as NonNullable<(typeof ranked)[0]>;
 
   return {
     provider: 'card-optimizer',

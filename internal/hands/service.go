@@ -168,6 +168,38 @@ func (s *Service) Execute(ctx context.Context, req ExecuteRequest) ExecuteResult
 		}
 	}
 
+	// Validate args payload size (max 512KB serialized).
+	if req.Args != nil {
+		argsBytes, marshalErr := json.Marshal(req.Args)
+		if marshalErr != nil {
+			return ExecuteResult{
+				SkillID:   req.SkillID,
+				Status:    "FAILED",
+				LatencyMs: time.Since(start).Milliseconds(),
+				Mode:      req.Mode,
+				Error: &SkillError{
+					Code:      "INVALID_ARGS",
+					Message:   fmt.Sprintf("failed to serialize args: %v", marshalErr),
+					Retryable: false,
+				},
+			}
+		}
+		const maxArgsBytes = 512 * 1024
+		if len(argsBytes) > maxArgsBytes {
+			return ExecuteResult{
+				SkillID:   req.SkillID,
+				Status:    "FAILED",
+				LatencyMs: time.Since(start).Milliseconds(),
+				Mode:      req.Mode,
+				Error: &SkillError{
+					Code:      "PAYLOAD_TOO_LARGE",
+					Message:   fmt.Sprintf("args payload %d bytes exceeds limit of %d bytes", len(argsBytes), maxArgsBytes),
+					Retryable: false,
+				},
+			}
+		}
+	}
+
 	// Resolve MCP server URL from connector.
 	var mcpURL string
 	if s.connectorSvc != nil {
@@ -188,6 +220,10 @@ func (s *Service) Execute(ctx context.Context, req ExecuteRequest) ExecuteResult
 		data, err := s.mcpClient.Execute(execCtx, mcpURL, req.SkillID, req.Args)
 		latency := time.Since(start).Milliseconds()
 		if err != nil {
+			errCode := "MCP_EXECUTION_FAILED"
+			if execCtx.Err() == context.DeadlineExceeded {
+				errCode = "EXECUTION_TIMEOUT"
+			}
 			retryable := isRetryableError(err)
 			return ExecuteResult{
 				SkillID:   req.SkillID,
@@ -195,7 +231,7 @@ func (s *Service) Execute(ctx context.Context, req ExecuteRequest) ExecuteResult
 				LatencyMs: latency,
 				Mode:      req.Mode,
 				Error: &SkillError{
-					Code:      "MCP_EXECUTION_FAILED",
+					Code:      errCode,
 					Message:   err.Error(),
 					Retryable: retryable,
 				},

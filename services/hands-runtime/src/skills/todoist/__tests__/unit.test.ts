@@ -15,7 +15,7 @@ describe('todoist unit', () => {
       }
     });
 
-    assert.equal(output.provider, 'todoist_mock');
+    assert.equal(output.provider, 'todoist_deterministic');
     assert.equal(output.action, 'create');
     assert.ok(output.task_id?.startsWith('task_'));
   });

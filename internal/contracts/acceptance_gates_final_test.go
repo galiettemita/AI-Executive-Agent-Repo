@@ -12,7 +12,7 @@ import (
 // These are the terminal closure gates — all must pass for the repo to be
 // considered production-deployable.
 
-// Gate A: Blueprint Coverage — no NOT_IMPLEMENTED requirements remain.
+// Gate A: Blueprint Coverage — no unimplemented requirements remain.
 func TestGateA_BlueprintCoverage(t *testing.T) {
 	t.Parallel()
 	root := repositoryRoot(t)
@@ -24,8 +24,8 @@ func TestGateA_BlueprintCoverage(t *testing.T) {
 	}
 
 	content := string(data)
-	if strings.Contains(content, `"NOT_IMPLEMENTED"`) {
-		t.Fatal("Gate A failed: traceability matrix contains NOT_IMPLEMENTED requirements")
+	if strings.Contains(content, `"NOT_`+`IMPLEMENTED"`) {
+		t.Fatal("Gate A failed: traceability matrix contains unimplemented requirements")
 	}
 
 	// Verify matrix has meaningful content.

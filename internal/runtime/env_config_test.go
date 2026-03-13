@@ -2,10 +2,27 @@ package runtime
 
 import "testing"
 
-func TestLoadServiceEnvConfigLocalDefaults(t *testing.T) {
+func TestLoadServiceEnvConfigUnsetEnvWithoutOverrideErrors(t *testing.T) {
 	t.Parallel()
 
-	cfg, err := LoadServiceEnvConfig(func(string) string { return "" }, ServiceEnvOptions{
+	_, err := LoadServiceEnvConfig(func(string) string { return "" }, ServiceEnvOptions{
+		ServiceName:       "brain",
+		DefaultListenAddr: ":18081",
+	})
+	if err == nil {
+		t.Fatal("expected error when BREVIO_ENV is unset without ALLOW_DEFAULT_BREVIO_ENV")
+	}
+}
+
+func TestLoadServiceEnvConfigUnsetEnvWithOverrideDefaultsToLocal(t *testing.T) {
+	t.Parallel()
+
+	cfg, err := LoadServiceEnvConfig(func(key string) string {
+		if key == "ALLOW_DEFAULT_BREVIO_ENV" {
+			return "1"
+		}
+		return ""
+	}, ServiceEnvOptions{
 		ServiceName:       "brain",
 		DefaultListenAddr: ":18081",
 	})
@@ -13,7 +30,7 @@ func TestLoadServiceEnvConfigLocalDefaults(t *testing.T) {
 		t.Fatalf("load service env config: %v", err)
 	}
 	if cfg.Environment != "local" {
-		t.Fatalf("unexpected environment: %s", cfg.Environment)
+		t.Fatalf("expected local environment, got: %s", cfg.Environment)
 	}
 	if cfg.ListenAddr != ":18081" {
 		t.Fatalf("unexpected listen addr: %s", cfg.ListenAddr)
@@ -23,7 +40,7 @@ func TestLoadServiceEnvConfigLocalDefaults(t *testing.T) {
 	}
 }
 
-func TestLoadServiceEnvConfigNonLocalRequiresKeys(t *testing.T) {
+func TestLoadServiceEnvConfigExplicitProdNotLocal(t *testing.T) {
 	t.Parallel()
 
 	_, err := LoadServiceEnvConfig(func(key string) string {
@@ -41,19 +58,88 @@ func TestLoadServiceEnvConfigNonLocalRequiresKeys(t *testing.T) {
 	}
 }
 
-func TestResolveSecretWithLocalDefault(t *testing.T) {
+func TestLoadServiceEnvConfigExplicitStagingNotLocal(t *testing.T) {
 	t.Parallel()
 
-	got, err := ResolveSecretWithLocalDefault(func(string) string { return "" }, "CONTROL_APP_SECRET", "local", "dev-secret")
+	_, err := LoadServiceEnvConfig(func(key string) string {
+		switch key {
+		case "BREVIO_ENV":
+			return "staging"
+		case "DATABASE_URL":
+			return "postgres://staging:5432/db"
+		default:
+			return ""
+		}
+	}, ServiceEnvOptions{
+		ServiceName:         "brain",
+		DefaultListenAddr:   ":18081",
+		RequiredNonLocalEnv: []string{"DATABASE_URL"},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error for staging with required keys: %v", err)
+	}
+}
+
+func TestResolveSecretWithLocalDefaultRequiresOverride(t *testing.T) {
+	t.Parallel()
+
+	_, err := ResolveSecretWithLocalDefault(
+		func(string) string { return "" },
+		"CONTROL_APP_SECRET", "local", "dev-secret",
+	)
+	if err == nil {
+		t.Fatal("expected error when local env lacks ALLOW_DEFAULT_BREVIO_ENV override")
+	}
+}
+
+func TestResolveSecretWithLocalDefaultWithOverride(t *testing.T) {
+	t.Parallel()
+
+	got, err := ResolveSecretWithLocalDefault(
+		func(key string) string {
+			if key == "ALLOW_DEFAULT_BREVIO_ENV" {
+				return "1"
+			}
+			return ""
+		},
+		"CONTROL_APP_SECRET", "local", "dev-secret",
+	)
 	if err != nil {
 		t.Fatalf("resolve secret: %v", err)
 	}
 	if got != "dev-secret" {
 		t.Fatalf("unexpected local default: %s", got)
 	}
+}
 
-	_, err = ResolveSecretWithLocalDefault(func(string) string { return "" }, "CONTROL_APP_SECRET", "production", "dev-secret")
+func TestResolveSecretProductionRequiresSecret(t *testing.T) {
+	t.Parallel()
+
+	_, err := ResolveSecretWithLocalDefault(
+		func(string) string { return "" },
+		"CONTROL_APP_SECRET", "production", "dev-secret",
+	)
 	if err == nil {
 		t.Fatal("expected production error for missing secret")
+	}
+}
+
+func TestResolveSecretExplicitValueAlwaysUsed(t *testing.T) {
+	t.Parallel()
+
+	got, err := ResolveSecretWithLocalDefault(
+		func(key string) string {
+			if key == "CONTROL_APP_SECRET" {
+				return "real-secret"
+			}
+			return ""
+		},
+		"CONTROL_APP_SECRET", "production", "dev-secret",
+	)
+	if err != nil {
+		t.Fatalf("resolve secret: %v", err)
+	}
+	if got != "real-secret" {
+		t.Fatalf("expected real-secret, got: %s", got)
 	}
 }

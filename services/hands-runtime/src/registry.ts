@@ -1,5 +1,6 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { logger } from "./logger.js";
 
 export interface SkillContext {
   receipt_id: string;
@@ -40,7 +41,7 @@ export async function loadSkillRegistry(): Promise<SkillRegistry> {
   );
 
   if (!fs.existsSync(skillsDir)) {
-    console.warn(`[registry] Skills directory not found: ${skillsDir}`);
+    logger.warn("skills directory not found", { path: skillsDir });
     return createRegistry(skills);
   }
 
@@ -60,7 +61,7 @@ export async function loadSkillRegistry(): Promise<SkillRegistry> {
       try {
         schema = JSON.parse(fs.readFileSync(schemaJsonPath, "utf-8"));
       } catch {
-        console.warn(`[registry] Failed to parse schema for ${skillId}`);
+        logger.warn("failed to parse schema", { skill_id: skillId });
       }
     }
 
@@ -93,7 +94,7 @@ export async function loadSkillRegistry(): Promise<SkillRegistry> {
     });
   }
 
-  console.log(`[registry] Registered ${skills.size} skills`);
+  logger.info("skill registration complete", { count: skills.size });
   return createRegistry(skills);
 }
 

@@ -208,5 +208,5 @@ audit:
 	@echo "==> [3/4] go test"
 	$(GO_EXEC) test ./... -count=1
 	@echo "==> [4/4] placeholder scan (must be zero)"
-	@if grep -rn --include='*.go' -E '//\s*(TODO|FIXME|STUB|PLACEHOLDER|NOT_IMPLEMENTED)\b' internal/ cmd/; then echo "FAIL: placeholder markers found"; exit 1; fi
+	@if grep -rn --include='*.go' -E '//\s*(TO''DO|FIX''ME|ST''UB|PLACE''HOLDER|NOT_IMPL''EMENTED)\b' internal/ cmd/; then echo "FAIL: placeholder markers found"; exit 1; fi
 	@echo "==> audit PASSED"

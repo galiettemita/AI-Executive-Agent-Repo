@@ -222,9 +222,9 @@ Status meanings:
 - `CONDITIONAL_MANUAL`: no required failures, but manual provider/account confirmations still required.
 - `BLOCKED`: one or more required failed items still unresolved.
 
-## 11) Generate Manual Closeout TODO Artifact
+## 11) Generate Manual Closeout Checklist Artifact
 
-After go-live signoff generation, create a deterministic manual TODO list from pending required items:
+After go-live signoff generation, create a deterministic manual checklist from pending required items:
 
 ```bash
 cd /Users/galiettemita/Downloads/Executive AI Agent/backend
@@ -384,7 +384,7 @@ ALLOW_CONDITIONAL_MANUAL=1 make external-phase-transition-check
 make production-deployment-signoff-check
 ```
 
-## 18) Generate Production Deployment TODO
+## 18) Generate Production Deployment Checklist
 
 Once the production signoff gate passes, generate the rollout execution checklist artifact:
 
@@ -396,7 +396,7 @@ make production-deployment-todo
 Output:
 - `artifacts/deploy/production_deployment_todo.md`
 
-The generated TODO includes:
+The generated checklist includes:
 1. final CI/full-gate command
 2. deployment command using `scripts/deploy/helm_rollout.sh`
 3. health checks + canary thresholds

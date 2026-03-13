@@ -11,8 +11,8 @@ func TestProfileServiceRuntimeClosure(t *testing.T) {
 	t.Parallel()
 
 	root := repositoryRoot(t)
-	profileSource := filepath.Join(root, "services", "brevio-profile", "src", "index.ts")
-	profileReadme := filepath.Join(root, "services", "brevio-profile", "README.md")
+	profileSource := filepath.Join(root, "deprecated", "brevio-profile", "src", "index.ts")
+	profileReadme := filepath.Join(root, "deprecated", "brevio-profile", "README.md")
 
 	assertFileContainsTokens(t, profileSource, []string{
 		"USER.md",

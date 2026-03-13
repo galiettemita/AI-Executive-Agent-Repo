@@ -2,10 +2,24 @@ package gateway
 
 import "testing"
 
-func TestLoadEnvConfigLocalDefaults(t *testing.T) {
+func TestLoadEnvConfigUnsetEnvWithoutOverrideErrors(t *testing.T) {
 	t.Parallel()
 
-	cfg, err := LoadEnvConfig(func(string) string { return "" })
+	_, err := LoadEnvConfig(func(string) string { return "" })
+	if err == nil {
+		t.Fatal("expected error when BREVIO_ENV is unset without ALLOW_DEFAULT_BREVIO_ENV")
+	}
+}
+
+func TestLoadEnvConfigUnsetEnvWithOverrideDefaultsToLocal(t *testing.T) {
+	t.Parallel()
+
+	cfg, err := LoadEnvConfig(func(key string) string {
+		if key == "ALLOW_DEFAULT_BREVIO_ENV" {
+			return "1"
+		}
+		return ""
+	})
 	if err != nil {
 		t.Fatalf("load env config: %v", err)
 	}

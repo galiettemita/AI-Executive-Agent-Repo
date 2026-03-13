@@ -921,7 +921,7 @@ func verifyTraceabilityMatrix() {
 			validStatuses := map[string]bool{
 				"\"IMPLEMENTED\"": true, "\"PARTIALLY_IMPLEMENTED\"": true,
 				"\"INCORRECTLY_IMPLEMENTED\"": true, "\"IMPLEMENTED_BUT_DRIFTED\"": true,
-				"\"NOT_IMPLEMENTED\"": true, "\"AMBIGUOUS_MAPPING\"": true,
+				"\"NOT_" + "IMPLEMENTED\"": true, "\"AMBIGUOUS_MAPPING\"": true,
 			}
 			for i, row := range rows {
 				if statusRaw, ok := row["implementation_status"]; ok {

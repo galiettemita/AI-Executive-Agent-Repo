@@ -11,11 +11,11 @@ func TestBrainServiceRuntimeClosure(t *testing.T) {
 	t.Parallel()
 
 	root := repositoryRoot(t)
-	brainSource := filepath.Join(root, "services", "brevio-brain", "src", "index.ts")
-	classifySource := filepath.Join(root, "services", "brevio-brain", "src", "classify.ts")
-	disambiguateSource := filepath.Join(root, "services", "brevio-brain", "src", "disambiguate.ts")
-	decomposeSource := filepath.Join(root, "services", "brevio-brain", "src", "decompose.ts")
-	brainReadme := filepath.Join(root, "services", "brevio-brain", "README.md")
+	brainSource := filepath.Join(root, "deprecated", "brevio-brain", "src", "index.ts")
+	classifySource := filepath.Join(root, "deprecated", "brevio-brain", "src", "classify.ts")
+	disambiguateSource := filepath.Join(root, "deprecated", "brevio-brain", "src", "disambiguate.ts")
+	decomposeSource := filepath.Join(root, "deprecated", "brevio-brain", "src", "decompose.ts")
+	brainReadme := filepath.Join(root, "deprecated", "brevio-brain", "README.md")
 
 	assertFileContainsTokens(t, brainSource, []string{
 		"/api/v1/brain/classify",

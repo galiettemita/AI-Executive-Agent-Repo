@@ -23,7 +23,7 @@ graph TB
         subgraph "Managed Services"
             RDS["RDS PostgreSQL 16\n(pgvector, Multi-AZ)"]
             EC["ElastiCache Redis 7"]
-            TEMP["Temporal Server"]
+            TMPL["Temporal Server"]
             SM["Secrets Manager\n(LLM API Keys)"]
             S3["S3\n(Files, Screenshots)"]
             SQS["SQS\n(Async Queues)"]
@@ -52,7 +52,7 @@ graph TB
     BR_POD --> BRW_POD
     BR_POD --> MKT_POD
     CRN_POD --> TW_POD
-    TW_POD --> TEMP
+    TW_POD --> TMPL
     BRW_POD --> CAPTCHA
     MKT_POD --> EMAIL
     MKT_POD --> SOCIAL
