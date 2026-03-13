@@ -119,6 +119,7 @@ type Service struct {
 	upgrader  websocket.Upgrader
 	injector  Injector
 	startedAt time.Time
+	wsToken   string // CANVAS_WS_TOKEN — when set, WebSocket upgrades require a matching bearer/query token
 	mu        sync.Mutex
 	sessions  map[*websocket.Conn]string
 	conns     map[*websocket.Conn]connEntry
@@ -130,10 +131,33 @@ type Service struct {
 	messageHandlers map[string]func(sessionID string, payload map[string]any)
 }
 
+// NewService creates a canvas service with origin-restricted WebSocket upgrader.
+// Allowed origins are loaded from CANVAS_ALLOWED_ORIGINS env var (comma-separated).
+// When no allowlist is configured (local/test), all origins are accepted.
 func NewService(injector Injector) *Service {
+	allowedOrigins := parseAllowedOrigins(os.Getenv("CANVAS_ALLOWED_ORIGINS"))
+
+	wsToken := strings.TrimSpace(os.Getenv("CANVAS_WS_TOKEN"))
+
 	s := &Service{
-		upgrader:        websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }},
+		upgrader: websocket.Upgrader{CheckOrigin: func(r *http.Request) bool {
+			// REPAIR: enforce origin allowlist for production security.
+			if len(allowedOrigins) == 0 {
+				return true // no allowlist configured — local/test only
+			}
+			origin := r.Header.Get("Origin")
+			if origin == "" {
+				return false
+			}
+			for _, allowed := range allowedOrigins {
+				if strings.EqualFold(origin, allowed) {
+					return true
+				}
+			}
+			return false
+		}},
 		injector:        injector,
+		wsToken:         wsToken,
 		startedAt:       time.Now().UTC(),
 		sessions:        map[*websocket.Conn]string{},
 		conns:           map[*websocket.Conn]connEntry{},
@@ -144,6 +168,22 @@ func NewService(injector Injector) *Service {
 	}
 	s.registerDefaultHandlers()
 	return s
+}
+
+// parseAllowedOrigins splits a comma-separated list of allowed origins.
+func parseAllowedOrigins(raw string) []string {
+	if raw == "" {
+		return nil
+	}
+	parts := strings.Split(raw, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		trimmed := strings.TrimSpace(p)
+		if trimmed != "" {
+			out = append(out, trimmed)
+		}
+	}
+	return out
 }
 
 func (s *Service) registerDefaultHandlers() {
@@ -171,7 +211,40 @@ func (s *Service) registerDefaultHandlers() {
 	s.messageHandlers[MsgTypeToolResult] = func(sessionID string, payload map[string]any) {}
 }
 
+// validateWSAuth checks the WebSocket upgrade request for a valid auth token.
+// It returns true if the request is authorized. When CANVAS_WS_TOKEN is unset
+// (empty), all requests are allowed for backward compatibility in local/test
+// environments. When set, the token must appear as a Bearer token in the
+// Authorization header or as the "token" query parameter.
+func (s *Service) validateWSAuth(r *http.Request) bool {
+	if s.wsToken == "" {
+		return true // no token configured — allow all (local/test)
+	}
+
+	// Check Authorization header: "Bearer <token>"
+	if auth := r.Header.Get("Authorization"); auth != "" {
+		const prefix = "Bearer "
+		if strings.HasPrefix(auth, prefix) {
+			if strings.TrimSpace(auth[len(prefix):]) == s.wsToken {
+				return true
+			}
+		}
+	}
+
+	// Check "token" query parameter
+	if r.URL.Query().Get("token") == s.wsToken {
+		return true
+	}
+
+	return false
+}
+
 func (s *Service) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
+	if !s.validateWSAuth(r) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
 	conn, err := s.upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)

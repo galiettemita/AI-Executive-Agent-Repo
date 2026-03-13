@@ -1,200 +1,37 @@
 {
-  "pipeline_version": "UltraPipeline",
-  "current_segment": 8,
-  "current_prompt": "G",
-  "completed_prompts": ["A", "B", "C", "D", "E", "F", "G"],
-  "execution_log": [
-    {
-      "segment": 0,
-      "name": "Execution Environment Detection",
-      "status": "COMPLETE",
-      "timestamp": "2026-03-12T00:00:00Z"
-    },
-    {
-      "segment": 1,
-      "name": "Repository Discovery",
-      "status": "COMPLETE",
-      "timestamp": "2026-03-12T00:00:00Z"
-    },
-    {
-      "segment": 2,
-      "name": "Baseline Validation",
-      "status": "COMPLETE",
-      "result": "build PASS, 2 test failures (stale references) — FIXED in Prompt A",
-      "timestamp": "2026-03-12T00:00:00Z"
-    },
-    {
-      "segment": 3,
-      "name": "Prompt Blueprint Preparation",
-      "status": "COMPLETE",
-      "timestamp": "2026-03-12T00:00:00Z"
-    },
-    {
-      "segment": 4,
-      "name": "Repository Structure Lock",
-      "status": "COMPLETE",
-      "timestamp": "2026-03-12T00:00:00Z"
-    },
-    {
-      "segment": 5,
-      "name": "Migration Safety Verification",
-      "status": "COMPLETE",
-      "note": "Script present; requires Docker for runtime verification",
-      "timestamp": "2026-03-12T00:00:00Z"
-    },
-    {
-      "segment": 6,
-      "name": "Schema Drift Detection",
-      "status": "COMPLETE",
-      "note": "No critical drift; enum count may need update for migrations 014-018",
-      "timestamp": "2026-03-12T00:00:00Z"
-    },
-    {
-      "segment": 7,
-      "name": "Dependency Graph Initialization",
-      "status": "COMPLETE",
-      "timestamp": "2026-03-12T00:00:00Z"
-    },
-    {
-      "segment": 8,
-      "name": "Pipeline Monitoring Setup",
-      "status": "COMPLETE",
-      "timestamp": "2026-03-12T00:00:00Z"
-    },
-    {
-      "prompt": "A",
-      "name": "Discovery + Harness + Gates",
-      "status": "COMPLETE",
-      "tasks_completed": 14,
-      "tasks_total": 14,
-      "timestamp": "2026-03-12T00:00:00Z",
-      "artifacts": [
-        "docs/WORKING_AGENT_RUNTIME_MAP.md",
-        "docs/WORKING_AGENT_DEFINITION_OF_DONE.md",
-        "tests/integration/working_agent_smoke_test.go",
-        "Makefile (local-verify target)"
-      ]
-    },
-    {
-      "prompt": "B",
-      "name": "Real LLM Layer + Verify Critic",
-      "status": "COMPLETE",
-      "tasks_completed": 5,
-      "tasks_total": 5,
-      "timestamp": "2026-03-12T00:00:00Z",
-      "artifacts": [
-        "internal/llm/anthropic.go (Anthropic Messages API client with retries, request IDs)",
-        "internal/llm/openai.go (OpenAI Responses API client with retries, request IDs, structured output)",
-        "internal/llm/intelligence.go (plan schema with depends_on, final_answer_requirements, verify/critic)",
-        "internal/llm/client.go (FailoverClient, idempotency keys, context request IDs)",
-        "internal/temporal/activities.go (real LLM + deterministic fallback for classify/plan/verify)",
-        "internal/temporal/workflows.go (verify→replan loop, max 2 iterations)",
-        "internal/temporal/worker.go (VerifyExecutionActivity registration)",
-        "internal/llm/clients_test.go (28 httptest tests for both providers + failover)",
-        "internal/llm/intelligence_test.go (schema validation, end-to-end intelligence tests)",
-        "internal/temporal/activities_llm_test.go (activity deterministic fallback + verify tests)"
-      ]
-    },
-    {
-      "prompt": "C",
-      "name": "Redis-Backed Runtime Guarantees",
-      "status": "COMPLETE",
-      "tasks_completed": 6,
-      "tasks_total": 6,
-      "timestamp": "2026-03-12T00:00:00Z",
-      "artifacts": [
-        "go.mod (go-redis/v9, miniredis/v2 dependencies)",
-        "internal/cache/redis.go (Redis client: Get/Set/Incr/Ping, replay cache, rate limiting, feature flags)",
-        "internal/llm/service.go (Redis-backed replay cache with in-memory fallback)",
-        "internal/llm/rate_limited_client.go (workspace-keyed fixed-window rate limiting via Redis)",
-        "internal/feature_flags/service.go (Redis-backed source of truth with local cache fallback)",
-        "internal/runtime/deep_health.go (RedisPinger interface for protocol-level PING check)",
-        "internal/cache/redis_test.go (15 tests: URL parsing, replay hit/miss/TTL, rate limiting concurrency, feature flags)",
-        "internal/llm/replay_redis_test.go (3 tests: Redis hit, in-memory fallback, cross-instance idempotency)",
-        "internal/runtime/deep_health_test.go (2 tests: PING success, PING failure)"
-      ]
-    },
-    {
-      "prompt": "D",
-      "name": "Tool Registry Powers Planning + Execution",
-      "status": "COMPLETE",
-      "tasks_completed": 4,
-      "tasks_total": 4,
-      "timestamp": "2026-03-12T00:00:00Z",
-      "artifacts": [
-        "internal/connectors/registry_repository.go (PgConnectorRegistryRepository: UpsertConnector, UpsertTool, ListAllTools, ListAllConnectors)",
-        "internal/connectors/handler.go (GET /v1/tools endpoint with ToolRegistryResponse)",
-        "internal/connectors/service.go (SeedToRepository, ListAllTools, ToolKeys, HasTool methods)",
-        "internal/llm/intelligence.go (ToolRegistry interface, planner tool injection + unknown tool rejection)",
-        "cmd/brevioctl/main.go (seed tools command — loads YAML, upserts into PostgreSQL)",
-        "internal/connectors/registry_test.go (12 tests: YAML parsing, validation, handler, SeedToRepository)",
-        "internal/llm/intelligence_test.go (3 tests: refuses unknown, accepts known, no-registry skip)"
-      ]
-    },
-    {
-      "prompt": "E",
-      "name": "Hands Runtime + Temporal Wiring",
-      "status": "COMPLETE",
-      "tasks_completed": 6,
-      "tasks_total": 6,
-      "timestamp": "2026-03-12T00:00:00Z",
-      "artifacts": [
-        "internal/hands/service.go (Go hands runtime: SkillMetadata, Execute, MCPClient, HTTPMCPClient, FakeMCPClient, HTTP handlers)",
-        "internal/hands/executor_adapter.go (ExecutorAdapter bridging hands.Service to Temporal HandsExecutor)",
-        "cmd/hands/main.go (HTTP server binary loading connectors from seed file)",
-        "internal/temporal/activities.go (HandsExecutor interface, ToolOutput field, production execution path)",
-        "internal/contracts/service_matrix_closure_test.go (updated for cmd/hands)",
-        "internal/hands/service_test.go (18 tests: service, adapter, HTTP handlers, FakeMCP, integration E2E)"
-      ]
-    },
-    {
-      "prompt": "F",
-      "name": "Policy Enforcement + No-Stubs E2E Gate + Operational Polish",
-      "status": "COMPLETE",
-      "tasks_completed": 3,
-      "tasks_total": 3,
-      "timestamp": "2026-03-12T00:00:00Z",
-      "artifacts": [
-        "internal/control/mux.go (OPAEvaluator in MuxDependencies, /v1/ routes wrapped with OPAPolicyMiddleware, health exempt)",
-        "cmd/control/main.go (evaluator wired into MuxDependencies)",
-        "internal/config/registry.go (OPA_ENDPOINT → OPA_URL canonical name fix)",
-        "internal/control/opa_middleware_test.go (6 tests: allow, deny-unreachable, deny-policy, nil-passthrough, require-approval, mux-health-exempt)",
-        "tests/integration/no_stubs_e2e_test.go (E2E: seed→classify→plan→authorize→execute→verify with fake LLM + spy hands + no-stubs assertions)",
-        "RUNBOOK.md (env vars, local dev quick start, troubleshooting: replay cache, rate limiting, OPA)"
-      ]
-    },
-    {
-      "prompt": "G",
-      "name": "Memory + RAG Productionization",
-      "status": "COMPLETE",
-      "tasks_completed": 9,
-      "tasks_total": 9,
-      "timestamp": "2026-03-12T00:00:00Z",
-      "artifacts": [
-        "docs/PROMPT_G_MEMORY_RAG_TRACEABILITY.md (schema-to-code mismatch analysis)",
-        "go.mod (pgvector-go v0.3.0 dependency)",
-        "internal/database/pool.go (AfterConnect pgvector type registration)",
-        "internal/database/vector.go (ToVector, FromVector, NullableVector helpers)",
-        "db/migrations/019_BREVIO_memory_rag_schema_alignment.sql (user_id, embedding_version, expires_at on memory_items; metadata on rag_chunks; HNSW index on memory_items.embedding)",
-        "internal/rag/pg_vector_store.go (SQL column names aligned: id, rag_collection_id, chunk_text, workspace_id; pgvector.Vector types)",
-        "internal/rag/pgvector.go (WorkspaceID field added to ChunkWithEmbedding)",
-        "internal/memory/pg_repository.go (pgvector.Vector for FindSimilarByEmbedding)",
-        "internal/rag/embeddings.go (TTL cache with max size, WithCacheTTL/WithCacheMaxSize options)",
-        "internal/temporal/activities.go (VectorStore field in ActivityDeps/Activities)",
-        "internal/temporal/activities_v102_p8.go (EmbedAndChunkActivity persists chunks to PgVectorProdStore)",
-        "internal/contracts/migration_chain_authority_closure_test.go (migration 019 added)",
-        "internal/contracts/dependency_closure_test.go (pgvector-go + updated x/ versions)",
-        "RUNBOOK.md (pgvector/embedding layer troubleshooting section)"
-      ]
-    }
+  "pipeline_version": "DeterministicRepairPipeline_v2",
+  "base_pipeline": "UltraPipeline (Prompts A-G complete)",
+  "current_state": 2,
+  "last_executed_prompt": null,
+  "checkpoint_id": "CP-0",
+  "repository_head": "c2a048825b0cd1e2a0f92e264cc7805e889ff6bf",
+  "branch": "codex/brevio-openclaw-phase0",
+  "prior_work": {
+    "completed_prompts": ["A", "B", "C", "D", "E", "F", "G"],
+    "note": "Infrastructure established (LLM clients, Redis cache, tool registry, hands runtime, policy enforcement, memory/RAG). Production-blocking defects identified by deterministic audit remain unfixed."
+  },
+  "repair_states": [
+    { "state": 0, "name": "INITIALIZATION", "status": "completed" },
+    { "state": 1, "name": "PROMPT_COMPILATION", "status": "completed" },
+    { "state": 2, "name": "TRACEABILITY_MAP", "status": "in_progress" },
+    { "state": 3, "name": "REPOSITORY_STABILITY_CHECK", "status": "pending" },
+    { "state": 4, "name": "STRUCTURE_LOCK", "status": "pending" },
+    { "state": 5, "name": "DEPENDENCY_VALIDATION", "status": "pending" },
+    { "state": 6, "name": "PROMPT_1_TEMPORAL_SILENT_SUCCESS", "status": "pending" },
+    { "state": 7, "name": "PROMPT_2_EXECUTOR_DISPATCHER_WIRING", "status": "pending" },
+    { "state": 8, "name": "PROMPT_3_SECURITY_CLOSURE", "status": "pending" },
+    { "state": 9, "name": "PROMPT_4_STUB_ELIMINATION", "status": "pending" },
+    { "state": 10, "name": "PROMPT_5_OBSERVABILITY_CLOSURE", "status": "pending" },
+    { "state": 11, "name": "PROMPT_6_REPRODUCIBLE_BUILD", "status": "pending" },
+    { "state": 12, "name": "FINAL_VERIFICATION", "status": "pending" }
   ],
-  "self_healing_events": [
-    {
-      "prompt": "A",
-      "trigger": "Stale standalone function references in v91_workflows_test.go and temporal_client_test.go",
-      "action": "Added standalone wrappers to v91_activities.go; updated contract test to use Activities struct methods",
-      "result": "Both packages now compile and pass",
-      "timestamp": "2026-03-12T00:00:00Z"
-    }
+  "confirmed_defects": [
+    "activities.go:631-639 fabricated tool success when HandsExecutor nil",
+    "activities.go:802-855 silent outbox drop when OutboxDispatcher nil",
+    "temporal-worker/main.go missing HandsExecutor and OutboxDispatcher wiring",
+    "executor/main.go:50-53 hard-coded default HMAC key",
+    "canvas/service.go:135 allow-all WebSocket origin",
+    "hands/main.go:26 zero-key InMemoryKeyProvider",
+    "6 stub services: agents, memorysvc, router, cron, browser, marketing"
   ]
 }

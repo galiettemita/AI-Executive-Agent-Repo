@@ -413,7 +413,7 @@ func TestFakeMCPClient_DefaultResponse(t *testing.T) {
 	t.Parallel()
 	fake := NewFakeMCPClient()
 
-	result, err := fake.Execute(context.Background(), "https://mcp.example/test", "test.tool", nil)
+	result, err := fake.Execute(context.Background(), "https://mcp.test.internal/test", "test.tool", nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -430,7 +430,7 @@ func TestFakeMCPClient_CustomError(t *testing.T) {
 	fake := NewFakeMCPClient()
 	fake.SetError(errors.New("test error"))
 
-	_, err := fake.Execute(context.Background(), "https://mcp.example/test", "test.tool", nil)
+	_, err := fake.Execute(context.Background(), "https://mcp.test.internal/test", "test.tool", nil)
 	if err == nil {
 		t.Fatal("expected error")
 	}

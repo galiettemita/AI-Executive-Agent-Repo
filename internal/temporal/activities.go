@@ -24,6 +24,7 @@ import (
 	"github.com/brevio/brevio/internal/rag"
 	"github.com/brevio/brevio/internal/trust"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"go.temporal.io/sdk/temporal"
 )
 
 // Activity input/output types
@@ -628,14 +629,21 @@ func (a *Activities) ExecuteToolActivity(ctx context.Context, input ExecuteToolI
 		}, nil
 	}
 
-	// Fallback: deterministic stub when hands runtime is not configured.
+	// REPAIR: missing HandsExecutor is a configuration error in production.
+	// Return non-retryable error so the workflow cannot silently succeed.
+	log.Printf("[ExecuteTool] FAILED tool=%s reason=HANDS_EXECUTOR_UNCONFIGURED", input.ToolKey)
 	return &ToolExecutionActivityResult{
 		ToolKey:        input.ToolKey,
 		Phase:          "commit",
-		Success:        true,
+		Success:        false,
 		IdempotencyKey: input.IdempotencyKey,
 		PayloadHash:    payloadHash,
-	}, nil
+		ToolOutput:     `{"error":"HANDS_EXECUTOR_UNCONFIGURED"}`,
+	}, temporal.NewNonRetryableApplicationError(
+		"HANDS_EXECUTOR_UNCONFIGURED: no executor configured for tool execution",
+		"CONFIGURATION_ERROR",
+		nil,
+	)
 }
 
 func (a *Activities) SynthesizeResponseActivity(ctx context.Context, input SynthesizeResponseInput) (*SynthesizeResponseResult, error) {
@@ -801,16 +809,37 @@ func (a *Activities) FetchPendingOutboxActivity(ctx context.Context, input Outbo
 // Observable: increments atomic counters for dispatched/failed/DLQ metrics.
 func (a *Activities) DispatchOutboxEntryActivity(ctx context.Context, entry OutboxEntry) (*OutboxEntryDispatchResult, error) {
 	if a.outboxSvc == nil {
-		return &OutboxEntryDispatchResult{Success: true}, nil
+		return &OutboxEntryDispatchResult{
+			Success: false,
+			Error:   "OUTBOX_SERVICE_UNCONFIGURED",
+		}, temporal.NewNonRetryableApplicationError(
+			"OUTBOX_SERVICE_UNCONFIGURED: no outbox service configured for dispatch",
+			"CONFIGURATION_ERROR",
+			nil,
+		)
 	}
 
 	log.Printf("[OutboxDispatch] entry=%s target=%s attempts=%d/%d", entry.ID, entry.Target, entry.Attempts, entry.MaxAttempts)
 
-	// Attempt dispatch via the configured dispatcher.
-	var dispatchErr error
-	if a.outboxDispatcher != nil {
-		dispatchErr = a.outboxDispatcher.Dispatch(ctx, entry.Target, []byte(entry.Payload))
+	// REPAIR: outboxDispatcher must be configured for production dispatch.
+	// A nil dispatcher is a configuration error — fail explicitly so retries/DLQ apply.
+	if a.outboxDispatcher == nil {
+		failReason := "OUTBOX_DISPATCHER_UNCONFIGURED"
+		_ = a.outboxSvc.MarkFailed(ctx, entry.ID, failReason)
+		a.outboxFailed.Add(1)
+		log.Printf("[OutboxDispatch] FAILED entry=%s reason=%s", entry.ID, failReason)
+		return &OutboxEntryDispatchResult{
+			Success: false,
+			Error:   failReason,
+		}, temporal.NewNonRetryableApplicationError(
+			"OUTBOX_DISPATCHER_UNCONFIGURED: no dispatcher configured for outbox delivery",
+			"CONFIGURATION_ERROR",
+			nil,
+		)
 	}
+
+	// Attempt dispatch via the configured dispatcher.
+	dispatchErr := a.outboxDispatcher.Dispatch(ctx, entry.Target, []byte(entry.Payload))
 
 	if dispatchErr != nil {
 		// Mark failed — outbox service handles exponential backoff and DLQ promotion.

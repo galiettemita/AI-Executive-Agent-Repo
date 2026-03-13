@@ -12,6 +12,8 @@ import (
 
 	adminpkg "github.com/brevio/brevio/internal/admin"
 	brainpkg "github.com/brevio/brevio/internal/brain"
+	"github.com/brevio/brevio/internal/connectors"
+	handspkg "github.com/brevio/brevio/internal/hands"
 	callpkg "github.com/brevio/brevio/internal/hands/call"
 	cognitionpkg "github.com/brevio/brevio/internal/cognition"
 	"github.com/brevio/brevio/internal/compliance"
@@ -119,6 +121,43 @@ func main() {
 			"llm_intelligence": llmStatus,
 		})
 	}
+
+	// REPAIR: Wire HandsExecutor — connects data plane to control plane.
+	// Uses in-process hands service with MCP client for tool execution.
+	seedPath := strings.TrimSpace(os.Getenv("CONNECTORS_SEED_FILE"))
+	if seedPath == "" {
+		seedPath = "internal/connectors/seeds/connectors.yaml"
+	}
+	handsKeyMaterial := strings.TrimSpace(os.Getenv("CONNECTORS_MASTER_KEY_B64"))
+	var handsKey []byte
+	if handsKeyMaterial != "" {
+		handsKey = []byte(handsKeyMaterial)
+	} else if cfg.Environment == "local" || cfg.Environment == "test" {
+		handsKey = make([]byte, 32) // zero key acceptable in local/test only
+	}
+	if handsKey != nil {
+		kp := connectors.NewInMemoryKeyProvider("v0", handsKey)
+		connSvc := connectors.NewService(kp)
+		if loadErr := connSvc.LoadSeedFile(seedPath); loadErr != nil {
+			logger.Info("hands_seed_load_warning", map[string]any{"error": loadErr.Error()})
+		}
+		mcpClient := handspkg.NewHTTPMCPClient(30 * time.Second)
+		handsSvc := handspkg.NewService(connSvc, mcpClient)
+		deps.HandsExecutor = handspkg.NewExecutorAdapter(handsSvc)
+		logger.Info("hands_executor_wired", map[string]any{"status": "enabled", "skills": len(handsSvc.ListSkills())})
+	} else {
+		// Fail-fast: non-local/test environments must have HandsExecutor configured.
+		if cfg.Environment != "" && cfg.Environment != "local" && cfg.Environment != "test" {
+			log.Fatalf("CONNECTORS_MASTER_KEY_B64 is required in %s environment — HandsExecutor cannot be nil in production", cfg.Environment)
+		}
+		logger.Info("hands_executor_degraded_mode", map[string]any{
+			"reason": "CONNECTORS_MASTER_KEY_B64 not set (acceptable in local/test only)",
+		})
+	}
+
+	// REPAIR: Wire OutboxDispatcher — enables real outbound delivery.
+	deps.OutboxDispatcher = breviotemporal.NewHTTPOutboxDispatcher(30 * time.Second)
+	logger.Info("outbox_dispatcher_wired", map[string]any{"status": "enabled", "type": "http"})
 
 	w := breviotemporal.NewWorkerWithDeps(temporalClient, breviotemporal.TaskQueueCore, deps)
 

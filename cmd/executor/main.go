@@ -49,7 +49,12 @@ func main() {
 
 		hmacKey := []byte(os.Getenv("HMAC_KEY"))
 		if len(hmacKey) == 0 {
-			hmacKey = []byte("executor-default-hmac-key")
+			// REPAIR: In non-local environments, HMAC_KEY must be configured.
+			// Hard-coded default secrets are a critical security defect.
+			if cfg.Environment != "local" && cfg.Environment != "test" {
+				log.Fatalf("HMAC_KEY is required in %s environment — refusing to start with default secret", cfg.Environment)
+			}
+			hmacKey = []byte("executor-local-dev-key-not-for-production")
 		}
 		receiptSvc := control.NewReceiptService(hmacKey)
 		durableReceipts := control.NewDurableReceiptService(receiptSvc, receiptRepo)

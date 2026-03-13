@@ -12,6 +12,7 @@ require go.temporal.io/sdk v1.31.0
 
 require (
 	github.com/alicebob/miniredis/v2 v2.37.0
+	github.com/pgvector/pgvector-go v0.3.0
 	github.com/redis/go-redis/v9 v9.18.0
 	github.com/stretchr/testify v1.10.0
 	gopkg.in/yaml.v3 v3.0.1
@@ -31,7 +32,6 @@ require (
 	github.com/jackc/puddle/v2 v2.2.2 // indirect
 	github.com/nexus-rpc/sdk-go v0.1.0 // indirect
 	github.com/pborman/uuid v1.2.1 // indirect
-	github.com/pgvector/pgvector-go v0.3.0 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/robfig/cron v1.2.0 // indirect
 	github.com/stretchr/objx v0.5.2 // indirect

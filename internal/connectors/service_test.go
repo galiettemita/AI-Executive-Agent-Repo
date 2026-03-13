@@ -36,7 +36,7 @@ func TestSeedLoaderSupportsJSONFile(t *testing.T) {
 			Domain:       "documents",
 			RiskLevel:    "LOW",
 			DataClass:    "internal",
-			MCPServerURL: "https://mcp.example/json_connector",
+			MCPServerURL: "https://mcp.test.internal/json_connector",
 		}},
 		Tools: []ConnectorTool{{
 			ConnectorKey:  "json_connector",

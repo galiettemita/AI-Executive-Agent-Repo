@@ -184,6 +184,15 @@ func (s *Service) LoadSeedFile(path string) error {
 	if err != nil {
 		return err
 	}
+	// If MCP_BASE_URL is set, override placeholder URLs (.unconfigured.local).
+	if base := strings.TrimSpace(os.Getenv("MCP_BASE_URL")); base != "" {
+		base = strings.TrimRight(base, "/")
+		for i := range seed.Connectors {
+			if strings.Contains(seed.Connectors[i].MCPServerURL, ".unconfigured.local") {
+				seed.Connectors[i].MCPServerURL = base + "/" + seed.Connectors[i].Key
+			}
+		}
+	}
 	return s.LoadSeed(seed)
 }
 

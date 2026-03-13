@@ -1,4 +1,4 @@
-.PHONY: dev build test lint migrate db-verify docker-build docker-build-infra contracts acceptance policy-validate ci ci-full load-test security-validate infra-validate api-docs api-docs-check tools-md tools-md-check skills-scaffolds-check proto-validate evals generate-remote-catalog-keys mcp-wave1-checklist mcp-wave56-checklist mcp-fleet-validate mcp-runtime-rollout deploy-helm staging-smoke-tests external-closeout-check external-closeout-regression-check external-phase-transition-check production-deployment-signoff-check production-canary-check production-deployment-todo production-post-deploy-validation production-phase-sync phase-closure-manifest phase-handoff-bundle phase-status go-live-signoff go-live-approval-packet go-live-approval-confirm manual-closeout-todo manual-provider-steps manual-closeout-batch-commands manual-closeout-confirm manual-closeout-unconfirm external-phase-sync local-verify
+.PHONY: dev build test lint migrate db-verify docker-build docker-build-infra contracts acceptance policy-validate ci ci-full load-test security-validate infra-validate api-docs api-docs-check tools-md tools-md-check skills-scaffolds-check proto-validate evals generate-remote-catalog-keys mcp-wave1-checklist mcp-wave56-checklist mcp-fleet-validate mcp-runtime-rollout deploy-helm staging-smoke-tests external-closeout-check external-closeout-regression-check external-phase-transition-check production-deployment-signoff-check production-canary-check production-deployment-todo production-post-deploy-validation production-phase-sync phase-closure-manifest phase-handoff-bundle phase-status go-live-signoff go-live-approval-packet go-live-approval-confirm manual-closeout-todo manual-provider-steps manual-closeout-batch-commands manual-closeout-confirm manual-closeout-unconfirm external-phase-sync local-verify audit
 
 GO_EXEC := ./scripts/dev/go_exec.sh
 GOFMT_EXEC := ./scripts/dev/gofmt_exec.sh
@@ -46,7 +46,7 @@ policy-validate:
 	bash scripts/policies/run_opa_tests.sh
 
 docker-build:
-	@for svc in gateway brain control executor canvas temporal-worker browser marketing agents memory router cron; do \
+	@for svc in gateway brain control executor canvas temporal-worker hands brevioctl; do \
 		echo "building $$svc"; \
 		docker build --build-arg SERVICE=$$svc -t brevio-$$svc:local .; \
 	done
@@ -197,3 +197,16 @@ mcp-fleet-validate:
 
 mcp-runtime-rollout:
 	$(GO_EXEC) run ./scripts/mcp/runtime_rollout/main.go
+
+# audit: definitive pass/fail gate for production readiness.
+# Runs tests, vet, and placeholder scan. Exits non-zero on any failure.
+audit:
+	@echo "==> [1/4] go vet"
+	$(GO_EXEC) vet ./...
+	@echo "==> [2/4] go build"
+	$(GO_EXEC) build -mod=vendor ./...
+	@echo "==> [3/4] go test"
+	$(GO_EXEC) test ./... -count=1
+	@echo "==> [4/4] placeholder scan (must be zero)"
+	@if grep -rn --include='*.go' -E '//\s*(TODO|FIXME|STUB|PLACEHOLDER|NOT_IMPLEMENTED)\b' internal/ cmd/; then echo "FAIL: placeholder markers found"; exit 1; fi
+	@echo "==> audit PASSED"

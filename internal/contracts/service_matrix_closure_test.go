@@ -12,19 +12,13 @@ func TestServiceBuildMatrixClosure(t *testing.T) {
 	root := repositoryRoot(t)
 
 	expectedServices := []string{
-		"agents",
 		"brain",
 		"brevioctl",
-		"browser",
 		"canvas",
 		"control",
-		"cron",
 		"executor",
 		"gateway",
 		"hands",
-		"marketing",
-		"memory",
-		"router",
 		"temporal-worker",
 	}
 
@@ -66,19 +60,13 @@ func TestServiceBinaryEntryPointClosure(t *testing.T) {
 	}
 	sort.Strings(actual)
 	assertStringSliceSetEquals(t, actual, []string{
-		"agents",
 		"brain",
 		"brevioctl",
-		"browser",
 		"canvas",
 		"control",
-		"cron",
 		"executor",
 		"gateway",
 		"hands",
-		"marketing",
-		"memory",
-		"router",
 		"temporal-worker",
 	}, "cmd_service_set")
 }

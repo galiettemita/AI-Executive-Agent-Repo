@@ -259,7 +259,8 @@ func TestExecuteToolActivity_MissingReceiptLLM(t *testing.T) {
 	}
 }
 
-// TestExecuteToolActivity_ValidReceiptLLM verifies that valid receipt produces result.
+// TestExecuteToolActivity_ValidReceiptLLM verifies that without HandsExecutor configured,
+// the activity returns explicit failure (not fabricated success).
 func TestExecuteToolActivity_ValidReceiptLLM(t *testing.T) {
 	t.Parallel()
 
@@ -271,8 +272,12 @@ func TestExecuteToolActivity_ValidReceiptLLM(t *testing.T) {
 		ReceiptID:      "receipt-001",
 		IdempotencyKey: "idem-test",
 	})
-	if err != nil {
-		t.Fatalf("error: %v", err)
+	// Expect non-retryable configuration error when HandsExecutor is nil.
+	if err == nil {
+		t.Fatal("expected non-nil error for unconfigured HandsExecutor")
+	}
+	if !strings.Contains(err.Error(), "HANDS_EXECUTOR_UNCONFIGURED") {
+		t.Fatalf("expected HANDS_EXECUTOR_UNCONFIGURED error, got: %v", err)
 	}
 	if result.ToolKey != "calendar.write" {
 		t.Errorf("expected tool key 'calendar.write', got %q", result.ToolKey)
@@ -280,10 +285,13 @@ func TestExecuteToolActivity_ValidReceiptLLM(t *testing.T) {
 	if result.Phase != "commit" {
 		t.Errorf("expected phase 'commit', got %q", result.Phase)
 	}
-	if !result.Success {
-		t.Error("expected Success=true")
+	if result.Success {
+		t.Error("expected Success=false when HandsExecutor is nil")
 	}
 	if result.IdempotencyKey == "" {
 		t.Error("expected non-empty IdempotencyKey")
+	}
+	if result.ToolOutput == "" {
+		t.Error("expected non-empty ToolOutput with HANDS_EXECUTOR_UNCONFIGURED error")
 	}
 }

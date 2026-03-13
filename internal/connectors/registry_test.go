@@ -18,7 +18,7 @@ func TestSeedFileYAMLParsing(t *testing.T) {
 
 	content := []byte(`
 connectors:
-  - { key: test_conn, domain: web, risk_level: LOW, data_class: public, mcp_server_url: https://mcp.example/test_conn }
+  - { key: test_conn, domain: web, risk_level: LOW, data_class: public, mcp_server_url: https://mcp.test.internal/test_conn }
 tools:
   - { connector_key: test_conn, tool_key: test_conn.search, write: false, reversible: false, autonomy_floor: A0 }
   - { connector_key: test_conn, tool_key: test_conn.write, write: true, reversible: true, autonomy_floor: A2 }
@@ -66,7 +66,7 @@ func TestSeedLoaderValidation_InvalidToolKey(t *testing.T) {
 			Domain:       "web",
 			RiskLevel:    "LOW",
 			DataClass:    "public",
-			MCPServerURL: "https://mcp.example/test_conn",
+			MCPServerURL: "https://mcp.test.internal/test_conn",
 		}},
 		Tools: []ConnectorTool{{
 			ConnectorKey:  "test_conn",
@@ -90,7 +90,7 @@ func TestSeedLoaderValidation_UnknownConnector(t *testing.T) {
 			Domain:       "web",
 			RiskLevel:    "LOW",
 			DataClass:    "public",
-			MCPServerURL: "https://mcp.example/test_conn",
+			MCPServerURL: "https://mcp.test.internal/test_conn",
 		}},
 		Tools: []ConnectorTool{{
 			ConnectorKey:  "unknown_conn",

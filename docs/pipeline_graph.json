@@ -1,0 +1,202 @@
+{
+  "version": "1.0.0",
+  "compiled_at": "2026-03-12T00:00:00Z",
+  "source": "Deterministic Architecture Audit and Repository Repair Plan for Brevio Repo",
+  "states": [
+    { "id": 0, "name": "INITIALIZATION", "status": "completed" },
+    { "id": 1, "name": "PROMPT_COMPILATION", "status": "completed" },
+    { "id": 2, "name": "TRACEABILITY_MAP", "status": "pending" },
+    { "id": 3, "name": "REPOSITORY_STABILITY_CHECK", "status": "pending" },
+    { "id": 4, "name": "STRUCTURE_LOCK", "status": "pending" },
+    { "id": 5, "name": "DEPENDENCY_VALIDATION", "status": "pending" },
+    { "id": 6, "name": "PROMPT_1_TEMPORAL_SILENT_SUCCESS", "status": "pending" },
+    { "id": 7, "name": "PROMPT_2_EXECUTOR_DISPATCHER_WIRING", "status": "pending" },
+    { "id": 8, "name": "PROMPT_3_SECURITY_CLOSURE", "status": "pending" },
+    { "id": 9, "name": "PROMPT_4_STUB_ELIMINATION", "status": "pending" },
+    { "id": 10, "name": "PROMPT_5_OBSERVABILITY_CLOSURE", "status": "pending" },
+    { "id": 11, "name": "PROMPT_6_REPRODUCIBLE_BUILD", "status": "pending" },
+    { "id": 12, "name": "FINAL_VERIFICATION", "status": "pending" }
+  ],
+  "tasks": [
+    {
+      "id": "T1",
+      "prompt": 1,
+      "name": "fix_outbox_dispatch_silent_drop",
+      "file": "internal/temporal/activities.go",
+      "lines": "802-855",
+      "description": "Fail DispatchOutboxEntryActivity when outboxDispatcher is nil instead of silently marking dispatched",
+      "depends_on": [],
+      "validation": "go build ./internal/temporal/... && go test ./internal/temporal/..."
+    },
+    {
+      "id": "T2",
+      "prompt": 1,
+      "name": "fix_tool_execution_fabricated_success",
+      "file": "internal/temporal/activities.go",
+      "lines": "631-639",
+      "description": "Return Success=false when HandsExecutor is nil instead of fabricating success",
+      "depends_on": [],
+      "validation": "go build ./internal/temporal/... && go test ./internal/temporal/..."
+    },
+    {
+      "id": "T3",
+      "prompt": 2,
+      "name": "create_remote_hands_executor",
+      "file": "internal/hands/remote_executor.go",
+      "description": "Implement HandsExecutor interface via HTTP calls to hands service",
+      "depends_on": ["T2"],
+      "validation": "go build ./internal/hands/..."
+    },
+    {
+      "id": "T4",
+      "prompt": 2,
+      "name": "create_http_outbox_dispatcher",
+      "file": "internal/temporal/outbox_dispatcher_http.go",
+      "description": "Implement OutboxDispatcher with SSRF protection and target allowlist",
+      "depends_on": ["T1"],
+      "validation": "go build ./internal/temporal/..."
+    },
+    {
+      "id": "T5",
+      "prompt": 2,
+      "name": "wire_deps_in_temporal_worker",
+      "file": "cmd/temporal-worker/main.go",
+      "description": "Wire HandsExecutor and OutboxDispatcher into ActivityDeps",
+      "depends_on": ["T3", "T4"],
+      "validation": "go build ./cmd/temporal-worker/..."
+    },
+    {
+      "id": "T6",
+      "prompt": 3,
+      "name": "remove_hardcoded_hmac_key",
+      "file": "cmd/executor/main.go",
+      "lines": "50-53",
+      "description": "Require HMAC_KEY in non-local environments, fail-fast if missing",
+      "depends_on": [],
+      "validation": "go build ./cmd/executor/..."
+    },
+    {
+      "id": "T7",
+      "prompt": 3,
+      "name": "harden_canvas_websocket_origin",
+      "file": "internal/canvas/service.go",
+      "lines": "135",
+      "description": "Replace CheckOrigin allow-all with config-driven allowlist",
+      "depends_on": [],
+      "validation": "go build ./internal/canvas/... && go test ./internal/canvas/..."
+    },
+    {
+      "id": "T8",
+      "prompt": 3,
+      "name": "harden_hands_key_provider",
+      "file": "cmd/hands/main.go",
+      "lines": "26",
+      "description": "Replace zero-key InMemoryKeyProvider with env-based key material for non-local",
+      "depends_on": [],
+      "validation": "go build ./cmd/hands/..."
+    },
+    {
+      "id": "T9",
+      "prompt": 3,
+      "name": "validate_connector_seed_file",
+      "file": "cmd/hands/main.go",
+      "description": "Reject placeholder unconfigured.local domains in non-local environments",
+      "depends_on": ["T8"],
+      "validation": "go build ./cmd/hands/..."
+    },
+    {
+      "id": "T10",
+      "prompt": 4,
+      "name": "implement_agents_service",
+      "file": "internal/agents/service.go",
+      "description": "Replace stub handlers with DB-backed CRUD and Temporal execution dispatch",
+      "depends_on": ["T5"],
+      "validation": "go build ./internal/agents/... && go build ./cmd/agents/..."
+    },
+    {
+      "id": "T11",
+      "prompt": 4,
+      "name": "implement_memorysvc_service",
+      "file": "internal/memorysvc/service.go",
+      "description": "Replace stub handlers with real persistence via internal/memory and internal/rag",
+      "depends_on": [],
+      "validation": "go build ./internal/memorysvc/... && go build ./cmd/memory/..."
+    },
+    {
+      "id": "T12",
+      "prompt": 4,
+      "name": "implement_router_service",
+      "file": "internal/router/service.go",
+      "description": "Replace stub handlers with real model routing via internal/llm policies",
+      "depends_on": [],
+      "validation": "go build ./internal/router/... && go build ./cmd/router/..."
+    },
+    {
+      "id": "T13",
+      "prompt": 4,
+      "name": "implement_cron_service",
+      "file": "internal/cron/service.go",
+      "description": "Replace stub handlers with DB-backed job persistence and scheduling",
+      "depends_on": [],
+      "validation": "go build ./internal/cron/... && go build ./cmd/cron/..."
+    },
+    {
+      "id": "T14",
+      "prompt": 4,
+      "name": "implement_browser_service",
+      "file": "internal/browser/service.go",
+      "description": "Replace stub handlers with browser automation orchestration",
+      "depends_on": [],
+      "validation": "go build ./internal/browser/... && go build ./cmd/browser/..."
+    },
+    {
+      "id": "T15",
+      "prompt": 4,
+      "name": "implement_marketing_service",
+      "file": "internal/marketing/service.go",
+      "description": "Replace stub handlers with DB-backed campaign and contact management",
+      "depends_on": [],
+      "validation": "go build ./internal/marketing/... && go build ./cmd/marketing/..."
+    },
+    {
+      "id": "T16",
+      "prompt": 5,
+      "name": "implement_otel_tracer_export",
+      "file": "internal/observability/otel.go",
+      "description": "Wire real OTEL OTLP exporter when endpoint is configured",
+      "depends_on": [],
+      "validation": "go build ./internal/observability/..."
+    },
+    {
+      "id": "T17",
+      "prompt": 6,
+      "name": "eliminate_todo_placeholders",
+      "file": "tests/integration/working_agent_smoke_test.go",
+      "description": "Remove or implement TODO markers per audit policy",
+      "depends_on": [],
+      "validation": "grep -r 'TODO' tests/ | wc -l"
+    },
+    {
+      "id": "T18",
+      "prompt": 6,
+      "name": "enforce_non_local_startup_requirements",
+      "file": "cmd/temporal-worker/main.go",
+      "description": "Fail-fast when HANDS_BASE_URL or dispatcher config missing in non-local env",
+      "depends_on": ["T5"],
+      "validation": "go build ./cmd/temporal-worker/..."
+    }
+  ],
+  "parallel_groups": [
+    { "group": "security_closure", "tasks": ["T6", "T7", "T8"], "reason": "modify different files with no shared dependencies" },
+    { "group": "stub_elimination_batch_1", "tasks": ["T11", "T12", "T13", "T14", "T15"], "reason": "independent service files with no shared dependencies" }
+  ],
+  "validation_gates": {
+    "post_prompt_1": "go build ./internal/temporal/... && go test ./internal/temporal/...",
+    "post_prompt_2": "go build ./cmd/temporal-worker/... && go build ./internal/hands/...",
+    "post_prompt_3": "go build ./cmd/executor/... && go build ./internal/canvas/... && go build ./cmd/hands/...",
+    "post_prompt_4": "go build ./internal/agents/... ./internal/memorysvc/... ./internal/router/... ./internal/cron/... ./internal/browser/... ./internal/marketing/...",
+    "post_prompt_5": "go build ./internal/observability/...",
+    "post_prompt_6": "go build ./... && go vet ./...",
+    "final": "go build ./... && go vet ./... && go test ./..."
+  }
+}
