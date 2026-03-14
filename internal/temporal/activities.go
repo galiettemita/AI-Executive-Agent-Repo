@@ -485,6 +485,11 @@ func (a *Activities) GeneratePlanActivity(ctx context.Context, input GeneratePla
 
 		// Plan was already validated by IntelligenceService.GeneratePlan
 		// which calls validatePlan + canonicalizePlan internally.
+		// Guard against nil plan from unexpected LLM response shape.
+		if plan == nil {
+			log.Printf("[GeneratePlan] LLM returned nil plan without error, using deterministic fallback")
+			return a.deterministicPlanFallback(planID, input.Intent), nil
+		}
 
 		toolKeys := make([]string, len(plan.Tools))
 		copy(toolKeys, plan.Tools)
@@ -570,7 +575,10 @@ func (a *Activities) AuthorizePlanActivity(ctx context.Context, input AuthorizeP
 		for _, toolKey := range input.ToolKeys {
 			allowed, hasOverride, err := a.skillACLCheck.IsSkillAllowed(ctx, input.WorkspaceID, "", toolKey)
 			if err != nil {
-				continue // graceful degradation on ACL check failure
+				return &AuthorizePlanResult{
+					Decision: "deny",
+					Reason:   fmt.Sprintf("SKILL_ACL_CHECK_FAILED: tool=%s: %v", toolKey, err),
+				}, nil
 			}
 			if hasOverride && !allowed {
 				return &AuthorizePlanResult{
@@ -662,6 +670,13 @@ func (a *Activities) SynthesizeResponseActivity(ctx context.Context, input Synth
 		synthesized, _, err := a.llmService.SynthesizeResponse(ctx, input.MessageID, toolSummary.String())
 		if err != nil {
 			log.Printf("[Synthesize] LLM synthesis failed, using template fallback: %v", err)
+			return &SynthesizeResponseResult{
+				ResponsePayload: fmt.Sprintf("Processed message %s with %d tool results", input.MessageID, len(input.ToolResults)),
+			}, nil
+		}
+		// Guard against nil response from unexpected LLM output.
+		if synthesized == nil {
+			log.Printf("[Synthesize] LLM returned nil response without error, using template fallback")
 			return &SynthesizeResponseResult{
 				ResponsePayload: fmt.Sprintf("Processed message %s with %d tool results", input.MessageID, len(input.ToolResults)),
 			}, nil

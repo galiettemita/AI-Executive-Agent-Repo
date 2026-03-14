@@ -6,14 +6,13 @@ import (
 	"encoding/hex"
 	"fmt"
 	"net"
-	"net/netip"
-	"net/url"
 	"regexp"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/brevio/brevio/internal/audit"
+	"github.com/brevio/brevio/internal/security"
 	"github.com/google/uuid"
 )
 
@@ -301,103 +300,15 @@ func (s *Service) appendMutationAudit(req ExecutionRequest, exec ToolExecution, 
 	})
 }
 
-var blockedPrefixes = []string{"169.254.169.254", "127.", "::1"}
-
-var blockedCIDRStrings = []string{
-	"127.0.0.0/8",
-	"10.0.0.0/8",
-	"172.16.0.0/12",
-	"192.168.0.0/16",
-	"169.254.0.0/16",
-	"100.64.0.0/10",
-	"198.18.0.0/15",
-	"0.0.0.0/8",
-	"224.0.0.0/4",
-	"240.0.0.0/4",
-	"::1/128",
-	"fc00::/7",
-	"fe80::/10",
-	"fd00::/8",
-}
-
-var blockedCIDRs = func() []netip.Prefix {
-	out := make([]netip.Prefix, 0, len(blockedCIDRStrings))
-	for _, cidr := range blockedCIDRStrings {
-		prefix, err := netip.ParsePrefix(cidr)
-		if err != nil {
-			continue
-		}
-		out = append(out, prefix)
-	}
-	return out
-}()
-
+// validateSSRF delegates to the shared SSRF validator in internal/security,
+// passing the service's custom resolver (if configured) for DNS rebinding
+// protection. This ensures consistent protection across all outbound targets.
 func (s *Service) validateSSRF(target string) error {
-	if target == "" {
-		return nil
-	}
-	parsed, err := url.Parse(target)
-	if err != nil {
-		return fmt.Errorf("invalid target url: %w", err)
-	}
-	host := parsed.Hostname()
-	if host == "" {
-		return fmt.Errorf("missing host")
-	}
-	for _, prefix := range blockedPrefixes {
-		if strings.HasPrefix(host, prefix) {
-			return fmt.Errorf("blocked host: %s", host)
-		}
-	}
-	if strings.EqualFold(host, "localhost") {
-		return fmt.Errorf("blocked host: %s", host)
-	}
-	ip := net.ParseIP(host)
-	if ip != nil {
-		return validateBlockedIP(host, ip)
-	}
-
 	resolver := s.resolver
 	if resolver == nil {
-		return nil
+		resolver = net.DefaultResolver
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
-	defer cancel()
-
-	resolved, err := resolver.LookupIPAddr(ctx, host)
-	if err != nil {
-		// Fail open on DNS resolution failure; hostname checks above still apply.
-		return nil
-	}
-	for _, ipAddr := range resolved {
-		if err := validateBlockedIP(host, ipAddr.IP); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func validateBlockedIP(host string, ip net.IP) error {
-	addr, ok := netip.AddrFromSlice(ip)
-	if !ok {
-		return nil
-	}
-	addr = addr.Unmap()
-	if addr.IsLoopback() {
-		return fmt.Errorf("blocked loopback address: %s", host)
-	}
-	if addr.IsPrivate() || addr.IsLinkLocalUnicast() || addr.IsLinkLocalMulticast() || addr.IsMulticast() || addr.IsUnspecified() {
-		return fmt.Errorf("blocked private address: %s", host)
-	}
-	for _, prefix := range blockedCIDRs {
-		if prefix.Contains(addr) {
-			if addr.String() == "169.254.169.254" {
-				return fmt.Errorf("blocked metadata address: %s", host)
-			}
-			return fmt.Errorf("blocked private address: %s", host)
-		}
-	}
-	return nil
+	return security.ValidateTargetURLWithResolver(target, resolver, 500*time.Millisecond)
 }
 
 func circuitKey(workspaceID, provider string) string {

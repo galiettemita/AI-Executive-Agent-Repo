@@ -15,6 +15,7 @@ type MessageProcessingWorkflowInput struct {
 	ChannelType    string `json:"channel_type"`
 	RawPayload     string `json:"raw_payload"`
 	IdempotencyKey string `json:"idempotency_key"`
+	Tier           string `json:"tier,omitempty"` // T1/T2/T3; defaults to T2 if empty
 }
 
 type MessageProcessingWorkflowResult struct {
@@ -61,7 +62,13 @@ func MessageProcessingWorkflow(ctx workflow.Context, input MessageProcessingWork
 
 	// Step 1: Validate envelope
 	var validateResult ValidateEnvelopeResult
-	err := workflow.ExecuteActivity(ctx, a.ValidateEnvelopeActivity, ValidateEnvelopeInput(input)).Get(ctx, &validateResult)
+	err := workflow.ExecuteActivity(ctx, a.ValidateEnvelopeActivity, ValidateEnvelopeInput{
+		MessageID:      input.MessageID,
+		WorkspaceID:    input.WorkspaceID,
+		ChannelType:    input.ChannelType,
+		RawPayload:     input.RawPayload,
+		IdempotencyKey: input.IdempotencyKey,
+	}).Get(ctx, &validateResult)
 	if err != nil {
 		return &MessageProcessingWorkflowResult{
 			WorkflowID:    "msg-" + input.MessageID,
@@ -159,8 +166,8 @@ func MessageProcessingWorkflow(ctx workflow.Context, input MessageProcessingWork
 		QualityScore: reasoningResult.QualityScore,
 	}).Get(ctx, &cogResult)
 	if err != nil {
-		logger.Warn("cognitive assessment failed, proceeding", "error", err)
-		cogResult = CognitiveAssessResult{Strategy: "proceed"}
+		logger.Warn("cognitive assessment failed, aborting per deny-by-default (D3)", "error", err)
+		cogResult = CognitiveAssessResult{Strategy: "abort"}
 	}
 
 	// Step 7: Council evaluation (convenes for CRITICAL risk or high complexity)
@@ -178,8 +185,8 @@ func MessageProcessingWorkflow(ctx workflow.Context, input MessageProcessingWork
 		Complexity:  complexity,
 	}).Get(ctx, &councilResult)
 	if err != nil {
-		logger.Warn("council evaluation failed, proceeding with default", "error", err)
-		councilResult = CouncilEvalResult{Decision: "approve"}
+		logger.Warn("council evaluation failed, denying per deny-by-default (D3)", "error", err)
+		councilResult = CouncilEvalResult{Decision: "deny", VoteCount: 0, EvidenceHash: "gate_error"}
 	}
 
 	// If cognitive assessment suggests abort, terminate.
@@ -254,7 +261,15 @@ func MessageProcessingWorkflow(ctx workflow.Context, input MessageProcessingWork
 	}
 	ctxVerify := workflow.WithActivityOptions(ctx, verifyAO)
 
-	const maxVerifyIterations = 2
+	// Resolve tier-adaptive verify iteration cap. Default to T2 for backward
+	// compatibility when callers omit Tier.
+	maxVerifyIterations := 2
+	switch input.Tier {
+	case "T1":
+		maxVerifyIterations = 1
+	case "T3":
+		maxVerifyIterations = 3
+	}
 	var execResults []ToolExecutionActivityResult
 	compensationNeeded := false
 	currentToolKeys := reasoningResult.ToolKeys
@@ -392,7 +407,18 @@ func MessageProcessingWorkflow(ctx workflow.Context, input MessageProcessingWork
 		Target:      input.ChannelType,
 	}).Get(ctx, &outboxResult)
 	if err != nil {
-		logger.Warn("outbox enqueue failed", "error", err)
+		logger.Warn("outbox enqueue failed, returning DELIVERY_FAILED", "error", err)
+		return &MessageProcessingWorkflowResult{
+			WorkflowID:          "msg-" + input.MessageID,
+			TerminalState:       "DELIVERY_FAILED",
+			ResponsePayload:     synthResult.ResponsePayload,
+			CompensationNeeded:  true,
+			EvidenceHash:        reasoningResult.EvidenceHash,
+			MemoryItemCount:     len(memResult.Items),
+			RAGChunkCount:       len(ragResult.Chunks),
+			ReasoningIterations: reasoningResult.Iterations,
+			CouncilConvened:     councilResult.Convened,
+		}, nil
 	}
 
 	return &MessageProcessingWorkflowResult{

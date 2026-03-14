@@ -6,12 +6,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
-	"net/netip"
-	"net/url"
-	"strings"
 	"time"
+
+	"github.com/brevio/brevio/internal/security"
 )
 
 // HTTPOutboxDispatcher dispatches outbox entries via HTTP POST to target URLs.
@@ -73,39 +71,8 @@ func (d *HTTPOutboxDispatcher) Dispatch(ctx context.Context, target string, payl
 	return nil
 }
 
-// validateDispatchTarget enforces SSRF protections on outbox targets.
+// validateDispatchTarget delegates to the shared SSRF validator in
+// internal/security, ensuring consistent protection across all outbound targets.
 func validateDispatchTarget(raw string) error {
-	parsed, err := url.Parse(raw)
-	if err != nil {
-		return fmt.Errorf("invalid url: %w", err)
-	}
-
-	scheme := strings.ToLower(parsed.Scheme)
-	if scheme != "https" && scheme != "http" {
-		return fmt.Errorf("blocked scheme: %s", scheme)
-	}
-
-	host := strings.ToLower(parsed.Hostname())
-	if host == "" {
-		return fmt.Errorf("missing host")
-	}
-
-	// Block well-known internal/metadata hosts.
-	if host == "localhost" || host == "::1" || host == "169.254.169.254" {
-		return fmt.Errorf("blocked host: %s", host)
-	}
-	if strings.HasPrefix(host, "127.") {
-		return fmt.Errorf("blocked loopback host")
-	}
-
-	// Resolve IP and block private ranges.
-	ip := net.ParseIP(host)
-	if ip != nil {
-		addr, ok := netip.AddrFromSlice(ip)
-		if ok && (addr.IsLoopback() || addr.IsPrivate() || addr.IsLinkLocalUnicast()) {
-			return fmt.Errorf("blocked private/loopback IP: %s", host)
-		}
-	}
-
-	return nil
+	return security.ValidateTargetURL(raw)
 }

@@ -19,3 +19,17 @@ artifacts/
 sbom.spdx.json
 tests/evals/results/eval-*.json
 .cache/
+
+# Compiled service binaries (build artifacts — not source code)
+/agents
+/blueprints
+/brevioctl
+/browser
+/canvas
+/control
+/cron
+/hands
+/marketing
+/memory
+/router
+/temporal-worker

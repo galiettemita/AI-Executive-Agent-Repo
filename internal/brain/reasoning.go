@@ -309,11 +309,21 @@ func (rl *ReasoningLoop) ExecutorStep(ctx context.Context, plan *Plan) (*Executi
 	order := executionOrder(plan.Steps)
 
 	for _, idx := range order {
+		// Bounds check: skip invalid indices from malformed plans.
+		if idx < 0 || idx >= len(plan.Steps) {
+			failed[idx] = true
+			completed[idx] = true
+			continue
+		}
 		step := plan.Steps[idx]
 
 		// Check if any dependency failed
 		depFailed := false
 		for _, dep := range step.DependsOn {
+			if dep < 0 || dep >= len(plan.Steps) {
+				depFailed = true
+				break
+			}
 			if failed[dep] {
 				depFailed = true
 				break

@@ -40,9 +40,12 @@ func (f *ClientFactory) Resolve(connectorKey string) (ConnectorClient, error) {
 	return client, nil
 }
 
-type NoopClient struct{}
+// TestOnlyNoopClient is a test-only stub that returns success for all operations.
+// MUST NOT be used in production — use ClientFactory.Resolve() which returns an
+// error for unregistered connectors. This type exists solely for unit tests.
+type TestOnlyNoopClient struct{}
 
-func (NoopClient) Simulate(_ context.Context, req ToolCallRequest) (SimulateResult, error) {
+func (TestOnlyNoopClient) Simulate(_ context.Context, req ToolCallRequest) (SimulateResult, error) {
 	return SimulateResult{
 		Success:        true,
 		Preview:        map[string]any{"tool_key": req.ToolKey},
@@ -52,7 +55,7 @@ func (NoopClient) Simulate(_ context.Context, req ToolCallRequest) (SimulateResu
 	}, nil
 }
 
-func (NoopClient) Commit(_ context.Context, req ToolCallRequest) (CommitResult, error) {
+func (TestOnlyNoopClient) Commit(_ context.Context, req ToolCallRequest) (CommitResult, error) {
 	return CommitResult{
 		Success:     true,
 		ReceiptID:   req.IdempotencyKey,
@@ -61,7 +64,7 @@ func (NoopClient) Commit(_ context.Context, req ToolCallRequest) (CommitResult, 
 	}, nil
 }
 
-func (NoopClient) HealthCheck(_ context.Context, _ string) (HealthResult, error) {
+func (TestOnlyNoopClient) HealthCheck(_ context.Context, _ string) (HealthResult, error) {
 	return HealthResult{
 		Reachable:     true,
 		Authenticated: true,

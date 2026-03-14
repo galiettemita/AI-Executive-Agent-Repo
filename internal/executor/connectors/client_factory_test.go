@@ -15,7 +15,7 @@ func TestConnectorFactoryAndRegistry(t *testing.T) {
 	}
 
 	factory := NewClientFactory(registry)
-	if err := factory.RegisterClient("google_calendar", NoopClient{}); err != nil {
+	if err := factory.RegisterClient("google_calendar", TestOnlyNoopClient{}); err != nil {
 		t.Fatalf("register client: %v", err)
 	}
 	client, err := factory.Resolve("google_calendar")
