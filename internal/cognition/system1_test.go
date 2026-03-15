@@ -1,4 +1,4 @@
-package cognitive
+package cognition
 
 import (
 	"testing"

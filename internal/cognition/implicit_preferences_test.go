@@ -1,29 +1,29 @@
-package cognitive
+package cognition
 
 import (
 	"testing"
 	"time"
 )
 
-func TestRecordSignalAndInferPreferences(t *testing.T) {
+func TestRecordWeightedSignalAndInferPreferences(t *testing.T) {
 	t.Parallel()
 
 	svc := NewImplicitPreferenceService()
 
-	svc.RecordSignal(BehaviorSignal{
+	svc.RecordWeightedSignal(WeightedBehaviorSignal{
 		WorkspaceID: "ws1", UserID: "u1", SignalType: "accept",
 		Context: "format", Value: "markdown", Timestamp: time.Now(),
 	})
-	svc.RecordSignal(BehaviorSignal{
+	svc.RecordWeightedSignal(WeightedBehaviorSignal{
 		WorkspaceID: "ws1", UserID: "u1", SignalType: "accept",
 		Context: "format", Value: "markdown", Timestamp: time.Now(),
 	})
-	svc.RecordSignal(BehaviorSignal{
+	svc.RecordWeightedSignal(WeightedBehaviorSignal{
 		WorkspaceID: "ws1", UserID: "u1", SignalType: "dismiss",
 		Context: "format", Value: "plaintext", Timestamp: time.Now(),
 	})
 
-	prefs := svc.InferPreferences("ws1", "u1")
+	prefs := svc.InferWeightedPreferences("ws1", "u1")
 	if len(prefs) == 0 {
 		t.Fatal("expected inferred preferences")
 	}
@@ -43,26 +43,26 @@ func TestRecordSignalAndInferPreferences(t *testing.T) {
 	}
 }
 
-func TestInferPreferencesEmpty(t *testing.T) {
+func TestInferWeightedPreferencesEmpty(t *testing.T) {
 	t.Parallel()
 
 	svc := NewImplicitPreferenceService()
-	prefs := svc.InferPreferences("ws1", "unknown_user")
+	prefs := svc.InferWeightedPreferences("ws1", "unknown_user")
 	if prefs != nil {
 		t.Fatal("expected nil preferences for unknown user")
 	}
 }
 
-func TestGetPreferenceByCategory(t *testing.T) {
+func TestGetWeightedPreferenceByCategory(t *testing.T) {
 	t.Parallel()
 
 	svc := NewImplicitPreferenceService()
-	svc.RecordSignal(BehaviorSignal{
+	svc.RecordWeightedSignal(WeightedBehaviorSignal{
 		WorkspaceID: "ws1", UserID: "u1", SignalType: "click",
 		Context: "theme", Value: "dark", Timestamp: time.Now(),
 	})
 
-	pref, err := svc.GetPreference("ws1", "u1", "theme")
+	pref, err := svc.GetWeightedPreference("ws1", "u1", "theme")
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -74,16 +74,16 @@ func TestGetPreferenceByCategory(t *testing.T) {
 	}
 }
 
-func TestGetPreferenceNonexistentCategory(t *testing.T) {
+func TestGetWeightedPreferenceNonexistentCategory(t *testing.T) {
 	t.Parallel()
 
 	svc := NewImplicitPreferenceService()
-	svc.RecordSignal(BehaviorSignal{
+	svc.RecordWeightedSignal(WeightedBehaviorSignal{
 		WorkspaceID: "ws1", UserID: "u1", SignalType: "click",
 		Context: "theme", Value: "dark", Timestamp: time.Now(),
 	})
 
-	pref, err := svc.GetPreference("ws1", "u1", "nonexistent")
+	pref, err := svc.GetWeightedPreference("ws1", "u1", "nonexistent")
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -92,11 +92,11 @@ func TestGetPreferenceNonexistentCategory(t *testing.T) {
 	}
 }
 
-func TestRecordSignalAutoTimestamp(t *testing.T) {
+func TestRecordWeightedSignalAutoTimestamp(t *testing.T) {
 	t.Parallel()
 
 	svc := NewImplicitPreferenceService()
-	err := svc.RecordSignal(BehaviorSignal{
+	err := svc.RecordWeightedSignal(WeightedBehaviorSignal{
 		WorkspaceID: "ws1", UserID: "u1", SignalType: "click",
 		Context: "btn", Value: "save",
 		// Timestamp is zero, should be auto-set.
@@ -105,7 +105,7 @@ func TestRecordSignalAutoTimestamp(t *testing.T) {
 		t.Fatalf("expected no error, got %v", err)
 	}
 
-	prefs := svc.InferPreferences("ws1", "u1")
+	prefs := svc.InferWeightedPreferences("ws1", "u1")
 	if len(prefs) != 1 {
 		t.Fatalf("expected 1 preference, got %d", len(prefs))
 	}

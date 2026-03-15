@@ -33,10 +33,11 @@ func TestCIWorkflowAuthorityClosure(t *testing.T) {
 		t.Fatal("quarantined CI workflow ci.yaml still exists at .github/workflows/ci.yaml — must be removed or moved to quarantine/")
 	}
 
-	// Verify the quarantine record exists.
-	quarantineRecord := filepath.Join(workflowDir, "quarantine", "ci.yaml.quarantined")
-	if _, err := os.Stat(quarantineRecord); err != nil {
-		t.Fatalf("quarantine record missing: %v — ci.yaml must be quarantined at .github/workflows/quarantine/ci.yaml.quarantined", err)
+	// The quarantine directory and its contents must not exist — the
+	// quarantined workflow has been permanently deleted.
+	quarantineDir := filepath.Join(workflowDir, "quarantine")
+	if _, err := os.Stat(quarantineDir); err == nil {
+		t.Fatal("quarantine directory .github/workflows/quarantine/ must not exist — quarantined workflows have been permanently deleted")
 	}
 
 	// Verify no duplicate trigger overlap: scan all active .yml/.yaml in workflows dir

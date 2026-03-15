@@ -1,4 +1,4 @@
-package cognitive
+package cognition
 
 import (
 	"sort"
@@ -6,8 +6,9 @@ import (
 	"time"
 )
 
-// BehaviorSignal represents a single implicit user behavior signal.
-type BehaviorSignal struct {
+// WeightedBehaviorSignal represents a single implicit user behavior signal
+// with a string-typed value, used by the ImplicitPreferenceService.
+type WeightedBehaviorSignal struct {
 	WorkspaceID string
 	UserID      string
 	SignalType  string // click, dwell, dismiss, accept, edit, undo
@@ -16,8 +17,8 @@ type BehaviorSignal struct {
 	Timestamp   time.Time
 }
 
-// InferredPreference represents a preference inferred from aggregated signals.
-type InferredPreference struct {
+// WeightedPreference represents a preference inferred from aggregated weighted signals.
+type WeightedPreference struct {
 	WorkspaceID string
 	UserID      string
 	Category    string
@@ -26,16 +27,17 @@ type InferredPreference struct {
 	SignalCount int
 }
 
-// ImplicitPreferenceService learns user preferences from behavioral signals.
+// ImplicitPreferenceService learns user preferences from behavioral signals
+// using weighted signal aggregation.
 type ImplicitPreferenceService struct {
 	mu      sync.RWMutex
-	signals map[string][]BehaviorSignal // key: workspaceID:userID
+	signals map[string][]WeightedBehaviorSignal // key: workspaceID:userID
 }
 
 // NewImplicitPreferenceService creates a new ImplicitPreferenceService.
 func NewImplicitPreferenceService() *ImplicitPreferenceService {
 	return &ImplicitPreferenceService{
-		signals: make(map[string][]BehaviorSignal),
+		signals: make(map[string][]WeightedBehaviorSignal),
 	}
 }
 
@@ -49,8 +51,8 @@ var signalWeight = map[string]float64{
 	"undo":    -0.3,
 }
 
-// RecordSignal stores a behavioral signal.
-func (s *ImplicitPreferenceService) RecordSignal(signal BehaviorSignal) error {
+// RecordWeightedSignal stores a behavioral signal.
+func (s *ImplicitPreferenceService) RecordWeightedSignal(signal WeightedBehaviorSignal) error {
 	if signal.Timestamp.IsZero() {
 		signal.Timestamp = time.Now()
 	}
@@ -63,8 +65,8 @@ func (s *ImplicitPreferenceService) RecordSignal(signal BehaviorSignal) error {
 	return nil
 }
 
-// InferPreferences aggregates signals into inferred preferences for a user.
-func (s *ImplicitPreferenceService) InferPreferences(workspaceID, userID string) []InferredPreference {
+// InferWeightedPreferences aggregates signals into inferred preferences for a user.
+func (s *ImplicitPreferenceService) InferWeightedPreferences(workspaceID, userID string) []WeightedPreference {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -99,7 +101,7 @@ func (s *ImplicitPreferenceService) InferPreferences(workspaceID, userID string)
 		entry.count++
 	}
 
-	var prefs []InferredPreference
+	var prefs []WeightedPreference
 	for pk, entry := range agg {
 		// Confidence is normalized weight sum.
 		confidence := entry.weightSum / float64(entry.count)
@@ -112,7 +114,7 @@ func (s *ImplicitPreferenceService) InferPreferences(workspaceID, userID string)
 			confidence = 1
 		}
 
-		prefs = append(prefs, InferredPreference{
+		prefs = append(prefs, WeightedPreference{
 			WorkspaceID: workspaceID,
 			UserID:      userID,
 			Category:    pk.category,
@@ -130,9 +132,9 @@ func (s *ImplicitPreferenceService) InferPreferences(workspaceID, userID string)
 	return prefs
 }
 
-// GetPreference retrieves the strongest preference for a given category.
-func (s *ImplicitPreferenceService) GetPreference(workspaceID, userID, category string) (*InferredPreference, error) {
-	prefs := s.InferPreferences(workspaceID, userID)
+// GetWeightedPreference retrieves the strongest preference for a given category.
+func (s *ImplicitPreferenceService) GetWeightedPreference(workspaceID, userID, category string) (*WeightedPreference, error) {
+	prefs := s.InferWeightedPreferences(workspaceID, userID)
 	for _, p := range prefs {
 		if p.Category == category {
 			return &p, nil

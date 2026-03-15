@@ -1,0 +1,2 @@
+# These files are legacy reference material. They must not be executed.
+*.sql linguist-generated=true

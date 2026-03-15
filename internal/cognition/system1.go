@@ -1,4 +1,4 @@
-package cognitive
+package cognition
 
 import (
 	"fmt"
@@ -6,9 +6,11 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
 )
 
-// Heuristic represents a learned fast-path reasoning pattern.
+// Heuristic represents a learned fast-path reasoning pattern
+// with confidence-based tracking, used by System1Service.
 type Heuristic struct {
 	ID           string
 	Pattern      string
@@ -20,8 +22,8 @@ type Heuristic struct {
 	CreatedAt    time.Time
 }
 
-// System1Result captures the outcome of a System 1 (fast) decision attempt.
-type System1Result struct {
+// System1FastResult captures the outcome of a System1Service fast decision attempt.
+type System1FastResult struct {
 	UsedHeuristic bool
 	HeuristicID   string
 	Response      string
@@ -29,7 +31,8 @@ type System1Result struct {
 	LatencyMs     int
 }
 
-// System1Service implements dual-process System 1 (fast, heuristic) reasoning.
+// System1Service implements confidence-based System 1 (fast, heuristic) reasoning
+// with word-level matching and automatic confidence decay.
 type System1Service struct {
 	mu         sync.RWMutex
 	heuristics map[string]*Heuristic
@@ -52,7 +55,7 @@ func (s *System1Service) LearnHeuristic(pattern, response, learnedFrom string) (
 	}
 
 	h := &Heuristic{
-		ID:           newID(),
+		ID:           uuid.Must(uuid.NewV7()).String(),
 		Pattern:      pattern,
 		Response:     response,
 		SuccessCount: 1,
@@ -170,7 +173,7 @@ func (s *System1Service) PruneHeuristics(minConfidence float64) int {
 // System1Decision attempts a fast-path decision using heuristics.
 // If a heuristic with confidence > 0.85 is matched, it is used directly.
 // Otherwise the result indicates deferral to System 2.
-func (s *System1Service) System1Decision(input string) (*System1Result, error) {
+func (s *System1Service) System1Decision(input string) (*System1FastResult, error) {
 	if input == "" {
 		return nil, fmt.Errorf("input must not be empty")
 	}
@@ -181,7 +184,7 @@ func (s *System1Service) System1Decision(input string) (*System1Result, error) {
 	latency := int(time.Since(start).Milliseconds())
 
 	if found && h.Confidence > 0.85 {
-		return &System1Result{
+		return &System1FastResult{
 			UsedHeuristic: true,
 			HeuristicID:   h.ID,
 			Response:      h.Response,
@@ -191,7 +194,7 @@ func (s *System1Service) System1Decision(input string) (*System1Result, error) {
 	}
 
 	// Defer to System 2.
-	return &System1Result{
+	return &System1FastResult{
 		UsedHeuristic: false,
 		LatencyMs:     latency,
 	}, nil
