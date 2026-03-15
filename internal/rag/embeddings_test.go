@@ -11,7 +11,8 @@ type mockProvider struct {
 	dims int
 }
 
-func (m *mockProvider) Dimensions() int { return m.dims }
+func (m *mockProvider) Dimensions() int  { return m.dims }
+func (m *mockProvider) ModelName() string { return "mock-test" }
 
 func (m *mockProvider) Embed(_ context.Context, texts []string) ([][]float32, error) {
 	result := make([][]float32, len(texts))

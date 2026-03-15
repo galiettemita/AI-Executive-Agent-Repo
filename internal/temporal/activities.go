@@ -11,6 +11,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"os"
+
 	"github.com/brevio/brevio/internal/brain"
 	"github.com/brevio/brevio/internal/cognition"
 	contextlayer "github.com/brevio/brevio/internal/context"
@@ -289,6 +291,14 @@ type ActivityDeps struct {
 
 	// Hands runtime: Go-native tool execution service.
 	HandsExecutor HandsExecutor
+
+	// Working memory tier: Redis-backed in-flight task state.
+	WorkingMemory WorkingMemoryService
+}
+
+// WorkingMemoryService is the minimal interface for working memory eviction in activities.
+type WorkingMemoryService interface {
+	Complete(ctx context.Context, workspaceID, taskID string)
 }
 
 // Activities is the struct that holds all activity implementations.
@@ -332,6 +342,14 @@ type Activities struct {
 	// Hands runtime: Go-native tool execution service.
 	handsExecutor HandsExecutor
 
+	// Working memory tier.
+	workingMemory WorkingMemoryService
+
+	// Reasoning upgrade services.
+	calibrationSvc    *brain.CalibrationService
+	counterfactualSvc *brain.CounterfactualService
+	embedProvider     rag.EmbeddingProvider
+
 	// Observability counters for outbox dispatch.
 	outboxDispatched atomic.Int64
 	outboxFailed     atomic.Int64
@@ -371,6 +389,7 @@ func NewActivitiesWithProdDeps(deps ActivityDeps) *Activities {
 		callService:      deps.CallService,
 		phoneVerifier:    deps.PhoneVerifier,
 		handsExecutor:    deps.HandsExecutor,
+		workingMemory:   deps.WorkingMemory,
 	}
 }
 
@@ -1806,4 +1825,30 @@ func fnvHash64(s string) uint64 {
 		h *= prime64
 	}
 	return h
+}
+
+// EvictWorkingMemoryActivity cleans up working memory for a completed task.
+// Best-effort: never returns error to avoid failing the workflow on eviction failure.
+func (a *Activities) EvictWorkingMemoryActivity(ctx context.Context, workspaceID, taskID string) error {
+	if a.workingMemory != nil {
+		a.workingMemory.Complete(ctx, workspaceID, taskID)
+	}
+	return nil
+}
+
+// buildLLMClient constructs a fresh AnthropicClient from environment.
+// Returns nil if ANTHROPIC_API_KEY is unset (graceful degradation).
+func (a *Activities) buildLLMClient() llm.Client {
+	apiKey := os.Getenv("ANTHROPIC_API_KEY")
+	if apiKey == "" {
+		return nil
+	}
+	client, err := llm.NewAnthropicClient(llm.AnthropicConfig{
+		APIKey:  apiKey,
+		Timeout: 60 * time.Second,
+	})
+	if err != nil {
+		return nil
+	}
+	return client
 }

@@ -88,7 +88,10 @@ func main() {
 		deps.CompressionRepo = contextpkg.NewPgCompressionRepository(pool)
 		deps.ContextRepo = contextpkg.NewPgRepository(pool)
 		deps.LatencyRepo = executorpkg.NewPgLatencyRepository(pool)
-		deps.EmbeddingProvider = ragpkg.NewOpenAIEmbeddingProvider("", os.Getenv("OPENAI_API_KEY"))
+		rawEmbedder := ragpkg.NewOpenAIEmbeddingProvider("", os.Getenv("OPENAI_API_KEY"))
+		cachedEmbedder := ragpkg.NewEmbeddingService(rawEmbedder)
+		ragpkg.ValidateEmbeddingDimensions(cachedEmbedder)
+		deps.EmbeddingProvider = cachedEmbedder
 		deps.CognitiveRepo = cognitionpkg.NewPgCognitiveRepository(pool)
 		deps.CallRepo = callpkg.NewPgCallRepository(pool)
 		deps.PhoneVerifier = callpkg.NewGooglePlacesClient(os.Getenv("GOOGLE_PLACES_API_KEY"))

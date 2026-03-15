@@ -1,9 +1,14 @@
 package council
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
+
+	"github.com/brevio/brevio/internal/llm"
 )
 
 // CouncilPolicy defines rules for when and how to convene a council.
@@ -24,22 +29,24 @@ type CouncilAgent struct {
 
 // Vote records an agent's vote in a council deliberation.
 type Vote struct {
-	AgentID    string  `json:"agent_id"`
-	Vote       string  `json:"vote"` // approve, reject, abstain
-	Confidence float64 `json:"confidence"`
-	CastAt     time.Time `json:"cast_at"`
+	AgentID       string    `json:"agent_id"`
+	Vote          string    `json:"vote"` // approve, reject, abstain
+	Confidence    float64   `json:"confidence"`
+	Justification string    `json:"justification,omitempty"`
+	CastAt        time.Time `json:"cast_at"`
 }
 
 // Council represents a convened council session.
 type Council struct {
-	ID          string         `json:"id"`
-	WorkspaceID string         `json:"workspace_id"`
-	Topic       string         `json:"topic"`
-	Agents      []CouncilAgent `json:"agents"`
-	Status      string         `json:"status"` // convened, deliberating, concluded
-	Decision    string         `json:"decision"`
-	Votes       []Vote         `json:"votes"`
-	CreatedAt   time.Time      `json:"created_at"`
+	ID             string         `json:"id"`
+	WorkspaceID    string         `json:"workspace_id"`
+	Topic          string         `json:"topic"`
+	Agents         []CouncilAgent `json:"agents"`
+	Status         string         `json:"status"` // convened, deliberating, concluded
+	Decision       string         `json:"decision"`
+	Votes          []Vote         `json:"votes"`
+	VotingStrategy string         `json:"voting_strategy"` // majority | unanimous | weighted
+	CreatedAt      time.Time      `json:"created_at"`
 }
 
 // CouncilDecision is the resolved outcome of a council deliberation.
@@ -51,21 +58,27 @@ type CouncilDecision struct {
 
 // CouncilService manages council convening and deliberation.
 type CouncilService struct {
-	mu       sync.RWMutex
-	nextID   int
-	councils map[string]*Council
-	// agentPool is the set of available agents
+	mu        sync.RWMutex
+	nextID    int
+	councils  map[string]*Council
 	agentPool []CouncilAgent
 	now       func() time.Time
+	llmClient llm.Client // may be nil; agents abstain if nil
 }
 
 // NewCouncilService creates a new council service.
 func NewCouncilService() *CouncilService {
+	return NewCouncilServiceWithLLM(nil)
+}
+
+// NewCouncilServiceWithLLM creates a council service with LLM-backed deliberation.
+func NewCouncilServiceWithLLM(client llm.Client) *CouncilService {
 	return &CouncilService{
-		nextID:   1,
-		councils: map[string]*Council{},
+		nextID:    1,
+		councils:  map[string]*Council{},
 		agentPool: []CouncilAgent{},
-		now:      func() time.Time { return time.Now().UTC() },
+		now:       func() time.Time { return time.Now().UTC() },
+		llmClient: client,
 	}
 }
 
@@ -124,6 +137,10 @@ func (s *CouncilService) ConveneCouncil(workspaceID string, topic string, policy
 		Status:      "convened",
 		Votes:       []Vote{},
 		CreatedAt:   s.now(),
+	}
+	council.VotingStrategy = policy.VotingStrategy
+	if council.VotingStrategy == "" {
+		council.VotingStrategy = "majority"
 	}
 	s.nextID++
 	s.councils[council.ID] = council
@@ -207,13 +224,10 @@ func (s *CouncilService) ResolveCouncil(councilID string) (*CouncilDecision, err
 	decision := &CouncilDecision{}
 	totalVoters := len(council.Votes)
 
-	// Determine the voting strategy from the policy.
-	// We look up the original policy indirectly through council metadata.
-	// For simplicity, we detect strategy from council config; default to majority.
-	strategy := "majority"
-	// The strategy is determined at convene time — we store it as part of internal state.
-	// For the in-memory implementation, we infer from vote patterns.
-	// In practice we'd store policy alongside the council.
+	strategy := council.VotingStrategy
+	if strategy == "" {
+		strategy = "majority"
+	}
 
 	switch strategy {
 	case "unanimous":
@@ -274,4 +288,145 @@ func hasRequiredCapabilities(agentCaps, required []string) bool {
 		}
 	}
 	return true
+}
+
+// Agent ID constants for specialist agents.
+const (
+	AgentIDFinancialRisk = "agent_financial_risk"
+	AgentIDLegal         = "agent_legal"
+	AgentIDUserAdvocate  = "agent_user_advocate"
+	AgentIDTechnical     = "agent_technical"
+	AgentIDEthics        = "agent_ethics"
+)
+
+var agentSystemPrompts = map[string]string{
+	AgentIDFinancialRisk: `You are a financial risk specialist. Assess financial risk.
+Respond ONLY with JSON: {"vote":"approve|reject|abstain","confidence":<0-1>,"justification":"<one sentence>"}`,
+	AgentIDLegal: `You are a legal compliance specialist. Review for legal/regulatory risk.
+Respond ONLY with JSON: {"vote":"approve|reject|abstain","confidence":<0-1>,"justification":"<one sentence>"}`,
+	AgentIDUserAdvocate: `You are a user advocate protecting the user's best interests.
+Respond ONLY with JSON: {"vote":"approve|reject|abstain","confidence":<0-1>,"justification":"<one sentence>"}`,
+	AgentIDTechnical: `You are a technical reliability specialist. Assess execution risk.
+Respond ONLY with JSON: {"vote":"approve|reject|abstain","confidence":<0-1>,"justification":"<one sentence>"}`,
+	AgentIDEthics: `You are an AI ethics specialist. Review for ethical issues.
+Respond ONLY with JSON: {"vote":"approve|reject|abstain","confidence":<0-1>,"justification":"<one sentence>"}`,
+}
+
+// DefaultCouncilAgents returns the standard specialist agents.
+func DefaultCouncilAgents() []CouncilAgent {
+	return []CouncilAgent{
+		{ID: AgentIDFinancialRisk, Name: "Financial Risk", Capabilities: []string{"financial", "risk"}},
+		{ID: AgentIDLegal, Name: "Legal Compliance", Capabilities: []string{"legal", "compliance"}},
+		{ID: AgentIDUserAdvocate, Name: "User Advocate", Capabilities: []string{"user_welfare"}},
+		{ID: AgentIDTechnical, Name: "Technical Review", Capabilities: []string{"technical", "reliability"}},
+	}
+}
+
+// DeliberateAndVote has each council agent deliberate via LLM before voting.
+func (s *CouncilService) DeliberateAndVote(ctx context.Context, councilID, actionDescription string) error {
+	s.mu.RLock()
+	council, ok := s.councils[councilID]
+	if !ok {
+		s.mu.RUnlock()
+		return fmt.Errorf("council %q not found", councilID)
+	}
+	agents := make([]CouncilAgent, len(council.Agents))
+	copy(agents, council.Agents)
+	topic := council.Topic
+	s.mu.RUnlock()
+
+	if s.llmClient == nil {
+		for _, ag := range agents {
+			_ = s.CastVote(councilID, ag.ID, "abstain", 0.5)
+		}
+		return nil
+	}
+
+	for _, ag := range agents {
+		vote, conf, justification, err := s.agentDeliberate(ctx, ag, topic, actionDescription)
+		if err != nil {
+			vote, conf, justification = "abstain", 0.5, "deliberation error"
+		}
+		s.mu.Lock()
+		if c, ok := s.councils[councilID]; ok {
+			alreadyVoted := false
+			for _, v := range c.Votes {
+				if v.AgentID == ag.ID {
+					alreadyVoted = true
+					break
+				}
+			}
+			if !alreadyVoted {
+				c.Status = "deliberating"
+				c.Votes = append(c.Votes, Vote{
+					AgentID:       ag.ID,
+					Vote:          vote,
+					Confidence:    conf,
+					Justification: justification,
+					CastAt:        s.now(),
+				})
+			}
+		}
+		s.mu.Unlock()
+	}
+	return nil
+}
+
+func (s *CouncilService) agentDeliberate(ctx context.Context, agent CouncilAgent, topic, action string) (string, float64, string, error) {
+	systemPrompt, ok := agentSystemPrompts[agent.ID]
+	if !ok {
+		systemPrompt = `You are a council member. Review the proposed action.
+Respond ONLY with JSON: {"vote":"approve|reject|abstain","confidence":<0-1>,"justification":"<one sentence>"}`
+	}
+	userMsg := fmt.Sprintf("Topic: %q\n\nProposed action:\n%s", topic, action)
+	resp, _, apiErr := s.llmClient.Generate(ctx, llm.GenerateRequest{
+		Model:       "claude-haiku-4-5-20251001",
+		MaxTokens:   256,
+		Temperature: 0.1,
+		System:      systemPrompt,
+		Messages:    []llm.ChatMsg{{Role: "user", Content: userMsg}},
+	})
+	if apiErr != nil {
+		return "abstain", 0.5, "", apiErr
+	}
+	var result struct {
+		Vote          string  `json:"vote"`
+		Confidence    float64 `json:"confidence"`
+		Justification string  `json:"justification"`
+	}
+	if jsonErr := json.Unmarshal([]byte(strings.TrimSpace(resp.Content)), &result); jsonErr != nil {
+		return "abstain", 0.5, "", jsonErr
+	}
+	switch result.Vote {
+	case "approve", "reject", "abstain":
+	default:
+		result.Vote = "abstain"
+	}
+	if result.Confidence < 0 || result.Confidence > 1 {
+		result.Confidence = 0.5
+	}
+	return result.Vote, result.Confidence, result.Justification, nil
+}
+
+// ConveneAndDecide is a convenience method that convenes, deliberates, and resolves.
+func (s *CouncilService) ConveneAndDecide(ctx context.Context, workspaceID, topic, actionDesc string) (bool, error) {
+	for _, ag := range DefaultCouncilAgents() {
+		s.RegisterAgent(ag)
+	}
+	policy := CouncilPolicy{
+		MinAgents: 2, MaxAgents: 4, VotingStrategy: "majority",
+		ConveneThreshold: 0.0,
+	}
+	council, err := s.ConveneCouncil(workspaceID, topic, policy)
+	if err != nil {
+		return false, fmt.Errorf("council: convene: %w", err)
+	}
+	if err := s.DeliberateAndVote(ctx, council.ID, actionDesc); err != nil {
+		return false, fmt.Errorf("council: deliberate: %w", err)
+	}
+	decision, err := s.ResolveCouncil(council.ID)
+	if err != nil {
+		return false, fmt.Errorf("council: resolve: %w", err)
+	}
+	return decision.Decision == "approved", nil
 }

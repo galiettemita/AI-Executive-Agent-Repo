@@ -1,0 +1,19 @@
+{
+  "version": "1.0",
+  "description": "Brevio golden evaluation dataset. Populate using: go run ./cmd/eval/seed --workspace=<id>",
+  "created_at": "2026-01-01T00:00:00Z",
+  "queries": [
+    {
+      "id": "seed-example-001",
+      "description": "EXAMPLE ONLY — replace with real entries via the seeder CLI",
+      "query": "PLACEHOLDER — run: go run ./cmd/eval/seed --workspace=YOUR_WORKSPACE_ID",
+      "expected_chunk_ids": [],
+      "expected_answer": "PLACEHOLDER",
+      "workspace_id": "00000000-0000-0000-0000-000000000000",
+      "category": "entity_lookup",
+      "difficulty": "easy",
+      "created_at": "2026-01-01T00:00:00Z",
+      "notes": "Delete this entry after running the seeder CLI to populate real entries."
+    }
+  ]
+}

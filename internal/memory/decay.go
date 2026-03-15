@@ -20,13 +20,16 @@ type DecayConfig struct {
 
 // MemoryItem represents a single memory entry managed by the decay service.
 type MemoryItem struct {
-	ID             uuid.UUID
-	WorkspaceID    string
-	Content        string
-	RelevanceScore float64
-	Category       string
-	LastAccessedAt time.Time
-	CreatedAt      time.Time
+	ID               uuid.UUID
+	WorkspaceID      string
+	Content          string
+	RelevanceScore   float64
+	Category         string
+	LastAccessedAt   time.Time
+	CreatedAt        time.Time
+	Confidence       float64 // 0.0-1.0; 0 treated as 1.0 for backwards compat
+	RetrievalCount   int
+	BaseHalfLifeDays float64 // 0 falls back to config.HalfLifeDays
 }
 
 // MemoryDecayService applies temporal decay to stored memories.
@@ -88,6 +91,41 @@ func computeLinearWeight(createdAt time.Time, now time.Time, halfLifeDays float6
 		w = 0
 	}
 	return w
+}
+
+// AdjustedHalfLife returns the effective half-life for an item that has been
+// successfully recalled retrievalCount times.
+// Formula: effective = base × (1 + ln(retrievalCount + 1))
+func AdjustedHalfLife(baseHalfLifeDays float64, retrievalCount int) float64 {
+	if baseHalfLifeDays <= 0 {
+		baseHalfLifeDays = 30.0
+	}
+	if retrievalCount < 0 {
+		retrievalCount = 0
+	}
+	return baseHalfLifeDays * (1.0 + math.Log(float64(retrievalCount)+1))
+}
+
+// applyDecayToItem applies confidence-dampened, spacing-adjusted exponential decay.
+// Pure function — no IO. Modifies item.RelevanceScore in-place.
+func applyDecayToItem(item *MemoryItem, elapsedDays float64, configHalfLife float64) {
+	baseHL := item.BaseHalfLifeDays
+	if baseHL <= 0 {
+		baseHL = configHalfLife
+	}
+	effectiveHL := AdjustedHalfLife(baseHL, item.RetrievalCount)
+
+	rawDecay := math.Exp(-0.693 * elapsedDays / effectiveHL)
+
+	conf := item.Confidence
+	if conf <= 0 {
+		conf = 1.0
+	}
+	item.RelevanceScore = item.RelevanceScore * math.Pow(rawDecay, 1.0/math.Max(0.1, conf))
+
+	if item.RelevanceScore < 0.01 && item.Confidence < 0.10 {
+		item.RelevanceScore = 0
+	}
 }
 
 // ShouldForget returns true if the weight has dropped below the minimum threshold.
@@ -160,6 +198,7 @@ func (d *MemoryDecayService) RefreshMemory(id string) error {
 		if d.items[i].ID == parsed {
 			d.items[i].RelevanceScore = 1.0
 			d.items[i].LastAccessedAt = d.now()
+			d.items[i].RetrievalCount++
 			return nil
 		}
 	}
@@ -202,4 +241,19 @@ func (d *MemoryDecayService) PurgeDecayed(workspaceID string, threshold float64)
 	}
 	d.items = remaining
 	return purged, nil
+}
+
+// TestExportedDefaultHalfLife is exported for testing only.
+func TestExportedDefaultHalfLife(memType string) float64 {
+	return defaultBaseHalfLifeDays(memType)
+}
+
+// NewTestDecayService creates a MemoryDecayService for unit tests.
+func NewTestDecayService() *MemoryDecayService {
+	return NewMemoryDecayService()
+}
+
+// TestApplyDecay is exported for testing the decay formula in isolation.
+func (d *MemoryDecayService) TestApplyDecay(item *MemoryItem, elapsedDays float64) {
+	applyDecayToItem(item, elapsedDays, 30.0)
 }

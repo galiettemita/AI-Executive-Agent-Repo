@@ -5,7 +5,7 @@ import "testing"
 func TestRAGServiceLifecycle(t *testing.T) {
 	t.Parallel()
 
-	s := NewService()
+	s := NewService(NewMockEmbeddingProvider(1536))
 	cfg := s.SetRerankerConfig("ws_1", 0.7, 0.3)
 	if cfg.DenseWeight <= cfg.BM25Weight {
 		t.Fatalf("expected dense weight normalization, got %+v", cfg)

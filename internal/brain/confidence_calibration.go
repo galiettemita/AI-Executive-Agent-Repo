@@ -186,3 +186,35 @@ func (s *CalibrationService) Recalibrate(workspaceID string) error {
 
 	return nil
 }
+
+// GetQualityTarget returns a workspace-calibrated quality target.
+func (s *CalibrationService) GetQualityTarget(workspaceID string, defaultTarget float64) float64 {
+	if workspaceID == "" {
+		return defaultTarget
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.ensureBuckets(workspaceID)
+	var weightedAcc float64
+	var total int
+	for _, b := range s.buckets[workspaceID] {
+		if b.SampleCount < 5 {
+			continue
+		}
+		weightedAcc += b.EmpiricalAccuracy * float64(b.SampleCount)
+		total += b.SampleCount
+	}
+	if total == 0 {
+		return defaultTarget
+	}
+	empirical := weightedAcc / float64(total)
+	target := empirical + 0.05
+	if target < defaultTarget {
+		target = defaultTarget
+	}
+	if target > 0.97 {
+		target = 0.97
+	}
+	return target
+}

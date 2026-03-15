@@ -1,37 +1,40 @@
 id: PROMPT_TASK_DECOMPOSE_V1
 model: claude-sonnet-4-20250514
-temperature: 0.2
-max_tokens: 1024
+temperature: 0.1
+max_tokens: 2048
+thinking:
+  enabled: true
+  budget_tokens: 8192
+self_consistency:
+  enabled: true
+  k: 3
+  apply_on_risk: critical
 system_prompt: |
-  Decompose the user request into a bounded task DAG for Brevio. Return JSON only.
-  Every task must reference a registered and enabled skill_id.
-  Keep the graph deterministic and minimal.
+  You are Brevio's task planner. Decompose the user request into a minimal executable
+  plan using ONLY the registered tool IDs provided at runtime.
+  Rules: minimum steps, explicit depends_on, phases=gather|act|verify, max 10 steps.
+  Output ONLY JSON matching the output_schema.
 output_schema:
   type: object
+  required: [steps, risk_level]
   additionalProperties: false
-  required: [tasks, execution_order]
   properties:
-    tasks:
+    steps:
       type: array
       maxItems: 10
       items:
         type: object
+        required: [tool_key, parameters, phase]
         additionalProperties: false
-        required: [skill_id, input, dependencies, priority]
         properties:
-          skill_id: { type: string }
-          input: { type: object }
-          dependencies:
-            type: array
-            items: { type: string }
-          priority:
-            type: integer
-            minimum: 1
-    execution_order:
-      type: string
-      enum: [parallel, sequential, mixed]
-validation:
+          tool_key: { type: string }
+          parameters: { type: object }
+          depends_on: { type: array, items: { type: integer } }
+          phase: { type: string, enum: [gather, act, verify] }
+    risk_level: { type: string, enum: [low, elevated, critical] }
+    reasoning: { type: string }
+guardrails:
   max_tasks: 10
   max_depth: 5
   acyclic_dag: true
-  all_skill_ids_registered: true
+  all_tool_keys_registered: true

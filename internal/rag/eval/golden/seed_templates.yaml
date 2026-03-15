@@ -1,0 +1,42 @@
+version: "1.0"
+templates:
+  - id_prefix: "entity"
+    category: entity_lookup
+    difficulty: easy
+    queries:
+      - "Who does {person} report to?"
+      - "What is {person}'s role?"
+      - "What company does {person} work at?"
+      - "What projects is {person} involved in?"
+
+  - id_prefix: "temporal"
+    category: temporal
+    difficulty: medium
+    queries:
+      - "What was decided in the last meeting about {topic}?"
+      - "What happened with {topic} last week?"
+      - "What is the current status of {project}?"
+
+  - id_prefix: "fact"
+    category: fact
+    difficulty: easy
+    queries:
+      - "What is the {metric} target for {period}?"
+      - "When is the deadline for {project}?"
+      - "What is {person}'s preferred way to handle {task}?"
+
+  - id_prefix: "procedural"
+    category: procedural
+    difficulty: easy
+    queries:
+      - "How does the user prefer to schedule meetings?"
+      - "What is the standard process for {task}?"
+      - "What tools does the team use for {function}?"
+
+  - id_prefix: "aggregation"
+    category: aggregation
+    difficulty: hard
+    queries:
+      - "Who are all the stakeholders in {project}?"
+      - "Summarize everything discussed about {topic} this month."
+      - "What are all the open action items for {person}?"

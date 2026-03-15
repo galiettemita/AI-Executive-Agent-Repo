@@ -8,7 +8,7 @@ import (
 func TestStoreAndRetrieveEpisodes(t *testing.T) {
 	t.Parallel()
 
-	er := NewEpisodicRetriever()
+	er := NewEpisodicRetriever(nil)
 	now := time.Now().UTC()
 
 	ep1, err := er.StoreEpisode("ws1", "User discussed project deadlines", now.Add(-48*time.Hour))
@@ -38,7 +38,7 @@ func TestStoreAndRetrieveEpisodes(t *testing.T) {
 func TestRetrieveRelevantWorkspaceIsolation(t *testing.T) {
 	t.Parallel()
 
-	er := NewEpisodicRetriever()
+	er := NewEpisodicRetriever(nil)
 	now := time.Now().UTC()
 
 	_, _ = er.StoreEpisode("ws1", "alpha episode", now)
@@ -101,7 +101,7 @@ func TestInjectIntoContextFormatting(t *testing.T) {
 func TestStoreEpisodeValidation(t *testing.T) {
 	t.Parallel()
 
-	er := NewEpisodicRetriever()
+	er := NewEpisodicRetriever(nil)
 
 	_, err := er.StoreEpisode("", "summary", time.Now())
 	if err == nil {

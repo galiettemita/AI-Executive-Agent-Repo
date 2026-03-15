@@ -70,6 +70,9 @@ func (d *DeterministicEmbeddingProvider) Embed(_ context.Context, texts []string
 // Dimensions returns the embedding vector size.
 func (d *DeterministicEmbeddingProvider) Dimensions() int { return d.dims }
 
+// ModelName returns the model identifier for cache key generation.
+func (d *DeterministicEmbeddingProvider) ModelName() string { return "deterministic-test-v1" }
+
 // PgChunkSpecRepository implements ChunkSpecRepository backed by pgx.
 type PgChunkSpecRepository struct {
 	q database.Querier

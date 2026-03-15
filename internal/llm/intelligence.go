@@ -317,8 +317,8 @@ func (s *IntelligenceService) generatePlanWithTemp(
 		// The explicit value here applies only to OpenAI fallback (which silently ignores Thinking).
 		Temperature: temperature,
 		Thinking: &ThinkingConfig{
-			Type:         "enabled",
-			BudgetTokens: 8000, // sufficient for complex 8-step plans
+			Enabled:      true,
+			BudgetTokens: 8000,
 		},
 		// JSONSchema is intentionally absent — incompatible with thinking.
 		// Response parsed via extractJSON() on the text content block.
@@ -619,8 +619,8 @@ func (s *IntelligenceService) VerifyExecution(ctx context.Context, input VerifyI
 		MaxTokens:   tier.MaxOutputTokens,
 		Temperature: 0.1,
 		Thinking: &ThinkingConfig{
-			Type:         "enabled",
-			BudgetTokens: 4000, // verification is simpler than planning
+			Enabled:      true,
+			BudgetTokens: 4000,
 		},
 		Messages: []ChatMsg{
 			{

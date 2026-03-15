@@ -1,6 +1,7 @@
 package memory
 
 import (
+	"math"
 	"testing"
 	"time"
 
@@ -124,5 +125,78 @@ func TestPurgeDecayedMissingWorkspace(t *testing.T) {
 	_, err := svc.PurgeDecayed("", 0.1)
 	if err == nil {
 		t.Fatal("expected error for empty workspace")
+	}
+}
+
+// --- AdjustedHalfLife tests ---
+
+func TestAdjustedHalfLife_ZeroRetrievals(t *testing.T) {
+	hl := AdjustedHalfLife(30.0, 0)
+	if math.Abs(hl-30.0) > 0.001 {
+		t.Fatalf("zero retrievals: got %v, want 30.0", hl)
+	}
+}
+
+func TestAdjustedHalfLife_OneRetrieval(t *testing.T) {
+	hl := AdjustedHalfLife(30.0, 1)
+	// 30 * (1 + ln(2)) ≈ 30 * 1.693 ≈ 50.79
+	if math.Abs(hl-50.79) > 0.2 {
+		t.Fatalf("1 retrieval: got %v, want ~50.79", hl)
+	}
+}
+
+func TestAdjustedHalfLife_FiftyRetrievals(t *testing.T) {
+	hl := AdjustedHalfLife(30.0, 50)
+	if hl < 100.0 {
+		t.Fatalf("50 retrievals: got %v, want > 100.0", hl)
+	}
+}
+
+func TestAdjustedHalfLife_NegativeBase_SafeDefault(t *testing.T) {
+	hl := AdjustedHalfLife(-5.0, 0)
+	if hl <= 0 {
+		t.Fatalf("negative base: got %v, expected safe positive default", hl)
+	}
+}
+
+func TestDefaultBaseHalfLife_Rule(t *testing.T) {
+	got := TestExportedDefaultHalfLife("rule")
+	if got != 730.0 {
+		t.Fatalf("rule: got %v, want 730.0", got)
+	}
+}
+
+func TestDefaultBaseHalfLife_Heartbeat(t *testing.T) {
+	got := TestExportedDefaultHalfLife("heartbeat")
+	if math.Abs(got-0.1667) > 0.001 {
+		t.Fatalf("heartbeat: got %v, want ~0.1667", got)
+	}
+}
+
+func TestDecay_HighRetrievalSlowsDecay(t *testing.T) {
+	itemFresh := &MemoryItem{RelevanceScore: 1.0, BaseHalfLifeDays: 30.0, RetrievalCount: 0, Confidence: 1.0}
+	itemFrequent := &MemoryItem{RelevanceScore: 1.0, BaseHalfLifeDays: 30.0, RetrievalCount: 20, Confidence: 1.0}
+
+	svc := NewTestDecayService()
+	svc.TestApplyDecay(itemFresh, 60.0)
+	svc.TestApplyDecay(itemFrequent, 60.0)
+
+	if itemFrequent.RelevanceScore <= itemFresh.RelevanceScore {
+		t.Fatalf("frequent item score (%v) should > fresh item score (%v) after 60 days",
+			itemFrequent.RelevanceScore, itemFresh.RelevanceScore)
+	}
+}
+
+func TestDecay_LowConfidenceDecaysFaster(t *testing.T) {
+	itemLow := &MemoryItem{RelevanceScore: 1.0, BaseHalfLifeDays: 30.0, RetrievalCount: 0, Confidence: 0.3}
+	itemHigh := &MemoryItem{RelevanceScore: 1.0, BaseHalfLifeDays: 30.0, RetrievalCount: 0, Confidence: 1.0}
+
+	svc := NewTestDecayService()
+	svc.TestApplyDecay(itemLow, 30.0)
+	svc.TestApplyDecay(itemHigh, 30.0)
+
+	if itemLow.RelevanceScore >= itemHigh.RelevanceScore {
+		t.Fatalf("low confidence (%v) should decay faster than high confidence (%v)",
+			itemLow.RelevanceScore, itemHigh.RelevanceScore)
 	}
 }

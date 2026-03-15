@@ -86,7 +86,14 @@ func NewMuxWithDependencies(service *Service, deps MuxDependencies) *http.ServeM
 	guardrailsSvc := guardrails.NewService()
 	learningSvc := learning.NewService()
 	modelTierSvc := model_tiers.NewService()
-	ragSvc = raglayer.NewService()
+	var ragEmbedder raglayer.EmbeddingProvider
+	if key := os.Getenv("OPENAI_API_KEY"); key != "" {
+		raw := raglayer.NewOpenAIEmbeddingProvider("", key)
+		ragEmbedder = raglayer.NewEmbeddingService(raw)
+	} else {
+		ragEmbedder = raglayer.NewMockEmbeddingProvider(1536)
+	}
+	ragSvc = raglayer.NewService(ragEmbedder)
 	selfModificationSvc := self_modification.NewService()
 	sessionSvc := sessions.NewService()
 	streamingSvc := streaming.NewService()

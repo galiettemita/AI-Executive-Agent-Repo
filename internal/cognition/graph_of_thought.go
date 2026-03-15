@@ -348,3 +348,41 @@ func (e *GoTEngine) GetBestConclusion(graphID string) (*ThoughtNode, error) {
 	}
 	return best, nil
 }
+
+// GetNode returns a snapshot of the node with the given ID.
+func (e *GoTEngine) GetNode(graphID, nodeID string) (*ThoughtNode, bool) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	g, ok := e.graphs[graphID]
+	if !ok {
+		return nil, false
+	}
+	n, ok := g.Nodes[nodeID]
+	if !ok {
+		return nil, false
+	}
+	cp := *n
+	return &cp, true
+}
+
+// SetNodeConfidence updates the confidence score of a node.
+func (e *GoTEngine) SetNodeConfidence(graphID, nodeID string, confidence float64) error {
+	if confidence < 0 || confidence > 1 {
+		return fmt.Errorf("confidence must be 0–1")
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	g, ok := e.graphs[graphID]
+	if !ok {
+		return fmt.Errorf("graph not found: %s", graphID)
+	}
+	n, ok := g.Nodes[nodeID]
+	if !ok {
+		return fmt.Errorf("node not found: %s", nodeID)
+	}
+	if n.Status == "pruned" {
+		return fmt.Errorf("cannot update pruned node")
+	}
+	n.Confidence = confidence
+	return nil
+}

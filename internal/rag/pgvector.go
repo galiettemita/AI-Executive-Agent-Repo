@@ -166,6 +166,61 @@ func (s *PgVectorStore) DeleteChunk(_ context.Context, chunkID string) bool {
 	return true
 }
 
+// QueryForReasoningContext retrieves topK chunks relevant to messageText for a workspace.
+func (s *PgVectorStore) QueryForReasoningContext(_ context.Context, workspaceID, messageText string, topK int) ([]ScoredChunk, error) {
+	if workspaceID == "" || messageText == "" {
+		return nil, nil
+	}
+	if topK <= 0 {
+		topK = 6
+	}
+	return s.SimilaritySearch(messageText, topK), nil
+}
+
+// SimilaritySearch performs BM25-based keyword similarity over in-memory chunks.
+func (s *PgVectorStore) SimilaritySearch(query string, topK int) []ScoredChunk {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	queryTerms := strings.Fields(strings.ToLower(query))
+	if len(queryTerms) == 0 {
+		return nil
+	}
+
+	scored := make([]ScoredChunk, 0, len(s.chunks))
+	for _, chunk := range s.chunks {
+		score := bm25ScoreContent(chunk.Content, queryTerms)
+		if score > 0 {
+			scored = append(scored, ScoredChunk{Chunk: chunk, Score: score})
+		}
+	}
+	sort.Slice(scored, func(i, j int) bool { return scored[i].Score > scored[j].Score })
+	if len(scored) > topK {
+		scored = scored[:topK]
+	}
+	return scored
+}
+
+// bm25ScoreContent computes a simplified BM25 relevance score for content against query terms.
+func bm25ScoreContent(docContent string, queryTerms []string) float64 {
+	docLower := strings.ToLower(docContent)
+	docWords := strings.Fields(docLower)
+	docLen := float64(len(docWords))
+	const avgDocLen = 200.0
+	const k1 = 1.2
+	const b = 0.75
+	var score float64
+	for _, term := range queryTerms {
+		tf := float64(strings.Count(docLower, term))
+		if tf == 0 {
+			continue
+		}
+		tfNorm := tf * (k1 + 1) / (tf + k1*(1-b+b*docLen/avgDocLen))
+		score += tfNorm
+	}
+	return score
+}
+
 // bm25Score computes a simplified BM25-style score based on term overlap.
 func bm25Score(queryTokens, docTokens []string) float64 {
 	if len(queryTokens) == 0 || len(docTokens) == 0 {

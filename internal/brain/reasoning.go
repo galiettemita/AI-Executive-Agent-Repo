@@ -101,6 +101,41 @@ type ReasoningContext struct {
 	RAGContext          string    `json:"rag_context,omitempty"`
 	RetryHints          string    `json:"retry_hints,omitempty"`
 	OriginalPayload     string    `json:"original_payload,omitempty"`
+
+	// RetrievedFacts holds RAG results injected before planning.
+	RetrievedFacts []RetrievedFact `json:"retrieved_facts,omitempty"`
+
+	// StepBackGoal is the abstract goal from the Step-Back pre-pass.
+	StepBackGoal string `json:"step_back_goal,omitempty"`
+
+	// WorkspaceQualityTarget overrides qualityTarget when > 0.
+	WorkspaceQualityTarget float64 `json:"workspace_quality_target,omitempty"`
+}
+
+// RetrievedFact is a single RAG result injected into the planning context.
+type RetrievedFact struct {
+	ChunkID   string  `json:"chunk_id"`
+	Score     float64 `json:"score"`
+	Snippet   string  `json:"snippet"`
+	Source    string  `json:"source"`
+	DataClass string  `json:"data_class,omitempty"`
+}
+
+// formatRetrievedFacts serialises retrieved facts for injection into planner context.
+func formatRetrievedFacts(facts []RetrievedFact) string {
+	if len(facts) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("\n\n## Relevant context from memory\n")
+	limit := 8
+	if len(facts) < limit {
+		limit = len(facts)
+	}
+	for _, f := range facts[:limit] {
+		b.WriteString(fmt.Sprintf("- [%s score=%.2f] %s\n", f.Source, f.Score, f.Snippet))
+	}
+	return b.String()
 }
 
 // PlanStep represents a single step in an execution plan.
@@ -178,8 +213,12 @@ type Summarizer interface {
 	SummarizeText(ctx context.Context, conversationText string, maxOutputTokens int) (string, error)
 }
 
+// CouncilConvener gates critical actions via multi-agent deliberation.
+type CouncilConvener interface {
+	ConveneAndDecide(ctx context.Context, workspaceID, topic, actionDesc string) (bool, error)
+}
+
 // ToolExecutor is the interface for executing tool calls.
-// Implementations bridge to the actual tool/connector layer.
 type ToolExecutor interface {
 	Execute(ctx context.Context, toolKey string, params map[string]any) (map[string]any, error)
 }
@@ -197,9 +236,19 @@ type ReasoningLoop struct {
 	worldModel       *WorldModelService
 	decomposition     *DynamicDecompositionService
 	maxIterationsCap  int
-	moaCfg            llm.MoAConfig
-	summarizer        Summarizer
-	compressThreshold float64
+	moaCfg                 llm.MoAConfig
+	summarizer             Summarizer
+	compressThreshold      float64
+	llmClient              llm.Client
+	registeredTools        []llm.ToolDefinition
+	enableExtendedThinking bool
+	thinkingBudgetTokens   int
+	selfConsistencyK       int
+	semanticCritic         *SemanticCriticService
+	prm                    *ProcessRewardModel
+	gotLLMEngine           *cognition.GoTLLMEngine
+	mctsConfig             *MCTSConfig
+	councilSvc             CouncilConvener
 }
 
 // ReasoningLoopConfig holds configuration for a ReasoningLoop.
@@ -218,6 +267,27 @@ type ReasoningLoopConfig struct {
 	MoA               llm.MoAConfig // zero value = disabled
 	Summarizer        Summarizer     // optional; if nil, compression is skipped gracefully
 	CompressThreshold float64        // fraction of ContextBudget at which to compress (default 0.70)
+
+	// LLMClient drives LLM-based planning. nil = heuristic fallback.
+	LLMClient llm.Client
+	// RegisteredTools is the tool registry the planner may select from.
+	RegisteredTools []llm.ToolDefinition
+	// EnableExtendedThinking activates Anthropic extended thinking on planner calls.
+	EnableExtendedThinking bool
+	// ThinkingBudgetTokens is the extended thinking budget (default 8192).
+	ThinkingBudgetTokens int
+	// SelfConsistencyK is the number of plan samples for majority voting. 0 or 1 = single sample.
+	SelfConsistencyK int
+	// SemanticCritic replaces heuristic critic when set.
+	SemanticCritic *SemanticCriticService
+	// PRM scores each step after execution; nil or Enabled=false = disabled.
+	PRM *ProcessRewardModel
+	// GoTLLMEngine runs Graph-of-Thought reasoning on complex multi-intent requests.
+	GoTLLMEngine *cognition.GoTLLMEngine
+	// MCTSConfig enables MCTS plan exploration for critical-risk plans.
+	MCTSConfig *MCTSConfig
+	// CouncilSvc gates critical actions via multi-agent deliberation.
+	CouncilSvc CouncilConvener
 }
 
 // NewReasoningLoop creates a new ReasoningLoop with the given config.
@@ -256,21 +326,39 @@ func NewReasoningLoop(cfg ReasoningLoopConfig) *ReasoningLoop {
 	if compressThreshold <= 0 || compressThreshold > 1.0 {
 		compressThreshold = 0.70
 	}
+	thinkingBudget := cfg.ThinkingBudgetTokens
+	if thinkingBudget <= 0 {
+		thinkingBudget = 8192
+	}
+	scK := cfg.SelfConsistencyK
+	if scK <= 0 {
+		scK = 1
+	}
 	return &ReasoningLoop{
-		executor:          cfg.Executor,
-		qualityTarget:     qualityTarget,
-		maxIterations:     maxIter,
-		stepTimeout:       stepTimeout,
-		intelligence:      cfg.Intelligence,
-		gotEngine:         cfg.GoTEngine,
-		gotThreshold:      gotThreshold,
-		gotBranches:       gotBranches,
-		worldModel:        cfg.WorldModel,
-		decomposition:     cfg.Decomposition,
-		maxIterationsCap:  iterCap,
-		moaCfg:            cfg.MoA,
-		summarizer:        cfg.Summarizer,
-		compressThreshold: compressThreshold,
+		executor:               cfg.Executor,
+		qualityTarget:          qualityTarget,
+		maxIterations:          maxIter,
+		stepTimeout:            stepTimeout,
+		intelligence:           cfg.Intelligence,
+		gotEngine:              cfg.GoTEngine,
+		gotThreshold:           gotThreshold,
+		gotBranches:            gotBranches,
+		worldModel:             cfg.WorldModel,
+		decomposition:          cfg.Decomposition,
+		maxIterationsCap:       iterCap,
+		moaCfg:                 cfg.MoA,
+		summarizer:             cfg.Summarizer,
+		compressThreshold:      compressThreshold,
+		llmClient:              cfg.LLMClient,
+		registeredTools:        cfg.RegisteredTools,
+		enableExtendedThinking: cfg.EnableExtendedThinking,
+		thinkingBudgetTokens:   thinkingBudget,
+		selfConsistencyK:       scK,
+		semanticCritic:         cfg.SemanticCritic,
+		prm:                    cfg.PRM,
+		gotLLMEngine:           cfg.GoTLLMEngine,
+		mctsConfig:             cfg.MCTSConfig,
+		councilSvc:             cfg.CouncilSvc,
 	}
 }
 
@@ -290,6 +378,74 @@ func (rl *ReasoningLoop) PlannerStep(ctx context.Context, rc *ReasoningContext) 
 		return nil, fmt.Errorf("%w: empty intent", ErrPlanEmpty)
 	}
 
+	// GoT pre-pass: for complex multi-intent requests, run GoT reasoning.
+	if rl.gotLLMEngine != nil && rc != nil {
+		gotNeeded := len(strings.Fields(rc.Intent)) > 50 && strings.Count(rc.Intent, " and ") >= 2
+		if gotNeeded {
+			gotResult, gotErr := rl.gotLLMEngine.Run(ctx, cognition.GoTRunRequest{
+				WorkspaceID: rc.WorkspaceID,
+				Question:    rc.Intent,
+				Context:     formatRetrievedFacts(rc.RetrievedFacts),
+				MaxSteps:    2,
+			})
+			if gotErr == nil && gotResult != nil && gotResult.Confidence >= 0.5 {
+				if rc.StepBackGoal == "" {
+					rc.StepBackGoal = gotResult.Conclusion
+				} else {
+					rc.StepBackGoal = rc.StepBackGoal + "; GoT: " + gotResult.Conclusion
+				}
+			}
+		}
+	}
+
+	// LLM-driven planner path (PROMPT_03: tool calling + self-consistency).
+	if rl.llmClient != nil {
+		input := LLMPlannerInput{
+			WorkspaceID:    rc.WorkspaceID,
+			Intent:         intent,
+			StepBackGoal:   rc.StepBackGoal,
+			RetrievedFacts: rc.RetrievedFacts,
+			Tools:          rl.registeredTools,
+			ContextBudget:  rc.ContextBudget,
+			UseThinking:    rl.enableExtendedThinking,
+			ThinkingBudget: rl.thinkingBudgetTokens,
+		}
+
+		// MCTS path: for critical plans when MCTSConfig is set.
+		if rl.mctsConfig != nil {
+			quickPlan, _, qErr := callLLMPlanner(ctx, rl.llmClient, input)
+			if qErr == nil && quickPlan != nil && quickPlan.RiskLevel == "critical" {
+				mcts := NewMCTSPlanner(*rl.mctsConfig)
+				mcts.cfg.LLMClient = rl.llmClient
+				if mctsPlan, mctsErr := mcts.Search(ctx, input); mctsErr == nil && mctsPlan != nil {
+					return mctsPlan, nil
+				}
+			} else if qErr == nil && quickPlan != nil {
+				return quickPlan, nil
+			}
+		}
+
+		// For critical plans, use self-consistency sampling.
+		if rl.selfConsistencyK > 1 {
+			quickPlan, _, quickErr := callLLMPlanner(ctx, rl.llmClient, input)
+			if quickErr == nil && quickPlan != nil && quickPlan.RiskLevel == "critical" {
+				sc := NewSelfConsistencyPlanner(rl.llmClient, rl.selfConsistencyK)
+				plan, err := sc.SelectPlan(ctx, input)
+				if err == nil && plan != nil {
+					return plan, nil
+				}
+			} else if quickErr == nil && quickPlan != nil {
+				return quickPlan, nil
+			}
+		}
+
+		plan, _, err := callLLMPlanner(ctx, rl.llmClient, input)
+		if err == nil && plan != nil && len(plan.Steps) > 0 {
+			return plan, nil
+		}
+		// LLM planner failed — fall through to intelligence service or heuristic.
+	}
+
 	// Prepend RetryHints so the LLM sees what failed in previous iterations.
 	memCtx := rc.MemoryContext
 	if rc.RetryHints != "" {
@@ -302,7 +458,6 @@ func (rl *ReasoningLoop) PlannerStep(ctx context.Context, rc *ReasoningContext) 
 		if gotErr == nil && plan != nil {
 			return plan, nil
 		}
-		// GoT failed — fall through to standard single-call planning.
 	}
 
 	// MoA path: activate for critical-risk or low confidence.
@@ -315,26 +470,19 @@ func (rl *ReasoningLoop) PlannerStep(ctx context.Context, rc *ReasoningContext) 
 		if err == nil && genPlan != nil && len(genPlan.Actions) > 0 {
 			return generatedPlanToBrainPlan(genPlan, rc.WorkspaceID), nil
 		}
-		// MoA failed — fall through to standard planning.
 	}
 
-	// Primary path: LLM-powered planner.
+	// Intelligence service path.
 	if rl.intelligence != nil {
 		genPlan, _, err := rl.intelligence.GeneratePlan(
-			ctx,
-			intent,
-			rc.Confidence,
-			rc.OriginalPayload,
-			memCtx,
-			rc.RAGContext,
+			ctx, intent, rc.Confidence, rc.OriginalPayload, memCtx, rc.RAGContext,
 		)
 		if err == nil && genPlan != nil && len(genPlan.Actions) > 0 {
 			return generatedPlanToBrainPlan(genPlan, rc.WorkspaceID), nil
 		}
-		// LLM failed — fall through to heuristic fallback.
 	}
 
-	// Fallback path: heuristic keyword planner.
+	// Heuristic fallback (test mode / nil client).
 	steps := buildStepsForIntentFallback(intent, rc)
 	if len(steps) == 0 {
 		return nil, fmt.Errorf("%w: could not derive steps for intent %q", ErrPlanEmpty, rc.Intent)
@@ -597,6 +745,62 @@ func estimateTokens(steps []PlanStep, contextBudget int) int {
 		return contextBudget
 	}
 	return base
+}
+
+// executorStepWithPRM wraps ExecutorStep and adds PRM early-termination scoring.
+// Used internally by RunLoop; public ExecutorStep is preserved for tests.
+func (rl *ReasoningLoop) executorStepWithPRM(ctx context.Context, plan *Plan, intent string) (*ExecutionResult, error) {
+	result, err := rl.ExecutorStep(ctx, plan)
+	if err != nil || result == nil || rl.prm == nil || intent == "" {
+		return result, err
+	}
+	// PRM: check the last completed step for early termination signal.
+	for i := len(result.Results) - 1; i >= 0; i-- {
+		r := result.Results[i]
+		if r.ToolKey == "" {
+			continue
+		}
+		_, shouldContinue, _ := rl.prm.ScoreStep(ctx, intent, plan.Steps, result.Results, r)
+		if !shouldContinue {
+			// Mark remaining incomplete steps as terminated.
+			for j := i + 1; j < len(result.Results); j++ {
+				if !result.Results[j].Success && result.Results[j].Error == "" {
+					result.Results[j].Error = fmt.Sprintf("early_termination by PRM after step %d", i)
+				}
+			}
+			result.CompensationNeeded = true
+		}
+		break // only check the last meaningful step
+	}
+	return result, nil
+}
+
+// criticStepWithSemantic wraps CriticStep and adds semantic LLM judge when available.
+// Used internally by RunLoop; public CriticStep is preserved for tests.
+func (rl *ReasoningLoop) criticStepWithSemantic(ctx context.Context, plan *Plan, result *ExecutionResult, intent string) (*CriticAssessment, error) {
+	// Try semantic critic first.
+	if rl.semanticCritic != nil && intent != "" {
+		score, err := rl.semanticCritic.Evaluate(ctx, SemanticCriticRequest{
+			OriginalIntent: intent,
+			Steps:          plan.Steps,
+			Results:        result.Results,
+		})
+		if err == nil && score != nil {
+			var hints []string
+			if score.RetryGuidance != "" {
+				hints = []string{score.RetryGuidance}
+			}
+			return &CriticAssessment{
+				QualityScore:    score.QualityScore,
+				Issues:          score.Issues,
+				ShouldRetry:     score.ShouldRetry,
+				RetryHints:      hints,
+				SemanticVerdict: "llm_judge",
+			}, nil
+		}
+		// Fall through to standard CriticStep on failure.
+	}
+	return rl.CriticStep(ctx, plan, result, intent)
 }
 
 // ExecutorStep executes plan steps respecting the dependency DAG.
@@ -976,6 +1180,12 @@ func (rl *ReasoningLoop) RunLoop(ctx context.Context, rc *ReasoningContext, maxI
 		effectiveMax = 1
 	}
 
+	// Apply per-workspace calibrated quality target if set.
+	qualityTarget := rl.qualityTarget
+	if rc.WorkspaceQualityTarget > 0 && rc.WorkspaceQualityTarget <= 1.0 {
+		qualityTarget = rc.WorkspaceQualityTarget
+	}
+
 	var (
 		finalPlan   *Plan
 		finalResult *ExecutionResult
@@ -1016,7 +1226,7 @@ func (rl *ReasoningLoop) RunLoop(ctx context.Context, rc *ReasoningContext, maxI
 		finalPlan = plan
 
 		// 2. Execute
-		result, err := rl.ExecutorStep(ctx, plan)
+		result, err := rl.executorStepWithPRM(ctx, plan, rc.Intent)
 		if err != nil {
 			return nil, fmt.Errorf("reasoning: iteration %d executor: %w", i+1, err)
 		}
@@ -1024,7 +1234,7 @@ func (rl *ReasoningLoop) RunLoop(ctx context.Context, rc *ReasoningContext, maxI
 		rl.storeFactsFromResult(rc.WorkspaceID, result)
 
 		// 3. Critique
-		assessment, err := rl.CriticStep(ctx, plan, result, rc.Intent)
+		assessment, err := rl.criticStepWithSemantic(ctx, plan, result, rc.Intent)
 		if err != nil {
 			return nil, fmt.Errorf("reasoning: iteration %d critic: %w", i+1, err)
 		}
@@ -1067,7 +1277,7 @@ func (rl *ReasoningLoop) RunLoop(ctx context.Context, rc *ReasoningContext, maxI
 		}
 
 		// Stop if quality target met
-		if criticScore >= rl.qualityTarget {
+		if criticScore >= qualityTarget {
 			return &LoopResult{
 				FinalPlan:     finalPlan,
 				FinalResult:   finalResult,
@@ -1087,6 +1297,11 @@ func (rl *ReasoningLoop) RunLoop(ctx context.Context, rc *ReasoningContext, maxI
 		Lessons:       deduplicate(allLessons),
 		DynamicBudget: effectiveMax,
 	}, nil
+}
+
+// HasLLMClient reports whether an LLM client is configured.
+func (rl *ReasoningLoop) HasLLMClient() bool {
+	return rl.llmClient != nil
 }
 
 // computeIterationsFromSignals derives an appropriate max iteration count
@@ -1135,4 +1350,21 @@ func deduplicate(items []string) []string {
 		}
 	}
 	return result
+}
+
+// RunReActLoop is the production reasoning path using ReAct interleaved reasoning.
+func (rl *ReasoningLoop) RunReActLoop(ctx context.Context, rc *ReasoningContext) (*ReactResult, error) {
+	if rl.llmClient == nil {
+		return nil, fmt.Errorf("react_loop: LLMClient required")
+	}
+	cfg := ReactLoopConfig{
+		LLMClient:      rl.llmClient,
+		Executor:       rl.executor,
+		Tools:          rl.registeredTools,
+		MaxTurns:       reactMaxTurns,
+		UseThinking:    rl.enableExtendedThinking,
+		ThinkingBudget: rl.thinkingBudgetTokens,
+		StepTimeout:    rl.stepTimeout,
+	}
+	return NewReActLoop(cfg).Run(ctx, rc)
 }

@@ -651,7 +651,7 @@ func TestAnthropicThinkingRequest(t *testing.T) {
 	resp, _, err := client.Generate(context.Background(), GenerateRequest{
 		Model:     ModelAnthropicSonnet,
 		MaxTokens: 1024,
-		Thinking:  &ThinkingConfig{Type: "enabled", BudgetTokens: 1000},
+		Thinking:  &ThinkingConfig{Enabled: true, BudgetTokens: 1000},
 		Messages:  []ChatMsg{{Role: "user", Content: "test"}},
 	})
 	if err != nil {
@@ -689,7 +689,7 @@ func TestAnthropicThinkingIncompatibleWithJSONSchema(t *testing.T) {
 	_, _, err := client.Generate(context.Background(), GenerateRequest{
 		Model:      ModelAnthropicSonnet,
 		MaxTokens:  512,
-		Thinking:   &ThinkingConfig{Type: "enabled", BudgetTokens: 1000},
+		Thinking:   &ThinkingConfig{Enabled: true, BudgetTokens: 1000},
 		JSONSchema: map[string]any{"type": "object"},
 		Messages:   []ChatMsg{{Role: "user", Content: "test"}},
 	})

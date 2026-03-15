@@ -1,8 +1,9 @@
 package rag
 
 import (
+	"context"
 	"fmt"
-	"hash/fnv"
+	"log"
 	"math"
 	"sort"
 	"strings"
@@ -58,6 +59,9 @@ type RerankerConfig struct {
 	BM25Weight   float64 `json:"bm25_weight"`
 	Enabled      bool    `json:"enabled"`
 	VersionLabel string  `json:"version_label"`
+	RerankerMode string  `json:"reranker_mode,omitempty"` // "cohere" | "llm" | "passthrough"
+	CohereModel  string  `json:"cohere_model,omitempty"`
+	RerankTopK   int     `json:"rerank_top_k,omitempty"`
 }
 
 type RetrievalEvalScore struct {
@@ -69,15 +73,29 @@ type RetrievalEvalScore struct {
 }
 
 type chunk struct {
-	ID           string
-	CollectionID string
-	Text         string
-	Tokens       []string
-	Embedding    []float64
-	Source       string
+	ID              string
+	CollectionID    string
+	Text            string
+	OriginalContent string // raw text before enrichment — displayed to users
+	EnrichedContent string // context-prepended text that was embedded
+	Tokens          []string
+	Embedding       []float64
+	Source          string
+}
+
+// AdaptiveGate classifies queries to determine if retrieval should be skipped.
+// Implemented by adaptive.Gate. Nil = always retrieve.
+type AdaptiveGate interface {
+	ShouldSkipRetrieval(ctx context.Context, query string) bool
 }
 
 type Service struct {
+	embedder       EmbeddingProvider // never nil; panics at construction if nil
+	bm25           *BM25Index        // never nil; initialized in NewService
+	enricher       ChunkEnricher     // default: MetadataChunkEnricher
+	hydeExpander   *HyDEExpander     // nil = direct embedding (no HyDE)
+	reranker       Reranker          // nil = no reranking
+	adaptiveGate   AdaptiveGate      // nil = always retrieve (backwards compat)
 	mu             sync.RWMutex
 	nextID         int
 	collections    map[string]Collection
@@ -88,8 +106,14 @@ type Service struct {
 	retrievalEvals map[string]RetrievalEvalScore
 }
 
-func NewService() *Service {
+func NewService(embedder EmbeddingProvider) *Service {
+	if embedder == nil {
+		panic("rag.NewService: embedder must not be nil — use MockEmbeddingProvider in tests")
+	}
 	return &Service{
+		embedder:       embedder,
+		bm25:           NewBM25Index(),
+		enricher:       NewPassthroughChunkEnricher(),
 		nextID:         1,
 		collections:    map[string]Collection{},
 		chunks:         map[string][]chunk{},
@@ -98,6 +122,30 @@ func NewService() *Service {
 		rerankers:      map[string]RerankerConfig{},
 		retrievalEvals: map[string]RetrievalEvalScore{},
 	}
+}
+
+// WithAdaptiveGate attaches the adaptive RAG gate to the service.
+func (s *Service) WithAdaptiveGate(gate AdaptiveGate) *Service {
+	s.adaptiveGate = gate
+	return s
+}
+
+// WithHyDEExpander attaches a HyDE expander to the service.
+func (s *Service) WithHyDEExpander(expander *HyDEExpander) *Service {
+	s.hydeExpander = expander
+	return s
+}
+
+// WithReranker attaches a cross-encoder reranker to the service.
+func (s *Service) WithReranker(r Reranker) *Service {
+	s.reranker = r
+	return s
+}
+
+// WithEnricher overrides the default chunk enricher.
+func (s *Service) WithEnricher(e ChunkEnricher) *Service {
+	s.enricher = e
+	return s
 }
 
 func (s *Service) UpsertCollection(collection Collection) Collection {
@@ -172,13 +220,42 @@ func (s *Service) Ingest(collectionID string, documents []string) (Collection, i
 		for _, part := range parts {
 			chunkIndex++
 			tokens := tokenize(part)
+
+			// Enrich chunk — best-effort; never fail ingest due to enrichment error.
+			enriched, enrichErr := s.enricher.Enrich(context.Background(), DocumentMeta{
+				WorkspaceID: collection.WorkspaceID,
+			}, part)
+			if enrichErr != nil {
+				log.Printf("[rag.Ingest] enrichment failed for chunk %d, using original: %v", chunkIndex, enrichErr)
+				enriched = part
+			}
+
+			// Embed the ENRICHED text (improves retrieval quality).
+			chunkEmbeddings, embedErr := s.embedder.Embed(context.Background(), []string{enriched})
+			if embedErr != nil {
+				log.Printf("[rag.Ingest] embedding failed for chunk %d: %v", chunkIndex, embedErr)
+				continue
+			}
+			if len(chunkEmbeddings) == 0 || len(chunkEmbeddings[0]) == 0 {
+				log.Printf("[rag.Ingest] empty vector returned for chunk %d", chunkIndex)
+				continue
+			}
+
+			chunkID := fmt.Sprintf("%s_chunk_%04d", collectionID, chunkIndex)
+
+			// Index for BM25 scoring.
+			bm25Tokens := BM25Tokenize(part)
+			s.bm25.IndexDocument(chunkID, bm25Tokens)
+
 			existing = append(existing, chunk{
-				ID:           fmt.Sprintf("%s_chunk_%04d", collectionID, chunkIndex),
-				CollectionID: collectionID,
-				Text:         part,
-				Tokens:       tokens,
-				Embedding:    embeddingFromTokens(tokens, 12),
-				Source:       fmt.Sprintf("collection:%s", collectionID),
+				ID:              chunkID,
+				CollectionID:    collectionID,
+				Text:            part,
+				OriginalContent: part,
+				EnrichedContent: enriched,
+				Tokens:          tokens,
+				Embedding:       float32ToFloat64(chunkEmbeddings[0]),
+				Source:          fmt.Sprintf("collection:%s", collectionID),
 			})
 			ingested++
 		}
@@ -191,6 +268,19 @@ func (s *Service) Ingest(collectionID string, documents []string) (Collection, i
 }
 
 func (s *Service) Search(workspaceID, turnID, queryText string, collectionIDs []string, maxResults int) Retrieval {
+	// Adaptive RAG Gate: skip retrieval for simple acknowledgements.
+	if s.adaptiveGate != nil && s.adaptiveGate.ShouldSkipRetrieval(context.Background(), queryText) {
+		return Retrieval{
+			RetrievalID:  turnID,
+			TurnID:       turnID,
+			WorkspaceID:  workspaceID,
+			Query:        queryText,
+			QueryText:    queryText,
+			QueryRewrite: normalizeQueryRewrite(queryText),
+			Results:      []RetrievalResult{},
+		}
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -202,8 +292,34 @@ func (s *Service) Search(workspaceID, turnID, queryText string, collectionIDs []
 		maxResults = 3
 	}
 	queryRewrite := normalizeQueryRewrite(queryText)
-	queryTokens := tokenize(queryRewrite)
-	queryEmbedding := embeddingFromTokens(queryTokens, 12)
+
+	// HyDE-expanded query embedding (averages hypothetical doc + original query).
+	var queryVecF32 []float32
+	if s.hydeExpander != nil {
+		var hydeErr error
+		queryVecF32, hydeErr = s.hydeExpander.ExpandQuery(context.Background(), queryRewrite)
+		if hydeErr != nil {
+			// Fallback: direct embedding.
+			embs, embedErr := s.embedder.Embed(context.Background(), []string{queryRewrite})
+			if embedErr != nil || len(embs) == 0 || len(embs[0]) == 0 {
+				return Retrieval{
+					RetrievalID: turnID, TurnID: turnID, WorkspaceID: workspaceID,
+					Query: queryText, QueryText: queryText, QueryRewrite: queryRewrite,
+				}
+			}
+			queryVecF32 = embs[0]
+		}
+	} else {
+		embs, embedErr := s.embedder.Embed(context.Background(), []string{queryRewrite})
+		if embedErr != nil || len(embs) == 0 || len(embs[0]) == 0 {
+			return Retrieval{
+				RetrievalID: turnID, TurnID: turnID, WorkspaceID: workspaceID,
+				Query: queryText, QueryText: queryText, QueryRewrite: queryRewrite,
+			}
+		}
+		queryVecF32 = embs[0]
+	}
+	queryEmbedding := float32ToFloat64(queryVecF32)
 	reranker := s.rerankerConfigLocked(workspaceID)
 
 	allowedCollections := s.collectionSelection(workspaceID, collectionIDs)
@@ -211,7 +327,7 @@ func (s *Service) Search(workspaceID, turnID, queryText string, collectionIDs []
 	for _, collection := range allowedCollections {
 		for _, storedChunk := range s.chunks[collection.ID] {
 			dense := cosineSimilarity(queryEmbedding, storedChunk.Embedding)
-			bm25 := bm25TokenOverlap(queryTokens, storedChunk.Tokens)
+			bm25 := s.bm25.Score(BM25Tokenize(storedChunk.Text), BM25Tokenize(queryRewrite))
 			hybrid := dense
 			if reranker.Enabled && collection.BM25Enabled {
 				hybrid = (reranker.DenseWeight * dense) + (reranker.BM25Weight * bm25)
@@ -235,6 +351,19 @@ func (s *Service) Search(workspaceID, turnID, queryText string, collectionIDs []
 		}
 		return results[i].Score > results[j].Score
 	})
+
+	// Cross-encoder reranking: applied to top-20 hybrid candidates.
+	if s.reranker != nil && len(results) > 0 {
+		rerankInput := results
+		if len(rerankInput) > 20 {
+			rerankInput = rerankInput[:20]
+		}
+		reranked, rerankErr := s.reranker.Rerank(context.Background(), queryRewrite, rerankInput, maxResults)
+		if rerankErr == nil {
+			results = reranked
+		}
+	}
+
 	if len(results) > maxResults {
 		results = results[:maxResults]
 	}
@@ -452,27 +581,14 @@ func tokenize(input string) []string {
 	return out
 }
 
-func embeddingFromTokens(tokens []string, dimensions int) []float64 {
-	if dimensions <= 0 {
-		dimensions = 8
+// float32ToFloat64 converts a []float32 vector to []float64 for compatibility
+// with the in-memory chunk storage which uses float64.
+func float32ToFloat64(v []float32) []float64 {
+	out := make([]float64, len(v))
+	for i, x := range v {
+		out[i] = float64(x)
 	}
-	vector := make([]float64, dimensions)
-	if len(tokens) == 0 {
-		return vector
-	}
-	for _, token := range tokens {
-		hash := fnv.New64a()
-		_, _ = hash.Write([]byte(token))
-		value := hash.Sum64()
-		for idx := 0; idx < dimensions; idx++ {
-			component := float64((value>>(uint(idx%8)*8))&0xFF) / 255.0
-			vector[idx] += component
-		}
-	}
-	for idx := range vector {
-		vector[idx] = vector[idx] / float64(len(tokens))
-	}
-	return vector
+	return out
 }
 
 func cosineSimilarity(left, right []float64) float64 {
@@ -497,22 +613,6 @@ func cosineSimilarity(left, right []float64) float64 {
 	return dot / (math.Sqrt(leftNorm) * math.Sqrt(rightNorm))
 }
 
-func bm25TokenOverlap(queryTokens, chunkTokens []string) float64 {
-	if len(queryTokens) == 0 || len(chunkTokens) == 0 {
-		return 0
-	}
-	chunkSet := map[string]struct{}{}
-	for _, token := range chunkTokens {
-		chunkSet[token] = struct{}{}
-	}
-	matches := 0
-	for _, token := range queryTokens {
-		if _, ok := chunkSet[token]; ok {
-			matches++
-		}
-	}
-	return float64(matches) / float64(len(queryTokens))
-}
 
 func roundScore(score float64) float64 {
 	if score < 0 {

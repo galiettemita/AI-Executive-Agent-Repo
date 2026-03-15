@@ -8,7 +8,7 @@ import (
 func TestProactiveSurfacingAddAndFind(t *testing.T) {
 	t.Parallel()
 
-	ps := NewProactiveSurfacingService()
+	ps := NewProactiveSurfacingService(nil)
 	_, err := ps.AddMemory("ws1", "project deadline is next Friday")
 	if err != nil {
 		t.Fatalf("add memory: %v", err)
@@ -30,7 +30,7 @@ func TestProactiveSurfacingAddAndFind(t *testing.T) {
 func TestProactiveSurfacingWorkspaceIsolation(t *testing.T) {
 	t.Parallel()
 
-	ps := NewProactiveSurfacingService()
+	ps := NewProactiveSurfacingService(nil)
 	_, _ = ps.AddMemory("ws1", "alpha memory content")
 	_, _ = ps.AddMemory("ws2", "beta memory content")
 
@@ -45,7 +45,7 @@ func TestProactiveSurfacingWorkspaceIsolation(t *testing.T) {
 func TestProactiveSurfacingEmptyResults(t *testing.T) {
 	t.Parallel()
 
-	ps := NewProactiveSurfacingService()
+	ps := NewProactiveSurfacingService(nil)
 	candidates := ps.FindRelevantMemories("ws_empty", "anything", 5)
 	if len(candidates) != 0 {
 		t.Fatalf("expected 0 candidates for empty workspace, got %d", len(candidates))
@@ -55,7 +55,7 @@ func TestProactiveSurfacingEmptyResults(t *testing.T) {
 func TestProactiveSurfacingLimit(t *testing.T) {
 	t.Parallel()
 
-	ps := NewProactiveSurfacingService()
+	ps := NewProactiveSurfacingService(nil)
 	for i := 0; i < 10; i++ {
 		_, _ = ps.AddMemory("ws1", "memory about project planning tasks")
 	}

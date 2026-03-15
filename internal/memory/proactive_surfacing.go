@@ -1,7 +1,9 @@
 package memory
 
 import (
+	"context"
 	"fmt"
+	"math"
 	"sort"
 	"strings"
 	"sync"
@@ -9,6 +11,9 @@ import (
 
 	"github.com/google/uuid"
 )
+
+// ProactiveSurfacingThreshold is the minimum composite score to surface a memory.
+const ProactiveSurfacingThreshold = 0.45
 
 // SurfacingCandidate represents a memory that may be proactively surfaced.
 type SurfacingCandidate struct {
@@ -18,25 +23,36 @@ type SurfacingCandidate struct {
 	Reason         string
 }
 
+// ProactiveSurfacingEmbedder is the minimal embedding interface for proactive surfacing.
+type ProactiveSurfacingEmbedder interface {
+	Embed(ctx context.Context, texts []string) ([][]float32, error)
+}
+
 // SurfacingMemory is an in-memory store entry for proactive surfacing.
 type SurfacingMemory struct {
 	ID          uuid.UUID
 	WorkspaceID string
 	Content     string
 	Keywords    []string
+	Embedding   []float32 // nil if not yet embedded
+	Confidence  float64   // 0 treated as 1.0
 	CreatedAt   time.Time
 }
 
 // ProactiveSurfacingService surfaces relevant memories based on current context.
+// Supports hybrid scoring: embedding similarity (65%) + keyword overlap (20%) + temporal (15%).
 type ProactiveSurfacingService struct {
 	mu       sync.Mutex
 	memories map[string][]SurfacingMemory // keyed by workspace_id
+	embedder ProactiveSurfacingEmbedder   // nil = keyword-only mode
 }
 
 // NewProactiveSurfacingService creates a new ProactiveSurfacingService.
-func NewProactiveSurfacingService() *ProactiveSurfacingService {
+// Pass nil embedder for keyword-only mode (backwards compatible).
+func NewProactiveSurfacingService(embedder ProactiveSurfacingEmbedder) *ProactiveSurfacingService {
 	return &ProactiveSurfacingService{
 		memories: map[string][]SurfacingMemory{},
+		embedder: embedder,
 	}
 }
 
@@ -54,7 +70,15 @@ func (ps *ProactiveSurfacingService) AddMemory(workspaceID, content string) (Sur
 		WorkspaceID: workspaceID,
 		Content:     strings.TrimSpace(content),
 		Keywords:    extractKeywords(content),
+		Confidence:  1.0,
 		CreatedAt:   time.Now().UTC(),
+	}
+
+	// Embed at write time — best-effort.
+	if ps.embedder != nil {
+		if embs, err := ps.embedder.Embed(context.Background(), []string{content}); err == nil && len(embs) > 0 {
+			mem.Embedding = embs[0]
+		}
 	}
 
 	ps.mu.Lock()
@@ -64,6 +88,8 @@ func (ps *ProactiveSurfacingService) AddMemory(workspaceID, content string) (Sur
 }
 
 // FindRelevantMemories returns the most relevant memories for the current context.
+// Uses hybrid scoring: embedding similarity (65%) + keyword overlap (20%) + temporal (15%).
+// Falls back to keyword + recency when embedder is nil or embedding fails.
 func (ps *ProactiveSurfacingService) FindRelevantMemories(workspaceID, currentContext string, limit int) []SurfacingCandidate {
 	ps.mu.Lock()
 	defer ps.mu.Unlock()
@@ -80,6 +106,14 @@ func (ps *ProactiveSurfacingService) FindRelevantMemories(workspaceID, currentCo
 	contextKeywords := extractKeywords(currentContext)
 	now := time.Now().UTC()
 
+	// Attempt to embed the context signal for semantic scoring.
+	var contextVec []float32
+	if ps.embedder != nil {
+		if embs, err := ps.embedder.Embed(context.Background(), []string{currentContext}); err == nil && len(embs) > 0 {
+			contextVec = embs[0]
+		}
+	}
+
 	type scored struct {
 		candidate SurfacingCandidate
 		score     float64
@@ -88,28 +122,50 @@ func (ps *ProactiveSurfacingService) FindRelevantMemories(workspaceID, currentCo
 	candidates := make([]scored, 0, len(memories))
 	for _, mem := range memories {
 		keywordScore := RankByRelevance(contextKeywords, mem.Keywords)
-		recencyScore := computeRecencyScore(now, mem.CreatedAt)
-		combinedScore := 0.7*keywordScore + 0.3*recencyScore
+		temporalScore := computeRecencyScore(now, mem.CreatedAt)
 
-		if combinedScore <= 0 {
+		var composite float64
+		if contextVec != nil && mem.Embedding != nil {
+			denseScore := float64(cosineSim32(contextVec, mem.Embedding))
+			composite = 0.65*denseScore + 0.20*keywordScore + 0.15*temporalScore
+		} else {
+			// Keyword-only fallback (original formula).
+			composite = 0.7*keywordScore + 0.3*temporalScore
+		}
+
+		// Confidence dampening.
+		confidence := mem.Confidence
+		if confidence <= 0 {
+			confidence = 1.0
+		}
+		composite *= confidence
+
+		// Temporal penalty for very old memories (exponential).
+		daysSince := now.Sub(mem.CreatedAt).Hours() / 24
+		if daysSince > 30 {
+			composite *= math.Exp(-0.03 * (daysSince - 30))
+		}
+
+		if composite < ProactiveSurfacingThreshold {
 			continue
 		}
 
-		reason := "keyword_match"
-		if keywordScore == 0 && recencyScore > 0 {
-			reason = "recency"
-		} else if keywordScore > 0 && recencyScore > 0 {
-			reason = "keyword_match+recency"
+		reason := "semantic_match"
+		if contextVec == nil || mem.Embedding == nil {
+			reason = "keyword_match"
+		}
+		if keywordScore > 0 && temporalScore > 0 {
+			reason += "+recency"
 		}
 
 		candidates = append(candidates, scored{
 			candidate: SurfacingCandidate{
 				MemoryID:       mem.ID,
 				Content:        mem.Content,
-				RelevanceScore: combinedScore,
+				RelevanceScore: composite,
 				Reason:         reason,
 			},
-			score: combinedScore,
+			score: composite,
 		})
 	}
 

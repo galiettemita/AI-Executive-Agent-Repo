@@ -279,3 +279,11 @@ func (s *CriticReflectorService) GetCritiqueHistory() []CriticOutput {
 	defer s.mu.RUnlock()
 	return s.ring.snapshot()
 }
+
+// HeuristicCriticService is an alias for CriticReflectorService.
+type HeuristicCriticService = CriticReflectorService
+
+// NewHeuristicCriticService creates a new heuristic critic (alias constructor).
+func NewHeuristicCriticService() *HeuristicCriticService {
+	return NewCriticReflectorService()
+}

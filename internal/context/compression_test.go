@@ -53,8 +53,8 @@ func TestCompressEntityExtraction(t *testing.T) {
 
 	cc := NewConversationCompressor()
 	turns := []Turn{
-		{Role: "user", Content: "Talk to Alice about the Project"},
-		{Role: "assistant", Content: "I contacted Bob regarding the Report"},
+		{Role: "user", Content: "Talk to Alice Chen about Project Alpha"},
+		{Role: "assistant", Content: "I contacted the CEO regarding the Q3 report"},
 		{Role: "user", Content: "Great, thanks"},
 	}
 	result := cc.Compress(turns, 5)
@@ -64,11 +64,11 @@ func TestCompressEntityExtraction(t *testing.T) {
 			allEntities[e] = struct{}{}
 		}
 	}
-	if _, ok := allEntities["Alice"]; !ok {
-		t.Fatal("expected Alice in entity refs")
+	if _, ok := allEntities["Alice Chen"]; !ok {
+		t.Fatalf("expected 'Alice Chen' in entity refs, got %v", allEntities)
 	}
-	if _, ok := allEntities["Project"]; !ok {
-		t.Fatal("expected Project in entity refs")
+	if _, ok := allEntities["CEO"]; !ok {
+		t.Fatalf("expected 'CEO' in entity refs, got %v", allEntities)
 	}
 }
 

@@ -12,10 +12,12 @@ import (
 	"time"
 )
 
-// EmbeddingProvider abstracts a text-embedding backend.
+// EmbeddingProvider is the single contract for all vector operations in Brevio.
+// All implementations must be safe for concurrent use.
 type EmbeddingProvider interface {
 	Embed(ctx context.Context, texts []string) ([][]float32, error)
 	Dimensions() int
+	ModelName() string
 }
 
 // -----------------------------------------------------------------------
@@ -59,6 +61,9 @@ func NewOpenAIEmbeddingProvider(baseURL, apiKey string) *OpenAIEmbeddingProvider
 
 // Dimensions returns the embedding vector size.
 func (p *OpenAIEmbeddingProvider) Dimensions() int { return 1536 }
+
+// ModelName returns the underlying model identifier.
+func (p *OpenAIEmbeddingProvider) ModelName() string { return p.Model }
 
 // Embed sends texts to the embeddings API and returns vectors.
 func (p *OpenAIEmbeddingProvider) Embed(ctx context.Context, texts []string) ([][]float32, error) {
@@ -157,6 +162,25 @@ func NewEmbeddingService(provider EmbeddingProvider, opts ...EmbeddingServiceOpt
 	return s
 }
 
+// Embed implements EmbeddingProvider. Delegates to the inner provider with L1 caching.
+func (s *EmbeddingService) Embed(ctx context.Context, texts []string) ([][]float32, error) {
+	results := make([][]float32, len(texts))
+	for i, text := range texts {
+		vec, err := s.EmbedDocument(ctx, text)
+		if err != nil {
+			return nil, fmt.Errorf("embed text[%d]: %w", i, err)
+		}
+		results[i] = vec
+	}
+	return results, nil
+}
+
+// Dimensions implements EmbeddingProvider.
+func (s *EmbeddingService) Dimensions() int { return s.provider.Dimensions() }
+
+// ModelName implements EmbeddingProvider.
+func (s *EmbeddingService) ModelName() string { return s.provider.ModelName() }
+
 // EmbedDocument embeds a document string, using the cache when available.
 func (s *EmbeddingService) EmbedDocument(ctx context.Context, text string) ([]float32, error) {
 	now := time.Now()
@@ -243,6 +267,19 @@ func (s *EmbeddingService) BatchEmbed(ctx context.Context, texts []string, batch
 		}
 	}
 	return all, nil
+}
+
+// ValidateEmbeddingDimensions panics at startup if the provider produces
+// vectors that do not match the pgvector schema.
+func ValidateEmbeddingDimensions(provider EmbeddingProvider) {
+	const schemaVectorDims = 1536
+	if d := provider.Dimensions(); d != schemaVectorDims {
+		panic(fmt.Sprintf(
+			"embedding provider returns %d dims but pgvector schema requires %d — "+
+				"check OpenAIEmbeddingProvider model config",
+			d, schemaVectorDims,
+		))
+	}
 }
 
 // CosineSimilarity computes the cosine similarity between two float32 vectors.

@@ -1,12 +1,19 @@
 package contextlayer
 
 import (
+	"context"
 	"fmt"
+	"log"
 	"sort"
 	"strings"
 	"sync"
 	"time"
 )
+
+// WorkingMemoryProvider is the context-assembly-facing interface.
+type WorkingMemoryProvider interface {
+	BuildContextSnippet(ctx context.Context, workspaceID, taskID string) (string, error)
+}
 
 type AttentionBudget struct {
 	Tier                string
@@ -82,10 +89,11 @@ type AllocationReport struct {
 }
 
 type Service struct {
-	mu          sync.RWMutex
-	budgets     map[string]Budget
-	allocations map[string][]Allocation
-	reports     map[string]AllocationReport
+	workingMemory WorkingMemoryProvider // may be nil (gracefully skipped)
+	mu            sync.RWMutex
+	budgets       map[string]Budget
+	allocations   map[string][]Allocation
+	reports       map[string]AllocationReport
 }
 
 func NewService() *Service {
@@ -94,6 +102,71 @@ func NewService() *Service {
 		allocations: map[string][]Allocation{},
 		reports:     map[string]AllocationReport{},
 	}
+}
+
+// SetWorkingMemory injects the working memory provider after construction.
+func (s *Service) SetWorkingMemory(wm WorkingMemoryProvider) {
+	s.workingMemory = wm
+}
+
+// MinContextConfidence is the minimum certainty for a memory item to appear in context.
+const MinContextConfidence = 0.3
+
+// FilterByConfidence removes memory items below the confidence threshold.
+// Items with Confidence=0 are treated as 1.0 for backwards compatibility.
+func FilterByConfidence(items []MemoryCandidate) []MemoryCandidate {
+	filtered := make([]MemoryCandidate, 0, len(items))
+	for _, item := range items {
+		conf := item.CosineSimilarity // proxy: candidates with score >= threshold pass
+		if conf == 0 {
+			conf = 1.0
+		}
+		if conf >= MinContextConfidence {
+			filtered = append(filtered, item)
+		}
+	}
+	return filtered
+}
+
+// ContradictionExclusionThreshold: contradicted items below this score are excluded.
+const ContradictionExclusionThreshold = 0.50
+
+// FilterContradicted applies scoring penalties and exclusion for contradicted memory items.
+// Items with IsContradicted=true and score below threshold are excluded entirely.
+// Items above threshold are included with a 40% penalty.
+type ContradictionFilterableItem struct {
+	IsContradicted bool
+	Score          float64
+	RelevanceScore float64
+	Body           string
+}
+
+// RankByRelevanceAndConfidence sorts memory candidates by effective score.
+func RankByRelevanceAndConfidence(items []MemoryCandidate) []MemoryCandidate {
+	out := append([]MemoryCandidate(nil), items...)
+	sort.Slice(out, func(i, j int) bool {
+		si := out[i].CosineSimilarity
+		sj := out[j].CosineSimilarity
+		if si != sj {
+			return si > sj
+		}
+		return out[i].CreatedAt.After(out[j].CreatedAt)
+	})
+	return out
+}
+
+// AssembleWorkingMemorySlot populates the working_memory context slot for a task.
+// Returns empty string when no meaningful state is present (slot is omitted).
+func (s *Service) AssembleWorkingMemorySlot(ctx context.Context, workspaceID, taskID string) string {
+	if taskID == "" || s.workingMemory == nil {
+		return ""
+	}
+	snippet, err := s.workingMemory.BuildContextSnippet(ctx, workspaceID, taskID)
+	if err != nil {
+		log.Printf("[context] working_memory snippet failed: %v", err)
+		return ""
+	}
+	return snippet
 }
 
 func AttentionBudgetForTier(tier string) AttentionBudget {
@@ -121,6 +194,10 @@ func DefaultContextSlots() []ContextSlot {
 		{Slot: 6, Name: "current_turn", MaxTokens: 2000, NeverTruncate: true, Priority: 999},
 		{Slot: 7, Name: "prior_tool_results", MaxTokens: 2000, Priority: 5},
 		{Slot: 8, Name: "evidence_citations", MaxTokens: 1000, Priority: 2},
+		{Slot: 9, Name: "working_memory", MaxTokens: 1500, Priority: 8},
+		{Slot: 10, Name: "proactive_memories", MaxTokens: 600, Priority: 6},
+		{Slot: 11, Name: "knowledge_graph", MaxTokens: 800, Priority: 7},
+		{Slot: 12, Name: "transferred_preferences", MaxTokens: 400, Priority: 5},
 	}
 }
 

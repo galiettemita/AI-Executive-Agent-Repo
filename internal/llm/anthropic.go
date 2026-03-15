@@ -56,31 +56,17 @@ func NewAnthropicClient(cfg AnthropicConfig) (*AnthropicClient, error) {
 	}, nil
 }
 
-// anthropicSystemBlock is one element of a multi-block system prompt.
-// Setting CacheControl instructs the Anthropic server to cache the KV state of
-// this block's prefix across requests, saving cost and reducing TTFT.
-type anthropicSystemBlock struct {
-	Type         string                 `json:"type"` // always "text"
-	Text         string                 `json:"text"`
-	CacheControl *anthropicCacheControl `json:"cache_control,omitempty"`
-}
-
-type anthropicCacheControl struct {
-	Type string `json:"type"` // "ephemeral"
-}
-
 type anthropicRequest struct {
-	Model       string                 `json:"model"`
-	MaxTokens   int                    `json:"max_tokens"`
-	Messages    []anthropicMessage     `json:"messages"`
-	System      []anthropicSystemBlock `json:"system,omitempty"`
-	Temperature *float64               `json:"temperature,omitempty"`
-	TopP        *float64               `json:"top_p,omitempty"`
-	// Forward-compat placeholders — fully wired in later prompts:
-	Thinking   *anthropicThinking   `json:"thinking,omitempty"`    // wired in Prompt 3
-	Stream     bool                 `json:"stream,omitempty"`      // wired in Prompt 5
-	Tools      []anthropicTool      `json:"tools,omitempty"`       // wired in Prompt 2
-	ToolChoice *anthropicToolChoice `json:"tool_choice,omitempty"` // wired in Prompt 2
+	Model       string             `json:"model"`
+	MaxTokens   int                `json:"max_tokens"`
+	Messages    []anthropicMessage `json:"messages"`
+	System      string             `json:"system,omitempty"`
+	Temperature *float64           `json:"temperature,omitempty"`
+	TopP        *float64           `json:"top_p,omitempty"`
+	Tools       []anthropicTool    `json:"tools,omitempty"`
+	ToolChoice  any                `json:"tool_choice,omitempty"`
+	Thinking    *anthropicThinking `json:"thinking,omitempty"`
+	Stream      bool               `json:"stream,omitempty"`
 }
 
 // anthropicThinking placeholder — fully defined in Prompt 3.
@@ -95,14 +81,9 @@ type anthropicTool struct {
 	InputSchema map[string]any `json:"input_schema"`
 }
 
-type anthropicToolChoice struct {
-	Type string `json:"type"` // "tool"
-	Name string `json:"name"`
-}
-
 type anthropicMessage struct {
 	Role    string `json:"role"`
-	Content string `json:"content"`
+	Content any    `json:"content"` // string OR []anthropicContentBlock
 }
 
 type anthropicResponse struct {
@@ -116,14 +97,17 @@ type anthropicResponse struct {
 }
 
 type anthropicContentBlock struct {
-	Type string `json:"type"`
-	Text string `json:"text,omitempty"`
-	// tool_use fields (populated when Type == "tool_use"):
-	Name  string         `json:"name,omitempty"`
-	Input map[string]any `json:"input,omitempty"`
-	// thinking field (populated when Type == "thinking", wired fully in Prompt 3):
-	Thinking string `json:"thinking,omitempty"`
+	Type     string         `json:"type"`               // text|tool_use|tool_result|thinking
+	Text     string         `json:"text,omitempty"`
+	ID       string         `json:"id,omitempty"`       // tool_use and tool_result
+	Name     string         `json:"name,omitempty"`     // tool_use
+	Input    map[string]any `json:"input,omitempty"`    // tool_use
+	Content  string         `json:"content,omitempty"`  // tool_result value
+	IsError  bool           `json:"is_error,omitempty"` // tool_result
+	Thinking string         `json:"thinking,omitempty"` // thinking block
 }
+
+const anthropicBetaThinking = "interleaved-thinking-2025-05-14"
 
 type anthropicUsage struct {
 	InputTokens              int `json:"input_tokens"`
@@ -154,83 +138,106 @@ type anthropicErrorResponse struct {
 
 func floatPtr(f float64) *float64 { return &f }
 
-// Generate calls the Anthropic Messages API.
+// Generate calls the Anthropic Messages API with full support for tool use and
+// extended thinking.
 func (c *AnthropicClient) Generate(ctx context.Context, req GenerateRequest) (*GenerateResponse, *Usage, error) {
-	// Guard: thinking and tool_use are incompatible in the same request.
-	if req.Thinking != nil && req.JSONSchema != nil {
+	// Guard: thinking and JSONSchema (tool_use forcing) are incompatible.
+	if req.Thinking != nil && req.Thinking.Enabled && req.JSONSchema != nil {
 		return nil, nil, fmt.Errorf(
 			"anthropic: Thinking and JSONSchema (tool_use) cannot both be set on the same request",
 		)
 	}
 
-	// Extract system message from messages slice.
-	var staticSystemText string
-	messages := make([]anthropicMessage, 0, len(req.Messages))
-	for _, msg := range req.Messages {
-		if msg.Role == "system" {
-			staticSystemText = msg.Content
-			continue
-		}
-		messages = append(messages, anthropicMessage{Role: msg.Role, Content: msg.Content})
-	}
-
-	// Build system blocks. Static system prompt is marked for server-side caching.
-	// Dynamic content (JSONSchema instruction) is appended as a separate uncached block.
-	var sysBlocks []anthropicSystemBlock
-	if staticSystemText != "" {
-		sysBlocks = append(sysBlocks, anthropicSystemBlock{
-			Type:         "text",
-			Text:         staticSystemText,
-			CacheControl: &anthropicCacheControl{Type: "ephemeral"},
-		})
-	}
 	maxTokens := req.MaxTokens
 	if maxTokens <= 0 {
 		maxTokens = 1024
 	}
 
+	// Build system prompt: prefer explicit System field, fall back to extracting from messages.
+	systemPrompt := req.System
+	var filteredMsgs []ChatMsg
+	for _, msg := range req.Messages {
+		if msg.Role == "system" {
+			if systemPrompt == "" {
+				systemPrompt = msg.Content
+			}
+			continue
+		}
+		filteredMsgs = append(filteredMsgs, msg)
+	}
+
 	apiReq := anthropicRequest{
 		Model:     req.Model,
 		MaxTokens: maxTokens,
-		Messages:  messages,
+		System:    systemPrompt,
+	}
+	if req.Temperature != 0 {
+		t := req.Temperature
+		apiReq.Temperature = &t
+	}
+	if req.TopP != 0 {
+		p := req.TopP
+		apiReq.TopP = &p
 	}
 
-	// Native structured output via tool_use forcing.
-	if req.JSONSchema != nil {
+	// Build messages with correct multi-turn tool use format.
+	apiReq.Messages = buildAnthropicMessages(filteredMsgs, req.PriorAssistantToolCalls, req.ToolResults)
+
+	// Tool definitions from explicit Tools field.
+	if len(req.Tools) > 0 {
+		apiReq.Tools = make([]anthropicTool, len(req.Tools))
+		for i, t := range req.Tools {
+			apiReq.Tools[i] = anthropicTool{
+				Name:        t.Name,
+				Description: t.Description,
+				InputSchema: t.InputSchema,
+			}
+		}
+		switch req.ToolChoice {
+		case ToolChoiceAny:
+			apiReq.ToolChoice = map[string]string{"type": "any"}
+		case ToolChoiceNone:
+			apiReq.ToolChoice = map[string]string{"type": "none"}
+		default:
+			tc := string(req.ToolChoice)
+			if tc != "" && req.ToolChoice != ToolChoiceAuto {
+				apiReq.ToolChoice = map[string]any{"type": "tool", "name": tc}
+			} else {
+				apiReq.ToolChoice = map[string]string{"type": "auto"}
+			}
+		}
+	}
+
+	// Native structured output via tool_use forcing (JSONSchema path).
+	if req.JSONSchema != nil && len(req.Tools) == 0 {
 		apiReq.Tools = []anthropicTool{{
 			Name:        "structured_output",
 			Description: "Output the result conforming exactly to the provided JSON schema.",
 			InputSchema: req.JSONSchema,
 		}}
-		apiReq.ToolChoice = &anthropicToolChoice{
-			Type: "tool",
-			Name: "structured_output",
-		}
+		apiReq.ToolChoice = map[string]any{"type": "tool", "name": "structured_output"}
 	}
-	apiReq.System = sysBlocks
 
-	// Wire extended thinking if requested.
-	if req.Thinking != nil {
-		apiReq.Thinking = &anthropicThinking{
-			Type:         req.Thinking.Type,
-			BudgetTokens: req.Thinking.BudgetTokens,
+	// Extended thinking.
+	useThinkingBeta := false
+	if req.Thinking != nil && req.Thinking.Enabled {
+		budget := req.Thinking.BudgetTokens
+		if budget < 1024 {
+			budget = 1024
 		}
-		// Anthropic API requires temperature=1.0 when thinking is enabled.
-		apiReq.Temperature = floatPtr(1.0)
-	} else {
-		if req.Temperature > 0 {
-			t := req.Temperature
-			apiReq.Temperature = &t
+		if budget > 32768 {
+			budget = 32768
 		}
-	}
-	if req.TopP > 0 && req.TopP < 1.0 {
-		p := req.TopP
-		apiReq.TopP = &p
+		apiReq.Thinking = &anthropicThinking{Type: "enabled", BudgetTokens: budget}
+		one := 1.0
+		apiReq.Temperature = &one
+		apiReq.TopP = nil
+		useThinkingBeta = true
 	}
 
 	body, err := json.Marshal(apiReq)
 	if err != nil {
-		return nil, nil, fmt.Errorf("anthropic: marshal request: %w", err)
+		return nil, nil, fmt.Errorf("anthropic: marshal: %w", err)
 	}
 
 	var lastErr error
@@ -242,8 +249,7 @@ func (c *AnthropicClient) Generate(ctx context.Context, req GenerateRequest) (*G
 			case <-time.After(RetryBackoff(attempt, time.Second, 30*time.Second)):
 			}
 		}
-
-		resp, usage, err := c.doRequest(ctx, body)
+		resp, usage, err := c.doRequestFull(ctx, body, useThinkingBeta)
 		if err == nil {
 			return resp, usage, nil
 		}
@@ -255,26 +261,75 @@ func (c *AnthropicClient) Generate(ctx context.Context, req GenerateRequest) (*G
 	return nil, nil, fmt.Errorf("anthropic: exhausted retries: %w", lastErr)
 }
 
+// buildAnthropicMessages constructs the message array per Anthropic multi-turn spec.
+func buildAnthropicMessages(msgs []ChatMsg, priorToolCalls []AssistantToolUse, toolResults []ToolResult) []anthropicMessage {
+	out := make([]anthropicMessage, 0, len(msgs)+2)
+
+	for _, m := range msgs {
+		out = append(out, anthropicMessage{Role: m.Role, Content: m.Content})
+	}
+
+	// Reconstruct prior assistant turn as structured content with tool_use blocks.
+	if len(priorToolCalls) > 0 {
+		blocks := make([]anthropicContentBlock, 0, len(priorToolCalls)*2)
+		for _, tc := range priorToolCalls {
+			if tc.Text != "" {
+				blocks = append(blocks, anthropicContentBlock{Type: "text", Text: tc.Text})
+			}
+			blocks = append(blocks, anthropicContentBlock{
+				Type:  "tool_use",
+				ID:    tc.ID,
+				Name:  tc.Name,
+				Input: tc.Input,
+			})
+		}
+		out = append(out, anthropicMessage{Role: "assistant", Content: blocks})
+	}
+
+	// Tool results become a user message with tool_result content blocks.
+	if len(toolResults) > 0 {
+		blocks := make([]anthropicContentBlock, len(toolResults))
+		for i, tr := range toolResults {
+			blocks[i] = anthropicContentBlock{
+				Type:    "tool_result",
+				ID:      tr.ToolCallID,
+				Content: tr.Content,
+				IsError: tr.IsError,
+			}
+		}
+		out = append(out, anthropicMessage{Role: "user", Content: blocks})
+	}
+
+	return out
+}
+
 func (c *AnthropicClient) doRequest(ctx context.Context, body []byte) (*GenerateResponse, *Usage, error) {
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+anthropicMessagesPath, bytes.NewReader(body))
+	return c.doRequestFull(ctx, body, false)
+}
+
+func (c *AnthropicClient) doRequestFull(ctx context.Context, body []byte, thinkingBeta bool) (*GenerateResponse, *Usage, error) {
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost,
+		c.baseURL+anthropicMessagesPath, bytes.NewReader(body))
 	if err != nil {
 		return nil, nil, fmt.Errorf("anthropic: create request: %w", err)
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("x-api-key", c.apiKey)
 	httpReq.Header.Set("anthropic-version", anthropicAPIVersion)
-	httpReq.Header.Set("anthropic-beta", "prompt-caching-2024-07-31")
+	if thinkingBeta {
+		httpReq.Header.Set("anthropic-beta", anthropicBetaThinking)
+	}
 	if reqID, ok := ctx.Value(requestIDKey{}).(string); ok && reqID != "" {
 		httpReq.Header.Set("X-Request-ID", reqID)
 	}
 
 	httpResp, err := c.httpClient.Do(httpReq)
 	if err != nil {
-		return nil, nil, fmt.Errorf("anthropic: http error: %w", err)
+		return nil, nil, fmt.Errorf("anthropic: http: %w", err)
 	}
 	defer httpResp.Body.Close()
 
-	respBody, err := io.ReadAll(io.LimitReader(httpResp.Body, 1<<20))
+	respBody, err := io.ReadAll(io.LimitReader(httpResp.Body, 4<<20))
 	if err != nil {
 		return nil, nil, fmt.Errorf("anthropic: read response: %w", err)
 	}
@@ -288,70 +343,71 @@ func (c *AnthropicClient) doRequest(ctx context.Context, body []byte) (*Generate
 
 	var apiResp anthropicResponse
 	if err := json.Unmarshal(respBody, &apiResp); err != nil {
-		return nil, nil, fmt.Errorf("anthropic: unmarshal response: %w", err)
+		return nil, nil, fmt.Errorf("anthropic: unmarshal: %w", err)
 	}
 
-	var contentBuilder strings.Builder
-	var toolUseOutput string
-	var thinkingContent string
+	var textB, thinkingB strings.Builder
+	var toolCalls []ToolCall
+	var structuredOutput string
 
 	for _, block := range apiResp.Content {
 		switch block.Type {
+		case "text":
+			textB.WriteString(block.Text)
 		case "thinking":
-			thinkingContent = block.Thinking
+			thinkingB.WriteString(block.Thinking)
 		case "tool_use":
+			toolCalls = append(toolCalls, ToolCall{
+				ID:    block.ID,
+				Name:  block.Name,
+				Input: block.Input,
+			})
+			// Handle structured_output tool for JSONSchema path
 			if block.Name == "structured_output" && block.Input != nil {
-				raw, err := json.Marshal(block.Input)
-				if err == nil {
-					toolUseOutput = string(raw)
+				raw, merr := json.Marshal(block.Input)
+				if merr == nil {
+					structuredOutput = string(raw)
 				}
 			}
-		case "text":
-			contentBuilder.WriteString(block.Text)
 		}
 	}
 
-	// Prefer tool_use output (structured output path) over text.
-	responseContent := contentBuilder.String()
-	if toolUseOutput != "" {
-		responseContent = toolUseOutput
+	responseContent := textB.String()
+	if structuredOutput != "" {
+		responseContent = structuredOutput
 	}
 
 	return &GenerateResponse{
-			Content:         responseContent,
-			Model:           apiResp.Model,
-			ProviderID:      "anthropic",
-			FinishReason:    apiResp.StopReason,
-			ThinkingContent: thinkingContent,
-		}, &Usage{
-			InputTokens:         apiResp.Usage.InputTokens,
-			OutputTokens:        apiResp.Usage.OutputTokens,
-			CacheCreationTokens: apiResp.Usage.CacheCreationInputTokens,
-			CacheReadTokens:     apiResp.Usage.CacheReadInputTokens,
-		}, nil
+		Content:         responseContent,
+		ThinkingContent: thinkingB.String(),
+		ToolCalls:       toolCalls,
+		Model:           apiResp.Model,
+		ProviderID:      "anthropic",
+		FinishReason:    apiResp.StopReason,
+		InputTokens:     apiResp.Usage.InputTokens,
+		OutputTokens:    apiResp.Usage.OutputTokens,
+	}, &Usage{
+		InputTokens:         apiResp.Usage.InputTokens,
+		OutputTokens:        apiResp.Usage.OutputTokens,
+		CacheCreationTokens: apiResp.Usage.CacheCreationInputTokens,
+		CacheReadTokens:     apiResp.Usage.CacheReadInputTokens,
+	}, nil
 }
 
 // Stream implements Client for Anthropic SSE streaming.
 func (c *AnthropicClient) Stream(ctx context.Context, req GenerateRequest, out chan<- StreamChunk) {
 	defer close(out)
 
-	var staticSystemText string
-	messages := make([]anthropicMessage, 0, len(req.Messages))
+	systemPrompt := req.System
+	var filteredMsgs []ChatMsg
 	for _, msg := range req.Messages {
 		if msg.Role == "system" {
-			staticSystemText = msg.Content
+			if systemPrompt == "" {
+				systemPrompt = msg.Content
+			}
 			continue
 		}
-		messages = append(messages, anthropicMessage{Role: msg.Role, Content: msg.Content})
-	}
-
-	var sysBlocks []anthropicSystemBlock
-	if staticSystemText != "" {
-		sysBlocks = append(sysBlocks, anthropicSystemBlock{
-			Type:         "text",
-			Text:         staticSystemText,
-			CacheControl: &anthropicCacheControl{Type: "ephemeral"},
-		})
+		filteredMsgs = append(filteredMsgs, msg)
 	}
 
 	maxTokens := req.MaxTokens
@@ -359,20 +415,26 @@ func (c *AnthropicClient) Stream(ctx context.Context, req GenerateRequest, out c
 		maxTokens = 1024
 	}
 
+	msgs := buildAnthropicMessages(filteredMsgs, nil, nil)
+
 	apiReq := anthropicRequest{
 		Model:     req.Model,
 		MaxTokens: maxTokens,
-		Messages:  messages,
-		System:    sysBlocks,
+		Messages:  msgs,
+		System:    systemPrompt,
 		Stream:    true,
 	}
 	if req.Temperature > 0 {
 		apiReq.Temperature = floatPtr(req.Temperature)
 	}
-	if req.Thinking != nil {
+	if req.Thinking != nil && req.Thinking.Enabled {
+		budget := req.Thinking.BudgetTokens
+		if budget < 1024 {
+			budget = 1024
+		}
 		apiReq.Thinking = &anthropicThinking{
-			Type:         req.Thinking.Type,
-			BudgetTokens: req.Thinking.BudgetTokens,
+			Type:         "enabled",
+			BudgetTokens: budget,
 		}
 		apiReq.Temperature = floatPtr(1.0)
 	}

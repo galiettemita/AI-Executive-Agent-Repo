@@ -29,13 +29,48 @@ type Client interface {
 	Stream(ctx context.Context, req GenerateRequest, out chan<- StreamChunk)
 }
 
-// ThinkingConfig enables extended chain-of-thought reasoning.
-// BudgetTokens are additive to MaxTokens (do not count against output token limit).
-// Only valid for Anthropic Sonnet 4+ and Opus 4+. Never use with Haiku.
-// Incompatible with JSONSchema (tool_use forcing) in the same request.
+// ToolDefinition describes a callable tool the LLM may invoke.
+type ToolDefinition struct {
+	Name        string         `json:"name"`
+	Description string         `json:"description"`
+	InputSchema map[string]any `json:"input_schema"`
+}
+
+// ToolCall is a single tool invocation the model requests.
+type ToolCall struct {
+	ID    string         `json:"id"`
+	Name  string         `json:"name"`
+	Input map[string]any `json:"input"`
+}
+
+// ToolResult carries the result of an executed tool back to the model.
+type ToolResult struct {
+	ToolCallID string `json:"tool_call_id"`
+	Content    string `json:"content"`
+	IsError    bool   `json:"is_error,omitempty"`
+}
+
+// ToolChoice controls model tool selection.
+type ToolChoice string
+
+const (
+	ToolChoiceAuto ToolChoice = "auto"
+	ToolChoiceAny  ToolChoice = "any"
+	ToolChoiceNone ToolChoice = "none"
+)
+
+// ThinkingConfig enables Anthropic extended thinking.
 type ThinkingConfig struct {
-	Type         string `json:"type"`          // always "enabled"
-	BudgetTokens int    `json:"budget_tokens"` // recommended range: 1024–32768
+	Enabled      bool `json:"enabled"`
+	BudgetTokens int  `json:"budget_tokens"` // 1024–32768
+}
+
+// AssistantToolUse reconstructs a prior assistant turn that made tool calls.
+type AssistantToolUse struct {
+	ID    string         `json:"id"`
+	Name  string         `json:"name"`
+	Input map[string]any `json:"input"`
+	Text  string         `json:"text,omitempty"`
 }
 
 // GenerateRequest carries all parameters for an LLM inference call.
@@ -49,8 +84,18 @@ type GenerateRequest struct {
 	JSONSchema map[string]any `json:"json_schema,omitempty"`
 	// IdempotencyKey is used for request deduplication at the provider level.
 	IdempotencyKey string `json:"idempotency_key,omitempty"`
-	// Thinking enables extended chain-of-thought. Incompatible with JSONSchema.
+	// Thinking enables extended chain-of-thought.
 	Thinking *ThinkingConfig `json:"thinking,omitempty"`
+	// System prompt sent to the model.
+	System string `json:"system,omitempty"`
+	// Tools available to the model.
+	Tools []ToolDefinition `json:"tools,omitempty"`
+	// ToolChoice controls tool selection.
+	ToolChoice ToolChoice `json:"tool_choice,omitempty"`
+	// ToolResults from a PREVIOUS round of tool calls.
+	ToolResults []ToolResult `json:"tool_results,omitempty"`
+	// PriorAssistantToolCalls from the PREVIOUS assistant turn.
+	PriorAssistantToolCalls []AssistantToolUse `json:"prior_assistant_tool_calls,omitempty"`
 }
 
 // ChatMsg is a single message in the conversation.
@@ -61,14 +106,18 @@ type ChatMsg struct {
 
 // GenerateResponse carries the inference result.
 type GenerateResponse struct {
-	Content    string `json:"content"`
-	Model      string `json:"model"`
-	ProviderID string `json:"provider_id"`
+	Content      string `json:"content"`
+	Model        string `json:"model"`
+	ProviderID   string `json:"provider_id"`
 	FinishReason string `json:"finish_reason"`
-	// ThinkingContent is the raw chain-of-thought from extended thinking.
-	// Empty for non-thinking responses and non-Anthropic providers.
-	// Logged for audit and debugging. Never sent to the end user.
+	// ThinkingContent is the extended reasoning trace.
 	ThinkingContent string `json:"thinking_content,omitempty"`
+	// ToolCalls are tool invocations the model wants to execute.
+	ToolCalls []ToolCall `json:"tool_calls,omitempty"`
+	// InputTokens mirrors Usage.InputTokens.
+	InputTokens int `json:"input_tokens,omitempty"`
+	// OutputTokens mirrors Usage.OutputTokens.
+	OutputTokens int `json:"output_tokens,omitempty"`
 }
 
 // Usage carries token consumption metrics for cost tracking.
