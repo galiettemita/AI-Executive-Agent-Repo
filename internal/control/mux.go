@@ -2949,7 +2949,7 @@ func handleAdmin(w http.ResponseWriter, r *http.Request, svc *admin.Service) {
 				hash = "unknown"
 			}
 			writeJSON(w, http.StatusOK, map[string]any{
-				"model_id":           "claude-sonnet-4-5-20250929",
+				"model_id":           "claude-sonnet-4-20250514",
 				"provider_id":        "anthropic",
 				"seed_int":           0,
 				"temperature":        0,

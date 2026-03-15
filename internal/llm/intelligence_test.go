@@ -216,7 +216,7 @@ func TestIntelligenceService_ClassifyIntent_WithHTTPTest(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		resp := anthropicResponse{
 			ID:   "msg_test",
-			Model: "claude-haiku-4-5-20250929",
+			Model: ModelAnthropicHaiku,
 			Content: []anthropicContentBlock{{
 				Type: "text",
 				Text: `{"intent":"calendar_management","confidence":0.91,"skills":["calendar.read","calendar.write"],"requires_decomposition":false,"reasoning":"User wants to schedule a meeting"}`,

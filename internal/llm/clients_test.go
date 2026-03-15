@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -47,7 +48,7 @@ func TestAnthropicClient_Success(t *testing.T) {
 			ID:    "msg_test",
 			Type:  "message",
 			Role:  "assistant",
-			Model: "claude-haiku-4-5-20250929",
+			Model: ModelAnthropicHaiku,
 			Content: []anthropicContentBlock{
 				{Type: "text", Text: `{"intent":"email_query","confidence":0.95}`},
 			},
@@ -61,7 +62,7 @@ func TestAnthropicClient_Success(t *testing.T) {
 
 	ctx := ContextWithRequestID(context.Background(), "req-123")
 	resp, usage, err := client.Generate(ctx, GenerateRequest{
-		Model:     "claude-haiku-4-5-20250929",
+		Model:     ModelAnthropicHaiku,
 		MaxTokens: 256,
 		Messages:  []ChatMsg{{Role: "user", Content: "hello"}},
 	})
@@ -93,7 +94,7 @@ func TestAnthropicClient_429Retryable(t *testing.T) {
 	defer ts.Close()
 
 	_, _, err := client.Generate(context.Background(), GenerateRequest{
-		Model:     "claude-haiku-4-5-20250929",
+		Model:     ModelAnthropicHaiku,
 		MaxTokens: 256,
 		Messages:  []ChatMsg{{Role: "user", Content: "hello"}},
 	})
@@ -123,7 +124,7 @@ func TestAnthropicClient_500Retryable(t *testing.T) {
 	defer ts.Close()
 
 	_, _, err := client.Generate(context.Background(), GenerateRequest{
-		Model:     "claude-haiku-4-5-20250929",
+		Model:     ModelAnthropicHaiku,
 		MaxTokens: 256,
 		Messages:  []ChatMsg{{Role: "user", Content: "hello"}},
 	})
@@ -183,7 +184,7 @@ func TestAnthropicClient_Timeout(t *testing.T) {
 	defer cancel()
 
 	_, _, err := client.Generate(ctx, GenerateRequest{
-		Model:     "claude-haiku-4-5-20250929",
+		Model:     ModelAnthropicHaiku,
 		MaxTokens: 256,
 		Messages:  []ChatMsg{{Role: "user", Content: "hello"}},
 	})
@@ -192,32 +193,56 @@ func TestAnthropicClient_Timeout(t *testing.T) {
 	}
 }
 
-func TestAnthropicClient_JSONSchemaInSystemPrompt(t *testing.T) {
+func TestAnthropicNativeStructuredOutput(t *testing.T) {
 	t.Parallel()
 
 	ts, client := newAnthropicTestServer(func(w http.ResponseWriter, r *http.Request) {
-		var req anthropicRequest
-		json.NewDecoder(r.Body).Decode(&req)
-		if !strings.Contains(req.System, "json_schema") && !strings.Contains(req.System, "JSON") {
-			t.Error("expected system prompt to contain schema instruction")
+		bodyBytes, _ := io.ReadAll(r.Body)
+		bodyStr := string(bodyBytes)
+
+		// Assert the request uses native tool_use, not system prompt injection.
+		if !strings.Contains(bodyStr, `"tools"`) {
+			t.Error("expected request body to contain tools field")
 		}
-		resp := anthropicResponse{
-			ID:      "msg_test",
-			Content: []anthropicContentBlock{{Type: "text", Text: `{"result":"ok"}`}},
-			Usage:   anthropicUsage{InputTokens: 10, OutputTokens: 5},
+		if !strings.Contains(bodyStr, `"tool_choice"`) {
+			t.Error("expected request body to contain tool_choice field")
 		}
+		if strings.Contains(bodyStr, "You MUST respond with valid JSON") {
+			t.Error("system prompt should NOT contain schema instruction when using native tool_use")
+		}
+
+		// Return a tool_use content block.
+		resp := map[string]any{
+			"id":          "msg_test",
+			"type":        "message",
+			"role":        "assistant",
+			"content":     []map[string]any{{"type": "tool_use", "name": "structured_output", "input": map[string]any{"intent": "email_query", "confidence": 0.95}}},
+			"model":       ModelAnthropicSonnet,
+			"stop_reason": "tool_use",
+			"usage":       map[string]any{"input_tokens": 100, "output_tokens": 50},
+		}
+		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(resp)
 	})
 	defer ts.Close()
 
-	_, _, err := client.Generate(context.Background(), GenerateRequest{
-		Model:      "claude-haiku-4-5-20250929",
+	resp, usage, err := client.Generate(context.Background(), GenerateRequest{
+		Model:      ModelAnthropicHaiku,
 		MaxTokens:  256,
 		Messages:   []ChatMsg{{Role: "user", Content: "test"}},
-		JSONSchema: map[string]any{"type": "object", "properties": map[string]any{"result": map[string]any{"type": "string"}}},
+		JSONSchema: map[string]any{"type": "object", "properties": map[string]any{"intent": map[string]any{"type": "string"}, "confidence": map[string]any{"type": "number"}}},
 	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(resp.Content, "email_query") {
+		t.Errorf("expected tool_use output with email_query, got %q", resp.Content)
+	}
+	if !strings.Contains(resp.Content, "0.95") {
+		t.Errorf("expected tool_use output with confidence, got %q", resp.Content)
+	}
+	if usage.InputTokens != 100 || usage.OutputTokens != 50 {
+		t.Errorf("unexpected usage: %+v", usage)
 	}
 }
 
@@ -429,6 +454,17 @@ func (s *stubClient) Generate(_ context.Context, _ GenerateRequest) (*GenerateRe
 	return s.resp, &Usage{InputTokens: 10, OutputTokens: 5}, s.err
 }
 
+func (s *stubClient) Stream(_ context.Context, _ GenerateRequest, out chan<- StreamChunk) {
+	defer close(out)
+	if s.err != nil {
+		out <- StreamChunk{Error: s.err}
+		return
+	}
+	if s.resp != nil {
+		out <- StreamChunk{Delta: s.resp.Content, Done: true, FinishReason: "end_turn"}
+	}
+}
+
 func TestFailoverClient_PrimarySuccess(t *testing.T) {
 	t.Parallel()
 
@@ -589,5 +625,75 @@ func TestComputeIdempotencyKey(t *testing.T) {
 	}
 	if key1 == key3 {
 		t.Error("different workspace should produce different key")
+	}
+}
+
+func TestAnthropicThinkingRequest(t *testing.T) {
+	t.Parallel()
+	var capturedBody []byte
+	ts, client := newAnthropicTestServer(func(w http.ResponseWriter, r *http.Request) {
+		capturedBody, _ = io.ReadAll(r.Body)
+		resp := map[string]any{
+			"id": "msg_t", "type": "message", "role": "assistant",
+			"content": []map[string]any{
+				{"type": "thinking", "thinking": "Let me reason step by step..."},
+				{"type": "text", "text": `{"intent":"test","confidence":0.9}`},
+			},
+			"model":       ModelAnthropicSonnet,
+			"stop_reason": "end_turn",
+			"usage":       map[string]int{"input_tokens": 100, "output_tokens": 200},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	})
+	defer ts.Close()
+
+	resp, _, err := client.Generate(context.Background(), GenerateRequest{
+		Model:     ModelAnthropicSonnet,
+		MaxTokens: 1024,
+		Thinking:  &ThinkingConfig{Type: "enabled", BudgetTokens: 1000},
+		Messages:  []ChatMsg{{Role: "user", Content: "test"}},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Verify temperature was forced to 1.0
+	var reqBody map[string]any
+	if err := json.Unmarshal(capturedBody, &reqBody); err != nil {
+		t.Fatalf("unmarshal request body: %v", err)
+	}
+	temp, _ := reqBody["temperature"].(float64)
+	if temp != 1.0 {
+		t.Errorf("expected temperature=1.0, got %v", reqBody["temperature"])
+	}
+	if _, ok := reqBody["thinking"]; !ok {
+		t.Error("expected 'thinking' field in request body")
+	}
+
+	// ThinkingContent must be populated
+	if resp.ThinkingContent != "Let me reason step by step..." {
+		t.Errorf("ThinkingContent: got %q", resp.ThinkingContent)
+	}
+	// Content must be the text block (not the thinking block)
+	if !strings.Contains(resp.Content, "intent") {
+		t.Errorf("unexpected Content: %q", resp.Content)
+	}
+}
+
+func TestAnthropicThinkingIncompatibleWithJSONSchema(t *testing.T) {
+	t.Parallel()
+	_, client := newAnthropicTestServer(func(w http.ResponseWriter, r *http.Request) {
+		t.Error("server should not be called")
+	})
+	_, _, err := client.Generate(context.Background(), GenerateRequest{
+		Model:      ModelAnthropicSonnet,
+		MaxTokens:  512,
+		Thinking:   &ThinkingConfig{Type: "enabled", BudgetTokens: 1000},
+		JSONSchema: map[string]any{"type": "object"},
+		Messages:   []ChatMsg{{Role: "user", Content: "test"}},
+	})
+	if err == nil {
+		t.Error("expected error when both Thinking and JSONSchema are set")
 	}
 }

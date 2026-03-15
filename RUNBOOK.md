@@ -453,3 +453,17 @@ brevioctl verify temporal-replay
 brevioctl verify provider-contract-tests
 brevioctl verify algorithm-fidelity
 ```
+
+## LLM Configuration
+
+All LLM and RAG behaviour is controlled via environment variables.
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `ANTHROPIC_API_KEY` | required | Anthropic provider authentication |
+| `OPENAI_API_KEY` | optional | OpenAI fallback provider for all LLM tiers |
+| `VOYAGE_API_KEY` | optional | Voyage AI embedding primary (falls back to OpenAI if unset) |
+| `LLM_TIMEOUT_SECONDS` | `60` | HTTP timeout in seconds for all LLM provider calls |
+| `FEATURE_STREAMING_ENABLED` | `false` | Set `true` to enable SSE streaming for synthesis |
+| `MAX_PARALLEL_TOOL_CALLS` | `3` | Temporal tool fan-out concurrency cap (1-10) |
+| `BREVIO_OPUS_ENABLED` | `false` | Set `true` to use Claude Opus 4 as orchestrator model |

@@ -313,7 +313,15 @@ func (s *IntelligenceService) generatePlanWithTemp(
 	req := GenerateRequest{
 		Model:       tier.PrimaryModel,
 		MaxTokens:   tier.MaxOutputTokens,
+		// Temperature is overridden to 1.0 by AnthropicClient when Thinking is set.
+		// The explicit value here applies only to OpenAI fallback (which silently ignores Thinking).
 		Temperature: temperature,
+		Thinking: &ThinkingConfig{
+			Type:         "enabled",
+			BudgetTokens: 8000, // sufficient for complex 8-step plans
+		},
+		// JSONSchema is intentionally absent — incompatible with thinking.
+		// Response parsed via extractJSON() on the text content block.
 		Messages: []ChatMsg{
 			{
 				Role: "system",
@@ -350,7 +358,6 @@ Respond with ONLY the JSON object.` + availableToolsSection,
 					intent, confidence, payload, contextSection.String()),
 			},
 		},
-		JSONSchema: generatedPlanSchema(),
 	}
 
 	resp, usage, err := s.planner.Generate(ctx, req)
@@ -536,15 +543,7 @@ func (s *IntelligenceService) SynthesizeResponse(ctx context.Context, payload st
 		MaxTokens:   tier.MaxOutputTokens,
 		Temperature: 0.3,
 		Messages: []ChatMsg{
-			{
-				Role: "system",
-				Content: `You are Brevio, an executive AI assistant. Generate a natural, concise response incorporating skill execution results. Output a JSON object with:
-- response_text: string (the user-facing response, max 4096 chars)
-- suggested_actions: array of string suggestions for follow-up
-- follow_up_scheduled: boolean
-
-Respond with ONLY the JSON object.`,
-			},
+			{Role: "system", Content: synthesisSystemPrompt()},
 			{
 				Role: "user",
 				Content: fmt.Sprintf("Original request: %s\n\nTool execution results:\n%s", payload, toolResults),
@@ -567,6 +566,38 @@ Respond with ONLY the JSON object.`,
 	return &result, usage, nil
 }
 
+// StreamSynthesizeResponse streams the synthesis response to the caller.
+// Does NOT use JSONSchema — tool_use forcing is incompatible with streaming.
+func (s *IntelligenceService) StreamSynthesizeResponse(
+	ctx context.Context,
+	payload string,
+	toolResults string,
+	out chan<- StreamChunk,
+) {
+	if s.synthesizer == nil {
+		out <- StreamChunk{Error: fmt.Errorf("intelligence: synthesizer not configured")}
+		close(out)
+		return
+	}
+	tier := ResolveTierModel("T2")
+	req := GenerateRequest{
+		Model:       tier.PrimaryModel,
+		MaxTokens:   tier.MaxOutputTokens,
+		Temperature: 0.3,
+		Messages: []ChatMsg{
+			{Role: "system", Content: synthesisSystemPrompt()},
+			{
+				Role: "user",
+				Content: fmt.Sprintf(
+					"Tool execution results:\n%s\n\nOriginal request: %s",
+					toolResults, payload,
+				),
+			},
+		},
+	}
+	s.synthesizer.Stream(ctx, req, out)
+}
+
 // VerifyExecution calls the LLM to evaluate whether tool outputs satisfy the plan.
 func (s *IntelligenceService) VerifyExecution(ctx context.Context, input VerifyInput) (*VerifyResult, *Usage, error) {
 	if s.synthesizer == nil {
@@ -587,6 +618,10 @@ func (s *IntelligenceService) VerifyExecution(ctx context.Context, input VerifyI
 		Model:       tier.PrimaryModel,
 		MaxTokens:   tier.MaxOutputTokens,
 		Temperature: 0.1,
+		Thinking: &ThinkingConfig{
+			Type:         "enabled",
+			BudgetTokens: 4000, // verification is simpler than planning
+		},
 		Messages: []ChatMsg{
 			{
 				Role: "system",
@@ -611,7 +646,6 @@ Respond with ONLY the JSON object.`,
 					input.Plan.FinalAnswerRequirements, retrySection),
 			},
 		},
-		JSONSchema: verifyResultSchema(),
 	}
 
 	resp, usage, err := s.synthesizer.Generate(ctx, req)
@@ -680,6 +714,53 @@ Return ONLY the JSON array. No markdown, no preamble.`
 		return nil, usage, fmt.Errorf("llm: VerifySteps expected %d results, got %d", len(inputs), len(results))
 	}
 	return results, usage, nil
+}
+
+// synthesisSystemPrompt returns the system prompt used for response synthesis.
+// Shared by SynthesizeResponse and StreamSynthesizeResponse to ensure consistency.
+func synthesisSystemPrompt() string {
+	return `You are Brevio, an executive AI assistant. Generate a natural, concise response incorporating skill execution results. Output a JSON object with:
+- response_text: string (the user-facing response, max 4096 chars)
+- suggested_actions: array of string suggestions for follow-up
+- follow_up_scheduled: boolean
+
+Respond with ONLY the JSON object.`
+}
+
+// SummarizeText implements brain.Summarizer.
+// Uses T0 (Haiku) — fast and cheap. Called only when context budget is exceeded.
+func (s *IntelligenceService) SummarizeText(
+	ctx context.Context,
+	conversationText string,
+	maxOutputTokens int,
+) (string, error) {
+	if s.classifier == nil {
+		return "", fmt.Errorf("intelligence: classifier not configured for summarization")
+	}
+	if maxOutputTokens <= 0 {
+		maxOutputTokens = 256
+	}
+
+	req := GenerateRequest{
+		Model:       ResolveTierModel("T0").PrimaryModel,
+		MaxTokens:   maxOutputTokens,
+		Temperature: 0.0,
+		// No Thinking (Haiku doesn't support it), no JSONSchema (plain text response).
+		Messages: []ChatMsg{
+			{
+				Role: "system",
+				Content: "Summarize the following conversation in 2–3 sentences. " +
+					"Preserve key decisions, facts, and action items. Be concise.",
+			},
+			{Role: "user", Content: conversationText},
+		},
+	}
+
+	resp, _, err := s.classifier.Generate(ctx, req)
+	if err != nil {
+		return "", fmt.Errorf("summarize conversation: %w", err)
+	}
+	return strings.TrimSpace(resp.Content), nil
 }
 
 // ValidateStrictPlanJSON parses and validates a plan JSON string against the

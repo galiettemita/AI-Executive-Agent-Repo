@@ -68,15 +68,15 @@ func TestTierMaxOutputTokenCap(t *testing.T) {
 		Tier:            "T1",
 		ModelID:         "model-a",
 		ProviderID:      "provider-a",
-		MaxOutputTokens: 999,
+		MaxOutputTokens: 2000,
 	})
 
 	var payload map[string]any
 	if err := json.Unmarshal([]byte(resp.PlanJSON), &payload); err != nil {
 		t.Fatalf("decode plan json: %v", err)
 	}
-	if int(payload["max_tokens"].(float64)) != 512 {
-		t.Fatalf("expected T1 cap of 512 max tokens, got %v", payload["max_tokens"])
+	if int(payload["max_tokens"].(float64)) != 1024 {
+		t.Fatalf("expected T1 cap of 1024 max tokens, got %v", payload["max_tokens"])
 	}
 	if payload["temperature"].(float64) != 0 || payload["top_p"].(float64) != 1 {
 		t.Fatalf("expected deterministic generation params, got %+v", payload)
@@ -117,10 +117,10 @@ func TestDefaultTierModelMapping(t *testing.T) {
 	t.Parallel()
 
 	mapping := DefaultTierModelMapping()
-	if got := mapping["T0"]; got.PrimaryModel != "claude-haiku-4-5-20250929" || got.FallbackModel != "gpt-4o-mini" || got.MaxOutputTokens != 256 {
+	if got := mapping["T0"]; got.PrimaryModel != ModelAnthropicHaiku || got.FallbackModel != ModelOpenAIGPT4oMini || got.MaxOutputTokens != 512 {
 		t.Fatalf("unexpected T0 mapping: %+v", got)
 	}
-	if got := mapping["T3"]; got.PrimaryModel != "claude-sonnet-4-20250514" || got.FallbackModel != "gpt-4o" || got.MaxOutputTokens != 2048 {
+	if got := mapping["T3"]; got.PrimaryModel != ModelAnthropicSonnet || got.FallbackModel != ModelOpenAIGPT4o || got.MaxOutputTokens != 8192 {
 		t.Fatalf("unexpected T3 mapping: %+v", got)
 	}
 }

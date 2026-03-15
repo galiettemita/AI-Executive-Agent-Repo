@@ -30,6 +30,64 @@ type Message struct {
 	Metadata  map[string]any `json:"metadata,omitempty"`
 }
 
+// CompressConversation returns a compacted conversation history.
+// Keeps the last keepTurns messages verbatim. Summarizes everything before that
+// using the provided Summarizer, prepending the result as a synthetic system message.
+func CompressConversation(
+	ctx context.Context,
+	history []Message,
+	contextBudgetTokens int,
+	keepTurns int,
+	summarizer Summarizer,
+) ([]Message, error) {
+	if len(history) == 0 || summarizer == nil || contextBudgetTokens <= 0 {
+		return history, nil
+	}
+
+	// Conservative token estimate: ~4 chars per token + 50 overhead per message.
+	estimated := 0
+	for _, m := range history {
+		estimated += len(m.Content)/4 + 50
+	}
+	threshold := int(float64(contextBudgetTokens) * 0.70)
+	if estimated <= threshold {
+		return history, nil
+	}
+	if keepTurns <= 0 {
+		keepTurns = 6
+	}
+	if len(history) <= keepTurns {
+		return history, nil
+	}
+
+	cutpoint := len(history) - keepTurns
+	older := history[:cutpoint]
+	recent := history[cutpoint:]
+
+	// Serialize older messages to text for the summarizer.
+	var sb strings.Builder
+	for _, m := range older {
+		sb.WriteString(m.Role)
+		sb.WriteString(": ")
+		sb.WriteString(m.Content)
+		sb.WriteString("\n")
+	}
+	summary, err := summarizer.SummarizeText(ctx, sb.String(), 256)
+	if err != nil {
+		return history, fmt.Errorf("compress: summarize failed (using full history): %w", err)
+	}
+
+	compressed := make([]Message, 0, 1+len(recent))
+	compressed = append(compressed, Message{
+		Role:      "system",
+		Content:   "[Earlier conversation summary: " + summary + "]",
+		Timestamp: time.Now().Unix(),
+		Metadata:  map[string]any{"compressed": true, "summarized_turns": cutpoint},
+	})
+	compressed = append(compressed, recent...)
+	return compressed, nil
+}
+
 // ReasoningContext carries all context needed for a reasoning loop iteration.
 type ReasoningContext struct {
 	MessageID           string    `json:"message_id"`
@@ -113,6 +171,13 @@ type LoopResult struct {
 	DynamicBudget int              `json:"dynamic_budget,omitempty"`
 }
 
+// Summarizer compresses a conversation text into a brief summary string.
+// Defined here (not in internal/llm) to avoid circular imports.
+// brain serializes []Message to text before calling this interface.
+type Summarizer interface {
+	SummarizeText(ctx context.Context, conversationText string, maxOutputTokens int) (string, error)
+}
+
 // ToolExecutor is the interface for executing tool calls.
 // Implementations bridge to the actual tool/connector layer.
 type ToolExecutor interface {
@@ -130,9 +195,11 @@ type ReasoningLoop struct {
 	gotThreshold   float64
 	gotBranches    int
 	worldModel       *WorldModelService
-	decomposition    *DynamicDecompositionService
-	maxIterationsCap int
-	moaCfg           llm.MoAConfig
+	decomposition     *DynamicDecompositionService
+	maxIterationsCap  int
+	moaCfg            llm.MoAConfig
+	summarizer        Summarizer
+	compressThreshold float64
 }
 
 // ReasoningLoopConfig holds configuration for a ReasoningLoop.
@@ -148,7 +215,9 @@ type ReasoningLoopConfig struct {
 	GoTBranches      int     // alternative hypotheses to generate (default 3, max 5)
 	WorldModel       *WorldModelService // nil = skip world fact enrichment
 	Decomposition    *DynamicDecompositionService
-	MoA              llm.MoAConfig // zero value = disabled
+	MoA               llm.MoAConfig // zero value = disabled
+	Summarizer        Summarizer     // optional; if nil, compression is skipped gracefully
+	CompressThreshold float64        // fraction of ContextBudget at which to compress (default 0.70)
 }
 
 // NewReasoningLoop creates a new ReasoningLoop with the given config.
@@ -183,19 +252,25 @@ func NewReasoningLoop(cfg ReasoningLoopConfig) *ReasoningLoop {
 	if iterCap <= 0 {
 		iterCap = 8
 	}
+	compressThreshold := cfg.CompressThreshold
+	if compressThreshold <= 0 || compressThreshold > 1.0 {
+		compressThreshold = 0.70
+	}
 	return &ReasoningLoop{
-		executor:      cfg.Executor,
-		qualityTarget: qualityTarget,
-		maxIterations: maxIter,
-		stepTimeout:   stepTimeout,
-		intelligence:  cfg.Intelligence,
-		gotEngine:     cfg.GoTEngine,
-		gotThreshold:  gotThreshold,
-		gotBranches:      gotBranches,
-		worldModel:       cfg.WorldModel,
-		decomposition:    cfg.Decomposition,
-		maxIterationsCap: iterCap,
-		moaCfg:           cfg.MoA,
+		executor:          cfg.Executor,
+		qualityTarget:     qualityTarget,
+		maxIterations:     maxIter,
+		stepTimeout:       stepTimeout,
+		intelligence:      cfg.Intelligence,
+		gotEngine:         cfg.GoTEngine,
+		gotThreshold:      gotThreshold,
+		gotBranches:       gotBranches,
+		worldModel:        cfg.WorldModel,
+		decomposition:     cfg.Decomposition,
+		maxIterationsCap:  iterCap,
+		moaCfg:            cfg.MoA,
+		summarizer:        cfg.Summarizer,
+		compressThreshold: compressThreshold,
 	}
 }
 
@@ -911,6 +986,16 @@ func (rl *ReasoningLoop) RunLoop(ctx context.Context, rc *ReasoningContext, maxI
 	for i := 0; i < effectiveMax; i++ {
 		if err := ctx.Err(); err != nil {
 			return nil, fmt.Errorf("%w: %v", ErrReasoningTimeout, err)
+		}
+
+		// Apply context compression before each planning iteration.
+		if rc.ContextBudget > 0 && rl.summarizer != nil {
+			compressed, compErr := CompressConversation(
+				ctx, rc.ConversationHistory, rc.ContextBudget, 6, rl.summarizer,
+			)
+			if compErr == nil {
+				rc.ConversationHistory = compressed
+			}
 		}
 
 		// On retry iterations, enrich MemoryContext with world facts learned so far.

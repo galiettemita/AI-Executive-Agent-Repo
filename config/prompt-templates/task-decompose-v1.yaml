@@ -1,5 +1,5 @@
 id: PROMPT_TASK_DECOMPOSE_V1
-model: claude-sonnet-4-5-20250929
+model: claude-sonnet-4-20250514
 temperature: 0.2
 max_tokens: 1024
 system_prompt: |

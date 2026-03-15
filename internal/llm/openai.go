@@ -1,6 +1,7 @@
 package llm
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -62,6 +63,7 @@ type openaiResponsesRequest struct {
 	Temperature  *float64            `json:"temperature,omitempty"`
 	TopP         *float64            `json:"top_p,omitempty"`
 	Text         *openaiTextConfig   `json:"text,omitempty"`
+	Stream       bool                `json:"stream,omitempty"`
 }
 
 type openaiInputItem struct {
@@ -163,7 +165,7 @@ func (c *OpenAIClient) Generate(ctx context.Context, req GenerateRequest) (*Gene
 			select {
 			case <-ctx.Done():
 				return nil, nil, fmt.Errorf("openai: %w", ctx.Err())
-			case <-time.After(time.Duration(attempt) * time.Second):
+			case <-time.After(RetryBackoff(attempt, time.Second, 30*time.Second)):
 			}
 		}
 
@@ -245,4 +247,113 @@ func (c *OpenAIClient) doRequest(ctx context.Context, body []byte) (*GenerateRes
 			InputTokens:  apiResp.Usage.InputTokens,
 			OutputTokens: apiResp.Usage.OutputTokens,
 		}, nil
+}
+
+type openAIStreamEvent struct {
+	Type     string                   `json:"type"`
+	Delta    string                   `json:"delta"`
+	Response *openaiResponsesResponse `json:"response,omitempty"`
+	Error    *openaiError             `json:"error,omitempty"`
+}
+
+// Stream implements Client for OpenAI SSE streaming.
+func (c *OpenAIClient) Stream(ctx context.Context, req GenerateRequest, out chan<- StreamChunk) {
+	defer close(out)
+
+	input := make([]openaiInputItem, 0, len(req.Messages))
+	for _, msg := range req.Messages {
+		role := msg.Role
+		if role == "system" {
+			role = "developer"
+		}
+		input = append(input, openaiInputItem{Role: role, Content: msg.Content})
+	}
+
+	apiReq := openaiResponsesRequest{
+		Model:  req.Model,
+		Input:  input,
+		Stream: true,
+	}
+	if req.MaxTokens > 0 {
+		apiReq.MaxTokens = req.MaxTokens
+	}
+	if req.Temperature > 0 {
+		t := req.Temperature
+		apiReq.Temperature = &t
+	}
+
+	body, err := json.Marshal(apiReq)
+	if err != nil {
+		out <- StreamChunk{Error: fmt.Errorf("openai stream: marshal: %w", err)}
+		return
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost,
+		c.baseURL+openaiResponsesPath, bytes.NewReader(body))
+	if err != nil {
+		out <- StreamChunk{Error: fmt.Errorf("openai stream: build request: %w", err)}
+		return
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Authorization", "Bearer "+c.apiKey)
+	if reqID, ok := ctx.Value(requestIDKey{}).(string); ok && reqID != "" {
+		httpReq.Header.Set("X-Request-ID", reqID)
+	}
+
+	streamClient := &http.Client{Timeout: 0}
+	resp, err := streamClient.Do(httpReq)
+	if err != nil {
+		out <- StreamChunk{Error: fmt.Errorf("openai stream: http: %w", err)}
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		out <- StreamChunk{Error: fmt.Errorf("openai stream: status %d: %s", resp.StatusCode, b)}
+		return
+	}
+
+	scanner := bufio.NewScanner(resp.Body)
+	for scanner.Scan() {
+		if ctx.Err() != nil {
+			out <- StreamChunk{Error: ctx.Err()}
+			return
+		}
+		line := scanner.Text()
+		if !strings.HasPrefix(line, "data: ") {
+			continue
+		}
+		data := strings.TrimPrefix(line, "data: ")
+		if data == "[DONE]" {
+			break
+		}
+		var event openAIStreamEvent
+		if err := json.Unmarshal([]byte(data), &event); err != nil {
+			continue
+		}
+		switch event.Type {
+		case "response.output_text.delta":
+			out <- StreamChunk{Delta: event.Delta}
+		case "response.completed":
+			var usage Usage
+			if event.Response != nil {
+				usage.InputTokens = event.Response.Usage.InputTokens
+				usage.OutputTokens = event.Response.Usage.OutputTokens
+			}
+			out <- StreamChunk{Done: true, FinishReason: "completed", Usage: &usage}
+			return
+		case "error":
+			if event.Error != nil {
+				out <- StreamChunk{Error: fmt.Errorf("openai stream error: %s: %s",
+					event.Error.Code, event.Error.Message)}
+			}
+			return
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		out <- StreamChunk{Error: fmt.Errorf("openai stream: scanner: %w", err)}
+		return
+	}
+	out <- StreamChunk{Done: true, FinishReason: "completed"}
 }

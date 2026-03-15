@@ -1,5 +1,5 @@
 id: PROMPT_RESPONSE_GEN_V1
-model: claude-sonnet-4-5-20250929
+model: claude-sonnet-4-20250514
 temperature: 0.3
 max_tokens: 2048
 system_prompt: |

@@ -16,6 +16,7 @@ import (
 	contextlayer "github.com/brevio/brevio/internal/context"
 	"github.com/brevio/brevio/internal/eq"
 	"github.com/brevio/brevio/internal/executor"
+	"github.com/brevio/brevio/internal/feature_flags"
 	"github.com/brevio/brevio/internal/hands/call"
 	"github.com/brevio/brevio/internal/llm"
 	"github.com/brevio/brevio/internal/memory"
@@ -57,15 +58,17 @@ type ClassifyIntentResult struct {
 }
 
 type GeneratePlanInput struct {
-	MessageID             string  `json:"message_id"`
-	WorkspaceID           string  `json:"workspace_id"`
-	Intent                string  `json:"intent"`
-	Confidence            float64 `json:"confidence"`
-	RequiresDecomposition bool    `json:"requires_decomposition,omitempty"`
-	Payload               string  `json:"payload,omitempty"`
-	MemoryContext         string  `json:"memory_context,omitempty"`
-	RAGContext            string  `json:"rag_context,omitempty"`
-	RetryHints            string  `json:"retry_hints,omitempty"` // populated on re-plan after verify fail
+	MessageID             string           `json:"message_id"`
+	WorkspaceID           string           `json:"workspace_id"`
+	Intent                string           `json:"intent"`
+	Confidence            float64          `json:"confidence"`
+	RequiresDecomposition bool             `json:"requires_decomposition,omitempty"`
+	Payload               string           `json:"payload,omitempty"`
+	MemoryContext         string           `json:"memory_context,omitempty"`
+	RAGContext            string           `json:"rag_context,omitempty"`
+	RetryHints            string           `json:"retry_hints,omitempty"` // populated on re-plan after verify fail
+	ConversationHistory   []brain.Message  `json:"conversation_history,omitempty"`
+	ContextBudget         int              `json:"context_budget,omitempty"` // 0 = use default 150000
 }
 
 type GeneratePlanResult struct {
@@ -465,6 +468,20 @@ func (a *Activities) keywordFallbackClassification(payload string) *ClassifyInte
 func (a *Activities) GeneratePlanActivity(ctx context.Context, input GeneratePlanInput) (*GeneratePlanResult, error) {
 	planID := hashKey("plan:" + input.MessageID + ":" + input.WorkspaceID)
 
+	// Compress conversation history if context budget is at risk.
+	budget := input.ContextBudget
+	if budget <= 0 {
+		budget = 150_000
+	}
+	if len(input.ConversationHistory) > 0 && a.llmService != nil {
+		compressed, compErr := brain.CompressConversation(ctx, input.ConversationHistory, budget, 6, a.llmService)
+		if compErr != nil {
+			log.Printf("[GeneratePlan] context compression warning (using full history): %v", compErr)
+		} else {
+			input.ConversationHistory = compressed
+		}
+	}
+
 	// Build payload for LLM — use explicit payload if available, fall back to intent.
 	payload := input.Payload
 	if payload == "" {
@@ -677,6 +694,33 @@ func (a *Activities) SynthesizeResponseActivity(ctx context.Context, input Synth
 			fmt.Fprintf(&toolSummary, "- %s [%s]: phase=%s hash=%s\n", tr.ToolKey, status, tr.Phase, tr.PayloadHash)
 		}
 
+		// Streaming path — only active when FEATURE_STREAMING_ENABLED=true.
+		if feature_flags.StreamingEnabled() {
+			streamOut := make(chan llm.StreamChunk, 64)
+			go a.llmService.StreamSynthesizeResponse(ctx, input.MessageID, toolSummary.String(), streamOut)
+
+			var sb strings.Builder
+			var streamErr error
+			for chunk := range streamOut {
+				if chunk.Error != nil {
+					streamErr = chunk.Error
+					break
+				}
+				sb.WriteString(chunk.Delta)
+			}
+
+			if streamErr == nil && sb.Len() > 0 {
+				return &SynthesizeResponseResult{
+					ResponsePayload: sb.String(),
+				}, nil
+			}
+			if streamErr != nil {
+				log.Printf("[Synthesize] streaming failed, falling back to non-streaming: %v", streamErr)
+			}
+			// Falls through to the non-streaming path below on any failure.
+		}
+
+		// Non-streaming path.
 		synthesized, _, err := a.llmService.SynthesizeResponse(ctx, input.MessageID, toolSummary.String())
 		if err != nil {
 			log.Printf("[Synthesize] LLM synthesis failed, using template fallback: %v", err)

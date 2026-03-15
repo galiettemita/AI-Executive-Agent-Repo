@@ -76,39 +76,10 @@ func NewService() *Service {
 		replay:       map[string]string{},
 		activePrompt: map[string]int{},
 		maxTokensByTier: map[string]int{
-			"T0": 256,
-			"T1": 512,
-			"T2": 1024,
-			"T3": 2048,
-		},
-	}
-}
-
-func DefaultTierModelMapping() map[string]TierModelSelection {
-	return map[string]TierModelSelection{
-		"T0": {
-			Tier:            "T0",
-			PrimaryModel:    "claude-haiku-4-5-20250929",
-			FallbackModel:   "gpt-4o-mini",
-			MaxOutputTokens: 256,
-		},
-		"T1": {
-			Tier:            "T1",
-			PrimaryModel:    "claude-haiku-4-5-20250929",
-			FallbackModel:   "gpt-4o-mini",
-			MaxOutputTokens: 512,
-		},
-		"T2": {
-			Tier:            "T2",
-			PrimaryModel:    "claude-sonnet-4-20250514",
-			FallbackModel:   "gpt-4o",
-			MaxOutputTokens: 1024,
-		},
-		"T3": {
-			Tier:            "T3",
-			PrimaryModel:    "claude-sonnet-4-20250514",
-			FallbackModel:   "gpt-4o",
-			MaxOutputTokens: 2048,
+			"T0": 512,
+			"T1": 1024,
+			"T2": 4096,
+			"T3": 8192,
 		},
 	}
 }
@@ -372,6 +343,19 @@ func (s *Service) SynthesizeResponse(ctx context.Context, payload, toolResults s
 	return intel.SynthesizeResponse(ctx, payload, toolResults)
 }
 
+// StreamSynthesizeResponse implements streaming synthesis, delegating to IntelligenceService.
+func (s *Service) StreamSynthesizeResponse(
+	ctx context.Context, payload, toolResults string, out chan<- StreamChunk,
+) {
+	intel := s.Intelligence()
+	if intel == nil {
+		out <- StreamChunk{Error: fmt.Errorf("llm: intelligence not configured")}
+		close(out)
+		return
+	}
+	intel.StreamSynthesizeResponse(ctx, payload, toolResults, out)
+}
+
 // VerifyExecution delegates to the real IntelligenceService for LLM-backed verification.
 func (s *Service) VerifyExecution(ctx context.Context, input VerifyInput) (*VerifyResult, *Usage, error) {
 	intel := s.Intelligence()
@@ -379,4 +363,17 @@ func (s *Service) VerifyExecution(ctx context.Context, input VerifyInput) (*Veri
 		return nil, nil, fmt.Errorf("llm: intelligence service not configured")
 	}
 	return intel.VerifyExecution(ctx, input)
+}
+
+// SummarizeText implements brain.Summarizer. Delegates to IntelligenceService.
+func (s *Service) SummarizeText(
+	ctx context.Context,
+	conversationText string,
+	maxOutputTokens int,
+) (string, error) {
+	intel := s.Intelligence()
+	if intel == nil {
+		return "", fmt.Errorf("llm: intelligence not configured for summarization")
+	}
+	return intel.SummarizeText(ctx, conversationText, maxOutputTokens)
 }

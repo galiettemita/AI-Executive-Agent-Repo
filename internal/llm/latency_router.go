@@ -20,9 +20,9 @@ type LatencyAwareRouter struct {
 // NewLatencyAwareRouter creates a new LatencyAwareRouter with default model tiers.
 func NewLatencyAwareRouter() *LatencyAwareRouter {
 	return &LatencyAwareRouter{
-		fastModel:     "gpt-4o-mini",
-		balancedModel: "gpt-4o",
-		bestModel:     "gpt-4-turbo",
+		fastModel:     ModelAnthropicHaiku,
+		balancedModel: ModelAnthropicSonnet,
+		bestModel:     ModelAnthropicSonnet, // Opus reserved for orchestrator tier (Prompt 8)
 	}
 }
 

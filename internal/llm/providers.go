@@ -6,6 +6,17 @@ import (
 	"time"
 )
 
+// Model string constants — single source of truth for all LLM model identifiers.
+// All files in this module MUST reference these constants. Never use bare string
+// literals for model names anywhere in internal/.
+const (
+	ModelAnthropicHaiku  = "claude-haiku-4-5-20251001" // corrected from 20250929
+	ModelAnthropicSonnet = "claude-sonnet-4-20250514"
+	ModelAnthropicOpus   = "claude-opus-4-20250514"
+	ModelOpenAIGPT4oMini = "gpt-4o-mini"
+	ModelOpenAIGPT4o     = "gpt-4o"
+)
+
 type ProviderConfig struct {
 	ProviderID string
 	BaseURL    string
@@ -39,13 +50,13 @@ func DefaultProviderRegistry() map[string]ProviderConfig {
 			ProviderID: "anthropic",
 			BaseURL:    "https://api.anthropic.com/v1",
 			AuthMethod: "x-api-key",
-			Models:     []string{"claude-sonnet-4-20250514", "claude-haiku-4-5-20250929"},
+			Models:     []string{ModelAnthropicSonnet, ModelAnthropicHaiku},
 		},
 		"openai": {
 			ProviderID: "openai",
 			BaseURL:    "https://api.openai.com/v1",
 			AuthMethod: "authorization_bearer",
-			Models:     []string{"gpt-4o", "gpt-4o-mini"},
+			Models:     []string{ModelOpenAIGPT4o, ModelOpenAIGPT4oMini},
 		},
 	}
 }
@@ -67,38 +78,47 @@ func DefaultProviderRateLimits() map[string]ProviderRateLimit {
 
 func DefaultModelCatalog() map[string]ModelCatalogEntry {
 	return map[string]ModelCatalogEntry{
-		"claude-sonnet-4-20250514": {
-			ModelKey:           "claude-sonnet-4-20250514",
+		ModelAnthropicSonnet: {
+			ModelKey:           ModelAnthropicSonnet,
 			ProviderID:         "anthropic",
 			CostPerInputToken:  0.000003,
 			CostPerOutputToken: 0.000015,
 			MaxContextTokens:   200000,
 			Capabilities:       []string{"planning", "synthesis", "extraction", "critique"},
 		},
-		"claude-haiku-4-5-20250929": {
-			ModelKey:           "claude-haiku-4-5-20250929",
+		ModelAnthropicHaiku: {
+			ModelKey:           ModelAnthropicHaiku,
 			ProviderID:         "anthropic",
 			CostPerInputToken:  0.0000008,
 			CostPerOutputToken: 0.000004,
 			MaxContextTokens:   200000,
 			Capabilities:       []string{"classification", "extraction", "routing", "simple_synthesis"},
 		},
-		"gpt-4o": {
-			ModelKey:           "gpt-4o",
+		ModelOpenAIGPT4o: {
+			ModelKey:           ModelOpenAIGPT4o,
 			ProviderID:         "openai",
 			CostPerInputToken:  0.0000025,
 			CostPerOutputToken: 0.00001,
 			MaxContextTokens:   128000,
 			Capabilities:       []string{"planning", "synthesis", "extraction", "critique"},
 		},
-		"gpt-4o-mini": {
-			ModelKey:           "gpt-4o-mini",
+		ModelOpenAIGPT4oMini: {
+			ModelKey:           ModelOpenAIGPT4oMini,
 			ProviderID:         "openai",
 			CostPerInputToken:  0.00000015,
 			CostPerOutputToken: 0.0000006,
 			MaxContextTokens:   128000,
 			Capabilities:       []string{"classification", "extraction", "routing", "simple_synthesis"},
 		},
+	}
+}
+
+func DefaultTierModelMapping() map[string]TierModelSelection {
+	return map[string]TierModelSelection{
+		"T0": {Tier: "T0", PrimaryModel: ModelAnthropicHaiku, FallbackModel: ModelOpenAIGPT4oMini, MaxOutputTokens: 512},
+		"T1": {Tier: "T1", PrimaryModel: ModelAnthropicHaiku, FallbackModel: ModelOpenAIGPT4oMini, MaxOutputTokens: 1024},
+		"T2": {Tier: "T2", PrimaryModel: ModelAnthropicSonnet, FallbackModel: ModelOpenAIGPT4o, MaxOutputTokens: 4096},
+		"T3": {Tier: "T3", PrimaryModel: ModelAnthropicSonnet, FallbackModel: ModelOpenAIGPT4o, MaxOutputTokens: 8192},
 	}
 }
 

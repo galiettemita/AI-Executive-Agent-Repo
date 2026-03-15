@@ -73,3 +73,20 @@ func (c *RateLimitedClient) Generate(ctx context.Context, req GenerateRequest) (
 
 	return resp, usage, nil
 }
+
+// Stream implements Client. Applies a pre-flight rate-limit check before
+// delegating to the inner provider's Stream.
+func (c *RateLimitedClient) Stream(ctx context.Context, req GenerateRequest, out chan<- StreamChunk) {
+	if c.redisCache != nil {
+		err := c.redisCache.CheckRateLimit(ctx, c.providerID, c.workspaceID,
+			c.limits.RequestsPerMinute, c.limits.TokensPerMinute, 0)
+		if err != nil {
+			if _, ok := err.(*cache.RateLimitError); ok {
+				out <- StreamChunk{Error: fmt.Errorf("status 429: %w", err)}
+				close(out)
+				return
+			}
+		}
+	}
+	c.inner.Stream(ctx, req, out)
+}

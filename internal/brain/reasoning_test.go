@@ -3,6 +3,7 @@ package brain
 import (
 	"context"
 	"errors"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -929,5 +930,83 @@ func TestRunLoop_DynamicBudget_CapApplied(t *testing.T) {
 	}
 	if result.DynamicBudget > 8 {
 		t.Errorf("expected dynamic budget capped at 8, got %d", result.DynamicBudget)
+	}
+}
+
+// --- CompressConversation tests ---
+
+type mockSummarizer struct {
+	summary string
+	called  bool
+}
+
+func (m *mockSummarizer) SummarizeText(_ context.Context, _ string, _ int) (string, error) {
+	m.called = true
+	return m.summary, nil
+}
+
+func TestCompressConversation_WithinBudget_NoCompression(t *testing.T) {
+	t.Parallel()
+	history := []Message{{Role: "user", Content: "hi"}}
+	mock := &mockSummarizer{summary: "summary"}
+	got, err := CompressConversation(context.Background(), history, 1_000_000, 6, mock)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if mock.called {
+		t.Error("summarizer should not be called when within budget")
+	}
+	if len(got) != len(history) {
+		t.Errorf("expected original history, got %d messages", len(got))
+	}
+}
+
+func TestCompressConversation_ExceedsBudget_Compresses(t *testing.T) {
+	t.Parallel()
+	history := make([]Message, 10)
+	for i := range history {
+		history[i] = Message{Role: "user", Content: strings.Repeat("x", 100)}
+	}
+	mock := &mockSummarizer{summary: "Earlier: user asked about x."}
+	compressed, _ := CompressConversation(context.Background(), history, 200, 3, mock)
+	if !mock.called {
+		t.Error("summarizer should have been called")
+	}
+	if len(compressed) == 0 {
+		t.Fatal("expected non-empty compressed history")
+	}
+	if compressed[0].Metadata == nil {
+		t.Error("expected metadata on summary message")
+	}
+	if _, ok := compressed[0].Metadata["compressed"]; !ok {
+		t.Error("expected compressed=true metadata")
+	}
+}
+
+func TestCompressConversation_NilSummarizer_ReturnsOriginal(t *testing.T) {
+	t.Parallel()
+	history := []Message{{Role: "user", Content: "hello"}}
+	got, err := CompressConversation(context.Background(), history, 100, 3, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(got) != 1 {
+		t.Errorf("expected original 1-message history, got %d", len(got))
+	}
+}
+
+func TestCompressConversation_TooFewMessages_ReturnsOriginal(t *testing.T) {
+	t.Parallel()
+	history := []Message{
+		{Role: "user", Content: "hi"},
+		{Role: "assistant", Content: "hello"},
+	}
+	mock := &mockSummarizer{}
+	got, _ := CompressConversation(context.Background(), history, 1, 6, mock)
+	if mock.called {
+		t.Error("summarizer should not be called with too few messages")
+	}
+	if len(got) != 2 {
+		t.Errorf("expected 2 messages, got %d", len(got))
 	}
 }

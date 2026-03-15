@@ -31,7 +31,7 @@ func TestServiceReplayCache_RedisHitPreventsSecondCall(t *testing.T) {
 		PromptKey:   "classify",
 		Input:       "schedule a meeting",
 		Tier:        "T1",
-		ModelID:     "claude-haiku-4-5-20250929",
+		ModelID:     ModelAnthropicHaiku,
 		ProviderID:  "anthropic",
 	}
 
@@ -115,7 +115,7 @@ func TestServiceReplayCache_CrossInstanceIdempotency(t *testing.T) {
 		PromptKey:   "classify",
 		Input:       "hello world",
 		Tier:        "T0",
-		ModelID:     "claude-haiku-4-5-20250929",
+		ModelID:     ModelAnthropicHaiku,
 		ProviderID:  "anthropic",
 	}
 

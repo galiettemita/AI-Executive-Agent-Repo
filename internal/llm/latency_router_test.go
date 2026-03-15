@@ -7,7 +7,7 @@ func TestLatencyRouterFastModel(t *testing.T) {
 
 	lr := NewLatencyAwareRouter()
 	model := lr.SelectModel(0.8, LatencyBudget{RemainingMs: 1500, TotalBudgetMs: 10000})
-	if model != "gpt-4o-mini" {
+	if model != ModelAnthropicHaiku {
 		t.Fatalf("expected fast model for <2000ms, got %s", model)
 	}
 }
@@ -17,7 +17,7 @@ func TestLatencyRouterBalancedModel(t *testing.T) {
 
 	lr := NewLatencyAwareRouter()
 	model := lr.SelectModel(0.8, LatencyBudget{RemainingMs: 3000, TotalBudgetMs: 10000})
-	if model != "gpt-4o" {
+	if model != ModelAnthropicSonnet {
 		t.Fatalf("expected balanced model for <4000ms, got %s", model)
 	}
 }
@@ -27,7 +27,7 @@ func TestLatencyRouterBestModel(t *testing.T) {
 
 	lr := NewLatencyAwareRouter()
 	model := lr.SelectModel(0.8, LatencyBudget{RemainingMs: 8000, TotalBudgetMs: 10000})
-	if model != "gpt-4-turbo" {
+	if model != ModelAnthropicSonnet {
 		t.Fatalf("expected best model for ample budget + high complexity, got %s", model)
 	}
 }
@@ -37,7 +37,7 @@ func TestLatencyRouterLowComplexityUsesBalanced(t *testing.T) {
 
 	lr := NewLatencyAwareRouter()
 	model := lr.SelectModel(0.2, LatencyBudget{RemainingMs: 8000, TotalBudgetMs: 10000})
-	if model != "gpt-4o" {
+	if model != ModelAnthropicSonnet {
 		t.Fatalf("expected balanced model for low complexity, got %s", model)
 	}
 }
@@ -65,7 +65,7 @@ func TestLatencyRouterComputedRemaining(t *testing.T) {
 	lr := NewLatencyAwareRouter()
 	// RemainingMs = 0 means compute from total - elapsed
 	model := lr.SelectModel(0.8, LatencyBudget{RemainingMs: 0, ElapsedMs: 9000, TotalBudgetMs: 10000})
-	if model != "gpt-4o-mini" {
+	if model != ModelAnthropicHaiku {
 		t.Fatalf("expected fast model when computed remaining < 2000, got %s", model)
 	}
 }
