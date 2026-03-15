@@ -3,7 +3,11 @@ package brain
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
+	"time"
+
+	"github.com/brevio/brevio/internal/cognition"
 )
 
 // mockExecutor implements ToolExecutor for testing.
@@ -219,7 +223,7 @@ func TestCriticStep_AllSuccess(t *testing.T) {
 		},
 	}
 
-	assessment, err := rl.CriticStep(context.Background(), plan, result)
+	assessment, err := rl.CriticStep(context.Background(), plan, result, "test request")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -249,7 +253,7 @@ func TestCriticStep_PartialFailure(t *testing.T) {
 		CompensationNeeded: true,
 	}
 
-	assessment, err := rl.CriticStep(context.Background(), plan, result)
+	assessment, err := rl.CriticStep(context.Background(), plan, result, "test request")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -268,7 +272,7 @@ func TestCriticStep_NilInputs(t *testing.T) {
 	t.Parallel()
 
 	rl := NewReasoningLoop(ReasoningLoopConfig{})
-	assessment, err := rl.CriticStep(context.Background(), nil, nil)
+	assessment, err := rl.CriticStep(context.Background(), nil, nil, "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -535,5 +539,395 @@ func TestExecutionOrder(t *testing.T) {
 	}
 	if order[2] != 0 {
 		t.Errorf("expected verify step third, got index %d", order[2])
+	}
+}
+
+// slowMockExecutor sleeps for a configured duration per tool key, recording
+// start/end timestamps for concurrency verification.
+type slowMockExecutor struct {
+	mu        sync.Mutex
+	delay     time.Duration
+	errs      map[string]error
+	starts    map[string]time.Time
+	ends      map[string]time.Time
+}
+
+func newSlowMockExecutor(delay time.Duration) *slowMockExecutor {
+	return &slowMockExecutor{
+		delay:  delay,
+		errs:   make(map[string]error),
+		starts: make(map[string]time.Time),
+		ends:   make(map[string]time.Time),
+	}
+}
+
+func (m *slowMockExecutor) Execute(ctx context.Context, toolKey string, _ map[string]any) (map[string]any, error) {
+	m.mu.Lock()
+	m.starts[toolKey] = time.Now()
+	m.mu.Unlock()
+
+	if err, ok := m.errs[toolKey]; ok {
+		m.mu.Lock()
+		m.ends[toolKey] = time.Now()
+		m.mu.Unlock()
+		return nil, err
+	}
+
+	select {
+	case <-time.After(m.delay):
+	case <-ctx.Done():
+		m.mu.Lock()
+		m.ends[toolKey] = time.Now()
+		m.mu.Unlock()
+		return nil, ctx.Err()
+	}
+
+	m.mu.Lock()
+	m.ends[toolKey] = time.Now()
+	m.mu.Unlock()
+	return map[string]any{"status": "ok"}, nil
+}
+
+func TestExecutorStep_ParallelIndependentSteps(t *testing.T) {
+	t.Parallel()
+
+	exec := newSlowMockExecutor(50 * time.Millisecond)
+	rl := NewReasoningLoop(ReasoningLoopConfig{Executor: exec})
+
+	plan := &Plan{
+		Steps: []PlanStep{
+			{ToolKey: "email_read", Parameters: map[string]any{}, Phase: "gather"},
+			{ToolKey: "calendar_read", Parameters: map[string]any{}, Phase: "gather"},
+			{ToolKey: "web_search", Parameters: map[string]any{}, Phase: "gather"},
+		},
+	}
+
+	start := time.Now()
+	result, err := rl.ExecutorStep(context.Background(), plan)
+	elapsed := time.Since(start)
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(result.Results) != 3 {
+		t.Fatalf("expected 3 results, got %d", len(result.Results))
+	}
+	for i, r := range result.Results {
+		if !r.Success {
+			t.Errorf("step %d should have succeeded", i)
+		}
+	}
+	// 3 independent 50ms steps running in parallel should complete well under 200ms.
+	if elapsed >= 200*time.Millisecond {
+		t.Errorf("expected parallel execution < 200ms, took %v", elapsed)
+	}
+}
+
+func TestExecutorStep_DependentStepsExecuteInOrder(t *testing.T) {
+	t.Parallel()
+
+	exec := newSlowMockExecutor(20 * time.Millisecond)
+	rl := NewReasoningLoop(ReasoningLoopConfig{Executor: exec})
+
+	plan := &Plan{
+		Steps: []PlanStep{
+			{ToolKey: "step_0", Parameters: map[string]any{}, Phase: "gather"},
+			{ToolKey: "step_1", Parameters: map[string]any{}, Phase: "act", DependsOn: []int{0}},
+			{ToolKey: "step_2", Parameters: map[string]any{}, Phase: "verify", DependsOn: []int{1}},
+		},
+	}
+
+	result, err := rl.ExecutorStep(context.Background(), plan)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	for i, r := range result.Results {
+		if !r.Success {
+			t.Errorf("step %d should have succeeded", i)
+		}
+	}
+
+	exec.mu.Lock()
+	defer exec.mu.Unlock()
+
+	// step_1 must start after step_0 finishes.
+	if exec.starts["step_1"].Before(exec.ends["step_0"]) {
+		t.Error("step_1 started before step_0 finished")
+	}
+	// step_2 must start after step_1 finishes.
+	if exec.starts["step_2"].Before(exec.ends["step_1"]) {
+		t.Error("step_2 started before step_1 finished")
+	}
+}
+
+func TestExecutorStep_FailedDependencySkipsDownstream(t *testing.T) {
+	t.Parallel()
+
+	exec := newSlowMockExecutor(10 * time.Millisecond)
+	exec.errs["step_0"] = errors.New("step_0 failed")
+	rl := NewReasoningLoop(ReasoningLoopConfig{Executor: exec})
+
+	plan := &Plan{
+		Steps: []PlanStep{
+			{ToolKey: "step_0", Parameters: map[string]any{}, Phase: "gather"},
+			{ToolKey: "step_1", Parameters: map[string]any{}, Phase: "act", DependsOn: []int{0}},
+		},
+	}
+
+	result, err := rl.ExecutorStep(context.Background(), plan)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.Results[0].Success {
+		t.Error("step_0 should have failed")
+	}
+	if result.Results[1].Success {
+		t.Error("step_1 should have been skipped")
+	}
+	if result.Results[1].Error != "skipped: dependency failed" {
+		t.Errorf("expected 'skipped: dependency failed', got %q", result.Results[1].Error)
+	}
+	if !result.CompensationNeeded {
+		t.Error("expected compensation needed")
+	}
+}
+
+func TestExecutorStep_ContextCancelled(t *testing.T) {
+	t.Parallel()
+
+	exec := newSlowMockExecutor(500 * time.Millisecond)
+	rl := NewReasoningLoop(ReasoningLoopConfig{Executor: exec})
+
+	plan := &Plan{
+		Steps: []PlanStep{
+			{ToolKey: "slow_a", Parameters: map[string]any{}, Phase: "gather"},
+			{ToolKey: "slow_b", Parameters: map[string]any{}, Phase: "gather"},
+		},
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		time.Sleep(50 * time.Millisecond)
+		cancel()
+	}()
+
+	start := time.Now()
+	result, err := rl.ExecutorStep(ctx, plan)
+	elapsed := time.Since(start)
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if elapsed >= 200*time.Millisecond {
+		t.Errorf("expected cancellation within 200ms, took %v", elapsed)
+	}
+	for i, r := range result.Results {
+		if r.Success {
+			t.Errorf("step %d should have failed due to cancellation", i)
+		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Graph-of-Thought integration tests
+// ---------------------------------------------------------------------------
+
+func TestPlannerStep_GoT_LowConfidenceActivates(t *testing.T) {
+	t.Parallel()
+
+	gotEngine := cognition.NewGoTEngine()
+	rl := NewReasoningLoop(ReasoningLoopConfig{
+		GoTEngine:    gotEngine,
+		GoTThreshold: 0.75,
+	})
+	rc := &ReasoningContext{
+		MessageID:   "msg-got-1",
+		WorkspaceID: "ws-1",
+		Intent:      "send an email to John about the meeting",
+		Confidence:  0.5, // below threshold — GoT should activate
+	}
+
+	// Without intelligence, GoT will fail (no GeneratePlan), but the
+	// fallback heuristic planner should still produce a plan.
+	plan, err := rl.PlannerStep(context.Background(), rc)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if plan == nil || len(plan.Steps) == 0 {
+		t.Fatal("expected non-empty plan from fallback")
+	}
+}
+
+func TestPlannerStep_GoT_HighConfidenceSkips(t *testing.T) {
+	t.Parallel()
+
+	gotEngine := cognition.NewGoTEngine()
+	rl := NewReasoningLoop(ReasoningLoopConfig{
+		GoTEngine:    gotEngine,
+		GoTThreshold: 0.75,
+	})
+	rc := &ReasoningContext{
+		MessageID:   "msg-got-2",
+		WorkspaceID: "ws-1",
+		Intent:      "check my calendar for tomorrow",
+		Confidence:  0.9, // above threshold — GoT should NOT activate
+	}
+
+	plan, err := rl.PlannerStep(context.Background(), rc)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if plan == nil || len(plan.Steps) == 0 {
+		t.Fatal("expected non-empty plan")
+	}
+}
+
+func TestPlannerStep_GoT_FailsFallsBack(t *testing.T) {
+	t.Parallel()
+
+	// GoT engine is set, intelligence is nil — GoT path will fail,
+	// should fall back to heuristic planner.
+	gotEngine := cognition.NewGoTEngine()
+	rl := NewReasoningLoop(ReasoningLoopConfig{
+		GoTEngine:    gotEngine,
+		GoTThreshold: 0.75,
+	})
+	rc := &ReasoningContext{
+		MessageID:   "msg-got-3",
+		WorkspaceID: "ws-1",
+		Intent:      "send reply to the email about budget",
+		Confidence:  0.4, // low confidence, GoT would try but intelligence is nil
+	}
+
+	plan, err := rl.PlannerStep(context.Background(), rc)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if plan == nil || len(plan.Steps) == 0 {
+		t.Fatal("expected non-empty plan from fallback path")
+	}
+	// Should have email-related steps from heuristic fallback.
+	found := false
+	for _, s := range plan.Steps {
+		if s.ToolKey == "email_read" || s.ToolKey == "email_send" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("expected email-related steps from heuristic fallback")
+	}
+}
+
+func TestGenerateHypotheses(t *testing.T) {
+	t.Parallel()
+
+	hyps := generateHypotheses("Send an email", "", 3)
+	if len(hyps) != 3 {
+		t.Fatalf("expected 3 hypotheses, got %d", len(hyps))
+	}
+	if hyps[0] != "Send an email" {
+		t.Errorf("first hypothesis should be the literal intent, got %q", hyps[0])
+	}
+
+	single := generateHypotheses("test", "", 1)
+	if len(single) != 1 || single[0] != "test" {
+		t.Errorf("single hypothesis should be the literal, got %v", single)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Dynamic iteration budget tests
+// ---------------------------------------------------------------------------
+
+func TestComputeIterationsFromSignals_Simple(t *testing.T) {
+	t.Parallel()
+
+	result := computeIterationsFromSignals(ComplexitySignals{
+		IntentCount:            1,
+		DomainCount:            1,
+		HasDependencies:        false,
+		HasTemporalConstraints: false,
+	})
+	if result != 1 {
+		t.Errorf("expected 1 for simple signals, got %d", result)
+	}
+}
+
+func TestComputeIterationsFromSignals_Complex(t *testing.T) {
+	t.Parallel()
+
+	result := computeIterationsFromSignals(ComplexitySignals{
+		IntentCount:            3,
+		DomainCount:            2,
+		HasDependencies:        true,
+		HasTemporalConstraints: true,
+	})
+	if result < 4 || result > 8 {
+		t.Errorf("expected result in [4, 8] for complex signals, got %d", result)
+	}
+}
+
+func TestRunLoop_DynamicBudget_UsesHigherValue(t *testing.T) {
+	t.Parallel()
+
+	exec := newMockExecutor()
+	exec.results["email_read"] = map[string]any{"emails": []string{"hi"}}
+	exec.results["email_send"] = map[string]any{"sent": true}
+	exec.results["verify_output"] = map[string]any{"verified": true}
+
+	decomp := NewDynamicDecompositionService()
+	rl := NewReasoningLoop(ReasoningLoopConfig{
+		Executor:      exec,
+		MaxIterations: 1,
+		Decomposition: decomp,
+	})
+
+	// Use a complex intent that yields dynamic > 1.
+	rc := &ReasoningContext{
+		MessageID:   "msg-dyn-1",
+		WorkspaceID: "ws-1",
+		Intent:      "send an email to John and schedule a meeting with Sarah and also search for the quarterly report document",
+		Confidence:  0.9,
+	}
+
+	result, err := rl.RunLoop(context.Background(), rc, 1)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.DynamicBudget <= 1 {
+		t.Errorf("expected dynamic budget > 1 for complex intent, got %d", result.DynamicBudget)
+	}
+}
+
+func TestRunLoop_DynamicBudget_CapApplied(t *testing.T) {
+	t.Parallel()
+
+	exec := newMockExecutor()
+	exec.results["email_read"] = map[string]any{"emails": []string{"hi"}}
+	exec.results["email_send"] = map[string]any{"sent": true}
+	exec.results["verify_output"] = map[string]any{"verified": true}
+
+	decomp := NewDynamicDecompositionService()
+	rl := NewReasoningLoop(ReasoningLoopConfig{
+		Executor:         exec,
+		MaxIterations:    20,
+		MaxIterationsCap: 8,
+		Decomposition:    decomp,
+	})
+
+	rc := &ReasoningContext{
+		MessageID:   "msg-dyn-2",
+		WorkspaceID: "ws-1",
+		Intent:      "send an email to John about quarterly budget and schedule review meetings with ten people and compile financial documents",
+		Confidence:  0.9,
+	}
+
+	result, err := rl.RunLoop(context.Background(), rc, 20)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.DynamicBudget > 8 {
+		t.Errorf("expected dynamic budget capped at 8, got %d", result.DynamicBudget)
 	}
 }

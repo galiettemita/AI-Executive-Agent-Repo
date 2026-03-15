@@ -57,14 +57,15 @@ type ClassifyIntentResult struct {
 }
 
 type GeneratePlanInput struct {
-	MessageID      string  `json:"message_id"`
-	WorkspaceID    string  `json:"workspace_id"`
-	Intent         string  `json:"intent"`
-	Confidence     float64 `json:"confidence"`
-	Payload        string  `json:"payload,omitempty"`
-	MemoryContext  string  `json:"memory_context,omitempty"`
-	RAGContext     string  `json:"rag_context,omitempty"`
-	RetryHints     string  `json:"retry_hints,omitempty"` // populated on re-plan after verify fail
+	MessageID             string  `json:"message_id"`
+	WorkspaceID           string  `json:"workspace_id"`
+	Intent                string  `json:"intent"`
+	Confidence            float64 `json:"confidence"`
+	RequiresDecomposition bool    `json:"requires_decomposition,omitempty"`
+	Payload               string  `json:"payload,omitempty"`
+	MemoryContext         string  `json:"memory_context,omitempty"`
+	RAGContext            string  `json:"rag_context,omitempty"`
+	RetryHints            string  `json:"retry_hints,omitempty"` // populated on re-plan after verify fail
 }
 
 type GeneratePlanResult struct {
@@ -475,9 +476,18 @@ func (a *Activities) GeneratePlanActivity(ctx context.Context, input GeneratePla
 		payload = payload + "\n\n[VERIFIER FEEDBACK — previous attempt was rejected]\n" + input.RetryHints
 	}
 
-	// Production path: use LLM-backed plan generation.
+	// Production path: use LLM-backed plan generation with confidence routing.
 	if a.llmService != nil && a.llmService.Intelligence() != nil {
-		plan, _, err := a.llmService.GeneratePlan(ctx, input.Intent, input.Confidence, payload, input.MemoryContext, input.RAGContext)
+		var plan *llm.GeneratedPlan
+		var err error
+		if input.Confidence > 0 {
+			plan, _, err = a.llmService.Intelligence().GeneratePlanWithRouting(
+				ctx, input.Intent, input.Confidence, input.RequiresDecomposition,
+				payload, input.MemoryContext, input.RAGContext,
+			)
+		} else {
+			plan, _, err = a.llmService.GeneratePlan(ctx, input.Intent, input.Confidence, payload, input.MemoryContext, input.RAGContext)
+		}
 		if err != nil {
 			log.Printf("[GeneratePlan] LLM plan generation failed, using deterministic fallback: %v", err)
 			return a.deterministicPlanFallback(planID, input.Intent), nil
@@ -1160,13 +1170,18 @@ type RAGSearchResult struct {
 
 // ReasoningLoopInput carries context for the brain reasoning loop.
 type ReasoningLoopInput struct {
-	MessageID     string       `json:"message_id"`
-	WorkspaceID   string       `json:"workspace_id"`
-	Intent        string       `json:"intent"`
-	Confidence    float64      `json:"confidence"`
-	MemoryItems   []MemoryItem `json:"memory_items"`
-	RAGChunks     []RAGChunk   `json:"rag_chunks"`
-	ContextBudget int          `json:"context_budget"`
+	MessageID       string       `json:"message_id"`
+	WorkspaceID     string       `json:"workspace_id"`
+	UserID          string       `json:"user_id,omitempty"`
+	Intent          string       `json:"intent"`
+	Confidence      float64      `json:"confidence"`
+	MemoryItems     []MemoryItem `json:"memory_items"`
+	RAGChunks       []RAGChunk   `json:"rag_chunks"`
+	ContextBudget   int          `json:"context_budget"`
+	MaxIterations   int          `json:"max_iterations,omitempty"`
+	MemoryContext   string       `json:"memory_context,omitempty"`
+	RAGContext      string       `json:"rag_context,omitempty"`
+	OriginalPayload string       `json:"original_payload,omitempty"`
 }
 
 // ReasoningLoopResult contains the reasoning output with audit evidence.
@@ -1376,56 +1391,96 @@ func (a *Activities) ExecuteReasoningLoopActivity(ctx context.Context, input Rea
 		input.MessageID, input.WorkspaceID, input.Intent,
 		len(input.MemoryItems), len(input.RAGChunks)))
 
-	// Production path: use LLM-backed plan generation.
-	if a.llmService != nil && a.llmService.Intelligence() != nil {
-		// Build context summaries for the planner.
-		var memoryCtx strings.Builder
+	// Build context strings from structured data if not provided directly.
+	memoryCtx := input.MemoryContext
+	if memoryCtx == "" {
+		var buf strings.Builder
 		for _, item := range input.MemoryItems {
-			fmt.Fprintf(&memoryCtx, "- [%s] %s (score: %.2f)\n", item.MemoryType, item.Body, item.Score)
+			fmt.Fprintf(&buf, "- [%s] %s (score: %.2f)\n", item.MemoryType, item.Body, item.Score)
 		}
-		var ragCtx strings.Builder
+		memoryCtx = buf.String()
+	}
+	ragCtx := input.RAGContext
+	if ragCtx == "" {
+		var buf strings.Builder
 		for _, chunk := range input.RAGChunks {
-			fmt.Fprintf(&ragCtx, "- %s (score: %.2f, source: %s)\n", chunk.Snippet, chunk.Score, chunk.Source)
+			fmt.Fprintf(&buf, "- %s (score: %.2f, source: %s)\n", chunk.Snippet, chunk.Score, chunk.Source)
 		}
+		ragCtx = buf.String()
+	}
 
-		plan, _, err := a.llmService.GeneratePlan(ctx, input.Intent, input.Confidence, input.Intent, memoryCtx.String(), ragCtx.String())
-		if err != nil {
-			log.Printf("[ReasoningLoop] LLM plan generation failed, falling back to deterministic: %v", err)
-		} else {
-			toolKeys := make([]string, len(plan.Tools))
-			copy(toolKeys, plan.Tools)
-			sort.Strings(toolKeys)
+	// Resolve intelligence service from the LLM layer.
+	var intelligence *llm.IntelligenceService
+	if a.llmService != nil {
+		intelligence = a.llmService.Intelligence()
+	}
 
-			planID := hashKey("plan:" + input.MessageID + ":" + input.WorkspaceID + ":" + contextHash)
+	maxIter := input.MaxIterations
+	if maxIter <= 0 {
+		maxIter = 3
+	}
 
-			return &ReasoningLoopResult{
-				PlanID:        planID,
-				ToolKeys:      toolKeys,
-				RiskLevel:     strings.ToUpper(plan.RiskLevel),
-				QualityScore:  plan.Confidence,
-				Iterations:    1,
-				EvidenceHash:  evidenceHash,
-				Deterministic: false,
-			}, nil
+	cfg := brain.ReasoningLoopConfig{
+		MaxIterations:    maxIter,
+		MaxIterationsCap: 8,
+		Intelligence:     intelligence,
+	}
+	loop := brain.NewReasoningLoop(cfg)
+
+	rc := &brain.ReasoningContext{
+		MessageID:       input.MessageID,
+		WorkspaceID:     input.WorkspaceID,
+		UserID:          input.UserID,
+		Intent:          input.Intent,
+		Confidence:      input.Confidence,
+		ContextBudget:   contextBudget,
+		MemoryContext:   memoryCtx,
+		RAGContext:      ragCtx,
+		OriginalPayload: input.OriginalPayload,
+	}
+
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	result, err := loop.RunLoop(ctx, rc, maxIter)
+	if err != nil {
+		log.Printf("[ReasoningLoop] loop failed, returning deterministic fallback: %v", err)
+		// Return a failed result rather than an error, for Temporal retry policy compat.
+		toolKeys := deterministicPlanTools(input.Intent, input.MemoryItems, input.RAGChunks)
+		sort.Strings(toolKeys)
+		return &ReasoningLoopResult{
+			PlanID:        hashKey("plan:" + input.MessageID + ":" + input.WorkspaceID + ":" + contextHash),
+			ToolKeys:      toolKeys,
+			RiskLevel:     deterministicRiskAssess(toolKeys),
+			QualityScore:  0,
+			Iterations:    0,
+			EvidenceHash:  evidenceHash,
+			Deterministic: true,
+		}, nil
+	}
+
+	// Convert LoopResult to ReasoningLoopResult.
+	var toolKeys []string
+	riskLevel := "LOW"
+	if result.FinalPlan != nil {
+		for _, step := range result.FinalPlan.Steps {
+			toolKeys = append(toolKeys, step.ToolKey)
+		}
+		sort.Strings(toolKeys)
+		riskLevel = strings.ToUpper(result.FinalPlan.RiskLevel)
+		if riskLevel == "" {
+			riskLevel = "LOW"
 		}
 	}
 
-	// Deterministic fallback: rule-based plan generation.
-	toolKeys := deterministicPlanTools(input.Intent, input.MemoryItems, input.RAGChunks)
-	sort.Strings(toolKeys)
-
-	riskLevel := deterministicRiskAssess(toolKeys)
-	qualityScore := deterministicQualityScore(input.Confidence, len(input.MemoryItems), len(input.RAGChunks))
-	planID := hashKey("plan:" + input.MessageID + ":" + input.WorkspaceID + ":" + contextHash)
-
 	return &ReasoningLoopResult{
-		PlanID:        planID,
+		PlanID:        hashKey("plan:" + input.MessageID + ":" + input.WorkspaceID + ":" + contextHash),
 		ToolKeys:      toolKeys,
 		RiskLevel:     riskLevel,
-		QualityScore:  qualityScore,
-		Iterations:    1,
+		QualityScore:  result.CriticScore,
+		Iterations:    result.Iterations,
 		EvidenceHash:  evidenceHash,
-		Deterministic: true,
+		Deterministic: intelligence == nil,
 	}, nil
 }
 

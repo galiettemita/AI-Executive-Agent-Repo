@@ -1,6 +1,8 @@
 package brain
 
 import (
+	"context"
+	"sync"
 	"testing"
 	"time"
 )
@@ -118,5 +120,110 @@ func TestGetCritiqueHistory(t *testing.T) {
 	history := svc.GetCritiqueHistory()
 	if len(history) != 2 {
 		t.Fatalf("expected 2 history entries, got %d", len(history))
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Ring buffer tests
+// ---------------------------------------------------------------------------
+
+func TestRingBuffer_WrapAround(t *testing.T) {
+	t.Parallel()
+
+	rb := newRingBuffer(3)
+	for i := 0; i < 5; i++ {
+		rb.push(CriticOutput{ID: string(rune('A' + i))})
+	}
+	snap := rb.snapshot()
+	if len(snap) != 3 {
+		t.Fatalf("expected 3 entries after wraparound, got %d", len(snap))
+	}
+	// Should be the last 3 pushed: C, D, E
+	if snap[0].ID != string(rune('C')) || snap[1].ID != string(rune('D')) || snap[2].ID != string(rune('E')) {
+		t.Errorf("expected [C D E], got [%s %s %s]", snap[0].ID, snap[1].ID, snap[2].ID)
+	}
+}
+
+func TestRingBuffer_SnapshotOrder(t *testing.T) {
+	t.Parallel()
+
+	rb := newRingBuffer(5)
+	rb.push(CriticOutput{ID: "A"})
+	rb.push(CriticOutput{ID: "B"})
+	rb.push(CriticOutput{ID: "C"})
+
+	snap := rb.snapshot()
+	if len(snap) != 3 {
+		t.Fatalf("expected 3, got %d", len(snap))
+	}
+	if snap[0].ID != "A" || snap[1].ID != "B" || snap[2].ID != "C" {
+		t.Errorf("expected [A B C], got [%s %s %s]", snap[0].ID, snap[1].ID, snap[2].ID)
+	}
+}
+
+func TestCriticReflectorService_BoundedMemory(t *testing.T) {
+	t.Parallel()
+
+	svc := NewCriticReflectorServiceWithConfig(CriticReflectorConfig{
+		RingBufferSize: 1000,
+	})
+
+	for i := 0; i < 2000; i++ {
+		_, _ = svc.Critique(ExecutionTrace{
+			WorkspaceID: "ws1",
+			PlanSteps:   1,
+			Succeeded:   1,
+			Duration:    time.Millisecond,
+		})
+	}
+
+	history := svc.GetCritiqueHistory()
+	if len(history) > 1000 {
+		t.Fatalf("expected ≤1000 entries, got %d", len(history))
+	}
+	if len(history) != 1000 {
+		t.Fatalf("expected exactly 1000 entries (full ring), got %d", len(history))
+	}
+}
+
+// mockCriticTraceRepo records Save calls for testing.
+type mockCriticTraceRepo struct {
+	mu    sync.Mutex
+	saved []CriticOutput
+}
+
+func (m *mockCriticTraceRepo) Save(_ context.Context, output CriticOutput) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.saved = append(m.saved, output)
+	return nil
+}
+
+func TestCriticReflectorService_RepositorySaveAsync(t *testing.T) {
+	t.Parallel()
+
+	repo := &mockCriticTraceRepo{}
+	svc := NewCriticReflectorServiceWithConfig(CriticReflectorConfig{
+		Repository: repo,
+	})
+
+	for i := 0; i < 5; i++ {
+		_, _ = svc.Critique(ExecutionTrace{
+			WorkspaceID: "ws1",
+			PlanSteps:   1,
+			Succeeded:   1,
+			Duration:    time.Millisecond,
+		})
+	}
+
+	// Give async goroutines time to complete.
+	time.Sleep(50 * time.Millisecond)
+
+	repo.mu.Lock()
+	count := len(repo.saved)
+	repo.mu.Unlock()
+
+	if count != 5 {
+		t.Fatalf("expected 5 Save calls, got %d", count)
 	}
 }

@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -513,11 +515,14 @@ func TestIntelligenceService_GeneratePlan_RefusesUnknownTools(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for unknown tool_key, got nil")
 	}
-	if !contains(err.Error(), "unknown tool_key") {
-		t.Errorf("expected error about unknown tool_key, got: %v", err)
+	if !contains(err.Error(), "unknown tool keys") {
+		t.Errorf("expected error about unknown tool keys, got: %v", err)
 	}
 	if !contains(err.Error(), "unknown_tool.do_stuff") {
 		t.Errorf("expected error to mention the unknown tool, got: %v", err)
+	}
+	if !contains(err.Error(), "google_gmail.read_email") {
+		t.Errorf("expected error to list available tools, got: %v", err)
 	}
 }
 
@@ -619,6 +624,365 @@ func TestIntelligenceService_GeneratePlan_NoRegistrySkipsValidation(t *testing.T
 	}
 	if plan == nil {
 		t.Fatal("expected non-nil plan")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// ValidateToolKey tests
+// ---------------------------------------------------------------------------
+
+func TestValidateToolKey_ValidKeys(t *testing.T) {
+	t.Parallel()
+
+	valid := []string{
+		"web_search",
+		"google_gmail.read_email",
+		"some.tool.v2",
+		"a.b.c.d",
+		"namespace_one.tool_two.version_three",
+	}
+	for _, key := range valid {
+		if err := ValidateToolKey(key); err != nil {
+			t.Errorf("expected %q to be valid, got error: %v", key, err)
+		}
+	}
+}
+
+func TestValidateToolKey_InvalidKeys(t *testing.T) {
+	t.Parallel()
+
+	invalid := []string{
+		"",
+		"Gmail",
+		"my tool",
+		"a..b",
+		".start",
+		"a.b.c.d.e",
+	}
+	for _, key := range invalid {
+		if err := ValidateToolKey(key); err == nil {
+			t.Errorf("expected %q to be invalid, got nil error", key)
+		}
+	}
+}
+
+func TestValidateToolKey_ThreeSegment_PreviouslyRejected(t *testing.T) {
+	t.Parallel()
+
+	// "some.tool.v2" was rejected by the old single-dot regex.
+	if err := ValidateToolKey("some.tool.v2"); err != nil {
+		t.Errorf("three-segment key should now be valid, got error: %v", err)
+	}
+	if err := ValidateToolKey("google_gmail.read_email.v2"); err != nil {
+		t.Errorf("three-segment key should now be valid, got error: %v", err)
+	}
+}
+
+func TestValidatePlanToolRegistryKeys_MissingKey(t *testing.T) {
+	t.Parallel()
+
+	plan := &GeneratedPlan{
+		Actions: []PlanAction{
+			{ToolKey: "web_search", Phase: "gather"},
+			{ToolKey: "unknown_tool", Phase: "act"},
+		},
+	}
+	registry := &fakeToolRegistry{tools: map[string]bool{
+		"web_search":    true,
+		"calendar_read": true,
+	}}
+
+	err := validatePlanToolRegistryKeys(plan, registry)
+	if err == nil {
+		t.Fatal("expected error for unknown tool key")
+	}
+	if !contains(err.Error(), "unknown_tool") {
+		t.Errorf("expected error to mention unknown_tool, got: %v", err)
+	}
+	if !contains(err.Error(), "web_search") {
+		t.Errorf("expected error to list available tools, got: %v", err)
+	}
+}
+
+func TestValidatePlanToolRegistryKeys_NilRegistry(t *testing.T) {
+	t.Parallel()
+
+	plan := &GeneratedPlan{
+		Actions: []PlanAction{
+			{ToolKey: "anything", Phase: "gather"},
+		},
+	}
+	if err := validatePlanToolRegistryKeys(plan, nil); err != nil {
+		t.Errorf("nil registry should skip validation, got: %v", err)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// MoA tests
+// ---------------------------------------------------------------------------
+
+func TestGeneratePlanMoA_Disabled_DelegatesToGeneratePlan(t *testing.T) {
+	t.Parallel()
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		resp := anthropicResponse{
+			ID:    "msg_moa_disabled",
+			Model: "claude-sonnet-4-20250514",
+			Content: []anthropicContentBlock{{
+				Type: "text",
+				Text: `{
+					"intent": "email_query",
+					"confidence": 0.9,
+					"actions": [{"tool_key": "email_read", "operation": "read", "phase": "gather"}],
+					"tools": ["email_read"],
+					"risk_level": "low",
+					"reasoning": "simple read",
+					"final_answer_requirements": "email read"
+				}`,
+			}},
+			StopReason: "end_turn",
+			Usage:      anthropicUsage{InputTokens: 100, OutputTokens: 50},
+		}
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer ts.Close()
+
+	client, _ := NewAnthropicClient(AnthropicConfig{
+		APIKey:  "test-key",
+		BaseURL: ts.URL,
+		Timeout: 5 * time.Second,
+	})
+
+	intel := NewIntelligenceService(IntelligenceConfig{Planner: client})
+
+	plan, _, err := intel.GeneratePlanMoA(
+		context.Background(), "email_query", 0.9, "read my emails", "", "",
+		MoAConfig{Enabled: false},
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if plan == nil {
+		t.Fatal("expected non-nil plan")
+	}
+	if plan.Intent != "email_query" {
+		t.Errorf("expected intent=email_query, got %s", plan.Intent)
+	}
+}
+
+func TestArbitratePlans_SingleProposal_ReturnsDirectly(t *testing.T) {
+	t.Parallel()
+
+	intel := NewIntelligenceService(IntelligenceConfig{})
+
+	proposal := GeneratedPlan{
+		Intent:     "test",
+		Confidence: 0.9,
+		Actions:    []PlanAction{{ToolKey: "web_search", Phase: "gather", Operation: "search"}},
+		Tools:      []string{"web_search"},
+		RiskLevel:  "low",
+		Reasoning:  "single plan",
+	}
+
+	result, _, err := intel.ArbitratePlans(context.Background(), "test", []GeneratedPlan{proposal})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.Rationale != "only one proposal" {
+		t.Errorf("expected 'only one proposal', got %q", result.Rationale)
+	}
+	if result.SelectedPlan.Intent != "test" {
+		t.Errorf("expected plan to be returned unchanged")
+	}
+}
+
+func TestArbitratePlans_NoProposals_ReturnsError(t *testing.T) {
+	t.Parallel()
+
+	intel := NewIntelligenceService(IntelligenceConfig{})
+
+	_, _, err := intel.ArbitratePlans(context.Background(), "test", []GeneratedPlan{})
+	if err == nil {
+		t.Fatal("expected error for empty proposals")
+	}
+}
+
+func TestGeneratePlanMoA_AllProposalsFail_FallsBack(t *testing.T) {
+	t.Parallel()
+
+	var callCount int64
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		n := atomic.AddInt64(&callCount, 1)
+		// First N calls fail (proposals), then the fallback GeneratePlan call succeeds.
+		if n <= 3 {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		resp := anthropicResponse{
+			ID:    "msg_moa_fallback",
+			Model: "claude-sonnet-4-20250514",
+			Content: []anthropicContentBlock{{
+				Type: "text",
+				Text: `{
+					"intent": "fallback",
+					"confidence": 0.8,
+					"actions": [{"tool_key": "web_search", "operation": "search", "phase": "gather"}],
+					"tools": ["web_search"],
+					"risk_level": "low",
+					"reasoning": "fallback plan",
+					"final_answer_requirements": "search done"
+				}`,
+			}},
+			StopReason: "end_turn",
+			Usage:      anthropicUsage{InputTokens: 50, OutputTokens: 25},
+		}
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer ts.Close()
+
+	client, _ := NewAnthropicClient(AnthropicConfig{
+		APIKey:  "test-key",
+		BaseURL: ts.URL,
+		Timeout: 5 * time.Second,
+	})
+
+	intel := NewIntelligenceService(IntelligenceConfig{Planner: client})
+
+	plan, _, err := intel.GeneratePlanMoA(
+		context.Background(), "test", 0.5, "test", "", "",
+		MoAConfig{Enabled: true, ProposalCount: 3},
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if plan == nil {
+		t.Fatal("expected non-nil plan from fallback")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Confidence routing tests
+// ---------------------------------------------------------------------------
+
+func TestResolveTierFromConfidence_LowConfidence_T3(t *testing.T) {
+	t.Parallel()
+	cfg := DefaultConfidenceRoutingConfig()
+	result := ResolveTierFromConfidence(0.4, false, cfg)
+	if result != "T3" {
+		t.Errorf("expected T3 for low confidence, got %s", result)
+	}
+}
+
+func TestResolveTierFromConfidence_HighConfidenceSimple_T1(t *testing.T) {
+	t.Parallel()
+	cfg := DefaultConfidenceRoutingConfig()
+	result := ResolveTierFromConfidence(0.95, false, cfg)
+	if result != "T1" {
+		t.Errorf("expected T1 for high confidence simple, got %s", result)
+	}
+}
+
+func TestResolveTierFromConfidence_HighConfidenceComplex_T2(t *testing.T) {
+	t.Parallel()
+	cfg := DefaultConfidenceRoutingConfig()
+	result := ResolveTierFromConfidence(0.95, true, cfg)
+	if result != "T2" {
+		t.Errorf("expected T2 for high confidence complex (decomposition=true), got %s", result)
+	}
+}
+
+func TestResolveTierFromConfidence_BothDisabled_AlwaysT2(t *testing.T) {
+	t.Parallel()
+	cfg := ConfidenceRoutingConfig{
+		LowConfidenceThreshold:        0.60,
+		HighConfidenceSimpleThreshold: 0.90,
+		EnableDowngrade:               false,
+		EnableUpgrade:                 false,
+	}
+	for _, conf := range []float64{0.1, 0.4, 0.6, 0.8, 0.95, 1.0} {
+		result := ResolveTierFromConfidence(conf, false, cfg)
+		if result != "T2" {
+			t.Errorf("expected T2 with both disabled at confidence=%.2f, got %s", conf, result)
+		}
+	}
+}
+
+func TestResolveTierFromConfidence_Boundaries(t *testing.T) {
+	t.Parallel()
+	cfg := DefaultConfidenceRoutingConfig()
+
+	// confidence=0.60 exactly → T2 (threshold is exclusive: < 0.60 triggers T3)
+	result := ResolveTierFromConfidence(0.60, false, cfg)
+	if result != "T2" {
+		t.Errorf("expected T2 at boundary 0.60, got %s", result)
+	}
+
+	// confidence=0.90 exactly → T2 (threshold is exclusive: > 0.90 triggers T1)
+	result = ResolveTierFromConfidence(0.90, false, cfg)
+	if result != "T2" {
+		t.Errorf("expected T2 at boundary 0.90, got %s", result)
+	}
+}
+
+func TestGeneratePlan_RoutingEnabled_LowConfidence_UsesT3Model(t *testing.T) {
+	t.Parallel()
+
+	var mu sync.Mutex
+	var capturedModel string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		json.NewDecoder(r.Body).Decode(&body)
+		if m, ok := body["model"].(string); ok {
+			mu.Lock()
+			capturedModel = m
+			mu.Unlock()
+		}
+		resp := anthropicResponse{
+			ID:    "msg_routing",
+			Model: "claude-sonnet-4-20250514",
+			Content: []anthropicContentBlock{{
+				Type: "text",
+				Text: `{
+					"intent": "complex_query",
+					"confidence": 0.4,
+					"actions": [{"tool_key": "web_search", "operation": "search", "phase": "gather"}],
+					"tools": ["web_search"],
+					"risk_level": "low",
+					"reasoning": "test",
+					"final_answer_requirements": "done"
+				}`,
+			}},
+			StopReason: "end_turn",
+			Usage:      anthropicUsage{InputTokens: 100, OutputTokens: 50},
+		}
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer ts.Close()
+
+	client, _ := NewAnthropicClient(AnthropicConfig{
+		APIKey:  "test-key",
+		BaseURL: ts.URL,
+		Timeout: 5 * time.Second,
+	})
+
+	intel := NewIntelligenceService(IntelligenceConfig{
+		Planner:                  client,
+		ConfidenceRoutingEnabled: true,
+		ConfidenceRouting:        DefaultConfidenceRoutingConfig(),
+	})
+
+	_, _, err := intel.GeneratePlan(context.Background(), "complex_query", 0.4, "test", "", "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// T3 model should be used for low confidence.
+	t3Tier := ResolveTierModel("T3")
+	mu.Lock()
+	model := capturedModel
+	mu.Unlock()
+	if model != t3Tier.PrimaryModel {
+		t.Errorf("expected T3 model %q, got %q", t3Tier.PrimaryModel, model)
 	}
 }
 

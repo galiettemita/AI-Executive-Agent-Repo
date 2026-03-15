@@ -7,9 +7,14 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 )
 
-var validToolKeyPattern = regexp.MustCompile(`^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)?$`)
+// validToolKeyPattern matches tool keys with 1–4 dot-separated lowercase segments.
+// Each segment: starts with a letter, followed by letters/digits/underscores.
+// Valid:   "web_search", "google_gmail.read_email", "some.tool.v2", "a.b.c.d"
+// Invalid: "", "Gmail", "my tool", "a..b", ".start", "a.b.c.d.e"
+var validToolKeyPattern = regexp.MustCompile(`^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*){0,3}$`)
 
 // IntentClassification is the structured output of intent classification.
 type IntentClassification struct {
@@ -73,6 +78,39 @@ type SynthesizedResponse struct {
 }
 
 // ToolRegistry provides the set of known tool_keys that the planner may reference.
+// MoAConfig configures Mixture-of-Agents parallel planning.
+type MoAConfig struct {
+	Enabled         bool    // false = disabled (default, safe)
+	ProposalCount   int     // parallel planning calls (default 3, min 2, max 5)
+	TemperatureBase float64 // temperature for proposal[0] (default 0.2)
+	TemperatureStep float64 // increment per additional proposal (default 0.15)
+}
+
+// MoAArbitrationResult is the output of the arbitrator LLM.
+type MoAArbitrationResult struct {
+	SelectedPlan  GeneratedPlan `json:"selected_plan"`
+	Rationale     string        `json:"rationale"`
+	RejectedCount int           `json:"rejected_count"`
+}
+
+// StepEvalInput carries context for evaluating a single plan step.
+type StepEvalInput struct {
+	OriginalRequest string         `json:"original_request"`
+	StepIndex       int            `json:"step_index"`
+	ToolKey         string         `json:"tool_key"`
+	Phase           string         `json:"phase"`
+	Output          map[string]any `json:"output,omitempty"`
+	StepError       string         `json:"step_error,omitempty"`
+	PlanContext     string         `json:"plan_context"`
+}
+
+// StepEvalResult is the per-step verdict from the PRM evaluator.
+type StepEvalResult struct {
+	Verdict     string `json:"verdict"`    // "pass" | "fail" | "uncertain"
+	Explanation string `json:"explanation"`
+	RetryHint   string `json:"retry_hint"`
+}
+
 type ToolRegistry interface {
 	ToolKeys() []string
 	HasTool(toolKey string) bool
@@ -81,28 +119,74 @@ type ToolRegistry interface {
 // IntelligenceService orchestrates LLM calls for the intelligence pipeline.
 // It uses the Client interface for provider-agnostic inference and enforces
 // structured output validation.
+// ConfidenceRoutingConfig controls adaptive tier selection by classification confidence.
+type ConfidenceRoutingConfig struct {
+	LowConfidenceThreshold        float64 // below this → T3 (default 0.60)
+	HighConfidenceSimpleThreshold float64 // above this + !decomposition → T1 (default 0.90)
+	EnableDowngrade               bool    // allow T1 for high-confidence simple requests
+	EnableUpgrade                 bool    // allow T3 for low-confidence requests
+}
+
+// DefaultConfidenceRoutingConfig returns safe, conservative defaults.
+func DefaultConfidenceRoutingConfig() ConfidenceRoutingConfig {
+	return ConfidenceRoutingConfig{
+		LowConfidenceThreshold:        0.60,
+		HighConfidenceSimpleThreshold: 0.90,
+		EnableDowngrade:               true,
+		EnableUpgrade:                 true,
+	}
+}
+
+// ResolveTierFromConfidence selects the LLM tier based on confidence and complexity.
+//
+//	confidence < LowConfidenceThreshold              → "T3" (most capable)
+//	confidence > HighConfidenceSimpleThreshold AND
+//	!requiresDecomposition                           → "T1" (fast/cheap)
+//	otherwise                                        → "T2" (balanced default)
+func ResolveTierFromConfidence(
+	confidence float64,
+	requiresDecomposition bool,
+	cfg ConfidenceRoutingConfig,
+) string {
+	if cfg.EnableUpgrade && confidence < cfg.LowConfidenceThreshold {
+		return "T3"
+	}
+	if cfg.EnableDowngrade &&
+		confidence > cfg.HighConfidenceSimpleThreshold &&
+		!requiresDecomposition {
+		return "T1"
+	}
+	return "T2"
+}
+
 type IntelligenceService struct {
-	classifier   Client // T0/T1 tier for fast classification
-	planner      Client // T2/T3 tier for planning
-	synthesizer  Client // T2/T3 tier for response generation
-	toolRegistry ToolRegistry
+	classifier        Client // T0/T1 tier for fast classification
+	planner           Client // T2/T3 tier for planning
+	synthesizer       Client // T2/T3 tier for response generation
+	toolRegistry      ToolRegistry
+	confidenceRouting ConfidenceRoutingConfig
+	routingEnabled    bool
 }
 
 // IntelligenceConfig holds the clients for each pipeline stage.
 type IntelligenceConfig struct {
-	Classifier   Client
-	Planner      Client
-	Synthesizer  Client
-	ToolRegistry ToolRegistry
+	Classifier               Client
+	Planner                  Client
+	Synthesizer              Client
+	ToolRegistry             ToolRegistry
+	ConfidenceRouting        ConfidenceRoutingConfig
+	ConfidenceRoutingEnabled bool
 }
 
 // NewIntelligenceService creates an IntelligenceService with injected clients.
 func NewIntelligenceService(cfg IntelligenceConfig) *IntelligenceService {
 	return &IntelligenceService{
-		classifier:   cfg.Classifier,
-		planner:      cfg.Planner,
-		synthesizer:  cfg.Synthesizer,
-		toolRegistry: cfg.ToolRegistry,
+		classifier:        cfg.Classifier,
+		planner:           cfg.Planner,
+		synthesizer:       cfg.Synthesizer,
+		toolRegistry:      cfg.ToolRegistry,
+		confidenceRouting: cfg.ConfidenceRouting,
+		routingEnabled:    cfg.ConfidenceRoutingEnabled,
 	}
 }
 
@@ -164,11 +248,48 @@ Respond with ONLY the JSON object.`,
 
 // GeneratePlan calls the LLM to produce a structured execution plan.
 func (s *IntelligenceService) GeneratePlan(ctx context.Context, intent string, confidence float64, payload string, memoryContext string, ragContext string) (*GeneratedPlan, *Usage, error) {
+	plannerTier := "T2"
+	if s.routingEnabled {
+		plannerTier = ResolveTierFromConfidence(confidence, false, s.confidenceRouting)
+	}
+	return s.generatePlanWithTemp(ctx, intent, confidence, payload, memoryContext, ragContext, 0.2, plannerTier)
+}
+
+// GeneratePlanWithRouting generates a plan using full confidence + decomposition routing.
+// Preferred variant when ClassifyIntent output (requiresDecomposition) is available.
+func (s *IntelligenceService) GeneratePlanWithRouting(
+	ctx context.Context,
+	intent string,
+	confidence float64,
+	requiresDecomposition bool,
+	payload string,
+	memoryContext string,
+	ragContext string,
+) (*GeneratedPlan, *Usage, error) {
+	plannerTier := "T2"
+	if s.routingEnabled {
+		plannerTier = ResolveTierFromConfidence(confidence, requiresDecomposition, s.confidenceRouting)
+	}
+	return s.generatePlanWithTemp(ctx, intent, confidence, payload, memoryContext, ragContext, 0.2, plannerTier)
+}
+
+// generatePlanWithTemp generates a plan with an explicit temperature and tier.
+// Used by MoA to produce diverse proposals and by routing to select the right model.
+func (s *IntelligenceService) generatePlanWithTemp(
+	ctx context.Context,
+	intent string,
+	confidence float64,
+	payload string,
+	memoryContext string,
+	ragContext string,
+	temperature float64,
+	tierName string,
+) (*GeneratedPlan, *Usage, error) {
 	if s.planner == nil {
 		return nil, nil, fmt.Errorf("intelligence: planner client not configured")
 	}
 
-	tier := ResolveTierModel("T2")
+	tier := ResolveTierModel(tierName)
 
 	var contextSection strings.Builder
 	if memoryContext != "" {
@@ -192,7 +313,7 @@ func (s *IntelligenceService) GeneratePlan(ctx context.Context, intent string, c
 	req := GenerateRequest{
 		Model:       tier.PrimaryModel,
 		MaxTokens:   tier.MaxOutputTokens,
-		Temperature: 0.2,
+		Temperature: temperature,
 		Messages: []ChatMsg{
 			{
 				Role: "system",
@@ -248,17 +369,159 @@ Respond with ONLY the JSON object.` + availableToolsSection,
 	}
 
 	// Validate tool_keys against registry if available.
-	if s.toolRegistry != nil {
-		for i, action := range plan.Actions {
-			if !s.toolRegistry.HasTool(action.ToolKey) {
-				return nil, usage, fmt.Errorf("intelligence: plan validation: action[%d] references unknown tool_key %q (not in registry)", i, action.ToolKey)
-			}
-		}
+	if err := validatePlanToolRegistryKeys(&plan, s.toolRegistry); err != nil {
+		return nil, usage, fmt.Errorf("intelligence: plan tool registry validation: %w", err)
 	}
 
 	canonicalizePlan(&plan)
 
 	return &plan, usage, nil
+}
+
+// ArbitratePlans passes multiple candidate plans to an arbitrator LLM and
+// returns the best synthesised plan.
+func (s *IntelligenceService) ArbitratePlans(
+	ctx context.Context,
+	originalIntent string,
+	proposals []GeneratedPlan,
+) (*MoAArbitrationResult, *Usage, error) {
+	if len(proposals) == 0 {
+		return nil, nil, fmt.Errorf("llm: ArbitratePlans: no proposals provided")
+	}
+	if len(proposals) == 1 {
+		return &MoAArbitrationResult{
+			SelectedPlan: proposals[0],
+			Rationale:    "only one proposal",
+		}, &Usage{}, nil
+	}
+	if s.synthesizer == nil {
+		return nil, nil, fmt.Errorf("llm: ArbitratePlans requires synthesizer client")
+	}
+
+	tier := ResolveTierModel("T2")
+	systemPrompt := `You are Brevio's plan arbitrator. You receive multiple candidate plans
+for the same user intent, each produced independently. Your task:
+1. Evaluate each plan for correctness, completeness, minimal steps, and risk.
+2. Select the BEST plan (or synthesise the best elements into one).
+3. Return ONLY a JSON object with fields:
+   "selected_plan": the complete chosen plan (same schema as input plans),
+   "rationale": one sentence explaining your choice,
+   "rejected_count": how many proposals you rejected.
+Return ONLY valid JSON. No markdown.`
+
+	proposalsJSON, err := json.Marshal(map[string]any{
+		"original_intent": originalIntent,
+		"proposals":       proposals,
+	})
+	if err != nil {
+		return nil, nil, fmt.Errorf("llm: ArbitratePlans marshal: %w", err)
+	}
+
+	req := GenerateRequest{
+		Model:       tier.PrimaryModel,
+		MaxTokens:   2048,
+		Temperature: 0.0,
+		Messages: []ChatMsg{
+			{Role: "system", Content: systemPrompt},
+			{Role: "user", Content: string(proposalsJSON)},
+		},
+	}
+
+	resp, usage, err := s.synthesizer.Generate(ctx, req)
+	if err != nil {
+		return nil, usage, fmt.Errorf("llm: ArbitratePlans LLM: %w", err)
+	}
+
+	clean := extractJSON(resp.Content)
+
+	var result MoAArbitrationResult
+	if err := json.Unmarshal([]byte(clean), &result); err != nil {
+		return nil, usage, fmt.Errorf("llm: ArbitratePlans parse: %w", err)
+	}
+	return &result, usage, nil
+}
+
+// GeneratePlanMoA runs ProposalCount parallel planning calls and arbitrates the best.
+// Falls back to single-call planning if disabled or not enough proposals succeed.
+func (s *IntelligenceService) GeneratePlanMoA(
+	ctx context.Context,
+	intent string,
+	confidence float64,
+	payload string,
+	memoryContext string,
+	ragContext string,
+	cfg MoAConfig,
+) (*GeneratedPlan, *Usage, error) {
+	if !cfg.Enabled {
+		return s.GeneratePlan(ctx, intent, confidence, payload, memoryContext, ragContext)
+	}
+	if cfg.ProposalCount < 2 {
+		cfg.ProposalCount = 2
+	}
+	if cfg.ProposalCount > 5 {
+		cfg.ProposalCount = 5
+	}
+	if cfg.TemperatureBase <= 0 {
+		cfg.TemperatureBase = 0.2
+	}
+	if cfg.TemperatureStep <= 0 {
+		cfg.TemperatureStep = 0.15
+	}
+
+	type planResult struct {
+		plan  *GeneratedPlan
+		usage *Usage
+		err   error
+	}
+	results := make(chan planResult, cfg.ProposalCount)
+
+	var wg sync.WaitGroup
+	for i := 0; i < cfg.ProposalCount; i++ {
+		wg.Add(1)
+		temp := cfg.TemperatureBase + float64(i)*cfg.TemperatureStep
+		go func(t float64) {
+			defer wg.Done()
+			p, u, e := s.generatePlanWithTemp(ctx, intent, confidence, payload, memoryContext, ragContext, t, "T2")
+			results <- planResult{p, u, e}
+		}(temp)
+	}
+	wg.Wait()
+	close(results)
+
+	var proposals []GeneratedPlan
+	var totalUsage Usage
+	for r := range results {
+		if r.err == nil && r.plan != nil {
+			proposals = append(proposals, *r.plan)
+		}
+		if r.usage != nil {
+			totalUsage.InputTokens += r.usage.InputTokens
+			totalUsage.OutputTokens += r.usage.OutputTokens
+		}
+	}
+
+	if len(proposals) < 2 {
+		if len(proposals) == 1 {
+			return &proposals[0], &totalUsage, nil
+		}
+		return s.GeneratePlan(ctx, intent, confidence, payload, memoryContext, ragContext)
+	}
+
+	arbResult, arbUsage, err := s.ArbitratePlans(ctx, intent, proposals)
+	if arbUsage != nil {
+		totalUsage.InputTokens += arbUsage.InputTokens
+		totalUsage.OutputTokens += arbUsage.OutputTokens
+	}
+	if err != nil {
+		best := proposals[0]
+		for _, p := range proposals[1:] {
+			if p.Confidence > best.Confidence {
+				best = p
+			}
+		}
+		return &best, &totalUsage, nil
+	}
+	return &arbResult.SelectedPlan, &totalUsage, nil
 }
 
 // SynthesizeResponse calls the LLM to generate a user-facing response.
@@ -369,6 +632,56 @@ Respond with ONLY the JSON object.`,
 	return &result, usage, nil
 }
 
+// VerifySteps evaluates all step results in a single batched LLM call.
+// Uses T1 (fast/cheap) model. Returns one StepEvalResult per input, same order.
+func (s *IntelligenceService) VerifySteps(ctx context.Context, inputs []StepEvalInput) ([]StepEvalResult, *Usage, error) {
+	if s.synthesizer == nil {
+		return nil, nil, fmt.Errorf("llm: VerifySteps requires synthesizer client")
+	}
+	if len(inputs) == 0 {
+		return []StepEvalResult{}, &Usage{}, nil
+	}
+
+	tier := ResolveTierModel("T1")
+	systemPrompt := `You are Brevio's step evaluator. For each step provided, output a JSON array
+where each element corresponds to the input step (same order) and contains:
+- "verdict": "pass", "fail", or "uncertain"
+- "explanation": one sentence describing the outcome
+- "retry_hint": if verdict is "fail", a specific actionable fix; otherwise ""
+Return ONLY the JSON array. No markdown, no preamble.`
+
+	inputJSON, err := json.Marshal(inputs)
+	if err != nil {
+		return nil, nil, fmt.Errorf("llm: VerifySteps marshal: %w", err)
+	}
+
+	req := GenerateRequest{
+		Model:       tier.PrimaryModel,
+		MaxTokens:   1024,
+		Temperature: 0.0,
+		Messages: []ChatMsg{
+			{Role: "system", Content: systemPrompt},
+			{Role: "user", Content: string(inputJSON)},
+		},
+	}
+
+	resp, usage, err := s.synthesizer.Generate(ctx, req)
+	if err != nil {
+		return nil, usage, fmt.Errorf("llm: VerifySteps LLM call: %w", err)
+	}
+
+	clean := extractJSON(resp.Content)
+
+	var results []StepEvalResult
+	if err := json.Unmarshal([]byte(clean), &results); err != nil {
+		return nil, usage, fmt.Errorf("llm: VerifySteps parse: %w", err)
+	}
+	if len(results) != len(inputs) {
+		return nil, usage, fmt.Errorf("llm: VerifySteps expected %d results, got %d", len(inputs), len(results))
+	}
+	return results, usage, nil
+}
+
 // ValidateStrictPlanJSON parses and validates a plan JSON string against the
 // canonical schema. Returns a non-retryable error if the plan is structurally invalid.
 func ValidateStrictPlanJSON(raw string) (*GeneratedPlan, error) {
@@ -382,6 +695,51 @@ func ValidateStrictPlanJSON(raw string) (*GeneratedPlan, error) {
 	}
 	canonicalizePlan(&plan)
 	return &plan, nil
+}
+
+// ValidateToolKey returns nil if the key format is valid, or a descriptive error.
+// Exported so other packages (executor, hands) can validate without the full service.
+func ValidateToolKey(toolKey string) error {
+	if strings.TrimSpace(toolKey) == "" {
+		return fmt.Errorf("tool_key is required (got empty string)")
+	}
+	if !validToolKeyPattern.MatchString(toolKey) {
+		return fmt.Errorf(
+			"invalid tool_key format %q: must be 1–4 dot-separated lowercase segments "+
+				"(e.g. \"web_search\", \"google_gmail.read_email\", \"some.tool.v2\")",
+			toolKey,
+		)
+	}
+	return nil
+}
+
+// validatePlanToolRegistryKeys checks every action's tool_key exists in the registry.
+// Returns a descriptive error listing available keys when any are missing.
+func validatePlanToolRegistryKeys(plan *GeneratedPlan, registry ToolRegistry) error {
+	if registry == nil || plan == nil {
+		return nil
+	}
+	available := registry.ToolKeys()
+	if len(available) == 0 {
+		return nil
+	}
+	availableSet := make(map[string]struct{}, len(available))
+	for _, k := range available {
+		availableSet[k] = struct{}{}
+	}
+	var missing []string
+	for _, action := range plan.Actions {
+		if _, ok := availableSet[action.ToolKey]; !ok {
+			missing = append(missing, action.ToolKey)
+		}
+	}
+	if len(missing) == 0 {
+		return nil
+	}
+	return fmt.Errorf(
+		"plan references unknown tool keys %v; available tools: %v",
+		missing, available,
+	)
 }
 
 // validatePlan checks structural validity of a generated plan.
@@ -402,11 +760,8 @@ func validatePlan(plan *GeneratedPlan) error {
 	}
 
 	for i, action := range plan.Actions {
-		if action.ToolKey == "" {
-			return fmt.Errorf("action[%d] tool_key is required", i)
-		}
-		if !validToolKeyPattern.MatchString(action.ToolKey) {
-			return fmt.Errorf("action[%d] invalid tool_key format: %q", i, action.ToolKey)
+		if err := ValidateToolKey(action.ToolKey); err != nil {
+			return fmt.Errorf("action[%d]: %w", i, err)
 		}
 		validPhase := map[string]bool{"gather": true, "act": true, "verify": true}
 		if !validPhase[action.Phase] {

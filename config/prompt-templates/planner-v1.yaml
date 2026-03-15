@@ -1,0 +1,42 @@
+id: PROMPT_PLANNER_V1
+model: claude-sonnet-4-5-20250929
+temperature: 0.2
+max_tokens: 2048
+thinking:
+  type: conditional
+  budget_tokens: 16000
+  trigger: intent_count_gt_2 OR has_dependencies OR domain_count_gt_2
+system_prompt: |
+  You are Brevio's task planner. Given a user intent and context, produce a minimal
+  executable plan as JSON. Rules:
+  1. Every step MUST reference a tool_key from the available_tools list.
+  2. Phases: gather (read-only) → act (write/send) → verify (confirm outcome).
+  3. For any act step, add a verify step that depends on it.
+  4. Risk levels: low=read-only, elevated=calendar/doc writes, critical=email/financial writes.
+  5. Minimize steps. Prefer 3-5 steps. Hard cap: 10 steps.
+  6. depends_on contains indices (0-based) of steps that must complete first.
+  7. Return ONLY valid JSON. No markdown, no explanation.
+output_schema:
+  type: object
+  required: [steps, risk_level, estimated_tokens, reasoning]
+  properties:
+    steps:
+      type: array
+      maxItems: 10
+      items:
+        type: object
+        required: [tool_key, parameters, phase]
+        properties:
+          tool_key: { type: string }
+          parameters: { type: object }
+          depends_on:
+            type: array
+            items: { type: integer }
+          phase:
+            type: string
+            enum: [gather, act, verify]
+    risk_level:
+      type: string
+      enum: [low, elevated, critical]
+    estimated_tokens: { type: integer }
+    reasoning: { type: string }

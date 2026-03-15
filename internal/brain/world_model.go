@@ -2,6 +2,7 @@ package brain
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -94,6 +95,50 @@ func (wm *WorldModelService) GetFacts(workspaceID, subject string) []WorldFact {
 		}
 	}
 	return result
+}
+
+// StoreFact stores a fact learned from a tool execution output.
+func (wm *WorldModelService) StoreFact(workspaceID, toolKey, content string) error {
+	if strings.TrimSpace(workspaceID) == "" || strings.TrimSpace(content) == "" {
+		return nil
+	}
+	_, err := wm.AddFact(workspaceID, toolKey, "tool_output", content, toolKey)
+	return err
+}
+
+// QueryFacts retrieves all facts for a workspace, sorted by LearnedAt DESC.
+// Returns empty slice (never nil) if no facts exist.
+func (wm *WorldModelService) QueryFacts(workspaceID string) []WorldFact {
+	wm.mu.Lock()
+	defer wm.mu.Unlock()
+
+	facts, ok := wm.facts[workspaceID]
+	if !ok || len(facts) == 0 {
+		return []WorldFact{}
+	}
+	sorted := make([]WorldFact, len(facts))
+	copy(sorted, facts)
+	sort.Slice(sorted, func(i, j int) bool {
+		return sorted[i].LearnedAt.After(sorted[j].LearnedAt)
+	})
+	return sorted
+}
+
+// SerializeForContext converts facts to a compact string for injection into LLM prompts.
+// Format: "[source] value" — one fact per line.
+// Truncated to maxFacts most-recent entries (default 20).
+func (wm *WorldModelService) SerializeForContext(facts []WorldFact, maxFacts int) string {
+	if maxFacts <= 0 {
+		maxFacts = 20
+	}
+	if len(facts) > maxFacts {
+		facts = facts[:maxFacts]
+	}
+	var sb strings.Builder
+	for _, f := range facts {
+		sb.WriteString(fmt.Sprintf("[%s] %s\n", f.Source, f.Value))
+	}
+	return strings.TrimSpace(sb.String())
 }
 
 // CheckFact checks if a specific fact exists for a subject and predicate.

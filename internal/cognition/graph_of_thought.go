@@ -296,6 +296,33 @@ func (e *GoTEngine) findBestPath(graph *ThoughtGraph, nodeID string) ([]string, 
 	return append([]string{nodeID}, bestPath...), (node.Confidence + bestConf) / 2.0
 }
 
+// AddHypothesis creates a hypothesis node branching from the graph root.
+// Convenience wrapper used by PlannerStep during multi-path planning.
+func (e *GoTEngine) AddHypothesis(graphID, content string, confidence float64) (string, error) {
+	e.mu.Lock()
+	graph, ok := e.graphs[graphID]
+	if !ok {
+		e.mu.Unlock()
+		return "", fmt.Errorf("got: graph %q not found", graphID)
+	}
+	rootID := graph.RootID
+	e.mu.Unlock()
+
+	node, err := e.Branch(graphID, rootID, content, "hypothesis")
+	if err != nil {
+		return "", err
+	}
+
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if g, ok := e.graphs[graphID]; ok {
+		if n, ok := g.Nodes[node.ID]; ok {
+			n.Confidence = confidence
+		}
+	}
+	return node.ID, nil
+}
+
 // GetBestConclusion returns the conclusion node with the highest confidence.
 func (e *GoTEngine) GetBestConclusion(graphID string) (*ThoughtNode, error) {
 	e.mu.Lock()

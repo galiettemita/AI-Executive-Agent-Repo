@@ -1,6 +1,7 @@
 package brain
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"sync"
@@ -18,12 +19,15 @@ type CriticOutput struct {
 	FailureModes         []string           `json:"failure_modes"`
 	ImprovementDirective string             `json:"improvement_directive"`
 	CreatedAt            time.Time          `json:"created_at"`
+	WorkspaceID          string             `json:"workspace_id,omitempty"`
+	RequestID            string             `json:"request_id,omitempty"`
+	Iteration            int                `json:"iteration,omitempty"`
 }
 
 // LessonCandidate represents a potential lesson extracted by the reflector.
 type LessonCandidate struct {
-	Topic      string `json:"topic"`
-	Lesson     string `json:"lesson"`
+	Topic      string  `json:"topic"`
+	Lesson     string  `json:"lesson"`
 	Confidence float64 `json:"confidence"`
 }
 
@@ -46,20 +50,97 @@ type ExecutionTrace struct {
 	Metadata    map[string]string `json:"metadata"`
 }
 
+// CriticTraceRepository persists critic outputs for long-term analytics.
+// A nil implementation is valid — disables persistence.
+type CriticTraceRepository interface {
+	Save(ctx context.Context, output CriticOutput) error
+}
+
+// ringBuffer is a fixed-size circular buffer for CriticOutput entries.
+type ringBuffer struct {
+	entries []CriticOutput
+	head    int
+	count   int
+	cap     int
+}
+
+func newRingBuffer(capacity int) *ringBuffer {
+	if capacity <= 0 {
+		capacity = 1000
+	}
+	return &ringBuffer{entries: make([]CriticOutput, capacity), cap: capacity}
+}
+
+// push adds an entry, overwriting the oldest when full.
+func (r *ringBuffer) push(entry CriticOutput) {
+	r.entries[r.head] = entry
+	r.head = (r.head + 1) % r.cap
+	if r.count < r.cap {
+		r.count++
+	}
+}
+
+// snapshot returns a copy of all entries in insertion order (oldest first).
+func (r *ringBuffer) snapshot() []CriticOutput {
+	if r.count == 0 {
+		return nil
+	}
+	out := make([]CriticOutput, r.count)
+	start := (r.head - r.count + r.cap) % r.cap
+	for i := 0; i < r.count; i++ {
+		out[i] = r.entries[(start+i)%r.cap]
+	}
+	return out
+}
+
+// CriticReflectorConfig holds configuration for the CriticReflectorService.
+type CriticReflectorConfig struct {
+	PassThreshold  float64
+	RingBufferSize int                   // default 1000
+	Repository     CriticTraceRepository // nil = in-memory only
+}
+
 // CriticReflectorService implements the CRITIC and REFLECTOR intelligence modules.
 type CriticReflectorService struct {
-	mu           sync.Mutex
-	history      []CriticOutput
+	mu            sync.RWMutex
+	ring          *ringBuffer
+	repository    CriticTraceRepository
 	passThreshold float64
-	now          func() time.Time
+	now           func() time.Time
 }
 
 // NewCriticReflectorService creates a new critic/reflector service.
 func NewCriticReflectorService() *CriticReflectorService {
+	return NewCriticReflectorServiceWithConfig(CriticReflectorConfig{})
+}
+
+// NewCriticReflectorServiceWithConfig creates a new critic/reflector service with config.
+func NewCriticReflectorServiceWithConfig(cfg CriticReflectorConfig) *CriticReflectorService {
+	threshold := cfg.PassThreshold
+	if threshold <= 0 {
+		threshold = 0.7
+	}
 	return &CriticReflectorService{
-		history:       []CriticOutput{},
-		passThreshold: 0.7,
+		ring:          newRingBuffer(cfg.RingBufferSize),
+		repository:    cfg.Repository,
+		passThreshold: threshold,
 		now:           func() time.Time { return time.Now().UTC() },
+	}
+}
+
+// record stores a critic output in the ring buffer and optionally persists it.
+func (s *CriticReflectorService) record(output CriticOutput) {
+	s.mu.Lock()
+	s.ring.push(output)
+	repo := s.repository
+	s.mu.Unlock()
+
+	if repo != nil {
+		go func() {
+			if err := repo.Save(context.Background(), output); err != nil {
+				_ = err
+			}
+		}()
 	}
 }
 
@@ -140,11 +221,10 @@ func (s *CriticReflectorService) Critique(trace ExecutionTrace) (*CriticOutput, 
 		FailureModes:         failureModes,
 		ImprovementDirective: directive,
 		CreatedAt:            s.now(),
+		WorkspaceID:          trace.WorkspaceID,
 	}
 
-	s.mu.Lock()
-	s.history = append(s.history, *output)
-	s.mu.Unlock()
+	s.record(*output)
 
 	return output, nil
 }
@@ -195,10 +275,7 @@ func (s *CriticReflectorService) Reflect(criticOutput *CriticOutput, trace Execu
 
 // GetCritiqueHistory returns all stored critique outputs.
 func (s *CriticReflectorService) GetCritiqueHistory() []CriticOutput {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	out := make([]CriticOutput, len(s.history))
-	copy(out, s.history)
-	return out
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.ring.snapshot()
 }

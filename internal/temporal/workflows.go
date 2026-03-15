@@ -83,7 +83,32 @@ func MessageProcessingWorkflow(ctx workflow.Context, input MessageProcessingWork
 		}, nil
 	}
 
-	// Step 2: Classify intent (deterministic parameters, fixed temperature)
+	// DEPLOYMENT NOTE (2026-03): RetrieveMemoryActivity and SearchRAGActivity now launch
+	// speculatively in parallel with ClassifyIntentActivity. In-flight workflow instances
+	// started before this deployment will encounter a non-determinism error during replay.
+	// Drain or terminate all in-flight MessageProcessingWorkflow instances before deploying.
+
+	// Step 2, 3, 4 — Launch memory and RAG speculatively while classification runs.
+	// All three only need validateResult.NormalizedPayload from Step 1.
+
+	// Launch memory and RAG immediately (non-blocking).
+	var memFuture workflow.Future
+	memFuture = workflow.ExecuteActivity(ctx, a.RetrieveMemoryActivity, MemoryRetrieveInput{
+		MessageID:   input.MessageID,
+		WorkspaceID: input.WorkspaceID,
+		Query:       validateResult.NormalizedPayload,
+		MaxItems:    10,
+	})
+
+	var ragFuture workflow.Future
+	ragFuture = workflow.ExecuteActivity(ctx, a.SearchRAGActivity, RAGSearchInput{
+		MessageID:   input.MessageID,
+		WorkspaceID: input.WorkspaceID,
+		Query:       validateResult.NormalizedPayload,
+		TopK:        5,
+	})
+
+	// Classify runs concurrently — block here until classification completes.
 	classifyAO := workflow.ActivityOptions{
 		StartToCloseTimeout: 120 * time.Second,
 		RetryPolicy: &temporal.RetryPolicy{
@@ -96,12 +121,16 @@ func MessageProcessingWorkflow(ctx workflow.Context, input MessageProcessingWork
 	}
 	ctxClassify := workflow.WithActivityOptions(ctx, classifyAO)
 	var classifyResult ClassifyIntentResult
-	err = workflow.ExecuteActivity(ctxClassify, a.ClassifyIntentActivity, ClassifyIntentInput{
+	if err := workflow.ExecuteActivity(ctxClassify, a.ClassifyIntentActivity, ClassifyIntentInput{
 		MessageID:   input.MessageID,
 		WorkspaceID: input.WorkspaceID,
 		Payload:     validateResult.NormalizedPayload,
-	}).Get(ctx, &classifyResult)
-	if err != nil {
+	}).Get(ctx, &classifyResult); err != nil {
+		// Must join speculative futures before returning.
+		var discardMem MemoryRetrieveResult
+		_ = memFuture.Get(ctx, &discardMem)
+		var discardRAG RAGSearchResult
+		_ = ragFuture.Get(ctx, &discardRAG)
 		return &MessageProcessingWorkflowResult{
 			WorkflowID:    "msg-" + input.MessageID,
 			TerminalState: "FAILED",
@@ -109,28 +138,15 @@ func MessageProcessingWorkflow(ctx workflow.Context, input MessageProcessingWork
 		}, nil
 	}
 
-	// Step 3: Retrieve memory (deterministic ordering: score DESC, ID ASC)
+	// Join speculative futures — memory and RAG failures are non-fatal.
 	var memResult MemoryRetrieveResult
-	err = workflow.ExecuteActivity(ctx, a.RetrieveMemoryActivity, MemoryRetrieveInput{
-		MessageID:   input.MessageID,
-		WorkspaceID: input.WorkspaceID,
-		Query:       validateResult.NormalizedPayload,
-		MaxItems:    10,
-	}).Get(ctx, &memResult)
-	if err != nil {
+	if err := memFuture.Get(ctx, &memResult); err != nil {
 		logger.Warn("memory retrieval failed, continuing without memory", "error", err)
 		memResult = MemoryRetrieveResult{Items: []MemoryItem{}}
 	}
 
-	// Step 4: RAG search (deterministic ordering: score DESC, ChunkID ASC)
 	var ragResult RAGSearchResult
-	err = workflow.ExecuteActivity(ctx, a.SearchRAGActivity, RAGSearchInput{
-		MessageID:   input.MessageID,
-		WorkspaceID: input.WorkspaceID,
-		Query:       validateResult.NormalizedPayload,
-		TopK:        5,
-	}).Get(ctx, &ragResult)
-	if err != nil {
+	if err := ragFuture.Get(ctx, &ragResult); err != nil {
 		logger.Warn("RAG search failed, continuing without RAG", "error", err)
 		ragResult = RAGSearchResult{Chunks: []RAGChunk{}}
 	}
