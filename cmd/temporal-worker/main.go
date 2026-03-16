@@ -21,6 +21,7 @@ import (
 	eqpkg "github.com/brevio/brevio/internal/eq"
 	executorpkg "github.com/brevio/brevio/internal/executor"
 	llmpkg "github.com/brevio/brevio/internal/llm"
+	policypkg "github.com/brevio/brevio/internal/policy"
 	memorypkg "github.com/brevio/brevio/internal/memory"
 	onboardingpkg "github.com/brevio/brevio/internal/onboarding"
 	"github.com/brevio/brevio/internal/outbox"
@@ -57,11 +58,19 @@ func main() {
 	// Bootstrap LLM intelligence layer from environment variables.
 	llmSvc := llmpkg.BootstrapService()
 
+	// Bootstrap OPA policy evaluator.
+	opaEval, opaErr := policypkg.NewEvaluator()
+	if opaErr != nil {
+		log.Fatalf("OPA evaluator init failed: %v", opaErr)
+	}
+	logger.Info("opa_evaluator_ready", map[string]any{"status": "policies_loaded"})
+
 	// Build activity dependencies based on runtime environment.
 	// When DATABASE_URL is set, activities use pgx-backed repositories and
 	// the transactional outbox service. Otherwise, degraded/test mode.
 	deps := breviotemporal.ActivityDeps{
-		LLMService: llmSvc,
+		LLMService:   llmSvc,
+		OPAEvaluator: opaEval,
 	}
 	dbURL := strings.TrimSpace(os.Getenv("DATABASE_URL"))
 	if dbURL != "" {

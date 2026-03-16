@@ -26,6 +26,7 @@ import (
 	"github.com/brevio/brevio/internal/outbox"
 	"github.com/brevio/brevio/internal/rag"
 	"github.com/brevio/brevio/internal/gateway"
+	"github.com/brevio/brevio/internal/policy"
 	"github.com/brevio/brevio/internal/trust"
 	"github.com/brevio/brevio/internal/voice/worker"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -296,6 +297,9 @@ type ActivityDeps struct {
 
 	// Working memory tier: Redis-backed in-flight task state.
 	WorkingMemory WorkingMemoryService
+
+	// OPA policy evaluator.
+	OPAEvaluator *policy.Evaluator
 }
 
 // WorkingMemoryService is the minimal interface for working memory eviction in activities.
@@ -352,6 +356,9 @@ type Activities struct {
 	counterfactualSvc *brain.CounterfactualService
 	embedProvider     rag.EmbeddingProvider
 
+	// OPA policy evaluator. Nil = policy gates skipped (dev/test mode only).
+	opaEvaluator *policy.Evaluator
+
 	// Observability counters for outbox dispatch.
 	outboxDispatched atomic.Int64
 	outboxFailed     atomic.Int64
@@ -392,6 +399,7 @@ func NewActivitiesWithProdDeps(deps ActivityDeps) *Activities {
 		phoneVerifier:    deps.PhoneVerifier,
 		handsExecutor:    deps.HandsExecutor,
 		workingMemory:   deps.WorkingMemory,
+		opaEvaluator:    deps.OPAEvaluator,
 	}
 }
 
@@ -607,7 +615,7 @@ func (a *Activities) deterministicPlanFallback(planID, intent string) *GenerateP
 }
 
 func (a *Activities) AuthorizePlanActivity(ctx context.Context, input AuthorizePlanInput) (*AuthorizePlanResult, error) {
-	// NNR-107: Kill switch evaluation precedes ALL other gates.
+	// Gate 0: Kill switch — runs first, unbypassable (NNR-107).
 	if a.killSwitchCheck != nil {
 		active, err := a.killSwitchCheck.IsActive(ctx, input.WorkspaceID, "")
 		if err != nil {
@@ -618,7 +626,28 @@ func (a *Activities) AuthorizePlanActivity(ctx context.Context, input AuthorizeP
 		}
 	}
 
-	// Skill ACL checks for each tool key.
+	// Gate 1: OPA full policy evaluation (autonomy, budget, write-gate).
+	if a.opaEvaluator != nil {
+		planInput := policy.PlanAuthzInput{
+			WorkspaceID: input.WorkspaceID,
+			PlanID:      input.PlanID,
+			ToolKeys:    input.ToolKeys,
+			RiskLevel:   input.RiskLevel,
+			Autonomy:    "A1", // safe default; enriched from workspace settings in production
+			BudgetCents: 0,
+			UsedCents:   0,
+			UserTier:    "free",
+		}
+		decision := a.opaEvaluator.EvaluatePlan(ctx, planInput)
+		if !decision.Allowed {
+			return &AuthorizePlanResult{
+				Decision: "deny",
+				Reason:   decision.Reason,
+			}, nil
+		}
+	}
+
+	// Gate 2: Skill ACL per tool key.
 	if a.skillACLCheck != nil {
 		for _, toolKey := range input.ToolKeys {
 			allowed, hasOverride, err := a.skillACLCheck.IsSkillAllowed(ctx, input.WorkspaceID, "", toolKey)

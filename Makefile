@@ -1,6 +1,21 @@
-.PHONY: dev build test lint migrate db-verify docker-build docker-build-infra contracts acceptance policy-validate ci ci-full load-test security-validate infra-validate api-docs api-docs-check tools-md tools-md-check skills-scaffolds-check proto-validate evals eval generate-remote-catalog-keys mcp-wave1-checklist mcp-wave56-checklist mcp-fleet-validate mcp-runtime-rollout deploy-helm staging-smoke-tests external-closeout-check external-closeout-regression-check external-phase-transition-check production-deployment-signoff-check production-canary-check production-deployment-todo production-post-deploy-validation production-phase-sync phase-closure-manifest phase-handoff-bundle phase-status go-live-signoff go-live-approval-packet go-live-approval-confirm manual-closeout-todo manual-provider-steps manual-closeout-batch-commands manual-closeout-confirm manual-closeout-unconfirm external-phase-sync local-verify audit
+.PHONY: opa-sync opa-test opa-verify dev build test lint migrate db-verify docker-build docker-build-infra contracts acceptance policy-validate ci ci-full load-test security-validate infra-validate api-docs api-docs-check tools-md tools-md-check skills-scaffolds-check proto-validate evals eval generate-remote-catalog-keys mcp-wave1-checklist mcp-wave56-checklist mcp-fleet-validate mcp-runtime-rollout deploy-helm staging-smoke-tests external-closeout-check external-closeout-regression-check external-phase-transition-check production-deployment-signoff-check production-canary-check production-deployment-todo production-post-deploy-validation production-phase-sync phase-closure-manifest phase-handoff-bundle phase-status go-live-signoff go-live-approval-packet go-live-approval-confirm manual-closeout-todo manual-provider-steps manual-closeout-batch-commands manual-closeout-confirm manual-closeout-unconfirm external-phase-sync local-verify audit
 
 GO_EXEC := ./scripts/dev/go_exec.sh
+
+opa-sync:
+	@mkdir -p internal/policy/rego
+	@cp policies/brevio/authz.rego         internal/policy/rego/authz.rego
+	@cp policies/tool_write_gate.rego      internal/policy/rego/tool_write_gate.rego
+	@cp policies/autonomy.rego             internal/policy/rego/autonomy.rego
+	@cp policies/budget_enforcement.rego   internal/policy/rego/budget_enforcement.rego
+	@cp policies/v10_gates.rego            internal/policy/rego/v10_gates.rego
+	@echo "OPA policies synced."
+
+opa-test:
+	$(GO_EXEC) test -race -count=1 ./internal/policy/...
+
+opa-verify: opa-sync opa-test
+	@echo "OPA policies verified."
 GOFMT_EXEC := ./scripts/dev/gofmt_exec.sh
 
 dev:
