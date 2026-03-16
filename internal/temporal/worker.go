@@ -3,6 +3,7 @@ package temporal
 import (
 	"fmt"
 
+	memorypkg "github.com/brevio/brevio/internal/memory"
 	"github.com/brevio/brevio/internal/workflows"
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/worker"
@@ -210,6 +211,14 @@ func NewWorkerWithDeps(c client.Client, taskQueue string, deps ActivityDeps) wor
 	w.RegisterActivity(activities.EnforceContextBudgetActivity)
 	w.RegisterActivity(activities.EvaluateLatencyBudgetActivity)
 	w.RegisterActivity(activities.WarmFastPathCacheActivity)
+
+	// Memory decay and RAPTOR consolidation cron workflows.
+	w.RegisterWorkflow(memorypkg.DecaySweepWorkflow)
+	w.RegisterWorkflow(memorypkg.RaptorConsolidationWorkflow)
+	decayActivities := &memorypkg.DecaySweepActivities{DecaySvc: memorypkg.NewMemoryDecayService()}
+	w.RegisterActivity(decayActivities.DecaySweepActivity)
+	raptorActivities := &memorypkg.RaptorConsolidationActivities{MemoryRepo: deps.MemoryRepo}
+	w.RegisterActivity(raptorActivities.RaptorConsolidationActivity)
 
 	// V9.1 soft intelligence activities (method-based).
 	v91 := workflows.NewV91Activities()

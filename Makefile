@@ -1,6 +1,8 @@
-.PHONY: proto opa-sync opa-test opa-verify dev build test lint migrate db-verify docker-build docker-build-infra contracts acceptance policy-validate ci ci-full load-test security-validate infra-validate api-docs api-docs-check tools-md tools-md-check skills-scaffolds-check proto-validate evals eval generate-remote-catalog-keys mcp-wave1-checklist mcp-wave56-checklist mcp-fleet-validate mcp-runtime-rollout deploy-helm staging-smoke-tests external-closeout-check external-closeout-regression-check external-phase-transition-check production-deployment-signoff-check production-canary-check production-deployment-todo production-post-deploy-validation production-phase-sync phase-closure-manifest phase-handoff-bundle phase-status go-live-signoff go-live-approval-packet go-live-approval-confirm manual-closeout-todo manual-provider-steps manual-closeout-batch-commands manual-closeout-confirm manual-closeout-unconfirm external-phase-sync local-verify audit
+.PHONY: proto opa-sync opa-test opa-verify smoke smoke-k6 post-deploy-verify dev build test lint migrate db-verify docker-build docker-build-infra contracts acceptance policy-validate ci ci-full load-test security-validate infra-validate api-docs api-docs-check tools-md tools-md-check skills-scaffolds-check proto-validate evals eval generate-remote-catalog-keys mcp-wave1-checklist mcp-wave56-checklist mcp-fleet-validate mcp-runtime-rollout deploy-helm staging-smoke-tests external-closeout-check external-closeout-regression-check external-phase-transition-check production-deployment-signoff-check production-canary-check production-deployment-todo production-post-deploy-validation production-phase-sync phase-closure-manifest phase-handoff-bundle phase-status go-live-signoff go-live-approval-packet go-live-approval-confirm manual-closeout-todo manual-provider-steps manual-closeout-batch-commands manual-closeout-confirm manual-closeout-unconfirm external-phase-sync local-verify audit
 
 GO_EXEC := ./scripts/dev/go_exec.sh
+GATEWAY_URL ?= http://localhost:18080
+BRAIN_URL   ?= http://localhost:18081
 
 PROTO_OUT := .
 PROTO_OPTS := --go_out=$(PROTO_OUT) --go_opt=paths=source_relative \
@@ -27,6 +29,18 @@ opa-test:
 
 opa-verify: opa-sync opa-test
 	@echo "OPA policies verified."
+
+smoke:
+	@echo "Running Go smoke tests against $(BRAIN_URL)..."
+	GATEWAY_URL=$(GATEWAY_URL) BRAIN_URL=$(BRAIN_URL) $(GO_EXEC) test -v -tags smoke -timeout=60s -run TestSmoke -count=1 ./tests/smoke/...
+
+smoke-k6:
+	@command -v k6 >/dev/null 2>&1 || { echo "Install k6: https://k6.io"; exit 1; }
+	GATEWAY_URL=$(GATEWAY_URL) BRAIN_URL=$(BRAIN_URL) k6 run tests/load/k6-smoke.js
+
+post-deploy-verify: smoke smoke-k6
+	@echo "Post-deploy verification complete."
+
 GOFMT_EXEC := ./scripts/dev/gofmt_exec.sh
 
 dev:

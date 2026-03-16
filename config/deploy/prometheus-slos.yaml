@@ -1,0 +1,88 @@
+# Brevio SLO Recording Rules and Alerts
+# Load this file into your Prometheus configuration under rule_files.
+
+groups:
+- name: brevio_slo_recording
+  interval: 30s
+  rules:
+  - record: job:brevio_gateway_requests:rate5m
+    expr: sum(rate(http_requests_total{job="brevio-gateway"}[5m])) by (status_class)
+  - record: job:brevio_gateway_errors:rate5m
+    expr: sum(rate(http_requests_total{job="brevio-gateway",status=~"5.."}[5m]))
+  - record: job:brevio_gateway_availability:ratio5m
+    expr: >
+      1 - (job:brevio_gateway_errors:rate5m
+          / sum(rate(http_requests_total{job="brevio-gateway"}[5m])))
+  - record: job:brevio_classify_latency_p99:5m
+    expr: >
+      histogram_quantile(0.99,
+        rate(brevio_activity_duration_seconds_bucket{activity="ClassifyIntentActivity"}[5m]))
+  - record: job:brevio_plan_latency_p99:5m
+    expr: >
+      histogram_quantile(0.99,
+        rate(brevio_activity_duration_seconds_bucket{activity="GeneratePlanActivity"}[5m]))
+  - record: job:brevio_tool_success_rate:5m
+    expr: >
+      sum(rate(brevio_tool_executions_total{status="success"}[5m]))
+      / sum(rate(brevio_tool_executions_total[5m]))
+  - record: job:brevio_e2e_latency_p95:5m
+    expr: >
+      histogram_quantile(0.95,
+        rate(brevio_workflow_duration_seconds_bucket{workflow="MessageProcessingWorkflow"}[5m]))
+
+- name: brevio_slo_alerts
+  rules:
+  - alert: BrevioGatewayAvailabilityBreach
+    expr: job:brevio_gateway_availability:ratio5m < 0.999
+    for: 5m
+    labels:
+      severity: critical
+      slo: gateway_availability_99_9
+    annotations:
+      summary: "Brevio gateway availability below 99.9% SLO"
+      description: "Current: {{ $value | humanizePercentage }}. SLO: 99.9%."
+  - alert: BrevioBrainClassifyLatencyBreach
+    expr: job:brevio_classify_latency_p99:5m > 2
+    for: 5m
+    labels:
+      severity: warning
+      slo: classify_p99_2s
+    annotations:
+      summary: "Intent classification p99 latency exceeds 2s"
+  - alert: BrevioToolExecutionSuccessRateBreach
+    expr: job:brevio_tool_success_rate:5m < 0.99
+    for: 5m
+    labels:
+      severity: warning
+      slo: tool_success_99
+    annotations:
+      summary: "Tool execution success rate below 99%"
+  - alert: BrevioE2ELatencyBreach
+    expr: job:brevio_e2e_latency_p95:5m > 15
+    for: 10m
+    labels:
+      severity: warning
+      slo: e2e_p95_15s
+    annotations:
+      summary: "End-to-end message processing p95 exceeds 15s"
+  - alert: BrevioHighAuthzDenialRate
+    expr: >
+      sum(rate(brevio_plan_authorizations_total{decision="deny"}[5m]))
+      / sum(rate(brevio_plan_authorizations_total[5m])) > 0.05
+    for: 5m
+    labels:
+      severity: warning
+      slo: authz_denial_5pct
+    annotations:
+      summary: "Authorization denial rate exceeds 5%"
+  - alert: BrevioHighLLMCostRate
+    expr: >
+      (sum(rate(brevio_llm_tokens_total{provider="anthropic",token_type="input"}[1h])) * 0.000003)
+      + (sum(rate(brevio_llm_tokens_total{provider="anthropic",token_type="output"}[1h])) * 0.000015)
+      > 50
+    for: 15m
+    labels:
+      severity: warning
+      slo: llm_cost_rate
+    annotations:
+      summary: "LLM cost rate exceeds $50/hour"

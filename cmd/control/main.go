@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"log"
+	"net/http"
 	"os"
 	"strconv"
 	"strings"
@@ -10,7 +12,10 @@ import (
 
 	"github.com/brevio/brevio/internal/audit"
 	"github.com/brevio/brevio/internal/control"
+	"github.com/brevio/brevio/internal/exploration"
+	"github.com/brevio/brevio/internal/metrics"
 	runtimeserver "github.com/brevio/brevio/internal/runtime"
+	selfmod "github.com/brevio/brevio/internal/self_modification"
 )
 
 func main() {
@@ -98,6 +103,36 @@ func main() {
 		AuditService: auditSvc,
 		OPAEvaluator: evaluator,
 	})
+	startedAt := time.Now().UTC()
+	mux.HandleFunc("GET /health/deep", func(w http.ResponseWriter, _ *http.Request) {
+		checks := runtimeserver.DeepDependencyChecks(os.Getenv)
+		overall := runtimeserver.OverallStatus(checks)
+		httpStatus := http.StatusOK
+		if overall != "healthy" {
+			httpStatus = http.StatusServiceUnavailable
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(httpStatus)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"status":    overall,
+			"version":   cfg.ServiceVersion,
+			"service":   "control",
+			"checks":    checks,
+			"uptime_ms": time.Since(startedAt).Milliseconds(),
+		})
+	})
+	mux.Handle("GET /metrics", metrics.Handler())
+
+	// Mount capability exploration routes.
+	explorationSvc := exploration.NewService()
+	exploration.RegisterRoutes(mux, explorationSvc)
+	logger.Info("exploration_routes_mounted", map[string]any{"status": "active"})
+
+	// Mount self-modification policy management routes.
+	selfModSvc := selfmod.NewService()
+	selfmod.RegisterRoutes(mux, selfModSvc)
+	logger.Info("self_modification_routes_mounted", map[string]any{"status": "active"})
+
 	handler := logger.Middleware(mux)
 
 	logger.Info("service_start", map[string]any{

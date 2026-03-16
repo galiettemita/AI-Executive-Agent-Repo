@@ -111,6 +111,17 @@ func DeepDependencyChecksWithOptions(options DeepHealthProbeOptions) map[string]
 	return checks
 }
 
+// OverallStatus computes the top-level status from a checks map.
+// Returns "healthy" if all checks are "ok" or "not_configured", "degraded" otherwise.
+func OverallStatus(checks map[string]string) string {
+	for _, v := range checks {
+		if v != DependencyStatusOK && v != DependencyStatusNotConfigured {
+			return "degraded"
+		}
+	}
+	return "healthy"
+}
+
 func parseDatabaseAddress(raw, defaultPort string) (string, error) {
 	trimmed := strings.TrimSpace(raw)
 	if trimmed == "" {

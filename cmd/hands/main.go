@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/brevio/brevio/internal/connectors"
 	"github.com/brevio/brevio/internal/hands"
+	"github.com/brevio/brevio/internal/metrics"
 	runtimeserver "github.com/brevio/brevio/internal/runtime"
 )
 
@@ -58,6 +60,25 @@ func main() {
 
 	mux := http.NewServeMux()
 	svc.RegisterRoutes(mux)
+	startedAt := time.Now().UTC()
+	mux.HandleFunc("GET /health/deep", func(w http.ResponseWriter, _ *http.Request) {
+		checks := runtimeserver.DeepDependencyChecks(os.Getenv)
+		overall := runtimeserver.OverallStatus(checks)
+		httpStatus := http.StatusOK
+		if overall != "healthy" {
+			httpStatus = http.StatusServiceUnavailable
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(httpStatus)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"status":    overall,
+			"version":   "v1.0.0",
+			"service":   "hands",
+			"checks":    checks,
+			"uptime_ms": time.Since(startedAt).Milliseconds(),
+		})
+	})
+	mux.Handle("GET /metrics", metrics.Handler())
 
 	logger := runtimeserver.NewJSONLogger("hands", env)
 	logger.SetOutput(os.Stdout)

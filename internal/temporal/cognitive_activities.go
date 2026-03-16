@@ -116,6 +116,13 @@ func intentToHuman(intentKey string) string {
 	return strings.ReplaceAll(strings.ReplaceAll(intentKey, "_", " "), ".", " → ")
 }
 
+func isSelfModifyingOp(toolKey string) bool {
+	lower := strings.ToLower(toolKey)
+	return strings.Contains(lower, "agent_config") ||
+		strings.Contains(lower, "self_modify") ||
+		strings.Contains(lower, "update_policy")
+}
+
 func isWriteToolKey(key string) bool {
 	lower := strings.ToLower(key)
 	for _, verb := range []string{"create", "send", "delete", "update", "move",

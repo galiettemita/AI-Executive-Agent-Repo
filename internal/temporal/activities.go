@@ -16,6 +16,7 @@ import (
 	"github.com/brevio/brevio/internal/brain"
 	"github.com/brevio/brevio/internal/connectors"
 	"github.com/brevio/brevio/internal/cognition"
+	selfmod "github.com/brevio/brevio/internal/self_modification"
 	contextlayer "github.com/brevio/brevio/internal/context"
 	"github.com/brevio/brevio/internal/eq"
 	"github.com/brevio/brevio/internal/executor"
@@ -27,6 +28,7 @@ import (
 	"github.com/brevio/brevio/internal/outbox"
 	"github.com/brevio/brevio/internal/rag"
 	"github.com/brevio/brevio/internal/gateway"
+	"github.com/brevio/brevio/internal/metrics"
 	"github.com/brevio/brevio/internal/policy"
 	"github.com/brevio/brevio/internal/trust"
 	"github.com/brevio/brevio/internal/voice/worker"
@@ -305,6 +307,9 @@ type ActivityDeps struct {
 
 	// OAuth credential resolver for tool execution.
 	CredentialResolver *connectors.CredentialResolver
+
+	// Self-modification policy service.
+	SelfModService *selfmod.Service
 }
 
 // WorkingMemoryService is the minimal interface for working memory eviction in activities.
@@ -367,6 +372,9 @@ type Activities struct {
 	// OAuth credential resolver for tool execution.
 	credentialResolver *connectors.CredentialResolver
 
+	// Self-modification policy service.
+	selfModSvc *selfmod.Service
+
 	// Observability counters for outbox dispatch.
 	outboxDispatched atomic.Int64
 	outboxFailed     atomic.Int64
@@ -409,6 +417,7 @@ func NewActivitiesWithProdDeps(deps ActivityDeps) *Activities {
 		workingMemory:   deps.WorkingMemory,
 		opaEvaluator:       deps.OPAEvaluator,
 		credentialResolver: deps.CredentialResolver,
+		selfModSvc:         deps.SelfModService,
 	}
 }
 
@@ -623,7 +632,17 @@ func (a *Activities) deterministicPlanFallback(planID, intent string) *GenerateP
 	}
 }
 
-func (a *Activities) AuthorizePlanActivity(ctx context.Context, input AuthorizePlanInput) (*AuthorizePlanResult, error) {
+func (a *Activities) AuthorizePlanActivity(ctx context.Context, input AuthorizePlanInput) (result *AuthorizePlanResult, err error) {
+	authzStart := time.Now()
+	defer func() {
+		decision := "allow"
+		if result != nil && result.Decision == "deny" {
+			decision = "deny"
+		}
+		metrics.RecordAuthorization(decision, input.RiskLevel)
+		metrics.RecordActivity("AuthorizePlanActivity", authzStart, err)
+	}()
+
 	// Gate 0: Kill switch — runs first, unbypassable (NNR-107).
 	if a.killSwitchCheck != nil {
 		active, err := a.killSwitchCheck.IsActive(ctx, input.WorkspaceID, "")
@@ -656,6 +675,25 @@ func (a *Activities) AuthorizePlanActivity(ctx context.Context, input AuthorizeP
 		}
 	}
 
+	// Gate 1b: Self-modification policy check.
+	if a.selfModSvc != nil {
+		for _, toolKey := range input.ToolKeys {
+			if isSelfModifyingOp(toolKey) {
+				decision := a.selfModSvc.EvaluateAction(input.WorkspaceID, selfmod.ActionRequest{
+					WorkspaceID:   input.WorkspaceID,
+					ActionKey:     toolKey,
+					RequestedRisk: input.RiskLevel,
+				})
+				if decision.Decision == "deny" {
+					return &AuthorizePlanResult{
+						Decision: "deny",
+						Reason:   "SELF_MOD_POLICY_DENIED:" + decision.Reason,
+					}, nil
+				}
+			}
+		}
+	}
+
 	// Gate 2: Skill ACL per tool key.
 	if a.skillACLCheck != nil {
 		for _, toolKey := range input.ToolKeys {
@@ -682,7 +720,17 @@ func (a *Activities) AuthorizePlanActivity(ctx context.Context, input AuthorizeP
 	}, nil
 }
 
-func (a *Activities) ExecuteToolActivity(ctx context.Context, input ExecuteToolInput) (*ToolExecutionActivityResult, error) {
+func (a *Activities) ExecuteToolActivity(ctx context.Context, input ExecuteToolInput) (_ *ToolExecutionActivityResult, err error) {
+	execStart := time.Now()
+	defer func() {
+		status := "success"
+		if err != nil {
+			status = "error"
+		}
+		metrics.RecordToolExecution(input.ToolKey, status)
+		metrics.RecordActivity("ExecuteToolActivity", execStart, err)
+	}()
+
 	if input.ReceiptID == "" {
 		return nil, fmt.Errorf("AUTHORIZATION_REQUIRED: no receipt provided")
 	}

@@ -14,6 +14,7 @@ import (
 	"github.com/brevio/brevio/internal/control"
 	"github.com/brevio/brevio/internal/executor"
 	callpkg "github.com/brevio/brevio/internal/hands/call"
+	"github.com/brevio/brevio/internal/metrics"
 	runtimeserver "github.com/brevio/brevio/internal/runtime"
 	"github.com/brevio/brevio/internal/security"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -115,6 +116,7 @@ func main() {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok"))
 	})
+	mux.Handle("GET /metrics", metrics.Handler())
 
 	// T11.2: Tool execution endpoint — simulate or commit tool execution via ProdService.
 	mux.HandleFunc("POST /v1/executor/tool/execute", func(w http.ResponseWriter, r *http.Request) {

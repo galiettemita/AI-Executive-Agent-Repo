@@ -13,6 +13,7 @@ import (
 
 	"github.com/brevio/brevio/internal/executor"
 	"github.com/brevio/brevio/internal/gateway"
+	"github.com/brevio/brevio/internal/metrics"
 	runtimeserver "github.com/brevio/brevio/internal/runtime"
 	brtemporal "github.com/brevio/brevio/internal/temporal"
 	"go.temporal.io/sdk/client"
@@ -109,6 +110,7 @@ func main() {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok"))
 	})
+	mux.Handle("GET /metrics", metrics.Handler())
 
 	// T11.1: Brain ingress — accept inbound message envelope, start MessageProcessingWorkflow.
 	// Idempotency: uses message ID as Temporal workflow ID to prevent duplicate processing.
@@ -152,10 +154,12 @@ func main() {
 
 		run, err := temporalClient.ExecuteWorkflow(context.Background(), opts, brtemporal.MessageProcessingWorkflow, wfInput)
 		if err != nil {
+			metrics.RecordInboundMessage(envelope.Channel, "rejected")
 			writeJSONError(w, http.StatusInternalServerError, fmt.Sprintf("workflow start failed: %v", err))
 			return
 		}
 
+		metrics.RecordInboundMessage(envelope.Channel, "accepted")
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusAccepted)
 		_ = json.NewEncoder(w).Encode(map[string]any{

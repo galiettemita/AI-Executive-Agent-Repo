@@ -29,7 +29,10 @@ import (
 	runtimeserver "github.com/brevio/brevio/internal/runtime"
 	breviotemporal "github.com/brevio/brevio/internal/temporal"
 	trustpkg "github.com/brevio/brevio/internal/trust"
+	workingmemorypkg "github.com/brevio/brevio/internal/workingmemory"
 	"github.com/jackc/pgx/v5/pgxpool"
+	goredis "github.com/redis/go-redis/v9"
+	temporalclient "go.temporal.io/sdk/client"
 )
 
 func main() {
@@ -179,6 +182,22 @@ func main() {
 	deps.OutboxDispatcher = breviotemporal.NewHTTPOutboxDispatcher(30 * time.Second)
 	logger.Info("outbox_dispatcher_wired", map[string]any{"status": "enabled", "type": "http"})
 
+	// Wire working memory tier (Redis-backed).
+	if redisURLForWM := strings.TrimSpace(os.Getenv("REDIS_URL")); redisURLForWM != "" {
+		wmOpts, wmErr := goredis.ParseURL(redisURLForWM)
+		if wmErr != nil {
+			logger.Info("working_memory_redis_parse_error", map[string]any{"error": wmErr.Error()})
+		} else {
+			wmRDB := goredis.NewClient(wmOpts)
+			wmAdapter := workingmemorypkg.NewGoRedisAdapter(wmRDB)
+			wmRepo := workingmemorypkg.NewRepository(wmAdapter)
+			wmLogger := &wmLogAdapter{logger: logger}
+			wmSvc := workingmemorypkg.NewService(wmRepo, wmLogger)
+			deps.WorkingMemory = wmSvc
+			logger.Info("working_memory_initialized", map[string]any{"backend": "redis"})
+		}
+	}
+
 	w := breviotemporal.NewWorkerWithDeps(temporalClient, breviotemporal.TaskQueueCore, deps)
 
 	go func() {
@@ -194,6 +213,38 @@ func main() {
 		"task_queue": breviotemporal.TaskQueueCore,
 		"production": dbURL != "",
 	})
+
+	// Schedule memory decay sweep cron (every 6 hours).
+	{
+		cronOpts := temporalclient.StartWorkflowOptions{
+			ID:           "brevio-memory-decay-sweep-global",
+			TaskQueue:    breviotemporal.TaskQueueCore,
+			CronSchedule: "0 */6 * * *",
+		}
+		_, cronErr := temporalClient.ExecuteWorkflow(context.Background(), cronOpts,
+			memorypkg.DecaySweepWorkflow, memorypkg.DecaySweepWorkflowInput{WorkspaceID: ""})
+		if cronErr != nil {
+			logger.Info("decay_cron_schedule_result", map[string]any{"note": cronErr.Error()})
+		} else {
+			logger.Info("decay_cron_scheduled", map[string]any{"schedule": "0 */6 * * *"})
+		}
+	}
+
+	// Schedule RAPTOR consolidation cron (nightly at 02:00 UTC).
+	{
+		cronOpts := temporalclient.StartWorkflowOptions{
+			ID:           "brevio-raptor-consolidation-nightly",
+			TaskQueue:    breviotemporal.TaskQueueCore,
+			CronSchedule: "0 2 * * *",
+		}
+		_, cronErr := temporalClient.ExecuteWorkflow(context.Background(), cronOpts,
+			memorypkg.RaptorConsolidationWorkflow, memorypkg.RaptorConsolidationWorkflowInput{WorkspaceID: ""})
+		if cronErr != nil {
+			logger.Info("raptor_cron_schedule_result", map[string]any{"note": cronErr.Error()})
+		} else {
+			logger.Info("raptor_cron_scheduled", map[string]any{"schedule": "0 2 * * *"})
+		}
+	}
 
 	mux := http.NewServeMux()
 	startedAt := time.Now().UTC()
@@ -274,4 +325,19 @@ func main() {
 	if err := runtimeserver.ServeWithGracefulShutdown("temporal-worker", cfg.ListenAddr, handler); err != nil {
 		log.Fatalf("temporal worker failed: %v", err)
 	}
+}
+
+// wmLogAdapter adapts runtimeserver.JSONLogger to workingmemory.Logger.
+type wmLogAdapter struct {
+	logger *runtimeserver.JSONLogger
+}
+
+func (a *wmLogAdapter) Info(msg string, args ...any) {
+	a.logger.Info(msg, map[string]any{"args": fmt.Sprint(args...)})
+}
+func (a *wmLogAdapter) Warn(msg string, args ...any) {
+	a.logger.Info("WARN: "+msg, map[string]any{"args": fmt.Sprint(args...)})
+}
+func (a *wmLogAdapter) Error(msg string, args ...any) {
+	a.logger.Info("ERROR: "+msg, map[string]any{"args": fmt.Sprint(args...)})
 }

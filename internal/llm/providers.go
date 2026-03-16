@@ -118,7 +118,7 @@ func DefaultTierModelMapping() map[string]TierModelSelection {
 		"T0": {Tier: "T0", PrimaryModel: ModelAnthropicHaiku, FallbackModel: ModelOpenAIGPT4oMini, MaxOutputTokens: 512},
 		"T1": {Tier: "T1", PrimaryModel: ModelAnthropicHaiku, FallbackModel: ModelOpenAIGPT4oMini, MaxOutputTokens: 1024},
 		"T2": {Tier: "T2", PrimaryModel: ModelAnthropicSonnet, FallbackModel: ModelOpenAIGPT4o, MaxOutputTokens: 4096},
-		"T3": {Tier: "T3", PrimaryModel: ModelAnthropicSonnet, FallbackModel: ModelOpenAIGPT4o, MaxOutputTokens: 8192},
+		"T3": {Tier: "T3", PrimaryModel: ModelAnthropicOpus, FallbackModel: ModelOpenAIGPT4o, MaxOutputTokens: 8192},
 	}
 }
 

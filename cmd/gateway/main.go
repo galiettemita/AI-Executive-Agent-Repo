@@ -2,12 +2,15 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"log"
+	"net/http"
 	"os"
 	"strings"
 	"time"
 
 	"github.com/brevio/brevio/internal/gateway"
+	"github.com/brevio/brevio/internal/metrics"
 	"github.com/brevio/brevio/internal/outbox"
 	runtimeserver "github.com/brevio/brevio/internal/runtime"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -21,6 +24,7 @@ func main() {
 
 	logger := runtimeserver.NewJSONLogger("gateway", cfg.Environment)
 	logger.SetOutput(os.Stdout)
+	startedAt := time.Now().UTC()
 
 	dbURL := strings.TrimSpace(os.Getenv("DATABASE_URL"))
 	if dbURL != "" {
@@ -50,6 +54,24 @@ func main() {
 		}
 
 		mux := gateway.NewProdMux(prodService)
+		mux.HandleFunc("GET /health/deep", func(w http.ResponseWriter, _ *http.Request) {
+			checks := runtimeserver.DeepDependencyChecks(os.Getenv)
+			overall := runtimeserver.OverallStatus(checks)
+			httpStatus := http.StatusOK
+			if overall != "healthy" {
+				httpStatus = http.StatusServiceUnavailable
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(httpStatus)
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"status":    overall,
+				"version":   cfg.ServiceVersion,
+				"service":   "gateway",
+				"checks":    checks,
+				"uptime_ms": time.Since(startedAt).Milliseconds(),
+			})
+		})
+		mux.Handle("GET /metrics", metrics.Handler())
 		handler := logger.Middleware(mux)
 
 		logger.Info("service_start", map[string]any{
@@ -69,6 +91,24 @@ func main() {
 		IMessageWebhookAPIKey: cfg.IMessageWebhookAPIKey,
 	})
 	mux := gateway.NewMux(service)
+	mux.HandleFunc("GET /health/deep", func(w http.ResponseWriter, _ *http.Request) {
+		checks := runtimeserver.DeepDependencyChecks(os.Getenv)
+		overall := runtimeserver.OverallStatus(checks)
+		httpStatus := http.StatusOK
+		if overall != "healthy" {
+			httpStatus = http.StatusServiceUnavailable
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(httpStatus)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"status":    overall,
+			"version":   cfg.ServiceVersion,
+			"service":   "gateway",
+			"checks":    checks,
+			"uptime_ms": time.Since(startedAt).Milliseconds(),
+		})
+	})
+	mux.Handle("GET /metrics", metrics.Handler())
 	handler := logger.Middleware(mux)
 
 	logger.Info("service_start", map[string]any{

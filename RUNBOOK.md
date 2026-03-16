@@ -467,3 +467,90 @@ All LLM and RAG behaviour is controlled via environment variables.
 | `FEATURE_STREAMING_ENABLED` | `false` | Set `true` to enable SSE streaming for synthesis |
 | `MAX_PARALLEL_TOOL_CALLS` | `3` | Temporal tool fan-out concurrency cap (1-10) |
 | `BREVIO_OPUS_ENABLED` | `false` | Set `true` to use Claude Opus 4 as orchestrator model |
+
+---
+
+## SLO Definitions
+
+| SLO | Target | Measurement | Window |
+|-----|--------|-------------|--------|
+| Gateway availability | 99.9% | `job:brevio_gateway_availability:ratio5m` | 5-min rolling |
+| Intent classify p99 | < 2s | `job:brevio_classify_latency_p99:5m` | 5-min rolling |
+| Tool execution success | ≥ 99% | `job:brevio_tool_success_rate:5m` | 5-min rolling |
+| E2E message p95 | < 15s | `job:brevio_e2e_latency_p95:5m` | 5-min rolling |
+| Authorization denial rate | < 5% | `job:brevio_authz_denial_rate:5m` | 5-min rolling |
+| LLM cost rate | < $50/hr | `job:brevio_llm_cost_rate_usd:1h` | 1-hour rolling |
+
+---
+
+## SLO Breach Response Playbook
+
+### Gateway availability < 99.9% (alert: BrevioGatewayAvailabilityBreach)
+
+1. Check pod health: `kubectl -n brevio get pods -l app.kubernetes.io/component=gateway`
+2. If CrashLoopBackOff: `kubectl -n brevio logs -l app.kubernetes.io/component=gateway --previous`
+3. If OOMKilled: increase memory limit in `values-production.yaml`, apply with `helm upgrade`
+4. Emergency scale-up: `kubectl -n brevio scale deployment brevio-gateway --replicas=10`
+5. If recent deploy is the cause: `helm -n brevio rollback brevio`
+
+### Brain classify p99 > 2s (alert: BrevioBrainClassifyLatencyBreach)
+
+1. Check LLM provider status pages: status.anthropic.com / status.openai.com
+2. If provider incident: circuit breaker should auto-activate. Check logs for `circuit_state=open`
+3. If circuit is not firing: verify `RateLimitedClient` and `CircuitBreaker` are wired in bootstrap
+4. Emergency override — force deterministic keyword classification:
+   ```
+   kubectl -n brevio set env deployment/brevio-brain FORCE_DETERMINISTIC_CLASSIFICATION=true
+   ```
+
+### Tool execution failure > 1% (alert: BrevioToolExecutionSuccessRateBreach)
+
+1. Identify failing tools: query `brevio_tool_executions_total{status="error"}` grouped by `tool_key`
+2. If Google/Slack/Notion APIs → check provider status pages
+3. If OAuth token errors → trigger re-auth for affected workspaces
+4. If hands-runtime is down: `kubectl -n brevio rollout restart deployment/brevio-hands`
+
+### High authorization denial rate > 5% (alert: BrevioHighAuthzDenialRate)
+
+1. Query recent denials: `brevio_plan_authorizations_total{decision="deny"}` by reason label
+2. If `KILL_SWITCH_ACTIVE`: check if kill switch was triggered accidentally
+3. If `OPA_EVAL_ERROR`: OPA module failed to load — check `internal/policy/rego/` files
+4. If `SKILL_ACL_DENIED`: workspace ACL may have been incorrectly tightened
+
+### High LLM cost rate (alert: BrevioHighLLMCostRate)
+
+1. Check if spike or sustained: compare 1h vs 24h average
+2. Identify high-spend workspaces via `brevio_llm_tokens_total` labels
+3. Apply emergency budget cap via admin API
+4. Verify budget enforcement policy is active in OPA
+
+---
+
+## Pre-Deploy Checklist
+
+- [ ] `make opa-verify` passes — OPA policies synced and tested
+- [ ] `go test -race ./...` passes — zero test failures
+- [ ] `go vet ./...` passes — no warnings
+- [ ] `npm run validate-registry` passes in `services/hands-runtime/`
+- [ ] `helm lint infra/helm/brevio` passes
+- [ ] All pending DB migrations reviewed
+- [ ] Feature flags for new capabilities set to disabled (default-off)
+- [ ] RUNBOOK.md updated if new services or SLOs changed
+
+## Post-Deploy Verification
+
+- [ ] `make smoke BRAIN_URL=https://brain.production.brevio.com` passes
+- [ ] Deep health green: `curl https://brain.production.brevio.com/health/deep | jq .status`
+- [ ] Prometheus SLO dashboard shows no active alerts
+- [ ] First 10 messages processed successfully (check Temporal UI)
+- [ ] `/metrics` endpoint returning data
+- [ ] No cost anomaly triggered (check 30 min after deploy)
+
+## Incident Severity Levels
+
+| Level | Criteria | Response Time | Examples |
+|-------|----------|---------------|---------|
+| P1 | Gateway down, >10% error rate | 15 min | Gateway crash, DB pool exhausted |
+| P2 | SLO breach > 5 min, data loss risk | 30 min | LLM provider down, OPA eval errors |
+| P3 | SLO at risk, degraded performance | 2 hours | Latency elevated, non-critical skills failing |
+| P4 | Minor anomaly, no user impact | Next business day | Cost spike, log warnings |
