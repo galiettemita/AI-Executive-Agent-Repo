@@ -88,6 +88,12 @@ func NewWorkerWithDeps(c client.Client, taskQueue string, deps ActivityDeps) wor
 	w.RegisterActivity(activities.EnqueueOutboxActivity)
 	w.RegisterActivity(activities.AssessCognitiveStateActivity)
 
+	// Cognitive routing and quality gate activities.
+	w.RegisterActivity(activities.DualProcessRoutingActivity)
+	w.RegisterActivity(activities.ClarificationCheckActivity)
+	w.RegisterActivity(activities.ResponseDriftCheckActivity)
+	w.RegisterActivity(activities.AnalyseSentimentActivity)
+
 	// Voice activities (method-based).
 	w.RegisterActivity(activities.InitVoiceSessionActivity)
 	w.RegisterActivity(activities.ExtractVoiceTasksActivity)

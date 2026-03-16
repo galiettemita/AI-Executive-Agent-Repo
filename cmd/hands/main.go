@@ -63,8 +63,25 @@ func main() {
 	logger.SetOutput(os.Stdout)
 	handler := logger.Middleware(mux)
 
+	// Start Hands gRPC server alongside HTTP.
+	handsGRPCAddr := os.Getenv("HANDS_GRPC_ADDR")
+	if handsGRPCAddr == "" {
+		handsGRPCAddr = ":50052"
+	}
+	handsRuntimeURL := os.Getenv("HANDS_RUNTIME_URL")
+	if handsRuntimeURL == "" {
+		handsRuntimeURL = fmt.Sprintf("http://localhost:%s", port)
+	}
+	handsSrv := hands.NewHandsGRPCServer(handsRuntimeURL, nil, "v1.0.0")
+	go func() {
+		logger.Info("hands_grpc_start", map[string]any{"addr": handsGRPCAddr})
+		if grpcErr := handsSrv.ListenAndServe(handsGRPCAddr); grpcErr != nil {
+			logger.Info("hands_grpc_stopped", map[string]any{"error": grpcErr.Error()})
+		}
+	}()
+
 	addr := fmt.Sprintf(":%s", port)
-	log.Printf("brevio-hands starting on %s (%d skills loaded)", addr, len(svc.ListSkills()))
+	log.Printf("brevio-hands starting on %s (gRPC on %s, %d skills loaded)", addr, handsGRPCAddr, len(svc.ListSkills()))
 	if err := http.ListenAndServe(addr, handler); err != nil {
 		log.Fatalf("server error: %v", err)
 	}

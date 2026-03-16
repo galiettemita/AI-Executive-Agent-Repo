@@ -151,6 +151,16 @@ func MessageProcessingWorkflow(ctx workflow.Context, input MessageProcessingWork
 		ragResult = RAGSearchResult{Chunks: []RAGChunk{}}
 	}
 
+	// Step 4b: Dual-process routing — decide System 1 (fast) vs System 2 (deliberate).
+	var dualResult DualProcessRoutingResult
+	_ = workflow.ExecuteActivity(ctx, a.DualProcessRoutingActivity, DualProcessRoutingInput{
+		WorkspaceID:    input.WorkspaceID,
+		MessageContent: validateResult.NormalizedPayload,
+		IntentKey:      classifyResult.Intent,
+		Confidence:     classifyResult.Confidence,
+	}).Get(ctx, &dualResult)
+	// dualResult informs reasoning depth; non-fatal if it fails.
+
 	// Step 5: Reasoning loop (PLANNER → EXECUTOR → CRITIC → REFLECTOR)
 	// Tool keys sorted lexically for replay determinism.
 	var reasoningResult ReasoningLoopResult
@@ -244,6 +254,31 @@ func MessageProcessingWorkflow(ctx workflow.Context, input MessageProcessingWork
 			WorkflowID:          "msg-" + input.MessageID,
 			TerminalState:       "FAILED",
 			Fallbacks:           []string{"authorization_denied"},
+			EvidenceHash:        reasoningResult.EvidenceHash,
+			MemoryItemCount:     len(memResult.Items),
+			RAGChunkCount:       len(ragResult.Chunks),
+			ReasoningIterations: reasoningResult.Iterations,
+			CouncilConvened:     councilResult.Convened,
+		}, nil
+	}
+
+	// Step 8b: Clarification check — ask user for confirmation on low-confidence write ops.
+	var clarifResult ClarificationCheckResult
+	_ = workflow.ExecuteActivity(ctx, a.ClarificationCheckActivity, ClarificationCheckInput{
+		WorkspaceID:    input.WorkspaceID,
+		MessageContent: validateResult.NormalizedPayload,
+		IntentKey:      classifyResult.Intent,
+		PlanID:         reasoningResult.PlanID,
+		ToolKeys:       reasoningResult.ToolKeys,
+		Confidence:     classifyResult.Confidence,
+	}).Get(ctx, &clarifResult)
+
+	if clarifResult.NeedsClarification {
+		// Deliver clarification question as the response — skip execution.
+		return &MessageProcessingWorkflowResult{
+			WorkflowID:          "msg-" + input.MessageID,
+			TerminalState:       "CLARIFICATION_NEEDED",
+			ResponsePayload:     clarifResult.Question,
 			EvidenceHash:        reasoningResult.EvidenceHash,
 			MemoryItemCount:     len(memResult.Items),
 			RAGChunkCount:       len(ragResult.Chunks),
@@ -412,6 +447,18 @@ func MessageProcessingWorkflow(ctx workflow.Context, input MessageProcessingWork
 			ReasoningIterations: reasoningResult.Iterations,
 			CouncilConvened:     councilResult.Convened,
 		}, nil
+	}
+
+	// Step 10b: Response drift check — validate response hasn't drifted from intent.
+	var driftResult ResponseDriftCheckResult
+	_ = workflow.ExecuteActivity(ctx, a.ResponseDriftCheckActivity, ResponseDriftCheckInput{
+		WorkspaceID:    input.WorkspaceID,
+		OriginalIntent: classifyResult.Intent,
+		Response:       synthResult.ResponsePayload,
+		IntentKey:      classifyResult.Intent,
+	}).Get(ctx, &driftResult)
+	if driftResult.DriftDetected {
+		logger.Warn("response drift detected", "drift_score", driftResult.DriftScore)
 	}
 
 	// Step 11: Enqueue outbox event for downstream consumption

@@ -1,0 +1,57 @@
+syntax = "proto3";
+package hands.v1;
+option go_package = "github.com/brevio/brevio/proto/hands/v1;handsv1";
+
+import "google/protobuf/timestamp.proto";
+
+service HandsService {
+  rpc ListSkills(ListSkillsRequest) returns (ListSkillsResponse);
+  rpc ExecuteSkill(ExecuteSkillRequest) returns (ExecuteSkillResponse);
+  rpc CheckSkillHealth(CheckSkillHealthRequest) returns (CheckSkillHealthResponse);
+}
+
+message ListSkillsRequest {
+  string workspace_id               = 1;
+  repeated string filter_categories = 2;
+}
+
+message SkillDescriptor {
+  string           skill_id        = 1;
+  string           name            = 2;
+  string           description     = 3;
+  string           category        = 4;
+  repeated string  required_scopes = 5;
+  bool             is_enabled      = 6;
+  string           plane           = 7;
+}
+
+message ListSkillsResponse {
+  repeated SkillDescriptor skills = 1;
+}
+
+message ExecuteSkillRequest {
+  string  workspace_id    = 1;
+  string  skill_id        = 2;
+  string  input_json      = 3;
+  string  oauth_token     = 4;
+  string  idempotency_key = 5;
+  int32   timeout_seconds = 6;
+}
+
+message ExecuteSkillResponse {
+  bool    success         = 1;
+  string  output_json     = 2;
+  string  error_message   = 3;
+  int64   latency_ms      = 4;
+  google.protobuf.Timestamp executed_at = 5;
+}
+
+message CheckSkillHealthRequest {
+  string skill_id = 1;
+}
+
+message CheckSkillHealthResponse {
+  string skill_id = 1;
+  string status   = 2;
+  string message  = 3;
+}

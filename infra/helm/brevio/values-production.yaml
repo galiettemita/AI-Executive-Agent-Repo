@@ -1,6 +1,23 @@
 global:
   environment: production
 
+clusterName: brevio-production
+
+karpenter:
+  enabled: true
+  nodeRoleName: brevio-production-karpenter-node
+
+autoscaling:
+  brain:
+    minReplicas: 3
+    maxReplicas: 50
+  gateway:
+    minReplicas: 5
+    maxReplicas: 100
+  hands:
+    minReplicas: 3
+    maxReplicas: 30
+
 gateway:
   image:
     tag: v9.3.0

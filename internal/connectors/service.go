@@ -319,6 +319,14 @@ func (s *Service) SeedToRepository(ctx context.Context, repo ConnectorRegistryRe
 	return len(connectors), len(tools), nil
 }
 
+// GetConnector returns the connector configuration for the given key.
+func (s *Service) GetConnector(key string) (Connector, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	c, ok := s.connectors[key]
+	return c, ok
+}
+
 func (s *Service) ConnectorCount() int {
 	s.mu.RLock()
 	defer s.mu.RUnlock()

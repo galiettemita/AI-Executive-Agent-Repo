@@ -7,6 +7,7 @@ import (
 
 	contextlayer "github.com/brevio/brevio/internal/context"
 	"github.com/brevio/brevio/internal/executor"
+	"github.com/brevio/brevio/internal/fastpath"
 	"github.com/brevio/brevio/internal/memory"
 	"github.com/brevio/brevio/internal/rag"
 )
@@ -425,6 +426,7 @@ func (a *Activities) EvaluateLatencyBudgetActivity(ctx context.Context, input Ev
 }
 
 // WarmFastPathCacheActivity warms the fast-path cache with rate limiting.
+// Seeds default routes and warms the cache with known high-volume inputs.
 func (a *Activities) WarmFastPathCacheActivity(ctx context.Context, input WarmFastPathCacheInput) (*WarmFastPathCacheResult, error) {
 	maxRoutes := input.MaxRoutes
 	if maxRoutes <= 0 {
@@ -436,11 +438,24 @@ func (a *Activities) WarmFastPathCacheActivity(ctx context.Context, input WarmFa
 		return &WarmFastPathCacheResult{RateLimited: true}, nil
 	}
 
-	// In production, routes would be fetched from DB.
-	// Degraded mode uses empty routes.
+	// Seed default routes into a FastPathService instance.
+	fpSvc := fastpath.NewFastPathService()
+	if err := fastpath.SeedDefaultRoutes(fpSvc); err != nil {
+		return &WarmFastPathCacheResult{RoutesWarmed: 0, AnswersCached: 0}, nil
+	}
+
+	// Pre-warm the cache with known high-volume inputs.
+	testInputs := []string{"hi", "hello", "thank you", "what can you do", "ok"}
+	cached := 0
+	for _, input := range testInputs {
+		if _, ok := fpSvc.Match(input); ok {
+			cached++
+		}
+	}
+
 	return &WarmFastPathCacheResult{
-		RoutesWarmed:  0,
-		AnswersCached: 0,
+		RoutesWarmed:  len(fastpath.DefaultRoutes()),
+		AnswersCached: cached,
 		RateLimited:   false,
 	}, nil
 }

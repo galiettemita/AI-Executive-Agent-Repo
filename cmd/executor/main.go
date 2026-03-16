@@ -15,6 +15,7 @@ import (
 	"github.com/brevio/brevio/internal/executor"
 	callpkg "github.com/brevio/brevio/internal/hands/call"
 	runtimeserver "github.com/brevio/brevio/internal/runtime"
+	"github.com/brevio/brevio/internal/security"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -341,12 +342,41 @@ func main() {
 		_ = json.NewEncoder(w).Encode(map[string]any{"segments": items})
 	})
 
+	// Executor gRPC server — runs alongside HTTP.
+	grpcAddr := os.Getenv("EXECUTOR_GRPC_ADDR")
+	if grpcAddr == "" {
+		grpcAddr = ":50051"
+	}
+
+	var mtlsCfg *security.MTLSConfig
+	certFile := os.Getenv("MTLS_CERT_FILE")
+	keyFile := os.Getenv("MTLS_KEY_FILE")
+	caFile := os.Getenv("MTLS_CA_FILE")
+	if certFile != "" && keyFile != "" && caFile != "" {
+		mtlsCfg = &security.MTLSConfig{
+			CertFile: certFile,
+			KeyFile:  keyFile,
+			CAFile:   caFile,
+		}
+	}
+
+	// Create a dispatcher adapter for the gRPC server.
+	grpcDispatcher := &grpcDispatchAdapter{prodSvc: prodSvc}
+	grpcSrv := executor.NewGRPCServer(grpcDispatcher, mtlsCfg, cfg.ServiceVersion)
+	go func() {
+		logger.Info("executor_grpc_start", map[string]any{"addr": grpcAddr})
+		if grpcErr := grpcSrv.ListenAndServe(grpcAddr); grpcErr != nil {
+			logger.Info("executor_grpc_stopped", map[string]any{"error": grpcErr.Error()})
+		}
+	}()
+
 	handler := logger.Middleware(mux)
 
 	logger.Info("service_start", map[string]any{
-		"listen_addr": cfg.ListenAddr,
-		"version":     cfg.ServiceVersion,
-		"production":  dbURL != "",
+		"listen_addr":  cfg.ListenAddr,
+		"grpc_addr":    grpcAddr,
+		"version":      cfg.ServiceVersion,
+		"production":   dbURL != "",
 	})
 	if err := runtimeserver.ServeWithGracefulShutdown("executor", cfg.ListenAddr, handler); err != nil {
 		log.Fatalf("executor server failed: %v", err)
@@ -372,4 +402,44 @@ func boolToStatus(b bool) string {
 		return "connected"
 	}
 	return "unavailable"
+}
+
+// grpcDispatchAdapter wraps ProdService to implement executor.DispatcherIface.
+type grpcDispatchAdapter struct {
+	prodSvc *executor.ProdService
+}
+
+func (a *grpcDispatchAdapter) Dispatch(ctx context.Context, req executor.DispatchRequest) (*executor.DispatchResult, error) {
+	if a.prodSvc == nil {
+		return &executor.DispatchResult{
+			ToolKey:      req.ToolKey,
+			Phase:        "commit",
+			Success:      false,
+			ErrorMessage: "executor not configured (no DATABASE_URL)",
+		}, nil
+	}
+
+	execReq := executor.ExecutionRequest{
+		WorkspaceID: req.WorkspaceID,
+		ToolKey:     req.ToolKey,
+		Action:      "execute",
+	}
+
+	exec, _, err := a.prodSvc.Commit(ctx, execReq, req.ReceiptID)
+	if err != nil {
+		return &executor.DispatchResult{
+			ToolKey:      req.ToolKey,
+			Phase:        "commit",
+			Success:      false,
+			ErrorMessage: err.Error(),
+		}, nil
+	}
+
+	return &executor.DispatchResult{
+		ExecutionID: exec.ID.String(),
+		ToolKey:     req.ToolKey,
+		Phase:       string(exec.Phase),
+		Success:     true,
+		ExecutedAt:  time.Now(),
+	}, nil
 }

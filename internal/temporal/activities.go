@@ -14,6 +14,7 @@ import (
 	"os"
 
 	"github.com/brevio/brevio/internal/brain"
+	"github.com/brevio/brevio/internal/connectors"
 	"github.com/brevio/brevio/internal/cognition"
 	contextlayer "github.com/brevio/brevio/internal/context"
 	"github.com/brevio/brevio/internal/eq"
@@ -104,6 +105,7 @@ type ExecuteToolInput struct {
 	ToolKey        string `json:"tool_key"`
 	ReceiptID      string `json:"receipt_id"`
 	IdempotencyKey string `json:"idempotency_key"`
+	OAuthToken     string `json:"oauth_token,omitempty"`
 }
 
 type ToolExecutionActivityResult struct {
@@ -300,6 +302,9 @@ type ActivityDeps struct {
 
 	// OPA policy evaluator.
 	OPAEvaluator *policy.Evaluator
+
+	// OAuth credential resolver for tool execution.
+	CredentialResolver *connectors.CredentialResolver
 }
 
 // WorkingMemoryService is the minimal interface for working memory eviction in activities.
@@ -359,6 +364,9 @@ type Activities struct {
 	// OPA policy evaluator. Nil = policy gates skipped (dev/test mode only).
 	opaEvaluator *policy.Evaluator
 
+	// OAuth credential resolver for tool execution.
+	credentialResolver *connectors.CredentialResolver
+
 	// Observability counters for outbox dispatch.
 	outboxDispatched atomic.Int64
 	outboxFailed     atomic.Int64
@@ -399,7 +407,8 @@ func NewActivitiesWithProdDeps(deps ActivityDeps) *Activities {
 		phoneVerifier:    deps.PhoneVerifier,
 		handsExecutor:    deps.HandsExecutor,
 		workingMemory:   deps.WorkingMemory,
-		opaEvaluator:    deps.OPAEvaluator,
+		opaEvaluator:       deps.OPAEvaluator,
+		credentialResolver: deps.CredentialResolver,
 	}
 }
 
@@ -688,11 +697,24 @@ func (a *Activities) ExecuteToolActivity(ctx context.Context, input ExecuteToolI
 
 	payloadHash := hashKey(input.WorkspaceID + "::" + input.ToolKey + "::" + input.IdempotencyKey)
 
+	// Resolve OAuth token for this tool key if not already set.
+	if input.OAuthToken == "" && a.credentialResolver != nil {
+		if resolved, resolveErr := a.credentialResolver.ResolveToken(
+			ctx, input.WorkspaceID, "", input.ToolKey,
+		); resolveErr == nil && resolved != "" {
+			input.OAuthToken = resolved
+		}
+	}
+
 	// Production path: call Go hands runtime for real execution.
 	if a.handsExecutor != nil {
+		execArgs := map[string]interface{}{}
+		if input.OAuthToken != "" {
+			execArgs["oauth_token"] = input.OAuthToken
+		}
 		success, output, err := a.handsExecutor.ExecuteTool(
 			ctx, input.ToolKey, input.WorkspaceID, input.ReceiptID,
-			input.IdempotencyKey, "commit", nil,
+			input.IdempotencyKey, "commit", execArgs,
 		)
 		if err != nil {
 			log.Printf("[ExecuteTool] hands execution failed for %s: %v", input.ToolKey, err)

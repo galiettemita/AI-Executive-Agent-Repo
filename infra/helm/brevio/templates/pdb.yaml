@@ -1,0 +1,17 @@
+{{- range $serviceName, $config := .Values.podDisruptionBudget }}
+{{- if $config.enabled }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "brevio.fullname" $ }}-{{ $serviceName }}-pdb
+  labels:
+    {{- include "brevio.labels" $ | nindent 4 }}
+spec:
+  minAvailable: {{ $config.minAvailable | default 1 }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "brevio.name" $ }}
+      app.kubernetes.io/component: {{ $serviceName }}
+{{- end }}
+{{- end }}

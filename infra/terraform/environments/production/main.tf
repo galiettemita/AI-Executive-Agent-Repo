@@ -48,6 +48,18 @@ module "waf" {
   source = "../../modules/waf"
 }
 
+module "cost_guardrails" {
+  source             = "../../modules/cost-guardrails"
+  environment        = local.environment
+  monthly_budget_usd = 5000
+  alert_email        = var.ops_alert_email
+}
+
+variable "ops_alert_email" {
+  type    = string
+  default = "ops@brevio.ai"
+}
+
 output "environment_contract" {
   value = {
     environment    = local.environment
@@ -63,7 +75,8 @@ output "environment_contract" {
       cloudfront  = module.cloudfront.module_contract
       route53     = module.route53.module_contract
       monitoring  = module.monitoring.module_contract
-      waf         = module.waf.module_contract
+      waf              = module.waf.module_contract
+      cost_guardrails  = module.cost_guardrails.module_contract
     }
   }
 }

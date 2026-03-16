@@ -1,13 +1,23 @@
 package fastpath
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
+	"hash/fnv"
 	"regexp"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/google/uuid"
 )
+
+// RedisCache is the interface FastPathService uses for caching.
+type RedisCache interface {
+	Get(ctx context.Context, key string) (string, error)
+	Set(ctx context.Context, key string, value string, ttl time.Duration) error
+}
 
 // FastPathRoute maps a regex pattern to a precomputed response.
 type FastPathRoute struct {
@@ -52,9 +62,18 @@ type FastPathService struct {
 	mu         sync.Mutex
 	routes     map[string]FastPathRoute
 	precomp    map[string]PrecomputedAnswer
+	redisCache RedisCache // nil = in-memory only
 	now        func() time.Time
 	totalHits  int
 	totalLatMs float64
+}
+
+// WithRedisCache attaches a Redis cache to the service.
+// When set, Match() checks Redis first and writes hits back to Redis.
+func (s *FastPathService) WithRedisCache(cache RedisCache) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.redisCache = cache
 }
 
 // NewFastPathService creates a new FastPathService.
@@ -98,12 +117,33 @@ func (s *FastPathService) RegisterRoute(pattern, response string, confidence flo
 }
 
 // Match attempts to match input against enabled routes and returns a precomputed answer.
+// When a RedisCache is attached, checks Redis first and writes hits back to Redis.
 func (s *FastPathService) Match(input string) (*FastPathResult, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	start := s.now()
 
+	// 1. Check Redis cache first (if available).
+	if s.redisCache != nil {
+		cacheKey := "fp:v1:" + hashInput(input)
+		if cached, err := s.redisCache.Get(context.Background(), cacheKey); err == nil && cached != "" {
+			var cr cachedRoute
+			if json.Unmarshal([]byte(cached), &cr) == nil {
+				elapsed := float64(s.now().Sub(start).Microseconds()) / 1000.0
+				s.totalHits++
+				s.totalLatMs += elapsed
+				return &FastPathResult{
+					RouteID:   cr.RouteID,
+					Response:  cr.Response,
+					LatencyMs: elapsed,
+					FromCache: true,
+				}, true
+			}
+		}
+	}
+
+	// 2. Regex match against registered routes.
 	for id, route := range s.routes {
 		if !route.Enabled {
 			continue
@@ -134,6 +174,15 @@ func (s *FastPathService) Match(input string) (*FastPathResult, bool) {
 		s.totalHits++
 		s.totalLatMs += elapsed
 
+		// Write to Redis cache for next time.
+		if s.redisCache != nil {
+			cr := cachedRoute{RouteID: id, Response: response}
+			if data, err := json.Marshal(cr); err == nil {
+				cacheKey := "fp:v1:" + hashInput(input)
+				_ = s.redisCache.Set(context.Background(), cacheKey, string(data), time.Hour)
+			}
+		}
+
 		return &FastPathResult{
 			RouteID:   id,
 			Response:  response,
@@ -142,6 +191,18 @@ func (s *FastPathService) Match(input string) (*FastPathResult, bool) {
 		}, true
 	}
 	return nil, false
+}
+
+// cachedRoute is the JSON structure stored in Redis for fast-path cache hits.
+type cachedRoute struct {
+	RouteID  string `json:"route_id"`
+	Response string `json:"response"`
+}
+
+func hashInput(s string) string {
+	h := fnv.New64a()
+	h.Write([]byte(strings.ToLower(strings.TrimSpace(s))))
+	return fmt.Sprintf("%x", h.Sum64())
 }
 
 // RefreshPrecomputed sets or updates a precomputed answer for a route.

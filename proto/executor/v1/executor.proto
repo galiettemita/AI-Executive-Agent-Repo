@@ -1,0 +1,62 @@
+syntax = "proto3";
+package executor.v1;
+option go_package = "github.com/brevio/brevio/proto/executor/v1;executorv1";
+
+import "google/protobuf/timestamp.proto";
+
+service ExecutorService {
+  rpc DispatchTool(DispatchToolRequest) returns (DispatchToolResponse);
+  rpc DispatchToolStream(DispatchToolRequest) returns (stream ExecutionEvent);
+  rpc GetExecutionStatus(GetExecutionStatusRequest) returns (GetExecutionStatusResponse);
+  rpc HealthCheck(HealthCheckRequest) returns (HealthCheckResponse);
+}
+
+message DispatchToolRequest {
+  string  message_id       = 1;
+  string  workspace_id     = 2;
+  string  tool_key         = 3;
+  string  receipt_id       = 4;
+  string  idempotency_key  = 5;
+  string  input_json       = 6;
+  string  oauth_token      = 7;
+  int32   timeout_seconds  = 8;
+}
+
+message DispatchToolResponse {
+  string  execution_id     = 1;
+  string  tool_key         = 2;
+  string  phase            = 3;
+  bool    success          = 4;
+  string  payload_hash     = 5;
+  string  output_json      = 6;
+  string  error_message    = 7;
+  google.protobuf.Timestamp executed_at = 8;
+  int64   latency_ms       = 9;
+}
+
+message ExecutionEvent {
+  string  execution_id     = 1;
+  string  event_type       = 2;
+  string  message          = 3;
+  bytes   payload          = 4;
+  google.protobuf.Timestamp timestamp = 5;
+}
+
+message GetExecutionStatusRequest {
+  string execution_id = 1;
+  string workspace_id = 2;
+}
+
+message GetExecutionStatusResponse {
+  string execution_id = 1;
+  string status       = 2;
+  string output_json  = 3;
+  google.protobuf.Timestamp completed_at = 4;
+}
+
+message HealthCheckRequest {}
+
+message HealthCheckResponse {
+  string status  = 1;
+  string version = 2;
+}

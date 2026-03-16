@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/brevio/brevio/internal/executor"
 	"github.com/brevio/brevio/internal/gateway"
 	runtimeserver "github.com/brevio/brevio/internal/runtime"
 	brtemporal "github.com/brevio/brevio/internal/temporal"
@@ -43,6 +44,20 @@ func main() {
 		}
 	}
 
+	// Executor gRPC client — connects Brain to Executor for tool dispatch.
+	executorGRPCAddr := os.Getenv("EXECUTOR_GRPC_ADDR")
+	if executorGRPCAddr == "" {
+		executorGRPCAddr = "executor:50051"
+	}
+	var executorGRPCClient *executor.GRPCClient
+	if grpcClient, dialErr := executor.NewGRPCClient(executorGRPCAddr, nil); dialErr != nil {
+		logger.Info("executor_grpc_client_unavailable", map[string]any{"error": dialErr.Error()})
+	} else {
+		executorGRPCClient = grpcClient
+		defer executorGRPCClient.Close()
+		logger.Info("executor_grpc_connected", map[string]any{"addr": executorGRPCAddr})
+	}
+
 	mux := http.NewServeMux()
 	startedAt := time.Now().UTC()
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, _ *http.Request) {
@@ -53,15 +68,26 @@ func main() {
 			"version":   cfg.ServiceVersion,
 			"uptime_ms": time.Since(startedAt).Milliseconds(),
 			"checks": map[string]string{
-				"process":  "ok",
-				"temporal": boolToStatus(temporalClient != nil),
+				"process":        "ok",
+				"temporal":       boolToStatus(temporalClient != nil),
+				"executor_grpc":  boolToStatus(executorGRPCClient != nil),
 			},
 		})
 	})
-	mux.HandleFunc("GET /health/deep", func(w http.ResponseWriter, _ *http.Request) {
+	mux.HandleFunc("GET /health/deep", func(w http.ResponseWriter, r *http.Request) {
 		checks := map[string]string{
 			"process":  "ok",
 			"temporal": boolToStatus(temporalClient != nil),
+		}
+		// Executor gRPC ping
+		if executorGRPCClient != nil {
+			if pingErr := executorGRPCClient.Ping(r.Context()); pingErr != nil {
+				checks["executor_grpc"] = "error: " + pingErr.Error()
+			} else {
+				checks["executor_grpc"] = "ok"
+			}
+		} else {
+			checks["executor_grpc"] = "unavailable"
 		}
 		for key, status := range runtimeserver.DeepDependencyChecks(os.Getenv) {
 			checks[key] = status

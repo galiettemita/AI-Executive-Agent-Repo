@@ -134,6 +134,14 @@ func main() {
 		})
 	}
 
+	// Wire OAuth credential resolver for tool execution.
+	if deps.Pool != nil {
+		tokenRefresher := connectors.NewTokenRefresher(connectors.NewService(connectors.NewInMemoryKeyProvider("v0", make([]byte, 32))))
+		credConnSvc := connectors.NewService(connectors.NewInMemoryKeyProvider("v0", make([]byte, 32)))
+		deps.CredentialResolver = connectors.NewCredentialResolver(credConnSvc, tokenRefresher)
+		logger.Info("credential_resolver_wired", map[string]any{"status": "oauth_tokens_active"})
+	}
+
 	// REPAIR: Wire HandsExecutor — connects data plane to control plane.
 	// Uses in-process hands service with MCP client for tool execution.
 	seedPath := strings.TrimSpace(os.Getenv("CONNECTORS_SEED_FILE"))

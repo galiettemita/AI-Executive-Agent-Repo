@@ -597,7 +597,7 @@ func TestIsRetryable(t *testing.T) {
 	for _, tc := range cases {
 		var err error
 		if tc.err != "" {
-			err = fmt.Errorf(tc.err)
+			err = fmt.Errorf("%s", tc.err)
 		}
 		if got := isRetryable(err); got != tc.expected {
 			t.Errorf("isRetryable(%q) = %v, want %v", tc.err, got, tc.expected)

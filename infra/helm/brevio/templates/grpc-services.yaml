@@ -1,0 +1,38 @@
+{{- if .Values.grpc.executor.enabled }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "brevio.fullname" . }}-executor-grpc
+  labels:
+    {{- include "brevio.labels" . | nindent 4 }}
+    app.kubernetes.io/component: executor
+spec:
+  selector:
+    app.kubernetes.io/name: {{ include "brevio.name" . }}
+    app.kubernetes.io/component: executor
+  ports:
+  - name: grpc
+    port: {{ .Values.grpc.executor.port }}
+    targetPort: {{ .Values.grpc.executor.port }}
+    protocol: TCP
+{{- end }}
+{{- if .Values.grpc.hands.enabled }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "brevio.fullname" . }}-hands-grpc
+  labels:
+    {{- include "brevio.labels" . | nindent 4 }}
+    app.kubernetes.io/component: hands
+spec:
+  selector:
+    app.kubernetes.io/name: {{ include "brevio.name" . }}
+    app.kubernetes.io/component: hands
+  ports:
+  - name: grpc
+    port: {{ .Values.grpc.hands.port }}
+    targetPort: {{ .Values.grpc.hands.port }}
+    protocol: TCP
+{{- end }}

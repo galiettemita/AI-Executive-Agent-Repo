@@ -9,7 +9,10 @@
     "dev": "node dist/server.js",
     "lint": "eslint src --ext .ts",
     "test": "npx tsx --test src/__tests__/*.test.ts",
-    "test:watch": "npx tsx --test --watch src/__tests__/*.test.ts"
+    "test:contracts": "npx tsx --test src/testing/__tests__/*.test.ts",
+    "test:watch": "npx tsx --test --watch src/__tests__/*.test.ts",
+    "validate-registry": "npx tsx src/testing/validate-registry.ts",
+    "verify-skill": "npx tsx ../../scripts/mcp/verify-skill.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1009.0",
