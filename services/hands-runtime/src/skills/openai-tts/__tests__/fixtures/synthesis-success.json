@@ -1,8 +1,8 @@
 {
   "provider": "openai-tts",
-  "voice": "verse",
+  "voice": "alloy",
   "format": "mp3",
-  "audio_url": "https://cdn.brevio.local/tts/openai/board-update-complete-and-approved-for-r.mp3",
-  "estimated_duration_ms": 1598,
+  "audio_url": "https://s3.us-east-1.amazonaws.com/brevio-tts/tts/abc123.mp3?X-Amz-Signature=test",
+  "estimated_duration_ms": 3000,
   "latency_budget_ms": 2000
 }

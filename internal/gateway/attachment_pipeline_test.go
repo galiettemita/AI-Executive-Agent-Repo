@@ -22,7 +22,7 @@ func TestAttachmentValidationAndS3Key(t *testing.T) {
 	tooLargeImage := AttachmentInput{
 		URL:       "https://example.com/img.jpg",
 		MIMEType:  "image/jpeg",
-		SizeBytes: 6 * 1024 * 1024,
+		SizeBytes: 21 * 1024 * 1024, // exceeds 20 MB image cap
 	}
 	if err := ValidateAttachmentInput(tooLargeImage); err == nil {
 		t.Fatal("expected oversized image rejection")

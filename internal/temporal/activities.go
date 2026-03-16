@@ -25,7 +25,9 @@ import (
 	"github.com/brevio/brevio/internal/onboarding"
 	"github.com/brevio/brevio/internal/outbox"
 	"github.com/brevio/brevio/internal/rag"
+	"github.com/brevio/brevio/internal/gateway"
 	"github.com/brevio/brevio/internal/trust"
+	"github.com/brevio/brevio/internal/voice/worker"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"go.temporal.io/sdk/temporal"
 )
@@ -1102,14 +1104,32 @@ func (a *Activities) ActivateKillSwitchActivity(ctx context.Context, input KillS
 
 func (a *Activities) InitVoiceSessionActivity(ctx context.Context, input VoiceInitInput) (*VoiceInitResult, error) {
 	if input.SessionID == "" || input.WorkspaceID == "" {
-		return nil, fmt.Errorf("session_id and workspace_id required")
+		return nil, fmt.Errorf("session_id and workspace_id are required")
 	}
+
 	h := sha256.Sum256([]byte(input.SessionID + ":" + input.WorkspaceID))
 	roomName := "voice-" + hex.EncodeToString(h[:8])
-	return &VoiceInitResult{
-		Token:    fmt.Sprintf("tok_%s_%s", input.SessionID[:8], input.ChannelType),
-		RoomName: roomName,
-	}, nil
+
+	apiKey := os.Getenv("LIVEKIT_API_KEY")
+	apiSecret := os.Getenv("LIVEKIT_API_SECRET")
+
+	if apiKey == "" || apiSecret == "" {
+		// Graceful degradation in dev/test environments.
+		return &VoiceInitResult{
+			Token:    "livekit-token-unavailable-check-env",
+			RoomName: roomName,
+		}, nil
+	}
+
+	signer, err := newTokenSignerAdapter(apiKey, apiSecret)
+	if err != nil {
+		return nil, fmt.Errorf("init voice session: create token signer: %w", err)
+	}
+	token, err := signer.Sign(input.SessionID, input.WorkspaceID, roomName)
+	if err != nil {
+		return nil, fmt.Errorf("sign livekit token: %w", err)
+	}
+	return &VoiceInitResult{Token: token, RoomName: roomName}, nil
 }
 
 func (a *Activities) ExtractVoiceTasksActivity(ctx context.Context, input VoiceTaskExtractInput) (*VoiceTaskExtractResult, error) {
@@ -1117,19 +1137,76 @@ func (a *Activities) ExtractVoiceTasksActivity(ctx context.Context, input VoiceT
 		return &VoiceTaskExtractResult{Tasks: []string{}}, nil
 	}
 
-	patterns := []string{"remind me to", "schedule", "send", "follow up", "set up", "create", "book"}
-	sentences := strings.Split(input.Transcript, ".")
-	var tasks []string
-	for _, sentence := range sentences {
-		lower := strings.ToLower(strings.TrimSpace(sentence))
-		for _, pattern := range patterns {
-			if strings.Contains(lower, pattern) {
-				tasks = append(tasks, strings.TrimSpace(sentence))
-				break
+	// Use LLM extraction when ANTHROPIC_API_KEY is configured.
+	if client := a.buildLLMClient(); client != nil {
+		extractor, err := worker.NewLLMTaskExtractor(worker.LLMTaskExtractorConfig{
+			LLMClient:      client,
+			TodayDate:      time.Now().UTC().Format("2006-01-02"),
+			FallbackOnFail: true,
+			MinConfidence:  0.65,
+		})
+		if err == nil {
+			result, extractErr := extractor.Extract(ctx, input.Transcript)
+			if extractErr == nil {
+				tasks := make([]string, 0, len(result.Tasks))
+				for _, t := range result.Tasks {
+					if strings.TrimSpace(t.Description) != "" {
+						tasks = append(tasks, strings.TrimSpace(t.Description))
+					}
+				}
+				return &VoiceTaskExtractResult{Tasks: tasks}, nil
 			}
 		}
 	}
+
+	// Keyword fallback — split into sentences for per-sentence matching.
+	kwExtractor := worker.NewKeywordTaskExtractor()
+	sentences := strings.Split(input.Transcript, ".")
+	turns := make([]worker.TranscriptTurn, 0, len(sentences))
+	for _, s := range sentences {
+		s = strings.TrimSpace(s)
+		if s != "" {
+			turns = append(turns, worker.TranscriptTurn{Speaker: "user", Text: s})
+		}
+	}
+	extracted := kwExtractor.ExtractTasks(turns)
+	tasks := make([]string, 0, len(extracted))
+	for _, t := range extracted {
+		if strings.TrimSpace(t.Description) != "" {
+			tasks = append(tasks, strings.TrimSpace(t.Description))
+		}
+	}
 	return &VoiceTaskExtractResult{Tasks: tasks}, nil
+}
+
+func (a *Activities) AnalyseSentimentActivity(ctx context.Context, input AnalyseSentimentInput) (*AnalyseSentimentResult, error) {
+	if input.Transcript == "" {
+		return &AnalyseSentimentResult{Summary: "", OverallLabel: "neutral", OverallScore: 0.5}, nil
+	}
+	client := a.buildLLMClient()
+	if client == nil {
+		return &AnalyseSentimentResult{
+			Summary:      "sentiment unavailable (ANTHROPIC_API_KEY not configured)",
+			OverallLabel: "neutral", OverallScore: 0.5,
+		}, nil
+	}
+	analyser, err := gateway.NewLLMSentimentAnalyser(gateway.LLMSentimentAnalyserConfig{LLMClient: client})
+	if err != nil {
+		return nil, fmt.Errorf("analyse sentiment: %w", err)
+	}
+	result, err := analyser.Analyse(ctx, input.Transcript, nil)
+	if err != nil {
+		// Non-fatal — return neutral rather than failing the workflow.
+		return &AnalyseSentimentResult{
+			Summary: "sentiment failed: " + err.Error(), OverallLabel: "neutral", OverallScore: 0.5,
+		}, nil
+	}
+	return &AnalyseSentimentResult{
+		Summary:          result.Summary,
+		EscalationSignal: result.EscalationSignal,
+		OverallLabel:     string(result.Overall.Label),
+		OverallScore:     result.Overall.Score,
+	}, nil
 }
 
 // --- Learning activities (method-based) ---

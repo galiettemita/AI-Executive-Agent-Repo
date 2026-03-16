@@ -6,7 +6,7 @@ func TestVoicePipelineDefaults(t *testing.T) {
 	t.Parallel()
 
 	cfg := DefaultVoicePipelineConfig()
-	if cfg.STTPrimaryProvider != "openai_whisper" || cfg.TTSProvider != "openai_tts" {
+	if cfg.STTPrimaryProvider != "deepgram_nova3" || cfg.STTFallbackProvider != "openai_whisper" || cfg.TTSProvider != "openai_tts" {
 		t.Fatalf("unexpected voice pipeline providers: %+v", cfg)
 	}
 	if cfg.ConfidenceThreshold != 0.7 || cfg.MaxAudioDurationSeconds != 120 || cfg.MaxResponseChars != 4096 {

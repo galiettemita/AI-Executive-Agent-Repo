@@ -17,10 +17,12 @@ type VoiceSessionWorkflowInput struct {
 
 // VoiceSessionWorkflowResult is the output of a voice session workflow.
 type VoiceSessionWorkflowResult struct {
-	SessionID      string   `json:"session_id"`
-	TerminalState  string   `json:"terminal_state"`
-	Duration       int64    `json:"duration_ms"`
-	TasksExtracted []string `json:"tasks_extracted,omitempty"`
+	SessionID        string   `json:"session_id"`
+	TerminalState    string   `json:"terminal_state"`
+	Duration         int64    `json:"duration_ms"`
+	TasksExtracted   []string `json:"tasks_extracted,omitempty"`
+	SentimentSummary string   `json:"sentiment_summary,omitempty"`
+	EscalationSignal bool     `json:"escalation_signal"`
 }
 
 // VoiceSessionWorkflow orchestrates a real-time voice session lifecycle.
@@ -83,11 +85,30 @@ func VoiceSessionWorkflow(ctx workflow.Context, input VoiceSessionWorkflowInput)
 		logger.Warn("task extraction failed", "error", err)
 	}
 
+	// Step 4: Sentiment (non-fatal — uses _ to discard error).
+	var sentimentResult AnalyseSentimentResult
+	_ = workflow.ExecuteActivity(
+		workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
+			StartToCloseTimeout: 30 * time.Second,
+			RetryPolicy: &temporal.RetryPolicy{
+				MaximumAttempts: 2,
+			},
+		}),
+		a.AnalyseSentimentActivity,
+		AnalyseSentimentInput{
+			SessionID:   input.SessionID,
+			WorkspaceID: input.WorkspaceID,
+			Transcript:  endSignal.Transcript,
+		},
+	).Get(ctx, &sentimentResult)
+
 	return &VoiceSessionWorkflowResult{
-		SessionID:      input.SessionID,
-		TerminalState:  "COMPLETED",
-		Duration:       endSignal.DurationMs,
-		TasksExtracted: extractResult.Tasks,
+		SessionID:        input.SessionID,
+		TerminalState:    "COMPLETED",
+		Duration:         endSignal.DurationMs,
+		TasksExtracted:   extractResult.Tasks,
+		SentimentSummary: sentimentResult.Summary,
+		EscalationSignal: sentimentResult.EscalationSignal,
 	}, nil
 }
 
@@ -123,4 +144,19 @@ type VoiceTaskExtractInput struct {
 // VoiceTaskExtractResult is the result of ExtractVoiceTasksActivity.
 type VoiceTaskExtractResult struct {
 	Tasks []string `json:"tasks"`
+}
+
+// AnalyseSentimentInput is the input for AnalyseSentimentActivity.
+type AnalyseSentimentInput struct {
+	SessionID   string `json:"session_id"`
+	WorkspaceID string `json:"workspace_id"`
+	Transcript  string `json:"transcript"`
+}
+
+// AnalyseSentimentResult is the result of AnalyseSentimentActivity.
+type AnalyseSentimentResult struct {
+	Summary          string  `json:"summary"`
+	EscalationSignal bool    `json:"escalation_signal"`
+	OverallLabel     string  `json:"overall_label"`
+	OverallScore     float64 `json:"overall_score"`
 }

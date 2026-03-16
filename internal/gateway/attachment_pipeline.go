@@ -29,7 +29,7 @@ func maxAttachmentBytesForMime(mime string) int64 {
 	mime = strings.ToLower(strings.TrimSpace(mime))
 	switch {
 	case strings.HasPrefix(mime, "image/"):
-		return 5 * 1024 * 1024
+		return 20 * 1024 * 1024 // 20 MB; supports vision analysis (Gemini supports 20 MB)
 	case strings.HasPrefix(mime, "audio/"):
 		return 16 * 1024 * 1024
 	case strings.HasPrefix(mime, "video/"):
@@ -96,4 +96,14 @@ func AttachmentS3Key(workspaceID, ingressTurnID uuid.UUID, hash, ext string) str
 
 func ExtensionFromFilename(filename string) string {
 	return strings.TrimPrefix(strings.ToLower(filepath.Ext(strings.TrimSpace(filename))), ".")
+}
+
+// ShouldRouteToVision returns true for MIME types that can be sent to vision analysis.
+func ShouldRouteToVision(mimeType string) bool {
+	switch strings.ToLower(strings.TrimSpace(mimeType)) {
+	case "image/jpeg", "image/png", "image/webp", "image/gif":
+		return true
+	default:
+		return false
+	}
 }

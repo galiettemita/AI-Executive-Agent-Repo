@@ -1,3 +1,6 @@
+// Deprecated: Use LiveKitTokenSigner from token_signer_lk.go instead.
+// This file's manual JWT implementation is kept for backward compatibility
+// during the migration window. Remove after all callers are updated.
 package worker
 
 import (

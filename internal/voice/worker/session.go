@@ -1,138 +1,69 @@
 package worker
 
 import (
-	"fmt"
-	"sync"
+	"context"
 	"time"
-
-	"github.com/brevio/brevio/internal/determinism"
 )
 
 // TranscriptTurn represents a single turn in a voice conversation.
 type TranscriptTurn struct {
-	Speaker   string
-	Text      string
-	Timestamp time.Time
+	Speaker   string    `json:"speaker"`
+	Text      string    `json:"text"`
+	Timestamp time.Time `json:"timestamp"`
 }
 
 // VoiceSession represents an active or completed voice session.
 type VoiceSession struct {
-	ID              string
-	WorkspaceID     string
-	UserID          string
-	Status          string // active, ended, error
-	StartedAt       time.Time
-	EndedAt         time.Time
-	DurationMs      int64
-	TranscriptTurns []TranscriptTurn
+	ID              string           `json:"id"`
+	WorkspaceID     string           `json:"workspace_id"`
+	UserID          string           `json:"user_id"`
+	Status          string           `json:"status"` // active, ended, error
+	StartedAt       time.Time        `json:"started_at"`
+	EndedAt         time.Time        `json:"ended_at"`
+	DurationMs      int64            `json:"duration_ms"`
+	TranscriptTurns []TranscriptTurn `json:"transcript_turns"`
 }
 
-// VoiceSessionService manages voice sessions.
+// VoiceSessionService provides backward-compatible methods over a SessionStore.
+// New code should use SessionStore directly.
 type VoiceSessionService struct {
-	mu       sync.Mutex
-	sessions map[string]*VoiceSession
+	store SessionStore
 }
 
-// NewVoiceSessionService creates a new VoiceSessionService.
-func NewVoiceSessionService() *VoiceSessionService {
-	return &VoiceSessionService{
-		sessions: make(map[string]*VoiceSession),
+// NewVoiceSessionService creates a VoiceSessionService backed by the given store.
+// If store is nil, an InMemorySessionStore is used.
+func NewVoiceSessionService(store ...SessionStore) *VoiceSessionService {
+	var s SessionStore
+	if len(store) > 0 && store[0] != nil {
+		s = store[0]
+	} else {
+		s = NewInMemorySessionStore()
 	}
+	return &VoiceSessionService{store: s}
 }
 
 // CreateSession starts a new voice session.
 func (s *VoiceSessionService) CreateSession(workspaceID, userID string) (*VoiceSession, error) {
-	if workspaceID == "" {
-		return nil, fmt.Errorf("workspaceID must not be empty")
-	}
-	if userID == "" {
-		return nil, fmt.Errorf("userID must not be empty")
-	}
-
-	id, err := determinism.NewUUIDv7()
-	if err != nil {
-		return nil, fmt.Errorf("generate session id: %w", err)
-	}
-
-	session := &VoiceSession{
-		ID:              id.String(),
-		WorkspaceID:     workspaceID,
-		UserID:          userID,
-		Status:          "active",
-		StartedAt:       time.Now(),
-		TranscriptTurns: []TranscriptTurn{},
-	}
-
-	s.mu.Lock()
-	s.sessions[session.ID] = session
-	s.mu.Unlock()
-
-	return session, nil
+	return s.store.Create(context.Background(), workspaceID, userID)
 }
 
 // EndSession marks a session as ended and records duration.
 func (s *VoiceSessionService) EndSession(sessionID string) (*VoiceSession, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	session, ok := s.sessions[sessionID]
-	if !ok {
-		return nil, fmt.Errorf("session %s not found", sessionID)
-	}
-	if session.Status != "active" {
-		return nil, fmt.Errorf("session %s is already %s", sessionID, session.Status)
-	}
-
-	session.Status = "ended"
-	session.EndedAt = time.Now()
-	session.DurationMs = session.EndedAt.Sub(session.StartedAt).Milliseconds()
-
-	return session, nil
+	return s.store.End(context.Background(), sessionID)
 }
 
 // AddTranscriptTurn appends a transcript turn to an active session.
 func (s *VoiceSessionService) AddTranscriptTurn(sessionID string, turn TranscriptTurn) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	session, ok := s.sessions[sessionID]
-	if !ok {
-		return fmt.Errorf("session %s not found", sessionID)
-	}
-	if session.Status != "active" {
-		return fmt.Errorf("cannot add turns to %s session", session.Status)
-	}
-
-	if turn.Timestamp.IsZero() {
-		turn.Timestamp = time.Now()
-	}
-
-	session.TranscriptTurns = append(session.TranscriptTurns, turn)
-	return nil
+	return s.store.AddTurn(context.Background(), sessionID, turn)
 }
 
 // GetSession retrieves a session by ID.
 func (s *VoiceSessionService) GetSession(sessionID string) (*VoiceSession, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	session, ok := s.sessions[sessionID]
-	if !ok {
-		return nil, fmt.Errorf("session %s not found", sessionID)
-	}
-	return session, nil
+	return s.store.Get(context.Background(), sessionID)
 }
 
 // ListSessions returns all sessions for a workspace.
 func (s *VoiceSessionService) ListSessions(workspaceID string) []VoiceSession {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	var result []VoiceSession
-	for _, session := range s.sessions {
-		if session.WorkspaceID == workspaceID {
-			result = append(result, *session)
-		}
-	}
-	return result
+	sessions, _ := s.store.List(context.Background(), workspaceID)
+	return sessions
 }

@@ -12,15 +12,21 @@
     "test:watch": "npx tsx --test --watch src/__tests__/*.test.ts"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1009.0",
+    "@aws-sdk/s3-request-presigner": "^3.1009.0",
     "@brevio/shared": "workspace:*",
+    "@google/generative-ai": "^0.24.1",
     "express": "^4.21.0",
+    "openai": "^6.29.0",
     "prom-client": "^15.1.0",
+    "uuid": "^13.0.0",
     "zod": "^3.23.0"
   },
   "devDependencies": {
-    "vitest": "^2.0.0",
     "@types/express": "^4.17.21",
     "@types/node": "^22.0.0",
-    "typescript": "^5.6.0"
+    "@types/uuid": "^11.0.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.0.0"
   }
 }

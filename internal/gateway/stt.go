@@ -20,11 +20,18 @@ var (
 	ErrSTTNoProviders   = errors.New("stt: no providers configured")
 )
 
+// DiarizationOptions controls speaker diarization on supported providers.
+type DiarizationOptions struct {
+	Enabled     bool // must be true to activate
+	MaxSpeakers int  // hint; 0 = auto
+}
+
 // STTOptions controls transcription behaviour.
 type STTOptions struct {
-	Language       string // BCP-47 language code, e.g. "en", "de"
-	MaxDurationSec int    // max audio length the provider should accept
-	Model          string // provider-specific model identifier
+	Language       string              // BCP-47 language code, e.g. "en", "de"
+	MaxDurationSec int                // max audio length the provider should accept
+	Model          string             // provider-specific model identifier
+	Diarization    *DiarizationOptions // nil = disabled
 }
 
 // TranscriptSegment represents a time-aligned word/phrase segment.
@@ -33,6 +40,7 @@ type TranscriptSegment struct {
 	EndMs      int64   `json:"end_ms"`
 	Text       string  `json:"text"`
 	Confidence float64 `json:"confidence"`
+	Speaker    string  `json:"speaker,omitempty"`
 }
 
 // TranscriptResult is the output of a successful transcription.
@@ -159,7 +167,7 @@ func (w *WhisperProvider) Transcribe(ctx context.Context, audioURL string, opts 
 			StartMs:    int64(seg.Start * 1000),
 			EndMs:      int64(seg.End * 1000),
 			Text:       seg.Text,
-			Confidence: 0.9, // Whisper does not return per-segment confidence
+			Confidence: NormaliseConfidence(-1), // Whisper does not return per-request or per-segment confidence
 		})
 	}
 
@@ -170,7 +178,7 @@ func (w *WhisperProvider) Transcribe(ctx context.Context, audioURL string, opts 
 
 	return &TranscriptResult{
 		Text:       wr.Text,
-		Confidence: 0.9, // Whisper does not return a global confidence score
+		Confidence: NormaliseConfidence(-1), // Whisper does not return per-request or per-segment confidence
 		Language:   lang,
 		DurationMs: int64(wr.Duration * 1000),
 		Segments:   segments,
@@ -373,6 +381,24 @@ func NewSTTService(cfg STTServiceConfig) (*STTService, error) {
 		fallback: cfg.Fallback,
 		timeout:  timeout,
 	}, nil
+}
+
+// NormaliseConfidence clamps a raw confidence score.
+// Pass -1 for providers that don't return confidence (e.g. Whisper).
+// Returns -1 to signal "confidence unknown".
+func NormaliseConfidence(raw float64) float64 {
+	if raw < 0 {
+		return -1
+	}
+	if raw > 1 {
+		return 1
+	}
+	return raw
+}
+
+// ConfidenceIsKnown returns false when the provider could not supply real confidence.
+func ConfidenceIsKnown(c float64) bool {
+	return c >= 0
 }
 
 // ValidateAudioURL performs basic validation on the audio URL.

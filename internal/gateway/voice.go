@@ -14,8 +14,8 @@ type VoicePipelineConfig struct {
 
 func DefaultVoicePipelineConfig() VoicePipelineConfig {
 	return VoicePipelineConfig{
-		STTPrimaryProvider:      "openai_whisper",
-		STTFallbackProvider:     "google_speech_v2",
+		STTPrimaryProvider:      "deepgram_nova3",
+		STTFallbackProvider:     "openai_whisper",
 		TTSProvider:             "openai_tts",
 		ConfidenceThreshold:     0.7,
 		MaxAudioDurationSeconds: 120,
