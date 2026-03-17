@@ -58,6 +58,96 @@ app.post('/v1/browser/navigate', verifyHMAC, async (req, res) => {
   }
 });
 
+app.post('/v1/browser/click', verifyHMAC, async (req, res) => {
+  try {
+    const { session_id, workspace_id, x, y } = req.body;
+    if (!session_id || x == null || y == null) {
+      res.status(400).json({ error: 'session_id, x, y required' }); return;
+    }
+    let s = pool.getSession(session_id);
+    if (!s) s = await pool.createSession(session_id, workspace_id ?? 'default');
+    if (!s.page) { res.status(400).json({ error: 'no active page in session' }); return; }
+    await s.page!.mouse.click(Number(x), Number(y));
+    await s.page!.waitForLoadState('domcontentloaded', { timeout: 5000 }).catch(() => {});
+    res.json({ ok: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message ?? 'click failed' });
+  }
+});
+
+app.post('/v1/browser/type', verifyHMAC, async (req, res) => {
+  try {
+    const { session_id, workspace_id, text } = req.body;
+    if (!session_id || text == null) {
+      res.status(400).json({ error: 'session_id, text required' }); return;
+    }
+    let s = pool.getSession(session_id);
+    if (!s) s = await pool.createSession(session_id, workspace_id ?? 'default');
+    if (!s.page) { res.status(400).json({ error: 'no active page in session' }); return; }
+    await s.page!.keyboard.type(String(text), { delay: 50 });
+    res.json({ ok: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message ?? 'type failed' });
+  }
+});
+
+app.post('/v1/browser/key', verifyHMAC, async (req, res) => {
+  try {
+    const { session_id, workspace_id, key } = req.body;
+    if (!session_id || !key) {
+      res.status(400).json({ error: 'session_id, key required' }); return;
+    }
+    let s = pool.getSession(session_id);
+    if (!s) s = await pool.createSession(session_id, workspace_id ?? 'default');
+    if (!s.page) { res.status(400).json({ error: 'no active page in session' }); return; }
+    await s.page!.keyboard.press(String(key));
+    res.json({ ok: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message ?? 'key failed' });
+  }
+});
+
+app.post('/v1/browser/scroll', verifyHMAC, async (req, res) => {
+  try {
+    const { session_id, workspace_id, direction, amount } = req.body;
+    if (!session_id || !direction) {
+      res.status(400).json({ error: 'session_id, direction required' }); return;
+    }
+    let s = pool.getSession(session_id);
+    if (!s) s = await pool.createSession(session_id, workspace_id ?? 'default');
+    if (!s.page) { res.status(400).json({ error: 'no active page in session' }); return; }
+    const delta = (direction === 'down' ? 1 : -1) * Number(amount || 3) * 100;
+    await s.page!.mouse.wheel(0, delta);
+    res.json({ ok: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message ?? 'scroll failed' });
+  }
+});
+
+app.post('/v1/browser/dom', verifyHMAC, async (req, res) => {
+  try {
+    const { session_id, workspace_id } = req.body;
+    if (!session_id) { res.status(400).json({ error: 'session_id required' }); return; }
+    let s = pool.getSession(session_id);
+    if (!s) s = await pool.createSession(session_id, workspace_id ?? 'default');
+    if (!s.page) { res.status(400).json({ error: 'no active page in session' }); return; }
+    const dom = await s.page!.evaluate(() => {
+      const els: string[] = [];
+      document.querySelectorAll('button,a,input,select,textarea,[role=button],[role=link]')
+        .forEach(el => {
+          const t = (el as HTMLElement).innerText?.trim() || '';
+          const r = el.getBoundingClientRect();
+          if (r.width > 0 && r.height > 0 && t)
+            els.push(`${el.tagName.toLowerCase()}[${Math.round(r.x)},${Math.round(r.y)}]: ${t.slice(0, 60)}`);
+        });
+      return els.join('\n');
+    });
+    res.json({ dom });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message ?? 'dom failed' });
+  }
+});
+
 app.post('/v1/browser/scrape', verifyHMAC, async (req, res) => {
   const { session_id, url, workspace_id, selectors } = req.body;
   const denial = allowlist.validate(url, 'scrape');

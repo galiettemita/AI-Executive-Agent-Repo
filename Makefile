@@ -254,3 +254,9 @@ audit:
 	@echo "==> [4/4] placeholder scan (must be zero)"
 	@if grep -rn --include='*.go' -E '//\s*(TO''DO|FIX''ME|ST''UB|PLACE''HOLDER|NOT_IMPL''EMENTED)\b' internal/ cmd/; then echo "FAIL: placeholder markers found"; exit 1; fi
 	@echo "==> audit PASSED"
+
+test-chaos: ## Run chaos engineering tests (requires live TEMPORAL_HOST, DATABASE_URL, REDIS_URL)
+	go test -tags=chaos ./tests/chaos/... -v -timeout=300s -count=1
+
+test-security: ## Run security attack tests (SSRF, prompt injection, JWT, SQL injection)
+	go test ./tests/security/... -v -timeout=60s -count=1

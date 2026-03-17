@@ -1,13 +1,27 @@
 package eq
 
 import (
+	"context"
 	"fmt"
+	"log"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/google/uuid"
 )
+
+// EQPersistRepository is the persistence contract for cross-session EQ state.
+// Implementations must be safe for concurrent use.
+type EQPersistRepository interface {
+	// LoadState retrieves the persisted emotional state for a workspace+user pair.
+	// Returns (nil, nil) when no persisted state exists.
+	LoadState(ctx context.Context, workspaceID, userID string) (*EmotionalState, error)
+
+	// SaveState persists or updates the emotional state for a workspace+user pair.
+	// Implementations MUST UPSERT on (workspace_id, user_id).
+	SaveState(ctx context.Context, state EmotionalState) error
+}
 
 // CommunicationProfile defines the communication style preferences for a workspace.
 type CommunicationProfile struct {
@@ -35,7 +49,8 @@ type EQService struct {
 	mu       sync.Mutex
 	profiles map[string]CommunicationProfile
 	history  map[string][]EmotionalState
-	now      func() time.Time
+	now         func() time.Time
+	persistRepo EQPersistRepository // nil = in-memory only (default); set via WithPersistRepository
 }
 
 // NewEQService creates a new EQService.
@@ -45,6 +60,13 @@ func NewEQService() *EQService {
 		history:  map[string][]EmotionalState{},
 		now:      func() time.Time { return time.Now().UTC() },
 	}
+}
+
+// WithPersistRepository attaches a persistence backend to EQService, enabling
+// cross-session emotional state continuity. Call during service initialisation.
+func (s *EQService) WithPersistRepository(repo EQPersistRepository) *EQService {
+	s.persistRepo = repo
+	return s
 }
 
 // DefaultProfile returns a balanced default communication profile.
@@ -183,6 +205,13 @@ func (s *EQService) LogEmotionalState(state EmotionalState) error {
 		state.Timestamp = s.now()
 	}
 	s.history[state.WorkspaceID] = append(s.history[state.WorkspaceID], state)
+
+	if s.persistRepo != nil {
+		if err := s.persistRepo.SaveState(context.Background(), state); err != nil {
+			log.Printf("[eq] persist emotional state failed: %v", err)
+		}
+	}
+
 	return nil
 }
 
@@ -253,4 +282,14 @@ func ensureCasualTone(s string) string {
 		s = strings.Replace(s, "Dear", "Hey", 1)
 	}
 	return s
+}
+
+// LoadCrossSessionHistory retrieves the persisted emotional state for a user
+// from a prior session. Returns (nil, nil) when no persisted state exists or
+// when no persistence backend is configured.
+func (s *EQService) LoadCrossSessionHistory(ctx context.Context, workspaceID, userID string) (*EmotionalState, error) {
+	if s.persistRepo == nil {
+		return nil, nil
+	}
+	return s.persistRepo.LoadState(ctx, workspaceID, userID)
 }

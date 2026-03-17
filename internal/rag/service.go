@@ -96,6 +96,7 @@ type Service struct {
 	hydeExpander   *HyDEExpander     // nil = direct embedding (no HyDE)
 	reranker       Reranker          // nil = no reranking
 	adaptiveGate   AdaptiveGate      // nil = always retrieve (backwards compat)
+	selfRAG        *SelfRAGCritiquer // nil = no post-retrieval critique
 	mu             sync.RWMutex
 	nextID         int
 	collections    map[string]Collection
@@ -139,6 +140,12 @@ func (s *Service) WithHyDEExpander(expander *HyDEExpander) *Service {
 // WithReranker attaches a cross-encoder reranker to the service.
 func (s *Service) WithReranker(r Reranker) *Service {
 	s.reranker = r
+	return s
+}
+
+// WithSelfRAG attaches the Self-RAG post-retrieval critiquer to the service.
+func (s *Service) WithSelfRAG(c *SelfRAGCritiquer) *Service {
+	s.selfRAG = c
 	return s
 }
 
@@ -267,30 +274,9 @@ func (s *Service) Ingest(collectionID string, documents []string) (Collection, i
 	return collection, ingested, true
 }
 
-func (s *Service) Search(workspaceID, turnID, queryText string, collectionIDs []string, maxResults int) Retrieval {
-	// Adaptive RAG Gate: skip retrieval for simple acknowledgements.
-	if s.adaptiveGate != nil && s.adaptiveGate.ShouldSkipRetrieval(context.Background(), queryText) {
-		return Retrieval{
-			RetrievalID:  turnID,
-			TurnID:       turnID,
-			WorkspaceID:  workspaceID,
-			Query:        queryText,
-			QueryText:    queryText,
-			QueryRewrite: normalizeQueryRewrite(queryText),
-			Results:      []RetrievalResult{},
-		}
-	}
-
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	workspaceID = normalizeWorkspaceID(workspaceID)
-	if strings.TrimSpace(turnID) == "" {
-		turnID = fmt.Sprintf("turn_%06d", len(s.retrievals)+1)
-	}
-	if maxResults <= 0 {
-		maxResults = 3
-	}
+// searchUnlocked performs the core retrieval pipeline (BM25 + HyDE + reranking).
+// MUST NOT call s.mu.Lock/Unlock — called both with and without the lock held.
+func (s *Service) searchUnlocked(workspaceID, queryText string, collectionIDs []string, maxResults int) []RetrievalResult {
 	queryRewrite := normalizeQueryRewrite(queryText)
 
 	// HyDE-expanded query embedding (averages hypothetical doc + original query).
@@ -302,20 +288,14 @@ func (s *Service) Search(workspaceID, turnID, queryText string, collectionIDs []
 			// Fallback: direct embedding.
 			embs, embedErr := s.embedder.Embed(context.Background(), []string{queryRewrite})
 			if embedErr != nil || len(embs) == 0 || len(embs[0]) == 0 {
-				return Retrieval{
-					RetrievalID: turnID, TurnID: turnID, WorkspaceID: workspaceID,
-					Query: queryText, QueryText: queryText, QueryRewrite: queryRewrite,
-				}
+				return nil
 			}
 			queryVecF32 = embs[0]
 		}
 	} else {
 		embs, embedErr := s.embedder.Embed(context.Background(), []string{queryRewrite})
 		if embedErr != nil || len(embs) == 0 || len(embs[0]) == 0 {
-			return Retrieval{
-				RetrievalID: turnID, TurnID: turnID, WorkspaceID: workspaceID,
-				Query: queryText, QueryText: queryText, QueryRewrite: queryRewrite,
-			}
+			return nil
 		}
 		queryVecF32 = embs[0]
 	}
@@ -368,6 +348,64 @@ func (s *Service) Search(workspaceID, turnID, queryText string, collectionIDs []
 		results = results[:maxResults]
 	}
 
+	return results
+}
+
+func (s *Service) Search(workspaceID, turnID, queryText string, collectionIDs []string, maxResults int) Retrieval {
+	// Adaptive RAG Gate: skip retrieval for simple acknowledgements.
+	if s.adaptiveGate != nil && s.adaptiveGate.ShouldSkipRetrieval(context.Background(), queryText) {
+		return Retrieval{
+			RetrievalID:  turnID,
+			TurnID:       turnID,
+			WorkspaceID:  workspaceID,
+			Query:        queryText,
+			QueryText:    queryText,
+			QueryRewrite: normalizeQueryRewrite(queryText),
+			Results:      []RetrievalResult{},
+		}
+	}
+
+	s.mu.Lock() // explicit lock, NO defer — manual unlock required for re-retrieval loop
+
+	workspaceID = normalizeWorkspaceID(workspaceID)
+	if strings.TrimSpace(turnID) == "" {
+		turnID = fmt.Sprintf("turn_%06d", len(s.retrievals)+1)
+	}
+	if maxResults <= 0 {
+		maxResults = 3
+	}
+
+	results := s.searchUnlocked(workspaceID, queryText, collectionIDs, maxResults)
+	if results == nil {
+		queryRewrite := normalizeQueryRewrite(queryText)
+		s.mu.Unlock()
+		return Retrieval{
+			RetrievalID: turnID, TurnID: turnID, WorkspaceID: workspaceID,
+			Query: queryText, QueryText: queryText, QueryRewrite: queryRewrite,
+		}
+	}
+
+	// Self-RAG post-retrieval critique loop
+	if s.selfRAG != nil {
+		for attempt := 0; attempt < s.selfRAG.config.MaxRetries; attempt++ {
+			decision, _ := s.selfRAG.Evaluate(context.Background(), queryText, results)
+
+			if decision.PassThreshold || decision.RewrittenQuery == "" {
+				break
+			}
+
+			s.mu.Unlock()
+			reResults := s.searchUnlocked(workspaceID, decision.RewrittenQuery, collectionIDs, maxResults)
+			s.mu.Lock()
+
+			if len(reResults) > 0 {
+				results = reResults
+			}
+			queryText = decision.RewrittenQuery
+		}
+	}
+
+	queryRewrite := normalizeQueryRewrite(queryText)
 	retrieval := Retrieval{
 		RetrievalID:  turnID,
 		TurnID:       turnID,
@@ -379,6 +417,8 @@ func (s *Service) Search(workspaceID, turnID, queryText string, collectionIDs []
 	}
 	s.retrievals[turnID] = retrieval
 	s.retrievalEvals[turnID] = evaluateRetrieval(retrieval)
+
+	s.mu.Unlock()
 	return retrieval
 }
 
@@ -612,7 +652,6 @@ func cosineSimilarity(left, right []float64) float64 {
 	}
 	return dot / (math.Sqrt(leftNorm) * math.Sqrt(rightNorm))
 }
-
 
 func roundScore(score float64) float64 {
 	if score < 0 {

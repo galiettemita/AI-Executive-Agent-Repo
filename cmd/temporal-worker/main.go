@@ -51,6 +51,36 @@ import (
 	temporalclient "go.temporal.io/sdk/client"
 )
 
+// llmCompleteAdapter wraps an llm.Client to satisfy the brain.CAILLMClient
+// and rag.CitationLLM interfaces (Complete(ctx, system, user) (string, error)).
+type llmCompleteAdapter struct {
+	client llmpkg.Client
+}
+
+func (a *llmCompleteAdapter) Complete(ctx context.Context, system, user string) (string, error) {
+	resp, _, err := a.client.Generate(ctx, llmpkg.GenerateRequest{
+		Model:     "claude-haiku-4-5-20251001",
+		MaxTokens: 1024,
+		Messages: []llmpkg.ChatMsg{
+			{Role: "system", Content: system},
+			{Role: "user", Content: user},
+		},
+	})
+	if err != nil {
+		return "", err
+	}
+	return resp.Content, nil
+}
+
+// mainLoggerAdapter adapts the runtime JSON logger to the brain.CAILogger / rag.Logger interfaces.
+type mainLoggerAdapter struct {
+	logger *runtimeserver.JSONLogger
+}
+
+func (a *mainLoggerAdapter) Info(msg string, args ...any)  { a.logger.Info(msg, map[string]any{"detail": fmt.Sprint(args...)}) }
+func (a *mainLoggerAdapter) Warn(msg string, args ...any)  { a.logger.Info("WARN_"+msg, map[string]any{"detail": fmt.Sprint(args...)}) }
+func (a *mainLoggerAdapter) Error(msg string, args ...any) { a.logger.Info("ERROR_"+msg, map[string]any{"detail": fmt.Sprint(args...)}) }
+
 func main() {
 	cfg, err := runtimeserver.LoadServiceEnvConfig(os.Getenv, runtimeserver.ServiceEnvOptions{
 		ServiceName:         "temporal-worker",
@@ -223,6 +253,39 @@ func main() {
 	// Wire IPI inference guard for post-tool-call taint tracking.
 	deps.InferenceGuard = guardrailspkg.NewInferenceGuard()
 	logger.Info("inference_guard_initialized", map[string]any{"ipi_rules": "active"})
+
+	// ── Semantic LLM Cache (pgvector-backed, 94% similarity, 4h TTL) ──────────
+	if llmSvc.Intelligence() != nil {
+		rawEmbed := ragpkg.NewOpenAIEmbeddingProvider("", os.Getenv("OPENAI_API_KEY"))
+		semCache := llmpkg.NewSemanticCache(
+			nil, // nil store → in-memory fallback; swap for pgvector store when ready
+			rawEmbed,
+			llmpkg.DefaultSemanticCacheConfig(),
+		)
+		deps.SemanticCache = semCache
+		logger.Info("semantic_cache_initialized", map[string]any{
+			"similarity_threshold": llmpkg.DefaultSemanticCacheConfig().SimilarityThreshold,
+			"ttl":                  llmpkg.DefaultSemanticCacheConfig().TTL.String(),
+		})
+	}
+
+	// ── Constitutional AI + Citation Attribution (Plan 06) ─────────────────────
+	if anthropicKey := os.Getenv("ANTHROPIC_API_KEY"); anthropicKey != "" {
+		caiClient, caiErr := llmpkg.NewAnthropicClient(llmpkg.AnthropicConfig{
+			APIKey:  anthropicKey,
+			Timeout: 30 * time.Second,
+		})
+		if caiErr == nil {
+			caiAdapter := &llmCompleteAdapter{client: caiClient}
+			deps.ConstitutionalAICritiquer = brainpkg.NewConstitutionalAICritiquer(
+				caiAdapter, brainpkg.DefaultCAIConfig(), &mainLoggerAdapter{logger: logger},
+			)
+			deps.CitationExtractor = ragpkg.NewCitationExtractor(
+				caiAdapter, &mainLoggerAdapter{logger: logger},
+			)
+			logger.Info("cai_and_citations_initialized", map[string]any{"status": "active"})
+		}
+	}
 
 	// Wire A/B experiment routing.
 	if deps.Pool != nil {

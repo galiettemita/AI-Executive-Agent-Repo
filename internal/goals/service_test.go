@@ -73,3 +73,100 @@ func TestGoalReviewMarksStalled(t *testing.T) {
 		t.Fatalf("expected stalled status, got %s", stalled[0].Status)
 	}
 }
+
+func TestGetNextMilestone(t *testing.T) {
+	svc := NewService()
+
+	const goalID = "goal-dep-test"
+
+	svc.milestones[goalID] = []Milestone{
+		{
+			ID:        "ms-A",
+			GoalID:    goalID,
+			Title:     "Milestone A",
+			Status:    "todo",
+			Order:     1,
+			DependsOn: []string{},
+		},
+		{
+			ID:        "ms-B",
+			GoalID:    goalID,
+			Title:     "Milestone B",
+			Status:    "todo",
+			Order:     2,
+			DependsOn: []string{"ms-A"},
+		},
+		{
+			ID:        "ms-C",
+			GoalID:    goalID,
+			Title:     "Milestone C",
+			Status:    "todo",
+			Order:     3,
+			DependsOn: []string{"ms-B"},
+		},
+	}
+
+	// Round 1: no deps completed → must return A
+	next, err := svc.GetNextMilestone(goalID)
+	if err != nil {
+		t.Fatalf("round 1: unexpected error: %v", err)
+	}
+	if next == nil {
+		t.Fatal("round 1: expected milestone A, got nil")
+	}
+	if next.ID != "ms-A" {
+		t.Fatalf("round 1: expected ms-A, got %q", next.ID)
+	}
+
+	// Mark A completed.
+	setMilestoneStatus(svc, goalID, "ms-A", "completed")
+
+	// Round 2: A completed → must return B
+	next, err = svc.GetNextMilestone(goalID)
+	if err != nil {
+		t.Fatalf("round 2: unexpected error: %v", err)
+	}
+	if next == nil {
+		t.Fatal("round 2: expected milestone B, got nil")
+	}
+	if next.ID != "ms-B" {
+		t.Fatalf("round 2: expected ms-B, got %q", next.ID)
+	}
+
+	// Mark B completed.
+	setMilestoneStatus(svc, goalID, "ms-B", "completed")
+
+	// Round 3: A+B completed → must return C
+	next, err = svc.GetNextMilestone(goalID)
+	if err != nil {
+		t.Fatalf("round 3: unexpected error: %v", err)
+	}
+	if next == nil {
+		t.Fatal("round 3: expected milestone C, got nil")
+	}
+	if next.ID != "ms-C" {
+		t.Fatalf("round 3: expected ms-C, got %q", next.ID)
+	}
+
+	// Mark C completed.
+	setMilestoneStatus(svc, goalID, "ms-C", "completed")
+
+	// Round 4: all completed → must return nil, nil
+	next, err = svc.GetNextMilestone(goalID)
+	if err != nil {
+		t.Fatalf("round 4: unexpected error: %v", err)
+	}
+	if next != nil {
+		t.Fatalf("round 4: expected nil when all milestones complete, got %+v", next)
+	}
+}
+
+func setMilestoneStatus(svc *Service, goalID, milestoneID, status string) {
+	ms := svc.milestones[goalID]
+	for i := range ms {
+		if ms[i].ID == milestoneID {
+			ms[i].Status = status
+		}
+	}
+	svc.milestones[goalID] = ms
+}

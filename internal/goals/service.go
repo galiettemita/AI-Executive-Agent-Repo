@@ -3,6 +3,7 @@ package goals
 import (
 	"fmt"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 )
@@ -24,6 +25,9 @@ type Milestone struct {
 	Title     string    `json:"title"`
 	Status    string    `json:"status"`
 	CreatedAt time.Time `json:"created_at"`
+	DependsOn []string  `json:"depends_on,omitempty"`
+	Horizon   string    `json:"horizon,omitempty"` // daily | weekly | monthly | quarterly
+	Order     int       `json:"order"`
 }
 
 type ProgressLog struct {
@@ -277,6 +281,81 @@ func (s *Service) SetMissionControlWidgets(workspaceID string, widgets []Mission
 	})
 	s.mcWidgets[workspaceID] = out
 	return out
+}
+
+// getNextMilestoneLocked returns the next executable milestone for goalID.
+// A milestone is eligible when Status == "todo" and every ID in its DependsOn
+// slice has Status == "completed". Among eligible milestones the one with the
+// lowest Order value is returned.
+//
+// Returns nil, nil when no eligible milestone exists.
+//
+// PRECONDITION: caller must hold s.mu (at minimum RLock) before invoking.
+// This method acquires no locks.
+func (s *Service) getNextMilestoneLocked(goalID string) (*Milestone, error) {
+	ms := s.milestones[goalID]
+
+	completedSet := make(map[string]bool, len(ms))
+	for _, m := range ms {
+		if m.Status == "completed" {
+			completedSet[m.ID] = true
+		}
+	}
+
+	eligible := make([]Milestone, 0, len(ms))
+	for _, m := range ms {
+		if m.Status != "todo" {
+			continue
+		}
+		allDepsMet := true
+		for _, dep := range m.DependsOn {
+			if !completedSet[dep] {
+				allDepsMet = false
+				break
+			}
+		}
+		if allDepsMet {
+			eligible = append(eligible, m)
+		}
+	}
+
+	if len(eligible) == 0 {
+		return nil, nil
+	}
+
+	sort.Slice(eligible, func(i, j int) bool {
+		return eligible[i].Order < eligible[j].Order
+	})
+
+	return &eligible[0], nil
+}
+
+// GetNextMilestone returns the next executable milestone for the given goalID.
+// It acquires a read lock and delegates to getNextMilestoneLocked.
+// Returns nil, nil if no eligible milestone exists.
+func (s *Service) GetNextMilestone(goalID string) (*Milestone, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.getNextMilestoneLocked(goalID)
+}
+
+// BuildContextSummary returns a human-readable summary of all goals and their
+// next executable milestone for the given workspaceID.
+func (s *Service) BuildContextSummary(workspaceID string) string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	var sb strings.Builder
+	for _, g := range s.goals {
+		if g.WorkspaceID == workspaceID {
+			fmt.Fprintf(&sb, "Goal[%s]: %s (%s)\n", g.Priority, g.Title, g.Status)
+			next, _ := s.getNextMilestoneLocked(g.ID)
+			if next != nil {
+				fmt.Fprintf(&sb, "  Next: %s (horizon:%s)\n", next.Title, next.Horizon)
+			}
+		}
+	}
+	return sb.String()
 }
 
 func (s *Service) MissionControlSnapshot(workspaceID string) map[string]any {

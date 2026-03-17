@@ -216,7 +216,10 @@ func addUncertaintyQualifiers(response string) string {
 }
 
 type SynthesizeResponseResult struct {
-	ResponsePayload string `json:"response_payload"`
+	ResponsePayload string         `json:"response_payload"`
+	FromCache       bool           `json:"from_cache,omitempty"`
+	CAIViolations   int            `json:"cai_violations,omitempty"`
+	Citations       []rag.Citation `json:"citations,omitempty"`
 }
 
 // VerifyExecutionInput carries context for the LLM-based critic/verifier.
@@ -453,6 +456,13 @@ type ActivityDeps struct {
 
 	// Trust scoring for SubAgent autonomy gate.
 	TrustSvc *trust.Service
+
+	// Semantic LLM cache (pgvector-backed, 94% similarity threshold).
+	SemanticCache *llm.SemanticCache
+
+	// Constitutional AI critiquer and citation extractor (Plan 06).
+	ConstitutionalAICritiquer *brain.ConstitutionalAICritiquer
+	CitationExtractor         *rag.CitationExtractor
 }
 
 // ProductionQualityGauge records the rolling quality score to Prometheus.
@@ -576,6 +586,13 @@ type Activities struct {
 	// Trust scoring for SubAgent autonomy gate.
 	trustSvc *trust.Service
 
+	// Semantic LLM cache.
+	semanticCache *llm.SemanticCache
+
+	// Constitutional AI critiquer and citation extractor (Plan 06).
+	caiCritiquer      *brain.ConstitutionalAICritiquer
+	citationExtractor *rag.CitationExtractor
+
 	// Observability counters for outbox dispatch.
 	outboxDispatched atomic.Int64
 	outboxFailed     atomic.Int64
@@ -644,6 +661,9 @@ func NewActivitiesWithProdDeps(deps ActivityDeps) *Activities {
 		kgService:             deps.KGService,
 		kgRetriever:           deps.KGRetriever,
 		trustSvc:              deps.TrustSvc,
+		semanticCache:         deps.SemanticCache,
+		caiCritiquer:          deps.ConstitutionalAICritiquer,
+		citationExtractor:     deps.CitationExtractor,
 	}
 }
 
@@ -1125,6 +1145,13 @@ func (a *Activities) SynthesizeResponseActivity(ctx context.Context, input Synth
 			fmt.Fprintf(&toolSummary, "- %s [%s]: phase=%s hash=%s\n", tr.ToolKey, status, tr.Phase, tr.PayloadHash)
 		}
 
+		// ── Semantic cache lookup ──────────────────────────────────────────────────
+		if a.semanticCache != nil {
+			if cached, hit := a.semanticCache.Lookup(ctx, input.WorkspaceID, toolSummary.String(), ""); hit {
+				return &SynthesizeResponseResult{ResponsePayload: cached, FromCache: true}, nil
+			}
+		}
+
 		// Streaming path — only active when FEATURE_STREAMING_ENABLED=true.
 		if feature_flags.StreamingEnabled() {
 			streamOut := make(chan llm.StreamChunk, 64)
@@ -1178,6 +1205,24 @@ func (a *Activities) SynthesizeResponseActivity(ctx context.Context, input Synth
 		}
 		responseText := synthesized.ResponseText
 
+		// ── CAI Post-Generation Review (Plan 06) ──────────────────────────────────
+		var caiViolations int
+		if a.caiCritiquer != nil {
+			// plan §6 step 3: in.Payload — adapted to toolSummary (user query context)
+			review, _ := a.caiCritiquer.Review(ctx, toolSummary.String(), responseText)
+			if review != nil {
+				if review.Revised {
+					responseText = review.RevisedResponse
+				}
+				caiViolations = review.ViolationCount
+			}
+		}
+
+		// TODO(plan-06): wire CitationExtractor once ragChunks is available in this activity
+		// if a.citationExtractor != nil && len(ragChunks) > 0 {
+		//     citations, _ := a.citationExtractor.Extract(ctx, responseText, ragChunks)
+		// }
+
 		// Uncertainty qualifiers for medium-confidence responses.
 		if input.AddQualifiers {
 			responseText = addUncertaintyQualifiers(responseText)
@@ -1191,8 +1236,14 @@ func (a *Activities) SynthesizeResponseActivity(ctx context.Context, input Synth
 			}
 		}
 
+		// ── Semantic cache store ───────────────────────────────────────────────────
+		if a.semanticCache != nil {
+			a.semanticCache.Put(ctx, input.WorkspaceID, toolSummary.String(), "", responseText, "synthesis")
+		}
+
 		return &SynthesizeResponseResult{
 			ResponsePayload: responseText,
+			CAIViolations:   caiViolations,
 		}, nil
 	}
 

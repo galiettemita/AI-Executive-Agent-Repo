@@ -30,7 +30,7 @@ export interface ScreenshotResult {
 
 export class BrowserSession {
   private context: BrowserContext;
-  private page: Page | null = null;
+  page: Page | null = null;
   readonly sessionId: string;
   readonly workspaceId: string;
 

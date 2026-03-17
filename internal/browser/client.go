@@ -169,3 +169,40 @@ func (c *Client) Health(ctx context.Context) error {
 	}
 	return nil
 }
+
+// Click sends a mouse click at pixel coordinates (x, y) in the viewport.
+func (c *Client) Click(ctx context.Context, sessionID string, x, y int) error {
+	return c.post(ctx, "/v1/browser/click",
+		map[string]any{"session_id": sessionID, "x": x, "y": y}, nil)
+}
+
+// Type sends keyboard text to the currently focused element.
+func (c *Client) Type(ctx context.Context, sessionID string, text string) error {
+	return c.post(ctx, "/v1/browser/type",
+		map[string]any{"session_id": sessionID, "text": text}, nil)
+}
+
+// KeyPress sends a named key (Enter, Tab, Escape, etc.).
+func (c *Client) KeyPress(ctx context.Context, sessionID string, key string) error {
+	return c.post(ctx, "/v1/browser/key",
+		map[string]any{"session_id": sessionID, "key": key}, nil)
+}
+
+// Scroll scrolls the page. direction is "up" or "down"; amount is scroll units.
+func (c *Client) Scroll(ctx context.Context, sessionID string, direction string, amount int) error {
+	return c.post(ctx, "/v1/browser/scroll",
+		map[string]any{"session_id": sessionID, "direction": direction, "amount": amount}, nil)
+}
+
+// GetDOM returns a '\n'-delimited list of visible interactive elements with
+// coordinates and truncated labels.
+func (c *Client) GetDOM(ctx context.Context, sessionID string) (string, error) {
+	var resp struct {
+		DOM string `json:"dom"`
+	}
+	if err := c.post(ctx, "/v1/browser/dom",
+		map[string]string{"session_id": sessionID}, &resp); err != nil {
+		return "", fmt.Errorf("browser.GetDOM: %w", err)
+	}
+	return resp.DOM, nil
+}

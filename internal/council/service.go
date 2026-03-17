@@ -342,16 +342,44 @@ func (s *CouncilService) DeliberateAndVote(ctx context.Context, councilID, actio
 		return nil
 	}
 
+	// voteResult carries a single agent's deliberation outcome across the fan-out channel.
+	type voteResult struct {
+		agentID       string
+		vote          string
+		confidence    float64
+		justification string
+	}
+
+	results := make(chan voteResult, len(agents))
+
 	for _, ag := range agents {
-		vote, conf, justification, err := s.agentDeliberate(ctx, ag, topic, actionDescription)
-		if err != nil {
-			vote, conf, justification = "abstain", 0.5, "deliberation error"
-		}
+		ag := ag // capture: prevents all goroutines closing over same pointer
+		go func() {
+			vote, conf, just, err := s.agentDeliberate(
+				ctx,
+				ag,
+				topic,
+				actionDescription,
+			)
+			if err != nil {
+				vote, conf, just = "abstain", 0.5, "deliberation error"
+			}
+			results <- voteResult{
+				agentID:       ag.ID,
+				vote:          vote,
+				confidence:    conf,
+				justification: just,
+			}
+		}()
+	}
+
+	for range agents {
+		r := <-results
 		s.mu.Lock()
 		if c, ok := s.councils[councilID]; ok {
 			alreadyVoted := false
 			for _, v := range c.Votes {
-				if v.AgentID == ag.ID {
+				if v.AgentID == r.agentID {
 					alreadyVoted = true
 					break
 				}
@@ -359,10 +387,10 @@ func (s *CouncilService) DeliberateAndVote(ctx context.Context, councilID, actio
 			if !alreadyVoted {
 				c.Status = "deliberating"
 				c.Votes = append(c.Votes, Vote{
-					AgentID:       ag.ID,
-					Vote:          vote,
-					Confidence:    conf,
-					Justification: justification,
+					AgentID:       r.agentID,
+					Vote:          r.vote,
+					Confidence:    r.confidence,
+					Justification: r.justification,
 					CastAt:        s.now(),
 				})
 			}
