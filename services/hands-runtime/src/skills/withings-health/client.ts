@@ -1,79 +1,58 @@
-import type {
-  WithingsHealthInput,
-  WithingsHealthOutput,
-  WithingsMeasurement,
-  WithingsMeasureType
-} from './types.js';
+// Plan §6 step 7 — Real Withings Health API
+// POST https://wbsapi.withings.net/measure?action=getmeas
+// action=getmeas is a QUERY PARAM; body is application/x-www-form-urlencoded
 
-function measureUnit(type: WithingsMeasureType): string {
-  switch (type) {
-    case 'weight':
-      return 'kg';
-    case 'body_fat_pct':
-      return '%';
-    case 'muscle_mass_kg':
-      return 'kg';
-    case 'heart_rate_bpm':
-      return 'bpm';
-    default:
-      return 'unit';
+interface SkillContext { token?: string; user_id?: string; }
+
+const MEAS_TYPE: Record<string, number> = {
+  weight:          1,
+  body_fat_pct:    6,
+  muscle_mass_kg:  76,
+  heart_rate_bpm:  11,
+};
+
+const UNIT_LABEL: Record<string, string> = {
+  weight: 'kg', body_fat_pct: '%', muscle_mass_kg: 'kg', heart_rate_bpm: 'bpm',
+};
+
+export async function runClient(
+  input: Record<string, any>,
+  ctx?: SkillContext
+): Promise<any> {
+  const token = ctx?.token ?? process.env.WITHINGS_TOKEN;
+  if (!token) throw new Error('Withings token required: provide ctx.token or set WITHINGS_TOKEN');
+
+  const measureType = input.measure_type ?? 'weight';
+  const meastype    = MEAS_TYPE[measureType];
+  if (meastype === undefined) {
+    throw new Error(`Unknown measure_type: "${measureType}". Valid: ${Object.keys(MEAS_TYPE).join(', ')}`);
   }
-}
 
-function baseValue(type: WithingsMeasureType): number {
-  switch (type) {
-    case 'weight':
-      return 78.4;
-    case 'body_fat_pct':
-      return 18.2;
-    case 'muscle_mass_kg':
-      return 34.1;
-    case 'heart_rate_bpm':
-      return 62;
-    default:
-      return 0;
+  const res = await fetch('https://wbsapi.withings.net/measure?action=getmeas', {
+    method:  'POST',
+    headers: {
+      authorization:  `Bearer ${token}`,
+      'content-type': 'application/x-www-form-urlencoded',
+    },
+    body: `meastype=${meastype}&category=1`,
+  });
+  if (!res.ok) throw new Error(`Withings HTTP error: ${res.status}`);
+  const body = await res.json();
+
+  if (body.status !== 0) {
+    throw new Error(`Withings API error status ${body.status}: ${body.error ?? 'unknown'}`);
   }
-}
 
-function buildMeasurements(type: WithingsMeasureType): WithingsMeasurement[] {
-  const unit = measureUnit(type);
-  const baseline = baseValue(type);
-  return [
-    {
-      recorded_at: '2026-03-02T07:05:00.000Z',
-      measure_type: type,
-      value: Number((baseline + 0.2).toFixed(2)),
-      unit
-    },
-    {
-      recorded_at: '2026-03-03T07:05:00.000Z',
-      measure_type: type,
-      value: Number((baseline + 0.1).toFixed(2)),
-      unit
-    },
-    {
-      recorded_at: '2026-03-04T07:05:00.000Z',
-      measure_type: type,
-      value: Number(baseline.toFixed(2)),
-      unit
-    }
-  ];
-}
-
-export async function runClient(input: WithingsHealthInput): Promise<WithingsHealthOutput> {
-  const measure_type = input.measure_type ?? 'weight';
-  const measurements = buildMeasurements(measure_type);
-  const first = (measurements[0] as WithingsMeasurement).value;
-  const last = (measurements[2] as WithingsMeasurement).value;
-  const trend: WithingsHealthOutput['trend'] =
-    last > first ? 'up' : last < first ? 'down' : 'stable';
+  const measurements = (body.body?.measuregrps ?? []).map((grp: any) => ({
+    date:         new Date(grp.date * 1000).toISOString(),
+    value:        grp.measures[0].value * Math.pow(10, grp.measures[0].unit),
+    measure_type: measureType,
+    unit:         UNIT_LABEL[measureType] ?? '',
+  }));
 
   return {
-    provider: 'withings-health',
-    action: input.action,
-    measure_type,
     measurements,
-    trend,
-    summary: `Withings ${measure_type} trend is ${trend} over the last three check-ins.`
+    measure_type: measureType,
+    count:        measurements.length,
   };
 }

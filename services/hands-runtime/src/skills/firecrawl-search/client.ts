@@ -1,32 +1,48 @@
-import type { FirecrawlInput, FirecrawlOutput, FirecrawlResult } from './types.js';
+// Plan §6 step 4 — Real Firecrawl /v1/search
+// Response wraps items in data.data[] per plan mapping: data[].{title||url, url, markdown→content}
 
-const RESULTS: FirecrawlResult[] = [
-  {
-    title: 'Executive assistant benchmark report',
-    url: 'https://crawl.example.com/exec-assistant-benchmark',
-    content: 'Benchmark data comparing assistant response quality and latency.'
-  },
-  {
-    title: 'Operational dashboard design patterns',
-    url: 'https://crawl.example.com/ops-dashboard-patterns',
-    content: 'Patterns for dashboard information hierarchy and alerting.'
-  },
-  {
-    title: 'Leadership meeting digest strategy',
-    url: 'https://crawl.example.com/leadership-meeting-digest',
-    content: 'How to distill long meetings into concise executive digests.'
-  }
-];
+import type { FirecrawlInput, FirecrawlOutput } from './types.js';
+
+interface FirecrawlItem {
+  title?: string | null;
+  url: string;
+  markdown?: string | null;
+}
+
+interface FirecrawlApiResponse {
+  data?: FirecrawlItem[];
+}
 
 export async function runClient(input: FirecrawlInput): Promise<FirecrawlOutput> {
-  const terms = input.query.toLowerCase().split(/\s+/).filter((term) => term.length > 1);
-  const results = RESULTS.filter((result) => {
-    const haystack = `${result.title} ${result.content}`.toLowerCase();
-    return terms.some((term) => haystack.includes(term));
-  }).slice(0, input.max_results ?? 5);
+  const key = process.env.FIRECRAWL_API_KEY ?? process.env.FAL_KEY;
+  if (!key) throw new Error('firecrawl-search: FIRECRAWL_API_KEY not set');
+
+  const response = await fetch('https://api.firecrawl.dev/v1/search', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${key}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      query: input.query,
+      limit: input.max_results ?? 10,
+    }),
+    signal: AbortSignal.timeout(10000),
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`firecrawl-search: HTTP ${response.status} – ${text.slice(0, 300)}`);
+  }
+
+  const data = (await response.json()) as FirecrawlApiResponse;
 
   return {
     provider: 'firecrawl',
-    results
+    results: (data.data ?? []).map((item) => ({
+      title: item.title ?? item.url,    // plan: title||url
+      url: item.url,
+      content: item.markdown ?? '',     // plan: markdown→content
+    })),
   };
 }

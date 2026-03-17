@@ -1,89 +1,67 @@
-import type {
-  PlaidAccount,
-  PlaidBalance,
-  PlaidInput,
-  PlaidOutput,
-  PlaidTransaction
-} from './types.js';
+// Plan §6 step 2 — Real Plaid API
+// ctx.token for per-user access tokens; PLAID_ENV controls base URL
 
-const ACCOUNTS: PlaidAccount[] = [
-  {
-    account_id: 'plaid_checking',
-    name: 'Main Checking',
-    mask: '1234',
-    subtype: 'checking'
-  },
-  {
-    account_id: 'plaid_savings',
-    name: 'Reserve Savings',
-    mask: '9876',
-    subtype: 'savings'
-  }
-];
+interface SkillContext { token?: string; user_id?: string; }
 
-const TRANSACTIONS: PlaidTransaction[] = [
-  {
-    transaction_id: 'ptxn_001',
-    account_id: 'plaid_checking',
-    name: 'Team Lunch',
-    amount: 48.5,
-    date: '2026-03-02'
-  },
-  {
-    transaction_id: 'ptxn_002',
-    account_id: 'plaid_checking',
-    name: 'Rideshare',
-    amount: 17.2,
-    date: '2026-03-03'
-  }
-];
-
-const BALANCES: PlaidBalance[] = [
-  {
-    account_id: 'plaid_checking',
-    available: 2410.2,
-    current: 2431.2
-  },
-  {
-    account_id: 'plaid_savings',
-    available: 11840.55,
-    current: 11840.55
-  }
-];
-
-function assertAccountExists(accountID?: string): void {
-  if (!accountID) {
-    return;
-  }
-  if (!ACCOUNTS.some((account) => account.account_id === accountID)) {
-    throw new Error('PLAID_ACCOUNT_NOT_FOUND');
-  }
+function isoDate(d: Date): string { return d.toISOString().slice(0, 10); }
+function today(): string { return isoDate(new Date()); }
+function daysAgo(n: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() - n);
+  return isoDate(d);
 }
 
-export async function runClient(input: PlaidInput): Promise<PlaidOutput> {
-  assertAccountExists(input.account_id);
+const ENV_URL: Record<string, string> = {
+  sandbox:     'https://sandbox.plaid.com',
+  development: 'https://development.plaid.com',
+  production:  'https://production.plaid.com',
+};
 
-  if (input.action === 'accounts') {
-    return {
-      provider: 'plaid',
-      action: 'accounts',
-      accounts: ACCOUNTS
-    };
+export async function runClient(
+  input: Record<string, any>,
+  ctx?: SkillContext
+): Promise<any> {
+  const baseUrl   = ENV_URL[process.env.PLAID_ENV ?? 'sandbox'] ?? 'https://sandbox.plaid.com';
+  const client_id = process.env.PLAID_CLIENT_ID;
+  const secret    = process.env.PLAID_SECRET;
+  if (!client_id || !secret) {
+    throw new Error('PLAID_CLIENT_ID and PLAID_SECRET env vars are required');
   }
 
-  if (input.action === 'transactions') {
-    return {
-      provider: 'plaid',
-      action: 'transactions',
-      transactions: TRANSACTIONS.filter(
-        (transaction) => !input.account_id || transaction.account_id === input.account_id
-      )
-    };
+  const access_token = ctx?.token ?? process.env.PLAID_ACCESS_TOKEN;
+  if (!access_token) {
+    throw new Error('Plaid access_token required: provide ctx.token or set PLAID_ACCESS_TOKEN');
   }
 
-  return {
-    provider: 'plaid',
-    action: 'balance',
-    balances: BALANCES.filter((balance) => !input.account_id || balance.account_id === input.account_id)
-  };
+  async function plaidPost(path: string, extra: Record<string, any> = {}): Promise<any> {
+    const res = await fetch(`${baseUrl}${path}`, {
+      method:  'POST',
+      headers: { 'content-type': 'application/json' },
+      body:    JSON.stringify({ client_id, secret, access_token, ...extra }),
+    });
+    const body = await res.json();
+    if (!res.ok) throw new Error(`Plaid API error ${res.status}: ${JSON.stringify(body)}`);
+    return body;
+  }
+
+  switch (input.action) {
+    case 'accounts': {
+      const body = await plaidPost('/accounts/get');
+      return { accounts: body.accounts };
+    }
+    case 'transactions': {
+      const body = await plaidPost('/transactions/get', {
+        start_date: input.start_date ?? daysAgo(30),
+        end_date:   input.end_date ?? today(),
+        options:    { count: 50 },
+      });
+      return { transactions: body.transactions, total_transactions: body.total_transactions };
+    }
+    case 'balance': {
+      const body = await plaidPost('/accounts/balance/get');
+      return { accounts: body.accounts };
+    }
+    default:
+      throw new Error(`Unknown Plaid action: ${input.action}`);
+  }
 }

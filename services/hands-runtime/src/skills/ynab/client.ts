@@ -1,72 +1,49 @@
-import type { YNABAccount, YNABInput, YNABOutput, YNABTransaction } from './types.js';
+// Plan §6 step 3 — Real YNAB API
 
-const ACCOUNTS: YNABAccount[] = [
-  {
-    account_id: 'acct_checking',
-    name: 'Checking',
-    balance_cents: 524030
-  },
-  {
-    account_id: 'acct_savings',
-    name: 'Savings',
-    balance_cents: 1834500
-  }
-];
+interface SkillContext { token?: string; user_id?: string; }
 
-const TRANSACTIONS: YNABTransaction[] = [
-  {
-    transaction_id: 'txn_001',
-    account_id: 'acct_checking',
-    payee: 'Coffee Bar',
-    amount_cents: -620,
-    date: '2026-03-01'
-  },
-  {
-    transaction_id: 'txn_002',
-    account_id: 'acct_checking',
-    payee: 'Office Supplies',
-    amount_cents: -4825,
-    date: '2026-03-02'
-  },
-  {
-    transaction_id: 'txn_003',
-    account_id: 'acct_savings',
-    payee: 'Interest',
-    amount_cents: 315,
-    date: '2026-03-02'
-  }
-];
+function isoDate(d: Date): string { return d.toISOString().slice(0, 10); }
+function daysAgo(n: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() - n);
+  return isoDate(d);
+}
 
-export async function runClient(input: YNABInput): Promise<YNABOutput> {
-  const budgetId = input.budget_id ?? 'primary-budget';
+const YNAB_BASE = 'https://api.youneedabudget.com/v1';
 
-  if (input.action === 'summary') {
-    const totalBudgetCents = ACCOUNTS.reduce((sum, account) => sum + account.balance_cents, 0);
-    return {
-      provider: 'ynab',
-      action: 'summary',
-      budget_id: budgetId,
-      total_budget_cents: totalBudgetCents
-    };
+export async function runClient(
+  input: Record<string, any>,
+  ctx?: SkillContext
+): Promise<any> {
+  const token = process.env.YNAB_TOKEN;
+  if (!token) throw new Error('YNAB_TOKEN env var is required');
+
+  const budgetId = input.budget_id ?? 'last-used';
+
+  async function ynabGet(path: string): Promise<any> {
+    const res = await fetch(`${YNAB_BASE}${path}`, {
+      headers: { authorization: `Bearer ${token}` },
+    });
+    const body = await res.json();
+    if (!res.ok) throw new Error(`YNAB API error ${res.status}: ${JSON.stringify(body)}`);
+    return body;
   }
 
-  if (input.action === 'accounts') {
-    return {
-      provider: 'ynab',
-      action: 'accounts',
-      budget_id: budgetId,
-      accounts: ACCOUNTS
-    };
+  switch (input.action) {
+    case 'summary': {
+      const body = await ynabGet(`/budgets/${budgetId}`);
+      return { budget: body.data.budget };
+    }
+    case 'accounts': {
+      const body = await ynabGet(`/budgets/${budgetId}/accounts`);
+      return { accounts: body.data.accounts.filter((a: any) => !a.closed) };
+    }
+    case 'transactions': {
+      const since_date = daysAgo(30);
+      const body = await ynabGet(`/budgets/${budgetId}/transactions?since_date=${since_date}`);
+      return { transactions: body.data.transactions };
+    }
+    default:
+      throw new Error(`Unknown YNAB action: ${input.action}`);
   }
-
-  if (input.account_id && !ACCOUNTS.some((account) => account.account_id === input.account_id)) {
-    throw new Error('YNAB_ACCOUNT_NOT_FOUND');
-  }
-
-  return {
-    provider: 'ynab',
-    action: 'transactions',
-    budget_id: budgetId,
-    transactions: TRANSACTIONS.filter((txn) => !input.account_id || txn.account_id === input.account_id)
-  };
 }

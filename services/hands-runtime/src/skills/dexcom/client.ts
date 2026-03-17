@@ -1,49 +1,48 @@
-import type { DexcomInput, DexcomOutput, DexcomReading } from './types.js';
+// Plan §6 step 6 — Real Dexcom CGM API
 
-function stateFor(value: number): DexcomReading['state'] {
-  if (value < 70) {
-    return 'low';
-  }
-  if (value > 180) {
-    return 'high';
-  }
-  return 'in_range';
-}
+interface SkillContext { token?: string; user_id?: string; }
 
-export async function runClient(input: DexcomInput): Promise<DexcomOutput> {
-  const readings: DexcomReading[] = [
-    {
-      timestamp: '2026-03-04T08:00:00.000Z',
-      value_mg_dl: 112,
-      trend: 'steady',
-      state: stateFor(112)
-    },
-    {
-      timestamp: '2026-03-04T08:05:00.000Z',
-      value_mg_dl: 118,
-      trend: 'rising',
-      state: stateFor(118)
-    },
-    {
-      timestamp: '2026-03-04T08:10:00.000Z',
-      value_mg_dl: 124,
-      trend: 'rising',
-      state: stateFor(124)
-    }
-  ];
+export async function runClient(
+  input: Record<string, any>,
+  ctx?: SkillContext
+): Promise<any> {
+  const token = ctx?.token ?? process.env.DEXCOM_TOKEN;
+  if (!token) throw new Error('Dexcom token required: provide ctx.token or set DEXCOM_TOKEN');
+
+  const endDate   = new Date();
+  const startDate = new Date(endDate.getTime() - 3 * 60 * 60 * 1000);
+
+  const url = `https://api.dexcom.com/v3/users/self/egvs`
+    + `?startDate=${startDate.toISOString()}`
+    + `&endDate=${endDate.toISOString()}`;
+
+  const res = await fetch(url, {
+    headers: { authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) throw new Error(`Dexcom API error: ${res.status}`);
+  const body = await res.json();
+
+  const readings = (body.records ?? []).map((r: any) => ({
+    time:              r.displayTime,
+    value_mg_dl:       r.value,
+    trend:             r.trend,
+    trend_description: r.trendDescription ?? null,
+    status:            r.value < 70 ? 'low' : r.value > 180 ? 'high' : 'in_range',
+  }));
 
   const alerts = readings
-    .filter((reading) => reading.state !== 'in_range')
-    .map((reading) => `${reading.timestamp}: glucose ${reading.state} at ${reading.value_mg_dl} mg/dL`);
+    .filter((r: any) => r.status !== 'in_range')
+    .map((r: any) => ({ time: r.time, value_mg_dl: r.value_mg_dl, status: r.status, trend: r.trend }));
 
   return {
-    provider: 'dexcom',
-    action: input.action,
     readings,
+    latest:  readings.length > 0 ? readings[readings.length - 1] : null,
     alerts,
-    summary:
-      alerts.length === 0
-        ? 'Glucose remained in range in sampled interval.'
-        : `Detected ${alerts.length} glucose alert(s) in sampled interval.`
+    summary: {
+      total:          readings.length,
+      low_count:      readings.filter((r: any) => r.status === 'low').length,
+      high_count:     readings.filter((r: any) => r.status === 'high').length,
+      in_range_count: readings.filter((r: any) => r.status === 'in_range').length,
+    },
   };
 }

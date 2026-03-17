@@ -1,48 +1,52 @@
-import type { TavilyInput, TavilyOutput, TavilyResult } from './types.js';
+// Plan §6 step 3 — Real Tavily /search endpoint
+// NOTE: auth is via api_key field in the JSON body, not a header
 
-function sanitizeToken(token: string): string {
-  return token.toLowerCase().replace(/[^a-z0-9-]/g, '');
+import type { TavilyInput, TavilyOutput } from './types.js';
+
+interface TavilyResult {
+  title: string;
+  url: string;
+  content: string;
+  score: number;
 }
 
-function buildUrl(token: string, domain?: string): string {
-  const safeToken = sanitizeToken(token) || 'result';
-  if (domain) {
-    return `https://${domain.replace(/^https?:\/\//, '')}/${safeToken}`;
-  }
-  return `https://research.example.com/${safeToken}`;
-}
-
-function toResults(query: string, maxResults: number, domains: string[]): TavilyResult[] {
-  const tokens = query
-    .split(/\s+/)
-    .map((token) => sanitizeToken(token))
-    .filter((token) => token.length > 1);
-
-  const baseTokens = tokens.length > 0 ? tokens : ['research'];
-
-  const results: TavilyResult[] = [];
-  for (let i = 0; i < maxResults; i += 1) {
-    const token = baseTokens[i % baseTokens.length] ?? 'research';
-    const domain = domains.length > 0 ? domains[i % domains.length] : undefined;
-    const score = Math.max(0.1, Number((0.95 - i * 0.07).toFixed(2)));
-
-    results.push({
-      title: `${token} insight ${i + 1}`,
-      url: buildUrl(token, domain),
-      content: `Context summary for ${token} (${i + 1}/${maxResults}).`,
-      score
-    });
-  }
-
-  return results;
+interface TavilyApiResponse {
+  results?: TavilyResult[];
 }
 
 export async function runClient(input: TavilyInput): Promise<TavilyOutput> {
-  const maxResults = input.max_results ?? 5;
-  const domains = input.include_domains ?? [];
+  const key = process.env.TAVILY_API_KEY;
+  if (!key) throw new Error('tavily: TAVILY_API_KEY not set');
+
+  const response = await fetch('https://api.tavily.com/search', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      api_key: key,
+      query: input.query,
+      max_results: input.max_results ?? 10,
+      include_domains: input.include_domains ?? [],
+      search_depth: 'basic',
+    }),
+    signal: AbortSignal.timeout(10000),
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`tavily: HTTP ${response.status} – ${text.slice(0, 300)}`);
+  }
+
+  const data = (await response.json()) as TavilyApiResponse;
 
   return {
     provider: 'tavily',
-    results: toResults(input.query, maxResults, domains)
+    results: (data.results ?? []).map((r) => ({
+      title: r.title ?? '',
+      url: r.url ?? '',
+      content: r.content ?? '',
+      score: r.score ?? 0,
+    })),
   };
 }

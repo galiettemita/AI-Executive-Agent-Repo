@@ -1,48 +1,52 @@
-import type { ExaInput, ExaOutput, ExaResultItem } from './types.js';
+// Plan §6 step 2 — Real Exa /search endpoint
 
-const RESULTS: ExaResultItem[] = [
-  {
-    title: 'Executive operating cadence templates',
-    url: 'https://insights.example.com/executive-cadence',
-    snippet: 'Structured weekly cadence frameworks for leadership teams.',
-    score: 0.94
-  },
-  {
-    title: 'Strategic planning with AI copilots',
-    url: 'https://research.example.com/ai-strategy-copilots',
-    snippet: 'How AI copilots improve strategic planning consistency.',
-    score: 0.91
-  },
-  {
-    title: 'Decision brief design guide',
-    url: 'https://docs.example.com/decision-brief-guide',
-    snippet: 'A practical guide to concise decision briefs for executives.',
-    score: 0.87
-  }
-];
+import type { ExaInput, ExaOutput } from './types.js';
+
+interface ExaResult {
+  title: string;
+  url: string;
+  text: string;
+  score: number;
+}
+
+interface ExaApiResponse {
+  results?: ExaResult[];
+}
 
 export async function runClient(input: ExaInput): Promise<ExaOutput> {
-  const terms = input.query
-    .toLowerCase()
-    .split(/\s+/)
-    .map((term) => term.trim())
-    .filter((term) => term.length > 1);
+  const key = process.env.EXA_API_KEY;
+  if (!key) throw new Error('exa: EXA_API_KEY not set');
 
-  const filtered = RESULTS.filter((item) => {
-    const haystack = `${item.title} ${item.snippet}`.toLowerCase();
-    if (!terms.length) {
-      return true;
-    }
-    return terms.some((term) => haystack.includes(term));
+  const response = await fetch('https://api.exa.ai/search', {
+    method: 'POST',
+    headers: {
+      'x-api-key': key,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      query: input.query,
+      numResults: input.max_results ?? 10,
+      includeDomains: input.include_domains ?? [],
+      useAutoprompt: true,
+      contents: { text: { maxCharacters: 1000 } },
+    }),
+    signal: AbortSignal.timeout(10000),
   });
 
-  const byDomain = input.include_domains?.length
-    ? filtered.filter((item) => input.include_domains?.some((domain) => item.url.includes(domain)))
-    : filtered;
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`exa: HTTP ${response.status} – ${text.slice(0, 300)}`);
+  }
 
-  const limit = input.max_results ?? 5;
+  const data = (await response.json()) as ExaApiResponse;
+
   return {
     provider: 'exa',
-    results: byDomain.slice(0, limit)
+    results: (data.results ?? []).map((r) => ({
+      title: r.title ?? '',
+      url: r.url ?? '',
+      snippet: r.text ?? '',   // plan: text→snippet
+      score: r.score ?? 0,
+    })),
   };
 }

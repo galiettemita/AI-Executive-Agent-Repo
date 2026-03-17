@@ -1,93 +1,150 @@
-import { createHash } from 'node:crypto';
+// Plan §6 steps 17–19 — Real Todoist /rest/v2/tasks
+// HTTP 204 checks for complete and delete (plan §6 step 19 explicit)
 
-import type { TodoistInput, TodoistOutput, TodoistTask } from './types.js';
+import type { TodoistInput, TodoistOutput } from './types.js';
 
-const BASE_TASKS: TodoistTask[] = [
-  {
-    task_id: 'task_exec_review',
-    content: 'Review executive briefing draft',
-    project_id: 'inbox',
-    due_string: 'today 5pm',
-    priority: 4,
-    completed: false
-  },
-  {
-    task_id: 'task_budget_sync',
-    content: 'Sync Q2 budget notes',
-    project_id: 'finance',
-    due_string: 'tomorrow 10am',
-    priority: 3,
-    completed: false
-  }
-];
+const TODOIST_BASE = 'https://api.todoist.com/rest/v2';
 
-function buildTaskId(seed: string): string {
-  const hash = createHash('sha256').update(seed).digest('hex').slice(0, 16);
-  return `task_${hash}`;
+interface TodoistApiTask {
+  id: string;
+  content: string;
+  project_id: string;
+  due?: { string?: string } | null;
+  priority: number;
+  is_completed: boolean;
 }
 
 export async function runClient(input: TodoistInput): Promise<TodoistOutput> {
-  const tasks = BASE_TASKS.map((task) => ({ ...task }));
+  const token = process.env.TODOIST_API_TOKEN;
+  if (!token) throw new Error('todoist: TODOIST_API_TOKEN not set');
+
+  const headers = {
+    'Authorization': `Bearer ${token}`,
+    'Content-Type': 'application/json',
+  };
+
   const projectId = input.project_id ?? 'inbox';
 
   if (input.action === 'list') {
-    const filtered = tasks.filter((task) => task.project_id === projectId || projectId === 'inbox');
+    // Plan §6 step 17: GET /tasks?project_id=<id>
+    const url = new URL(`${TODOIST_BASE}/tasks`);
+    url.searchParams.set('project_id', projectId);
+
+    const response = await fetch(url.toString(), {
+      headers,
+      signal: AbortSignal.timeout(10000),
+    });
+
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(`todoist: HTTP ${response.status} – ${text.slice(0, 300)}`);
+    }
+
+    const data = (await response.json()) as TodoistApiTask[];
+
     return {
       provider: 'todoist_deterministic',
       action: 'list',
-      tasks: filtered
+      tasks: data.map((t) => ({
+        task_id: t.id,
+        content: t.content,
+        project_id: t.project_id,
+        due_string: t.due?.string,
+        priority: t.priority,
+        completed: t.is_completed,
+      })),
     };
   }
 
   if (input.action === 'create') {
     const content = input.task?.content?.trim();
-    if (!content) {
-      throw new Error('TODOIST_CONTENT_REQUIRED');
+    if (!content) throw new Error('todoist: content is required for create');
+
+    // Plan §6 step 18: POST /tasks
+    const response = await fetch(`${TODOIST_BASE}/tasks`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        content,
+        project_id: projectId,
+        due_string: input.task?.due_string,
+        priority: input.task?.priority ?? 1,
+      }),
+      signal: AbortSignal.timeout(10000),
+    });
+
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(`todoist: HTTP ${response.status} – ${text.slice(0, 300)}`);
     }
 
-    const taskId = buildTaskId(`${projectId}|${content}|${input.task?.due_string ?? ''}`);
+    const data = (await response.json()) as TodoistApiTask;
     return {
       provider: 'todoist_deterministic',
       action: 'create',
-      task_id: taskId,
+      task_id: data.id,
       tasks: [
         {
-          task_id: taskId,
-          content,
-          project_id: projectId,
-          due_string: input.task?.due_string,
-          priority: input.task?.priority ?? 1,
-          completed: false
-        }
-      ]
+          task_id: data.id,
+          content: data.content,
+          project_id: data.project_id,
+          due_string: data.due?.string,
+          priority: data.priority,
+          completed: false,
+        },
+      ],
     };
   }
 
-  const taskId = input.task?.task_id?.trim();
-  if (!taskId) {
-    throw new Error('TODOIST_TASK_ID_REQUIRED');
-  }
-
   if (input.action === 'complete') {
+    const taskId = input.task?.task_id?.trim();
+    if (!taskId) throw new Error('todoist: task_id is required for complete');
+
+    // Plan §6 step 19: POST /tasks/{id}/close (HTTP 204)
+    const response = await fetch(`${TODOIST_BASE}/tasks/${taskId}/close`, {
+      method: 'POST',
+      headers,
+      signal: AbortSignal.timeout(10000),
+    });
+
+    if (response.status !== 204) {
+      const text = await response.text().catch(() => '');
+      throw new Error(
+        `todoist: complete failed – expected 204, got HTTP ${response.status} ${text.slice(0, 200)}`
+      );
+    }
+
     return {
       provider: 'todoist_deterministic',
       action: 'complete',
       task_id: taskId,
-      tasks: [
-        {
-          task_id: taskId,
-          content: 'Completed task',
-          project_id: projectId,
-          priority: 1,
-          completed: true
-        }
-      ]
     };
   }
 
-  return {
-    provider: 'todoist_deterministic',
-    action: 'delete',
-    task_id: taskId
-  };
+  if (input.action === 'delete') {
+    const taskId = input.task?.task_id?.trim();
+    if (!taskId) throw new Error('todoist: task_id is required for delete');
+
+    // Plan §6 step 19: DELETE /tasks/{id}
+    const response = await fetch(`${TODOIST_BASE}/tasks/${taskId}`, {
+      method: 'DELETE',
+      headers,
+      signal: AbortSignal.timeout(10000),
+    });
+
+    if (response.status !== 204) {
+      const text = await response.text().catch(() => '');
+      throw new Error(
+        `todoist: delete failed – expected 204, got HTTP ${response.status} ${text.slice(0, 200)}`
+      );
+    }
+
+    return {
+      provider: 'todoist_deterministic',
+      action: 'delete',
+      task_id: taskId,
+    };
+  }
+
+  throw new Error(`todoist: unknown action ${input.action}`);
 }

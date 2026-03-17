@@ -1,57 +1,40 @@
-import type { SerpAPIInput, SerpAPIOutput, SerpAPIResultItem } from './types.js';
+// Plan §6 step 10 — Real SerpAPI search
 
-const BY_ENGINE: Record<'google' | 'amazon' | 'yelp', SerpAPIResultItem[]> = {
-  google: [
-    {
-      title: 'Executive assistant automation examples',
-      link: 'https://google.example.com/executive-assistant-automation',
-      source: 'Google'
-    },
-    {
-      title: 'Building deterministic AI workflows',
-      link: 'https://google.example.com/deterministic-ai-workflows',
-      source: 'Google'
-    }
-  ],
-  amazon: [
-    {
-      title: 'Noise-cancelling headset',
-      link: 'https://amazon.example.com/noise-cancelling-headset',
-      source: 'Amazon'
-    },
-    {
-      title: 'Standing desk lamp',
-      link: 'https://amazon.example.com/standing-desk-lamp',
-      source: 'Amazon'
-    }
-  ],
-  yelp: [
-    {
-      title: 'Cafe Meridian',
-      link: 'https://yelp.example.com/cafe-meridian',
-      source: 'Yelp'
-    },
-    {
-      title: 'Boardroom Bistro',
-      link: 'https://yelp.example.com/boardroom-bistro',
-      source: 'Yelp'
-    }
-  ]
-};
+interface SkillContext { token?: string; user_id?: string; }
 
-export async function runClient(input: SerpAPIInput): Promise<SerpAPIOutput> {
-  const engine = input.engine ?? 'google';
-  const queryTerms = input.query.toLowerCase().split(/\s+/).filter((term) => term.length > 1);
-  const results = BY_ENGINE[engine]
-    .filter((item) => {
-      const target = `${item.title} ${item.link}`.toLowerCase();
-      return queryTerms.some((term) => target.includes(term));
-    })
-    .slice(0, input.max_results ?? 5);
+export async function runClient(
+  input: Record<string, any>,
+  ctx?: SkillContext
+): Promise<any> {
+  const key = process.env.SERPAPI_KEY;
+  if (!key)          throw new Error('SERPAPI_KEY env var is required');
+  if (!input.query)  throw new Error('query is required');
+
+  const engine = input.engine      ?? 'google';
+  const num    = input.max_results ?? 10;
+
+  const url = `https://serpapi.com/search`
+    + `?api_key=${key}`
+    + `&engine=${encodeURIComponent(engine)}`
+    + `&q=${encodeURIComponent(input.query)}`
+    + `&num=${num}`;
+
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`SerpAPI error: ${res.status}`);
+  const body = await res.json();
+
+  const results = (body.organic_results ?? []).map((r: any) => ({
+    title:    r.title,
+    link:     r.link,
+    source:   r.source   ?? null,
+    snippet:  r.snippet  ?? null,
+    position: r.position ?? null,
+  }));
 
   return {
-    provider: 'serpapi',
+    query:         input.query,
     engine,
-    results
+    results,
+    total_results: body.search_information?.total_results ?? null,
   };
 }

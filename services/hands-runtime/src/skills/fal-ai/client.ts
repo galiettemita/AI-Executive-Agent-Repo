@@ -1,25 +1,49 @@
-import { createHash } from 'node:crypto';
+// Plan §6 step 9 — Real fal.ai image generation API
+// Authorization: Key <key>
 
-import type { FalAIInput, FalAIOutput } from './types.js';
+interface SkillContext { token?: string; user_id?: string; }
 
-const BLOCKED_TERMS = ['exploit', 'self-harm', 'csam'];
+const SIZE_MAP: Record<string, { width: number; height: number }> = {
+  square:    { width: 1024, height: 1024 },
+  landscape: { width: 1280, height:  720 },
+  portrait:  { width:  720, height: 1280 },
+};
 
-export async function runClient(input: FalAIInput): Promise<FalAIOutput> {
-  const lower = input.prompt.toLowerCase();
-  for (const term of BLOCKED_TERMS) {
-    if (lower.includes(term)) {
-      throw new Error('FAL_CONTENT_POLICY_BLOCKED');
-    }
+export async function runClient(
+  input: Record<string, any>,
+  ctx?: SkillContext
+): Promise<any> {
+  const key = process.env.FAL_KEY;
+  if (!key)           throw new Error('FAL_KEY env var is required');
+  if (!input.prompt)  throw new Error('prompt is required');
+
+  const model      = input.model ?? 'fal-ai/fast-sdxl';
+  const image_size = SIZE_MAP[input.size ?? 'square'] ?? SIZE_MAP['square'];
+
+  const res = await fetch(`https://fal.run/${model}`, {
+    method:  'POST',
+    headers: {
+      authorization:  `Key ${key}`,
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({
+      prompt:     input.prompt,
+      image_size,
+      num_images: input.num_images ?? 1,
+    }),
+  });
+  if (!res.ok) {
+    const errBody = await res.json().catch(() => ({}));
+    throw new Error(`fal.ai API error ${res.status}: ${JSON.stringify(errBody)}`);
   }
-
-  const model = input.model ?? 'fal-ai/flux/dev';
-  const size = input.size ?? 'square';
-  const digest = createHash('sha256').update(`${model}|${size}|${input.prompt}`).digest('hex').slice(0, 20);
+  const body = await res.json();
 
   return {
-    provider: 'fal-ai',
-    image_url: `https://cdn.mock.fal.ai/${digest}.png`,
-    model_used: model,
-    size
+    image_url: body.images[0].url,
+    images:    body.images.map((img: any) => img.url),
+    model,
+    prompt:    input.prompt,
+    seed:      body.seed ?? null,
+    size:      input.size ?? 'square',
   };
 }

@@ -1,76 +1,69 @@
-import type {
-  MonarchAccount,
-  MonarchBudget,
-  MonarchMoneyInput,
-  MonarchMoneyOutput,
-  MonarchTransaction
-} from './types.js';
+// Plan §5 — Real Monarch Money GraphQL API
+// ctx.token → MONARCH_TOKEN fallback
 
-const ACCOUNTS: MonarchAccount[] = [
-  {
-    account_id: 'mon_acc_001',
-    name: 'Main Checking',
-    balance_cents: 923400
-  },
-  {
-    account_id: 'mon_acc_002',
-    name: 'Travel Card',
-    balance_cents: -124500
-  }
-];
+interface SkillContext { token?: string; user_id?: string; }
 
-const TRANSACTIONS: MonarchTransaction[] = [
-  {
-    transaction_id: 'mon_tx_001',
-    account_id: 'mon_acc_001',
-    merchant: 'Downtown Garage',
-    amount_cents: -1800,
-    category: 'Parking',
-    posted_at: '2026-03-04T15:00:00.000Z'
-  },
-  {
-    transaction_id: 'mon_tx_002',
-    account_id: 'mon_acc_001',
-    merchant: 'Executive Cafe',
-    amount_cents: -2850,
-    category: 'Meals',
-    posted_at: '2026-03-03T12:10:00.000Z'
-  }
-];
+const MONARCH_GQL = 'https://api.monarchmoney.com/graphql';
 
-const BUDGETS: MonarchBudget[] = [
-  {
-    category: 'Meals',
-    budget_cents: 120000,
-    spent_cents: 78200
-  },
-  {
-    category: 'Transport',
-    budget_cents: 80000,
-    spent_cents: 31400
-  }
-];
+export async function runClient(
+  input: Record<string, any>,
+  ctx?: SkillContext
+): Promise<any> {
+  const token = ctx?.token ?? process.env.MONARCH_TOKEN;
+  if (!token) throw new Error('Monarch Money token required: provide ctx.token or set MONARCH_TOKEN');
 
-export async function runClient(input: MonarchMoneyInput): Promise<MonarchMoneyOutput> {
-  if (input.action === 'accounts') {
-    return {
-      provider: 'monarch-money',
-      action: 'accounts',
-      accounts: ACCOUNTS
-    };
+  async function gql(query: string): Promise<any> {
+    const res = await fetch(MONARCH_GQL, {
+      method:  'POST',
+      headers: {
+        authorization:  `Token ${token}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ query }),
+    });
+    if (!res.ok) throw new Error(`Monarch Money HTTP error: ${res.status}`);
+    const body = await res.json();
+    if (body.errors?.length) throw new Error(`Monarch Money GraphQL error: ${body.errors[0].message}`);
+    return body.data;
   }
 
-  if (input.action === 'transactions') {
-    return {
-      provider: 'monarch-money',
-      action: 'transactions',
-      transactions: TRANSACTIONS.filter((item) => item.account_id === input.account_id)
-    };
-  }
+  switch (input.action) {
 
-  return {
-    provider: 'monarch-money',
-    action: 'budgets',
-    budgets: BUDGETS
-  };
+    case 'accounts': {
+      const data = await gql(`{
+        accounts {
+          id name type subtype currentBalance
+          institution { name }
+          isHidden
+        }
+      }`);
+      return { accounts: data.accounts.filter((a: any) => !a.isHidden) };
+    }
+
+    case 'transactions': {
+      const data = await gql(`{
+        transactions(limit: 50) {
+          edges {
+            node { id date merchant { name } amount category { name } notes }
+          }
+        }
+      }`);
+      return { transactions: data.transactions.edges.map((e: any) => e.node) };
+    }
+
+    case 'budgets': {
+      const data = await gql(`{
+        budgets {
+          category { name }
+          budgeted
+          actual
+          remaining
+        }
+      }`);
+      return { budgets: data.budgets };
+    }
+
+    default:
+      throw new Error(`Unknown Monarch Money action: ${input.action}. Valid: accounts, transactions, budgets`);
+  }
 }
