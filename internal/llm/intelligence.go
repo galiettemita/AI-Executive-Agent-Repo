@@ -566,6 +566,43 @@ func (s *IntelligenceService) SynthesizeResponse(ctx context.Context, payload st
 	return &result, usage, nil
 }
 
+// SynthesizeResponseWithSystemPrompt is like SynthesizeResponse but accepts a custom
+// system prompt for EQ-modulated tone/formality/empathy injection (Phase 4).
+func (s *IntelligenceService) SynthesizeResponseWithSystemPrompt(
+	ctx context.Context,
+	payload string,
+	toolResults string,
+	systemPrompt string,
+) (*SynthesizedResponse, *Usage, error) {
+	if s.synthesizer == nil {
+		return nil, nil, fmt.Errorf("intelligence: synthesizer client not configured")
+	}
+	if systemPrompt == "" {
+		systemPrompt = synthesisSystemPrompt()
+	}
+	tier := ResolveTierModel("T2")
+	req := GenerateRequest{
+		Model:       tier.PrimaryModel,
+		MaxTokens:   tier.MaxOutputTokens,
+		Temperature: 0.3,
+		Messages: []ChatMsg{
+			{Role: "system", Content: systemPrompt},
+			{Role: "user", Content: fmt.Sprintf("Original request: %s\n\nTool execution results:\n%s", payload, toolResults)},
+		},
+		JSONSchema: synthesizedResponseSchema(),
+	}
+	resp, usage, err := s.synthesizer.Generate(ctx, req)
+	if err != nil {
+		return nil, nil, fmt.Errorf("intelligence: synthesize with system prompt: %w", err)
+	}
+	var result SynthesizedResponse
+	content := extractJSON(resp.Content)
+	if err := json.Unmarshal([]byte(content), &result); err != nil {
+		return nil, usage, fmt.Errorf("intelligence: parse synthesis: %w (raw: %s)", err, truncate(resp.Content, 200))
+	}
+	return &result, usage, nil
+}
+
 // StreamSynthesizeResponse streams the synthesis response to the caller.
 // Does NOT use JSONSchema — tool_use forcing is incompatible with streaming.
 func (s *IntelligenceService) StreamSynthesizeResponse(

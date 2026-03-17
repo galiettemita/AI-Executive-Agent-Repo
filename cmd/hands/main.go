@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/brevio/brevio/internal/connectors"
+	"github.com/brevio/brevio/internal/disclosure"
 	"github.com/brevio/brevio/internal/hands"
 	"github.com/brevio/brevio/internal/metrics"
 	runtimeserver "github.com/brevio/brevio/internal/runtime"
@@ -43,14 +44,25 @@ func main() {
 		log.Fatalf("Failed to load seed file: %v", err)
 	}
 
-	// REPAIR: Reject placeholder MCP URLs in non-local environments.
+	// REPAIR resolved: Reject placeholder and internal MCP URLs in non-local environments.
+	// Blocks: unconfigured.local, localhost, 127.x.x.x, 0.0.0.0, empty.
 	if env != "" && env != "local" && env != "test" {
+		var invalid []string
 		for _, c := range connSvc.ListConnectors() {
-			if strings.Contains(c.MCPServerURL, "unconfigured.local") {
-				log.Fatalf("Placeholder MCP URL detected for connector %s in %s environment — configure real MCP servers via MCP_BASE_URL", c.Key, env)
+			if connectors.IsPlaceholderMCPURL(c.MCPServerURL) {
+				invalid = append(invalid, fmt.Sprintf("  connector=%q url=%q", c.Key, c.MCPServerURL))
 			}
 		}
+		if len(invalid) > 0 {
+			log.Fatalf(
+				"startup aborted: placeholder or internal MCP URLs in %s environment:\n%s\n"+
+					"Set MCP_BASE_URL env var to override seed placeholders before startup.",
+				env, strings.Join(invalid, "\n"))
+		}
 	}
+
+	// Inject AI disclosure transport globally — all outbound MCP calls carry X-Brevio-Agent: true.
+	http.DefaultTransport = disclosure.NewBrevioAgentTransport(http.DefaultTransport)
 
 	// Create MCP client.
 	mcpClient := hands.NewHTTPMCPClient(30 * time.Second)

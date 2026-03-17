@@ -25,6 +25,9 @@ type GuardInput struct {
 	ToolArgs      map[string]any `json:"tool_args"`
 	ModelResponse string         `json:"model_response"`
 	WorkspaceID   string         `json:"workspace_id"`
+	TrustSource   string         `json:"trust_source,omitempty"`
+	AutonomyTier  string         `json:"autonomy_tier,omitempty"`
+	ToolOutput    string         `json:"tool_output,omitempty"`
 }
 
 // GuardViolation describes a single rule violation.
@@ -306,6 +309,11 @@ func (g *InferenceGuard) registerDefaults() {
 	})
 
 	// --- PostToolCall rules ---
+
+	// IPI taint-tracking rule (highest priority for untrusted tool outputs).
+	if defaultIPIRule != nil {
+		g.rules[PostToolCall] = append(g.rules[PostToolCall], *defaultIPIRule)
+	}
 
 	g.rules[PostToolCall] = append(g.rules[PostToolCall], GuardRule{
 		Name: "response_pii_leakage",

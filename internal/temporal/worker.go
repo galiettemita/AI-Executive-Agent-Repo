@@ -233,6 +233,58 @@ func NewWorkerWithDeps(c client.Client, taskQueue string, deps ActivityDeps) wor
 	w.RegisterActivity(v91.RefreshWidgetsActivity)
 	w.RegisterActivity(v91.AnalyzeCapabilityGapsActivity)
 
+	// PAHF preference learning activities.
+	w.RegisterActivity(activities.PreferenceUpdateActivity)
+	w.RegisterActivity(activities.PreferenceRetrievalActivity)
+
+	// Hindsight reflection activity.
+	w.RegisterActivity(activities.ReflectionActivity)
+
+	// Production eval sampling and hallucination detection.
+	w.RegisterWorkflow(ProductionEvalSamplerWorkflow)
+	w.RegisterActivity(activities.ProductionEvalSampleActivity)
+	w.RegisterActivity(activities.SynthesisVerifyActivity)
+
+	// Vision pre-processing.
+	w.RegisterActivity(activities.VisionPreProcessActivity)
+
+	// Knowledge graph extraction (Phase 5).
+	w.RegisterActivity(activities.KGExtractActivity)
+
+	// SubAgent orchestrator workflow + activities.
+	w.RegisterWorkflow(SubAgentOrchestratorWorkflow)
+	w.RegisterActivity(activities.CheckSubAgentAutonomyActivity)
+	w.RegisterActivity(activities.DecomposeSubTasksActivity)
+
+	// Plan simulator.
+	w.RegisterActivity(activities.SimulatePlanActivity)
+
+	// GAIA benchmark.
+	w.RegisterWorkflow(GAIARunnerWorkflow)
+	w.RegisterActivity(activities.InitBenchmarkRunActivity)
+	w.RegisterActivity(activities.RunBenchmarkTaskActivity)
+	w.RegisterActivity(activities.RunAllBenchmarkTasksActivity)
+	w.RegisterActivity(activities.FinalizeBenchmarkRunActivity)
+
+	// DPO pipeline.
+	w.RegisterWorkflow(DPORoundWorkflow)
+	w.RegisterActivity(activities.FeedbackIngestionActivity)
+	w.RegisterActivity(activities.DPODatasetReadyActivity)
+	w.RegisterActivity(activities.StartDPORoundActivity)
+	w.RegisterActivity(activities.PollDPOJobActivity)
+	w.RegisterActivity(activities.CheckpointDeployActivity)
+	w.RegisterActivity(activities.QualityDeltaMonitorActivity)
+
+	// A2A task execution.
+	w.RegisterWorkflow(A2ATaskExecutionWorkflow)
+	w.RegisterActivity(activities.DelegateA2ATaskActivity)
+	w.RegisterActivity(activities.ListExternalAgentsActivity)
+
+	// Proactive monitoring.
+	w.RegisterWorkflow(ProactiveMonitorWorkflow)
+	w.RegisterActivity(activities.DetectProactiveSignalsActivity)
+	w.RegisterActivity(activities.BuildAndDispatchProactiveOfferActivity)
+
 	return w
 }
 

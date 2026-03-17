@@ -541,3 +541,34 @@ func (s *Service) Consolidate(workspaceID string) []Item {
 	})
 	return consolidated
 }
+
+// SearchByType retrieves memory items matching memoryType for a workspace+user.
+// Returns up to topK items sorted by confidence descending.
+func (s *Service) SearchByType(workspaceID, userID, memoryType string, topK int) ([]Item, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	var results []Item
+	for _, itemID := range s.itemOrder {
+		item := s.items[itemID]
+		if item.WorkspaceID != workspaceID {
+			continue
+		}
+		if item.Status == StatusDeleted {
+			continue
+		}
+		if memoryType != "" && item.MemoryType != memoryType {
+			continue
+		}
+		results = append(results, item)
+	}
+
+	sort.Slice(results, func(i, j int) bool {
+		return results[i].Confidence > results[j].Confidence
+	})
+
+	if topK > 0 && len(results) > topK {
+		results = results[:topK]
+	}
+	return results, nil
+}

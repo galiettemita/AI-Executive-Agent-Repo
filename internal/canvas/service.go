@@ -139,15 +139,21 @@ func NewService(injector Injector) *Service {
 
 	wsToken := strings.TrimSpace(os.Getenv("CANVAS_WS_TOKEN"))
 
+	env := strings.TrimSpace(os.Getenv("BREVIO_ENV"))
 	s := &Service{
 		upgrader: websocket.Upgrader{CheckOrigin: func(r *http.Request) bool {
-			// REPAIR: enforce origin allowlist for production security.
+			// Origin enforcement: fail-closed in production.
 			if len(allowedOrigins) == 0 {
-				return true // no allowlist configured — local/test only
+				// Local/test: open for developer convenience.
+				if env == "" || env == "local" || env == "test" {
+					return true
+				}
+				// Non-local with no CANVAS_ALLOWED_ORIGINS: deny all cross-origin.
+				return false
 			}
 			origin := r.Header.Get("Origin")
 			if origin == "" {
-				return false
+				return true // same-origin requests have no Origin header
 			}
 			for _, allowed := range allowedOrigins {
 				if strings.EqualFold(origin, allowed) {

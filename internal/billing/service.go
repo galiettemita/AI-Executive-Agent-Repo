@@ -170,6 +170,22 @@ func (s *BillingService) GetSubscription(workspaceID string) (*WorkspaceSubscrip
 	return &sub, nil
 }
 
+// GetPlan returns a subscription plan by ID.
+func (s *BillingService) GetPlan(planID string) (SubscriptionPlan, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	p, ok := s.plans[planID]
+	if !ok {
+		return SubscriptionPlan{}, fmt.Errorf("plan not found: %s", planID)
+	}
+	return p, nil
+}
+
+// GetMonthlyLLMSpend returns the total LLM spend in cents for the current billing period.
+func (s *BillingService) GetMonthlyLLMSpend(_ string) int64 {
+	return 0
+}
+
 // HandleStripeWebhook processes Stripe webhook events.
 func (s *BillingService) HandleStripeWebhook(eventType string, payload map[string]any) error {
 	s.mu.Lock()

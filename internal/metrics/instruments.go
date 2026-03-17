@@ -65,6 +65,21 @@ var InboundMessages = promauto.NewCounterVec(
 	[]string{"channel", "status"},
 )
 
+// ProductionQualityScore is a Prometheus gauge tracking the rolling 7-day pass rate
+// of LLM judge evaluations on sampled production workflows.
+var ProductionQualityScore = promauto.NewGauge(prometheus.GaugeOpts{
+	Name: "brevio_production_quality_score",
+	Help: "Rolling 7-day pass rate of LLM judge evaluations on sampled production workflows.",
+})
+
+// PrometheusQualityGauge wraps the Prometheus gauge for dependency injection.
+type PrometheusQualityGauge struct{}
+
+// Set records the quality score value.
+func (g *PrometheusQualityGauge) Set(value float64) {
+	ProductionQualityScore.Set(value)
+}
+
 // RecordActivity records activity duration into the histogram.
 func RecordActivity(activityName string, start time.Time, err error) {
 	s := "success"

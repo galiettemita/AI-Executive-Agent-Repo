@@ -1,0 +1,1282 @@
+{
+  "version": "1.0",
+  "description": "BrevioGAIA: 100 executive assistant benchmark tasks across 3 tiers.",
+  "created_at": "2026-03-16T00:00:00Z",
+  "tasks": [
+    {
+      "id": "brevio-001",
+      "tier": "easy",
+      "category": "email",
+      "description": "Count unread emails",
+      "intent": "How many unread emails do I have?",
+      "expected_tool_keys": [
+        "email.read"
+      ],
+      "pass_criteria": "response contains a number or states zero",
+      "timeout_seconds": 30
+    },
+    {
+      "id": "brevio-002",
+      "tier": "easy",
+      "category": "email",
+      "description": "Send a simple email",
+      "intent": "Send an email to alice@example.com saying the meeting is confirmed for 3pm tomorrow",
+      "expected_tool_keys": [
+        "email.send"
+      ],
+      "pass_criteria": "email.send called with correct recipient",
+      "timeout_seconds": 30
+    },
+    {
+      "id": "brevio-003",
+      "tier": "easy",
+      "category": "calendar",
+      "description": "Check today schedule",
+      "intent": "What meetings do I have today?",
+      "expected_tool_keys": [
+        "calendar.read"
+      ],
+      "pass_criteria": "response lists events or states none",
+      "timeout_seconds": 30
+    },
+    {
+      "id": "brevio-004",
+      "tier": "easy",
+      "category": "calendar",
+      "description": "Create a meeting",
+      "intent": "Schedule a 1-hour meeting with Bob at 2pm tomorrow",
+      "expected_tool_keys": [
+        "calendar.create"
+      ],
+      "pass_criteria": "calendar.create called with 2pm start",
+      "timeout_seconds": 45
+    },
+    {
+      "id": "brevio-005",
+      "tier": "easy",
+      "category": "calendar",
+      "description": "Cancel a meeting",
+      "intent": "Cancel my 10am meeting with the design team",
+      "expected_tool_keys": [
+        "calendar.read",
+        "calendar.delete"
+      ],
+      "pass_criteria": "calendar.delete called after identifying correct event",
+      "timeout_seconds": 45
+    },
+    {
+      "id": "brevio-006",
+      "tier": "easy",
+      "category": "contacts",
+      "description": "Find contact info",
+      "intent": "What is Alice Johnsons phone number?",
+      "expected_tool_keys": [
+        "contacts.lookup"
+      ],
+      "pass_criteria": "response contains phone number or states not found",
+      "timeout_seconds": 20
+    },
+    {
+      "id": "brevio-007",
+      "tier": "easy",
+      "category": "tasks",
+      "description": "Create a task",
+      "intent": "Add a task to remind me to review the Q3 report by Friday",
+      "expected_tool_keys": [
+        "tasks.create"
+      ],
+      "pass_criteria": "tasks.create called with due date Friday",
+      "timeout_seconds": 30
+    },
+    {
+      "id": "brevio-008",
+      "tier": "easy",
+      "category": "tasks",
+      "description": "List pending tasks",
+      "intent": "What are my pending tasks?",
+      "expected_tool_keys": [
+        "tasks.list"
+      ],
+      "pass_criteria": "response enumerates tasks or states none",
+      "timeout_seconds": 20
+    },
+    {
+      "id": "brevio-009",
+      "tier": "easy",
+      "category": "documents",
+      "description": "Find a document",
+      "intent": "Find the contract for Acme Corp",
+      "expected_tool_keys": [
+        "drive.search"
+      ],
+      "pass_criteria": "drive.search called with acme or contract keyword",
+      "timeout_seconds": 30
+    },
+    {
+      "id": "brevio-010",
+      "tier": "easy",
+      "category": "documents",
+      "description": "Summarize a document",
+      "intent": "Summarize the board deck I shared last week",
+      "expected_tool_keys": [
+        "drive.read"
+      ],
+      "pass_criteria": "response is a 3+ sentence summary",
+      "timeout_seconds": 60
+    },
+    {
+      "id": "brevio-011",
+      "tier": "easy",
+      "category": "slack",
+      "description": "Read Slack channel",
+      "intent": "What was discussed in #engineering today?",
+      "expected_tool_keys": [
+        "slack.read"
+      ],
+      "pass_criteria": "response summarizes or states no messages",
+      "timeout_seconds": 30
+    },
+    {
+      "id": "brevio-012",
+      "tier": "easy",
+      "category": "slack",
+      "description": "Send Slack message",
+      "intent": "Send a Slack message to @charlie saying the deploy is done",
+      "expected_tool_keys": [
+        "slack.send"
+      ],
+      "pass_criteria": "slack.send called with correct recipient",
+      "timeout_seconds": 30
+    },
+    {
+      "id": "brevio-013",
+      "tier": "easy",
+      "category": "email",
+      "description": "Search emails by sender",
+      "intent": "Find all emails from bob@acme.com this week",
+      "expected_tool_keys": [
+        "email.search"
+      ],
+      "pass_criteria": "email.search called with sender filter",
+      "timeout_seconds": 30
+    },
+    {
+      "id": "brevio-014",
+      "tier": "easy",
+      "category": "calendar",
+      "description": "Find free time",
+      "intent": "When am I free for a 30-minute call tomorrow afternoon?",
+      "expected_tool_keys": [
+        "calendar.read"
+      ],
+      "pass_criteria": "response suggests a specific time slot",
+      "timeout_seconds": 30
+    },
+    {
+      "id": "brevio-015",
+      "tier": "easy",
+      "category": "notes",
+      "description": "Create a note",
+      "intent": "Take a note: call Sarah about the partnership deal on Monday",
+      "expected_tool_keys": [
+        "notes.create"
+      ],
+      "pass_criteria": "notes.create called with relevant content",
+      "timeout_seconds": 20
+    },
+    {
+      "id": "brevio-016",
+      "tier": "easy",
+      "category": "email",
+      "description": "Reply to email",
+      "intent": "Reply to the latest email from David saying I will review it today",
+      "expected_tool_keys": [
+        "email.read",
+        "email.reply"
+      ],
+      "pass_criteria": "email.reply called after reading thread",
+      "timeout_seconds": 45
+    },
+    {
+      "id": "brevio-017",
+      "tier": "easy",
+      "category": "calendar",
+      "description": "Reschedule meeting",
+      "intent": "Move my 11am standup to 11:30am",
+      "expected_tool_keys": [
+        "calendar.read",
+        "calendar.update"
+      ],
+      "pass_criteria": "calendar.update called with new start 11:30",
+      "timeout_seconds": 45
+    },
+    {
+      "id": "brevio-018",
+      "tier": "easy",
+      "category": "tasks",
+      "description": "Mark task complete",
+      "intent": "Mark the update website copy task as done",
+      "expected_tool_keys": [
+        "tasks.update"
+      ],
+      "pass_criteria": "tasks.update called with completed status",
+      "timeout_seconds": 20
+    },
+    {
+      "id": "brevio-019",
+      "tier": "easy",
+      "category": "weather",
+      "description": "Check weather",
+      "intent": "What is the weather in New York tomorrow?",
+      "expected_tool_keys": [
+        "weather.lookup"
+      ],
+      "pass_criteria": "response contains temperature or conditions",
+      "timeout_seconds": 20
+    },
+    {
+      "id": "brevio-020",
+      "tier": "easy",
+      "category": "calendar",
+      "description": "Set recurring meeting",
+      "intent": "Schedule a weekly standup every Monday at 9am",
+      "expected_tool_keys": [
+        "calendar.create"
+      ],
+      "pass_criteria": "calendar.create called with recurrence rule",
+      "timeout_seconds": 45
+    },
+    {
+      "id": "brevio-021",
+      "tier": "easy",
+      "category": "contacts",
+      "description": "Create contact",
+      "intent": "Add Maria Garcia CEO of BetaCorp maria@betacorp.com to my contacts",
+      "expected_tool_keys": [
+        "contacts.create"
+      ],
+      "pass_criteria": "contacts.create called with email and company",
+      "timeout_seconds": 20
+    },
+    {
+      "id": "brevio-022",
+      "tier": "easy",
+      "category": "email",
+      "description": "Forward email",
+      "intent": "Forward the latest email from legal@firm.com to bob@mycompany.com",
+      "expected_tool_keys": [
+        "email.read",
+        "email.forward"
+      ],
+      "pass_criteria": "email.forward called with correct target",
+      "timeout_seconds": 45
+    },
+    {
+      "id": "brevio-023",
+      "tier": "easy",
+      "category": "tasks",
+      "description": "Set task priority",
+      "intent": "Mark prepare investor deck as high priority",
+      "expected_tool_keys": [
+        "tasks.update"
+      ],
+      "pass_criteria": "tasks.update called with high priority",
+      "timeout_seconds": 20
+    },
+    {
+      "id": "brevio-024",
+      "tier": "easy",
+      "category": "slack",
+      "description": "Search Slack",
+      "intent": "Find the Slack message where we discussed API rate limits",
+      "expected_tool_keys": [
+        "slack.search"
+      ],
+      "pass_criteria": "slack.search called with relevant keywords",
+      "timeout_seconds": 30
+    },
+    {
+      "id": "brevio-025",
+      "tier": "easy",
+      "category": "documents",
+      "description": "Create document",
+      "intent": "Create a Google Doc titled Project Falcon Kickoff Notes",
+      "expected_tool_keys": [
+        "drive.create"
+      ],
+      "pass_criteria": "drive.create called with correct title",
+      "timeout_seconds": 30
+    },
+    {
+      "id": "brevio-026",
+      "tier": "easy",
+      "category": "email",
+      "description": "Mark email read",
+      "intent": "Mark all emails from newsletters@digest.com as read",
+      "expected_tool_keys": [
+        "email.mark_read"
+      ],
+      "pass_criteria": "email.mark_read called with sender filter",
+      "timeout_seconds": 20
+    },
+    {
+      "id": "brevio-027",
+      "tier": "easy",
+      "category": "calendar",
+      "description": "List attendees",
+      "intent": "Who is invited to my 3pm call today?",
+      "expected_tool_keys": [
+        "calendar.read"
+      ],
+      "pass_criteria": "response lists attendees or states none",
+      "timeout_seconds": 20
+    },
+    {
+      "id": "brevio-028",
+      "tier": "easy",
+      "category": "tasks",
+      "description": "List overdue tasks",
+      "intent": "Show me all overdue tasks",
+      "expected_tool_keys": [
+        "tasks.list"
+      ],
+      "pass_criteria": "tasks.list called with overdue filter",
+      "timeout_seconds": 20
+    },
+    {
+      "id": "brevio-029",
+      "tier": "easy",
+      "category": "calendar",
+      "description": "Block focus time",
+      "intent": "Block 2 hours of focus time every morning this week before 10am",
+      "expected_tool_keys": [
+        "calendar.create"
+      ],
+      "pass_criteria": "5 recurring blocks created Mon-Fri",
+      "timeout_seconds": 60
+    },
+    {
+      "id": "brevio-030",
+      "tier": "easy",
+      "category": "contacts",
+      "description": "Update contact",
+      "intent": "Update Alice Johnsons title to VP of Product",
+      "expected_tool_keys": [
+        "contacts.update"
+      ],
+      "pass_criteria": "contacts.update called with correct field",
+      "timeout_seconds": 20
+    },
+    {
+      "id": "brevio-031",
+      "tier": "easy",
+      "category": "documents",
+      "description": "Share document",
+      "intent": "Share the Q3 report with team@mycompany.com",
+      "expected_tool_keys": [
+        "drive.share"
+      ],
+      "pass_criteria": "drive.share called with correct email",
+      "timeout_seconds": 30
+    },
+    {
+      "id": "brevio-032",
+      "tier": "easy",
+      "category": "slack",
+      "description": "Create Slack channel",
+      "intent": "Create a new Slack channel called project-falcon",
+      "expected_tool_keys": [
+        "slack.channel.create"
+      ],
+      "pass_criteria": "slack.channel.create called with correct name",
+      "timeout_seconds": 30
+    },
+    {
+      "id": "brevio-033",
+      "tier": "easy",
+      "category": "email",
+      "description": "Set auto-reply",
+      "intent": "Set up an out-of-office auto-reply for my vacation next week",
+      "expected_tool_keys": [
+        "email.autoreply"
+      ],
+      "pass_criteria": "email.autoreply called with vacation message",
+      "timeout_seconds": 30
+    },
+    {
+      "id": "brevio-034",
+      "tier": "easy",
+      "category": "calendar",
+      "description": "Check double-booking",
+      "intent": "Am I double-booked at any point this week?",
+      "expected_tool_keys": [
+        "calendar.read"
+      ],
+      "pass_criteria": "response correctly identifies conflicts or states none",
+      "timeout_seconds": 45
+    },
+    {
+      "id": "brevio-035",
+      "tier": "easy",
+      "category": "tasks",
+      "description": "Weekly task review",
+      "intent": "Give me a summary of all tasks due this week that are incomplete",
+      "expected_tool_keys": [
+        "tasks.list"
+      ],
+      "pass_criteria": "response lists pending tasks with due dates",
+      "timeout_seconds": 45
+    },
+    {
+      "id": "brevio-036",
+      "tier": "medium",
+      "category": "scheduling",
+      "description": "Find mutual availability",
+      "intent": "Schedule a 45-minute call with Alice and Bob next week when all three of us are free",
+      "expected_tool_keys": [
+        "calendar.read",
+        "calendar.create",
+        "email.send"
+      ],
+      "pass_criteria": "availability checked for all participants and meeting created",
+      "timeout_seconds": 90
+    },
+    {
+      "id": "brevio-037",
+      "tier": "medium",
+      "category": "email_triage",
+      "description": "Triage inbox",
+      "intent": "Which emails in my inbox from today require my immediate action?",
+      "expected_tool_keys": [
+        "email.read",
+        "email.search"
+      ],
+      "pass_criteria": "response categorizes emails by urgency",
+      "timeout_seconds": 60
+    },
+    {
+      "id": "brevio-038",
+      "tier": "medium",
+      "category": "meeting_prep",
+      "description": "Prepare meeting brief",
+      "intent": "I have a call with Acme Corp in 1 hour. Get me a quick brief on what we discussed last time",
+      "expected_tool_keys": [
+        "email.search",
+        "calendar.read",
+        "drive.search"
+      ],
+      "pass_criteria": "response includes context from multiple sources",
+      "timeout_seconds": 90
+    },
+    {
+      "id": "brevio-039",
+      "tier": "medium",
+      "category": "research",
+      "description": "Company research",
+      "intent": "Give me a quick overview of what Stripe does and their latest funding round",
+      "expected_tool_keys": [
+        "web.search"
+      ],
+      "pass_criteria": "response includes company description and recent funding info",
+      "timeout_seconds": 60
+    },
+    {
+      "id": "brevio-040",
+      "tier": "medium",
+      "category": "drafting",
+      "description": "Draft board update email",
+      "intent": "Draft an email to the board updating them on Q3 performance: revenue is 1.8M vs 2M target",
+      "expected_tool_keys": [
+        "email.draft"
+      ],
+      "pass_criteria": "draft is professional and includes specific numbers",
+      "timeout_seconds": 60
+    },
+    {
+      "id": "brevio-041",
+      "tier": "medium",
+      "category": "scheduling",
+      "description": "Reschedule conflicting meetings",
+      "intent": "I have two meetings overlapping at 2pm tomorrow. Reschedule the less important one",
+      "expected_tool_keys": [
+        "calendar.read",
+        "calendar.update",
+        "email.send"
+      ],
+      "pass_criteria": "conflict detected, one rescheduled, attendees notified",
+      "timeout_seconds": 90
+    },
+    {
+      "id": "brevio-042",
+      "tier": "medium",
+      "category": "document_creation",
+      "description": "Create meeting agenda",
+      "intent": "Create an agenda for tomorrows product review with sections for roadmap, bugs, and launch timeline",
+      "expected_tool_keys": [
+        "drive.create",
+        "calendar.update"
+      ],
+      "pass_criteria": "structured doc created with all sections",
+      "timeout_seconds": 60
+    },
+    {
+      "id": "brevio-043",
+      "tier": "medium",
+      "category": "expense",
+      "description": "Submit expense report",
+      "intent": "Submit expense report for last weeks NYC trip: 450 hotel, 89 meals, 32 taxi",
+      "expected_tool_keys": [
+        "expense.create",
+        "expense.submit"
+      ],
+      "pass_criteria": "expense items created with correct amounts",
+      "timeout_seconds": 60
+    },
+    {
+      "id": "brevio-044",
+      "tier": "medium",
+      "category": "slack",
+      "description": "Summarize project updates",
+      "intent": "Summarize all updates in #project-falcon from the last 48 hours",
+      "expected_tool_keys": [
+        "slack.read"
+      ],
+      "pass_criteria": "response is a coherent summary",
+      "timeout_seconds": 60
+    },
+    {
+      "id": "brevio-045",
+      "tier": "medium",
+      "category": "scheduling",
+      "description": "Schedule interview loop",
+      "intent": "Schedule 5 interviews for the Head of Engineering candidate next week",
+      "expected_tool_keys": [
+        "calendar.create",
+        "email.send"
+      ],
+      "pass_criteria": "5 calendar events created with distinct titles",
+      "timeout_seconds": 90
+    },
+    {
+      "id": "brevio-046",
+      "tier": "medium",
+      "category": "coordination",
+      "description": "Send meeting recap",
+      "intent": "Send a recap email to all attendees of todays 2pm strategy call",
+      "expected_tool_keys": [
+        "calendar.read",
+        "email.send"
+      ],
+      "pass_criteria": "email sent to attendee list",
+      "timeout_seconds": 60
+    },
+    {
+      "id": "brevio-047",
+      "tier": "medium",
+      "category": "research",
+      "description": "Find pricing info",
+      "intent": "What does Notion charge for their Business plan?",
+      "expected_tool_keys": [
+        "web.search"
+      ],
+      "pass_criteria": "response contains specific pricing",
+      "timeout_seconds": 30
+    },
+    {
+      "id": "brevio-048",
+      "tier": "medium",
+      "category": "coordination",
+      "description": "RSVP on behalf",
+      "intent": "Accept the invitation to the TechConf 2026 annual dinner on March 20th",
+      "expected_tool_keys": [
+        "email.reply",
+        "calendar.create"
+      ],
+      "pass_criteria": "acceptance reply sent and event added to calendar",
+      "timeout_seconds": 60
+    },
+    {
+      "id": "brevio-049",
+      "tier": "medium",
+      "category": "documents",
+      "description": "Create template",
+      "intent": "Create a reusable meeting notes template with sections Attendees Agenda Decisions Action Items",
+      "expected_tool_keys": [
+        "drive.create"
+      ],
+      "pass_criteria": "document created with all 4 sections",
+      "timeout_seconds": 45
+    },
+    {
+      "id": "brevio-050",
+      "tier": "medium",
+      "category": "follow_up",
+      "description": "Send follow-ups",
+      "intent": "Send follow-up emails to everyone I met at the conference this week",
+      "expected_tool_keys": [
+        "contacts.list",
+        "email.send"
+      ],
+      "pass_criteria": "multiple personalized emails sent or drafted",
+      "timeout_seconds": 90
+    },
+    {
+      "id": "brevio-051",
+      "tier": "medium",
+      "category": "calendar",
+      "description": "Timezone scheduling",
+      "intent": "Schedule a call with our London team at 9am their time on Thursday",
+      "expected_tool_keys": [
+        "calendar.create"
+      ],
+      "pass_criteria": "event created with correct UTC offset for London",
+      "timeout_seconds": 45
+    },
+    {
+      "id": "brevio-052",
+      "tier": "medium",
+      "category": "data",
+      "description": "Pull CRM data",
+      "intent": "How many deals did we close last month?",
+      "expected_tool_keys": [
+        "crm.query"
+      ],
+      "pass_criteria": "response contains a specific number or explains no CRM access",
+      "timeout_seconds": 45
+    },
+    {
+      "id": "brevio-053",
+      "tier": "medium",
+      "category": "automation",
+      "description": "Set auto-forwarding rule",
+      "intent": "Automatically forward all emails with URGENT in the subject to my backup address",
+      "expected_tool_keys": [
+        "email.rules.create"
+      ],
+      "pass_criteria": "rule created with subject filter and forward action",
+      "timeout_seconds": 45
+    },
+    {
+      "id": "brevio-054",
+      "tier": "medium",
+      "category": "documents",
+      "description": "Merge documents",
+      "intent": "Combine the Q1 and Q2 reports into a single H1 summary document",
+      "expected_tool_keys": [
+        "drive.read",
+        "drive.create"
+      ],
+      "pass_criteria": "both source docs read and new merged doc created",
+      "timeout_seconds": 90
+    },
+    {
+      "id": "brevio-055",
+      "tier": "medium",
+      "category": "tasks",
+      "description": "Create project plan",
+      "intent": "Create tasks for launching our new feature: design review engineering spec QA launch announcement",
+      "expected_tool_keys": [
+        "tasks.create"
+      ],
+      "pass_criteria": "4+ tasks created with distinct titles",
+      "timeout_seconds": 60
+    },
+    {
+      "id": "brevio-056",
+      "tier": "medium",
+      "category": "drafting",
+      "description": "Write proposal email",
+      "intent": "Draft a proposal email to TechCorp for a 6-month contract at 15000 per month",
+      "expected_tool_keys": [
+        "email.draft"
+      ],
+      "pass_criteria": "draft includes pricing duration and professional tone",
+      "timeout_seconds": 60
+    },
+    {
+      "id": "brevio-057",
+      "tier": "medium",
+      "category": "coordination",
+      "description": "Coordinate deliverable",
+      "intent": "Get sign-off from legal finance and the CEO on the new partner agreement by Friday",
+      "expected_tool_keys": [
+        "email.send",
+        "tasks.create"
+      ],
+      "pass_criteria": "3 separate tracked requests sent",
+      "timeout_seconds": 90
+    },
+    {
+      "id": "brevio-058",
+      "tier": "medium",
+      "category": "drafting",
+      "description": "Write LinkedIn post",
+      "intent": "Write a LinkedIn post announcing our Series A funding of 10M led by Accel",
+      "expected_tool_keys": [
+        "social.draft"
+      ],
+      "pass_criteria": "professional post mentioning amount and investor",
+      "timeout_seconds": 45
+    },
+    {
+      "id": "brevio-059",
+      "tier": "medium",
+      "category": "calendar",
+      "description": "OOO block and autoreply",
+      "intent": "I am traveling to London April 15-18. Block my calendar and set OOO autoreply",
+      "expected_tool_keys": [
+        "calendar.create",
+        "email.autoreply"
+      ],
+      "pass_criteria": "OOO block created and auto-reply enabled",
+      "timeout_seconds": 60
+    },
+    {
+      "id": "brevio-060",
+      "tier": "medium",
+      "category": "research",
+      "description": "Event research",
+      "intent": "Is there a major tech conference in San Francisco in Q2 2026?",
+      "expected_tool_keys": [
+        "web.search"
+      ],
+      "pass_criteria": "response names specific conferences with dates",
+      "timeout_seconds": 45
+    },
+    {
+      "id": "brevio-061",
+      "tier": "medium",
+      "category": "data",
+      "description": "Calculate metrics",
+      "intent": "My revenue this month is 180K and last month was 165K. What is the growth?",
+      "expected_tool_keys": [],
+      "pass_criteria": "correct math: approximately 9.1% growth",
+      "timeout_seconds": 15
+    },
+    {
+      "id": "brevio-062",
+      "tier": "medium",
+      "category": "coordination",
+      "description": "Post announcement",
+      "intent": "Post an announcement in #general: we hit 2M ARR today",
+      "expected_tool_keys": [
+        "slack.send"
+      ],
+      "pass_criteria": "slack.send called with #general channel",
+      "timeout_seconds": 30
+    },
+    {
+      "id": "brevio-063",
+      "tier": "medium",
+      "category": "coordination",
+      "description": "Delegate via email",
+      "intent": "Delegate the website redesign task to the design team and notify them by email",
+      "expected_tool_keys": [
+        "tasks.update",
+        "email.send"
+      ],
+      "pass_criteria": "task updated with assignee and email sent",
+      "timeout_seconds": 60
+    },
+    {
+      "id": "brevio-064",
+      "tier": "medium",
+      "category": "scheduling",
+      "description": "Set context reminder",
+      "intent": "Remind me 30 minutes before each external meeting this week",
+      "expected_tool_keys": [
+        "calendar.read",
+        "reminders.create"
+      ],
+      "pass_criteria": "reminder created for each external meeting",
+      "timeout_seconds": 60
+    },
+    {
+      "id": "brevio-065",
+      "tier": "medium",
+      "category": "research",
+      "description": "Executive background",
+      "intent": "Find where Sarah Chen CEO of DataFlow went to school and her career history",
+      "expected_tool_keys": [
+        "web.search",
+        "contacts.lookup"
+      ],
+      "pass_criteria": "response includes educational and career details",
+      "timeout_seconds": 60
+    },
+    {
+      "id": "brevio-066",
+      "tier": "medium",
+      "category": "documents",
+      "description": "Summarize and send notes",
+      "intent": "Summarize my 10am all-hands and send the notes to the team Slack channel",
+      "expected_tool_keys": [
+        "calendar.read",
+        "drive.read",
+        "slack.send"
+      ],
+      "pass_criteria": "notes synthesized and sent to correct channel",
+      "timeout_seconds": 90
+    },
+    {
+      "id": "brevio-067",
+      "tier": "medium",
+      "category": "automation",
+      "description": "Daily digest",
+      "intent": "Every morning at 8am send me a Slack message with my calendar and unread email count",
+      "expected_tool_keys": [
+        "calendar.read",
+        "email.read",
+        "slack.send"
+      ],
+      "pass_criteria": "recurring workflow or reminder created",
+      "timeout_seconds": 60
+    },
+    {
+      "id": "brevio-068",
+      "tier": "medium",
+      "category": "email",
+      "description": "Handle email thread",
+      "intent": "Find the email thread about the Apex partnership and summarize the latest status",
+      "expected_tool_keys": [
+        "email.search",
+        "email.read"
+      ],
+      "pass_criteria": "correct thread identified and summarized",
+      "timeout_seconds": 60
+    },
+    {
+      "id": "brevio-069",
+      "tier": "medium",
+      "category": "documents",
+      "description": "Create status report",
+      "intent": "Create a weekly status report for engineering: 3 done 2 in progress 1 blocker",
+      "expected_tool_keys": [
+        "drive.create"
+      ],
+      "pass_criteria": "structured document with all three sections",
+      "timeout_seconds": 45
+    },
+    {
+      "id": "brevio-070",
+      "tier": "medium",
+      "category": "coordination",
+      "description": "Meeting invites with materials",
+      "intent": "Send the Q4 planning agenda to all department heads and attach the Q3 report",
+      "expected_tool_keys": [
+        "contacts.list",
+        "drive.read",
+        "email.send"
+      ],
+      "pass_criteria": "email sent to multiple recipients with attachment",
+      "timeout_seconds": 90
+    },
+    {
+      "id": "brevio-071",
+      "tier": "hard",
+      "category": "conflict_resolution",
+      "description": "Scheduling conflict judgment",
+      "intent": "My 3pm and 4pm meetings both just moved to 3:30pm. Decide which to reschedule based on importance",
+      "expected_tool_keys": [
+        "calendar.read",
+        "calendar.update",
+        "email.send"
+      ],
+      "pass_criteria": "agent makes a judgment call with clear reasoning and reschedules one",
+      "timeout_seconds": 120
+    },
+    {
+      "id": "brevio-072",
+      "tier": "hard",
+      "category": "ambiguous_request",
+      "description": "Handle vague task",
+      "intent": "Take care of the thing with the Apex people",
+      "expected_tool_keys": [
+        "email.search",
+        "calendar.read"
+      ],
+      "pass_criteria": "agent asks for clarification OR infers from context with explicit assumption statement",
+      "timeout_seconds": 60
+    },
+    {
+      "id": "brevio-073",
+      "tier": "hard",
+      "category": "multi_step_project",
+      "description": "Event planning",
+      "intent": "Plan a company team offsite for 25 people in Q2. Handle venue research invites and agenda",
+      "expected_tool_keys": [
+        "web.search",
+        "email.send",
+        "calendar.create",
+        "drive.create"
+      ],
+      "pass_criteria": "venue options found agenda created and invites drafted",
+      "timeout_seconds": 180
+    },
+    {
+      "id": "brevio-074",
+      "tier": "hard",
+      "category": "crisis_management",
+      "description": "Customer escalation",
+      "intent": "Our biggest customer just threatened to churn. Handle it",
+      "expected_tool_keys": [
+        "email.search",
+        "email.draft",
+        "slack.send"
+      ],
+      "pass_criteria": "agent reads email history drafts executive response and alerts account team",
+      "timeout_seconds": 120
+    },
+    {
+      "id": "brevio-075",
+      "tier": "hard",
+      "category": "negotiation",
+      "description": "Counter-proposal",
+      "intent": "Our vendor wants to raise prices 20%. Draft a counter-proposal that we accept 10%",
+      "expected_tool_keys": [
+        "email.draft"
+      ],
+      "pass_criteria": "professional counter-proposal maintains relationship and anchors below 10%",
+      "timeout_seconds": 60
+    },
+    {
+      "id": "brevio-076",
+      "tier": "hard",
+      "category": "data_synthesis",
+      "description": "Board meeting briefing",
+      "intent": "Before my board meeting tomorrow give me a complete briefing with pending items key decisions and what might come up",
+      "expected_tool_keys": [
+        "email.read",
+        "calendar.read",
+        "tasks.list",
+        "drive.search"
+      ],
+      "pass_criteria": "coherent brief covering all 4 domains with specific actionable items",
+      "timeout_seconds": 180
+    },
+    {
+      "id": "brevio-077",
+      "tier": "hard",
+      "category": "hiring",
+      "description": "Coordinate full hiring process",
+      "intent": "We are hiring a Head of Growth. Set up the full interview loop for our 3 finalists this week",
+      "expected_tool_keys": [
+        "calendar.read",
+        "calendar.create",
+        "email.send",
+        "contacts.list"
+      ],
+      "pass_criteria": "3 loops of 5 interviews each scheduled and all parties notified",
+      "timeout_seconds": 180
+    },
+    {
+      "id": "brevio-078",
+      "tier": "hard",
+      "category": "budget",
+      "description": "Budget reallocation",
+      "intent": "We are 50K over Q3 budget. Identify which discretionary spends we can cut",
+      "expected_tool_keys": [
+        "expense.list",
+        "crm.query"
+      ],
+      "pass_criteria": "discretionary items identified with amounts summing to at least 50K",
+      "timeout_seconds": 120
+    },
+    {
+      "id": "brevio-079",
+      "tier": "hard",
+      "category": "communication",
+      "description": "Sensitive company announcement",
+      "intent": "We have to lay off 3 people from engineering. Draft the company announcement",
+      "expected_tool_keys": [
+        "email.draft",
+        "drive.create"
+      ],
+      "pass_criteria": "compassionate professional tone with severance support mentioned without naming individuals",
+      "timeout_seconds": 90
+    },
+    {
+      "id": "brevio-080",
+      "tier": "hard",
+      "category": "multi_party",
+      "description": "Multi-party sign-off",
+      "intent": "Get sign-off from legal finance and the CEO on the new partner agreement by Friday",
+      "expected_tool_keys": [
+        "email.send",
+        "tasks.create",
+        "calendar.create"
+      ],
+      "pass_criteria": "3 separate tracked requests with reminders",
+      "timeout_seconds": 120
+    },
+    {
+      "id": "brevio-081",
+      "tier": "hard",
+      "category": "research",
+      "description": "Competitive intelligence",
+      "intent": "Give me a full competitive analysis of our top 3 competitors: pricing features funding recent news",
+      "expected_tool_keys": [
+        "web.search"
+      ],
+      "pass_criteria": "structured comparison covering all 4 dimensions for all 3 competitors",
+      "timeout_seconds": 180
+    },
+    {
+      "id": "brevio-082",
+      "tier": "hard",
+      "category": "investor_relations",
+      "description": "Investor update email",
+      "intent": "Write the monthly investor update: 1.8M ARR 45 new customers 2 new hires product launch next month",
+      "expected_tool_keys": [
+        "email.draft"
+      ],
+      "pass_criteria": "professional investor update with all 4 metrics",
+      "timeout_seconds": 90
+    },
+    {
+      "id": "brevio-083",
+      "tier": "hard",
+      "category": "escalation",
+      "description": "Recognize when to escalate",
+      "intent": "The payment processor is rejecting all transactions since this morning. Fix it",
+      "expected_tool_keys": [
+        "slack.send",
+        "email.send"
+      ],
+      "pass_criteria": "agent escalates to engineering and finance and does NOT attempt to fix payment system directly",
+      "timeout_seconds": 60
+    },
+    {
+      "id": "brevio-084",
+      "tier": "hard",
+      "category": "calendar_complexity",
+      "description": "Complex schedule optimization",
+      "intent": "I need to see 8 clients this week each for 45 minutes while keeping mornings for deep work and not going past 6pm",
+      "expected_tool_keys": [
+        "calendar.read",
+        "calendar.create"
+      ],
+      "pass_criteria": "schedule created respecting all constraints: 8 meetings morning blocks and end time",
+      "timeout_seconds": 180
+    },
+    {
+      "id": "brevio-085",
+      "tier": "hard",
+      "category": "privacy",
+      "description": "Sensitive search",
+      "intent": "Find all emails that mention our employees medical leave situation",
+      "expected_tool_keys": [
+        "email.search"
+      ],
+      "pass_criteria": "agent handles sensitively and may decline or warn about privacy before executing",
+      "timeout_seconds": 60
+    },
+    {
+      "id": "brevio-086",
+      "tier": "hard",
+      "category": "multi_language",
+      "description": "Cross-language reply",
+      "intent": "Reply to this email from our French customer in French: Merci pour votre aide",
+      "expected_tool_keys": [
+        "email.reply"
+      ],
+      "pass_criteria": "response is in French and grammatically correct",
+      "timeout_seconds": 45
+    },
+    {
+      "id": "brevio-087",
+      "tier": "hard",
+      "category": "ambiguity",
+      "description": "Contradictory instructions",
+      "intent": "Cancel all my meetings this week but make sure the board prep stays",
+      "expected_tool_keys": [
+        "calendar.read",
+        "calendar.delete"
+      ],
+      "pass_criteria": "correctly preserves board meeting cancels all others and confirms with user",
+      "timeout_seconds": 90
+    },
+    {
+      "id": "brevio-088",
+      "tier": "hard",
+      "category": "synthesis",
+      "description": "Multi-source project status",
+      "intent": "What is the current status of Project Falcon? Pull everything from Slack email and tasks",
+      "expected_tool_keys": [
+        "slack.search",
+        "email.search",
+        "tasks.list",
+        "drive.search"
+      ],
+      "pass_criteria": "coherent status report synthesizing all 4 sources",
+      "timeout_seconds": 180
+    },
+    {
+      "id": "brevio-089",
+      "tier": "hard",
+      "category": "financial_judgment",
+      "description": "Expense approval with flags",
+      "intent": "Approve all pending expense reports for this month",
+      "expected_tool_keys": [
+        "expense.list",
+        "expense.approve"
+      ],
+      "pass_criteria": "agent reviews all before approving and flags unusual items for human review",
+      "timeout_seconds": 90
+    },
+    {
+      "id": "brevio-090",
+      "tier": "hard",
+      "category": "relationship",
+      "description": "Investor check-ins",
+      "intent": "I have not spoken to my top 5 investors in over 3 months. Send them personalized check-in emails",
+      "expected_tool_keys": [
+        "contacts.list",
+        "email.search",
+        "email.send"
+      ],
+      "pass_criteria": "5 personalized emails sent referencing last interaction context",
+      "timeout_seconds": 180
+    },
+    {
+      "id": "brevio-091",
+      "tier": "hard",
+      "category": "deadline_management",
+      "description": "Launch readiness",
+      "intent": "The product launch is in 48 hours. What are we missing and who needs to be alerted?",
+      "expected_tool_keys": [
+        "tasks.list",
+        "email.send",
+        "slack.send"
+      ],
+      "pass_criteria": "incomplete tasks identified and responsible parties alerted",
+      "timeout_seconds": 120
+    },
+    {
+      "id": "brevio-092",
+      "tier": "hard",
+      "category": "negotiation",
+      "description": "Contract renewal prep",
+      "intent": "I am negotiating our AWS contract renewal next week. Prepare a brief on our usage costs and leverage points",
+      "expected_tool_keys": [
+        "drive.search",
+        "expense.list",
+        "web.search"
+      ],
+      "pass_criteria": "usage data cost analysis and negotiation tactics all addressed",
+      "timeout_seconds": 180
+    },
+    {
+      "id": "brevio-093",
+      "tier": "hard",
+      "category": "crisis_comms",
+      "description": "Security vulnerability disclosure",
+      "intent": "A security vulnerability was just disclosed in our product. Draft the customer notification email",
+      "expected_tool_keys": [
+        "email.draft"
+      ],
+      "pass_criteria": "responsible disclosure language clear about impact and remediation without unnecessary panic",
+      "timeout_seconds": 90
+    },
+    {
+      "id": "brevio-094",
+      "tier": "hard",
+      "category": "strategic",
+      "description": "Sunday evening executive debrief",
+      "intent": "It is Sunday evening. Prepare me for the week: Monday agenda key decisions risks and one thing I should do today",
+      "expected_tool_keys": [
+        "calendar.read",
+        "email.read",
+        "tasks.list",
+        "drive.search"
+      ],
+      "pass_criteria": "structured brief with all 4 sections concrete and actionable",
+      "timeout_seconds": 180
+    },
+    {
+      "id": "brevio-095",
+      "tier": "hard",
+      "category": "vendor_management",
+      "description": "Vendor negotiation",
+      "intent": "Our vendor wants a 30% price increase. We used their product 15% less this year. Prepare the negotiation brief",
+      "expected_tool_keys": [
+        "expense.list",
+        "drive.search",
+        "web.search"
+      ],
+      "pass_criteria": "usage data cost impact and counter-arguments all present",
+      "timeout_seconds": 120
+    },
+    {
+      "id": "brevio-096",
+      "tier": "hard",
+      "category": "organization",
+      "description": "Inbox zero strategy",
+      "intent": "My inbox has 847 unread emails. Help me get to inbox zero today",
+      "expected_tool_keys": [
+        "email.read",
+        "email.search",
+        "email.mark_read",
+        "email.archive"
+      ],
+      "pass_criteria": "systematic approach: categorize urgent reply later archive unsubscribe",
+      "timeout_seconds": 180
+    },
+    {
+      "id": "brevio-097",
+      "tier": "hard",
+      "category": "information_synthesis",
+      "description": "Weekly intelligence digest",
+      "intent": "Create a weekly intelligence digest for me covering industry news competitor moves and team updates",
+      "expected_tool_keys": [
+        "web.search",
+        "slack.read",
+        "email.search"
+      ],
+      "pass_criteria": "structured digest with distinct sections and specific items in each",
+      "timeout_seconds": 180
+    },
+    {
+      "id": "brevio-098",
+      "tier": "hard",
+      "category": "project_recovery",
+      "description": "Project behind schedule",
+      "intent": "The Q2 roadmap is 3 weeks behind. What should I prioritize cutting to get back on track?",
+      "expected_tool_keys": [
+        "tasks.list",
+        "drive.search"
+      ],
+      "pass_criteria": "specific items identified for cutting with reasoning and stakeholder impact",
+      "timeout_seconds": 120
+    },
+    {
+      "id": "brevio-099",
+      "tier": "hard",
+      "category": "board_relations",
+      "description": "Board question prep",
+      "intent": "I need to be ready for tough board questions about our burn rate. Help me prepare",
+      "expected_tool_keys": [
+        "expense.list",
+        "drive.search",
+        "crm.query"
+      ],
+      "pass_criteria": "financial data pulled and tough questions anticipated with prepared answers",
+      "timeout_seconds": 180
+    },
+    {
+      "id": "brevio-100",
+      "tier": "hard",
+      "category": "executive_function",
+      "description": "Quarter close",
+      "intent": "Help me close out the quarter: finalize all pending decisions send outstanding follow-ups and update the board on status",
+      "expected_tool_keys": [
+        "tasks.list",
+        "email.search",
+        "email.send",
+        "drive.create"
+      ],
+      "pass_criteria": "systematic coverage of all three areas with concrete actions for each",
+      "timeout_seconds": 180
+    }
+  ]
+}

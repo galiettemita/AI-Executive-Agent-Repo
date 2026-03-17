@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/brevio/brevio/internal/connectors"
+	"github.com/brevio/brevio/internal/disclosure"
 )
 
 // SkillMetadata describes a registered skill.
@@ -217,7 +218,33 @@ func (s *Service) Execute(ctx context.Context, req ExecuteRequest) ExecuteResult
 		execCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 		defer cancel()
 
-		data, err := s.mcpClient.Execute(execCtx, mcpURL, req.SkillID, req.Args)
+		// AI Identity Disclosure (EU AI Act Article 50): inject disclosure into args.
+		disclosedArgs := make(map[string]interface{}, len(req.Args))
+		for k, v := range req.Args {
+			disclosedArgs[k] = v
+		}
+		if disclosure.IsEmailSkill(req.SkillID) {
+			anyArgs := make(map[string]any, len(disclosedArgs))
+			for k, v := range disclosedArgs {
+				anyArgs[k] = v
+			}
+			anyArgs = disclosure.InjectEmailDisclosure(anyArgs)
+			for k, v := range anyArgs {
+				disclosedArgs[k] = v
+			}
+		}
+		if disclosure.IsCalendarWriteSkill(req.SkillID) {
+			anyArgs := make(map[string]any, len(disclosedArgs))
+			for k, v := range disclosedArgs {
+				anyArgs[k] = v
+			}
+			anyArgs = disclosure.InjectCalendarDisclosure(anyArgs)
+			for k, v := range anyArgs {
+				disclosedArgs[k] = v
+			}
+		}
+
+		data, err := s.mcpClient.Execute(execCtx, mcpURL, req.SkillID, disclosedArgs)
 		latency := time.Since(start).Milliseconds()
 		if err != nil {
 			errCode := "MCP_EXECUTION_FAILED"

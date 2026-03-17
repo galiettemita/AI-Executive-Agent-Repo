@@ -64,3 +64,19 @@ alerts:
     evaluation_window: 30m
     severity: medium
     action: notify_runtime_owner
+  - alert_key: brevio_gaia_regression
+    metric: brevio_gaia_regression_alert
+    threshold: 0.5
+    operator: ">"
+    evaluation_window: 1h
+    severity: high
+    action: notify_runtime_owner
+    description: "GAIA benchmark pass rate dropped >5% from prior week."
+  - alert_key: brevio_gaia_pass_rate_critical
+    metric: brevio_gaia_pass_rate
+    threshold: 0.50
+    operator: "<"
+    evaluation_window: 24h
+    severity: critical
+    action: page_primary_on_call
+    description: "GAIA benchmark pass rate below 50%."

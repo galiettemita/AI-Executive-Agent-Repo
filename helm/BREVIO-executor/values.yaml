@@ -8,7 +8,19 @@ autoscaling:
   enabled: true
   minReplicas: 3
   maxReplicas: 12
-extraEnv: []
+# SECURITY NOTE: HMAC_KEY is required in all non-local environments.
+# Minimum length: 32 bytes. Generate: openssl rand -hex 32
+# In production, inject via Kubernetes Secret (not plain text in values.yaml).
+extraEnv:
+  - name: HMAC_KEY
+    # REQUIRED in production. Generate with: openssl rand -hex 32
+    # Store in a Kubernetes Secret and reference via secretKeyRef:
+    # - name: HMAC_KEY
+    #   valueFrom:
+    #     secretKeyRef:
+    #       name: brevio-executor-secrets
+    #       key: hmac-key
+    value: ""
 mtls:
   enabled: false
   issuerName: brevio-internal-ca-issuer

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/brevio/brevio/internal/control"
+	"github.com/brevio/brevio/internal/disclosure"
 	"github.com/brevio/brevio/internal/executor"
 	callpkg "github.com/brevio/brevio/internal/hands/call"
 	"github.com/brevio/brevio/internal/metrics"
@@ -24,7 +25,7 @@ func main() {
 	cfg, err := runtimeserver.LoadServiceEnvConfig(os.Getenv, runtimeserver.ServiceEnvOptions{
 		ServiceName:         "executor",
 		DefaultListenAddr:   ":18083",
-		RequiredNonLocalEnv: []string{"DATABASE_URL", "REDIS_URL", "TEMPORAL_HOST"},
+		RequiredNonLocalEnv: []string{"DATABASE_URL", "REDIS_URL", "TEMPORAL_HOST", "HMAC_KEY"},
 	})
 	if err != nil {
 		log.Fatalf("executor config validation failed: %v", err)
@@ -32,6 +33,9 @@ func main() {
 
 	logger := runtimeserver.NewJSONLogger("executor", cfg.Environment)
 	logger.SetOutput(os.Stdout)
+
+	// Inject AI disclosure transport globally — all outbound HTTP carries X-Brevio-Agent: true.
+	http.DefaultTransport = disclosure.NewBrevioAgentTransport(http.DefaultTransport)
 
 	// Build production executor when DATABASE_URL is available.
 	dbURL := strings.TrimSpace(os.Getenv("DATABASE_URL"))
@@ -51,12 +55,20 @@ func main() {
 
 		hmacKey := []byte(os.Getenv("HMAC_KEY"))
 		if len(hmacKey) == 0 {
-			// REPAIR: In non-local environments, HMAC_KEY must be configured.
-			// Hard-coded default secrets are a critical security defect.
-			if cfg.Environment != "local" && cfg.Environment != "test" {
-				log.Fatalf("HMAC_KEY is required in %s environment — refusing to start with default secret", cfg.Environment)
-			}
+			// REPAIR resolved: HMAC_KEY is now in RequiredNonLocalEnv — startup fails above
+			// if unset in non-local environments. This fallback is only reachable in local/test.
 			hmacKey = []byte("executor-local-dev-key-not-for-production")
+		} else if len(hmacKey) < 32 {
+			if cfg.Environment != "local" && cfg.Environment != "test" {
+				log.Fatalf(
+					"HMAC_KEY is too short in %s environment: got %d bytes, minimum is 32 bytes (256 bits). "+
+						"Generate a new key with: openssl rand -hex 32",
+					cfg.Environment, len(hmacKey))
+			}
+			logger.Info("executor_hmac_key_warning", map[string]any{
+				"warning": "HMAC_KEY is shorter than 32 bytes — acceptable in local/test only",
+				"length":  len(hmacKey),
+			})
 		}
 		receiptSvc := control.NewReceiptService(hmacKey)
 		durableReceipts := control.NewDurableReceiptService(receiptSvc, receiptRepo)

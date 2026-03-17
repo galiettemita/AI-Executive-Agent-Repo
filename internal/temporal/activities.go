@@ -15,23 +15,40 @@ import (
 
 	"github.com/brevio/brevio/internal/brain"
 	"github.com/brevio/brevio/internal/connectors"
+	"github.com/brevio/brevio/internal/a2a"
+	"github.com/brevio/brevio/internal/benchmark"
+	"github.com/brevio/brevio/internal/browser"
+	"github.com/brevio/brevio/internal/security/sandbox"
+	"github.com/brevio/brevio/internal/observability"
 	"github.com/brevio/brevio/internal/cognition"
+	"github.com/brevio/brevio/internal/delegation"
+	"github.com/brevio/brevio/internal/dpo"
+	rageval "github.com/brevio/brevio/internal/rag/eval"
+	"github.com/brevio/brevio/internal/preference"
+	"github.com/brevio/brevio/internal/simulation"
+	"github.com/brevio/brevio/internal/proactive"
 	selfmod "github.com/brevio/brevio/internal/self_modification"
 	contextlayer "github.com/brevio/brevio/internal/context"
 	"github.com/brevio/brevio/internal/eq"
+	"github.com/brevio/brevio/internal/eval"
+	"github.com/brevio/brevio/internal/experiment"
+	"github.com/brevio/brevio/internal/vision"
 	"github.com/brevio/brevio/internal/executor"
 	"github.com/brevio/brevio/internal/feature_flags"
 	"github.com/brevio/brevio/internal/hands/call"
 	"github.com/brevio/brevio/internal/llm"
 	"github.com/brevio/brevio/internal/memory"
+	"github.com/brevio/brevio/internal/memory/kg"
 	"github.com/brevio/brevio/internal/onboarding"
 	"github.com/brevio/brevio/internal/outbox"
 	"github.com/brevio/brevio/internal/rag"
 	"github.com/brevio/brevio/internal/gateway"
+	"github.com/brevio/brevio/internal/guardrails"
 	"github.com/brevio/brevio/internal/metrics"
 	"github.com/brevio/brevio/internal/policy"
 	"github.com/brevio/brevio/internal/trust"
 	"github.com/brevio/brevio/internal/voice/worker"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"go.temporal.io/sdk/temporal"
 )
@@ -77,6 +94,7 @@ type GeneratePlanInput struct {
 	RetryHints            string           `json:"retry_hints,omitempty"` // populated on re-plan after verify fail
 	ConversationHistory   []brain.Message  `json:"conversation_history,omitempty"`
 	ContextBudget         int              `json:"context_budget,omitempty"` // 0 = use default 150000
+	UserID                string           `json:"user_id,omitempty"`
 }
 
 type GeneratePlanResult struct {
@@ -88,11 +106,13 @@ type GeneratePlanResult struct {
 }
 
 type AuthorizePlanInput struct {
-	MessageID   string   `json:"message_id"`
-	WorkspaceID string   `json:"workspace_id"`
-	PlanID      string   `json:"plan_id"`
-	ToolKeys    []string `json:"tool_keys"`
-	RiskLevel   string   `json:"risk_level"`
+	MessageID        string   `json:"message_id"`
+	WorkspaceID      string   `json:"workspace_id"`
+	PlanID           string   `json:"plan_id"`
+	ToolKeys         []string `json:"tool_keys"`
+	RiskLevel        string   `json:"risk_level"`
+	RequestingUserID string   `json:"requesting_user_id,omitempty"`
+	WorkspaceOwnerID string   `json:"workspace_owner_id,omitempty"`
 }
 
 type AuthorizePlanResult struct {
@@ -111,18 +131,88 @@ type ExecuteToolInput struct {
 }
 
 type ToolExecutionActivityResult struct {
-	ToolKey        string `json:"tool_key"`
-	Phase          string `json:"phase"`
-	Success        bool   `json:"success"`
-	IdempotencyKey string `json:"idempotency_key"`
-	PayloadHash    string `json:"payload_hash"`
-	ToolOutput     any    `json:"tool_output,omitempty"`
+	ToolKey          string `json:"tool_key"`
+	Phase            string `json:"phase"`
+	Success          bool   `json:"success"`
+	IdempotencyKey   string `json:"idempotency_key"`
+	PayloadHash      string `json:"payload_hash"`
+	ToolOutput       any    `json:"tool_output,omitempty"`
+	UntrustedContent bool   `json:"untrusted_content,omitempty"`
 }
 
 type SynthesizeResponseInput struct {
 	MessageID   string                        `json:"message_id"`
 	WorkspaceID string                        `json:"workspace_id"`
 	ToolResults []ToolExecutionActivityResult `json:"tool_results"`
+
+	// EQ modulation fields — sourced from ApplyEQStrategyActivity (Phase 4).
+	EQToneDirective  string  `json:"eq_tone_directive,omitempty"`
+	EQFormalityLevel int     `json:"eq_formality_level,omitempty"`
+	EQLengthModifier float64 `json:"eq_length_modifier,omitempty"`
+	EQOfferHelp      bool    `json:"eq_offer_help,omitempty"`
+
+	// Uncertainty qualifier flag — set when 0.50 <= confidence < 0.75.
+	AddQualifiers bool    `json:"add_qualifiers,omitempty"`
+	Confidence    float64 `json:"confidence,omitempty"`
+}
+
+// buildEQSystemPrompt returns the synthesis system prompt with EQ directives injected.
+func buildEQSystemPrompt(input SynthesizeResponseInput) string {
+	base := `You are Brevio, an executive AI assistant. Generate a natural, concise response
+incorporating skill execution results. Output a JSON object with:
+- response_text: string (user-facing response, max 4096 chars)
+- suggested_actions: array of follow-up string suggestions
+- follow_up_scheduled: boolean
+
+Respond with ONLY the JSON object.`
+
+	hasEQ := input.EQToneDirective != "" || input.EQFormalityLevel != 0 || input.EQLengthModifier != 0
+	if !hasEQ {
+		return base
+	}
+
+	var dirs []string
+	if input.EQToneDirective != "" {
+		dirs = append(dirs, "TONE: "+input.EQToneDirective)
+	}
+	switch {
+	case input.EQFormalityLevel >= 4:
+		dirs = append(dirs, "STYLE: Use formal professional language. Full sentences, no contractions.")
+	case input.EQFormalityLevel > 0 && input.EQFormalityLevel <= 2:
+		dirs = append(dirs, "STYLE: Use conversational, friendly language.")
+	}
+	switch {
+	case input.EQLengthModifier > 0 && input.EQLengthModifier < 0.7:
+		dirs = append(dirs, "LENGTH: Be very concise. Maximum 2 sentences in response_text.")
+	case input.EQLengthModifier > 1.3:
+		dirs = append(dirs, "LENGTH: Provide a thorough, detailed response.")
+	}
+	if input.EQOfferHelp {
+		dirs = append(dirs, "EMPATHY: Begin with a brief empathetic acknowledgement before the main response.")
+	}
+	if len(dirs) == 0 {
+		return base
+	}
+	return base + "\n\nEQ MODULATION DIRECTIVES (apply to response_text):\n" + strings.Join(dirs, "\n")
+}
+
+// addUncertaintyQualifiers prepends a qualifier phrase for medium-confidence responses.
+func addUncertaintyQualifiers(response string) string {
+	qualifiers := []string{
+		"Based on the available information, ",
+		"As best I can determine, ",
+		"To my knowledge, ",
+	}
+	for _, q := range qualifiers {
+		if strings.HasPrefix(response, q) {
+			return response
+		}
+	}
+	if len(response) == 0 {
+		return qualifiers[0]
+	}
+	q := qualifiers[len(response)%len(qualifiers)]
+	return q + strings.ToLower(response[:1]) + response[1:]
 }
 
 type SynthesizeResponseResult struct {
@@ -310,6 +400,64 @@ type ActivityDeps struct {
 
 	// Self-modification policy service.
 	SelfModService *selfmod.Service
+
+	// IPI inference guard.
+	InferenceGuard *guardrails.InferenceGuard
+
+	// PAHF preference learning.
+	MemorySvc           *memory.Service
+	PreferenceRetriever *preference.Retriever
+
+	// Production eval sampling.
+	ProductionEvalSampler *eval.ProductionEvalSampler
+	SynthesisVerifier     *eval.SynthesisVerifier
+	QualityGauge          ProductionQualityGauge
+
+	// A/B experiment routing.
+	ExperimentRouter  *experiment.ExperimentRouter
+	VariantScoreStore *experiment.VariantScoreStore
+
+	// Vision processor.
+	VisionProcessor *vision.VisionProcessor
+
+	// Proactive monitor.
+	ProactiveMonitor *proactive.ProactiveMonitor
+	OfferBuilder     *proactive.OfferBuilder
+
+	// A2A client and registry.
+	A2AClient             *a2a.A2AClient
+	ExternalAgentRegistry *a2a.ExternalAgentRegistry
+
+	// DPO pipeline.
+	DPOService         *dpo.Service
+	ScoreStore         *rageval.ScoreStore
+	FeatureFlagService *feature_flags.Service
+
+	// Plan simulator.
+	Simulator *simulation.Simulator
+
+	// GAIA benchmark.
+	BenchmarkRepo     *benchmark.Repository
+	PrometheusMetrics *observability.PrometheusMetrics
+
+	// Browser automation.
+	BrowserClient     *browser.Client
+	BrowserSandboxSvc *sandbox.MCPSandboxService
+
+	// Delegation service.
+	DelegationSvc *delegation.Service
+
+	// Knowledge graph (Phase 5).
+	KGService   *kg.Service
+	KGRetriever *kg.Retriever
+
+	// Trust scoring for SubAgent autonomy gate.
+	TrustSvc *trust.Service
+}
+
+// ProductionQualityGauge records the rolling quality score to Prometheus.
+type ProductionQualityGauge interface {
+	Set(value float64)
 }
 
 // WorkingMemoryService is the minimal interface for working memory eviction in activities.
@@ -375,6 +523,59 @@ type Activities struct {
 	// Self-modification policy service.
 	selfModSvc *selfmod.Service
 
+	// IPI inference guard for post-tool-call taint tracking.
+	inferenceGuard *guardrails.InferenceGuard
+
+	// PAHF preference learning.
+	memorySvc           *memory.Service
+	preferenceRetriever *preference.Retriever
+
+	// Production eval sampling and hallucination detection.
+	prodEvalSampler   *eval.ProductionEvalSampler
+	synthesisVerifier *eval.SynthesisVerifier
+	qualityGauge      ProductionQualityGauge
+
+	// A/B experiment routing.
+	experimentRouter  *experiment.ExperimentRouter
+	variantScoreStore *experiment.VariantScoreStore
+
+	// Vision processor.
+	visionProcessor *vision.VisionProcessor
+
+	// Proactive monitor.
+	proactiveMonitor *proactive.ProactiveMonitor
+	offerBuilder     *proactive.OfferBuilder
+
+	// A2A client and registry.
+	a2aClient             *a2a.A2AClient
+	externalAgentRegistry *a2a.ExternalAgentRegistry
+
+	// DPO pipeline.
+	dpoService         *dpo.Service
+	scoreStore         *rageval.ScoreStore
+	featureFlagService *feature_flags.Service
+
+	// Plan simulator.
+	simulator *simulation.Simulator
+
+	// GAIA benchmark.
+	benchmarkRepo     *benchmark.Repository
+	prometheusMetrics *observability.PrometheusMetrics
+
+	// Browser automation.
+	browserClient     *browser.Client
+	browserSandboxSvc *sandbox.MCPSandboxService
+
+	// Delegation service.
+	delegationSvc *delegation.Service
+
+	// Knowledge graph (Phase 5).
+	kgService   *kg.Service
+	kgRetriever *kg.Retriever
+
+	// Trust scoring for SubAgent autonomy gate.
+	trustSvc *trust.Service
+
 	// Observability counters for outbox dispatch.
 	outboxDispatched atomic.Int64
 	outboxFailed     atomic.Int64
@@ -418,6 +619,31 @@ func NewActivitiesWithProdDeps(deps ActivityDeps) *Activities {
 		opaEvaluator:       deps.OPAEvaluator,
 		credentialResolver: deps.CredentialResolver,
 		selfModSvc:         deps.SelfModService,
+		inferenceGuard:      deps.InferenceGuard,
+		memorySvc:           deps.MemorySvc,
+		preferenceRetriever: deps.PreferenceRetriever,
+		prodEvalSampler:     deps.ProductionEvalSampler,
+		synthesisVerifier:   deps.SynthesisVerifier,
+		qualityGauge:        deps.QualityGauge,
+		experimentRouter:    deps.ExperimentRouter,
+		variantScoreStore:   deps.VariantScoreStore,
+		visionProcessor:     deps.VisionProcessor,
+		proactiveMonitor:    deps.ProactiveMonitor,
+		offerBuilder:        deps.OfferBuilder,
+		a2aClient:             deps.A2AClient,
+		externalAgentRegistry: deps.ExternalAgentRegistry,
+		dpoService:            deps.DPOService,
+		scoreStore:            deps.ScoreStore,
+		featureFlagService:    deps.FeatureFlagService,
+		simulator:             deps.Simulator,
+		benchmarkRepo:         deps.BenchmarkRepo,
+		prometheusMetrics:     deps.PrometheusMetrics,
+		browserClient:         deps.BrowserClient,
+		browserSandboxSvc:     deps.BrowserSandboxSvc,
+		delegationSvc:         deps.DelegationSvc,
+		kgService:             deps.KGService,
+		kgRetriever:           deps.KGRetriever,
+		trustSvc:              deps.TrustSvc,
 	}
 }
 
@@ -514,6 +740,19 @@ func (a *Activities) keywordFallbackClassification(payload string) *ClassifyInte
 
 func (a *Activities) GeneratePlanActivity(ctx context.Context, input GeneratePlanInput) (*GeneratePlanResult, error) {
 	planID := hashKey("plan:" + input.MessageID + ":" + input.WorkspaceID)
+
+	// PAHF step 2: inject preference context when plan confidence is low.
+	if input.Confidence < 0.65 && a.preferenceRetriever != nil {
+		prefFacts, prefErr := a.preferenceRetriever.FetchTopK(ctx, input.WorkspaceID, input.UserID, input.Intent, 5)
+		if prefErr == nil && len(prefFacts) > 0 {
+			preferenceCtx := preference.FormatForLLM(prefFacts)
+			if input.MemoryContext == "" {
+				input.MemoryContext = preferenceCtx
+			} else {
+				input.MemoryContext = preferenceCtx + "\n\n" + input.MemoryContext
+			}
+		}
+	}
 
 	// Compress conversation history if context budget is at risk.
 	budget := input.ContextBudget
@@ -713,6 +952,30 @@ func (a *Activities) AuthorizePlanActivity(ctx context.Context, input AuthorizeP
 		}
 	}
 
+	// Gate 3: Delegation check — cross-user workspace access requires grant (Phase 4).
+	if a.delegationSvc != nil &&
+		input.RequestingUserID != "" &&
+		input.WorkspaceOwnerID != "" &&
+		input.RequestingUserID != input.WorkspaceOwnerID {
+		wsID, parseErr := uuid.Parse(input.WorkspaceID)
+		if parseErr != nil {
+			return &AuthorizePlanResult{Decision: "deny", Reason: fmt.Sprintf("DELEGATION_INVALID_WORKSPACE: %v", parseErr)}, nil
+		}
+		granteeID, parseErr := uuid.Parse(input.RequestingUserID)
+		if parseErr != nil {
+			return &AuthorizePlanResult{Decision: "deny", Reason: fmt.Sprintf("DELEGATION_INVALID_GRANTEE: %v", parseErr)}, nil
+		}
+		for _, toolKey := range input.ToolKeys {
+			if !a.delegationSvc.CanGranteeUseTool(wsID, granteeID, toolKey) {
+				return &AuthorizePlanResult{
+					Decision: "deny",
+					Reason: fmt.Sprintf("DELEGATION_REQUIRED: no valid grant covers tool %q for grantee %s in workspace %s",
+						toolKey, input.RequestingUserID, input.WorkspaceID),
+				}, nil
+			}
+		}
+	}
+
 	receiptID := hashKey("receipt:" + input.PlanID + ":" + input.WorkspaceID)
 	return &AuthorizePlanResult{
 		Decision:  "allow",
@@ -754,6 +1017,29 @@ func (a *Activities) ExecuteToolActivity(ctx context.Context, input ExecuteToolI
 		}
 	}
 
+	// A2A delegation path: tool keys starting with "delegate:" route to external agents.
+	if strings.HasPrefix(input.ToolKey, "delegate:") && a.a2aClient != nil {
+		capability := strings.TrimPrefix(input.ToolKey, "delegate:")
+		delegateReq := a2a.DelegateRequest{
+			WorkspaceID: input.WorkspaceID,
+			Capability:  capability,
+			Input:       map[string]any{"workspace_id": input.WorkspaceID},
+			TimeoutSecs: 120,
+		}
+		delegateResult, delegateErr := a.a2aClient.Delegate(ctx, delegateReq)
+		if delegateErr != nil {
+			return &ToolExecutionActivityResult{
+				ToolKey: input.ToolKey, Phase: "a2a_delegation_failed", Success: false,
+				IdempotencyKey: input.IdempotencyKey, PayloadHash: payloadHash,
+			}, nil
+		}
+		return &ToolExecutionActivityResult{
+			ToolKey: input.ToolKey, Phase: "commit", Success: delegateResult.Status == a2a.TaskStatusCompleted,
+			IdempotencyKey: input.IdempotencyKey, PayloadHash: payloadHash,
+			ToolOutput: delegateResult.Output,
+		}, nil
+	}
+
 	// Production path: call Go hands runtime for real execution.
 	if a.handsExecutor != nil {
 		execArgs := map[string]interface{}{}
@@ -774,14 +1060,39 @@ func (a *Activities) ExecuteToolActivity(ctx context.Context, input ExecuteToolI
 				PayloadHash:    payloadHash,
 			}, nil
 		}
-		return &ToolExecutionActivityResult{
+		result := &ToolExecutionActivityResult{
 			ToolKey:        input.ToolKey,
 			Phase:          "commit",
 			Success:        success,
 			IdempotencyKey: input.IdempotencyKey,
 			PayloadHash:    payloadHash,
 			ToolOutput:     output,
-		}, nil
+		}
+
+		// IPI taint-tracking: check tool output for indirect prompt injection.
+		if output != nil && a.inferenceGuard != nil {
+			trustSrc := guardrails.InferTrustSource(input.ToolKey)
+			if trustSrc.IsUntrusted() {
+				ipiResult := a.inferenceGuard.CheckPostToolCallIPI(guardrails.IPIGuardInput{
+					WorkspaceID: input.WorkspaceID,
+					TrustSource: trustSrc,
+					ToolOutput:  fmt.Sprintf("%v", output),
+				})
+				if !ipiResult.Allowed {
+					log.Printf("[ExecuteTool] IPI_BLOCKED tool=%s reason=%s", input.ToolKey, ipiResult.Reason)
+					return &ToolExecutionActivityResult{
+						ToolKey: input.ToolKey,
+						Phase:   "ipi_blocked",
+						Success: false,
+					}, fmt.Errorf("IPI_BLOCKED: %s", ipiResult.Reason)
+				}
+				if ipiResult.UntrustedContent {
+					result.UntrustedContent = true
+				}
+			}
+		}
+
+		return result, nil
 	}
 
 	// REPAIR: missing HandsExecutor is a configuration error in production.
@@ -840,29 +1151,61 @@ func (a *Activities) SynthesizeResponseActivity(ctx context.Context, input Synth
 			// Falls through to the non-streaming path below on any failure.
 		}
 
-		// Non-streaming path.
-		synthesized, _, err := a.llmService.SynthesizeResponse(ctx, input.MessageID, toolSummary.String())
-		if err != nil {
-			log.Printf("[Synthesize] LLM synthesis failed, using template fallback: %v", err)
+		// Non-streaming path with EQ modulation (Phase 4).
+		systemPrompt := buildEQSystemPrompt(input)
+		hasEQ := input.EQToneDirective != "" || input.EQFormalityLevel != 0 || input.EQLengthModifier != 0
+
+		var synthesized *llm.SynthesizedResponse
+		var synthErr error
+		if hasEQ && a.llmService.Intelligence() != nil {
+			synthesized, _, synthErr = a.llmService.Intelligence().SynthesizeResponseWithSystemPrompt(
+				ctx, input.MessageID, toolSummary.String(), systemPrompt)
+		} else {
+			synthesized, _, synthErr = a.llmService.SynthesizeResponse(ctx, input.MessageID, toolSummary.String())
+		}
+
+		if synthErr != nil {
+			log.Printf("[Synthesize] LLM synthesis failed, using template fallback: %v", synthErr)
 			return &SynthesizeResponseResult{
 				ResponsePayload: fmt.Sprintf("Processed message %s with %d tool results", input.MessageID, len(input.ToolResults)),
 			}, nil
 		}
-		// Guard against nil response from unexpected LLM output.
 		if synthesized == nil {
 			log.Printf("[Synthesize] LLM returned nil response without error, using template fallback")
 			return &SynthesizeResponseResult{
 				ResponsePayload: fmt.Sprintf("Processed message %s with %d tool results", input.MessageID, len(input.ToolResults)),
 			}, nil
 		}
+		responseText := synthesized.ResponseText
+
+		// Uncertainty qualifiers for medium-confidence responses.
+		if input.AddQualifiers {
+			responseText = addUncertaintyQualifiers(responseText)
+		}
+
+		// Hallucination detection for T2/T3 responses.
+		if a.synthesisVerifier != nil {
+			vr, _ := a.synthesisVerifier.Verify(ctx, input.WorkspaceID, "", input.MessageID, responseText, "t2")
+			if vr != nil && !vr.Passed {
+				responseText += "\n\n_(Note: Some details in this response may require verification.)_"
+			}
+		}
+
 		return &SynthesizeResponseResult{
-			ResponsePayload: synthesized.ResponseText,
+			ResponsePayload: responseText,
 		}, nil
 	}
 
 	// Degraded path: template-based response.
+	responsePayload := fmt.Sprintf("Processed message %s with %d tool results", input.MessageID, len(input.ToolResults))
+
+	// Mark message as AI-generated (EU AI Act Article 50 compliance).
+	if a.pool != nil && input.MessageID != "" {
+		_, _ = a.pool.Exec(ctx, `UPDATE messages SET is_ai_generated=true WHERE id=$1`, input.MessageID)
+	}
+
 	return &SynthesizeResponseResult{
-		ResponsePayload: fmt.Sprintf("Processed message %s with %d tool results", input.MessageID, len(input.ToolResults)),
+		ResponsePayload: responsePayload,
 	}, nil
 }
 
@@ -1403,8 +1746,9 @@ type RAGChunk struct {
 
 // RAGSearchResult contains deterministically-ordered RAG chunks.
 type RAGSearchResult struct {
-	Chunks      []RAGChunk `json:"chunks"`
-	TotalScored int        `json:"total_scored"`
+	Chunks           []RAGChunk `json:"chunks"`
+	TotalScored      int        `json:"total_scored"`
+	KGContextSnippet string     `json:"kg_context_snippet,omitempty"`
 }
 
 // ReasoningLoopInput carries context for the brain reasoning loop.
@@ -1603,11 +1947,55 @@ func (a *Activities) SearchRAGActivity(ctx context.Context, input RAGSearchInput
 		chunks = chunks[:topK]
 	}
 
+	// KG Secondary Retrieval (Phase 5): append knowledge graph context snippet.
+	kgContextSnippet := ""
+	if a.kgRetriever != nil && input.Query != "" {
+		kgResult, kgErr := a.kgRetriever.Query(ctx, input.WorkspaceID, input.Query, 2)
+		if kgErr == nil && kgResult != nil && kgResult.ContextSnippet != "" {
+			kgContextSnippet = kgResult.ContextSnippet
+		}
+	}
+
 	return &RAGSearchResult{
-		Chunks:      chunks,
-		TotalScored: len(chunks),
+		Chunks:           chunks,
+		TotalScored:      len(chunks),
+		KGContextSnippet: kgContextSnippet,
 	}, nil
 }
+
+// KGExtractInput drives KG triple extraction.
+type KGExtractInput struct {
+	WorkspaceID string `json:"workspace_id"`
+	TurnID      string `json:"turn_id"`
+	Content     string `json:"content"`
+}
+
+// KGExtractActivity extracts knowledge graph triples from message content.
+func (a *Activities) KGExtractActivity(ctx context.Context, input KGExtractInput) error {
+	if a.kgService == nil || input.Content == "" || input.WorkspaceID == "" {
+		return nil
+	}
+	a.kgService.ExtractAndStore(ctx, kg.ExtractionRequest{
+		WorkspaceID: input.WorkspaceID,
+		TurnID:      input.TurnID,
+		Content:     input.Content,
+	})
+	return nil
+}
+
+// NewKGLogger returns a kg.Logger backed by Go's standard log package.
+func NewKGLogger() kg.Logger {
+	return &kgSlogLogger{}
+}
+
+type kgSlogLogger struct{}
+
+func (l *kgSlogLogger) Info(msg string, args ...any)  { log.Printf("[KG INFO] "+msg, args...) }
+func (l *kgSlogLogger) Warn(msg string, args ...any)  { log.Printf("[KG WARN] "+msg, args...) }
+func (l *kgSlogLogger) Error(msg string, args ...any) { log.Printf("[KG ERROR] "+msg, args...) }
+func (l *kgSlogLogger) Debug(msg string, _ ...any)    {}
+
+var _ kg.Logger = (*kgSlogLogger)(nil)
 
 // ExecuteReasoningLoopActivity runs the brain reasoning loop:
 // PLANNER → EXECUTOR → CRITIC → REFLECTOR with deterministic parameters.
@@ -2027,4 +2415,110 @@ func (a *Activities) buildLLMClient() llm.Client {
 		return nil
 	}
 	return client
+}
+
+// ProductionEvalSampleActivity samples completed workflows and re-scores them.
+func (a *Activities) ProductionEvalSampleActivity(ctx context.Context) (ProductionEvalSampleResult, error) {
+	if a.prodEvalSampler == nil {
+		return ProductionEvalSampleResult{}, nil
+	}
+	sampleCount, passRate, err := a.prodEvalSampler.SampleAndScore(ctx)
+	if err != nil {
+		return ProductionEvalSampleResult{}, fmt.Errorf("ProductionEvalSampleActivity: %w", err)
+	}
+	if a.qualityGauge != nil {
+		a.qualityGauge.Set(passRate)
+	}
+	return ProductionEvalSampleResult{SampleCount: sampleCount, PassRate: passRate}, nil
+}
+
+// SynthesisVerifyActivity runs hallucination detection on a synthesized T2/T3 response.
+func (a *Activities) SynthesisVerifyActivity(
+	ctx context.Context,
+	workspaceID, systemPrompt, userPrompt, response, tier string,
+) (*eval.VerificationResult, error) {
+	if a.synthesisVerifier == nil {
+		return &eval.VerificationResult{Passed: true, ConsistencyScore: 1.0}, nil
+	}
+	return a.synthesisVerifier.Verify(ctx, workspaceID, systemPrompt, userPrompt, response, tier)
+}
+
+// VisionPreProcessActivity detects image attachments in the incoming message payload,
+// calls the Claude vision API to extract text and entities, and returns a normalized
+// text representation ready for injection into ClassifyIntentActivity.
+func (a *Activities) VisionPreProcessActivity(ctx context.Context, req vision.ExtractionRequest) (*vision.ExtractionResult, error) {
+	if a.visionProcessor == nil || len(req.Attachments) == 0 {
+		return &vision.ExtractionResult{
+			WorkspaceID: req.WorkspaceID,
+			TurnID:      req.TurnID,
+		}, nil
+	}
+
+	result, err := a.visionProcessor.Process(ctx, req)
+	if err != nil {
+		return &vision.ExtractionResult{WorkspaceID: req.WorkspaceID, TurnID: req.TurnID}, nil
+	}
+
+	if a.pool != nil && !result.IsEmpty() {
+		_, _ = a.pool.Exec(ctx, `
+			INSERT INTO vision_extractions
+				(workspace_id, turn_id, image_type, normalized_text, entity_count, confidence)
+			VALUES ($1,$2,$3,$4,$5,$6)
+		`, result.WorkspaceID, result.TurnID, result.ImageType,
+			result.NormalizedText, len(result.Entities), result.Confidence)
+	}
+
+	return result, nil
+}
+
+// DetectProactiveSignalsActivity detects proactive opportunities for a workspace.
+func (a *Activities) DetectProactiveSignalsActivity(ctx context.Context, workspaceID string) ([]proactive.Signal, error) {
+	if a.proactiveMonitor == nil {
+		return nil, nil
+	}
+	return a.proactiveMonitor.DetectSignals(ctx, workspaceID)
+}
+
+// BuildAndDispatchProactiveOfferActivity builds an offer message for a signal and
+// dispatches it via the outbox. NEVER executes any tool or action — offer-only.
+func (a *Activities) BuildAndDispatchProactiveOfferActivity(ctx context.Context, s proactive.Signal) (string, error) {
+	if a.offerBuilder == nil {
+		return "", nil
+	}
+
+	offerText, err := a.offerBuilder.Build(s)
+	if err != nil {
+		return "", fmt.Errorf("BuildAndDispatchProactiveOfferActivity: %w", err)
+	}
+
+	if a.proactiveMonitor != nil {
+		_, _ = a.proactiveMonitor.PersistSignal(ctx, s, offerText)
+	}
+
+	if a.outboxDispatcher != nil {
+		payload := []byte(offerText)
+		_ = a.outboxDispatcher.Dispatch(ctx, "whatsapp:"+s.WorkspaceID, payload)
+	}
+
+	return offerText, nil
+}
+
+// DelegateA2ATaskActivity delegates a task to an external A2A agent.
+func (a *Activities) DelegateA2ATaskActivity(ctx context.Context, req a2a.DelegateRequest) (*a2a.DelegateResult, error) {
+	if a.a2aClient == nil {
+		return nil, temporal.NewNonRetryableApplicationError("a2a_client not configured", "CONFIG_ERROR", nil)
+	}
+	result, err := a.a2aClient.Delegate(ctx, req)
+	if err != nil {
+		return nil, fmt.Errorf("DelegateA2ATaskActivity: %w", err)
+	}
+	return result, nil
+}
+
+// ListExternalAgentsActivity returns all active external agents from the registry.
+func (a *Activities) ListExternalAgentsActivity(ctx context.Context) ([]a2a.ExternalAgent, error) {
+	if a.externalAgentRegistry == nil {
+		return nil, nil
+	}
+	return a.externalAgentRegistry.List(ctx)
 }

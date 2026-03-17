@@ -2,20 +2,42 @@ package temporal
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
+	"github.com/brevio/brevio/internal/simulation"
+	"github.com/brevio/brevio/internal/vision"
 	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/workflow"
 )
 
+// detectEmotionalState infers emotional context from intent text for EQ strategy selection.
+func detectEmotionalState(intent string) string {
+	lower := strings.ToLower(intent)
+	switch {
+	case strings.Contains(lower, "urgent") || strings.Contains(lower, "asap") ||
+		strings.Contains(lower, "emergency") || strings.Contains(lower, "immediately"):
+		return "stressed_urgent"
+	case strings.Contains(lower, "cancel") || strings.Contains(lower, "wrong") ||
+		strings.Contains(lower, "mistake") || strings.Contains(lower, "incorrect"):
+		return "correction_mode"
+	case strings.Contains(lower, "please") || strings.Contains(lower, "could you") ||
+		strings.Contains(lower, "would you mind"):
+		return "polite_request"
+	default:
+		return "neutral"
+	}
+}
+
 // MessageProcessingWorkflowInput matches the existing MessageProcessingInput structure.
 type MessageProcessingWorkflowInput struct {
-	MessageID      string `json:"message_id"`
-	WorkspaceID    string `json:"workspace_id"`
-	ChannelType    string `json:"channel_type"`
-	RawPayload     string `json:"raw_payload"`
-	IdempotencyKey string `json:"idempotency_key"`
-	Tier           string `json:"tier,omitempty"` // T1/T2/T3; defaults to T2 if empty
+	MessageID        string                  `json:"message_id"`
+	WorkspaceID      string                  `json:"workspace_id"`
+	ChannelType      string                  `json:"channel_type"`
+	RawPayload       string                  `json:"raw_payload"`
+	IdempotencyKey   string                  `json:"idempotency_key"`
+	Tier             string                  `json:"tier,omitempty"` // T1/T2/T3; defaults to T2 if empty
+	ImageAttachments []vision.ImageAttachment `json:"image_attachments,omitempty"`
 }
 
 type MessageProcessingWorkflowResult struct {
@@ -83,20 +105,29 @@ func MessageProcessingWorkflow(ctx workflow.Context, input MessageProcessingWork
 		}, nil
 	}
 
-	// DEPLOYMENT NOTE (2026-03): RetrieveMemoryActivity and SearchRAGActivity now launch
-	// speculatively in parallel with ClassifyIntentActivity. In-flight workflow instances
-	// started before this deployment will encounter a non-determinism error during replay.
-	// Drain or terminate all in-flight MessageProcessingWorkflow instances before deploying.
+	// Step 1b: Vision pre-processing — extract text from image attachments if present.
+	classifyPayload := validateResult.NormalizedPayload
+	if len(input.ImageAttachments) > 0 {
+		var visionResult vision.ExtractionResult
+		visionErr := workflow.ExecuteActivity(ctx, a.VisionPreProcessActivity, vision.ExtractionRequest{
+			WorkspaceID: input.WorkspaceID,
+			TurnID:      input.MessageID,
+			Attachments: input.ImageAttachments,
+			Hint:        validateResult.NormalizedPayload,
+		}).Get(ctx, &visionResult)
+		if visionErr == nil && !visionResult.IsEmpty() {
+			classifyPayload = visionResult.FormatForPrompt() + "\n\nUser message: " + classifyPayload
+		}
+	}
 
 	// Step 2, 3, 4 — Launch memory and RAG speculatively while classification runs.
-	// All three only need validateResult.NormalizedPayload from Step 1.
 
 	// Launch memory and RAG immediately (non-blocking).
 	var memFuture workflow.Future
 	memFuture = workflow.ExecuteActivity(ctx, a.RetrieveMemoryActivity, MemoryRetrieveInput{
 		MessageID:   input.MessageID,
 		WorkspaceID: input.WorkspaceID,
-		Query:       validateResult.NormalizedPayload,
+		Query:       classifyPayload,
 		MaxItems:    10,
 	})
 
@@ -104,7 +135,7 @@ func MessageProcessingWorkflow(ctx workflow.Context, input MessageProcessingWork
 	ragFuture = workflow.ExecuteActivity(ctx, a.SearchRAGActivity, RAGSearchInput{
 		MessageID:   input.MessageID,
 		WorkspaceID: input.WorkspaceID,
-		Query:       validateResult.NormalizedPayload,
+		Query:       classifyPayload,
 		TopK:        5,
 	})
 
@@ -124,7 +155,7 @@ func MessageProcessingWorkflow(ctx workflow.Context, input MessageProcessingWork
 	if err := workflow.ExecuteActivity(ctxClassify, a.ClassifyIntentActivity, ClassifyIntentInput{
 		MessageID:   input.MessageID,
 		WorkspaceID: input.WorkspaceID,
-		Payload:     validateResult.NormalizedPayload,
+		Payload:     classifyPayload,
 	}).Get(ctx, &classifyResult); err != nil {
 		// Must join speculative futures before returning.
 		var discardMem MemoryRetrieveResult
@@ -160,6 +191,42 @@ func MessageProcessingWorkflow(ctx workflow.Context, input MessageProcessingWork
 		Confidence:     classifyResult.Confidence,
 	}).Get(ctx, &dualResult)
 	// dualResult informs reasoning depth; non-fatal if it fails.
+
+	// ── EQ Strategy Application (Phase 4) ─────────────────────────────────────
+	var eqResult ApplyEQStrategyResult
+	if eqErr := workflow.ExecuteActivity(
+		workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
+			StartToCloseTimeout: 10 * time.Second,
+			RetryPolicy:         &temporal.RetryPolicy{MaximumAttempts: 2, InitialInterval: time.Second},
+		}),
+		a.ApplyEQStrategyActivity,
+		ApplyEQStrategyInput{
+			WorkspaceID:   input.WorkspaceID,
+			DetectedState: detectEmotionalState(classifyResult.Intent),
+			CommStyle:     "standard",
+		},
+	).Get(ctx, &eqResult); eqErr != nil {
+		logger.Warn("ApplyEQStrategyActivity failed, continuing without EQ", "error", eqErr)
+	}
+
+	// ── Uncertainty Routing (Phase 4) ─────────────────────────────────────────
+	const clarificationThreshold = 0.50
+	if classifyResult.Confidence < clarificationThreshold {
+		var lowConfClarif ClarificationCheckResult
+		clarifErr := workflow.ExecuteActivity(ctx, a.ClarificationCheckActivity, ClarificationCheckInput{
+			WorkspaceID:    input.WorkspaceID,
+			MessageContent: validateResult.NormalizedPayload,
+			IntentKey:      classifyResult.Intent,
+			Confidence:     classifyResult.Confidence,
+		}).Get(ctx, &lowConfClarif)
+		if clarifErr == nil && lowConfClarif.NeedsClarification {
+			return &MessageProcessingWorkflowResult{
+				WorkflowID:      "msg-" + input.MessageID,
+				TerminalState:   "CLARIFICATION_REQUIRED",
+				ResponsePayload: lowConfClarif.Question,
+			}, nil
+		}
+	}
 
 	// Step 5: Reasoning loop (PLANNER → EXECUTOR → CRITIC → REFLECTOR)
 	// Tool keys sorted lexically for replay determinism.
@@ -221,6 +288,41 @@ func MessageProcessingWorkflow(ctx workflow.Context, input MessageProcessingWork
 			WorkflowID:          "msg-" + input.MessageID,
 			TerminalState:       "FAILED",
 			Fallbacks:           []string{"cognitive_abort"},
+			EvidenceHash:        reasoningResult.EvidenceHash,
+			MemoryItemCount:     len(memResult.Items),
+			RAGChunkCount:       len(ragResult.Chunks),
+			ReasoningIterations: reasoningResult.Iterations,
+			CouncilConvened:     councilResult.Convened,
+		}, nil
+	}
+
+	// Step 7b: World model simulation — constraint-check the plan before authorization.
+	var simResult simulation.SimulationResult
+	simErr := workflow.ExecuteActivity(ctx, a.SimulatePlanActivity, simulation.SimulationInput{
+		WorkspaceID: input.WorkspaceID,
+		PlanID:      reasoningResult.PlanID,
+		Intent:      classifyResult.Intent,
+		Payload:     validateResult.NormalizedPayload,
+		ToolKeys:    reasoningResult.ToolKeys,
+		RiskLevel:   reasoningResult.RiskLevel,
+	}).Get(ctx, &simResult)
+	if simErr != nil {
+		logger.Warn("SimulatePlanActivity failed, continuing", "error", simErr)
+	} else if !simResult.Passed {
+		var violationDescs []string
+		for _, v := range simResult.Violations {
+			if v.Severity == "BLOCK" {
+				violationDescs = append(violationDescs, v.Description)
+			}
+		}
+		clarification := "I can't complete this plan because:\n"
+		for i, d := range violationDescs {
+			clarification += fmt.Sprintf("%d. %s\n", i+1, d)
+		}
+		return &MessageProcessingWorkflowResult{
+			WorkflowID:          "msg-" + input.MessageID,
+			TerminalState:       "CONSTRAINT_VIOLATION",
+			ResponsePayload:     clarification,
 			EvidenceHash:        reasoningResult.EvidenceHash,
 			MemoryItemCount:     len(memResult.Items),
 			RAGChunkCount:       len(ragResult.Chunks),
@@ -432,9 +534,15 @@ func MessageProcessingWorkflow(ctx workflow.Context, input MessageProcessingWork
 	ctxSynth := workflow.WithActivityOptions(ctx, synthesizeAO)
 	var synthResult SynthesizeResponseResult
 	err = workflow.ExecuteActivity(ctxSynth, a.SynthesizeResponseActivity, SynthesizeResponseInput{
-		MessageID:   input.MessageID,
-		WorkspaceID: input.WorkspaceID,
-		ToolResults: execResults,
+		MessageID:        input.MessageID,
+		WorkspaceID:      input.WorkspaceID,
+		ToolResults:      execResults,
+		EQToneDirective:  eqResult.ToneDirective,
+		EQFormalityLevel: eqResult.FormalityLevel,
+		EQLengthModifier: eqResult.LengthModifier,
+		EQOfferHelp:      eqResult.OfferHelp,
+		AddQualifiers:    classifyResult.Confidence >= 0.50 && classifyResult.Confidence < 0.75,
+		Confidence:       classifyResult.Confidence,
 	}).Get(ctx, &synthResult)
 	if err != nil {
 		return &MessageProcessingWorkflowResult{

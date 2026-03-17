@@ -11,6 +11,61 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+func TestCheckOriginAllowlist(t *testing.T) {
+	cases := []struct {
+		name      string
+		env       string
+		allowlist string
+		origin    string
+		wantAllow bool
+	}{
+		{"local_open", "local", "", "http://evil.com", true},
+		{"prod_no_list_deny", "production", "", "http://evil.com", false},
+		{"prod_match", "production", "https://app.brevio.ai", "https://app.brevio.ai", true},
+		{"prod_mismatch", "production", "https://app.brevio.ai", "http://evil.com", false},
+		{"prod_multi_match", "production", "https://a.com,https://b.com", "https://b.com", true},
+		{"blank_env_open", "", "", "http://any.com", true},
+		{"prod_no_origin_same_origin", "production", "https://app.brevio.ai", "", true},
+		{"test_env_open", "test", "", "http://evil.com", true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("BREVIO_ENV", tc.env)
+			t.Setenv("CANVAS_ALLOWED_ORIGINS", tc.allowlist)
+
+			svc := NewService(&InMemoryInjector{})
+			req, _ := http.NewRequest(http.MethodGet, "/ws", nil)
+			if tc.origin != "" {
+				req.Header.Set("Origin", tc.origin)
+			}
+			got := svc.upgrader.CheckOrigin(req)
+			if got != tc.wantAllow {
+				t.Errorf("env=%q allowlist=%q origin=%q: got %v want %v",
+					tc.env, tc.allowlist, tc.origin, got, tc.wantAllow)
+			}
+		})
+	}
+}
+
+func TestParseAllowedOrigins(t *testing.T) {
+	cases := []struct {
+		input string
+		want  int
+	}{
+		{"", 0},
+		{"https://a.com", 1},
+		{"https://a.com,https://b.com", 2},
+		{"https://a.com, https://b.com , https://c.com", 3},
+		{",,,", 0},
+	}
+	for _, tc := range cases {
+		got := parseAllowedOrigins(tc.input)
+		if len(got) != tc.want {
+			t.Errorf("parseAllowedOrigins(%q) = %d entries, want %d", tc.input, len(got), tc.want)
+		}
+	}
+}
+
 func TestWebSocketConnectionAndToolInjection(t *testing.T) {
 	t.Parallel()
 

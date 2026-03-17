@@ -20,6 +20,22 @@ import (
 	contextpkg "github.com/brevio/brevio/internal/context"
 	eqpkg "github.com/brevio/brevio/internal/eq"
 	executorpkg "github.com/brevio/brevio/internal/executor"
+	experimentpkg "github.com/brevio/brevio/internal/experiment"
+	a2apkg "github.com/brevio/brevio/internal/a2a"
+	benchmarkpkg "github.com/brevio/brevio/internal/benchmark"
+	browserpkg "github.com/brevio/brevio/internal/browser"
+	delegationpkg "github.com/brevio/brevio/internal/delegation"
+	kgpkg "github.com/brevio/brevio/internal/memory/kg"
+	sandboxpkg "github.com/brevio/brevio/internal/security/sandbox"
+	billingpkg "github.com/brevio/brevio/internal/billing"
+	simulationpkg "github.com/brevio/brevio/internal/simulation"
+	walletpkg "github.com/brevio/brevio/internal/wallet"
+	dpopkg "github.com/brevio/brevio/internal/dpo"
+	featureflagspkg "github.com/brevio/brevio/internal/feature_flags"
+	ragevalpkg "github.com/brevio/brevio/internal/rag/eval"
+	guardrailspkg "github.com/brevio/brevio/internal/guardrails"
+	proactivepkg "github.com/brevio/brevio/internal/proactive"
+	preferencepkg "github.com/brevio/brevio/internal/preference"
 	llmpkg "github.com/brevio/brevio/internal/llm"
 	policypkg "github.com/brevio/brevio/internal/policy"
 	memorypkg "github.com/brevio/brevio/internal/memory"
@@ -198,6 +214,57 @@ func main() {
 		}
 	}
 
+	// Wire PAHF preference learning loop.
+	pahfMemorySvc := memorypkg.NewService()
+	deps.MemorySvc = pahfMemorySvc
+	deps.PreferenceRetriever = preferencepkg.NewRetriever(pahfMemorySvc)
+	logger.Info("preference_learning_initialized", map[string]any{"status": "pahf_active"})
+
+	// Wire IPI inference guard for post-tool-call taint tracking.
+	deps.InferenceGuard = guardrailspkg.NewInferenceGuard()
+	logger.Info("inference_guard_initialized", map[string]any{"ipi_rules": "active"})
+
+	// Wire A/B experiment routing.
+	if deps.Pool != nil {
+		deps.ExperimentRouter = experimentpkg.NewExperimentRouter(deps.Pool)
+		deps.VariantScoreStore = experimentpkg.NewVariantScoreStore(deps.Pool)
+		logger.Info("experiment_router_initialized", map[string]any{"status": "active"})
+	}
+
+	// Wire proactive monitor.
+	proactiveSnooze := proactivepkg.NewSnoozeStore(deps.Pool)
+	deps.ProactiveMonitor = proactivepkg.NewProactiveMonitor(deps.Pool, proactiveSnooze, nil, nil)
+	deps.OfferBuilder = proactivepkg.NewOfferBuilder()
+	logger.Info("proactive_monitor_initialized", map[string]any{"status": "active"})
+
+	// Wire A2A client and external agent registry.
+	a2aRegistry := a2apkg.NewExternalAgentRegistry(deps.Pool)
+	a2aTaskStore := a2apkg.NewTaskStore(deps.Pool)
+	deps.ExternalAgentRegistry = a2aRegistry
+	deps.A2AClient = a2apkg.NewA2AClient(a2aRegistry, a2aTaskStore)
+	logger.Info("a2a_client_initialized", map[string]any{"status": "active"})
+
+	// Wire DPO pipeline.
+	dpoRepo := dpopkg.NewRepository(deps.Pool)
+	ftc, ftcErr := dpopkg.NewFineTuneClient()
+	if ftcErr != nil {
+		logger.Info("dpo_fine_tune_client_unavailable", map[string]any{"reason": ftcErr.Error()})
+	}
+	if ftcErr == nil {
+		deps.DPOService = dpopkg.NewService(dpoRepo, ftc)
+	}
+	deps.ScoreStore = ragevalpkg.NewScoreStore("")
+	deps.FeatureFlagService = featureflagspkg.NewService()
+	logger.Info("dpo_pipeline_initialized", map[string]any{"enabled": ftcErr == nil})
+
+	// Wire plan simulator (world model).
+	walletSvc := walletpkg.NewWalletService()
+	billingSvc := billingpkg.NewBillingService()
+	financeProvider := simulationpkg.NewWalletFinancialProvider(walletSvc, billingSvc)
+	calendarProvider := &simulationpkg.NoOpCalendarProvider{}
+	deps.Simulator = simulationpkg.NewSimulator(calendarProvider, financeProvider)
+	logger.Info("plan_simulator_initialized", map[string]any{"status": "active"})
+
 	w := breviotemporal.NewWorkerWithDeps(temporalClient, breviotemporal.TaskQueueCore, deps)
 
 	go func() {
@@ -243,6 +310,102 @@ func main() {
 			logger.Info("raptor_cron_schedule_result", map[string]any{"note": cronErr.Error()})
 		} else {
 			logger.Info("raptor_cron_scheduled", map[string]any{"schedule": "0 2 * * *"})
+		}
+	}
+
+	// Schedule production eval sampler cron (every hour).
+	{
+		cronOpts := temporalclient.StartWorkflowOptions{
+			ID:           "brevio-production-eval-sampler-cron",
+			TaskQueue:    breviotemporal.TaskQueueCore,
+			CronSchedule: "0 * * * *",
+		}
+		_, cronErr := temporalClient.ExecuteWorkflow(context.Background(), cronOpts,
+			breviotemporal.ProductionEvalSamplerWorkflow)
+		if cronErr != nil {
+			logger.Info("production_eval_cron_schedule_result", map[string]any{"note": cronErr.Error()})
+		} else {
+			logger.Info("production_eval_cron_scheduled", map[string]any{"schedule": "0 * * * *"})
+		}
+	}
+
+	// Schedule proactive monitor cron (every 15 minutes).
+	{
+		cronOpts := temporalclient.StartWorkflowOptions{
+			ID:           "brevio-proactive-monitor-global-cron",
+			TaskQueue:    breviotemporal.TaskQueueCore,
+			CronSchedule: "*/15 * * * *",
+		}
+		_, cronErr := temporalClient.ExecuteWorkflow(context.Background(), cronOpts,
+			breviotemporal.ProactiveMonitorWorkflow, "global")
+		if cronErr != nil {
+			logger.Info("proactive_monitor_cron_schedule_result", map[string]any{"note": cronErr.Error()})
+		} else {
+			logger.Info("proactive_monitor_cron_scheduled", map[string]any{"schedule": "*/15 * * * *"})
+		}
+	}
+
+	// Schedule DPO nightly cron (03:00 UTC).
+	{
+		cronOpts := temporalclient.StartWorkflowOptions{
+			ID:           "dpo-nightly-cron",
+			TaskQueue:    breviotemporal.TaskQueueCore,
+			CronSchedule: "0 3 * * *",
+		}
+		_, cronErr := temporalClient.ExecuteWorkflow(context.Background(), cronOpts,
+			breviotemporal.DPORoundWorkflow, dpopkg.DPORoundInput{MinPairCount: dpopkg.MinPairsForDPO})
+		if cronErr != nil {
+			logger.Info("dpo_cron_schedule_result", map[string]any{"note": cronErr.Error()})
+		} else {
+			logger.Info("dpo_cron_scheduled", map[string]any{"schedule": "0 3 * * *"})
+		}
+	}
+
+	// Wire GAIA benchmark.
+	deps.BenchmarkRepo = benchmarkpkg.NewRepository(deps.Pool)
+	logger.Info("gaia_benchmark_initialized", map[string]any{"status": "active"})
+
+	// Wire browser automation client.
+	browserClient := browserpkg.NewClient()
+	deps.BrowserClient = browserClient
+	deps.BrowserSandboxSvc = sandboxpkg.NewMCPSandboxService()
+	logger.Info("browser_client_initialized", map[string]any{"url": os.Getenv("BROWSER_MCP_URL")})
+
+	// Wire delegation service (Phase 4).
+	deps.DelegationSvc = delegationpkg.NewService()
+	logger.Info("delegation_service_initialized", map[string]any{"status": "active"})
+
+	// Wire trust service for SubAgent autonomy gate.
+	deps.TrustSvc = trustpkg.NewService()
+	logger.Info("trust_service_initialized", map[string]any{"status": "active"})
+
+	// Wire KG service and retriever (Phase 5).
+	if deps.Pool != nil {
+		kgLogger := breviotemporal.NewKGLogger()
+		kgDB := kgpkg.NewPgxPoolAdapter(deps.Pool)
+		kgRepo := kgpkg.NewRepository(kgDB, kgLogger)
+		deps.KGRetriever = kgpkg.NewRetriever(kgRepo, nil, kgLogger)
+		deps.KGService = kgpkg.NewService(nil, deps.KGRetriever, kgRepo, nil, kgLogger)
+		logger.Info("kg_service_initialized", map[string]any{"status": "active"})
+	}
+
+	// Schedule GAIA weekly cron (Sunday 23:00 UTC).
+	{
+		cronOpts := temporalclient.StartWorkflowOptions{
+			ID:           "gaia-weekly-cron",
+			TaskQueue:    breviotemporal.TaskQueueCore,
+			CronSchedule: "0 23 * * 0",
+		}
+		_, cronErr := temporalClient.ExecuteWorkflow(context.Background(), cronOpts,
+			breviotemporal.GAIARunnerWorkflow, benchmarkpkg.GAIARunnerInput{
+				DatasetPath: "evals/gaia/brevio_gaia_dataset.json",
+				TriggeredBy: "cron",
+				ModelVersion: "claude-sonnet-4-6",
+			})
+		if cronErr != nil {
+			logger.Info("gaia_cron_schedule_result", map[string]any{"note": cronErr.Error()})
+		} else {
+			logger.Info("gaia_cron_scheduled", map[string]any{"schedule": "0 23 * * 0"})
 		}
 	}
 

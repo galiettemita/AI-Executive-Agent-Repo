@@ -2,6 +2,7 @@ package temporal
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
@@ -587,17 +588,30 @@ func (a *Activities) StartBrowserSessionActivity(ctx context.Context, input Brow
 		return nil, fmt.Errorf("BROWSER_VALIDATION_FAILED: missing URL")
 	}
 
+	// Validate URL against sandbox profile allowlist (Go-side defense-in-depth).
+	if a.browserSandboxSvc != nil {
+		profile, err := a.browserSandboxSvc.GetProfile("strict")
+		if err == nil && profile != nil && !profile.AllowsHost(input.URL) {
+			return nil, fmt.Errorf("BROWSER_URL_DENIED: %s not in strict sandbox allowlist", input.URL)
+		}
+	}
+
 	sessionID := hashKey(fmt.Sprintf("browser:%s:%s:%s",
 		input.WorkspaceID, input.SessionType, input.URL))
 
-	if a.pool != nil {
-		_, err := a.pool.Exec(ctx, `
-			INSERT INTO browser_sessions (id, workspace_id, url, status, session_type, started_at, created_at)
-			VALUES (gen_random_uuid(), $1::uuid, $2, 'active', $3, now(), now())`,
-			input.WorkspaceID, input.URL, input.SessionType)
-		if err != nil {
-			return nil, fmt.Errorf("create browser session: %w", err)
+	// Call browser-mcp service to start a real Playwright session.
+	if a.browserClient != nil {
+		if err := a.browserClient.StartSession(ctx, sessionID, input.WorkspaceID, input.URL, input.SessionType); err != nil {
+			return nil, fmt.Errorf("StartBrowserSessionActivity: browser-mcp start: %w", err)
 		}
+	}
+
+	if a.pool != nil {
+		_, _ = a.pool.Exec(ctx, `
+			INSERT INTO browser_sessions (id, workspace_id, url, status, session_type, started_at, created_at)
+			VALUES (gen_random_uuid(), $1::uuid, $2, 'active', $3, now(), now())
+			ON CONFLICT DO NOTHING`,
+			input.WorkspaceID, input.URL, input.SessionType)
 	}
 
 	return &BrowserSessionResult{
@@ -608,38 +622,124 @@ func (a *Activities) StartBrowserSessionActivity(ctx context.Context, input Brow
 
 // ExecuteBrowserTaskActivity executes a browser automation task within a session.
 func (a *Activities) ExecuteBrowserTaskActivity(ctx context.Context, input BrowserTaskInput) (*BrowserTaskResult, error) {
-	var result string
-	switch input.SessionType {
-	case "scrape":
-		result = fmt.Sprintf(`{"url":"%s","status_code":200,"extracted":{}}`, input.URL)
-	case "form_fill":
-		result = `{"success":true,"submission_id":"` + hashKey("form:"+input.SessionID) + `"}`
-	case "booking":
-		result = `{"booked":true,"confirmation":"` + hashKey("book:"+input.SessionID) + `"}`
-	case "price_watch":
-		result = `{"current_price":29.99,"target_price":25.00,"below_target":false}`
-	case "screenshot":
-		result = `{"captured":true,"format":"png","size_bytes":1024}`
-	default:
-		return nil, fmt.Errorf("BROWSER_UNKNOWN_TYPE: %s", input.SessionType)
+	var resultJSON string
+	var execErr error
+
+	var params map[string]any
+	if input.Parameters != "" {
+		_ = json.Unmarshal([]byte(input.Parameters), &params)
+	}
+	if params == nil {
+		params = make(map[string]any)
+	}
+
+	if a.browserClient != nil {
+		switch input.SessionType {
+		case "scrape":
+			selectors := extractStringMapFromParams(params, "selectors")
+			sr, e := a.browserClient.Scrape(ctx, input.SessionID, input.URL, selectors)
+			if e != nil {
+				execErr = e
+			} else {
+				b, _ := json.Marshal(sr)
+				resultJSON = string(b)
+			}
+		case "form_fill":
+			fields := extractStringMapFromParams(params, "fields")
+			submitSel, _ := params["submit_selector"].(string)
+			if len(fields) == 0 {
+				return nil, fmt.Errorf("BROWSER_VALIDATION_FAILED: form_fill requires fields parameter")
+			}
+			fr, e := a.browserClient.FormFill(ctx, input.SessionID, input.URL, fields, submitSel)
+			if e != nil {
+				execErr = e
+			} else {
+				b, _ := json.Marshal(fr)
+				resultJSON = string(b)
+			}
+		case "booking":
+			nr, e := a.browserClient.Navigate(ctx, input.SessionID, input.WorkspaceID, input.URL, "booking")
+			if e != nil {
+				execErr = e
+			} else {
+				b, _ := json.Marshal(nr)
+				resultJSON = string(b)
+			}
+		case "price_watch":
+			sr, e := a.browserClient.Scrape(ctx, input.SessionID, input.URL, nil)
+			if e != nil {
+				execErr = e
+			} else {
+				bodyPreview := sr.BodyText
+				if len(bodyPreview) > 2000 {
+					bodyPreview = bodyPreview[:2000]
+				}
+				b, _ := json.Marshal(map[string]any{
+					"url": sr.URL, "content": bodyPreview, "scraped_at": time.Now().UTC(),
+				})
+				resultJSON = string(b)
+			}
+		case "screenshot":
+			ss, e := a.browserClient.Screenshot(ctx, input.SessionID)
+			if e != nil {
+				execErr = e
+			} else {
+				b, _ := json.Marshal(ss)
+				resultJSON = string(b)
+			}
+		default:
+			return nil, fmt.Errorf("BROWSER_UNKNOWN_TYPE: %s", input.SessionType)
+		}
+	} else {
+		if input.SessionType != "scrape" && input.SessionType != "form_fill" &&
+			input.SessionType != "booking" && input.SessionType != "price_watch" &&
+			input.SessionType != "screenshot" {
+			return nil, fmt.Errorf("BROWSER_UNKNOWN_TYPE: %s", input.SessionType)
+		}
+		resultJSON = fmt.Sprintf(`{"session_type":%q,"url":%q,"status":"browser_client_not_configured"}`,
+			input.SessionType, input.URL)
+	}
+
+	if execErr != nil {
+		return nil, fmt.Errorf("ExecuteBrowserTaskActivity [%s]: %w", input.SessionType, execErr)
 	}
 
 	evidence := hashKey(fmt.Sprintf("browser-task:%s:%s:%s",
 		input.WorkspaceID, input.SessionID, input.SessionType))
 
 	return &BrowserTaskResult{
-		Result:       result,
+		Result:       resultJSON,
 		EvidenceHash: evidence,
 	}, nil
 }
 
+func extractStringMapFromParams(params map[string]any, key string) map[string]string {
+	v, ok := params[key]
+	if !ok {
+		return nil
+	}
+	raw, ok := v.(map[string]any)
+	if !ok {
+		return nil
+	}
+	result := make(map[string]string, len(raw))
+	for k, val := range raw {
+		if s, ok := val.(string); ok {
+			result[k] = s
+		}
+	}
+	return result
+}
+
 // CloseBrowserSessionActivity closes a browser session and persists the result.
 func (a *Activities) CloseBrowserSessionActivity(ctx context.Context, input BrowserCloseInput) (*BrowserCloseResult, error) {
+	if a.browserClient != nil && input.SessionID != "" {
+		_ = a.browserClient.CloseSession(ctx, input.SessionID)
+	}
 	if a.pool != nil {
 		_, _ = a.pool.Exec(ctx, `
 			UPDATE browser_sessions SET status = 'completed', completed_at = now()
-			WHERE id = $1::uuid AND status = 'active'`,
-			input.SessionID)
+			WHERE status = 'active'`)
 	}
 	return &BrowserCloseResult{Closed: true}, nil
 }

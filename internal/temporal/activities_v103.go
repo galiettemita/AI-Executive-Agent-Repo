@@ -3,9 +3,15 @@ package temporal
 import (
 	"context"
 	"fmt"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/brevio/brevio/internal/cognition"
+	"github.com/brevio/brevio/internal/memory"
+	"github.com/brevio/brevio/internal/memory/kg"
+	"go.temporal.io/sdk/activity"
+	temporalSDK "go.temporal.io/sdk/temporal"
 )
 
 // V10.3 Cognitive Activity Input/Output types.
@@ -199,21 +205,144 @@ func (a *Activities) DecayBeliefsActivity(ctx context.Context, input DecayBelief
 	return &DecayBeliefsResult{Decayed: decayed, Persisted: err == nil}, err
 }
 
-// RunConsolidationActivity runs nightly memory consolidation (COG-10).
-func (a *Activities) RunConsolidationActivity(ctx context.Context, input RunConsolidationInput) (*RunConsolidationResult, error) {
-	svc := cognition.NewConsolidationService()
-	episodes := []cognition.Episode{
-		{ID: "synthetic-1", Content: "consolidation run", Tags: []string{"nightly"}, ImportanceScore: 0.5, Timestamp: time.Now().UTC()},
+// EpisodicCluster is a group of thematically related episodic memory items.
+type EpisodicCluster struct {
+	Theme string
+	Items []memory.Item
+}
+
+const (
+	raptorMinClusterSize      = 3
+	raptorPromotionThreshold  = 0.60
+	raptorMaxPromotionsPerRun = 10
+)
+
+func clusterEpisodicItems(items []memory.Item) []EpisodicCluster {
+	themeMap := map[string][]string{
+		"scheduling":    {"schedule", "meeting", "calendar", "appointment", "reschedule"},
+		"email":         {"email", "mail", "send", "reply", "forward", "inbox"},
+		"tasks":         {"task", "todo", "deadline", "priority", "complete", "done"},
+		"research":      {"search", "find", "lookup", "research", "who", "what", "when"},
+		"documents":     {"document", "draft", "report", "write", "create", "file"},
+		"communication": {"slack", "message", "notify", "team", "channel"},
+		"travel":        {"flight", "hotel", "travel", "book", "trip"},
+		"financial":     {"pay", "invoice", "expense", "budget", "cost"},
 	}
-	run, err := svc.RunConsolidation(input.WorkspaceID, episodes)
-	if err != nil {
-		return nil, fmt.Errorf("consolidation: %w", err)
+	clusters := make(map[string][]memory.Item)
+	for _, item := range items {
+		theme := classifyItemTheme(item.Body, themeMap)
+		clusters[theme] = append(clusters[theme], item)
+	}
+	result := make([]EpisodicCluster, 0, len(clusters))
+	for theme, clusterItems := range clusters {
+		result = append(result, EpisodicCluster{Theme: theme, Items: clusterItems})
+	}
+	sort.Slice(result, func(i, j int) bool { return len(result[i].Items) > len(result[j].Items) })
+	return result
+}
+
+func classifyItemTheme(body string, themeMap map[string][]string) string {
+	lower := strings.ToLower(body)
+	best, bestScore := "general", 0
+	for theme, kws := range themeMap {
+		score := 0
+		for _, kw := range kws {
+			if strings.Contains(lower, kw) {
+				score++
+			}
+		}
+		if score > bestScore {
+			bestScore, best = score, theme
+		}
+	}
+	return best
+}
+
+func avgConfidence(items []memory.Item) float64 {
+	if len(items) == 0 {
+		return 0
+	}
+	total := 0.0
+	for _, it := range items {
+		c := it.Confidence
+		if c == 0 {
+			c = 0.5
+		}
+		total += c
+	}
+	return total / float64(len(items))
+}
+
+func buildSemanticFact(cluster EpisodicCluster) string {
+	var best memory.Item
+	for _, it := range cluster.Items {
+		if it.Confidence > best.Confidence {
+			best = it
+		}
+	}
+	rep := best.Body
+	if len(rep) > 200 {
+		rep = rep[:200] + "..."
+	}
+	return fmt.Sprintf("Recurring workspace pattern (%s theme): %s — consolidated from %d related episodes.",
+		cluster.Theme, rep, len(cluster.Items))
+}
+
+// RunConsolidationActivity runs nightly memory consolidation using memory.kg clustering.
+func (a *Activities) RunConsolidationActivity(ctx context.Context, input RunConsolidationInput) (*RunConsolidationResult, error) {
+	logger := activity.GetLogger(ctx)
+
+	if input.WorkspaceID == "" {
+		return nil, temporalSDK.NewNonRetryableApplicationError("workspace_id required", "INVALID_INPUT", nil)
+	}
+
+	var episodic []memory.Item
+	if a.memorySvc != nil {
+		for _, item := range a.memorySvc.Retrieve(input.WorkspaceID) {
+			if item.MemoryType == "episodic" && !item.IsContradicted {
+				episodic = append(episodic, item)
+			}
+		}
+	}
+
+	if len(episodic) == 0 {
+		return &RunConsolidationResult{EpisodesAnalyzed: 0, Status: "complete"}, nil
+	}
+
+	clusters := clusterEpisodicItems(episodic)
+
+	promoted := 0
+	for _, cluster := range clusters {
+		if promoted >= raptorMaxPromotionsPerRun {
+			break
+		}
+		if len(cluster.Items) < raptorMinClusterSize || avgConfidence(cluster.Items) < raptorPromotionThreshold {
+			continue
+		}
+		semanticBody := buildSemanticFact(cluster)
+		if a.memorySvc != nil {
+			_, err := a.memorySvc.WriteWithRequest(memory.WriteRequest{
+				WorkspaceID: input.WorkspaceID, UserID: "system",
+				MemoryType: "semantic", Body: semanticBody, Confidence: avgConfidence(cluster.Items),
+			})
+			if err != nil {
+				logger.Warn("consolidation: write failed", "theme", cluster.Theme, "error", err)
+				continue
+			}
+			promoted++
+		}
+		if a.kgService != nil {
+			go a.kgService.ExtractAndStore(context.Background(), kg.ExtractionRequest{
+				WorkspaceID: input.WorkspaceID,
+				TurnID:      fmt.Sprintf("consolidation:%s:%s", input.WorkspaceID, cluster.Theme),
+				Content:     semanticBody,
+			})
+		}
 	}
 
 	result := &RunConsolidationResult{
-		EpisodesAnalyzed:  run.EpisodicProcessed,
-		PatternsExtracted: run.PatternsFound,
-		Status:            "complete",
+		EpisodesAnalyzed: len(episodic), PatternsExtracted: len(clusters),
+		PatternsPromoted: promoted, Status: "complete",
 	}
 
 	if a.pool != nil && a.cognitiveRepo != nil {
@@ -222,17 +351,16 @@ func (a *Activities) RunConsolidationActivity(ctx context.Context, input RunCons
 			runDate = time.Now().UTC().Format("2006-01-02")
 		}
 		persistErr := a.cognitiveRepo.PersistConsolidationRun(ctx, cognition.ConsolidationRunRow{
-			WorkspaceID:       input.WorkspaceID,
-			RunDate:           runDate,
-			EpisodesAnalyzed:  run.EpisodicProcessed,
-			PatternsExtracted: run.PatternsFound,
-			PatternsPromoted:  run.SemanticsExtracted,
-			Status:            "complete",
+			WorkspaceID: input.WorkspaceID, RunDate: runDate,
+			EpisodesAnalyzed: len(episodic), PatternsExtracted: len(clusters),
+			PatternsPromoted: promoted, Status: "complete",
 		})
 		result.Persisted = persistErr == nil
-		result.PatternsPromoted = run.SemanticsExtracted
 	}
 
+	logger.Info("consolidation complete",
+		"workspace_id", input.WorkspaceID, "episodes", len(episodic),
+		"clusters", len(clusters), "promoted", promoted)
 	return result, nil
 }
 

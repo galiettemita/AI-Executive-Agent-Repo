@@ -12,6 +12,8 @@ import (
 
 	"github.com/brevio/brevio/internal/audit"
 	"github.com/brevio/brevio/internal/control"
+	"github.com/brevio/brevio/internal/a2a"
+	experimentpkg "github.com/brevio/brevio/internal/experiment"
 	"github.com/brevio/brevio/internal/exploration"
 	"github.com/brevio/brevio/internal/metrics"
 	runtimeserver "github.com/brevio/brevio/internal/runtime"
@@ -132,6 +134,30 @@ func main() {
 	selfModSvc := selfmod.NewService()
 	selfmod.RegisterRoutes(mux, selfModSvc)
 	logger.Info("self_modification_routes_mounted", map[string]any{"status": "active"})
+
+	// Mount A/B experiment management routes.
+	experimentRouter := experimentpkg.NewExperimentRouter(nil)
+	experimentpkg.RegisterRoutes(mux, experimentRouter)
+	logger.Info("experiment_routes_mounted", map[string]any{"status": "active"})
+
+	// Mount A2A protocol server.
+	a2aBaseURL := strings.TrimSpace(os.Getenv("A2A_BASE_URL"))
+	if a2aBaseURL == "" {
+		a2aBaseURL = "http://localhost:8080"
+	}
+	a2aTokens := map[string]a2a.M2MToken{}
+	if tok := strings.TrimSpace(os.Getenv("A2A_M2M_TOKEN")); tok != "" {
+		a2aTokens[tok] = a2a.M2MToken{
+			AgentID:   "external-agent",
+			Scopes:    []string{"a2a:tasks"},
+			ExpiresAt: time.Now().Add(24 * time.Hour * 365),
+		}
+	}
+	a2aValidator := a2a.NewStaticM2MValidator(a2aTokens)
+	a2aTaskStore := a2a.NewTaskStore(nil)
+	a2aServer := a2a.NewServer(a2aTaskStore, a2aValidator, a2a.DefaultAgentCard(a2aBaseURL), nil)
+	a2aServer.RegisterRoutes(mux)
+	logger.Info("a2a_routes_mounted", map[string]any{"base_url": a2aBaseURL})
 
 	handler := logger.Middleware(mux)
 

@@ -232,6 +232,18 @@ func (s *WalletService) GetBalance(walletID string) (int64, error) {
 	return wallet.BalanceCents, nil
 }
 
+// GetWallet returns the wallet for a workspace. Returns error if not found.
+func (s *WalletService) GetWallet(workspaceID string) (Wallet, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, w := range s.wallets {
+		if w.WorkspaceID == workspaceID {
+			return w, nil
+		}
+	}
+	return Wallet{}, fmt.Errorf("wallet not found for workspace %s", workspaceID)
+}
+
 // RegisterMerchant registers a new merchant.
 func (s *WalletService) RegisterMerchant(name, category string, maxCents int64) (*Merchant, error) {
 	if name == "" {

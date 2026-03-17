@@ -6,6 +6,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/brevio/brevio/internal/benchmark"
 )
 
 type User struct {
@@ -91,6 +93,7 @@ type Service struct {
 	alertEvents      []AlertEvent
 	mcpServerHealth  map[string]MCPServerHealth
 	now              func() time.Time
+	benchmarkRepo    *benchmark.Repository
 }
 
 func NewService() *Service {

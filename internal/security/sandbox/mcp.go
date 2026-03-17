@@ -9,16 +9,39 @@ import (
 
 // MCPSandboxProfile defines resource and access constraints for an MCP server.
 type MCPSandboxProfile struct {
-	ServerID            string   `json:"server_id"`
-	Name                string   `json:"name"` // strict | standard | permissive | custom
-	AllowedPaths        []string `json:"allowed_paths"`
-	DeniedPaths         []string `json:"denied_paths"`
-	AllowNetwork        bool     `json:"allow_network"`
-	AllowFilesystemWrite bool   `json:"allow_filesystem_write"`
-	MaxMemoryMB         int      `json:"max_memory_mb"`
-	MaxCPUSeconds       int      `json:"max_cpu_seconds"`
-	AllowedEnvVars      []string `json:"allowed_env_vars"`
-	DeniedCommands      []string `json:"denied_commands"`
+	ServerID             string   `json:"server_id"`
+	Name                 string   `json:"name"` // strict | standard | permissive | custom
+	AllowedPaths         []string `json:"allowed_paths"`
+	DeniedPaths          []string `json:"denied_paths"`
+	AllowNetwork         bool     `json:"allow_network"`
+	AllowFilesystemWrite bool     `json:"allow_filesystem_write"`
+	MaxMemoryMB          int      `json:"max_memory_mb"`
+	MaxCPUSeconds        int      `json:"max_cpu_seconds"`
+	AllowedEnvVars       []string `json:"allowed_env_vars"`
+	DeniedCommands       []string `json:"denied_commands"`
+	AllowedHosts         []string `json:"allowed_hosts,omitempty"`
+}
+
+// AllowsHost checks whether the given URL is permitted by this sandbox profile.
+func (p *MCPSandboxProfile) AllowsHost(rawURL string) bool {
+	if len(p.AllowedHosts) == 0 {
+		return true
+	}
+	var host string
+	if idx := strings.Index(rawURL, "://"); idx >= 0 {
+		remainder := rawURL[idx+3:]
+		if slashIdx := strings.Index(remainder, "/"); slashIdx >= 0 {
+			host = remainder[:slashIdx]
+		} else {
+			host = remainder
+		}
+	}
+	for _, allowed := range p.AllowedHosts {
+		if host == allowed || strings.HasSuffix(host, "."+allowed) {
+			return true
+		}
+	}
+	return false
 }
 
 // SandboxDecision is the outcome of a tool-execution validation.

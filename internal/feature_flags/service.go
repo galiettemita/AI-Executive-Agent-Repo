@@ -302,6 +302,32 @@ func (s *Service) loadFlagFromRedis(key string) (Flag, bool) {
 	return flag, true
 }
 
+// EnableForWorkspace activates a feature flag for a specific workspace with metadata.
+func (s *Service) EnableForWorkspace(_ context.Context, flagKey, workspaceID string, meta map[string]any) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	compositeKey := flagKey + ":" + workspaceID
+	s.flags[compositeKey] = Flag{Key: compositeKey, FlagType: "boolean", Enabled: true}
+	s.rules[compositeKey] = []Rule{{MatchType: "workspace", MatchValue: workspaceID, Enabled: true}}
+	s.resetCacheLocked()
+	return nil
+}
+
+// DisableForWorkspace deactivates a workspace-scoped feature flag.
+func (s *Service) DisableForWorkspace(_ context.Context, flagKey, workspaceID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	compositeKey := flagKey + ":" + workspaceID
+	if existing, ok := s.flags[compositeKey]; ok {
+		existing.Enabled = false
+		s.flags[compositeKey] = existing
+	}
+	s.resetCacheLocked()
+	return nil
+}
+
 func evaluationCacheKey(key, workspaceID string, attributes map[string]string) string {
 	if len(attributes) == 0 {
 		return key + "|" + workspaceID

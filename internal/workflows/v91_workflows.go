@@ -231,30 +231,45 @@ func LearningConsolidationWorkflow(ctx workflow.Context, input LearningConsolida
 	}, nil
 }
 
-// DailyIntrospectionWorkflow triggers daily capture summarization.
+// DailyIntrospectionWorkflow triggers daily capture summarization and hindsight reflection.
 func DailyIntrospectionWorkflow(ctx workflow.Context, input DailyIntrospectionWorkflowInput) (*DailyIntrospectionWorkflowResult, error) {
 	logger := workflow.GetLogger(ctx)
 	logger.Info("DailyIntrospectionWorkflow started", "workspaceID", input.WorkspaceID, "date", input.CaptureDate)
 
 	var a *V91Activities
 	ao := workflow.ActivityOptions{
-		StartToCloseTimeout: 60 * time.Second,
+		StartToCloseTimeout: 5 * time.Minute,
 		RetryPolicy: &temporal.RetryPolicy{
 			InitialInterval:    time.Second,
 			BackoffCoefficient: 2.0,
-			MaximumInterval:    30 * time.Second,
+			MaximumInterval:    60 * time.Second,
 			MaximumAttempts:    3,
 		},
 	}
 	ctx = workflow.WithActivityOptions(ctx, ao)
 
+	// Step 1: Existing summarization
 	var summarizeResult SummarizeDailyResult
 	err := workflow.ExecuteActivity(ctx, a.SummarizeDailyActivity, SummarizeDailyInput{
 		WorkspaceID: input.WorkspaceID,
 		CaptureDate: input.CaptureDate,
 	}).Get(ctx, &summarizeResult)
 	if err != nil {
-		return nil, err
+		// Non-fatal: continue even if summarization fails
+		logger.Warn("SummarizeDailyActivity failed", "error", err)
+	}
+
+	// Step 2: Hindsight reflection — clusters intents, identifies failures, writes insights
+	var reflectionResult interface{}
+	reflectErr := workflow.ExecuteActivity(ctx, "ReflectionActivity",
+		map[string]interface{}{
+			"workspace_id": input.WorkspaceID,
+			"date":         input.CaptureDate,
+			"max_insights": 10,
+		},
+	).Get(ctx, &reflectionResult)
+	if reflectErr != nil {
+		logger.Warn("ReflectionActivity failed", "error", reflectErr)
 	}
 
 	return &DailyIntrospectionWorkflowResult{
