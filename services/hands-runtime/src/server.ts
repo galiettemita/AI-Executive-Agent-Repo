@@ -72,6 +72,27 @@ app.post("/v1/skills/:skillId/execute", async (req: Request, res: Response) => {
   }
 });
 
+// ---------------------------------------------------------------------------
+// MCP Proxy Route  (plan §6 Step 5 — resolves P0-MCP-PROXY-ROUTE-MISSING)
+// Called by HTTPMCPClient.Execute() in the Go brain service.
+// URL pattern: POST /mcp/:connectorKey/execute
+// ---------------------------------------------------------------------------
+app.post('/mcp/:connectorKey/execute', async (req: Request, res: Response) => {
+  const connectorKey = req.params["connectorKey"] as string;
+  const { tool_key, args } = req.body;
+  const skillId = tool_key || connectorKey;
+  const skill = registry.getSkill(skillId) || registry.getSkill(connectorKey);
+  if (!skill) {
+    res.status(404).json({ error: 'skill_not_found' });
+    return;
+  }
+  const result = await skill.execute(args ?? {}, {
+    receipt_id: String(req.headers['x-receipt-id'] || 'mcp'),
+    workspace_id: String(req.headers['x-workspace-id'] || 'unknown'),
+  });
+  res.json({ result, status: 'ok' });
+});
+
 // 4. health — liveness/readiness probe
 app.get("/healthz/live", (_req: Request, res: Response) => {
   res.json({ status: "alive" });

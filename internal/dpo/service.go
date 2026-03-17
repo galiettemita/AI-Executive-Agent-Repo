@@ -3,10 +3,21 @@ package dpo
 import (
 	"context"
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/google/uuid"
 )
+
+// dpoBaseModel returns the OpenAI base model for DPO fine-tuning.
+// Reads DPO_BASE_MODEL from the environment at runtime.
+// Default: gpt-4o-mini-2024-07-18
+func dpoBaseModel() string {
+	if m := os.Getenv("DPO_BASE_MODEL"); m != "" {
+		return m
+	}
+	return "gpt-4o-mini-2024-07-18"
+}
 
 // Service orchestrates the DPO feedback ingestion and round management.
 type Service struct {
@@ -89,7 +100,7 @@ func (s *Service) StartDPORound(ctx context.Context, workspaceID *uuid.UUID, bas
 		return DPORound{}, fmt.Errorf("dpo.Service.StartDPORound: only %d pairs (need %d)", len(pairs), MinPairsForDPO)
 	}
 
-	jobID, err := s.ftc.SubmitDPOJob(ctx, DPOBaseModel, pairs)
+	jobID, err := s.ftc.SubmitDPOJob(ctx, dpoBaseModel(), pairs)
 	if err != nil {
 		return DPORound{}, fmt.Errorf("dpo.Service.StartDPORound: submit job: %w", err)
 	}
@@ -99,7 +110,7 @@ func (s *Service) StartDPORound(ctx context.Context, workspaceID *uuid.UUID, bas
 		WorkspaceID:          workspaceID,
 		RoundNumber:          roundNum,
 		PairCount:            len(pairs),
-		BaseModel:            DPOBaseModel,
+		BaseModel:            dpoBaseModel(),
 		FineTuneJobID:        &jobID,
 		Status:               "running",
 		QualityScoreBaseline: &baseline,

@@ -7,6 +7,49 @@ x-common-env: &common-env
   TEMPORAL_HOST: temporal:7233
   TEMPORAL_NAMESPACE: default
   SERVICE_VERSION: local
+  ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+  OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+  DEEPGRAM_API_KEY: ${DEEPGRAM_API_KEY:-}
+  CARTESIA_API_KEY: ${CARTESIA_API_KEY:-}
+  VAPI_API_KEY: ${VAPI_API_KEY:-}
+  RETELL_API_KEY: ${RETELL_API_KEY:-}
+  COHERE_API_KEY: ${COHERE_API_KEY:-}
+  MCP_BASE_URL: ${MCP_BASE_URL:-http://hands-runtime:18089/mcp}
+  HANDS_RUNTIME_URL: ${HANDS_RUNTIME_URL:-http://hands-runtime:18089}
+  CONNECTORS_MASTER_KEY_B64: ${CONNECTORS_MASTER_KEY_B64:-}
+  CONNECTORS_SEED_FILE: ${CONNECTORS_SEED_FILE:-seeds/connectors.json}
+  BROWSER_MCP_URL: ${BROWSER_MCP_URL:-}
+  BROWSER_MCP_HMAC_KEY: ${BROWSER_MCP_HMAC_KEY:-}
+  GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+  GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+  MICROSOFT_CLIENT_ID: ${MICROSOFT_CLIENT_ID:-}
+  MICROSOFT_CLIENT_SECRET: ${MICROSOFT_CLIENT_SECRET:-}
+  BRAVE_SEARCH_API_KEY: ${BRAVE_SEARCH_API_KEY:-}
+  GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+  PERPLEXITY_API_KEY: ${PERPLEXITY_API_KEY:-}
+  EXA_API_KEY: ${EXA_API_KEY:-}
+  FIRECRAWL_API_KEY: ${FIRECRAWL_API_KEY:-}
+  TAVILY_API_KEY: ${TAVILY_API_KEY:-}
+  SLACK_BOT_TOKEN: ${SLACK_BOT_TOKEN:-}
+  NOTION_TOKEN: ${NOTION_TOKEN:-}
+  LINEAR_API_KEY: ${LINEAR_API_KEY:-}
+  ASANA_ACCESS_TOKEN: ${ASANA_ACCESS_TOKEN:-}
+  JIRA_API_TOKEN: ${JIRA_API_TOKEN:-}
+  JIRA_BASE_URL: ${JIRA_BASE_URL:-}
+  JIRA_EMAIL: ${JIRA_EMAIL:-}
+  GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+  PLAID_CLIENT_ID: ${PLAID_CLIENT_ID:-}
+  PLAID_SECRET: ${PLAID_SECRET:-}
+  SPOTIFY_TOKEN: ${SPOTIFY_TOKEN:-}
+  DEXCOM_TOKEN: ${DEXCOM_TOKEN:-}
+  WITHINGS_TOKEN: ${WITHINGS_TOKEN:-}
+  HOME_ASSISTANT_URL: ${HOME_ASSISTANT_URL:-}
+  HOME_ASSISTANT_TOKEN: ${HOME_ASSISTANT_TOKEN:-}
+  OPENAI_FINETUNE_BASE_URL: ${OPENAI_FINETUNE_BASE_URL:-https://api.openai.com/v1}
+  DPO_BASE_MODEL: ${DPO_BASE_MODEL:-gpt-4o-mini-2024-07-18}
+  GOOGLE_PLACES_API_KEY: ${GOOGLE_PLACES_API_KEY:-}
+  SERPAPI_KEY: ${SERPAPI_KEY:-}
+  FAL_KEY: ${FAL_KEY:-}
 
 x-runtime-service: &runtime-service
   build:
@@ -304,6 +347,32 @@ services:
       <<: *common-env
     ports:
       - '18088:8086'
+    networks:
+      - brevio
+
+  hands-runtime:
+    build:
+      context: ./services/hands-runtime
+      dockerfile: Dockerfile
+    ports:
+      - "18089:18089"
+    environment:
+      <<: *common-env
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "wget",
+          "--quiet",
+          "--tries=1",
+          "--spider",
+          "http://localhost:18089/healthz/ready",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    restart: unless-stopped
     networks:
       - brevio
 
