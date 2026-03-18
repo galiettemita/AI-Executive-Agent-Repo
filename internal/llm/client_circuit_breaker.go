@@ -22,9 +22,9 @@ type ClientCircuitBreaker struct {
 }
 
 // NewClientCircuitBreaker creates a circuit breaker wrapping a Client.
-func NewClientCircuitBreaker(inner Client, name string, cfg CircuitBreakerConfig) *ClientCircuitBreaker {
+func NewClientCircuitBreaker(inner Client, name string, cfg CircuitBreakerConfig) (*ClientCircuitBreaker, error) {
 	if inner == nil {
-		panic("NewClientCircuitBreaker: inner must not be nil")
+		return nil, fmt.Errorf("llm.NewClientCircuitBreaker: inner must not be nil")
 	}
 	return &ClientCircuitBreaker{
 		inner:           inner,
@@ -32,7 +32,7 @@ func NewClientCircuitBreaker(inner Client, name string, cfg CircuitBreakerConfig
 		cfg:             cfg,
 		state:           StateClosed,
 		lastStateChange: time.Now(),
-	}
+	}, nil
 }
 
 // Generate routes a generation request through the circuit breaker.

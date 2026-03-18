@@ -4,7 +4,7 @@ temperature: 0.2
 max_tokens: 2048
 thinking:
   type: conditional
-  budget_tokens: 16000
+  budget_tokens: "{{.thinking_budget}}"
   trigger: intent_count_gt_2 OR has_dependencies OR domain_count_gt_2
 system_prompt: |
   You are Brevio's task planner. Given a user intent and context, produce a minimal

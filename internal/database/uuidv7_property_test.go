@@ -4,6 +4,8 @@ import (
 	"encoding/hex"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 // TestUUIDv7Properties verifies RFC 9562 UUIDv7 invariants.
@@ -14,7 +16,8 @@ func TestUUIDv7VersionBits(t *testing.T) {
 	t.Parallel()
 	// Generate 1000 UUIDv7s and verify version/variant
 	for i := 0; i < 1000; i++ {
-		id := GenerateUUIDv7()
+		id, idErr := GenerateUUIDv7()
+		require.NoError(t, idErr)
 		hexStr := strings.ReplaceAll(id, "-", "")
 		if len(hexStr) != 32 {
 			t.Fatalf("invalid UUID hex length: %d", len(hexStr))
@@ -39,7 +42,9 @@ func TestUUIDv7Monotonicity(t *testing.T) {
 	const count = 100
 	ids := make([]string, count)
 	for i := 0; i < count; i++ {
-		ids[i] = GenerateUUIDv7()
+		var idErr error
+		ids[i], idErr = GenerateUUIDv7()
+		require.NoError(t, idErr)
 	}
 	// Extract timestamps and verify non-decreasing
 	for i := 1; i < count; i++ {
@@ -55,7 +60,8 @@ func TestUUIDv7Uniqueness(t *testing.T) {
 	t.Parallel()
 	seen := make(map[string]struct{}, 10000)
 	for i := 0; i < 10000; i++ {
-		id := GenerateUUIDv7()
+		id, idErr := GenerateUUIDv7()
+		require.NoError(t, idErr)
 		if _, exists := seen[id]; exists {
 			t.Fatalf("duplicate UUIDv7 at iteration %d: %s", i, id)
 		}

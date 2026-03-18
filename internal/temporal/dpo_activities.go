@@ -7,6 +7,7 @@ import (
 	"go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/temporal"
 
+	"github.com/brevio/brevio/internal/compliance/eu_ai_act"
 	"github.com/brevio/brevio/internal/dpo"
 	"github.com/google/uuid"
 )
@@ -27,6 +28,20 @@ func (a *Activities) FeedbackIngestionActivity(ctx context.Context, in dpo.Feedb
 		return dpo.PreferencePair{}, fmt.Errorf("FeedbackIngestionActivity: %w", err)
 	}
 	logger.Info("DPO: preference pair stored", "pair_id", pair.ID, "signal", in.SignalType)
+
+	// EU AI Act Art. 10: log dataset provenance for DPO preference pair.
+	if a.euDataGov != nil && pair.WorkspaceID != uuid.Nil {
+		pairID := pair.ID
+		go func() {
+			_ = a.euDataGov.LogDataset(context.Background(), eu_ai_act.DataGovernanceEntry{
+				WorkspaceID: pair.WorkspaceID,
+				DatasetName: "dpo_preference_pairs",
+				Provenance:  fmt.Sprintf("DPO pair from signal=%s workspace=%s", in.SignalType, pair.WorkspaceID),
+				DPOPairRef:  &pairID,
+			})
+		}()
+	}
+
 	return pair, nil
 }
 

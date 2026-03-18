@@ -1,0 +1,86 @@
+# .github/workflows/e2e.yml
+name: E2E Test Suite
+
+on:
+  pull_request:
+    branches: [main, develop]
+  schedule:
+    # Daily at 06:00 UTC
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+
+env:
+  CI_E2E: "true"
+
+jobs:
+  e2e:
+    name: End-to-End Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+          cache: true
+
+      - name: Verify Go version matches go.mod
+        run: grep -q "^go 1.23" go.mod || (echo "go.mod version mismatch" && exit 1)
+
+      - name: Run E2E Suite
+        env:
+          CI_E2E: "true"
+        run: |
+          go test \
+            -v \
+            -timeout 300s \
+            -count=1 \
+            ./tests/e2e/... 2>&1 | tee e2e-output.log
+
+      - name: Upload E2E logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-logs-${{ github.run_id }}
+          path: e2e-output.log
+          retention-days: 7
+
+      - name: Fail if any scenario failed
+        run: |
+          if grep -q "^--- FAIL" e2e-output.log; then
+            echo "One or more E2E scenarios failed:"
+            grep "^--- FAIL" e2e-output.log
+            exit 1
+          fi
+
+  voice-e2e:
+    name: Voice Pipeline E2E (manual only)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    if: github.event_name == 'workflow_dispatch'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+          cache: true
+
+      - name: Run Voice E2E
+        env:
+          TEST_VOICE_E2E: "true"
+          CI_E2E: "true"
+        run: |
+          go test \
+            -v \
+            -timeout 120s \
+            -count=1 \
+            -run TestE2ESuite/E2E008 \
+            ./tests/e2e/...

@@ -93,7 +93,11 @@ func NewMuxWithDependencies(service *Service, deps MuxDependencies) *http.ServeM
 	} else {
 		ragEmbedder = raglayer.NewMockEmbeddingProvider(1536)
 	}
-	ragSvc = raglayer.NewService(ragEmbedder)
+	var ragErr error
+	ragSvc, ragErr = raglayer.NewService(ragEmbedder)
+	if ragErr != nil {
+		log.Fatalf("failed to create RAG service: %v", ragErr)
+	}
 	selfModificationSvc := self_modification.NewService()
 	sessionSvc := sessions.NewService()
 	streamingSvc := streaming.NewService()
@@ -248,6 +252,10 @@ func NewMuxWithDependencies(service *Service, deps MuxDependencies) *http.ServeM
 		}
 		if strings.HasPrefix(r.URL.Path, "/v1/captures") {
 			handleCaptures(w, r, captureSvc)
+			return
+		}
+		if strings.HasPrefix(r.URL.Path, "/v1/dsr/requests") {
+			handleDSRIntake(w, r, complianceSvc, auditSvc)
 			return
 		}
 		if strings.HasPrefix(r.URL.Path, "/v1/compliance") {
@@ -2998,6 +3006,57 @@ func handleAdmin(w http.ResponseWriter, r *http.Request, svc *admin.Service) {
 		http.NotFound(w, r)
 		return
 	}
+}
+
+// handleDSRIntake handles POST /v1/dsr/requests — creates a DSR and returns 202 Accepted.
+func handleDSRIntake(w http.ResponseWriter, r *http.Request, svc *compliance.Service, auditSvc *audit.Service) {
+	if r.Method != http.MethodPost {
+		writeError(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var payload compliance.DSRRequest
+	if err := decodeJSON(r, &payload); err != nil {
+		writeError(w, "invalid request body: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if payload.RequestType == "" {
+		payload.RequestType = "erasure"
+	}
+	validTypes := map[string]bool{"erasure": true, "access": true, "portability": true, "deletion": true}
+	if !validTypes[payload.RequestType] {
+		writeError(w, "invalid request_type: must be erasure, access, portability, or deletion", http.StatusBadRequest)
+		return
+	}
+
+	if payload.WorkspaceID == "" {
+		payload.WorkspaceID = r.URL.Query().Get("workspace_id")
+	}
+	if payload.WorkspaceID == "" {
+		payload.WorkspaceID = "default"
+	}
+
+	// Set deadline: 28 days from now (GDPR Article 17).
+	deadline := time.Now().UTC().Add(28 * 24 * time.Hour)
+	payload.DeadlineAt = deadline.Format(time.RFC3339)
+	payload.DeadlineDate = deadline.Format("2006-01-02")
+	payload.Status = "pending"
+
+	request := svc.CreateDSR(payload)
+
+	appendControlAudit(auditSvc, r, request.WorkspaceID, "dsr.intake.create", "dsr:"+request.ID, nil, map[string]any{
+		"id":           request.ID,
+		"request_type": request.RequestType,
+		"status":       request.Status,
+		"user_id":      request.UserID,
+	})
+
+	writeJSON(w, http.StatusAccepted, map[string]any{
+		"request_id": request.ID,
+		"status":     request.Status,
+		"deadline":   request.DeadlineAt,
+	})
 }
 
 func appendControlAudit(auditSvc *audit.Service, r *http.Request, workspaceID, action, resource string, before, after map[string]any) {

@@ -7,6 +7,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/require"
 )
 
 type mockCompressionLLM struct {
@@ -54,7 +56,8 @@ func TestLLMCompressor_StructuredOutput(t *testing.T) {
 	}`}
 	store := &mockCompressionStore{}
 	fallback := NewConversationCompressor()
-	compressor := NewLLMCompressor(llm, store, fallback, nopCompressionLogger{})
+	compressor, cErr := NewLLMCompressor(llm, store, fallback, nopCompressionLogger{})
+	require.NoError(t, cErr)
 
 	result, err := compressor.CompressTurns(context.Background(), "ws-1", "conv-1",
 		longTurns(5), 1, 5)
@@ -81,7 +84,8 @@ func TestLLMCompressor_NullArraysNormalized(t *testing.T) {
 		"open_questions": null
 	}`}
 	fallback := NewConversationCompressor()
-	compressor := NewLLMCompressor(llm, nil, fallback, nopCompressionLogger{})
+	compressor, cErr := NewLLMCompressor(llm, nil, fallback, nopCompressionLogger{})
+	require.NoError(t, cErr)
 
 	result, err := compressor.CompressTurns(context.Background(), "ws-1", "conv-1",
 		longTurns(5), 1, 5)
@@ -96,7 +100,8 @@ func TestLLMCompressor_NullArraysNormalized(t *testing.T) {
 func TestLLMCompressor_MalformedJSON_FallsBack(t *testing.T) {
 	llm := &mockCompressionLLM{response: "Sorry, I can't help with that."}
 	fallback := NewConversationCompressor()
-	compressor := NewLLMCompressor(llm, nil, fallback, nopCompressionLogger{})
+	compressor, cErr := NewLLMCompressor(llm, nil, fallback, nopCompressionLogger{})
+	require.NoError(t, cErr)
 
 	result, err := compressor.CompressTurns(context.Background(), "ws-1", "conv-1",
 		longTurns(5), 1, 5)
@@ -111,7 +116,8 @@ func TestLLMCompressor_MalformedJSON_FallsBack(t *testing.T) {
 func TestLLMCompressor_LLMError_FallsBack(t *testing.T) {
 	llm := &mockCompressionLLM{err: fmt.Errorf("LLM unavailable")}
 	fallback := NewConversationCompressor()
-	compressor := NewLLMCompressor(llm, nil, fallback, nopCompressionLogger{})
+	compressor, cErr := NewLLMCompressor(llm, nil, fallback, nopCompressionLogger{})
+	require.NoError(t, cErr)
 
 	result, err := compressor.CompressTurns(context.Background(), "ws-1", "conv-1",
 		longTurns(5), 1, 5)
@@ -129,7 +135,8 @@ func TestLLMCompressor_BelowTokenBudget_NoLLMCall(t *testing.T) {
 	_ = llm
 	trackingLLM := &trackingCompressionLLM{called: &called}
 	fallback := NewConversationCompressor()
-	compressor := NewLLMCompressor(trackingLLM, nil, fallback, nopCompressionLogger{})
+	compressor, cErr := NewLLMCompressor(trackingLLM, nil, fallback, nopCompressionLogger{})
+	require.NoError(t, cErr)
 
 	shortTurns := []Turn{
 		{Role: "user", Content: "hello"},
@@ -155,7 +162,8 @@ func TestLLMCompressor_PersistsArtifact(t *testing.T) {
 	}`}
 	store := &mockCompressionStore{}
 	fallback := NewConversationCompressor()
-	compressor := NewLLMCompressor(llm, store, fallback, nopCompressionLogger{})
+	compressor, cErr := NewLLMCompressor(llm, store, fallback, nopCompressionLogger{})
+	require.NoError(t, cErr)
 
 	_, _ = compressor.CompressTurns(context.Background(), "ws-1", "conv-1",
 		longTurns(5), 1, 5)

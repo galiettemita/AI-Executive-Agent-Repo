@@ -17,6 +17,7 @@ var mctsTempCycle = []float64{0.1, 0.4, 0.6, 0.3, 0.5}
 type MCTSConfig struct {
 	LLMClient         llm.Client
 	CounterfactualSvc *CounterfactualService
+	ORM               *OutcomeRewardModel
 	MaxIterations     int
 	MaxDepth          int
 	ExplorationC      float64
@@ -177,6 +178,23 @@ func (m *MCTSPlanner) simulate(plan *Plan) float64 {
 	if plan == nil || len(plan.Steps) == 0 {
 		return 0
 	}
+
+	// ORM-backed scoring: evaluate the plan trajectory using the outcome reward model.
+	if m.cfg.ORM != nil && m.cfg.ORM.llmClient != nil {
+		ormScore, err := m.cfg.ORM.ScoreFinalOutcome(
+			context.Background(),
+			plan.WorkspaceID,
+			"mcts_simulation",
+			plan.Steps,
+			nil, // no results yet (simulation)
+			fmt.Sprintf("Plan with %d steps, risk=%s", len(plan.Steps), plan.RiskLevel),
+		)
+		if err == nil {
+			return ormScore.OverallQuality / 5.0 // normalize to 0–1 for UCB1
+		}
+		// Fallback to heuristic on ORM failure.
+	}
+
 	if m.cfg.CounterfactualSvc != nil {
 		analysis, err := m.cfg.CounterfactualSvc.ScoreAlternatives(
 			Plan{Steps: []PlanStep{}, RiskLevel: "low"},

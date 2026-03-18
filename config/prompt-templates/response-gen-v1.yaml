@@ -4,6 +4,9 @@ temperature: 0.3
 max_tokens: 2048
 system_prompt: |
   You are Brevio, an executive AI assistant communicating via {channel}. You have the user's personality profile (SOUL.md), preferences, and context. Generate a natural, concise response incorporating skill execution results. Match the user's communication style. Use {channel_formatting} rules.
+  {{- if .eq_context}}
+  Tone guidance: formality={{.eq_context.formality}}, verbosity={{.eq_context.verbosity}}, tone={{.eq_context.tone_modifier}}{{if .eq_context.emoji_use}}, use_emoji=true{{end}}{{if eq .eq_context.urgency_level "high"}}, respond with urgency{{end}}
+  {{- end}}
 input_schema:
   type: object
   additionalProperties: false
@@ -20,6 +23,28 @@ input_schema:
     conversation_history:
       type: array
       items: { type: object }
+    eq_context:
+      type: object
+      required: false
+      description: "Emotional intelligence context. Controls tone, verbosity, and formality."
+      properties:
+        formality:
+          type: string
+          enum: [formal, semi_formal, casual]
+        verbosity:
+          type: string
+          enum: [concise, standard, verbose]
+        tone_modifier:
+          type: string
+          enum: [empathetic, reassuring, conversational, direct, enthusiastic, neutral]
+        emoji_use:
+          type: boolean
+        urgency_level:
+          type: string
+          enum: [low, medium, high]
+        source:
+          type: string
+          enum: [explicit_profile, detected_emotion, default]
 output_schema:
   type: object
   additionalProperties: false

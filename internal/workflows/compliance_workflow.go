@@ -241,6 +241,18 @@ func (s *Service) ComplianceSweepWorkflow(input ComplianceSweepInput) Compliance
 			formatIdempotencyKey("compliance_sweep_v1::send_compliance_alert::"+input.ExecutionID))
 	}
 
+	// Step 5: Trigger DSR erasure workflows for pending erasure requests.
+	// In production, pending DSRs with request_type=erasure|deletion are picked up
+	// by the Temporal DSRFullErasureWorkflow (registered in internal/temporal/worker.go).
+	// This step marks them as identified for processing.
+	for _, req := range result.DSRAtRisk {
+		if req.RequestType == "deletion" || req.RequestType == "erasure" {
+			s.appendWorkflowStep("compliance_sweep_v1",
+				fmt.Sprintf("dsr_erasure_trigger_%s", req.ID), "triggered",
+				formatIdempotencyKey("compliance_sweep_v1::dsr_erasure::"+req.ID))
+		}
+	}
+
 	result.States = append(result.States, ComplianceStateCompleted)
 	result.TerminalState = ComplianceStateCompleted
 	s.recordWorkflowInstance("compliance_sweep_v1", "completed")

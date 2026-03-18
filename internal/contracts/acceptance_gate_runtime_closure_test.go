@@ -17,6 +17,7 @@ import (
 	"github.com/brevio/brevio/internal/control"
 	"github.com/brevio/brevio/internal/crdt"
 	"github.com/brevio/brevio/internal/database"
+	"github.com/stretchr/testify/require"
 	"github.com/brevio/brevio/internal/gateway"
 	"github.com/brevio/brevio/internal/integration"
 	"github.com/brevio/brevio/internal/llm"
@@ -841,7 +842,8 @@ func TestAcceptanceGateRuntimeCoverageV10(t *testing.T) {
 	t.Run("uuidv7_properties", func(t *testing.T) {
 		// Verify UUIDv7 Go implementation
 		for i := 0; i < 100; i++ {
-			id := database.GenerateUUIDv7()
+			id, idErr := database.GenerateUUIDv7()
+			require.NoError(t, idErr)
 			hexStr := strings.ReplaceAll(id, "-", "")
 			if len(hexStr) != 32 {
 				t.Fatalf("invalid UUID hex length: %d", len(hexStr))

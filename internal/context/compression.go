@@ -279,11 +279,11 @@ func NewLLMCompressor(
 	store CompressionArtifactStore,
 	fallback *ConversationCompressor,
 	logger CompressionLogger,
-) *LLMCompressor {
+) (*LLMCompressor, error) {
 	if fallback == nil {
-		panic("LLMCompressor: fallback ConversationCompressor must not be nil")
+		return nil, fmt.Errorf("context.NewLLMCompressor: ConversationCompressor must not be nil")
 	}
-	return &LLMCompressor{llm: llm, store: store, fallback: fallback, logger: logger}
+	return &LLMCompressor{llm: llm, store: store, fallback: fallback, logger: logger}, nil
 }
 
 const compressionSystemPrompt = `You are a memory compressor for an AI executive assistant.

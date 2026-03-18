@@ -13,11 +13,11 @@ type Repository struct {
 	redis RedisClient
 }
 
-func NewRepository(redis RedisClient) *Repository {
+func NewRepository(redis RedisClient) (*Repository, error) {
 	if redis == nil {
-		panic("workingmemory.NewRepository: redis must not be nil")
+		return nil, fmt.Errorf("workingmemory.NewRepository: redis must not be nil")
 	}
-	return &Repository{redis: redis}
+	return &Repository{redis: redis}, nil
 }
 
 func (r *Repository) key(workspaceID, taskID string) string {

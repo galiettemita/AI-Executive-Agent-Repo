@@ -54,6 +54,7 @@ type ExecutionTrace struct {
 // A nil implementation is valid — disables persistence.
 type CriticTraceRepository interface {
 	Save(ctx context.Context, output CriticOutput) error
+	StoreORMResult(ctx context.Context, workspaceID, intent string, score *OutcomeScore) error
 }
 
 // ringBuffer is a fixed-size circular buffer for CriticOutput entries.

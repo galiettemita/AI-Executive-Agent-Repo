@@ -149,7 +149,10 @@ func (rs *ReceiptService) EvaluateAndIssue(req ReceiptRequest) (*Receipt, []Gate
 	evaluations = append(evaluations, rateEval)
 
 	// All gates passed — issue receipt
-	receiptID := database.GenerateUUIDv7()
+	receiptID, err := database.GenerateUUIDv7()
+	if err != nil {
+		return nil, evaluations, fmt.Errorf("generate receipt ID: %w", err)
+	}
 	bundleHash := rs.hashPolicyBundle(req.PolicyBundle)
 
 	gateNames := make([]string, len(evaluations))
@@ -400,7 +403,11 @@ func (el *ExecutionLedger) Record(entry LedgerEntry) error {
 		return fmt.Errorf("IDEMPOTENCY_CONFLICT: duplicate execution for key %s", key)
 	}
 
-	entry.ID = database.GenerateUUIDv7()
+	id, err := database.GenerateUUIDv7()
+	if err != nil {
+		return fmt.Errorf("generate ledger entry ID: %w", err)
+	}
+	entry.ID = id
 	entry.CreatedAt = time.Now().UTC()
 	el.entries[key] = &entry
 	return nil

@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/require"
 )
 
 type mockCBLLM struct {
@@ -20,7 +22,8 @@ func (m *mockCBLLM) Complete(_ context.Context, _, _ string) (string, error) {
 
 func TestCircuitBreaker_ClosedState_PassesThrough(t *testing.T) {
 	inner := &mockCBLLM{response: "ok"}
-	cb := NewLLMCircuitBreaker(inner, "test", DefaultCircuitBreakerConfig(), nil)
+	cb, err := NewLLMCircuitBreaker(inner, "test", DefaultCircuitBreakerConfig(), nil)
+	require.NoError(t, err)
 
 	result, err := cb.Complete(context.Background(), "sys", "user")
 	if err != nil {
@@ -38,14 +41,15 @@ func TestCircuitBreaker_ThreeFailures_Opens(t *testing.T) {
 	inner := &mockCBLLM{err: fmt.Errorf("fail")}
 	cfg := DefaultCircuitBreakerConfig()
 	cfg.FailureThreshold = 3
-	cb := NewLLMCircuitBreaker(inner, "test", cfg, nil)
+	cb, err := NewLLMCircuitBreaker(inner, "test", cfg, nil)
+	require.NoError(t, err)
 
 	for i := 0; i < 3; i++ {
 		cb.Complete(context.Background(), "s", "u")
 	}
 
 	// 4th call should fast-fail
-	_, err := cb.Complete(context.Background(), "s", "u")
+	_, err = cb.Complete(context.Background(), "s", "u")
 	if !IsCircuitOpen(err) {
 		t.Fatalf("expected ErrCircuitOpen, got: %v", err)
 	}
@@ -58,12 +62,13 @@ func TestCircuitBreaker_OpenState_FastFails(t *testing.T) {
 	inner := &mockCBLLM{err: fmt.Errorf("fail")}
 	cfg := DefaultCircuitBreakerConfig()
 	cfg.FailureThreshold = 1
-	cb := NewLLMCircuitBreaker(inner, "test", cfg, nil)
+	cb, err := NewLLMCircuitBreaker(inner, "test", cfg, nil)
+	require.NoError(t, err)
 
 	cb.Complete(context.Background(), "s", "u") // fail → open
 
 	inner.called = 0
-	_, err := cb.Complete(context.Background(), "s", "u")
+	_, err = cb.Complete(context.Background(), "s", "u")
 	if !IsCircuitOpen(err) {
 		t.Fatal("expected fast-fail")
 	}
@@ -79,7 +84,8 @@ func TestCircuitBreaker_RecoveryTimeout_TransitionsToHalfOpen(t *testing.T) {
 		RecoveryTimeout:  50 * time.Millisecond,
 		SuccessThreshold: 1,
 	}
-	cb := NewLLMCircuitBreaker(inner, "test", cfg, nil)
+	cb, err := NewLLMCircuitBreaker(inner, "test", cfg, nil)
+	require.NoError(t, err)
 
 	cb.Complete(context.Background(), "s", "u") // fail → open
 
@@ -108,7 +114,8 @@ func TestCircuitBreaker_HalfOpen_Success_Closes(t *testing.T) {
 		RecoveryTimeout:  10 * time.Millisecond,
 		SuccessThreshold: 2,
 	}
-	cb := NewLLMCircuitBreaker(inner, "test", cfg, nil)
+	cb, err := NewLLMCircuitBreaker(inner, "test", cfg, nil)
+	require.NoError(t, err)
 
 	cb.Complete(context.Background(), "s", "u") // fail → open
 	time.Sleep(15 * time.Millisecond)           // → half-open
@@ -130,7 +137,8 @@ func TestCircuitBreaker_HalfOpen_Failure_Reopens(t *testing.T) {
 		RecoveryTimeout:  10 * time.Millisecond,
 		SuccessThreshold: 2,
 	}
-	cb := NewLLMCircuitBreaker(inner, "test", cfg, nil)
+	cb, err := NewLLMCircuitBreaker(inner, "test", cfg, nil)
+	require.NoError(t, err)
 
 	cb.Complete(context.Background(), "s", "u") // fail → open
 	time.Sleep(15 * time.Millisecond)           // → half-open

@@ -47,19 +47,22 @@ func BootstrapIntelligenceWithRedis(redisClient *cache.RedisClient) *Intelligenc
 		if err != nil {
 			log.Printf("[LLM] Failed to create Anthropic client: %v", err)
 		} else {
-			// Wrap with circuit breaker.
-			cbClient := Client(NewClientCircuitBreaker(raw, "anthropic", cbCfg))
-			// Wrap with rate limiter when Redis available.
-			if redisClient != nil {
-				anthropicWrapped = NewRateLimitedClient(RateLimitedClientConfig{
-					Inner: cbClient, RedisCache: redisClient,
-					ProviderID: "anthropic", WorkspaceID: "global",
-					Limits: limits["anthropic"],
-				})
-				log.Println("[LLM] Anthropic: circuit breaker + rate limiting active")
+			cbRaw, cbErr := NewClientCircuitBreaker(raw, "anthropic", cbCfg)
+			if cbErr != nil {
+				log.Printf("[LLM] Failed to create Anthropic circuit breaker: %v", cbErr)
 			} else {
-				anthropicWrapped = cbClient
-				log.Println("[LLM] Anthropic: circuit breaker active (no rate limiting)")
+				cbClient := Client(cbRaw)
+				if redisClient != nil {
+					anthropicWrapped = NewRateLimitedClient(RateLimitedClientConfig{
+						Inner: cbClient, RedisCache: redisClient,
+						ProviderID: "anthropic", WorkspaceID: "global",
+						Limits: limits["anthropic"],
+					})
+					log.Println("[LLM] Anthropic: circuit breaker + rate limiting active")
+				} else {
+					anthropicWrapped = cbClient
+					log.Println("[LLM] Anthropic: circuit breaker active (no rate limiting)")
+				}
 			}
 		}
 	}
@@ -70,17 +73,22 @@ func BootstrapIntelligenceWithRedis(redisClient *cache.RedisClient) *Intelligenc
 		if err != nil {
 			log.Printf("[LLM] Failed to create OpenAI client: %v", err)
 		} else {
-			cbClient := Client(NewClientCircuitBreaker(raw, "openai", cbCfg))
-			if redisClient != nil {
-				openaiWrapped = NewRateLimitedClient(RateLimitedClientConfig{
-					Inner: cbClient, RedisCache: redisClient,
-					ProviderID: "openai", WorkspaceID: "global",
-					Limits: limits["openai"],
-				})
-				log.Println("[LLM] OpenAI: circuit breaker + rate limiting active")
+			cbRaw, cbErr := NewClientCircuitBreaker(raw, "openai", cbCfg)
+			if cbErr != nil {
+				log.Printf("[LLM] Failed to create OpenAI circuit breaker: %v", cbErr)
 			} else {
-				openaiWrapped = cbClient
-				log.Println("[LLM] OpenAI: circuit breaker active (no rate limiting)")
+				cbClient := Client(cbRaw)
+				if redisClient != nil {
+					openaiWrapped = NewRateLimitedClient(RateLimitedClientConfig{
+						Inner: cbClient, RedisCache: redisClient,
+						ProviderID: "openai", WorkspaceID: "global",
+						Limits: limits["openai"],
+					})
+					log.Println("[LLM] OpenAI: circuit breaker + rate limiting active")
+				} else {
+					openaiWrapped = cbClient
+					log.Println("[LLM] OpenAI: circuit breaker active (no rate limiting)")
+				}
 			}
 		}
 	}

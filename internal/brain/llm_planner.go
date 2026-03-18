@@ -11,6 +11,7 @@ import (
 
 const plannerModel = "claude-sonnet-4-20250514"
 const plannerMaxTokens = 2048
+const maxORMRetries = 2
 
 // LLMPlannerInput carries all context for a single planner invocation.
 type LLMPlannerInput struct {

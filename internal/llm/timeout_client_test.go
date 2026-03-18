@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/require"
 )
 
 type slowLLM struct {
@@ -24,7 +26,8 @@ func (s *slowLLM) Complete(ctx context.Context, _, _ string) (string, error) {
 
 func TestTimeoutClient_FastCall_ReturnsResult(t *testing.T) {
 	inner := &slowLLM{delay: 50 * time.Millisecond, response: "hello"}
-	client := NewTimeoutLLMClient(inner, 1*time.Second, "test", nil)
+	client, err := NewTimeoutLLMClient(inner, 1*time.Second, "test", nil)
+	require.NoError(t, err)
 
 	result, err := client.Complete(context.Background(), "sys", "user")
 	if err != nil {
@@ -37,10 +40,11 @@ func TestTimeoutClient_FastCall_ReturnsResult(t *testing.T) {
 
 func TestTimeoutClient_SlowCall_TimesOut(t *testing.T) {
 	inner := &slowLLM{delay: 2 * time.Second, response: "late"}
-	client := NewTimeoutLLMClient(inner, 200*time.Millisecond, "test", nil)
+	client, err := NewTimeoutLLMClient(inner, 200*time.Millisecond, "test", nil)
+	require.NoError(t, err)
 
 	start := time.Now()
-	_, err := client.Complete(context.Background(), "sys", "user")
+	_, err = client.Complete(context.Background(), "sys", "user")
 	elapsed := time.Since(start)
 
 	if err == nil {
@@ -56,13 +60,14 @@ func TestTimeoutClient_SlowCall_TimesOut(t *testing.T) {
 
 func TestTimeoutClient_RespectsParentContextDeadline(t *testing.T) {
 	inner := &slowLLM{delay: 5 * time.Second, response: "late"}
-	client := NewTimeoutLLMClient(inner, 2*time.Second, "test", nil)
+	client, err := NewTimeoutLLMClient(inner, 2*time.Second, "test", nil)
+	require.NoError(t, err)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
 
 	start := time.Now()
-	_, err := client.Complete(ctx, "sys", "user")
+	_, err = client.Complete(ctx, "sys", "user")
 	elapsed := time.Since(start)
 
 	if err == nil {
@@ -75,9 +80,10 @@ func TestTimeoutClient_RespectsParentContextDeadline(t *testing.T) {
 
 func TestTimeoutClient_ErrorFromInner_Propagated(t *testing.T) {
 	inner := &slowLLM{delay: 10 * time.Millisecond, err: fmt.Errorf("API error")}
-	client := NewTimeoutLLMClient(inner, 1*time.Second, "test", nil)
+	client, err := NewTimeoutLLMClient(inner, 1*time.Second, "test", nil)
+	require.NoError(t, err)
 
-	_, err := client.Complete(context.Background(), "sys", "user")
+	_, err = client.Complete(context.Background(), "sys", "user")
 	if err == nil {
 		t.Fatal("expected error")
 	}

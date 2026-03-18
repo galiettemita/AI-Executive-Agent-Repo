@@ -7,8 +7,10 @@ import (
 	"time"
 
 	"github.com/brevio/brevio/internal/brain"
+	"github.com/brevio/brevio/internal/compliance/eu_ai_act"
 	"github.com/brevio/brevio/internal/eq"
 	"github.com/brevio/brevio/internal/trust"
+	"github.com/google/uuid"
 )
 
 // V10.2 Intelligence Activity Input/Output types.
@@ -244,6 +246,22 @@ func (a *Activities) EvaluateAutonomyDemotionActivity(ctx context.Context, input
 		TrustScoreAtDemotion:   &ts,
 		FailureCountAtDemotion: &fc,
 	})
+
+	// EU AI Act Art. 73: record autonomy demotion as a serious incident.
+	if a.euIncidentLog != nil {
+		wsID, parseErr := uuid.Parse(input.WorkspaceID)
+		if parseErr == nil {
+			go func() {
+				_, _ = a.euIncidentLog.RecordIncident(context.Background(), eu_ai_act.IncidentEntry{
+					WorkspaceID:   wsID,
+					IncidentType:  "autonomy_demotion",
+					TriggerMetric: fmt.Sprintf("demoted_to=%d", newLevel),
+					Severity:      "high",
+					Description:   fmt.Sprintf("Workspace autonomy demoted from %d to %d: %s", currentLevel, newLevel, reason),
+				})
+			}()
+		}
+	}
 
 	return &EvaluateAutonomyDemotionResult{
 		Demoted:       true,

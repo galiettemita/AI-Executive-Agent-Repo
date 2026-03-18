@@ -14,7 +14,11 @@ import (
 	"os"
 
 	"github.com/brevio/brevio/internal/brain"
+	"github.com/brevio/brevio/internal/caching"
+	"github.com/brevio/brevio/internal/compliance/eu_ai_act"
+	a2amarketplace "github.com/brevio/brevio/internal/a2a/marketplace"
 	"github.com/brevio/brevio/internal/connectors"
+	"github.com/brevio/brevio/internal/mcp"
 	"github.com/brevio/brevio/internal/a2a"
 	"github.com/brevio/brevio/internal/benchmark"
 	"github.com/brevio/brevio/internal/browser"
@@ -151,6 +155,9 @@ type SynthesizeResponseInput struct {
 	EQLengthModifier float64 `json:"eq_length_modifier,omitempty"`
 	EQOfferHelp      bool    `json:"eq_offer_help,omitempty"`
 
+	// EQ context — resolved emotional tone parameters for prompt injection (B-08).
+	EQContext *eq.EQContext `json:"eq_context,omitempty"`
+
 	// Uncertainty qualifier flag — set when 0.50 <= confidence < 0.75.
 	AddQualifiers bool    `json:"add_qualifiers,omitempty"`
 	Confidence    float64 `json:"confidence,omitempty"`
@@ -167,6 +174,30 @@ incorporating skill execution results. Output a JSON object with:
 Respond with ONLY the JSON object.`
 
 	hasEQ := input.EQToneDirective != "" || input.EQFormalityLevel != 0 || input.EQLengthModifier != 0
+
+	// B-08: EQContext from emotion→tone mapping takes priority when present.
+	if input.EQContext != nil && input.EQContext.Source != "default" {
+		var dirs []string
+		dirs = append(dirs, "TONE: "+input.EQContext.ToneModifier)
+		dirs = append(dirs, fmt.Sprintf("FORMALITY: %s", input.EQContext.Formality))
+		switch input.EQContext.Verbosity {
+		case "concise":
+			dirs = append(dirs, "LENGTH: Be very concise. Maximum 2 sentences in response_text.")
+		case "verbose":
+			dirs = append(dirs, "LENGTH: Provide a thorough, detailed response.")
+		}
+		if input.EQContext.EmojiUse {
+			dirs = append(dirs, "EMOJI: Include relevant emoji in the response.")
+		}
+		if input.EQContext.UrgencyLevel == "high" {
+			dirs = append(dirs, "URGENCY: Respond with a sense of urgency.")
+		}
+		if input.EQContext.ToneModifier == "empathetic" {
+			dirs = append(dirs, "EMPATHY: Begin with a brief empathetic acknowledgement before the main response.")
+		}
+		return base + "\n\nEQ MODULATION DIRECTIVES (apply to response_text):\n" + strings.Join(dirs, "\n")
+	}
+
 	if !hasEQ {
 		return base
 	}
@@ -367,6 +398,8 @@ type ActivityDeps struct {
 	LLMService *llm.Service
 
 	// V10.2 intelligence dependencies.
+	EQService        *eq.EQService
+	EQABTracker      *eq.EQABTracker
 	EQRepo           eq.EQStrategyRepository
 	DemotionRepo     trust.DemotionRepository
 	IntelligenceRepo brain.IntelligenceRepository
@@ -457,12 +490,43 @@ type ActivityDeps struct {
 	// Trust scoring for SubAgent autonomy gate.
 	TrustSvc *trust.Service
 
+	// World model repository (PostgreSQL-backed).
+	WorldModelRepo brain.WorldModelRepository
+
+	// LLM cache bridge (L1→L2→L3→semantic).
+	LLMCacheBridge *caching.LLMCacheBridge
+
 	// Semantic LLM cache (pgvector-backed, 94% similarity threshold).
 	SemanticCache *llm.SemanticCache
 
 	// Constitutional AI critiquer and citation extractor (Plan 06).
 	ConstitutionalAICritiquer *brain.ConstitutionalAICritiquer
 	CitationExtractor         *rag.CitationExtractor
+
+	// EU AI Act compliance (Art. 9, 10, 73).
+	EUAIActRiskRegister        *eu_ai_act.RiskRegister
+	EUAIActDataGov             *eu_ai_act.DataGovernanceLog
+	EUAIActIncidentLog         *eu_ai_act.IncidentLog
+	EUAIActConformityGenerator *eu_ai_act.ConformityAssessmentGenerator
+
+	// Outcome Reward Model for trajectory evaluation and retry gating.
+	ORM *brain.OutcomeRewardModel
+
+	// Mixture of Agents (MoA) multi-provider synthesis.
+	MoA        *brain.MixtureOfAgents
+	MoATrigger *brain.MoATrigger
+
+	// MCP tool discovery service.
+	MCPDiscovery *mcp.MCPDiscoveryService
+
+	// A2A agent marketplace.
+	AgentMarketplace *a2amarketplace.AgentMarketplace
+
+	// Per-tool cost recorder.
+	ToolCostRecorder *mcp.ToolCostRecorder
+
+	// Paged infinite context manager factory.
+	PagedContextFactory func(sessionID, workspaceID string) *memory.PagedContextManager
 }
 
 // ProductionQualityGauge records the rolling quality score to Prometheus.
@@ -491,6 +555,8 @@ type Activities struct {
 	llmService *llm.Service
 
 	// V10.2 intelligence dependencies.
+	eqService        *eq.EQService
+	eqABTracker      *eq.EQABTracker
 	eqRepo           eq.EQStrategyRepository
 	demotionRepo     trust.DemotionRepository
 	intelligenceRepo brain.IntelligenceRepository
@@ -586,12 +652,40 @@ type Activities struct {
 	// Trust scoring for SubAgent autonomy gate.
 	trustSvc *trust.Service
 
+	// World model repository.
+	worldModelRepo brain.WorldModelRepository
+
+	// LLM cache bridge (L1→L2→L3→semantic).
+	llmCacheBridge *caching.LLMCacheBridge
+
 	// Semantic LLM cache.
 	semanticCache *llm.SemanticCache
 
 	// Constitutional AI critiquer and citation extractor (Plan 06).
 	caiCritiquer      *brain.ConstitutionalAICritiquer
 	citationExtractor *rag.CitationExtractor
+
+	// EU AI Act compliance (Art. 9, 10, 73).
+	euRiskRegister        *eu_ai_act.RiskRegister
+	euDataGov             *eu_ai_act.DataGovernanceLog
+	euIncidentLog         *eu_ai_act.IncidentLog
+	euConformityGenerator *eu_ai_act.ConformityAssessmentGenerator
+
+	// Outcome Reward Model.
+	orm *brain.OutcomeRewardModel
+
+	// Mixture of Agents.
+	moaSvc     *brain.MixtureOfAgents
+	moaTrigger *brain.MoATrigger
+
+	// MCP discovery.
+	mcpDiscovery *mcp.MCPDiscoveryService
+
+	// A2A agent marketplace.
+	agentMarketplace *a2amarketplace.AgentMarketplace
+
+	// Per-tool cost recorder.
+	toolCostRecorder *mcp.ToolCostRecorder
 
 	// Observability counters for outbox dispatch.
 	outboxDispatched atomic.Int64
@@ -616,6 +710,8 @@ func NewActivitiesWithProdDeps(deps ActivityDeps) *Activities {
 		killSwitchCheck:  deps.KillSwitchCheck,
 		skillACLCheck:    deps.SkillACLCheck,
 		llmService:       deps.LLMService,
+		eqService:        deps.EQService,
+		eqABTracker:      deps.EQABTracker,
 		eqRepo:           deps.EQRepo,
 		demotionRepo:     deps.DemotionRepo,
 		intelligenceRepo: deps.IntelligenceRepo,
@@ -661,9 +757,21 @@ func NewActivitiesWithProdDeps(deps ActivityDeps) *Activities {
 		kgService:             deps.KGService,
 		kgRetriever:           deps.KGRetriever,
 		trustSvc:              deps.TrustSvc,
+		worldModelRepo:        deps.WorldModelRepo,
+		llmCacheBridge:        deps.LLMCacheBridge,
 		semanticCache:         deps.SemanticCache,
 		caiCritiquer:          deps.ConstitutionalAICritiquer,
 		citationExtractor:     deps.CitationExtractor,
+		euRiskRegister:        deps.EUAIActRiskRegister,
+		euDataGov:             deps.EUAIActDataGov,
+		euIncidentLog:         deps.EUAIActIncidentLog,
+		euConformityGenerator: deps.EUAIActConformityGenerator,
+		orm:                   deps.ORM,
+		moaSvc:                deps.MoA,
+		moaTrigger:            deps.MoATrigger,
+		mcpDiscovery:          deps.MCPDiscovery,
+		agentMarketplace:     deps.AgentMarketplace,
+		toolCostRecorder:     deps.ToolCostRecorder,
 	}
 }
 
@@ -1089,6 +1197,25 @@ func (a *Activities) ExecuteToolActivity(ctx context.Context, input ExecuteToolI
 			ToolOutput:     output,
 		}
 
+		// EU AI Act Art. 9: record tool execution as a risk signal.
+		if success && a.euRiskRegister != nil {
+			wsID, parseErr := uuid.Parse(input.WorkspaceID)
+			if parseErr == nil {
+				go func() {
+					_, _ = a.euRiskRegister.RecordRisk(context.Background(), eu_ai_act.RiskItem{
+						WorkspaceID:      wsID,
+						Category:         eu_ai_act.RiskCategoryArt9RiskMgmt,
+						Description:      fmt.Sprintf("Tool execution: %s", input.ToolKey),
+						Likelihood:       eu_ai_act.RiskLikelihoodMedium,
+						Impact:           eu_ai_act.RiskImpactMedium,
+						MitigationStatus: eu_ai_act.MitigationOpen,
+						SourceEvent:      "tool_execution",
+						SourceRef:        input.IdempotencyKey,
+					})
+				}()
+			}
+		}
+
 		// IPI taint-tracking: check tool output for indirect prompt injection.
 		if output != nil && a.inferenceGuard != nil {
 			trustSrc := guardrails.InferTrustSource(input.ToolKey)
@@ -1145,11 +1272,27 @@ func (a *Activities) SynthesizeResponseActivity(ctx context.Context, input Synth
 			fmt.Fprintf(&toolSummary, "- %s [%s]: phase=%s hash=%s\n", tr.ToolKey, status, tr.Phase, tr.PayloadHash)
 		}
 
-		// ── Semantic cache lookup ──────────────────────────────────────────────────
-		if a.semanticCache != nil {
+		// ── Cache lookup (L1→L2→L3→semantic) ────────────────────────────────────
+		if a.llmCacheBridge != nil {
+			if cached, hit := a.llmCacheBridge.Lookup(ctx, input.WorkspaceID, toolSummary.String(), ""); hit {
+				return &SynthesizeResponseResult{ResponsePayload: cached, FromCache: true}, nil
+			}
+		} else if a.semanticCache != nil {
 			if cached, hit := a.semanticCache.Lookup(ctx, input.WorkspaceID, toolSummary.String(), ""); hit {
 				return &SynthesizeResponseResult{ResponsePayload: cached, FromCache: true}, nil
 			}
+		}
+
+		// ── EQ Prompt Routing (B-08) ─────────────────────────────────────────────
+		if feature_flags.EQPromptRoutingEnabled() && input.EQContext == nil {
+			eqCtx := eq.DefaultEQContext()
+			if a.eqService != nil {
+				if state, err := a.eqService.DetectEmotion(toolSummary.String()); err == nil && state != nil {
+					profile, _ := a.eqService.GetProfile(input.WorkspaceID)
+					eqCtx = eq.EmotionToEQContext(state.DetectedEmotion, profile)
+				}
+			}
+			input.EQContext = &eqCtx
 		}
 
 		// Streaming path — only active when FEATURE_STREAMING_ENABLED=true.
@@ -1215,6 +1358,22 @@ func (a *Activities) SynthesizeResponseActivity(ctx context.Context, input Synth
 					responseText = review.RevisedResponse
 				}
 				caiViolations = review.ViolationCount
+
+				// EU AI Act Art. 73: record CAI violations as incidents.
+				if caiViolations > 0 && a.euIncidentLog != nil {
+					wsID, parseErr := uuid.Parse(input.WorkspaceID)
+					if parseErr == nil {
+						go func() {
+							_, _ = a.euIncidentLog.RecordIncident(context.Background(), eu_ai_act.IncidentEntry{
+								WorkspaceID:   wsID,
+								IncidentType:  "cai_violation",
+								TriggerMetric: fmt.Sprintf("violations=%d", caiViolations),
+								Severity:      "high",
+								Description:   fmt.Sprintf("CAI review detected %d violations in synthesis response", caiViolations),
+							})
+						}()
+					}
+				}
 			}
 		}
 
@@ -1236,8 +1395,19 @@ func (a *Activities) SynthesizeResponseActivity(ctx context.Context, input Synth
 			}
 		}
 
-		// ── Semantic cache store ───────────────────────────────────────────────────
-		if a.semanticCache != nil {
+		// ── EQ A/B tracking (B-08) ────────────────────────────────────────────────
+		if a.eqABTracker != nil && input.WorkspaceID != "" {
+			eqWasEnabled := input.EQContext != nil && input.EQContext.Source != "default"
+			wsID, parseErr := uuid.Parse(input.WorkspaceID)
+			if parseErr == nil {
+				_ = a.eqABTracker.RecordResponseQuality(ctx, wsID, input.MessageID, 0.5, eqWasEnabled)
+			}
+		}
+
+		// ── Cache store (all layers + semantic) ───────────────────────────────────
+		if a.llmCacheBridge != nil {
+			a.llmCacheBridge.Put(ctx, input.WorkspaceID, toolSummary.String(), "", responseText, "synthesis")
+		} else if a.semanticCache != nil {
 			a.semanticCache.Put(ctx, input.WorkspaceID, toolSummary.String(), "", responseText, "synthesis")
 		}
 

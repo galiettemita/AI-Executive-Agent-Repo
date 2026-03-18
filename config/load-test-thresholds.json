@@ -1,0 +1,22 @@
+{
+  "smoke": {
+    "http_req_duration_p99_ms": 2000,
+    "http_req_failed_rate": 0.01,
+    "vus": 1,
+    "duration": "1m"
+  },
+  "load": {
+    "http_req_duration_p99_ms": 5000,
+    "http_req_failed_rate": 0.02,
+    "vus": 50,
+    "duration": "5m"
+  },
+  "staging": {
+    "smoke_threshold_ms": 2000,
+    "load_threshold_ms": 5000
+  },
+  "production": {
+    "smoke_threshold_ms": 1500,
+    "load_threshold_ms": 4000
+  }
+}

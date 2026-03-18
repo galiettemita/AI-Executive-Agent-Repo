@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/brevio/brevio/internal/llm"
+	"github.com/stretchr/testify/require"
 )
 
 type cbMockClient struct {
@@ -35,7 +36,8 @@ func (m *cbMockClient) Stream(_ context.Context, _ llm.GenerateRequest, out chan
 func TestClientCircuitBreaker_PassesThrough(t *testing.T) {
 	t.Parallel()
 	mc := &cbMockClient{}
-	cb := llm.NewClientCircuitBreaker(mc, "test", llm.DefaultCircuitBreakerConfig())
+	cb, cbErr := llm.NewClientCircuitBreaker(mc, "test", llm.DefaultCircuitBreakerConfig())
+	require.NoError(t, cbErr)
 	_, _, err := cb.Generate(context.Background(), llm.GenerateRequest{})
 	if err != nil {
 		t.Errorf("expected no error, got %v", err)
@@ -46,7 +48,8 @@ func TestClientCircuitBreaker_OpensAfterFailures(t *testing.T) {
 	t.Parallel()
 	mc := &cbMockClient{err: fmt.Errorf("provider down")}
 	cfg := llm.DefaultCircuitBreakerConfig()
-	cb := llm.NewClientCircuitBreaker(mc, "test", cfg)
+	cb, cbErr := llm.NewClientCircuitBreaker(mc, "test", cfg)
+	require.NoError(t, cbErr)
 
 	for i := 0; i < cfg.FailureThreshold; i++ {
 		cb.Generate(context.Background(), llm.GenerateRequest{})
@@ -63,7 +66,8 @@ func TestClientCircuitBreaker_RecoveryToHalfOpen(t *testing.T) {
 	mc := &cbMockClient{err: fmt.Errorf("down")}
 	cfg := llm.DefaultCircuitBreakerConfig()
 	cfg.RecoveryTimeout = 50 * time.Millisecond
-	cb := llm.NewClientCircuitBreaker(mc, "test", cfg)
+	cb, cbErr := llm.NewClientCircuitBreaker(mc, "test", cfg)
+	require.NoError(t, cbErr)
 
 	for i := 0; i < cfg.FailureThreshold; i++ {
 		cb.Generate(context.Background(), llm.GenerateRequest{})
@@ -80,7 +84,8 @@ func TestClientCircuitBreaker_RecoveryToHalfOpen(t *testing.T) {
 func TestClientCircuitBreaker_ConcurrentSafe(t *testing.T) {
 	t.Parallel()
 	mc := &cbMockClient{}
-	cb := llm.NewClientCircuitBreaker(mc, "concurrent", llm.DefaultCircuitBreakerConfig())
+	cb, cbErr := llm.NewClientCircuitBreaker(mc, "concurrent", llm.DefaultCircuitBreakerConfig())
+	require.NoError(t, cbErr)
 	done := make(chan struct{}, 50)
 	for i := 0; i < 50; i++ {
 		go func() {

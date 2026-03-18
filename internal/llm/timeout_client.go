@@ -34,9 +34,9 @@ type TimeoutLLMClient struct {
 	metrics TimeoutMetrics
 }
 
-func NewTimeoutLLMClient(inner LLMCompleter, timeout time.Duration, name string, metrics TimeoutMetrics) *TimeoutLLMClient {
+func NewTimeoutLLMClient(inner LLMCompleter, timeout time.Duration, name string, metrics TimeoutMetrics) (*TimeoutLLMClient, error) {
 	if inner == nil {
-		panic("llm.NewTimeoutLLMClient: inner client must not be nil")
+		return nil, fmt.Errorf("llm.NewTimeoutLLMClient: inner must not be nil")
 	}
 	if timeout <= 0 {
 		timeout = 2 * time.Second
@@ -44,7 +44,7 @@ func NewTimeoutLLMClient(inner LLMCompleter, timeout time.Duration, name string,
 	if metrics == nil {
 		metrics = &NoopTimeoutMetrics{}
 	}
-	return &TimeoutLLMClient{inner: inner, timeout: timeout, name: name, metrics: metrics}
+	return &TimeoutLLMClient{inner: inner, timeout: timeout, name: name, metrics: metrics}, nil
 }
 
 // Complete calls the underlying LLM client with a hard deadline.

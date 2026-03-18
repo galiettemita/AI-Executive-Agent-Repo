@@ -269,17 +269,17 @@ func (s *EmbeddingService) BatchEmbed(ctx context.Context, texts []string, batch
 	return all, nil
 }
 
-// ValidateEmbeddingDimensions panics at startup if the provider produces
+// ValidateEmbeddingDimensions returns an error if the provider produces
 // vectors that do not match the pgvector schema.
-func ValidateEmbeddingDimensions(provider EmbeddingProvider) {
+func ValidateEmbeddingDimensions(provider EmbeddingProvider) error {
 	const schemaVectorDims = 1536
 	if d := provider.Dimensions(); d != schemaVectorDims {
-		panic(fmt.Sprintf(
-			"embedding provider returns %d dims but pgvector schema requires %d — "+
-				"check OpenAIEmbeddingProvider model config",
+		return fmt.Errorf(
+			"rag.ValidateEmbeddingDimensions: got %d dimensions, expected %d",
 			d, schemaVectorDims,
-		))
+		)
 	}
+	return nil
 }
 
 // CosineSimilarity computes the cosine similarity between two float32 vectors.

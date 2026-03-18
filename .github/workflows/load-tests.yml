@@ -1,0 +1,118 @@
+# .github/workflows/load-tests.yml
+# Triggered after successful staging deployment.
+# Smoke test gates: p99 < 2000ms, error rate < 1%.
+# Load test gates: p99 < 5000ms, error rate < 2%.
+# Failure blocks ArgoCD production promotion.
+
+name: Load Tests
+
+on:
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: 'Staging base URL to test against'
+        required: false
+        default: ''
+  deployment_status:
+
+jobs:
+  smoke:
+    name: Smoke Test (p99 < 2000ms)
+    runs-on: ubuntu-latest
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'deployment_status' &&
+       github.event.deployment_status.state == 'success' &&
+       github.event.deployment_status.environment == 'staging')
+    outputs:
+      smoke_passed: ${{ steps.verify.outputs.passed }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run k6 smoke test
+        uses: grafana/k6-action@v0.3.1
+        with:
+          filename: tests/load/k6-smoke.js
+          flags: >-
+            --env GATEWAY_URL=${{ secrets.STAGING_URL || inputs.base_url }}
+            --env BRAIN_URL=${{ secrets.STAGING_BRAIN_URL || inputs.base_url }}
+            --out json=k6-smoke-results.json
+            --out experimental-prometheus-rw=${{ secrets.PROMETHEUS_REMOTE_WRITE_URL }}
+
+      - name: Verify smoke thresholds
+        id: verify
+        run: |
+          P99=$(jq '.metrics."http_req_duration".values."p(99)"' k6-smoke-results.json 2>/dev/null || echo "0")
+          ERROR_RATE=$(jq '.metrics.http_req_failed.values.rate' k6-smoke-results.json 2>/dev/null || echo "0")
+          echo "p99=${P99}ms, error_rate=${ERROR_RATE}"
+          if (( $(echo "$P99 < 2000" | bc -l) )) && (( $(echo "$ERROR_RATE < 0.01" | bc -l) )); then
+            echo "passed=true" >> $GITHUB_OUTPUT
+            echo "Smoke test passed: p99=${P99}ms < 2000ms, error_rate=${ERROR_RATE} < 1%"
+          else
+            echo "passed=false" >> $GITHUB_OUTPUT
+            echo "Smoke test FAILED: p99=${P99}ms, error_rate=${ERROR_RATE}"
+            exit 1
+          fi
+
+      - name: Upload smoke results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: k6-smoke-results
+          path: k6-smoke-results.json
+
+  load:
+    name: Load Test (50 VUs, 5min, p99 < 5000ms)
+    runs-on: ubuntu-latest
+    needs: smoke
+    if: needs.smoke.outputs.smoke_passed == 'true'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run k6 load test
+        uses: grafana/k6-action@v0.3.1
+        with:
+          filename: tests/load/k6-load-test.js
+          flags: >-
+            --env GATEWAY_URL=${{ secrets.STAGING_URL || inputs.base_url }}
+            --env BRAIN_URL=${{ secrets.STAGING_BRAIN_URL || inputs.base_url }}
+            --env WORKSPACE_ID=${{ secrets.LOAD_TEST_WORKSPACE_ID }}
+            --out json=k6-load-results.json
+            --out experimental-prometheus-rw=${{ secrets.PROMETHEUS_REMOTE_WRITE_URL }}
+
+      - name: Verify load thresholds
+        run: |
+          P99=$(jq '.metrics."http_req_duration".values."p(99)"' k6-load-results.json 2>/dev/null || echo "0")
+          ERROR_RATE=$(jq '.metrics.http_req_failed.values.rate' k6-load-results.json 2>/dev/null || echo "0")
+          echo "p99=${P99}ms, error_rate=${ERROR_RATE}"
+          if (( $(echo "$P99 < 5000" | bc -l) )) && (( $(echo "$ERROR_RATE < 0.02" | bc -l) )); then
+            echo "Load test passed: p99=${P99}ms < 5000ms, error_rate=${ERROR_RATE} < 2%"
+          else
+            echo "Load test FAILED: p99=${P99}ms, error_rate=${ERROR_RATE}"
+            exit 1
+          fi
+
+      - name: Upload load results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: k6-load-results
+          path: k6-load-results.json
+
+  # This job acts as the gate that ArgoCD checks before promoting to production.
+  production-gate:
+    name: Production Promotion Gate
+    runs-on: ubuntu-latest
+    needs: [smoke, load]
+    if: always()
+    steps:
+      - name: Assert load tests passed
+        run: |
+          if [[ "${{ needs.load.result }}" == "success" ]]; then
+            echo "All load tests passed. Production promotion APPROVED."
+          else
+            echo "Load tests did not pass. Production promotion BLOCKED."
+            exit 1
+          fi

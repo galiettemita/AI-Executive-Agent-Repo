@@ -12,6 +12,8 @@ import (
 
 	adminpkg "github.com/brevio/brevio/internal/admin"
 	brainpkg "github.com/brevio/brevio/internal/brain"
+	cachingpkg "github.com/brevio/brevio/internal/caching"
+	euaiactpkg "github.com/brevio/brevio/internal/compliance/eu_ai_act"
 	"github.com/brevio/brevio/internal/connectors"
 	handspkg "github.com/brevio/brevio/internal/hands"
 	callpkg "github.com/brevio/brevio/internal/hands/call"
@@ -138,6 +140,10 @@ func main() {
 		deps.KillSwitchCheck = adminpkg.NewPgKillSwitchRepository(pool)
 		deps.SkillACLCheck = adminpkg.NewPgSkillACLRepository(pool)
 		deps.EQRepo = eqpkg.NewPgEQStrategyRepository(pool)
+		deps.EQService = eqpkg.NewEQService()
+		if eqABTracker, eqABErr := eqpkg.NewEQABTracker(pool); eqABErr == nil {
+			deps.EQABTracker = eqABTracker
+		}
 		deps.DemotionRepo = trustpkg.NewPgDemotionRepository(pool)
 		deps.IntelligenceRepo = brainpkg.NewPgIntelligenceRepository(pool)
 		deps.DecayRepo = memorypkg.NewPgDecayRepository(pool)
@@ -148,7 +154,9 @@ func main() {
 		deps.LatencyRepo = executorpkg.NewPgLatencyRepository(pool)
 		rawEmbedder := ragpkg.NewOpenAIEmbeddingProvider("", os.Getenv("OPENAI_API_KEY"))
 		cachedEmbedder := ragpkg.NewEmbeddingService(rawEmbedder)
-		ragpkg.ValidateEmbeddingDimensions(cachedEmbedder)
+		if err := ragpkg.ValidateEmbeddingDimensions(cachedEmbedder); err != nil {
+			log.Fatalf("failed to validate embedding dimensions: %v", err)
+		}
 		deps.EmbeddingProvider = cachedEmbedder
 		deps.CognitiveRepo = cognitionpkg.NewPgCognitiveRepository(pool)
 		deps.CallRepo = callpkg.NewPgCallRepository(pool)
@@ -236,7 +244,10 @@ func main() {
 		} else {
 			wmRDB := goredis.NewClient(wmOpts)
 			wmAdapter := workingmemorypkg.NewGoRedisAdapter(wmRDB)
-			wmRepo := workingmemorypkg.NewRepository(wmAdapter)
+			wmRepo, wmRepoErr := workingmemorypkg.NewRepository(wmAdapter)
+			if wmRepoErr != nil {
+				log.Fatalf("failed to create working memory repository: %v", wmRepoErr)
+			}
 			wmLogger := &wmLogAdapter{logger: logger}
 			wmSvc := workingmemorypkg.NewService(wmRepo, wmLogger)
 			deps.WorkingMemory = wmSvc
@@ -267,6 +278,15 @@ func main() {
 			"similarity_threshold": llmpkg.DefaultSemanticCacheConfig().SimilarityThreshold,
 			"ttl":                  llmpkg.DefaultSemanticCacheConfig().TTL.String(),
 		})
+
+		// Wire LLM cache bridge (L1→L2→L3→semantic).
+		cacheLayers := cachingpkg.NewService()
+		llmCacheBridge, bridgeErr := cachingpkg.NewLLMCacheBridge(semCache, cacheLayers)
+		if bridgeErr != nil {
+			log.Fatalf("failed to construct LLMCacheBridge: %v", bridgeErr)
+		}
+		deps.LLMCacheBridge = llmCacheBridge
+		logger.Info("llm_cache_bridge_initialized", map[string]any{"status": "active"})
 	}
 
 	// ── Constitutional AI + Citation Attribution (Plan 06) ─────────────────────
@@ -442,6 +462,44 @@ func main() {
 	deps.TrustSvc = trustpkg.NewService()
 	logger.Info("trust_service_initialized", map[string]any{"status": "active"})
 
+	// Wire world model repository.
+	if deps.Pool != nil {
+		wmRepo, wmRepoErr := brainpkg.NewPgWorldModelRepository(deps.Pool)
+		if wmRepoErr != nil {
+			log.Fatalf("failed to construct WorldModelRepository: %v", wmRepoErr)
+		}
+		deps.WorldModelRepo = wmRepo
+		logger.Info("world_model_repo_initialized", map[string]any{"status": "active"})
+	}
+
+	// Wire EU AI Act compliance services (Art. 9, 10, 73).
+	if deps.Pool != nil {
+		euRR, _ := euaiactpkg.NewRiskRegister(deps.Pool)
+		euDG, _ := euaiactpkg.NewDataGovernanceLog(deps.Pool)
+		euIL, _ := euaiactpkg.NewIncidentLog(deps.Pool)
+		deps.EUAIActRiskRegister = euRR
+		deps.EUAIActDataGov = euDG
+		deps.EUAIActIncidentLog = euIL
+		if euRR != nil && euDG != nil && euIL != nil {
+			euCAG, _ := euaiactpkg.NewConformityAssessmentGenerator(deps.Pool, euRR, euIL, euDG)
+			deps.EUAIActConformityGenerator = euCAG
+		}
+		logger.Info("eu_ai_act_services_initialized", map[string]any{"status": "active"})
+	}
+
+	// Wire Outcome Reward Model (ORM).
+	if anthropicKey := os.Getenv("ANTHROPIC_API_KEY"); anthropicKey != "" {
+		ormClient, ormErr := llmpkg.NewAnthropicClient(llmpkg.AnthropicConfig{
+			APIKey:  anthropicKey,
+			Timeout: 30 * time.Second,
+		})
+		if ormErr == nil {
+			var criticRepo brainpkg.CriticTraceRepository
+			deps.ORM = brainpkg.NewOutcomeRewardModel(ormClient, criticRepo)
+			logger.Info("orm_initialized", map[string]any{"status": "active", "model": "claude-haiku-4-5"})
+		}
+	}
+
 	// Wire KG service and retriever (Phase 5).
 	if deps.Pool != nil {
 		kgLogger := breviotemporal.NewKGLogger()
@@ -469,6 +527,38 @@ func main() {
 			logger.Info("gaia_cron_schedule_result", map[string]any{"note": cronErr.Error()})
 		} else {
 			logger.Info("gaia_cron_scheduled", map[string]any{"schedule": "0 23 * * 0"})
+		}
+	}
+
+	// Schedule world model expiry sweep cron (every hour).
+	{
+		cronOpts := temporalclient.StartWorkflowOptions{
+			ID:           "brevio-world-model-expiry-cron",
+			TaskQueue:    breviotemporal.TaskQueueCore,
+			CronSchedule: "0 * * * *",
+		}
+		_, cronErr := temporalClient.ExecuteWorkflow(context.Background(), cronOpts,
+			breviotemporal.WorldModelExpiryCronWorkflow)
+		if cronErr != nil {
+			logger.Info("world_model_cron_schedule_result", map[string]any{"note": cronErr.Error()})
+		} else {
+			logger.Info("world_model_cron_scheduled", map[string]any{"schedule": "0 * * * *"})
+		}
+	}
+
+	// Schedule EU AI Act compliance cron (daily at 02:00 UTC).
+	{
+		cronOpts := temporalclient.StartWorkflowOptions{
+			ID:           breviotemporal.EUAIActComplianceWorkflowID(),
+			TaskQueue:    breviotemporal.TaskQueueCore,
+			CronSchedule: breviotemporal.EUAIActCronSchedule,
+		}
+		_, cronErr := temporalClient.ExecuteWorkflow(context.Background(), cronOpts,
+			breviotemporal.EUAIActComplianceWorkflow)
+		if cronErr != nil {
+			logger.Info("eu_ai_act_cron_schedule_result", map[string]any{"note": cronErr.Error()})
+		} else {
+			logger.Info("eu_ai_act_cron_scheduled", map[string]any{"schedule": breviotemporal.EUAIActCronSchedule})
 		}
 	}
 

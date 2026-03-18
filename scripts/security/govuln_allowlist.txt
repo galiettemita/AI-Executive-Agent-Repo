@@ -1,13 +1,6 @@
 # Go 1.22 baseline allowlist for known vulnerabilities that are not patchable
 # without moving to newer Go toolchain releases. One ID per line.
-GO-2026-4341
-GO-2026-4340
-GO-2026-4337
-GO-2025-4175
-GO-2025-4155
-GO-2025-4013
-GO-2025-4011
-GO-2025-4010
+# Updated: Go 1.25.0 → 1.23.4. Above entries patched in 1.23.4 + crypto v0.35.0. Removed 2026-03-17.
 GO-2025-4009
 GO-2025-4008
 GO-2025-4007

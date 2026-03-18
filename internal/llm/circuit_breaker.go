@@ -81,9 +81,9 @@ func NewLLMCircuitBreaker(
 	name string,
 	cfg CircuitBreakerConfig,
 	metrics CircuitBreakerMetrics,
-) *LLMCircuitBreaker {
+) (*LLMCircuitBreaker, error) {
 	if inner == nil {
-		panic("llm.NewLLMCircuitBreaker: inner must not be nil")
+		return nil, fmt.Errorf("llm.NewLLMCircuitBreaker: inner must not be nil")
 	}
 	if metrics == nil {
 		metrics = &NoopCircuitBreakerMetrics{}
@@ -95,7 +95,7 @@ func NewLLMCircuitBreaker(
 		metrics:         metrics,
 		state:           StateClosed,
 		lastStateChange: time.Now(),
-	}
+	}, nil
 }
 
 // Complete routes the call through the circuit breaker.

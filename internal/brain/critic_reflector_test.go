@@ -199,6 +199,10 @@ func (m *mockCriticTraceRepo) Save(_ context.Context, output CriticOutput) error
 	return nil
 }
 
+func (m *mockCriticTraceRepo) StoreORMResult(_ context.Context, _, _ string, _ *OutcomeScore) error {
+	return nil
+}
+
 func TestCriticReflectorService_RepositorySaveAsync(t *testing.T) {
 	t.Parallel()
 

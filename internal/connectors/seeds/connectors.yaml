@@ -60,6 +60,9 @@ connectors:
   - { key: airtable, domain: data, risk_level: MEDIUM, data_class: confidential, mcp_server_url: https://mcp.unconfigured.local/airtable }
   - { key: postgres, domain: data, risk_level: ELEVATED, data_class: confidential, mcp_server_url: https://mcp.unconfigured.local/postgres }
   - { key: snowflake, domain: data, risk_level: ELEVATED, data_class: confidential, mcp_server_url: https://mcp.unconfigured.local/snowflake }
+  - { key: goals, domain: productivity, risk_level: MEDIUM, data_class: internal, mcp_server_url: https://mcp.unconfigured.local/goals }
+  - { key: wallet, domain: financial, risk_level: CRITICAL, data_class: restricted, mcp_server_url: https://mcp.unconfigured.local/wallet }
+  - { key: vision, domain: media, risk_level: LOW, data_class: internal, mcp_server_url: https://mcp.unconfigured.local/vision }
 tools:
   - { connector_key: google_calendar, tool_key: google_calendar.create_event, write: true, reversible: true, autonomy_floor: A2 }
   - { connector_key: google_gmail, tool_key: google_gmail.send_email, write: true, reversible: false, autonomy_floor: A1 }
@@ -125,3 +128,8 @@ tools:
   - { connector_key: airtable, tool_key: airtable.upsert_record, write: true, reversible: true, autonomy_floor: A1 }
   - { connector_key: postgres, tool_key: postgres.query, write: false, reversible: false, autonomy_floor: A1 }
   - { connector_key: snowflake, tool_key: snowflake.query, write: false, reversible: false, autonomy_floor: A1 }
+  - { connector_key: goals, tool_key: goals.create_milestone, write: true, reversible: true, autonomy_floor: A2 }
+  - { connector_key: goals, tool_key: goals.update_status, write: true, reversible: true, autonomy_floor: A3 }
+  - { connector_key: wallet, tool_key: wallet.get_balance, write: false, reversible: false, autonomy_floor: A3 }
+  - { connector_key: wallet, tool_key: wallet.create_payment_request, write: true, reversible: true, autonomy_floor: A0 }
+  - { connector_key: vision, tool_key: vision.analyze_video, write: false, reversible: false, autonomy_floor: A2 }

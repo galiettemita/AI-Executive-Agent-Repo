@@ -107,9 +107,9 @@ type Service struct {
 	retrievalEvals map[string]RetrievalEvalScore
 }
 
-func NewService(embedder EmbeddingProvider) *Service {
+func NewService(embedder EmbeddingProvider) (*Service, error) {
 	if embedder == nil {
-		panic("rag.NewService: embedder must not be nil — use MockEmbeddingProvider in tests")
+		return nil, fmt.Errorf("rag.NewService: embedder must not be nil")
 	}
 	return &Service{
 		embedder:       embedder,
@@ -122,7 +122,7 @@ func NewService(embedder EmbeddingProvider) *Service {
 		evalScores:     map[string]EvalScore{},
 		rerankers:      map[string]RerankerConfig{},
 		retrievalEvals: map[string]RetrievalEvalScore{},
-	}
+	}, nil
 }
 
 // WithAdaptiveGate attaches the adaptive RAG gate to the service.

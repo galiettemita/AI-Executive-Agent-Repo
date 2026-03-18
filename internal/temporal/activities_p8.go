@@ -7,6 +7,9 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/brevio/brevio/internal/compliance/eu_ai_act"
+	"github.com/google/uuid"
 )
 
 // ===================== FEDERATION ACTIVITY TYPES =====================
@@ -1101,6 +1104,22 @@ func (a *Activities) EvaluateLoadSheddingTierActivity(ctx context.Context, input
 	} else if input.CPUPercent > 80 || input.ErrorRate > 2 {
 		newTier = "D1"
 		reason = fmt.Sprintf("elevated: cpu=%.1f%% err=%.1f%%", input.CPUPercent, input.ErrorRate)
+	}
+
+	// EU AI Act Art. 73: record incident when error rate exceeds 15%.
+	if input.ErrorRate > 15 && a.euIncidentLog != nil {
+		wsID, parseErr := uuid.Parse(input.WorkspaceID)
+		if parseErr == nil {
+			go func() {
+				_, _ = a.euIncidentLog.RecordIncident(context.Background(), eu_ai_act.IncidentEntry{
+					WorkspaceID:   wsID,
+					IncidentType:  "high_error_rate",
+					TriggerMetric: fmt.Sprintf("error_rate=%.2f%%", input.ErrorRate),
+					Severity:      "high",
+					Description:   fmt.Sprintf("Error rate %.1f%% exceeded 15%% threshold", input.ErrorRate),
+				})
+			}()
+		}
 	}
 
 	// Get previous tier from DB.

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	wm "github.com/brevio/brevio/internal/workingmemory"
+	"github.com/stretchr/testify/require"
 )
 
 // --- in-process mock Redis ---
@@ -73,7 +74,8 @@ func (nopLogger) Error(string, ...any) {}
 func newTestService(t *testing.T) (*wm.Service, *mockRedis) {
 	t.Helper()
 	redis := newMockRedis()
-	repo := wm.NewRepository(redis)
+	repo, err := wm.NewRepository(redis)
+	require.NoError(t, err)
 	svc := wm.NewService(repo, nopLogger{})
 	return svc, redis
 }

@@ -9,7 +9,7 @@ import (
 
 // GenerateUUIDv7 produces an RFC 9562 UUIDv7 string.
 // Layout: 48-bit unix_ms | 4-bit version(7) | 12-bit rand_a | 2-bit variant(10) | 62-bit rand_b
-func GenerateUUIDv7() string {
+func GenerateUUIDv7() (string, error) {
 	var b [16]byte
 
 	// 48-bit millisecond timestamp
@@ -19,7 +19,7 @@ func GenerateUUIDv7() string {
 
 	// Fill remaining 10 bytes with crypto random
 	if _, err := rand.Read(b[6:]); err != nil {
-		panic(fmt.Sprintf("crypto/rand failed: %v", err))
+		return "", fmt.Errorf("database.GenerateUUIDv7: crypto/rand failed: %w", err)
 	}
 
 	// Set version 7 (bits 48-51)
@@ -34,5 +34,5 @@ func GenerateUUIDv7() string {
 		binary.BigEndian.Uint16(b[6:8]),
 		binary.BigEndian.Uint16(b[8:10]),
 		b[10:16],
-	)
+	), nil
 }

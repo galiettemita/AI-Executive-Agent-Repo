@@ -1,0 +1,142 @@
+[
+  {
+    "id": "mh_001",
+    "query": "What are the Q3 revenue figures for our top 3 customers, and how does their combined total compare to the same period last year?",
+    "min_hops": 2,
+    "expected_entities": ["Q3 revenue", "top 3 customers", "year-over-year comparison"],
+    "domain": "financial_analysis"
+  },
+  {
+    "id": "mh_002",
+    "query": "Find all outstanding invoices from Acme Corp, calculate the total amount due, and identify which are past 30 days overdue.",
+    "min_hops": 2,
+    "expected_entities": ["Acme Corp", "outstanding invoices", "overdue threshold"],
+    "domain": "invoice_management"
+  },
+  {
+    "id": "mh_003",
+    "query": "Identify all clauses in the MSA with GlobalTech that include liability caps, and compare them to the standard template we use.",
+    "min_hops": 2,
+    "expected_entities": ["GlobalTech", "MSA", "liability caps", "standard template"],
+    "domain": "contract_review"
+  },
+  {
+    "id": "mh_004",
+    "query": "List all deals closed by the enterprise sales team in Q4, group them by region, and show total ARR per region.",
+    "min_hops": 2,
+    "expected_entities": ["enterprise sales", "Q4 deals", "regional ARR"],
+    "domain": "crm_aggregation"
+  },
+  {
+    "id": "mh_005",
+    "query": "Find all meetings this week with external stakeholders that have open action items from previous calls with those same companies.",
+    "min_hops": 3,
+    "expected_entities": ["external stakeholders", "meetings this week", "open action items", "previous calls"],
+    "domain": "calendar_cross_reference"
+  },
+  {
+    "id": "mh_006",
+    "query": "Summarize the three most recent board meeting minutes and extract all decisions related to product roadmap changes.",
+    "min_hops": 2,
+    "expected_entities": ["board meeting minutes", "product roadmap", "decisions"],
+    "domain": "multi_document_synthesis"
+  },
+  {
+    "id": "mh_007",
+    "query": "Pull all employees hired in the last 90 days across EMEA offices and flag any whose onboarding checklists are incomplete.",
+    "min_hops": 2,
+    "expected_entities": ["EMEA employees", "90-day hires", "onboarding checklists"],
+    "domain": "hr_compliance"
+  },
+  {
+    "id": "mh_008",
+    "query": "Find all breaking API changes introduced in v2.x releases and cross-reference them with customer tickets filed in the same period.",
+    "min_hops": 3,
+    "expected_entities": ["v2.x releases", "breaking API changes", "customer tickets"],
+    "domain": "technical_documentation"
+  },
+  {
+    "id": "mh_009",
+    "query": "Identify all data processing addendums signed with EU customers and flag any that predate GDPR and may need renegotiation.",
+    "min_hops": 2,
+    "expected_entities": ["EU customers", "data processing addendums", "GDPR", "renegotiation"],
+    "domain": "legal_policy"
+  },
+  {
+    "id": "mh_010",
+    "query": "Match all bank transactions from October against approved expense reports and identify any discrepancies over $500.",
+    "min_hops": 2,
+    "expected_entities": ["October transactions", "expense reports", "discrepancies"],
+    "domain": "financial_reconciliation"
+  },
+  {
+    "id": "mh_011",
+    "query": "Find all engineering projects that are currently behind schedule, identify the blockers mentioned in the last standup notes, and list the project owners.",
+    "min_hops": 3,
+    "expected_entities": ["engineering projects", "behind schedule", "blockers", "standup notes", "project owners"],
+    "domain": "project_status"
+  },
+  {
+    "id": "mh_012",
+    "query": "Compare the SLAs offered by our top three cloud vendors for storage services and flag any that fall below our internal minimum requirements.",
+    "min_hops": 2,
+    "expected_entities": ["cloud vendors", "SLAs", "storage services", "minimum requirements"],
+    "domain": "vendor_comparison"
+  },
+  {
+    "id": "mh_013",
+    "query": "Pull the feature comparison matrix for our Pro and Enterprise tiers, then identify which Enterprise features were requested most in support tickets last quarter.",
+    "min_hops": 2,
+    "expected_entities": ["Pro tier", "Enterprise tier", "feature comparison", "support tickets"],
+    "domain": "product_comparison"
+  },
+  {
+    "id": "mh_014",
+    "query": "List all enterprise accounts with NPS scores below 7 in the last survey, and find their most recent support escalations.",
+    "min_hops": 2,
+    "expected_entities": ["enterprise accounts", "NPS scores", "support escalations"],
+    "domain": "customer_health"
+  },
+  {
+    "id": "mh_015",
+    "query": "Show me all departments that exceeded their Q3 budget by more than 10%, and pull the line items that caused the overrun.",
+    "min_hops": 2,
+    "expected_entities": ["departments", "Q3 budget", "budget overrun", "line items"],
+    "domain": "budget_analysis"
+  },
+  {
+    "id": "mh_016",
+    "query": "Find all jurisdictions where we operate and cross-reference them with the latest regulatory updates affecting our industry published in the last 6 months.",
+    "min_hops": 3,
+    "expected_entities": ["jurisdictions", "regulatory updates", "industry", "6-month window"],
+    "domain": "regulatory_compliance"
+  },
+  {
+    "id": "mh_017",
+    "query": "Prepare a briefing on GlobalTech: pull their recent support tickets, open renewals, and last three QBR notes.",
+    "min_hops": 3,
+    "expected_entities": ["GlobalTech", "support tickets", "renewals", "QBR notes"],
+    "domain": "meeting_prep"
+  },
+  {
+    "id": "mh_018",
+    "query": "Identify all customers using deprecated endpoints that will be removed in the v3.0 release, and pull their account owner contact details.",
+    "min_hops": 2,
+    "expected_entities": ["deprecated endpoints", "v3.0 release", "customers", "account owners"],
+    "domain": "release_impact"
+  },
+  {
+    "id": "mh_019",
+    "query": "List all vendor contracts expiring in the next 60 days, their annual value, and whether the vendor has submitted a renewal proposal.",
+    "min_hops": 2,
+    "expected_entities": ["vendor contracts", "60-day expiry", "annual value", "renewal proposals"],
+    "domain": "procurement"
+  },
+  {
+    "id": "mh_020",
+    "query": "Produce a weekly sales digest: new deals closed, pipeline changes over $100K, and any accounts moved to churn risk this week.",
+    "min_hops": 3,
+    "expected_entities": ["new deals", "pipeline changes", "churn risk", "weekly digest"],
+    "domain": "executive_summary"
+  }
+]

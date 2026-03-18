@@ -285,6 +285,39 @@ func NewWorkerWithDeps(c client.Client, taskQueue string, deps ActivityDeps) wor
 	w.RegisterActivity(activities.DetectProactiveSignalsActivity)
 	w.RegisterActivity(activities.BuildAndDispatchProactiveOfferActivity)
 
+	// World model expiry sweep.
+	w.RegisterWorkflow(WorldModelExpiryCronWorkflow)
+	w.RegisterActivity(activities.WorldModelExpirySweepActivity)
+	w.RegisterActivity(activities.WorldModelExpirySweepWorkspaceListActivity)
+
+	// EQ A/B promotion check.
+	w.RegisterActivity(activities.EQPromotionCheckActivity)
+
+	// DSR GDPR erasure cascade.
+	w.RegisterWorkflow(DSRFullErasureWorkflow)
+	w.RegisterActivity(activities.DSRDeleteEpisodicMemoryActivity)
+	w.RegisterActivity(activities.DSRDeleteKGTriplesActivity)
+	w.RegisterActivity(activities.DSRDeleteVectorChunksActivity)
+	w.RegisterActivity(activities.DSRRedactExecutionLogsActivity)
+	w.RegisterActivity(activities.DSRNullifyPIIActivity)
+	w.RegisterActivity(activities.DSRRevokeConsentActivity)
+	w.RegisterActivity(activities.DSRConfirmationActivity)
+	w.RegisterActivity(activities.DSRSLAMonitorActivity)
+
+	// EU AI Act compliance (Art. 9, 10, 73).
+	w.RegisterWorkflow(EUAIActComplianceWorkflow)
+	w.RegisterActivity(activities.EUAIActAggregateRisksActivity)
+	w.RegisterActivity(activities.EUAIActCheckIncidentThresholdsActivity)
+	w.RegisterActivity(activities.EUAIActGenerateConformityEvidenceActivity)
+
+	// MCP tool discovery.
+	w.RegisterWorkflow(MCPToolDiscoveryWorkflow)
+	w.RegisterActivity(activities.MCPToolDiscoveryActivity)
+
+	// A2A agent heartbeat.
+	w.RegisterWorkflow(AgentHeartbeatWorkflow)
+	w.RegisterActivity(activities.AgentHeartbeatActivity)
+
 	return w
 }
 

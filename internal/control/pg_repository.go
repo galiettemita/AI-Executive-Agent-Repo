@@ -193,7 +193,11 @@ func (r *PgReceiptRepository) RevokeReceipt(ctx context.Context, receiptID, reas
 
 func (r *PgReceiptRepository) StoreGateDecision(ctx context.Context, decision *GateDecisionRecord) error {
 	if decision.ID == "" {
-		decision.ID = database.GenerateUUIDv7()
+		id, err := database.GenerateUUIDv7()
+		if err != nil {
+			return fmt.Errorf("generate gate decision ID: %w", err)
+		}
+		decision.ID = id
 	}
 	if decision.CreatedAt.IsZero() {
 		decision.CreatedAt = time.Now().UTC()
@@ -219,7 +223,11 @@ func (r *PgReceiptRepository) StoreGateDecision(ctx context.Context, decision *G
 
 func (r *PgReceiptRepository) StoreLedgerEntry(ctx context.Context, entry *LedgerEntry) error {
 	if entry.ID == "" {
-		entry.ID = database.GenerateUUIDv7()
+		id, err := database.GenerateUUIDv7()
+		if err != nil {
+			return fmt.Errorf("generate ledger entry ID: %w", err)
+		}
+		entry.ID = id
 	}
 	if entry.CreatedAt.IsZero() {
 		entry.CreatedAt = time.Now().UTC()
@@ -243,7 +251,11 @@ func (r *PgReceiptRepository) StoreLedgerEntry(ctx context.Context, entry *Ledge
 
 func (r *PgReceiptRepository) StoreBudgetEvent(ctx context.Context, event *BudgetEvent) error {
 	if event.ID == "" {
-		event.ID = database.GenerateUUIDv7()
+		id, err := database.GenerateUUIDv7()
+		if err != nil {
+			return fmt.Errorf("generate budget event ID: %w", err)
+		}
+		event.ID = id
 	}
 	if event.CreatedAt.IsZero() {
 		event.CreatedAt = time.Now().UTC()
