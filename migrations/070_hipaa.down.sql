@@ -1,0 +1,11 @@
+DROP TABLE IF EXISTS workspace_settings;
+DROP INDEX IF EXISTS idx_hipaa_breach_log_detected_at;
+DROP INDEX IF EXISTS idx_hipaa_breach_log_workspace_id;
+DROP TABLE IF EXISTS hipaa_breach_log;
+DROP INDEX IF EXISTS idx_hipaa_access_log_workspace_id;
+DROP INDEX IF EXISTS idx_hipaa_access_log_accessed_at;
+DROP INDEX IF EXISTS idx_hipaa_access_log_user_id;
+DROP TABLE IF EXISTS hipaa_access_log;
+DROP INDEX IF EXISTS idx_baa_active;
+DROP INDEX IF EXISTS idx_baa_workspace_id;
+DROP TABLE IF EXISTS business_associate_agreements;

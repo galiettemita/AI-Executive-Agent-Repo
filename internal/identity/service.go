@@ -41,6 +41,7 @@ type Workspace struct {
 	MemoryNamespace      string
 	DomainAutonomyJSON   string
 	AllowedConnectorKeys []string
+	Region               string // "us-east-1" or "eu-west-1"; default "us-east-1"
 	CreatedAt            time.Time
 	UpdatedAt            time.Time
 }

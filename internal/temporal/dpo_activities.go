@@ -2,6 +2,7 @@ package temporal
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"go.temporal.io/sdk/activity"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/brevio/brevio/internal/compliance/eu_ai_act"
 	"github.com/brevio/brevio/internal/dpo"
+	"github.com/brevio/brevio/internal/learning"
 	"github.com/google/uuid"
 )
 
@@ -72,16 +74,10 @@ type DPOReadinessResult struct {
 }
 
 // StartDPORoundActivity fetches unused pairs, submits fine-tune job, creates round record.
+// Includes a pre-round DP privacy budget check (P3-03).
 func (a *Activities) StartDPORoundActivity(ctx context.Context, in dpo.DPORoundInput) (dpo.DPORound, error) {
 	if a.dpoService == nil {
 		return dpo.DPORound{}, temporal.NewNonRetryableApplicationError("dpoService not configured", "NOT_CONFIGURED", nil)
-	}
-
-	baselineScore := 0.75
-	if a.scoreStore != nil {
-		if score, err := a.scoreStore.RollingPassRate(ctx, "", 7); err == nil {
-			baselineScore = score
-		}
 	}
 
 	var wsIDPtr *uuid.UUID
@@ -91,6 +87,23 @@ func (a *Activities) StartDPORoundActivity(ctx context.Context, in dpo.DPORoundI
 			return dpo.DPORound{}, temporal.NewNonRetryableApplicationError("invalid workspace_id", "INVALID_INPUT", err)
 		}
 		wsIDPtr = &wsID
+
+		// P3-03: Pre-round privacy budget check.
+		if a.dpAccountant != nil {
+			budget, budgetErr := a.dpAccountant.GetBudget(ctx, wsID)
+			if budgetErr == nil && budget != nil && budget.Halted {
+				return dpo.DPORound{}, temporal.NewNonRetryableApplicationError(
+					fmt.Sprintf("DPO halted for workspace %s: privacy budget exhausted (epsilon=%.2f)", wsID, budget.CumulativeEpsilon),
+					"PRIVACY_BUDGET_EXHAUSTED", learning.ErrPrivacyBudgetExhausted)
+			}
+		}
+	}
+
+	baselineScore := 0.75
+	if a.scoreStore != nil {
+		if score, err := a.scoreStore.RollingPassRate(ctx, "", 7); err == nil {
+			baselineScore = score
+		}
 	}
 
 	round, err := a.dpoService.StartDPORound(ctx, wsIDPtr, baselineScore)
@@ -101,6 +114,7 @@ func (a *Activities) StartDPORoundActivity(ctx context.Context, in dpo.DPORoundI
 }
 
 // PollDPOJobActivity polls the fine-tune API until job completes.
+// Includes post-round DP privacy accounting (P3-03).
 func (a *Activities) PollDPOJobActivity(ctx context.Context, round dpo.DPORound) (string, error) {
 	if a.dpoService == nil {
 		return "", temporal.NewNonRetryableApplicationError("dpoService not configured", "NOT_CONFIGURED", nil)
@@ -112,6 +126,25 @@ func (a *Activities) PollDPOJobActivity(ctx context.Context, round dpo.DPORound)
 		return "", fmt.Errorf("PollDPOJobActivity: %w", err)
 	}
 	_ = a.dpoService.RecordRoundComplete(ctx, round.ID, checkpointID)
+
+	// P3-03: Post-round DP privacy accounting.
+	if a.dpAccountant != nil && round.WorkspaceID != nil {
+		numSteps := round.PairCount // approximate: 1 step per pair
+		if numSteps < 1 {
+			numSteps = 100
+		}
+		dpErr := a.dpAccountant.RecordRound(ctx, *round.WorkspaceID, learning.DPOSigma, learning.DPOSamplingRate, numSteps)
+		if dpErr != nil {
+			if errors.Is(dpErr, learning.ErrPrivacyBudgetExhausted) {
+				activity.GetLogger(ctx).Warn("privacy budget exhausted, DPO halted",
+					"workspace_id", round.WorkspaceID.String())
+				// Graceful halt — not a retry error.
+			} else {
+				activity.GetLogger(ctx).Error("dp accounting error", "error", dpErr)
+			}
+		}
+	}
+
 	return checkpointID, nil
 }
 

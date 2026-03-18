@@ -3,7 +3,16 @@ package temporal
 import (
 	"fmt"
 
+	caipkg "github.com/brevio/brevio/internal/compliance/cai"
+	consentpkg "github.com/brevio/brevio/internal/compliance/consent"
+	hipaapkg "github.com/brevio/brevio/internal/compliance/hipaa"
+	soc2pkg "github.com/brevio/brevio/internal/compliance/soc2"
+	evaluationpkg "github.com/brevio/brevio/internal/evaluation"
+	learningpkg "github.com/brevio/brevio/internal/learning"
+	dpobatchpkg "github.com/brevio/brevio/internal/learning/dpo"
+	federatedpkg "github.com/brevio/brevio/internal/learning/federated"
 	memorypkg "github.com/brevio/brevio/internal/memory"
+	redteampkg "github.com/brevio/brevio/internal/security/redteam"
 	"github.com/brevio/brevio/internal/workflows"
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/worker"
@@ -317,6 +326,75 @@ func NewWorkerWithDeps(c client.Client, taskQueue string, deps ActivityDeps) wor
 	// A2A agent heartbeat.
 	w.RegisterWorkflow(AgentHeartbeatWorkflow)
 	w.RegisterActivity(activities.AgentHeartbeatActivity)
+
+	// Red-team adversarial pipeline (P3-01).
+	w.RegisterWorkflow(redteampkg.RedTeamWorkflow)
+	if deps.RedTeamRunner != nil {
+		rtActivities := &redteampkg.Activities{Runner: deps.RedTeamRunner}
+		w.RegisterActivity(rtActivities.RunGCGAttacksActivity)
+		w.RegisterActivity(rtActivities.RunAutoDanActivity)
+		w.RegisterActivity(rtActivities.RunHarmBenchActivity)
+		w.RegisterActivity(rtActivities.PersistReportActivity)
+		w.RegisterActivity(rtActivities.CheckAutoHardeningActivity)
+	}
+
+	// Membership inference audit (P3-03).
+	w.RegisterWorkflow(learningpkg.MembershipInferenceWorkflow)
+	w.RegisterActivity(learningpkg.RunMembershipInferenceActivity)
+
+	// Consent revocation erasure (P3-04).
+	w.RegisterWorkflow(consentpkg.ConsentRevocationWorkflow)
+	w.RegisterActivity(consentpkg.IdentifyDataForErasureActivity)
+	w.RegisterActivity(consentpkg.ErasePreferenceDataActivity)
+	w.RegisterActivity(consentpkg.EraseAnalyticsDataActivity)
+	w.RegisterActivity(consentpkg.EraseMarketingDataActivity)
+	w.RegisterActivity(consentpkg.AuditRevocationCompleteActivity)
+
+	// HIPAA breach workflow (P3-06).
+	w.RegisterWorkflow(hipaapkg.HIPAABreachWorkflow)
+	w.RegisterWorkflow(hipaapkg.HIPAALogRetentionWorkflow)
+	w.RegisterActivity(hipaapkg.CreateBreachRecordActivity)
+	w.RegisterActivity(hipaapkg.NotifyComplianceTeamActivity)
+	w.RegisterActivity(hipaapkg.ContainBreachActivity)
+	w.RegisterActivity(hipaapkg.EscalateBreachActivity)
+	w.RegisterActivity(hipaapkg.CleanupOldHIPAALogsActivity)
+
+	// Compliance evidence collection (P3-05).
+	w.RegisterWorkflow(soc2pkg.ComplianceEvidenceWorkflow)
+	w.RegisterActivity(soc2pkg.CollectCC61Activity)
+	w.RegisterActivity(soc2pkg.CollectCC66Activity)
+	w.RegisterActivity(soc2pkg.CollectCC72Activity)
+	w.RegisterActivity(soc2pkg.CollectCC92Activity)
+	w.RegisterActivity(soc2pkg.CollectPI14Activity)
+	w.RegisterActivity(soc2pkg.CollectISO27001Activity)
+
+	// Continual learning: forgetting detector (P3-11).
+	w.RegisterWorkflow(learningpkg.ForgettingDetectorWorkflow)
+	w.RegisterActivity(learningpkg.UpdateBaselinesActivity)
+	w.RegisterActivity(learningpkg.DetectForgettingActivity)
+	w.RegisterActivity(learningpkg.RunAnchorPromotionActivity)
+
+	// Shadow evaluation & MT-Bench (P3-12).
+	w.RegisterWorkflow(evaluationpkg.ShadowEvalWorkflow)
+	w.RegisterActivity(evaluationpkg.ScoreChampionActivity)
+	w.RegisterActivity(evaluationpkg.ScoreChallengerActivity)
+	w.RegisterActivity(evaluationpkg.LLMJudgeEvalActivity)
+	w.RegisterActivity(evaluationpkg.RecordShadowResultActivity)
+	w.RegisterWorkflow(evaluationpkg.MTBenchRunnerWorkflow)
+	w.RegisterActivity(evaluationpkg.RunMTBenchActivity)
+
+	// DPO batch processing (P3-10).
+	w.RegisterWorkflow(dpobatchpkg.DPOBatchWorkflow)
+	w.RegisterActivity(dpobatchpkg.ProcessQueuedPairsActivity)
+
+	// Constitutional AI principle discovery (P3-13).
+	w.RegisterWorkflow(caipkg.ConstitutionalPrincipleDiscoveryWorkflow)
+	w.RegisterActivity(caipkg.RunDiscoveryActivity)
+	w.RegisterActivity(caipkg.NotifyAdminActivity)
+
+	// Federated fine-tuning (P3-14).
+	w.RegisterWorkflow(federatedpkg.FederatedFineTuningWorkflow)
+	w.RegisterActivity(federatedpkg.RunFederatedRoundActivity)
 
 	return w
 }

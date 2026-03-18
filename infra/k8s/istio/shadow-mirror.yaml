@@ -1,0 +1,29 @@
+# Traffic mirroring: Istio mirrors 5% of production REQUESTS to brain-canary.
+# The shadow receiver (see Prompt 10, Task B2) independently runs BOTH the champion
+# and challenger models on the mirrored request, then compares results.
+# This avoids the need for response-level header injection, which Istio does not support.
+# SHADOW_EVAL_ENABLED env var on the canary pod enables/disables shadow processing.
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: brain-shadow
+  namespace: brevio
+spec:
+  hosts:
+    - brain
+  http:
+    - match:
+        - headers:
+            x-shadow-eval-enabled:
+              exact: "true"
+      mirror:
+        host: brain-canary
+        port:
+          number: 8080
+      mirrorPercentage:
+        value: 5.0
+      route:
+        - destination:
+            host: brain
+            port:
+              number: 8080

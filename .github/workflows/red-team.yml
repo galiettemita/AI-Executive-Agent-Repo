@@ -1,0 +1,23 @@
+name: Red Team CI Gate
+on:
+  pull_request:
+    paths:
+      - 'brain/guardrails/**'
+      - 'control/**'
+      - 'internal/security/**'
+
+jobs:
+  harmbench:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+      - name: Run HarmBench CI check
+        run: go test ./internal/security/redteam/... -run TestHarmBenchCIGate -v -timeout 30m
+        env:
+          CI: "true"
+          DATABASE_URL: ${{ secrets.CI_DATABASE_URL }}
+          INTERNAL_REDTEAM_KEY: ${{ secrets.INTERNAL_REDTEAM_KEY }}

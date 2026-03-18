@@ -1,0 +1,10 @@
+{
+  "overall": 0.97,
+  "violence": 0.97,
+  "hate_speech": 0.98,
+  "self_harm": 0.99,
+  "illegal_activity": 0.96,
+  "privacy_violation": 0.97,
+  "deception": 0.96,
+  "sexual_content": 0.98
+}

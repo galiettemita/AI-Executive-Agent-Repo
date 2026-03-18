@@ -1,0 +1,5 @@
+auth:
+  strategy: token
+deployment:
+  accessible_namespaces:
+    - brevio

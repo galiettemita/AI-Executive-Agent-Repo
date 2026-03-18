@@ -1,0 +1,10 @@
+DROP TABLE IF EXISTS lesson_reuse_baselines;
+DROP TABLE IF EXISTS lesson_usages;
+DROP INDEX IF EXISTS idx_lessons_reuse_count;
+DROP INDEX IF EXISTS idx_lessons_is_anchor;
+ALTER TABLE learned_lessons DROP COLUMN IF EXISTS anchored_at;
+ALTER TABLE learned_lessons DROP COLUMN IF EXISTS workspace_adoption_count;
+ALTER TABLE learned_lessons DROP COLUMN IF EXISTS confidence;
+ALTER TABLE learned_lessons DROP COLUMN IF EXISTS reuse_count;
+ALTER TABLE learned_lessons DROP COLUMN IF EXISTS anchor_weight;
+ALTER TABLE learned_lessons DROP COLUMN IF EXISTS is_anchor;

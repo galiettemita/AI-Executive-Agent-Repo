@@ -22,7 +22,11 @@ import (
 	"github.com/brevio/brevio/internal/a2a"
 	"github.com/brevio/brevio/internal/benchmark"
 	"github.com/brevio/brevio/internal/browser"
+	consentpkg "github.com/brevio/brevio/internal/compliance/consent"
+	learningpkg "github.com/brevio/brevio/internal/learning"
+	"github.com/brevio/brevio/internal/security/redteam"
 	"github.com/brevio/brevio/internal/security/sandbox"
+	watermarkpkg "github.com/brevio/brevio/internal/watermark"
 	"github.com/brevio/brevio/internal/observability"
 	"github.com/brevio/brevio/internal/cognition"
 	"github.com/brevio/brevio/internal/delegation"
@@ -527,6 +531,20 @@ type ActivityDeps struct {
 
 	// Paged infinite context manager factory.
 	PagedContextFactory func(sessionID, workspaceID string) *memory.PagedContextManager
+
+	// Red-team runner (P3-01).
+	RedTeamRunner *redteam.RedTeamRunner
+
+	// DP accountant (P3-03).
+	DPAccountant *learningpkg.RDPAccountant
+
+	// Watermarking (P3-02).
+	C2PAWatermarker   *watermarkpkg.C2PAContentWatermarker
+	SemanticWatermark *watermarkpkg.SemanticWatermarker
+	ProvenanceStore   *watermarkpkg.ProvenanceStore
+
+	// Consent middleware (P3-04).
+	ConsentMiddleware *consentpkg.PurposeLimitationMiddleware
 }
 
 // ProductionQualityGauge records the rolling quality score to Prometheus.
@@ -687,6 +705,17 @@ type Activities struct {
 	// Per-tool cost recorder.
 	toolCostRecorder *mcp.ToolCostRecorder
 
+	// Watermarking (P3-02).
+	c2paWatermarker    *watermarkpkg.C2PAContentWatermarker
+	semanticWatermark  *watermarkpkg.SemanticWatermarker
+	provenanceStore    *watermarkpkg.ProvenanceStore
+
+	// DP accountant (P3-03).
+	dpAccountant *learningpkg.RDPAccountant
+
+	// Consent middleware (P3-04).
+	consentMiddleware *consentpkg.PurposeLimitationMiddleware
+
 	// Observability counters for outbox dispatch.
 	outboxDispatched atomic.Int64
 	outboxFailed     atomic.Int64
@@ -772,6 +801,11 @@ func NewActivitiesWithProdDeps(deps ActivityDeps) *Activities {
 		mcpDiscovery:          deps.MCPDiscovery,
 		agentMarketplace:     deps.AgentMarketplace,
 		toolCostRecorder:     deps.ToolCostRecorder,
+		c2paWatermarker:      deps.C2PAWatermarker,
+		semanticWatermark:    deps.SemanticWatermark,
+		provenanceStore:      deps.ProvenanceStore,
+		dpAccountant:         deps.DPAccountant,
+		consentMiddleware:    deps.ConsentMiddleware,
 	}
 }
 
@@ -1134,6 +1168,19 @@ func (a *Activities) ExecuteToolActivity(ctx context.Context, input ExecuteToolI
 		}
 	}
 
+	// P3-04: Purpose limitation consent check before tool execution.
+	if a.consentMiddleware != nil {
+		wsUUID, parseErr := uuid.Parse(input.WorkspaceID)
+		if parseErr == nil {
+			// Use a nil user ID — in the executor pipeline user ID is not available;
+			// the consent check uses workspace-level consent as a proxy.
+			dataCategory := inferDataCategory(input.ToolKey)
+			if consentErr := a.consentMiddleware.CheckToolConsent(ctx, wsUUID, uuid.Nil, input.ToolKey, dataCategory); consentErr != nil {
+				return nil, fmt.Errorf("CONSENT_REQUIRED: %w", consentErr)
+			}
+		}
+	}
+
 	payloadHash := hashKey(input.WorkspaceID + "::" + input.ToolKey + "::" + input.IdempotencyKey)
 
 	// Resolve OAuth token for this tool key if not already set.
@@ -1401,6 +1448,41 @@ func (a *Activities) SynthesizeResponseActivity(ctx context.Context, input Synth
 			wsID, parseErr := uuid.Parse(input.WorkspaceID)
 			if parseErr == nil {
 				_ = a.eqABTracker.RecordResponseQuality(ctx, wsID, input.MessageID, 0.5, eqWasEnabled)
+			}
+		}
+
+		// ── Watermarking (P3-02) ─────────────────────────────────────────────────
+		if a.c2paWatermarker != nil {
+			wsID, parseErr := uuid.Parse(input.WorkspaceID)
+			if parseErr == nil {
+				reqID := uuid.New()
+				wmMeta := watermarkpkg.WatermarkMeta{
+					ModelID:     "claude-sonnet-4-6",
+					WorkspaceID: wsID,
+					RequestID:   reqID,
+					Timestamp:   time.Now(),
+				}
+
+				originalText := responseText
+
+				// Always apply C2PA content-level watermark.
+				tagged, tagErr := a.c2paWatermarker.Tag(ctx, responseText, wmMeta)
+				if tagErr == nil {
+					responseText = tagged
+				}
+
+				// Apply semantic watermark for longer responses.
+				if a.semanticWatermark != nil && len(originalText) > 500 {
+					watermarked, swErr := a.semanticWatermark.Watermark(ctx, responseText, wmMeta)
+					if swErr == nil {
+						responseText = watermarked
+					}
+				}
+
+				// Record provenance.
+				if a.provenanceStore != nil {
+					_ = a.provenanceStore.Record(ctx, originalText, responseText, wmMeta)
+				}
 			}
 		}
 
@@ -1921,6 +2003,26 @@ func (a *Activities) ExecuteFederationSyncActivity(ctx context.Context, input Fe
 func hashKey(input string) string {
 	sum := sha256.Sum256([]byte(input))
 	return hex.EncodeToString(sum[:16])
+}
+
+// inferDataCategory maps a tool key to a consent data category.
+func inferDataCategory(toolKey string) string {
+	lower := strings.ToLower(toolKey)
+	switch {
+	case strings.Contains(lower, "finance") || strings.Contains(lower, "payment") ||
+		strings.Contains(lower, "invoice") || strings.Contains(lower, "billing"):
+		return "financial"
+	case strings.Contains(lower, "health") || strings.Contains(lower, "medical"):
+		return "health"
+	case strings.Contains(lower, "analytics") || strings.Contains(lower, "metric") ||
+		strings.Contains(lower, "report"):
+		return "analytics"
+	case strings.Contains(lower, "marketing") || strings.Contains(lower, "campaign") ||
+		strings.Contains(lower, "newsletter"):
+		return "marketing"
+	default:
+		return "general"
+	}
 }
 
 // --- Intelligence pipeline activity types (P7) ---

@@ -1,6 +1,9 @@
 package security
 
-import "time"
+import (
+	"os"
+	"time"
+)
 
 type MTLSCertificatePolicy struct {
 	CAProvider          string
@@ -26,4 +29,17 @@ func InternalServiceIdentities() []string {
 		"executor.brevio.internal",
 		"canvas.brevio.internal",
 	}
+}
+
+// IsIstioMTLSEnabled returns true when Istio handles inter-service mTLS.
+// When enabled, manual mTLS cert provisioning for inter-service calls is skipped;
+// cert_rotator remains active for external API client certificates (Anthropic, OpenAI, etc.).
+func IsIstioMTLSEnabled() bool {
+	return os.Getenv("ISTIO_MTLS_ENABLED") == "true"
+}
+
+// InternalMTLSRequired returns true if manual mTLS certs are needed for inter-service comms.
+// Returns false when Istio handles mTLS via sidecar injection.
+func InternalMTLSRequired() bool {
+	return !IsIstioMTLSEnabled()
 }

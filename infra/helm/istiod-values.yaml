@@ -1,0 +1,17 @@
+pilot:
+  resources:
+    requests:
+      cpu: 500m
+      memory: 2048Mi
+  env:
+    PILOT_ENABLE_WORKLOAD_ENTRY_AUTOREGISTRATION: "true"
+
+meshConfig:
+  accessLogFile: /dev/stdout
+  enableTracing: true
+  defaultConfig:
+    tracing:
+      zipkin:
+        address: jaeger-collector.monitoring:9411
+  outboundTrafficPolicy:
+    mode: REGISTRY_ONLY

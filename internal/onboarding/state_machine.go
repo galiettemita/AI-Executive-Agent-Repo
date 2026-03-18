@@ -13,6 +13,7 @@ const (
 	StageWelcome      = "welcome"
 	StageDiscovery    = "discovery"
 	StageOAuthConnect = "oauth_connect"
+	StageConsentGrant = "consent_grant"
 	StageCalibration  = "calibration"
 	StageFirstValue   = "first_value"
 	StageWrapUp       = "wrap_up"
@@ -22,10 +23,17 @@ var stageOrder = []string{
 	StageWelcome,
 	StageDiscovery,
 	StageOAuthConnect,
+	StageConsentGrant,
 	StageCalibration,
 	StageFirstValue,
 	StageWrapUp,
 }
+
+// ConsentRequiredPurposes defines which consent purposes must be granted
+// during the consent_grant onboarding stage. executive_assistance is required;
+// all others are optional.
+var ConsentRequiredPurposes = []string{"executive_assistance"}
+var ConsentOptionalPurposes = []string{"analytics", "fine_tuning", "marketing"}
 
 // OnboardingSession tracks progress through the onboarding funnel.
 type OnboardingSession struct {
@@ -104,6 +112,13 @@ func (s *OnboardingService) AdvanceStage(sessionID string, answers map[string]st
 	// Record answers for the current stage.
 	for k, v := range answers {
 		session.StageAnswers[session.CurrentStage+"."+k] = v
+	}
+
+	// Block consent_grant stage unless executive_assistance consent is granted.
+	if session.CurrentStage == StageConsentGrant {
+		if answers["executive_assistance"] != "granted" {
+			return fmt.Errorf("executive_assistance consent is required to proceed")
+		}
 	}
 
 	session.CompletedStages = append(session.CompletedStages, session.CurrentStage)

@@ -15,6 +15,7 @@ func RequiredSecretKeys() []string {
 		"oauth_client_secret_microsoft",
 		"oauth_client_secret_slack",
 		"oauth_state_signing_key",
+		"watermark_hmac_key",
 	}
 }
 

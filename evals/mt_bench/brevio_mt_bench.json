@@ -1,0 +1,1282 @@
+[
+  {
+    "id": "writing_01",
+    "category": "writing",
+    "turns": [
+      {
+        "turn": 1,
+        "user": "Draft a concise email from the CEO to all employees announcing a 15% workforce reduction, emphasizing empathy, transparency about the business reasons, and outlining next steps for affected and remaining employees.",
+        "reference": "Should include empathetic tone, clear business rationale, specific support for affected employees (severance, outplacement), reassurance for remaining staff, and a concrete timeline."
+      },
+      {
+        "turn": 2,
+        "user": "Now adapt this email into a version specifically for the board of directors that focuses on the financial impact, expected savings, and strategic repositioning rather than the emotional tone.",
+        "reference": "Should shift to a professional, data-oriented tone with projected cost savings, timeline to profitability impact, strategic rationale, and risk mitigation measures while remaining respectful about the human element."
+      }
+    ]
+  },
+  {
+    "id": "writing_02",
+    "category": "writing",
+    "turns": [
+      {
+        "turn": 1,
+        "user": "Write a one-page executive memo summarizing Q3 performance for a SaaS company that missed revenue targets by 8% but exceeded user growth targets by 12%. The memo should be balanced and action-oriented.",
+        "reference": "Should present both metrics clearly, explain the divergence between revenue and growth, propose corrective actions for revenue, and frame user growth as a leading indicator. Professional memo format expected."
+      },
+      {
+        "turn": 2,
+        "user": "Add a section to the memo that proposes three specific pricing strategy adjustments to close the revenue gap in Q4, with estimated impact for each.",
+        "reference": "Should offer three distinct, realistic pricing strategies (e.g., tiered upsell, annual commitment discounts, usage-based add-ons) with rough quantified impact estimates and implementation considerations."
+      }
+    ]
+  },
+  {
+    "id": "writing_03",
+    "category": "writing",
+    "turns": [
+      {
+        "turn": 1,
+        "user": "Prepare structured meeting notes from the following raw notes: 'talked about Q4 pipeline - looks thin. Maria said enterprise deals slipping. Need more SDRs maybe. John wants to try ABM. Budget unclear. Next meeting Tuesday.'",
+        "reference": "Should organize into clear sections (attendees, agenda, discussion points, decisions, action items, next meeting), infer reasonable structure, and flag items needing clarification."
+      },
+      {
+        "turn": 2,
+        "user": "Based on these meeting notes, draft three specific action items with owners, deadlines, and success criteria that could be shared in a follow-up Slack message.",
+        "reference": "Should produce three actionable items tied to the discussion (pipeline analysis, ABM proposal, SDR budget request), assign plausible owners, set realistic deadlines, and define measurable success criteria."
+      }
+    ]
+  },
+  {
+    "id": "writing_04",
+    "category": "writing",
+    "turns": [
+      {
+        "turn": 1,
+        "user": "Write a board report executive summary for a Series B fintech startup that has achieved product-market fit but is burning $1.2M/month with 14 months of runway remaining. The tone should be confident but transparent.",
+        "reference": "Should balance optimism with realism, quantify key metrics (burn rate, runway, PMF evidence), outline path to sustainability, and present clear asks or decisions needed from the board."
+      },
+      {
+        "turn": 2,
+        "user": "The board chair has responded asking for a scenario analysis section. Add three scenarios (base, optimistic, pessimistic) with different assumptions about revenue growth and burn rate, each showing runway implications.",
+        "reference": "Should present three clearly differentiated scenarios with specific numeric assumptions, resulting runway calculations, and recommended actions for each scenario."
+      }
+    ]
+  },
+  {
+    "id": "writing_05",
+    "category": "writing",
+    "turns": [
+      {
+        "turn": 1,
+        "user": "Draft a press release announcing our company's acquisition of a smaller AI analytics competitor for $45M. Our company is Brevio (enterprise AI platform) acquiring DataLens (analytics startup with 200 customers).",
+        "reference": "Should follow standard press release format (headline, dateline, lead, quotes, boilerplate), highlight strategic value, mention customer benefit, and include appropriate executive quotes from both sides."
+      },
+      {
+        "turn": 2,
+        "user": "Our PR team flagged that the release needs a dedicated FAQ section for DataLens customers who may be worried about service continuity. Add 5 key Q&As addressing their likely concerns.",
+        "reference": "Should address product continuity, pricing changes, data migration, support transitions, and integration timeline with reassuring but honest answers."
+      }
+    ]
+  },
+  {
+    "id": "writing_06",
+    "category": "writing",
+    "turns": [
+      {
+        "turn": 1,
+        "user": "Write a formal proposal letter to a Fortune 500 prospect explaining why they should choose our enterprise AI platform over building an in-house solution. Focus on TCO, time-to-value, and ongoing innovation.",
+        "reference": "Should present a compelling business case with TCO comparison framework, quantified time-to-value advantage, ongoing R&D investment argument, and a professional call to action."
+      },
+      {
+        "turn": 2,
+        "user": "The prospect's CTO responded saying they are concerned about vendor lock-in and data sovereignty. Rewrite the key section to directly address these two objections with specific technical commitments.",
+        "reference": "Should address lock-in with open standards, data portability, and API-first architecture arguments; address sovereignty with deployment options, compliance certifications, and contractual guarantees."
+      }
+    ]
+  },
+  {
+    "id": "writing_07",
+    "category": "writing",
+    "turns": [
+      {
+        "turn": 1,
+        "user": "Create a quarterly all-hands presentation script (speaker notes) for the CEO covering: record customer NPS of 72, two major product launches, one security incident that was resolved, and upcoming office consolidation.",
+        "reference": "Should flow naturally as spoken remarks, celebrate wins authentically, address the security incident with transparency and lessons learned, and frame the office consolidation positively with empathy."
+      },
+      {
+        "turn": 2,
+        "user": "Several employees have posted on the internal forum expressing anxiety about the office consolidation meaning layoffs. Add a specific segment to the script that addresses this rumor directly and honestly.",
+        "reference": "Should acknowledge the concern directly without being dismissive, provide factual clarity about whether layoffs are or are not involved, explain the actual rationale, and describe support measures."
+      }
+    ]
+  },
+  {
+    "id": "writing_08",
+    "category": "writing",
+    "turns": [
+      {
+        "turn": 1,
+        "user": "Draft an investor update email for our seed-stage startup. Key metrics: MRR grew from $18K to $32K in 3 months, we signed our first enterprise pilot, CAC is $1,200 but LTV is still unknown, and we need to raise a bridge round.",
+        "reference": "Should present metrics with appropriate context, highlight the enterprise pilot as validation, be transparent about unknowns (LTV), frame the bridge round need constructively, and include specific asks of investors."
+      },
+      {
+        "turn": 2,
+        "user": "One investor replied asking why LTV is unknown and whether that signals product-market fit issues. Draft a thoughtful response that turns this into a strength.",
+        "reference": "Should explain the LTV data maturity timeline, reframe early-stage unknown LTV as normal, point to leading indicators (retention, expansion, NPS), and position the enterprise pilot as a de-risking signal."
+      }
+    ]
+  },
+  {
+    "id": "writing_09",
+    "category": "writing",
+    "turns": [
+      {
+        "turn": 1,
+        "user": "Write a formal internal policy document outlining our company's new hybrid work policy: 3 days in-office (Tues-Thurs), flexible Mondays and Fridays, with exceptions for fully remote roles. Include enforcement and accommodation provisions.",
+        "reference": "Should be structured as a formal policy with scope, definitions, requirements, exception process, accommodation provisions, and effective date. Professional and unambiguous language."
+      },
+      {
+        "turn": 2,
+        "user": "HR has flagged that this policy needs to comply with ADA reasonable accommodation requirements and also address employees in different time zones. Revise the relevant sections.",
+        "reference": "Should add ADA-compliant accommodation language, interactive process references, multi-timezone provisions with core overlap hours, and ensure no discriminatory impact on protected classes."
+      }
+    ]
+  },
+  {
+    "id": "writing_10",
+    "category": "writing",
+    "turns": [
+      {
+        "turn": 1,
+        "user": "Write a LinkedIn post from our CEO announcing that we have reached $10M ARR, reflecting on the three-year journey from idea to this milestone. The tone should be authentic and grateful, not boastful.",
+        "reference": "Should feel personal and genuine, mention specific challenges overcome, thank team/customers/investors by role (not name-dropping excessively), and include a forward-looking vision. Appropriate LinkedIn length and style."
+      },
+      {
+        "turn": 2,
+        "user": "Great, but our head of marketing says the post needs a stronger call-to-action for hiring. We have 15 open roles. Rework the ending to naturally transition from the milestone celebration into a recruiting pitch.",
+        "reference": "Should smoothly transition from celebration to opportunity, frame joining as participating in the next chapter, mention role diversity and culture, and include a clear CTA without feeling like a bait-and-switch."
+      }
+    ]
+  },
+  {
+    "id": "roleplay_01",
+    "category": "roleplay",
+    "turns": [
+      {
+        "turn": 1,
+        "user": "Roleplay as an upset enterprise customer (VP of Engineering) who just discovered that our platform had a 4-hour outage that was not communicated proactively. I need to practice my response as the account executive.",
+        "reference": "Should adopt a realistic VP persona expressing frustration about communication failure (not just the outage), reference business impact, mention SLA implications, and demand concrete remediation. Should be firm but professional."
+      },
+      {
+        "turn": 2,
+        "user": "Good. Now I responded with an apology and promised a postmortem within 48 hours. As the VP, push back harder—you want a service credit and a dedicated escalation channel. Make me work for the save.",
+        "reference": "Should escalate appropriately, mention contract renewal leverage, demand specific service credits with dollar amounts, insist on a named escalation contact, and hint at competitive alternatives without being unreasonable."
+      }
+    ]
+  },
+  {
+    "id": "roleplay_02",
+    "category": "roleplay",
+    "turns": [
+      {
+        "turn": 1,
+        "user": "Act as an activist investor who has taken a 7% stake in our publicly traded company and is pushing for a board seat and strategic review. I am the CEO preparing for our first meeting. Open the conversation.",
+        "reference": "Should present a credible activist investor persona with specific operational critiques, margin improvement proposals, capital allocation concerns, and a collaborative-but-firm tone about governance changes."
+      },
+      {
+        "turn": 2,
+        "user": "I pushed back on the board seat request citing our current board's qualifications. As the activist, counter my argument and raise the stakes by mentioning a potential proxy fight if we cannot reach agreement.",
+        "reference": "Should credibly escalate with proxy fight reference, cite specific board composition gaps, mention shareholder support indicators, and propose a compromise path while maintaining pressure."
+      }
+    ]
+  },
+  {
+    "id": "roleplay_03",
+    "category": "roleplay",
+    "turns": [
+      {
+        "turn": 1,
+        "user": "Play the role of a high-performing senior engineer who is threatening to leave because they were passed over for promotion to Staff Engineer. I am their engineering director and need to have a retention conversation.",
+        "reference": "Should express genuine frustration about specific promotion criteria perceived as unfair, mention recruiter interest and competing offers, and show emotional investment in the company alongside disappointment."
+      },
+      {
+        "turn": 2,
+        "user": "I offered a clear promotion timeline and a 10% retention bonus. As the engineer, express cautious interest but push for more specifics—you want written commitments and a mentor assignment.",
+        "reference": "Should show softening but maintain negotiating posture, ask for written promotion criteria with dates, request a specific senior mentor, and express that trust needs rebuilding. Should feel like a realistic de-escalation."
+      }
+    ]
+  },
+  {
+    "id": "roleplay_04",
+    "category": "roleplay",
+    "turns": [
+      {
+        "turn": 1,
+        "user": "Roleplay as a skeptical Series A lead investor during a pitch meeting. I am the founder of an AI-powered legal tech startup seeking $8M. Challenge my pitch with tough but fair questions.",
+        "reference": "Should ask about market size with defensible bottom-up analysis, competitive moats, regulatory risk, customer acquisition cost, team gaps, and use of funds. Questions should be specific to legal tech and AI."
+      },
+      {
+        "turn": 2,
+        "user": "I answered your questions about market size and competition. Now drill into unit economics and ask about my assumptions for the financial model. Be particularly skeptical about my customer acquisition strategy.",
+        "reference": "Should probe CAC payback period, channel mix assumptions, enterprise sales cycle length for legal, logo vs. net revenue retention, and whether the financial model accounts for the long procurement cycles in legal."
+      }
+    ]
+  },
+  {
+    "id": "roleplay_05",
+    "category": "roleplay",
+    "turns": [
+      {
+        "turn": 1,
+        "user": "Act as a journalist from a major tech publication who is writing a story about AI safety concerns and has requested an interview with our CEO. I am the CEO. Begin the interview with your first set of questions.",
+        "reference": "Should ask probing but fair questions about AI safety practices, data handling, bias mitigation, responsible deployment, and how the company balances innovation speed with safety. Should feel like a real tech journalist."
+      },
+      {
+        "turn": 2,
+        "user": "I gave measured answers about our safety framework. Now ask tougher follow-up questions that probe for specifics and potential weaknesses in my responses. Try to get a more newsworthy quote.",
+        "reference": "Should push past corporate talking points, ask about specific incidents or near-misses, question the adequacy of self-regulation, and seek concrete commitments rather than vague assurances."
+      }
+    ]
+  },
+  {
+    "id": "roleplay_06",
+    "category": "roleplay",
+    "turns": [
+      {
+        "turn": 1,
+        "user": "Play the role of our company's general counsel advising me (the CEO) against a proposed partnership with a company that has ongoing regulatory investigations. Present your legal concerns.",
+        "reference": "Should raise reputational risk, potential regulatory contagion, due diligence gaps, contractual indemnification needs, and board fiduciary duty concerns in a lawyerly but accessible manner."
+      },
+      {
+        "turn": 2,
+        "user": "I acknowledged the risks but said the partnership is strategically critical. As general counsel, propose a risk mitigation framework that would allow the partnership to proceed with appropriate safeguards.",
+        "reference": "Should propose enhanced due diligence, staged partnership with exit triggers, regulatory counsel engagement, ring-fenced operations, contractual protections, and board disclosure requirements."
+      }
+    ]
+  },
+  {
+    "id": "roleplay_07",
+    "category": "roleplay",
+    "turns": [
+      {
+        "turn": 1,
+        "user": "Roleplay as a co-founder who disagrees with my (the other co-founder and CEO) decision to pivot the company from B2B to B2C. You think it will destroy the company. Start the conversation.",
+        "reference": "Should present a passionate but reasoned disagreement citing existing B2B traction, team competency gaps for B2C, capital requirements, competitive landscape differences, and concern about abandoning paying customers."
+      },
+      {
+        "turn": 2,
+        "user": "I made my case for the pivot citing a larger TAM and faster growth potential. As my co-founder, propose a compromise: a structured experiment to test B2C before fully committing, with clear success criteria.",
+        "reference": "Should propose a time-boxed pilot with specific budget, success metrics (acquisition cost, retention, revenue targets), a decision framework for go/no-go, and protection of existing B2B revenue during the test."
+      }
+    ]
+  },
+  {
+    "id": "roleplay_08",
+    "category": "roleplay",
+    "turns": [
+      {
+        "turn": 1,
+        "user": "Act as the head of a Fortune 500 procurement department. I am selling our enterprise software and this is the final negotiation meeting. You want a 30% discount off our list price. Open negotiations.",
+        "reference": "Should cite competitive bids, internal budget constraints, multi-year commitment leverage, and volume-based discount expectations. Should be a skilled negotiator who uses silence and anchoring."
+      },
+      {
+        "turn": 2,
+        "user": "I offered 15% off with a 3-year commitment. As the procurement head, counter with a creative deal structure that gets you closer to your target without simply asking for a bigger discount.",
+        "reference": "Should propose creative structures like phased rollout with milestone pricing, payment term advantages, co-marketing value exchange, reference customer discount, or bundled training credits."
+      }
+    ]
+  },
+  {
+    "id": "roleplay_09",
+    "category": "roleplay",
+    "turns": [
+      {
+        "turn": 1,
+        "user": "Play the role of a regulatory affairs executive from the EU who is reviewing our AI product for GDPR and EU AI Act compliance. I am the product VP. Begin your compliance review questions.",
+        "reference": "Should ask about data processing legal basis, automated decision-making transparency, risk classification under the AI Act, data subject rights implementation, and cross-border data transfer mechanisms."
+      },
+      {
+        "turn": 2,
+        "user": "I answered your initial questions satisfactorily. Now probe deeper into our AI model's explainability capabilities and our approach to algorithmic impact assessments.",
+        "reference": "Should ask about model interpretability methods, bias audit frequency and methodology, human-in-the-loop requirements, documentation under Article 13 of the AI Act, and conformity assessment procedures."
+      }
+    ]
+  },
+  {
+    "id": "roleplay_10",
+    "category": "roleplay",
+    "turns": [
+      {
+        "turn": 1,
+        "user": "Roleplay as an employee representative from our European works council who has concerns about a planned AI-driven performance monitoring system. I am the CHRO presenting the system. Voice your objections.",
+        "reference": "Should raise worker surveillance concerns, proportionality principle, consent issues, potential for algorithmic bias in performance assessment, and rights under worker protection directives."
+      },
+      {
+        "turn": 2,
+        "user": "I addressed your concerns by proposing transparency measures and opt-out provisions. As the works council representative, outline the minimum conditions under which the council would agree to a pilot program.",
+        "reference": "Should specify data minimization requirements, independent algorithmic audit, employee access to their data, appeal process for AI-derived assessments, sunset clause, and regular review cadence."
+      }
+    ]
+  },
+  {
+    "id": "reasoning_01",
+    "category": "reasoning",
+    "turns": [
+      {
+        "turn": 1,
+        "user": "Our SaaS product's churn rate increased from 3% to 5% monthly over the last quarter, but NPS scores remained stable at 45. Walk me through a structured causal analysis of what could explain this divergence.",
+        "reference": "Should identify multiple causal hypotheses (pricing pressure, competitor entry, segment-specific churn, survey bias, involuntary churn, cohort effects), propose a diagnostic framework, and explain why NPS might lag or mask churn drivers."
+      },
+      {
+        "turn": 2,
+        "user": "Analysis revealed that churn is concentrated in our SMB segment while enterprise retention is actually improving. Our SMB customers cite 'lack of ROI' but our usage data shows they barely use the product. What is the root cause and what should we do?",
+        "reference": "Should identify onboarding and activation failure as the likely root cause rather than product-market fit, distinguish between value delivery failure and value perception failure, and recommend specific activation interventions over feature changes."
+      }
+    ]
+  },
+  {
+    "id": "reasoning_02",
+    "category": "reasoning",
+    "turns": [
+      {
+        "turn": 1,
+        "user": "We need to decide whether to build or buy a customer data platform. Our current stack is fragmented across 6 tools. Present a structured decision framework for this build-vs-buy choice.",
+        "reference": "Should include evaluation criteria (TCO, time-to-value, customization needs, maintenance burden, strategic differentiation, data sensitivity), a weighted scoring methodology, and key questions to answer before deciding."
+      },
+      {
+        "turn": 2,
+        "user": "We scored both options and 'buy' won on most criteria, but our CTO insists on building because they believe CDPs will become a core competitive differentiator. How do I evaluate whether the CTO's argument has merit?",
+        "reference": "Should provide a framework for assessing whether data infrastructure is truly differentiating (is it closer to the customer value prop or to commodity infrastructure?), reference strategic vs. context distinction, and suggest a compromise approach."
+      }
+    ]
+  },
+  {
+    "id": "reasoning_03",
+    "category": "reasoning",
+    "turns": [
+      {
+        "turn": 1,
+        "user": "Our company is evaluating three geographic expansion options: UK, Germany, or Japan. We are a B2B SaaS company with $20M ARR, 50 employees, no international presence. How should we think about this decision?",
+        "reference": "Should propose evaluation dimensions (market size, regulatory complexity, cultural fit, language barriers, existing demand signals, competitive landscape, hiring difficulty, time zone overlap), and a phased analysis approach."
+      },
+      {
+        "turn": 2,
+        "user": "We narrowed it to UK vs. Germany. The UK has lower regulatory friction and shared language, but Germany has 2x the addressable market. Our board is split. How do we break the tie?",
+        "reference": "Should introduce second-order thinking (UK as a beachhead for Europe vs. Germany as direct large-market entry), consider sequencing strategy, analyze whether language/regulatory advantages offset market size, and recommend a decision with clear reasoning."
+      }
+    ]
+  },
+  {
+    "id": "reasoning_04",
+    "category": "reasoning",
+    "turns": [
+      {
+        "turn": 1,
+        "user": "We just learned that our largest customer (18% of revenue) is being acquired by a company that uses a competitor's product. Assess the risk and recommend a response strategy.",
+        "reference": "Should quantify the revenue concentration risk, assess probability and timeline of churning, identify stakeholder mapping in the acquiring company, propose retention strategies, and recommend long-term concentration risk mitigation."
+      },
+      {
+        "turn": 2,
+        "user": "We reached out to the acquiring company and learned they plan to consolidate onto their existing platform within 12 months. We have that window to either retain them or prepare. What is the optimal 12-month play?",
+        "reference": "Should propose a dual-track strategy: aggressive retention play (integration value, switching cost emphasis, executive alignment) in parallel with revenue diversification to reduce dependency, with specific milestones and decision triggers."
+      }
+    ]
+  },
+  {
+    "id": "reasoning_05",
+    "category": "reasoning",
+    "turns": [
+      {
+        "turn": 1,
+        "user": "Our engineering team ships features 40% slower than the industry benchmark, but our quality metrics (bug rate, incident frequency) are best-in-class. The CEO wants both speed and quality. Is this possible, or is there a fundamental tradeoff?",
+        "reference": "Should analyze the speed-quality tradeoff nuance, identify where the tradeoff is real vs. where it can be broken (process inefficiency, over-engineering, testing automation, parallelization), and propose investigation areas."
+      },
+      {
+        "turn": 2,
+        "user": "Investigation revealed that 60% of the slowness comes from an overly conservative code review process (3 required approvals, average 4-day review cycle). How do we redesign this without sacrificing quality?",
+        "reference": "Should propose tiered review policies based on risk/blast radius, suggest automated quality gates, recommend reducing approvals with increased automated testing, and reference industry best practices for balancing review rigor with velocity."
+      }
+    ]
+  },
+  {
+    "id": "reasoning_06",
+    "category": "reasoning",
+    "turns": [
+      {
+        "turn": 1,
+        "user": "Three of our five product managers quit in the same month. They gave different exit interview reasons (compensation, career growth, management style). How do I determine the real root cause versus stated reasons?",
+        "reference": "Should discuss exit interview reliability issues, propose triangulation methods (skip-level interviews, Glassdoor analysis, stay interview data, manager 360 reviews), and identify common underlying patterns that surface as different stated reasons."
+      },
+      {
+        "turn": 2,
+        "user": "After deeper investigation, the common thread appears to be that product managers feel they have no real decision-making authority—engineering leadership overrides their roadmap decisions. How do I fix this organizational dysfunction?",
+        "reference": "Should address the PM-engineering power dynamic, propose clear RACI for product decisions, recommend executive alignment on PM authority, suggest structural changes (empowered product teams), and outline change management approach."
+      }
+    ]
+  },
+  {
+    "id": "reasoning_07",
+    "category": "reasoning",
+    "turns": [
+      {
+        "turn": 1,
+        "user": "We have the opportunity to raise a Series C at a $500M valuation (2x our last round), but we would need to accept aggressive liquidation preferences and participating preferred terms. Our current runway is 18 months. Should we take it?",
+        "reference": "Should analyze the dilution and economic impact of participating preferred, assess whether 18 months of runway creates negotiating leverage or urgency, consider market conditions, and present the decision as a risk-adjusted tradeoff."
+      },
+      {
+        "turn": 2,
+        "user": "What if instead of this round, we cut burn by 30% to extend runway to 28 months and wait for better terms? Walk me through the second-order consequences of each path.",
+        "reference": "Should map second-order effects: for cutting (slower growth, talent loss risk, competitive window, improved efficiency) vs. for raising (aggressive terms in downside scenarios, growth optionality, market timing risk). Should present a decision matrix."
+      }
+    ]
+  },
+  {
+    "id": "reasoning_08",
+    "category": "reasoning",
+    "turns": [
+      {
+        "turn": 1,
+        "user": "Our product serves both healthcare and financial services verticals. We cannot fund full roadmaps for both. The healthcare vertical has higher revenue but slower growth; fintech has lower revenue but 3x growth rate. How do we prioritize?",
+        "reference": "Should introduce frameworks for vertical prioritization (revenue contribution, growth trajectory, CAC/LTV by vertical, competitive moats, regulatory barriers as advantages, team expertise), and discuss the danger of half-investing in both."
+      },
+      {
+        "turn": 2,
+        "user": "We decided to prioritize fintech but cannot afford to lose our healthcare customers. Design a resource allocation strategy that maximizes fintech investment while maintaining healthcare as a 'cash cow' with minimal investment.",
+        "reference": "Should propose an 80/20 split framework, identify which healthcare features are maintenance vs. growth, suggest platform architecture that serves both with shared infrastructure, and define clear criteria for what healthcare requests get resourced."
+      }
+    ]
+  },
+  {
+    "id": "reasoning_09",
+    "category": "reasoning",
+    "turns": [
+      {
+        "turn": 1,
+        "user": "We launched a free tier 6 months ago. Free users grew 300%, but paid conversion is 0.5% vs. our target of 3%. The product team says we need more time; the CFO wants to kill the free tier. Who is right?",
+        "reference": "Should avoid a binary right/wrong framing, analyze free tier conversion benchmarks, identify potential causes of low conversion (value gap, paywall placement, user segment mismatch), and propose diagnostic steps before making the kill/keep decision."
+      },
+      {
+        "turn": 2,
+        "user": "Data shows that free users who connect 3+ integrations convert at 8%, but only 5% of free users reach that activation point. How does this change the analysis and what should we do?",
+        "reference": "Should identify this as a classic activation problem (not a free tier problem), recommend focusing on driving users to the 3-integration milestone, propose onboarding redesign, and reframe the free tier debate as an activation investment question."
+      }
+    ]
+  },
+  {
+    "id": "reasoning_10",
+    "category": "reasoning",
+    "turns": [
+      {
+        "turn": 1,
+        "user": "A competitor just launched a feature that directly replicates our core differentiator, and they are offering it for free. Our stock dropped 8%. Walk me through how to assess whether this is an existential threat or a manageable competitive development.",
+        "reference": "Should propose a threat assessment framework: feature parity vs. deep capability comparison, switching cost analysis, customer relationship depth, execution quality assessment, sustainable competitive advantages beyond features, and market signaling vs. actual impact."
+      },
+      {
+        "turn": 2,
+        "user": "Assessment shows the competitor's version is 70% as capable as ours but improving quickly. We estimate 12-18 months before parity. What is our strategic response over this window?",
+        "reference": "Should outline a multi-track response: accelerate innovation to widen the gap, deepen customer lock-in through integrations and data network effects, consider pricing adjustments, strengthen the moat through partnerships, and plan for a world where the feature is commoditized."
+      }
+    ]
+  },
+  {
+    "id": "math_01",
+    "category": "math",
+    "turns": [
+      {
+        "turn": 1,
+        "user": "We have 500 customers paying an average of $2,000/month. Monthly gross churn is 4% and expansion revenue from existing customers is 2% of MRR per month. Calculate our net revenue retention rate and project our ARR in 12 months assuming no new customer acquisition.",
+        "reference": "Should calculate NRR as approximately 98% monthly (100% - 4% + 2%), project the compounding effect over 12 months on the starting ARR of $12M, arriving at approximately $9.4M-$9.5M, and explain the math step by step."
+      },
+      {
+        "turn": 2,
+        "user": "Now assume we also add 25 new customers per month at the same $2,000 ARPU, but new customer churn in the first 3 months is 8% (double our mature churn). What is our projected ARR after 12 months?",
+        "reference": "Should model the cohort-based math with different churn rates for new vs. mature customers, track monthly MRR additions and losses, and arrive at a correct projection. Should show the calculation methodology clearly."
+      }
+    ]
+  },
+  {
+    "id": "math_02",
+    "category": "math",
+    "turns": [
+      {
+        "turn": 1,
+        "user": "Our Q3 budget was $5M. Actual spend was: Engineering $2.4M (budget $2.0M), Sales $1.1M (budget $1.5M), Marketing $0.8M (budget $0.7M), G&A $0.5M (budget $0.8M). Calculate the variance for each department and overall, both in dollars and percentage.",
+        "reference": "Should correctly calculate: Engineering +$400K (+20%), Sales -$400K (-26.7%), Marketing +$100K (+14.3%), G&A -$300K (-37.5%). Total actual $4.8M vs. $5.0M budget = -$200K (-4%). Should distinguish favorable vs. unfavorable variances."
+      },
+      {
+        "turn": 2,
+        "user": "Engineering's $400K overrun was due to hiring 3 unplanned engineers at $120K annual salary each. If these engineers each produce features that generate $50K MRR within 6 months, was the overrun justified? Calculate the ROI.",
+        "reference": "Should calculate the 6-month cost ($180K = 3 x $60K for half-year), the projected annual MRR from features ($1.8M = $150K x 12), factor in fully loaded costs vs. incremental revenue, and present an ROI figure. Should note assumptions and limitations."
+      }
+    ]
+  },
+  {
+    "id": "math_03",
+    "category": "math",
+    "turns": [
+      {
+        "turn": 1,
+        "user": "We are considering two pricing models for our SaaS product. Model A: flat $500/month per customer. Model B: $200/month base + $0.05 per API call. Our average customer makes 8,000 API calls per month but with high variance (std dev of 5,000). Which model generates more revenue and which has more predictable revenue?",
+        "reference": "Should calculate Model A revenue ($500/customer), Model B average revenue ($200 + $400 = $600/customer), but then analyze variance: Model A has zero revenue variance, Model B has revenue std dev of $250/customer. Should discuss the risk-return tradeoff."
+      },
+      {
+        "turn": 2,
+        "user": "We have 1,000 customers. If we switch from Model A to Model B, some customers will churn because their bills increase. Assume customers who make more than 6,000 API calls will see higher bills and 20% of those will churn. Estimate the net revenue impact.",
+        "reference": "Should estimate the proportion of customers above 6,000 calls using the normal distribution (approximately 65.5% given mean 8,000 and std dev 5,000), calculate 20% churn of those (~131 customers), and compute net revenue change considering higher ARPU from remaining customers minus lost revenue from churned ones."
+      }
+    ]
+  },
+  {
+    "id": "math_04",
+    "category": "math",
+    "turns": [
+      {
+        "turn": 1,
+        "user": "We spent $500K on marketing last quarter and acquired 200 customers. Average contract value is $15,000/year, gross margin is 75%, and average customer lifetime is 3 years. Calculate our CAC, LTV, and LTV:CAC ratio. Is this healthy?",
+        "reference": "Should calculate CAC = $2,500, LTV = $15,000 x 0.75 x 3 = $33,750, LTV:CAC = 13.5x. Should note this is extremely healthy (benchmark is 3x+), but also question whether the assumptions are validated, especially the 3-year lifetime estimate."
+      },
+      {
+        "turn": 2,
+        "user": "Our board says LTV:CAC of 13.5x means we are under-investing in growth. If we want to bring LTV:CAC down to 5x by spending more on marketing while maintaining the same conversion rates, how much should we spend per quarter and how many customers would that acquire?",
+        "reference": "Should solve for target CAC at 5x LTV ratio ($6,750), calculate the implied marketing spend to acquire the same 200 customers at higher CAC ($1,350,000), or alternatively calculate how many more customers the existing funnel could produce at higher spend levels. Should discuss diminishing returns."
+      }
+    ]
+  },
+  {
+    "id": "math_05",
+    "category": "math",
+    "turns": [
+      {
+        "turn": 1,
+        "user": "Our marketplace takes a 15% commission. GMV last month was $2M. We have 500 sellers (average GMV $4,000) and 10,000 buyers (average order $200). Seller acquisition cost is $300, buyer acquisition cost is $15. Calculate our unit economics per transaction and per seller.",
+        "reference": "Should calculate: revenue per transaction ($30 on $200 avg order), contribution per seller ($600 commission - $300 acquisition = $300 net before other costs), contribution per buyer ($30 - $15 = $15 first transaction). Should also calculate take rate verification and seller/buyer ratios."
+      },
+      {
+        "turn": 2,
+        "user": "We want to launch a subscription tier for sellers at $99/month that reduces their commission to 10%. If 40% of sellers adopt it, what is the impact on our monthly revenue? At what adoption rate does the subscription model break even with the current model?",
+        "reference": "Should calculate current revenue ($300K at 15% of $2M), new revenue with 40% adoption: subscription revenue ($19,800) + reduced commission from subscribers (~$80K at 10% of $800K GMV) + full commission from non-subscribers ($180K at 15% of $1.2M) = ~$279,800. Break-even adoption calculation should follow."
+      }
+    ]
+  },
+  {
+    "id": "math_06",
+    "category": "math",
+    "turns": [
+      {
+        "turn": 1,
+        "user": "We are raising a Series B. Pre-money valuation is $80M, we are raising $20M. The new round has a 1x non-participating liquidation preference. Founders own 40%, seed investors own 15%, Series A owns 20%, ESOP is 10%, and the rest is unallocated. Calculate the post-money cap table.",
+        "reference": "Should calculate post-money valuation ($100M), new investor ownership (20%), and dilute all existing holders proportionally: Founders 32%, Seed 12%, Series A 16%, ESOP 8%, Unallocated 12%, Series B 20%."
+      },
+      {
+        "turn": 2,
+        "user": "If the company sells for $150M, how much does each group receive under the liquidation preference structure? What about at a $50M sale price? Show the waterfall for both scenarios.",
+        "reference": "Should model the waterfall: at $150M, Series B takes the greater of 1x preference ($20M) or 20% of proceeds ($30M), so they convert and take $30M. Remaining $120M split pro-rata. At $50M, Series B takes $20M preference, remaining $30M split among others. Should show exact dollar amounts for each group in both scenarios."
+      }
+    ]
+  },
+  {
+    "id": "math_07",
+    "category": "math",
+    "turns": [
+      {
+        "turn": 1,
+        "user": "We run a freemium SaaS product. Current metrics: 100,000 free users, 2% convert to paid ($50/month), 5% monthly churn on paid. We spend $2 per free user per month on infrastructure. Calculate our monthly profit/loss and the break-even conversion rate.",
+        "reference": "Should calculate: paid users = 2,000, paid revenue = $100,000, free user cost = $200,000, total loss = -$100,000. Break-even conversion rate solves for: (rate x 100,000 x $50) = $200,000, so rate = 4%. Should also consider paid user infrastructure costs."
+      },
+      {
+        "turn": 2,
+        "user": "We can reduce free user infrastructure cost by 50% through optimization, or we can improve conversion to 3% through better onboarding. Which initiative has a larger impact on monthly P&L, and what is the combined effect if we do both?",
+        "reference": "Should calculate: Cost optimization saves $100K (from $200K to $100K), bringing P&L to $0. Conversion improvement adds $50K revenue (3,000 x $50 = $150K vs. $100K), bringing P&L to -$50K. Cost optimization has larger impact. Combined: $150K revenue - $100K free cost = +$50K profit."
+      }
+    ]
+  },
+  {
+    "id": "math_08",
+    "category": "math",
+    "turns": [
+      {
+        "turn": 1,
+        "user": "Our sales team has 10 AEs, each with a $1.2M annual quota. Historical quota attainment is 70% on average. Fully loaded AE cost is $200K/year. OTE is $150K (50/50 base/commission). Calculate our sales efficiency ratio and cost of revenue from the sales team.",
+        "reference": "Should calculate: expected revenue per AE ($840K), total expected revenue ($8.4M), total sales cost ($2M or $1.5M OTE depending on attainment-based commission), sales efficiency ratio (revenue/cost), and net contribution. Should clarify assumptions about commission structure at 70% attainment."
+      },
+      {
+        "turn": 2,
+        "user": "We want to hire 5 more AEs but expect a 6-month ramp period where new AEs achieve only 30% of quota. Calculate the first-year impact on revenue and costs, and determine when the new AEs become ROI-positive.",
+        "reference": "Should model H1 (ramp: 30% of $600K half-quota = $180K each, $900K total) and H2 (70% of $600K = $420K each, $2.1M total) for new AEs. Total first-year new revenue: $3M. Cost: $1M (5 x $200K). Should calculate monthly break-even point during ramp."
+      }
+    ]
+  },
+  {
+    "id": "math_09",
+    "category": "math",
+    "turns": [
+      {
+        "turn": 1,
+        "user": "Our cloud infrastructure costs scale with users. Current costs: $50K/month for 10,000 DAU. We expect to grow to 100,000 DAU in 12 months. If costs scale sub-linearly with a power law exponent of 0.7, what will our monthly infrastructure cost be at 100,000 DAU?",
+        "reference": "Should apply the power law: cost scales as DAU^0.7. At 10x DAU, cost scales by 10^0.7 = 5.01x. So projected cost = $50K x 5.01 = approximately $250,500/month. Should explain the power law math and note it assumes consistent architecture."
+      },
+      {
+        "turn": 2,
+        "user": "If our ARPU is $5/month, at what DAU count does infrastructure cost per user exceed revenue per user, making each additional user unprofitable? Assume the same power law scaling from the base of $50K at 10,000 DAU.",
+        "reference": "Should set up the equation: $50,000 x (DAU/10,000)^0.7 / DAU = $5, solve for DAU where cost per user equals $5. The equation simplifies to finding where total cost = $5 x DAU. Should solve this algebraically: 50,000 x (DAU/10,000)^0.7 = 5 x DAU."
+      }
+    ]
+  },
+  {
+    "id": "math_10",
+    "category": "math",
+    "turns": [
+      {
+        "turn": 1,
+        "user": "We are negotiating a revenue-share partnership. Partner proposes: they get 30% of revenue from customers they refer, decreasing by 5 percentage points per year to a floor of 10%. If they refer 50 customers in Year 1 with $10K ACV each and we expect 90% annual retention, calculate the total revenue share paid over 5 years.",
+        "reference": "Should calculate year by year: Y1: 50 customers x $10K x 30% = $150K. Y2: 45 customers x $10K x 25% = $112.5K. Y3: 40.5 x $10K x 20% = $81K. Y4: 36.45 x $10K x 15% = $54.7K. Y5: 32.8 x $10K x 10% = $32.8K. Total approximately $431K."
+      },
+      {
+        "turn": 2,
+        "user": "We counter-proposed a flat 20% for the first 2 years then 10% thereafter, with no annual decrease. Calculate the difference in total payout over the same 5 years and determine which structure the partner would prefer and which we should prefer.",
+        "reference": "Should calculate the counter-proposal: Y1: 50 x $10K x 20% = $100K. Y2: 45 x $10K x 20% = $90K. Y3: 40.5 x $10K x 10% = $40.5K. Y4: 36.45 x $10K x 10% = $36.5K. Y5: 32.8 x $10K x 10% = $32.8K. Total approximately $299.8K. Compare and analyze which party benefits from which structure."
+      }
+    ]
+  },
+  {
+    "id": "coding_01",
+    "category": "coding",
+    "turns": [
+      {
+        "turn": 1,
+        "user": "Write a Python script that monitors a Slack channel for messages containing 'urgent' or 'escalation', extracts the sender and message content, and sends a formatted summary to a designated executive notification channel every 30 minutes.",
+        "reference": "Should use Slack SDK/API with proper auth, implement message filtering with regex or keyword matching, batch messages into a formatted summary, use scheduling (e.g., APScheduler), and include error handling and logging."
+      },
+      {
+        "turn": 2,
+        "user": "Extend the script to also assign a severity score (1-5) based on keywords in the message (e.g., 'outage' = 5, 'customer complaint' = 3, 'question' = 1) and sort the summary by severity. Add deduplication for messages that were already reported.",
+        "reference": "Should implement a keyword-to-severity mapping, add deduplication using message IDs or hashing, sort output by severity descending, and persist reported message IDs between runs (file or database)."
+      }
+    ]
+  },
+  {
+    "id": "coding_02",
+    "category": "coding",
+    "turns": [
+      {
+        "turn": 1,
+        "user": "Design a REST API endpoint specification for an executive dashboard that aggregates data from Salesforce (pipeline), Jira (engineering velocity), and Stripe (revenue). Define the endpoints, request/response schemas, and caching strategy.",
+        "reference": "Should define clear RESTful endpoints (e.g., /api/dashboard/pipeline, /api/dashboard/velocity, /api/dashboard/revenue, /api/dashboard/summary), include proper JSON response schemas with typed fields, suggest caching TTLs per data source, and address authentication."
+      },
+      {
+        "turn": 2,
+        "user": "Now implement the Stripe revenue aggregation endpoint in Python (FastAPI or Flask). It should return MRR, ARR, net new MRR, churned MRR, and expansion MRR for a given date range. Include proper error handling.",
+        "reference": "Should implement a working endpoint with Stripe API integration, calculate each MRR component from subscription data, handle date range parameters, include proper HTTP error responses, and use async if FastAPI."
+      }
+    ]
+  },
+  {
+    "id": "coding_03",
+    "category": "coding",
+    "turns": [
+      {
+        "turn": 1,
+        "user": "Write a TypeScript function that takes a meeting transcript (string) and uses structured output parsing to extract: attendees, key decisions, action items (with owners and deadlines), and unresolved questions. Use Zod for schema validation.",
+        "reference": "Should define Zod schemas for each extracted entity, implement structured parsing logic, handle edge cases (missing owners, ambiguous deadlines), and return a strongly typed result object."
+      },
+      {
+        "turn": 2,
+        "user": "Now add an LLM integration layer that sends the transcript to an API (OpenAI or Anthropic) for extraction, validates the response against your Zod schemas, retries on validation failure with error feedback, and caches results by transcript hash.",
+        "reference": "Should implement LLM API call with proper prompt engineering, Zod validation of the response, retry logic with the validation error fed back to the LLM, content-based caching with hash keys, and proper TypeScript typing throughout."
+      }
+    ]
+  },
+  {
+    "id": "coding_04",
+    "category": "coding",
+    "turns": [
+      {
+        "turn": 1,
+        "user": "Write a SQL query that generates a cohort retention analysis for a SaaS product. The source table has columns: user_id, subscription_start_date, subscription_end_date (null if active), and monthly_revenue. Show retention rates by monthly cohort for the first 12 months.",
+        "reference": "Should use CTEs to define cohorts by month, calculate active subscribers per cohort per month using date comparisons, compute retention rates as percentages, and present a proper cohort matrix. Should handle null end dates correctly."
+      },
+      {
+        "turn": 2,
+        "user": "Now extend this query to also calculate net dollar retention by cohort (accounting for plan upgrades and downgrades), and add a comparison showing which cohorts outperform or underperform the average retention curve.",
+        "reference": "Should add revenue-weighted retention calculation per cohort per month, compute average retention across all cohorts, and flag over/under-performing cohorts. Should handle revenue changes within a subscription correctly."
+      }
+    ]
+  },
+  {
+    "id": "coding_05",
+    "category": "coding",
+    "turns": [
+      {
+        "turn": 1,
+        "user": "Design a GitHub Actions CI/CD workflow that runs on PR creation: lints code, runs unit tests, performs a security scan, and posts a summary comment on the PR with results. Write the YAML configuration.",
+        "reference": "Should define a proper GitHub Actions workflow with parallel jobs for lint, test, and security scan, use appropriate actions (e.g., actions/checkout, security scanning tools), aggregate results, and use the GitHub API to post a PR comment."
+      },
+      {
+        "turn": 2,
+        "user": "Add a deployment stage that triggers on merge to main: builds a Docker image, pushes to ECR, deploys to ECS with blue-green deployment, and automatically rolls back if health checks fail within 5 minutes.",
+        "reference": "Should extend the workflow with deployment jobs gated on merge, include Docker build and ECR push steps, configure ECS blue-green deployment (CodeDeploy or direct), implement health check monitoring, and define rollback triggers."
+      }
+    ]
+  },
+  {
+    "id": "coding_06",
+    "category": "coding",
+    "turns": [
+      {
+        "turn": 1,
+        "user": "Write a Python data pipeline that reads CSV files from an S3 bucket, validates the schema (expected columns and types), transforms the data by calculating aggregations, and writes the results to a PostgreSQL database. Use pandas and boto3.",
+        "reference": "Should implement S3 reading with boto3, schema validation with clear error messages, pandas transformations with groupby aggregations, PostgreSQL writing with SQLAlchemy, and proper connection/resource management."
+      },
+      {
+        "turn": 2,
+        "user": "Add fault tolerance: idempotent processing (skip already-processed files), dead-letter handling for files that fail validation, retry logic with exponential backoff for transient failures, and a summary report emailed via SES after each run.",
+        "reference": "Should implement processed-file tracking (DynamoDB or database table), move failed files to a dead-letter S3 prefix with error metadata, add retries with backoff using tenacity or similar, and compose an HTML summary email sent via SES."
+      }
+    ]
+  },
+  {
+    "id": "coding_07",
+    "category": "coding",
+    "turns": [
+      {
+        "turn": 1,
+        "user": "Create a Python script that automates weekly executive reporting by pulling data from Google Sheets (OKR tracking), calculating completion percentages, identifying at-risk OKRs (below 60% at proportional time), and generating a formatted PDF report.",
+        "reference": "Should use Google Sheets API for data retrieval, implement time-proportional progress calculation, flag at-risk items with clear logic, and generate a professional PDF (using reportlab or weasyprint) with tables and status indicators."
+      },
+      {
+        "turn": 2,
+        "user": "Add trend analysis that compares this week's OKR progress to the last 4 weeks, identifies OKRs that are decelerating, and adds a trend chart (sparkline or line chart) for each OKR in the PDF report.",
+        "reference": "Should implement week-over-week delta calculation, deceleration detection (decreasing rate of change), chart generation with matplotlib or plotly, and embed the charts into the PDF alongside the tabular data."
+      }
+    ]
+  },
+  {
+    "id": "coding_08",
+    "category": "coding",
+    "turns": [
+      {
+        "turn": 1,
+        "user": "Write a webhook handler in Node.js (Express) that receives Stripe webhook events, verifies the signature, and processes subscription.created, subscription.updated, subscription.deleted, and invoice.payment_failed events. Include proper idempotency handling.",
+        "reference": "Should implement Stripe signature verification, event type routing, idempotency key tracking (database), proper HTTP response codes (200 for processed, 202 for duplicate, 500 for errors), and async processing for heavy operations."
+      },
+      {
+        "turn": 2,
+        "user": "Add a real-time notification system that, on critical events (payment failures, subscription cancellations for high-value accounts over $1000 MRR), sends an alert to a Slack channel and creates a ticket in a task management system via API.",
+        "reference": "Should implement value-based filtering logic, parallel dispatch to Slack (webhook) and task system (API call), include relevant context in notifications (customer name, MRR, subscription details), and handle notification delivery failures gracefully."
+      }
+    ]
+  },
+  {
+    "id": "coding_09",
+    "category": "coding",
+    "turns": [
+      {
+        "turn": 1,
+        "user": "Write a Python script that integrates with the Google Calendar API to analyze an executive's meeting patterns over the past month: total meeting hours, average meeting duration, percentage of day in meetings, most frequent meeting participants, and meeting-free blocks.",
+        "reference": "Should authenticate with Google Calendar API, fetch events for the date range, compute all requested metrics accurately, handle recurring events and all-day events properly, and present results in a clear summary format."
+      },
+      {
+        "turn": 2,
+        "user": "Extend this to generate an 'executive time audit' report that categorizes meetings (1:1, team, external, board) based on attendee patterns, identifies the most fragmented days, and suggests an optimized calendar layout that batches similar meetings and protects deep work blocks.",
+        "reference": "Should implement meeting classification heuristics based on attendee count and domain, calculate fragmentation score per day, and generate optimization suggestions following time-blocking best practices with specific proposed schedule blocks."
+      }
+    ]
+  },
+  {
+    "id": "coding_10",
+    "category": "coding",
+    "turns": [
+      {
+        "turn": 1,
+        "user": "Design and implement a rate limiter middleware in Python (for FastAPI) that supports per-user rate limits, tiered limits based on subscription plan (free: 100/hour, pro: 1000/hour, enterprise: 10000/hour), and uses Redis for distributed state.",
+        "reference": "Should implement sliding window or token bucket algorithm, use Redis for distributed counting, extract user and plan from request context, return proper 429 responses with Retry-After headers, and be configurable per-endpoint."
+      },
+      {
+        "turn": 2,
+        "user": "Add an analytics layer that tracks rate limit usage patterns, identifies users approaching their limits, generates daily usage reports, and exposes a /rate-limit/status endpoint that returns the user's current usage, remaining quota, and reset time.",
+        "reference": "Should implement usage tracking in Redis with proper TTLs, a background job for daily report generation, the status endpoint with accurate remaining calculations, and alerting logic for users above 80% utilization."
+      }
+    ]
+  },
+  {
+    "id": "extraction_01",
+    "category": "extraction",
+    "turns": [
+      {
+        "turn": 1,
+        "user": "Extract key decisions and action items from this meeting transcript: 'Sarah: I think we should go with vendor A for the CRM migration. Total cost is $150K over 18 months. Mike: Agreed, but we need legal to review the contract first. I will send it to Lisa by Friday. Sarah: Also, we need to freeze new feature development during migration, so let us push the Q2 roadmap by 3 weeks. Mike: I will update the project timeline. Jennifer: What about data migration? Sarah: Good point, we need a dedicated resource. Mike, can you identify someone from your team by next Wednesday?'",
+        "reference": "Should extract decisions (vendor A selected, $150K/18mo, feature freeze during migration, Q2 roadmap delayed 3 weeks), action items (Mike: send contract to Lisa by Friday, Mike: update project timeline, Mike: identify data migration resource by Wednesday), and flag the open question about data migration resourcing."
+      },
+      {
+        "turn": 2,
+        "user": "Now format these as a structured follow-up email to all participants, organizing by priority, and flag any action items that have deadlines within the next 48 hours assuming today is Wednesday morning.",
+        "reference": "Should produce a professional follow-up email with decisions summarized, action items sorted by deadline urgency, explicitly flag the Friday deadline as within 48 hours, and include a next-meeting reference."
+      }
+    ]
+  },
+  {
+    "id": "extraction_02",
+    "category": "extraction",
+    "turns": [
+      {
+        "turn": 1,
+        "user": "From the following contract clause, extract the key obligations, deadlines, penalties, and termination conditions: 'The Service Provider shall deliver the Phase 1 deliverables within 90 days of the Effective Date. Failure to deliver within this period shall result in a penalty of 2% of the total contract value per week of delay, not to exceed 10% in aggregate. Either party may terminate this Agreement upon 60 days written notice. In the event of termination for cause, the non-breaching party shall be entitled to recover all direct damages up to the total contract value. The Service Provider shall maintain professional liability insurance of not less than $5M throughout the term.'",
+        "reference": "Should clearly extract: obligations (Phase 1 delivery, insurance maintenance), deadlines (90 days, 60 days notice), penalties (2%/week up to 10%), termination conditions (60 days notice, cause-based with damages), and insurance requirement ($5M)."
+      },
+      {
+        "turn": 2,
+        "user": "We are the client in this contract. Identify three potential risks or gaps in this clause that our legal team should negotiate before signing, and suggest specific amendments for each.",
+        "reference": "Should identify risks such as: vague 'Phase 1 deliverables' definition, penalty cap may be insufficient for extended delays, 'direct damages' limitation excludes consequential damages, no quality acceptance criteria, and no IP assignment clause. Should propose specific amendment language."
+      }
+    ]
+  },
+  {
+    "id": "extraction_03",
+    "category": "extraction",
+    "turns": [
+      {
+        "turn": 1,
+        "user": "Extract the top 5 strategic priorities and their associated KPIs from this CEO's earnings call statement: 'This year, our primary focus is on three pillars. First, accelerating enterprise adoption—we are targeting 50 enterprise logos by year end, up from 23 today. Second, platform expansion through our new analytics module, which we expect to contribute 15% of ARR by Q4. Third, operational efficiency—we are targeting 70% gross margins, up from 62%. Additionally, we are investing heavily in our AI capabilities, with a goal of launching three AI-powered features by mid-year. Finally, our international expansion into EMEA is on track, with our London office opening in Q3 and a target of $5M EMEA revenue by year end.'",
+        "reference": "Should extract five priorities (enterprise adoption, platform expansion, operational efficiency, AI capabilities, EMEA expansion) with specific KPIs (50 logos, 15% ARR contribution, 70% gross margin, 3 AI features by mid-year, $5M EMEA revenue + London Q3)."
+      },
+      {
+        "turn": 2,
+        "user": "Create a tracking dashboard specification from these extracted priorities. For each KPI, define the data source, measurement frequency, target vs. actual format, and early warning thresholds that would trigger executive attention.",
+        "reference": "Should specify a concrete dashboard layout with each KPI tied to a realistic data source (CRM, billing system, P&L, product analytics, regional revenue reports), suggest weekly or monthly cadences, define red/yellow/green thresholds, and identify leading indicators for each."
+      }
+    ]
+  },
+  {
+    "id": "extraction_04",
+    "category": "extraction",
+    "turns": [
+      {
+        "turn": 1,
+        "user": "Analyze this customer feedback collection and extract the top themes with frequency counts: 'Love the product but onboarding was confusing. Took 3 weeks to get started.' / 'API documentation is outdated. Had to contact support 4 times.' / 'Great features but way too expensive for small teams.' / 'Onboarding needs work. The setup wizard broke twice.' / 'Pricing is fair for enterprise but kills us as a 10-person team.' / 'Support team is amazing but docs are terrible.' / 'We almost churned during onboarding. Too many steps.' / 'The API docs say one thing but the actual endpoints do something else.' / 'Price increase was unexpected. No warning.' / 'Fantastic product once you get past the learning curve. Onboarding guide would help.'",
+        "reference": "Should identify themes: Onboarding issues (4 mentions), Documentation problems (3 mentions), Pricing concerns for small teams (3 mentions), Positive product sentiment (3 mentions), Good support (1 mention). Should note patterns within themes."
+      },
+      {
+        "turn": 2,
+        "user": "Based on these themes, draft a prioritized action plan with estimated business impact. Use a 2x2 framework of effort vs. impact to recommend which theme to tackle first.",
+        "reference": "Should create a 2x2 matrix classifying each theme, recommend onboarding improvement as likely high-impact/medium-effort first priority, documentation as high-impact/low-effort quick win, pricing as high-impact/high-effort requiring more analysis, and justify the prioritization."
+      }
+    ]
+  },
+  {
+    "id": "extraction_05",
+    "category": "extraction",
+    "turns": [
+      {
+        "turn": 1,
+        "user": "From this board meeting transcript excerpt, extract the voted-upon resolutions and their outcomes: 'Chairman: Motion to approve the Q3 financial statements as presented. All in favor? Motion passes unanimously. Next, motion to authorize the CEO to negotiate the acquisition of TechCo for up to $30M. Discussion? Director Lee: I have concerns about the valuation. After discussion, motion passes 5-2 with Directors Lee and Patel dissenting. Motion to increase the authorized share pool by 2% for the employee option plan. Motion passes 6-1, Director Patel dissenting. Final motion to adjourn. Passed unanimously.'",
+        "reference": "Should extract four resolutions with exact vote counts: Q3 financials (unanimous pass), TechCo acquisition authorization (5-2, Lee and Patel dissenting), share pool increase (6-1, Patel dissenting), adjournment (unanimous). Should note the $30M cap and 2% increase specifics."
+      },
+      {
+        "turn": 2,
+        "user": "Director Patel dissented on two motions. Draft a brief analysis memo for the CEO on how to engage Director Patel before the next board meeting, considering the pattern in their dissents and likely underlying concerns.",
+        "reference": "Should identify the pattern (Patel opposes dilutive and expensive actions, suggesting financial conservatism or valuation sensitivity), propose a pre-meeting engagement strategy, suggest presenting additional financial justification, and recommend a 1:1 conversation to understand Patel's framework."
+      }
+    ]
+  },
+  {
+    "id": "extraction_06",
+    "category": "extraction",
+    "turns": [
+      {
+        "turn": 1,
+        "user": "Extract all financial figures and their context from this investor letter paragraph: 'Revenue for the fiscal year reached $47.3M, representing 34% year-over-year growth. Gross margins expanded 320 basis points to 71.2%, driven primarily by infrastructure cost optimization. We reduced our net burn to $2.1M per quarter from $3.8M in the prior year. Our cash position stands at $28.5M, providing approximately 3.4 years of runway at current burn rates. ARR exiting the year was $52.1M, and we added $14.7M in net new ARR during the year.'",
+        "reference": "Should extract all figures with context: revenue ($47.3M, 34% YoY growth), gross margin (71.2%, +320bps), net burn ($2.1M/quarter, down from $3.8M), cash ($28.5M, 3.4 years runway), exiting ARR ($52.1M), net new ARR ($14.7M). Should note the delta between ARR and revenue implies strong Q4 bookings."
+      },
+      {
+        "turn": 2,
+        "user": "Cross-check these numbers for internal consistency. Are there any figures that do not add up or raise questions? Identify any discrepancies or missing context that an analyst might flag.",
+        "reference": "Should flag: ARR ($52.1M) vs. revenue ($47.3M) gap suggests strong back-half bookings acceleration; verify the $14.7M net new ARR implies starting ARR of $37.4M which should map to roughly $37-38M revenue if linear, suggesting non-linearity; runway calculation check ($28.5M / $2.1M per quarter = 13.6 quarters = 3.4 years, this checks out)."
+      }
+    ]
+  },
+  {
+    "id": "extraction_07",
+    "category": "extraction",
+    "turns": [
+      {
+        "turn": 1,
+        "user": "Extract the competitive positioning claims from this product announcement: 'Today we launch QuantumSync 3.0, the industry's first real-time data synchronization platform with sub-millisecond latency. Unlike legacy solutions from DataCorp and SyncWare that require batch processing windows, QuantumSync operates continuously. Our enterprise customers report 99.99% data accuracy compared to the industry average of 99.5%. With SOC 2 Type II and HIPAA compliance certified, we are the only solution in our category approved for use in regulated industries. Pricing starts at $2,500/month, approximately 40% less than comparable enterprise solutions.'",
+        "reference": "Should extract claims categorized as: performance claims (sub-ms latency, real-time vs. batch), accuracy claims (99.99% vs. 99.5% industry), compliance claims (SOC 2 Type II, HIPAA, only regulated-industry solution), pricing claims (40% less than comparable), and competitive references (DataCorp, SyncWare)."
+      },
+      {
+        "turn": 2,
+        "user": "If I am the competitive intelligence analyst at DataCorp, which of these claims should I investigate as potentially misleading, and what evidence would I need to refute each one?",
+        "reference": "Should identify verifiable vs. vague claims: 'industry's first' is hard to verify (need patent/launch date research), 'industry average' of 99.5% needs a source, 'only solution for regulated industries' is verifiable via competitor certifications, '40% less' needs price comparison methodology. Should outline specific evidence needed for each."
+      }
+    ]
+  },
+  {
+    "id": "extraction_08",
+    "category": "extraction",
+    "turns": [
+      {
+        "turn": 1,
+        "user": "Extract the organizational structure and reporting lines from this announcement email: 'Effective April 1, we are reorganizing the Product & Engineering division. CTO Maria Chen will oversee two pillars: Platform Engineering led by VP David Kim (teams: Infrastructure, DevOps, Security) and Product Engineering led by VP Sarah Lopez (teams: Core Product, Integrations, Mobile). CPO James Wright will lead Product Management (teams: Enterprise PM, Growth PM, Platform PM) and the newly created Design division under Director Alex Rivera (teams: UX Research, Product Design, Brand Design). Both Maria and James report directly to CEO.'",
+        "reference": "Should produce a clear hierarchy: CEO at top, with CTO Maria Chen and CPO James Wright as direct reports. Under Maria: David Kim (Infrastructure, DevOps, Security) and Sarah Lopez (Core Product, Integrations, Mobile). Under James: Product Management (Enterprise PM, Growth PM, Platform PM) and Alex Rivera (UX Research, Product Design, Brand Design)."
+      },
+      {
+        "turn": 2,
+        "user": "Identify potential organizational design issues in this structure. What coordination challenges might arise and what cross-functional mechanisms would you recommend?",
+        "reference": "Should identify issues: PM and Engineering in separate reporting chains could create misalignment, Design under CPO but building for engineering teams creates a dependency, no clear data/analytics home, and potential for platform vs. product engineering prioritization conflicts. Should recommend coordination mechanisms like EPD triads, shared OKRs, and regular cross-pillar syncs."
+      }
+    ]
+  },
+  {
+    "id": "extraction_09",
+    "category": "extraction",
+    "turns": [
+      {
+        "turn": 1,
+        "user": "Extract the risk factors and their potential impact from this project status report: 'The ERP migration is 60% complete and on schedule. However, we have identified several risks: (1) The legacy data cleaning is taking 40% longer than estimated, which could delay the go-live by 2-3 weeks if the trend continues. (2) Two key integration developers resigned last week, and backfilling will take 4-6 weeks. (3) The vendor has announced a price increase of 15% effective next quarter, which could add $200K to the project budget. (4) User acceptance testing has not been scheduled due to stakeholder availability conflicts. (5) The parallel-run period may need to extend from 4 weeks to 8 weeks based on data reconciliation complexity.'",
+        "reference": "Should extract five risks with categorization (schedule, resource, budget, process, scope), quantify each impact (2-3 weeks delay, 4-6 week backfill gap, $200K cost increase, unknown UAT timeline, 4-week parallel-run extension), and identify interdependencies between risks."
+      },
+      {
+        "turn": 2,
+        "user": "Create a risk mitigation matrix for these five risks. For each, propose a mitigation action, assign a risk owner role, estimate the residual risk after mitigation, and prioritize them by combined likelihood and impact.",
+        "reference": "Should produce a structured risk register with pre/post-mitigation risk scores, specific mitigation actions (hire contractors for developer gap, negotiate price lock with vendor, etc.), realistic risk owner assignments, and a force-ranked priority list."
+      }
+    ]
+  },
+  {
+    "id": "extraction_10",
+    "category": "extraction",
+    "turns": [
+      {
+        "turn": 1,
+        "user": "Extract the key commitments and timelines from this partnership agreement summary: 'Brevio and CloudFirst agree to co-develop an integrated analytics module (Project Atlas) with the following terms: Brevio provides the AI engine and data pipeline; CloudFirst provides the cloud infrastructure and go-to-market channels. Development begins Q2 2026 with a joint team of 8 engineers (5 Brevio, 3 CloudFirst). Beta launch targeted for Q4 2026. Revenue split: 60% Brevio, 40% CloudFirst for direct sales; 50/50 for channel sales. Minimum annual commitment: CloudFirst guarantees $2M in pipeline within 12 months of GA. Exclusivity: 18-month exclusive in the financial services vertical. IP: jointly owned, with each party retaining rights to their contributed components.'",
+        "reference": "Should extract: commitments per party (Brevio: AI engine + data pipeline + 5 engineers; CloudFirst: infrastructure + GTM + 3 engineers + $2M pipeline), timelines (Q2 2026 start, Q4 2026 beta), financial terms (60/40 and 50/50 splits), exclusivity (18 months, finserv), and IP terms (joint ownership with retained component rights)."
+      },
+      {
+        "turn": 2,
+        "user": "As Brevio's VP of Partnerships, identify the five most important terms to negotiate further before signing. For each, explain why it matters and what specific improvement you would seek.",
+        "reference": "Should identify: GA date commitment (not just beta), pipeline guarantee enforcement mechanism and definition, exclusivity scope clarity (does finserv include insurance?), IP ownership upon termination, and revenue attribution methodology for channel vs. direct. Should propose specific negotiation positions for each."
+      }
+    ]
+  },
+  {
+    "id": "stem_01",
+    "category": "stem",
+    "turns": [
+      {
+        "turn": 1,
+        "user": "We ran an A/B test on our pricing page. Control (current page) had 10,000 visitors and 320 conversions (3.2%). Variant (new design) had 10,000 visitors and 370 conversions (3.7%). Is this result statistically significant? Walk me through the analysis.",
+        "reference": "Should calculate the z-test for proportions, determine p-value (approximately 0.048 for one-tailed), discuss significance at the 0.05 level, compute confidence interval for the difference, and discuss practical significance vs. statistical significance. Should note the test is borderline significant."
+      },
+      {
+        "turn": 2,
+        "user": "The product team wants to ship the variant immediately. The data science team says we should run the test longer. Explain the risks of stopping early and calculate how many more visitors we would need for 95% confidence with 80% power if the true difference is 0.5 percentage points.",
+        "reference": "Should explain peeking problem and inflated false positive rates, calculate required sample size using the power formula for two-proportion test (approximately 30,000+ per group for a 0.5pp effect), discuss the tradeoff of speed vs. confidence, and suggest a sequential testing approach as a compromise."
+      }
+    ]
+  },
+  {
+    "id": "stem_02",
+    "category": "stem",
+    "turns": [
+      {
+        "turn": 1,
+        "user": "Our product analytics team reports that users who complete onboarding within the first 24 hours have 80% 30-day retention, compared to 30% for users who take longer. The team concludes that faster onboarding causes better retention. Critique this analysis.",
+        "reference": "Should identify the correlation-causation fallacy, propose confounding variables (user motivation, technical sophistication, use case urgency), suggest that both speed and retention may be driven by underlying user intent, and recommend methods to establish causality (instrumental variables, natural experiments, controlled rollout)."
+      },
+      {
+        "turn": 2,
+        "user": "How would you design an experiment to test whether accelerating onboarding actually causes improved retention, while controlling for user motivation as a confounding variable?",
+        "reference": "Should propose a randomized experiment (simplified onboarding flow for random subset), discuss stratified randomization by user characteristics, define primary and secondary metrics, calculate required sample size, account for the ethical consideration of potentially degrading one group's experience, and suggest measuring motivation proxies."
+      }
+    ]
+  },
+  {
+    "id": "stem_03",
+    "category": "stem",
+    "turns": [
+      {
+        "turn": 1,
+        "user": "Our data shows monthly revenue of: Jan $800K, Feb $840K, Mar $920K, Apr $880K, May $960K, Jun $1.02M, Jul $980K, Aug $1.05M, Sep $1.12M, Oct $1.08M, Nov $1.15M, Dec $1.25M. The CEO says we are growing 56% year-over-year. The CFO says the real growth rate is lower. Who is right and why?",
+        "reference": "Should calculate that comparing Dec to Jan gives 56% but this is misleading. Should compute the actual annualized growth rate using proper methods (CAGR from monthly data, linear regression, or average month-over-month growth compounded). The real annualized rate is closer to the MoM compound rate. Should discuss why start/end comparisons are misleading with volatile data."
+      },
+      {
+        "turn": 2,
+        "user": "If I need to present a defensible growth rate to investors, what methodology should I use and what caveats should I include? Also, is there evidence of seasonality or acceleration/deceleration in this data?",
+        "reference": "Should recommend trailing 3-month average comparison or regression-based growth rate as more defensible, note the Apr and Jul/Oct dips may suggest quarterly patterns, discuss whether the data shows acceleration (recent months growing faster), and recommend presenting multiple views with context."
+      }
+    ]
+  },
+  {
+    "id": "stem_04",
+    "category": "stem",
+    "turns": [
+      {
+        "turn": 1,
+        "user": "Define the key product metrics framework for a B2B SaaS executive dashboard. I need metrics organized by category (acquisition, activation, engagement, retention, revenue) with precise definitions and recommended measurement frequencies.",
+        "reference": "Should define metrics per category with exact formulas: Acquisition (qualified leads, lead velocity rate, CAC), Activation (time to first value, onboarding completion rate), Engagement (DAU/MAU, feature adoption), Retention (logo retention, net revenue retention, cohort curves), Revenue (MRR, ARR, ARPU, expansion rate). Each with frequency and data source."
+      },
+      {
+        "turn": 2,
+        "user": "Now identify the three most important leading indicators from this framework that would give earliest warning of a future churn problem, and explain the causal chain from each leading indicator to eventual churn.",
+        "reference": "Should identify leading indicators like declining engagement scores, decreasing feature adoption breadth, support ticket sentiment shift, or NPS/CSAT trends, and trace the causal chain (e.g., declining login frequency -> reduced value realization -> missed renewal intent -> churn). Should quantify typical lag times."
+      }
+    ]
+  },
+  {
+    "id": "stem_05",
+    "category": "stem",
+    "turns": [
+      {
+        "turn": 1,
+        "user": "We launched a new feature and want to measure its impact on user engagement. Pre-launch average daily sessions per user was 2.3 (std dev 0.8) over 30 days. Post-launch (14 days) the average is 2.6 (std dev 0.9). Our PM says the feature increased engagement by 13%. Evaluate this claim.",
+        "reference": "Should assess statistical significance (t-test yields a significant result given these parameters), but flag issues: novelty effect bias in 14-day window, no control group, seasonal or other confounds, and the need to distinguish between feature usage and overall engagement lift."
+      },
+      {
+        "turn": 2,
+        "user": "How would you design a proper measurement framework to isolate the true long-term engagement impact of this feature, accounting for novelty effect, selection bias, and external factors?",
+        "reference": "Should propose: holdback experiment (delayed rollout group as control), difference-in-differences analysis, measurement over 8-12 weeks to account for novelty decay, segmentation by feature adoption level, and control for external factors (marketing campaigns, seasonality) using interrupted time series."
+      }
+    ]
+  },
+  {
+    "id": "stem_06",
+    "category": "stem",
+    "turns": [
+      {
+        "turn": 1,
+        "user": "Our recommendation engine serves 1M requests per day. We are testing a new algorithm. The current algorithm has a 4.2% click-through rate. We want to detect a minimum improvement of 0.3 percentage points with 95% confidence and 80% power. How long do we need to run the test if we split traffic 50/50?",
+        "reference": "Should calculate required sample size per group using the two-proportion z-test formula (approximately 43,000-45,000 per group for these parameters), then divide by daily traffic per group (500K) to get less than 1 day. Should note the result and discuss why minimum detectable effect matters more than duration here."
+      },
+      {
+        "turn": 2,
+        "user": "The data science team warns that our click-through rate varies significantly by day of week (weekday: 4.8%, weekend: 2.9%). How does this affect our test design and analysis?",
+        "reference": "Should explain that day-of-week variation introduces periodic confounding, recommend running the test in full-week increments, suggest stratified analysis by day type, discuss using day-of-week as a covariate in regression to improve power, and recalculate required duration accounting for the variance increase."
+      }
+    ]
+  },
+  {
+    "id": "stem_07",
+    "category": "stem",
+    "turns": [
+      {
+        "turn": 1,
+        "user": "We have customer satisfaction scores from 500 enterprise accounts (mean 7.8 out of 10, median 8.2, std dev 1.9). The distribution is left-skewed. Our benchmark target is 8.0. Are we meeting the benchmark? What does the skew tell us?",
+        "reference": "Should note the mean is below 8.0 but median is above, explain that left skew indicates a tail of very dissatisfied customers pulling the mean down, recommend reporting median as more representative, identify that the gap between mean and median (0.4) signals a bimodal or long-tail issue worth investigating, and perform a one-sample t-test against 8.0."
+      },
+      {
+        "turn": 2,
+        "user": "We segmented the data and found that 15% of accounts (75 accounts) have scores below 5.0, while the remaining 85% have a mean of 8.6. These low-scoring accounts represent 35% of our ARR. What should we do with this analysis?",
+        "reference": "Should flag the severe revenue concentration risk in dissatisfied accounts, recommend immediate intervention for the 75 at-risk accounts, calculate potential ARR at risk, propose a targeted rescue program, and discuss whether the two populations need different product/service strategies rather than averaging across them."
+      }
+    ]
+  },
+  {
+    "id": "stem_08",
+    "category": "stem",
+    "turns": [
+      {
+        "turn": 1,
+        "user": "Our marketing team ran 5 campaigns last quarter with these results: Campaign A: $50K spend, 500 leads, 25 conversions. Campaign B: $30K spend, 800 leads, 16 conversions. Campaign C: $80K spend, 300 leads, 30 conversions. Campaign D: $20K spend, 600 leads, 6 conversions. Campaign E: $40K spend, 450 leads, 22 conversions. Rank these campaigns by efficiency and explain which metric(s) you are using and why.",
+        "reference": "Should calculate multiple efficiency metrics: cost per lead (B wins), cost per conversion (E wins at ~$1,818), conversion rate from leads (A and C win at 5% and 10%), and discuss why cost per conversion is the most relevant bottom-line metric. Should note Campaign C has the best lead quality but highest cost per lead."
+      },
+      {
+        "turn": 2,
+        "user": "If we have $100K to allocate next quarter and can scale any campaign proportionally, what is the optimal allocation? What assumptions does this require and how might they break down?",
+        "reference": "Should optimize for conversions per dollar (allocate most to E and A based on cost-per-conversion), but critically discuss the scalability assumption: campaigns may have diminishing returns at higher spend, channel capacity limits, audience saturation, and the need for testing budget. Should propose an allocation with a test-and-learn reserve."
+      }
+    ]
+  },
+  {
+    "id": "stem_09",
+    "category": "stem",
+    "turns": [
+      {
+        "turn": 1,
+        "user": "We want to build a customer health score that predicts churn 90 days in advance. Available signals: product usage (daily logins, feature breadth, API calls), support (ticket volume, sentiment, response time), financial (payment failures, contract value trend), and engagement (NPS responses, meeting attendance, champion changes). How should we design this scoring system?",
+        "reference": "Should propose a weighted composite score methodology, discuss whether to use rule-based vs. ML approach given the prediction requirement, recommend starting with logistic regression for interpretability, define feature engineering for each signal category, discuss training data requirements, and address the class imbalance problem (churn is typically rare)."
+      },
+      {
+        "turn": 2,
+        "user": "We built the model and it has 85% accuracy but only 40% recall for actual churners. The CS team says they would rather have more false positives than miss real churners. How do we adjust the model and what are the operational implications?",
+        "reference": "Should explain the precision-recall tradeoff, recommend lowering the classification threshold to increase recall at the cost of precision, discuss the operational cost of false positives (CS team capacity), suggest optimizing for a business metric (expected revenue saved) rather than pure accuracy, and recommend setting the threshold based on CS team capacity constraints."
+      }
+    ]
+  },
+  {
+    "id": "stem_10",
+    "category": "stem",
+    "turns": [
+      {
+        "turn": 1,
+        "user": "Our infrastructure team reports that API response times follow a log-normal distribution with median 120ms and p99 at 850ms. Our SLA guarantees p95 under 500ms. Are we meeting our SLA? If median moves to 150ms but the distribution shape stays the same, will we still meet it?",
+        "reference": "Should explain log-normal properties, estimate p95 from the given parameters (it falls between median and p99, likely around 400-500ms range), determine SLA compliance status, then model the shift scenario by scaling the distribution and recalculating p95. Should show the mathematical reasoning."
+      },
+      {
+        "turn": 2,
+        "user": "We are considering adding a CDN that would reduce latency by a fixed 30ms for all requests. How does subtracting a constant from a log-normal distribution affect the shape and our percentile targets? Is a flat reduction more valuable at the median or the tail?",
+        "reference": "Should explain that subtracting a constant from a log-normal distribution shifts it but changes its shape (no longer strictly log-normal), has equal absolute impact at all percentiles but greater relative impact at the median than the tail, and discuss whether the investment is better spent on tail-specific optimizations if the SLA is the concern."
+      }
+    ]
+  },
+  {
+    "id": "humanities_01",
+    "category": "humanities",
+    "turns": [
+      {
+        "turn": 1,
+        "user": "Our AI product makes hiring recommendations for enterprise clients. We discovered that the model has a measurable bias: it recommends male candidates 15% more often for technical roles when controlling for qualifications. How should we handle this ethically and strategically?",
+        "reference": "Should address immediate ethical obligation (disclose and remediate), legal exposure (EEOC, disparate impact liability), customer communication strategy, technical remediation approaches (bias auditing, debiasing methods), and the tension between shipping speed and responsible AI practices."
+      },
+      {
+        "turn": 2,
+        "user": "Our VP of Sales argues that disclosing the bias to customers before we fix it will kill three enterprise deals worth $2M total. They want to fix it quietly first. Our Chief Ethics Officer disagrees. How do you advise the CEO?",
+        "reference": "Should analyze the ethical arguments (transparency vs. harm reduction), legal risk of non-disclosure (if discovered later, liability increases dramatically), reputational risk calculation, stakeholder trust implications, and recommend a middle path with timeline-bound disclosure and immediate mitigation measures."
+      }
+    ]
+  },
+  {
+    "id": "humanities_02",
+    "category": "humanities",
+    "turns": [
+      {
+        "turn": 1,
+        "user": "We are a US-based company expanding to the EU. Our product collects behavioral analytics that are standard practice in the US but may conflict with GDPR principles of data minimization and purpose limitation. Analyze the ethical and regulatory considerations.",
+        "reference": "Should discuss the philosophical difference between US (notice-and-choice) and EU (rights-based) data protection frameworks, identify specific GDPR articles at risk, analyze the ethics of behavioral tracking beyond mere compliance, and propose a principled approach to data collection that could work globally."
+      },
+      {
+        "turn": 2,
+        "user": "Our product team proposes maintaining two versions: a full-tracking US version and a privacy-preserving EU version. Critically evaluate this approach from both an ethical and a business strategy perspective.",
+        "reference": "Should discuss the ethical problem of treating privacy as geography-dependent rather than a universal right, the operational complexity and cost of dual systems, the risk of the EU standard becoming global (GDPR effect), and argue that building to the highest standard globally may be both more ethical and more strategically sound."
+      }
+    ]
+  },
+  {
+    "id": "humanities_03",
+    "category": "humanities",
+    "turns": [
+      {
+        "turn": 1,
+        "user": "A whistleblower in our company has reported to the press that our product's security vulnerability was known internally for 6 months before we patched it. The story will run tomorrow. Develop a communication strategy for all stakeholders: media, customers, employees, board, and regulators.",
+        "reference": "Should develop differentiated messaging for each stakeholder group, prioritize customer communication, address the timeline criticism directly, propose accountability measures, and balance transparency with legal considerations. Should include timing and channel recommendations."
+      },
+      {
+        "turn": 2,
+        "user": "The board wants to identify and discipline the whistleblower. Several executives support this. Advise the CEO on why this is problematic and what the appropriate response to whistleblowing should be, considering legal protections and organizational culture.",
+        "reference": "Should cite whistleblower protection laws (SOX, Dodd-Frank, state laws), explain the ethical function of whistleblowing in corporate governance, warn about retaliation liability and cultural damage, and propose a constructive response that addresses the underlying failure (the 6-month delay) rather than punishing the disclosure."
+      }
+    ]
+  },
+  {
+    "id": "humanities_04",
+    "category": "humanities",
+    "turns": [
+      {
+        "turn": 1,
+        "user": "Our company recently conducted a pay equity audit and found that women earn 8% less than men in equivalent roles after controlling for experience and performance. The CHRO wants to close the gap immediately with market adjustments. The CFO says the $1.2M cost is too high this quarter. Advise the executive team.",
+        "reference": "Should analyze the legal liability of known but unaddressed pay inequity, ethical obligations, employee trust implications if the gap becomes known, phased remediation options, and the reputational risk vs. financial cost tradeoff. Should recommend acting on both moral and business grounds."
+      },
+      {
+        "turn": 2,
+        "user": "We decided to close the gap over two quarters. Now, should we proactively communicate to employees that we found and are fixing a pay gap, or just quietly adjust salaries? What are the arguments for each approach?",
+        "reference": "Should argue for transparency: builds trust, demonstrates values, attracts talent. Against: may anger those who were underpaid, could invite legal claims for back pay. Should recommend transparent communication with careful framing that acknowledges the issue, explains the fix, and describes systemic changes to prevent recurrence."
+      }
+    ]
+  },
+  {
+    "id": "humanities_05",
+    "category": "humanities",
+    "turns": [
+      {
+        "turn": 1,
+        "user": "Our largest customer in a developing country has asked us to build a feature that would enable surveillance of employee communications beyond what we consider ethically acceptable, but it is legal in their jurisdiction. They represent 12% of our revenue. How should we approach this?",
+        "reference": "Should analyze the tension between cultural relativism and universal ethical principles, assess the reputational and precedent-setting risks, consider whether building the feature normalizes surveillance, discuss revenue dependency, and propose a principled framework for evaluating ethically ambiguous feature requests."
+      },
+      {
+        "turn": 2,
+        "user": "We declined to build the feature and the customer threatened to leave. Our board is divided. Construct the strongest arguments both for and against our decision, then recommend a path forward.",
+        "reference": "Should present steel-man arguments for both sides: for declining (brand integrity, slippery slope, employee trust, long-term market position) and against (legal in jurisdiction, customer autonomy, revenue impact, cultural imperialism concerns). Should recommend maintaining the position with a clear ethical framework document for future decisions."
+      }
+    ]
+  },
+  {
+    "id": "humanities_06",
+    "category": "humanities",
+    "turns": [
+      {
+        "turn": 1,
+        "user": "We are planning to implement AI-driven performance reviews that will partially replace manager judgment. The system uses peer feedback, code commits, customer interactions, and meeting participation as inputs. Analyze the ethical implications and potential unintended consequences.",
+        "reference": "Should discuss algorithmic fairness concerns, the risk of optimizing for measurable over meaningful contributions, impact on neurodivergent employees, privacy implications of monitoring meeting participation, the removal of human context from evaluation, and potential for gaming behavior."
+      },
+      {
+        "turn": 2,
+        "user": "Engineering leadership loves the system because it reduces bias from manager favorites. HR is concerned it penalizes introverts and caregivers. How do we design a system that captures the benefits of both approaches?",
+        "reference": "Should propose a hybrid system where AI provides data-driven insights but managers retain decision authority, include accommodation for different work styles, weight inputs to avoid penalizing non-visible contributions, add self-assessment and goal-based evaluation, and include regular bias audits of the AI component."
+      }
+    ]
+  },
+  {
+    "id": "humanities_07",
+    "category": "humanities",
+    "turns": [
+      {
+        "turn": 1,
+        "user": "Our company took a public stance on a social issue that aligns with our values but has alienated a segment of customers representing about 8% of revenue. Some employees are thrilled while others feel the company should stay neutral on political issues. Evaluate the decision framework for corporate social advocacy.",
+        "reference": "Should discuss stakeholder theory vs. shareholder primacy, the growing expectation of corporate social responsibility, authenticity requirements (does the stance align with internal practices?), employee engagement effects, customer segment analysis, and frameworks for deciding when to take public positions."
+      },
+      {
+        "turn": 2,
+        "user": "Now a different social issue has emerged and employees are demanding the company take a public stance. This time, the executive team is personally divided on the issue. How should the CEO decide whether and how to respond?",
+        "reference": "Should provide a decision framework: is the issue connected to business operations or employee wellbeing? Is there internal consensus? What is the cost of silence vs. speech? Should distinguish between issues that affect employees directly vs. general political issues, and propose a thoughtful process for decision-making that respects diverse viewpoints."
+      }
+    ]
+  },
+  {
+    "id": "humanities_08",
+    "category": "humanities",
+    "turns": [
+      {
+        "turn": 1,
+        "user": "We acquired a company in a different country and need to integrate two very different corporate cultures. Our culture is flat, transparent, and informal. Theirs is hierarchical, formal, and relationship-driven. Both have been successful. Develop an integration strategy that does not destroy either culture's strengths.",
+        "reference": "Should draw on cross-cultural management theory (Hofstede, Trompenaars), propose preserving local cultural strengths while establishing shared values, recommend against imposing the acquiring company's culture, suggest cultural exchange programs, and identify specific friction points to manage (decision-making style, communication norms, meeting culture)."
+      },
+      {
+        "turn": 2,
+        "user": "Three months into integration, the acquired team's top performers are leaving because they feel our 'flat culture' actually means unclear career progression and that their expertise is not respected in our informal environment. How do we address this?",
+        "reference": "Should acknowledge the legitimate criticism that 'flat' can mean 'structureless,' propose creating clear career ladders that work in both cultural contexts, implement visible recognition mechanisms, create formal mentorship matching senior acquired-team members with roles that leverage their expertise, and address the deeper issue of cultural humility in integration."
+      }
+    ]
+  },
+  {
+    "id": "humanities_09",
+    "category": "humanities",
+    "turns": [
+      {
+        "turn": 1,
+        "user": "Our AI assistant product is increasingly being used by customers for mental health-adjacent conversations (stress management, work anxiety, burnout). We did not design it for this. What are our ethical obligations and what policy should we develop?",
+        "reference": "Should discuss duty of care, the risk of AI providing harmful mental health advice, liability considerations, the difference between supportive conversation and therapy, responsible design principles, and the need for clear boundaries, disclaimers, and escalation paths to qualified professionals."
+      },
+      {
+        "turn": 2,
+        "user": "Our product team sees this as a growth opportunity and wants to lean into mental health features. Our legal team wants to block all mental health conversations entirely. Find a responsible middle ground.",
+        "reference": "Should propose a tiered approach: acknowledge and validate emotions without providing therapy, offer curated resources and professional referrals, implement safety escalation for crisis indicators, avoid claiming therapeutic efficacy, partner with licensed mental health organizations, and define clear scope boundaries with appropriate disclaimers."
+      }
+    ]
+  },
+  {
+    "id": "humanities_10",
+    "category": "humanities",
+    "turns": [
+      {
+        "turn": 1,
+        "user": "Our company is considering replacing 30% of our customer support team (120 people) with AI agents over the next 18 months. The AI demonstrably handles routine tickets faster and cheaper. How should we think about this decision beyond just the cost savings?",
+        "reference": "Should address the human impact comprehensively: job displacement obligations, reskilling opportunities, impact on remaining team morale, community economic effects, customer experience quality considerations, the ethical dimension of automating livelihoods, and the company's responsibility to employees who built the business."
+      },
+      {
+        "turn": 2,
+        "user": "The CEO has decided to proceed with the AI transition. Design a responsible transition plan that maximizes both business benefit and human dignity for affected employees.",
+        "reference": "Should propose: extended notice period beyond legal minimums, genuine reskilling programs (not just token offerings) into AI trainer, escalation specialist, or other roles, severance packages, internal hiring preferences, phased transition to allow adaptation, transparent communication, alumni network support, and measurement of the human impact alongside the business metrics."
+      }
+    ]
+  }
+]

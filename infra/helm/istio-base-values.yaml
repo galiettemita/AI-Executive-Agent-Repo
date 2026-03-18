@@ -1,0 +1,4 @@
+global:
+  meshID: brevio-mesh
+  network: brevio-network
+  clusterName: brevio-prod

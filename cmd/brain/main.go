@@ -11,11 +11,15 @@ import (
 	"strings"
 	"time"
 
+	"log/slog"
+
+	consentpkg "github.com/brevio/brevio/internal/compliance/consent"
 	"github.com/brevio/brevio/internal/executor"
 	"github.com/brevio/brevio/internal/gateway"
 	"github.com/brevio/brevio/internal/metrics"
 	runtimeserver "github.com/brevio/brevio/internal/runtime"
 	brtemporal "github.com/brevio/brevio/internal/temporal"
+	watermarkpkg "github.com/brevio/brevio/internal/watermark"
 	"go.temporal.io/sdk/client"
 )
 
@@ -169,6 +173,31 @@ func main() {
 			"run_id":      run.GetRunID(),
 		})
 	})
+
+	// ── Consent API (P3-04) ───────────────────────────────────────────────────
+	{
+		consentLogger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
+		consentRegistry := consentpkg.NewConsentRegistry(nil, consentLogger)
+		consentHandler := consentpkg.NewConsentHandler(consentRegistry, temporalClient, "brevio-main", consentLogger)
+		consentHandler.RegisterRoutes(mux)
+		logger.Info("consent_api_registered", map[string]any{"status": "active"})
+	}
+
+	// ── Content Verification Endpoint (P3-02) ─────────────────────────────────
+	if wmKeyHex := os.Getenv("WATERMARK_HMAC_KEY"); wmKeyHex != "" {
+		wmLogger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
+		c2pa, c2paErr := watermarkpkg.NewC2PAContentWatermarker(wmLogger)
+		if c2paErr == nil {
+			var semWM *watermarkpkg.SemanticWatermarker
+			if os.Getenv("SEMANTIC_WATERMARK_ENABLED") != "false" {
+				semWM, _ = watermarkpkg.NewSemanticWatermarker(c2pa.HMACKey(), wmLogger)
+			}
+			verifyHandler := watermarkpkg.NewVerifyContentHandler(c2pa, semWM, nil, wmLogger)
+			rateLimiter := watermarkpkg.NewIPRateLimiter(100, time.Minute)
+			mux.Handle("POST /v1/verify/content", rateLimiter.Middleware(verifyHandler))
+			logger.Info("verify_content_endpoint_registered", map[string]any{"status": "active"})
+		}
+	}
 
 	handler := logger.Middleware(mux)
 

@@ -1,0 +1,23 @@
+name: MT-Bench CI Regression Gate
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'brain/**'
+      - 'internal/llm/**'
+
+jobs:
+  mt-bench-regression:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+      - name: Run MT-Bench regression check
+        run: go test ./internal/evaluation/... -run TestMTBenchCIRegression -v -timeout 45m
+        env:
+          CI: "true"
+          DATABASE_URL: ${{ secrets.CI_DATABASE_URL }}
+          ANTHROPIC_API_KEY: ${{ secrets.CI_ANTHROPIC_API_KEY }}

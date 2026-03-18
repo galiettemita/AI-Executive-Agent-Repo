@@ -1,0 +1,195 @@
+---
+# Brain service
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: brain
+  namespace: brevio
+spec:
+  hosts:
+    - brain
+  http:
+    - retries:
+        attempts: 3
+        perTryTimeout: 30s
+        retryOn: "5xx,reset,connect-failure"
+      timeout: 90s
+      route:
+        - destination:
+            host: brain
+            port:
+              number: 8080
+---
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata:
+  name: brain
+  namespace: brevio
+spec:
+  host: brain
+  trafficPolicy:
+    connectionPool:
+      http:
+        http1MaxPendingRequests: 100
+        http2MaxRequests: 1000
+    outlierDetection:
+      consecutive5xxErrors: 5
+      interval: 30s
+      baseEjectionTime: 30s
+      maxEjectionPercent: 50
+---
+# Gateway service
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: gateway
+  namespace: brevio
+spec:
+  hosts:
+    - gateway
+  http:
+    - retries:
+        attempts: 3
+        perTryTimeout: 20s
+        retryOn: "5xx,reset,connect-failure"
+      timeout: 60s
+      route:
+        - destination:
+            host: gateway
+            port:
+              number: 8080
+---
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata:
+  name: gateway
+  namespace: brevio
+spec:
+  host: gateway
+  trafficPolicy:
+    connectionPool:
+      http:
+        http1MaxPendingRequests: 200
+        http2MaxRequests: 2000
+    outlierDetection:
+      consecutive5xxErrors: 5
+      interval: 30s
+      baseEjectionTime: 30s
+      maxEjectionPercent: 50
+---
+# Control service
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: control
+  namespace: brevio
+spec:
+  hosts:
+    - control
+  http:
+    - retries:
+        attempts: 3
+        perTryTimeout: 30s
+        retryOn: "5xx,reset,connect-failure"
+      timeout: 90s
+      route:
+        - destination:
+            host: control
+            port:
+              number: 8080
+---
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata:
+  name: control
+  namespace: brevio
+spec:
+  host: control
+  trafficPolicy:
+    connectionPool:
+      http:
+        http1MaxPendingRequests: 100
+        http2MaxRequests: 1000
+    outlierDetection:
+      consecutive5xxErrors: 5
+      interval: 30s
+      baseEjectionTime: 30s
+      maxEjectionPercent: 50
+---
+# Executor service
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: executor
+  namespace: brevio
+spec:
+  hosts:
+    - executor
+  http:
+    - retries:
+        attempts: 2
+        perTryTimeout: 60s
+        retryOn: "5xx,reset,connect-failure"
+      timeout: 120s
+      route:
+        - destination:
+            host: executor
+            port:
+              number: 8080
+---
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata:
+  name: executor
+  namespace: brevio
+spec:
+  host: executor
+  trafficPolicy:
+    connectionPool:
+      http:
+        http1MaxPendingRequests: 100
+        http2MaxRequests: 500
+    outlierDetection:
+      consecutive5xxErrors: 3
+      interval: 30s
+      baseEjectionTime: 60s
+      maxEjectionPercent: 30
+---
+# Canvas service
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: canvas
+  namespace: brevio
+spec:
+  hosts:
+    - canvas
+  http:
+    - retries:
+        attempts: 3
+        perTryTimeout: 30s
+        retryOn: "5xx,reset,connect-failure"
+      timeout: 90s
+      route:
+        - destination:
+            host: canvas
+            port:
+              number: 8080
+---
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata:
+  name: canvas
+  namespace: brevio
+spec:
+  host: canvas
+  trafficPolicy:
+    connectionPool:
+      http:
+        http1MaxPendingRequests: 100
+        http2MaxRequests: 1000
+    outlierDetection:
+      consecutive5xxErrors: 5
+      interval: 30s
+      baseEjectionTime: 30s
+      maxEjectionPercent: 50

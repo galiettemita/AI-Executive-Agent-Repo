@@ -3,9 +3,22 @@ terraform {
 }
 
 locals {
-  environment    = "production"
-  primary_region = "us-east-1"
-  dr_region      = "eu-west-1"
+  environment      = "production"
+  primary_region   = "us-east-1"
+  secondary_region = "eu-west-1"
+  dr_region        = "eu-west-1"
+  regions          = ["us-east-1", "eu-west-1"]
+}
+
+# Multi-region provider aliases (P3-09).
+provider "aws" {
+  alias  = "us_east_1"
+  region = "us-east-1"
+}
+
+provider "aws" {
+  alias  = "eu_west_1"
+  region = "eu-west-1"
 }
 
 module "eks" {

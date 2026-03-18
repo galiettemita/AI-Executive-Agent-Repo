@@ -1,6 +1,6 @@
 module github.com/brevio/brevio
 
-go 1.23.4
+go 1.25.0
 
 require github.com/google/uuid v1.6.0
 

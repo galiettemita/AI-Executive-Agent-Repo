@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"strings"
@@ -28,7 +29,12 @@ import (
 	browserpkg "github.com/brevio/brevio/internal/browser"
 	delegationpkg "github.com/brevio/brevio/internal/delegation"
 	kgpkg "github.com/brevio/brevio/internal/memory/kg"
+	consentpkg "github.com/brevio/brevio/internal/compliance/consent"
+	soc2pkg "github.com/brevio/brevio/internal/compliance/soc2"
+	learningpkg "github.com/brevio/brevio/internal/learning"
+	redteampkg "github.com/brevio/brevio/internal/security/redteam"
 	sandboxpkg "github.com/brevio/brevio/internal/security/sandbox"
+	watermarkpkg "github.com/brevio/brevio/internal/watermark"
 	billingpkg "github.com/brevio/brevio/internal/billing"
 	simulationpkg "github.com/brevio/brevio/internal/simulation"
 	walletpkg "github.com/brevio/brevio/internal/wallet"
@@ -462,6 +468,76 @@ func main() {
 	deps.TrustSvc = trustpkg.NewService()
 	logger.Info("trust_service_initialized", map[string]any{"status": "active"})
 
+	// Wire compliance evidence pool (P3-05), HIPAA pool (P3-06), and eval pool (P3-12).
+	if deps.Pool != nil {
+		adminpkg.CompliancePool = deps.Pool
+		adminpkg.HIPAAPool = deps.Pool
+		adminpkg.EvalPool = deps.Pool
+		logger.Info("compliance_pool_initialized", map[string]any{"status": "active"})
+	}
+
+	// Wire consent middleware (P3-04).
+	if deps.Pool != nil {
+		consentLogger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
+		consentRegistry := consentpkg.NewConsentRegistry(deps.Pool, consentLogger)
+		deps.ConsentMiddleware = consentpkg.NewPurposeLimitationMiddleware(consentRegistry, consentLogger)
+		logger.Info("consent_middleware_initialized", map[string]any{"status": "active"})
+	}
+
+	// Wire DP accountant (P3-03).
+	if deps.Pool != nil {
+		dpLogger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
+		deps.DPAccountant = learningpkg.NewRDPAccountant(deps.Pool, dpLogger)
+		adminpkg.DPBudgetPool = deps.Pool
+		logger.Info("dp_accountant_initialized", map[string]any{"status": "active"})
+	}
+
+	// Wire watermarking services (P3-02).
+	if wmKeyHex := os.Getenv("WATERMARK_HMAC_KEY"); wmKeyHex != "" {
+		wmLogger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
+		c2pa, c2paErr := watermarkpkg.NewC2PAContentWatermarker(wmLogger)
+		if c2paErr != nil {
+			logger.Info("watermark_c2pa_unavailable", map[string]any{"reason": c2paErr.Error()})
+		} else {
+			deps.C2PAWatermarker = c2pa
+			logger.Info("watermark_c2pa_initialized", map[string]any{"status": "active"})
+
+			if os.Getenv("SEMANTIC_WATERMARK_ENABLED") != "false" {
+				semWM, semErr := watermarkpkg.NewSemanticWatermarker(c2pa.HMACKey(), wmLogger)
+				if semErr != nil {
+					logger.Info("watermark_semantic_unavailable", map[string]any{"reason": semErr.Error()})
+				} else {
+					deps.SemanticWatermark = semWM
+					logger.Info("watermark_semantic_initialized", map[string]any{"status": "active"})
+				}
+			}
+
+			if deps.Pool != nil {
+				deps.ProvenanceStore = watermarkpkg.NewProvenanceStore(deps.Pool, wmLogger)
+				adminpkg.ProvenancePool = deps.Pool
+				logger.Info("provenance_store_initialized", map[string]any{"status": "active"})
+			}
+		}
+	} else if cfg.Environment != "" && cfg.Environment != "local" && cfg.Environment != "test" {
+		logger.Info("watermark_disabled", map[string]any{"reason": "WATERMARK_HMAC_KEY not set"})
+	}
+
+	// Wire red-team runner (P3-01).
+	if deps.Pool != nil {
+		rtLogger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
+		rtGuard := guardrailspkg.NewInferenceGuard()
+		rtGuardSvc := guardrailspkg.NewService()
+		rtAttackGen, rtErr := redteampkg.NewAttackGenerator(rtGuard, rtGuardSvc, rtLogger)
+		if rtErr != nil {
+			logger.Info("redteam_attack_generator_unavailable", map[string]any{"reason": rtErr.Error()})
+		} else {
+			rtHarmBench := redteampkg.NewHarmBenchEvaluator(deps.Pool, rtLogger)
+			deps.RedTeamRunner = redteampkg.NewRedTeamRunner(deps.Pool, temporalClient, rtAttackGen, rtHarmBench, rtLogger)
+			adminpkg.HarmBenchPool = deps.Pool
+			logger.Info("redteam_runner_initialized", map[string]any{"status": "active"})
+		}
+	}
+
 	// Wire world model repository.
 	if deps.Pool != nil {
 		wmRepo, wmRepoErr := brainpkg.NewPgWorldModelRepository(deps.Pool)
@@ -559,6 +635,24 @@ func main() {
 			logger.Info("eu_ai_act_cron_schedule_result", map[string]any{"note": cronErr.Error()})
 		} else {
 			logger.Info("eu_ai_act_cron_scheduled", map[string]any{"schedule": breviotemporal.EUAIActCronSchedule})
+		}
+	}
+
+	// Schedule red-team weekly cron (Sunday 02:00 UTC) — P3-01.
+	if deps.RedTeamRunner != nil {
+		if cronErr := redteampkg.ScheduleRedTeamCron(temporalClient, breviotemporal.TaskQueueCore); cronErr != nil {
+			logger.Info("redteam_cron_schedule_result", map[string]any{"note": cronErr.Error()})
+		} else {
+			logger.Info("redteam_cron_scheduled", map[string]any{"schedule": redteampkg.RedTeamCronSchedule})
+		}
+	}
+
+	// Schedule compliance evidence daily cron (03:00 UTC) — P3-05.
+	{
+		if cronErr := soc2pkg.ScheduleComplianceCron(temporalClient, breviotemporal.TaskQueueCore); cronErr != nil {
+			logger.Info("compliance_cron_schedule_result", map[string]any{"note": cronErr.Error()})
+		} else {
+			logger.Info("compliance_cron_scheduled", map[string]any{"schedule": soc2pkg.ComplianceCronSchedule})
 		}
 	}
 
