@@ -1,24 +1,31 @@
 import { randomUUID } from 'node:crypto';
 import http from 'node:http';
+import { pathToFileURL } from 'node:url';
 
 import { aggregateResults } from './aggregate.js';
 import { classifyIntent } from './classify.js';
 import { loadBrainConfig, loadDisambiguationRules } from './config.js';
 import { decomposeTask } from './decompose.js';
 import { disambiguateSkills } from './disambiguate.js';
+import { normalizeReasoningInput } from './normalize.js';
+import { buildPlannerProposal } from './planner.js';
 import type {
   AggregationRequest,
   BrainConfig,
   DisambiguationRequest,
+  DisambiguationRules,
   IntentClassificationInput,
+  NormalizedReasoningRequest,
+  ProcessRequest,
   RequestContext,
   SkillResult
 } from './types.js';
+import { verifyPlan } from './verify.js';
 
 interface BrainRuntime {
   config: BrainConfig;
   startedAtMs: number;
-  disambiguationRules: ReturnType<typeof loadDisambiguationRules>;
+  disambiguationRules: DisambiguationRules;
   server: http.Server;
   close(): Promise<void>;
 }
@@ -85,15 +92,15 @@ async function readRawBody(req: http.IncomingMessage, maxBytes = 2 * 1024 * 1024
   return chunks.length > 0 ? Buffer.concat(chunks) : Buffer.from('{}', 'utf8');
 }
 
-function parseObject(rawBody: Buffer): Record<string, unknown> {
+function parseObject(rawBody: Buffer): { value?: Record<string, unknown>; error?: string } {
   try {
     const parsed = JSON.parse(rawBody.toString('utf8'));
     if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-      return parsed as Record<string, unknown>;
+      return { value: parsed as Record<string, unknown> };
     }
-    return {};
+    return { error: 'invalid_json_object' };
   } catch {
-    return {};
+    return { error: 'invalid_json' };
   }
 }
 
@@ -112,7 +119,7 @@ function asStringArray(value: unknown): string[] | undefined {
   const output = value
     .map((item) => asString(item))
     .filter((item): item is string => Boolean(item));
-  return output.length > 0 ? output : undefined;
+  return output.length > 0 ? [...new Set(output)] : undefined;
 }
 
 function asBool(value: unknown): boolean | undefined {
@@ -142,24 +149,44 @@ function extractSkillResults(value: unknown): SkillResult[] {
       continue;
     }
 
-    const result: SkillResult = {
+    out.push({
       skill_id: skillId,
       status,
-      data: raw.data && typeof raw.data === 'object' && !Array.isArray(raw.data)
-        ? (raw.data as Record<string, unknown>)
-        : undefined,
+      data: raw.data && typeof raw.data === 'object' && !Array.isArray(raw.data) ? (raw.data as Record<string, unknown>) : undefined,
       error: raw.error && typeof raw.error === 'object' && !Array.isArray(raw.error)
         ? {
             code: asString((raw.error as Record<string, unknown>).code) ?? 'UNKNOWN_ERROR',
             message: asString((raw.error as Record<string, unknown>).message) ?? 'unknown error'
           }
-        : undefined
-    };
-
-    out.push(result);
+        : undefined,
+      source: asString(raw.source) === 'external' ? 'external' : 'hands'
+    });
   }
 
   return out;
+}
+
+function normalizePayload(payload: Record<string, unknown>): NormalizedReasoningRequest {
+  const request: ProcessRequest = {
+    message_text: asString(payload.message_text) ?? '',
+    user_profile:
+      payload.user_profile && typeof payload.user_profile === 'object' && !Array.isArray(payload.user_profile)
+        ? (payload.user_profile as ProcessRequest['user_profile'])
+        : undefined,
+    user_preferences:
+      payload.user_preferences && typeof payload.user_preferences === 'object' && !Array.isArray(payload.user_preferences)
+        ? (payload.user_preferences as ProcessRequest['user_preferences'])
+        : undefined,
+    deployment_mode: asString(payload.deployment_mode) as ProcessRequest['deployment_mode'],
+    user_tier: asString(payload.user_tier) as ProcessRequest['user_tier'],
+    channel: asString(payload.channel) as ProcessRequest['channel'],
+    context:
+      payload.context && typeof payload.context === 'object' && !Array.isArray(payload.context)
+        ? (payload.context as ProcessRequest['context'])
+        : undefined,
+    skill_results: extractSkillResults(payload.skill_results)
+  };
+  return normalizeReasoningInput(request);
 }
 
 function healthPayload(runtime: BrainRuntime, deep: boolean): Record<string, unknown> {
@@ -177,11 +204,13 @@ function healthPayload(runtime: BrainRuntime, deep: boolean): Record<string, unk
     ...payload,
     checks: {
       process: 'ok',
-      disambiguation_config: runtime.config.disambiguationConfigPath
+      disambiguation_config: runtime.config.disambiguationConfigPath,
+      planner_provider: runtime.config.plannerProvider,
+      planner_model: runtime.config.plannerModel
     },
     disambiguation: {
-      rules_loaded: runtime.disambiguationRules.length,
-      groups: runtime.disambiguationRules.map((rule) => rule.group)
+      rules_loaded: Object.keys(runtime.disambiguationRules).length,
+      groups: Object.keys(runtime.disambiguationRules).sort()
     }
   };
 }
@@ -204,14 +233,25 @@ function buildRuntime(config?: BrainConfig): BrainRuntime {
     const method = req.method ?? 'GET';
     const path = new URL(req.url ?? '/', 'http://localhost').pathname;
 
-    const onError = (statusCode: number, code: string): void => {
-      sendJSON(res, statusCode, { error: code });
+    const onError = (statusCode: number, code: string, message?: string): void => {
+      sendJSON(res, statusCode, message ? { error: code, message } : { error: code });
       logEvent(runtime, ctx, 'brain.request.error', 'WARN', {
         method,
         path,
         status_code: statusCode,
-        code
+        code,
+        message
       });
+    };
+
+    const parseRequest = async (): Promise<Record<string, unknown> | undefined> => {
+      const rawBody = await readRawBody(req);
+      const parsed = parseObject(rawBody);
+      if (parsed.error) {
+        onError(400, parsed.error);
+        return undefined;
+      }
+      return parsed.value;
     };
 
     if (method === 'GET' && path === '/health') {
@@ -226,20 +266,23 @@ function buildRuntime(config?: BrainConfig): BrainRuntime {
 
     if (method === 'POST' && path === '/api/v1/brain/classify') {
       void (async () => {
-        const rawBody = await readRawBody(req);
-        const payload = parseObject(rawBody);
-        const messageText = asString(payload.message_text);
-        if (!messageText) {
+        const payload = await parseRequest();
+        if (!payload) {
+          return;
+        }
+        const request = normalizePayload(payload);
+        if (!request.message_text) {
           onError(400, 'message_text_required');
           return;
         }
 
-        const output = classifyIntent(payload as IntentClassificationInput);
+        const output = classifyIntent(request as IntentClassificationInput);
         sendJSON(res, 200, output as unknown as Record<string, unknown>);
         logEvent(runtime, ctx, 'brain.classify.complete', 'INFO', {
           intent: output.intent,
           confidence: output.confidence,
-          skills: output.skills
+          skills: output.skills,
+          clarification_required: output.clarification_required
         });
       })().catch((err) => {
         onError(500, 'classify_failed');
@@ -252,31 +295,33 @@ function buildRuntime(config?: BrainConfig): BrainRuntime {
 
     if (method === 'POST' && path === '/api/v1/brain/disambiguate') {
       void (async () => {
-        const rawBody = await readRawBody(req);
-        const payload = parseObject(rawBody);
-        const messageText = asString(payload.message_text);
-        if (!messageText) {
+        const payload = await parseRequest();
+        if (!payload) {
+          return;
+        }
+        const request = normalizePayload(payload);
+        if (!request.message_text) {
           onError(400, 'message_text_required');
           return;
         }
 
         const disambiguationReq: DisambiguationRequest = {
-          message_text: messageText,
+          message_text: request.message_text,
           intent: asString(payload.intent),
           candidate_skills: asStringArray(payload.candidate_skills),
-          deployment_mode: asString(payload.deployment_mode) as DisambiguationRequest['deployment_mode'],
-          user_tier: asString(payload.user_tier) as DisambiguationRequest['user_tier'],
-          user_preferences:
-            payload.user_preferences && typeof payload.user_preferences === 'object' && !Array.isArray(payload.user_preferences)
-              ? (payload.user_preferences as DisambiguationRequest['user_preferences'])
-              : undefined
+          deployment_mode: request.deployment_mode,
+          user_tier: request.user_tier,
+          user_preferences: request.user_preferences,
+          enabled_skills: request.user_profile.enabled_skills,
+          allow_multi_intent: asBool(payload.allow_multi_intent)
         };
 
         const output = disambiguateSkills(disambiguationReq, runtime.disambiguationRules);
         sendJSON(res, 200, output as unknown as Record<string, unknown>);
         logEvent(runtime, ctx, 'brain.disambiguate.complete', 'INFO', {
           group_hits: output.group_hits,
-          resolved_skills: output.resolved_skills
+          resolved_skills: output.resolved_skills,
+          clarification_required: output.clarification_required
         });
       })().catch((err) => {
         onError(500, 'disambiguation_failed');
@@ -289,11 +334,17 @@ function buildRuntime(config?: BrainConfig): BrainRuntime {
 
     if (method === 'POST' && path === '/api/v1/brain/decompose') {
       void (async () => {
-        const rawBody = await readRawBody(req);
-        const payload = parseObject(rawBody);
-        const requestText = asString(payload.request) ?? asString(payload.message_text) ?? '';
+        const payload = await parseRequest();
+        if (!payload) {
+          return;
+        }
+        const requestText = asString(payload.request) ?? asString(payload.message_text);
+        if (!requestText) {
+          onError(400, 'message_text_required');
+          return;
+        }
         const skills = asStringArray(payload.skills) ?? [];
-        const requires = asBool(payload.requires_decomposition) ?? skills.length > 1;
+        const requires = asBool(payload.requires_decomposition) ?? requestText.toLowerCase().includes(' and ');
 
         const output = decomposeTask(requestText, skills, requires);
         sendJSON(res, 200, output as unknown as Record<string, unknown>);
@@ -319,8 +370,10 @@ function buildRuntime(config?: BrainConfig): BrainRuntime {
 
     if (method === 'POST' && path === '/api/v1/brain/aggregate') {
       void (async () => {
-        const rawBody = await readRawBody(req);
-        const payload = parseObject(rawBody);
+        const payload = await parseRequest();
+        if (!payload) {
+          return;
+        }
         const request: AggregationRequest = {
           skill_results: extractSkillResults(payload.skill_results),
           user_profile:
@@ -334,7 +387,7 @@ function buildRuntime(config?: BrainConfig): BrainRuntime {
         sendJSON(res, 200, output as unknown as Record<string, unknown>);
         logEvent(runtime, ctx, 'brain.aggregate.complete', 'INFO', {
           suggested_actions: output.suggested_actions.length,
-          follow_up_scheduled: output.follow_up_scheduled
+          completion_ratio: output.completion_ratio
         });
       })().catch((err) => {
         onError(500, 'aggregate_failed');
@@ -347,63 +400,52 @@ function buildRuntime(config?: BrainConfig): BrainRuntime {
 
     if (method === 'POST' && path === '/api/v1/brain/process') {
       void (async () => {
-        const rawBody = await readRawBody(req);
-        const payload = parseObject(rawBody);
-        const messageText = asString(payload.message_text);
-        if (!messageText) {
+        const payload = await parseRequest();
+        if (!payload) {
+          return;
+        }
+        const request = normalizePayload(payload);
+        if (!request.message_text) {
           onError(400, 'message_text_required');
           return;
         }
 
-        const classification = classifyIntent(payload as IntentClassificationInput);
-        const disambiguated = disambiguateSkills(
-          {
-            message_text: messageText,
-            intent: classification.intent,
-            candidate_skills: classification.skills,
-            deployment_mode: asString(payload.deployment_mode) as DisambiguationRequest['deployment_mode'],
-            user_tier: asString(payload.user_tier) as DisambiguationRequest['user_tier'],
-            user_preferences:
-              payload.user_preferences && typeof payload.user_preferences === 'object' && !Array.isArray(payload.user_preferences)
-                ? (payload.user_preferences as DisambiguationRequest['user_preferences'])
-                : undefined
-          },
-          runtime.disambiguationRules
-        );
-        const decomposition = decomposeTask(
-          messageText,
-          disambiguated.resolved_skills,
-          classification.requires_decomposition
-        );
+        const classification = classifyIntent(request);
+        const { decomposition, disambiguation, plan } = await buildPlannerProposal(request, runtime.disambiguationRules, runtime.config);
+        const verification = verifyPlan(plan, request.skill_results, request);
+        const aggregation = request.skill_results && request.skill_results.length > 0
+          ? aggregateResults({
+              skill_results: request.skill_results,
+              user_profile: {
+                communication_style: request.user_profile.communication_style
+              },
+              channel: request.channel
+            })
+          : undefined;
 
-        const syntheticResults: SkillResult[] = disambiguated.resolved_skills.map((skill) => ({
-          skill_id: skill,
-          status: 'SUCCESS',
-          data: {
-            note: 'execution delegated to hands-plane'
-          }
-        }));
-
-        const aggregation = aggregateResults({
-          skill_results: syntheticResults,
-          user_profile:
-            payload.user_profile && typeof payload.user_profile === 'object' && !Array.isArray(payload.user_profile)
-              ? (payload.user_profile as AggregationRequest['user_profile'])
-              : undefined,
-          channel: asString(payload.channel) as AggregationRequest['channel']
-        });
+        const executionStatus = plan.requires_clarification
+          ? 'clarification_required'
+          : aggregation
+            ? 'completed'
+            : 'dispatch_ready';
 
         sendJSON(res, 200, {
           classification,
-          disambiguation: disambiguated,
+          disambiguation,
           decomposition,
-          aggregation
+          plan,
+          verification,
+          aggregation,
+          execution_status: executionStatus
         });
 
         logEvent(runtime, ctx, 'brain.process.complete', 'INFO', {
           intent: classification.intent,
-          resolved_skills: disambiguated.resolved_skills,
-          tasks: decomposition.tasks.length
+          resolved_skills: disambiguation.resolved_skills,
+          tasks: decomposition.tasks.length,
+          planner_provider: plan.planner_provider,
+          planner_mode: plan.planner_mode,
+          execution_status: executionStatus
         });
       })().catch((err) => {
         if (err instanceof Error && err.message.startsWith('TASK_GRAPH_INVALID')) {
@@ -503,22 +545,26 @@ async function main(): Promise<void> {
 
   logEvent(runtime, ctx, 'brain.started', 'INFO', {
     port: runtime.config.port,
-    disambiguation_rules: runtime.disambiguationRules.length,
-    disambiguation_config: runtime.config.disambiguationConfigPath
+    disambiguation_rules: Object.keys(runtime.disambiguationRules).length,
+    disambiguation_config: runtime.config.disambiguationConfigPath,
+    planner_provider: runtime.config.plannerProvider,
+    planner_model: runtime.config.plannerModel
   });
 }
 
-void main().catch((err) => {
-  process.stderr.write(
-    JSON.stringify({
-      ts: new Date().toISOString(),
-      service: 'brevio-brain',
-      event: 'brain.start.failed',
-      severity: 'ERROR',
-      message: err instanceof Error ? err.message : String(err)
-    }) + '\n'
-  );
-  process.exit(1);
-});
+if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) {
+  void main().catch((err) => {
+    process.stderr.write(
+      JSON.stringify({
+        ts: new Date().toISOString(),
+        service: 'brevio-brain',
+        event: 'brain.start.failed',
+        severity: 'ERROR',
+        message: err instanceof Error ? err.message : String(err)
+      }) + '\n'
+    );
+    process.exit(1);
+  });
+}
 
 export { buildRuntime as createBrainRuntime };

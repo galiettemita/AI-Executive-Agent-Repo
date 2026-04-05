@@ -1736,7 +1736,11 @@ func handleTemporalReasoning(w http.ResponseWriter, r *http.Request, svc *tempor
 			if workspaceID == "" {
 				workspaceID = "default"
 			}
-			constraint := svc.UpsertConstraint(workspaceID, payload)
+			constraint, err := svc.UpsertConstraint(workspaceID, payload)
+			if err != nil {
+				writeError(w, err.Error(), http.StatusBadRequest)
+				return
+			}
 			writeJSON(w, http.StatusCreated, constraint)
 			return
 
@@ -1751,7 +1755,11 @@ func handleTemporalReasoning(w http.ResponseWriter, r *http.Request, svc *tempor
 				workspaceID = "default"
 			}
 			payload.ID = parts[3]
-			constraint := svc.UpsertConstraint(workspaceID, payload)
+			constraint, err := svc.UpsertConstraint(workspaceID, payload)
+			if err != nil {
+				writeError(w, err.Error(), http.StatusBadRequest)
+				return
+			}
 			writeJSON(w, http.StatusOK, constraint)
 			return
 
@@ -1788,14 +1796,24 @@ func handleTemporalReasoning(w http.ResponseWriter, r *http.Request, svc *tempor
 			writeError(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		if strings.TrimSpace(payload.ReferenceDate) == "" && strings.TrimSpace(payload.ReferenceTS) != "" {
-			if parsed, err := time.Parse(time.RFC3339, payload.ReferenceTS); err == nil {
-				payload.ReferenceDate = parsed.UTC().Format("2006-01-02")
+			if strings.TrimSpace(payload.ReferenceDate) == "" && strings.TrimSpace(payload.ReferenceTS) != "" {
+				if parsed, err := time.Parse(time.RFC3339, payload.ReferenceTS); err == nil {
+					loc := time.UTC
+					if strings.TrimSpace(payload.Timezone) != "" {
+						if tz, tzErr := time.LoadLocation(payload.Timezone); tzErr == nil {
+							loc = tz
+						}
+					}
+					payload.ReferenceDate = parsed.In(loc).Format("2006-01-02")
+				}
 			}
-		}
-		resolution := svc.ResolveExpression(payload.WorkspaceID, payload.Expression, payload.ReferenceDate, payload.Timezone)
-		writeJSON(w, http.StatusOK, resolution)
-		return
+			resolution, err := svc.ResolveExpression(payload.WorkspaceID, payload.Expression, payload.ReferenceDate, payload.Timezone)
+			if err != nil {
+				writeError(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			writeJSON(w, http.StatusOK, resolution)
+			return
 
 	case "conflicts":
 		if r.Method != http.MethodPost {
@@ -1811,8 +1829,13 @@ func handleTemporalReasoning(w http.ResponseWriter, r *http.Request, svc *tempor
 			writeError(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		writeJSON(w, http.StatusOK, svc.BuildConflictReport(payload.WorkspaceID, payload.ProposedStart, payload.ProposedEnd))
-		return
+			report, err := svc.BuildConflictReport(payload.WorkspaceID, payload.ProposedStart, payload.ProposedEnd)
+			if err != nil {
+				writeError(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			writeJSON(w, http.StatusOK, report)
+			return
 
 	case "travel-time":
 		if r.Method != http.MethodPost {

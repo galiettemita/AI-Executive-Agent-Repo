@@ -67,9 +67,16 @@ func NewService() *Service {
 	}
 }
 
+func normalizeWorkspaceID(workspaceID string) string {
+	if strings.TrimSpace(workspaceID) == "" {
+		return "default"
+	}
+	return workspaceID
+}
+
 func (s *Service) DefaultConfig(workspaceID string) Config {
 	return Config{
-		WorkspaceID:               workspaceID,
+		WorkspaceID:               normalizeWorkspaceID(workspaceID),
 		DefaultTimezone:           "UTC",
 		MaxHorizonDays:            365,
 		ConflictPriorityThreshold: 80,
@@ -77,25 +84,33 @@ func (s *Service) DefaultConfig(workspaceID string) Config {
 	}
 }
 
+func resolveLocation(name string) (*time.Location, error) {
+	if strings.TrimSpace(name) == "" {
+		return time.UTC, nil
+	}
+	return time.LoadLocation(name)
+}
+
 func (s *Service) UpsertConfig(workspaceID string, cfg Config) Config {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if workspaceID == "" {
-		workspaceID = "default"
-	}
+	workspaceID = normalizeWorkspaceID(workspaceID)
 	defaults := s.DefaultConfig(workspaceID)
 	cfg.WorkspaceID = workspaceID
 	if cfg.DefaultTimezone == "" {
 		cfg.DefaultTimezone = defaults.DefaultTimezone
 	}
-	if cfg.MaxHorizonDays == 0 {
+	if _, err := resolveLocation(cfg.DefaultTimezone); err != nil {
+		cfg.DefaultTimezone = defaults.DefaultTimezone
+	}
+	if cfg.MaxHorizonDays <= 0 {
 		cfg.MaxHorizonDays = defaults.MaxHorizonDays
 	}
-	if cfg.ConflictPriorityThreshold == 0 {
+	if cfg.ConflictPriorityThreshold <= 0 {
 		cfg.ConflictPriorityThreshold = defaults.ConflictPriorityThreshold
 	}
-	if cfg.TravelSpeedKPH == 0 {
+	if cfg.TravelSpeedKPH <= 0 {
 		cfg.TravelSpeedKPH = defaults.TravelSpeedKPH
 	}
 
@@ -106,16 +121,49 @@ func (s *Service) UpsertConfig(workspaceID string, cfg Config) Config {
 func (s *Service) GetConfig(workspaceID string) (Config, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	cfg, ok := s.configs[workspaceID]
+	cfg, ok := s.configs[normalizeWorkspaceID(workspaceID)]
 	return cfg, ok
 }
 
-func (s *Service) UpsertConstraint(workspaceID string, constraint Constraint) Constraint {
+func parseTimestamp(value string) (time.Time, error) {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return time.Time{}, fmt.Errorf("timestamp required")
+	}
+	if parsed, err := time.Parse(time.RFC3339, trimmed); err == nil {
+		return parsed.UTC(), nil
+	}
+	if parsed, err := time.Parse(time.RFC3339Nano, trimmed); err == nil {
+		return parsed.UTC(), nil
+	}
+	return time.Time{}, fmt.Errorf("invalid timestamp %q", value)
+}
+
+func validateConstraintTimes(constraint Constraint) error {
+	if strings.TrimSpace(constraint.Subject) == "" {
+		return fmt.Errorf("constraint subject required")
+	}
+	start, err := parseTimestamp(constraint.StartsAt)
+	if err != nil {
+		return fmt.Errorf("invalid starts_at: %w", err)
+	}
+	end, err := parseTimestamp(constraint.EndsAt)
+	if err != nil {
+		return fmt.Errorf("invalid ends_at: %w", err)
+	}
+	if !end.After(start) {
+		return fmt.Errorf("ends_at must be after starts_at")
+	}
+	return nil
+}
+
+func (s *Service) UpsertConstraint(workspaceID string, constraint Constraint) (Constraint, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if workspaceID == "" {
-		workspaceID = "default"
+	workspaceID = normalizeWorkspaceID(workspaceID)
+	if err := validateConstraintTimes(constraint); err != nil {
+		return Constraint{}, err
 	}
 	if constraint.ID == "" {
 		constraint.ID = fmt.Sprintf("constraint_%06d", len(s.constraints[workspaceID])+1)
@@ -123,7 +171,7 @@ func (s *Service) UpsertConstraint(workspaceID string, constraint Constraint) Co
 	if constraint.Status == "" {
 		constraint.Status = "active"
 	}
-	if constraint.Priority == 0 {
+	if constraint.Priority <= 0 {
 		constraint.Priority = 50
 	}
 	constraint.WorkspaceID = workspaceID
@@ -132,14 +180,14 @@ func (s *Service) UpsertConstraint(workspaceID string, constraint Constraint) Co
 		s.constraints[workspaceID] = map[string]Constraint{}
 	}
 	s.constraints[workspaceID][constraint.ID] = constraint
-	return constraint
+	return constraint, nil
 }
 
 func (s *Service) ListConstraints(workspaceID string) []Constraint {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	source := s.constraints[workspaceID]
+	source := s.constraints[normalizeWorkspaceID(workspaceID)]
 	out := make([]Constraint, 0, len(source))
 	for _, constraint := range source {
 		out = append(out, constraint)
@@ -153,6 +201,7 @@ func (s *Service) ListConstraints(workspaceID string) []Constraint {
 func (s *Service) DeleteConstraint(workspaceID, id string) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	workspaceID = normalizeWorkspaceID(workspaceID)
 	if _, ok := s.constraints[workspaceID]; !ok {
 		return false
 	}
@@ -163,72 +212,118 @@ func (s *Service) DeleteConstraint(workspaceID, id string) bool {
 	return true
 }
 
-func (s *Service) ResolveExpression(workspaceID, expression, referenceDate, timezone string) Resolution {
-	if workspaceID == "" {
-		workspaceID = "default"
+func (s *Service) timezoneForWorkspace(workspaceID, explicit string) (string, *time.Location, error) {
+	if strings.TrimSpace(explicit) != "" {
+		loc, err := resolveLocation(explicit)
+		return explicit, loc, err
 	}
-	if referenceDate == "" {
-		referenceDate = "2026-01-01"
+	if cfg, ok := s.GetConfig(workspaceID); ok {
+		loc, err := resolveLocation(cfg.DefaultTimezone)
+		return cfg.DefaultTimezone, loc, err
+	}
+	loc, err := resolveLocation("UTC")
+	return "UTC", loc, err
+}
+
+func parseReferenceDate(referenceDate string, loc *time.Location) (time.Time, error) {
+	const layout = "2006-01-02"
+	if strings.TrimSpace(referenceDate) == "" {
+		now := time.Now().In(loc)
+		return time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, loc), nil
+	}
+	parsed, err := time.ParseInLocation(layout, referenceDate, loc)
+	if err != nil {
+		return time.Time{}, err
+	}
+	return parsed, nil
+}
+
+func (s *Service) ResolveExpression(workspaceID, expression, referenceDate, timezone string) (Resolution, error) {
+	workspaceID = normalizeWorkspaceID(workspaceID)
+	if strings.TrimSpace(expression) == "" {
+		return Resolution{}, fmt.Errorf("expression required")
 	}
 
-	resolvedDate := referenceDate
-	confidence := 0.50
+	timezoneName, loc, err := s.timezoneForWorkspace(workspaceID, timezone)
+	if err != nil {
+		return Resolution{}, err
+	}
+	reference, err := parseReferenceDate(referenceDate, loc)
+	if err != nil {
+		return Resolution{}, fmt.Errorf("invalid reference_date: %w", err)
+	}
+
+	resolvedDate := reference
+	confidence := 0.45
 	lower := strings.TrimSpace(strings.ToLower(expression))
 
 	switch {
 	case strings.Contains(lower, "tomorrow"):
-		resolvedDate = plusDays(referenceDate, 1)
+		resolvedDate = reference.AddDate(0, 0, 1)
 		confidence = 0.95
+	case strings.Contains(lower, "today"), strings.Contains(lower, "tonight"), strings.Contains(lower, "this evening"):
+		resolvedDate = reference
+		confidence = 0.82
 	case strings.Contains(lower, "next week"):
-		resolvedDate = plusDays(referenceDate, 7)
-		confidence = 0.90
+		resolvedDate = reference.AddDate(0, 0, 7)
+		confidence = 0.9
 	case strings.HasPrefix(lower, "next "):
-		if resolved, ok := resolveNextWeekday(referenceDate, strings.TrimPrefix(lower, "next ")); ok {
+		if resolved, ok := resolveNextWeekday(reference, strings.TrimPrefix(lower, "next ")); ok {
 			resolvedDate = resolved
 			confidence = 0.88
 		}
 	case strings.HasPrefix(lower, "in ") && strings.HasSuffix(lower, " weeks"):
 		countRaw := strings.TrimSuffix(strings.TrimPrefix(lower, "in "), " weeks")
-		count, err := strconv.Atoi(strings.TrimSpace(countRaw))
-		if err == nil && count >= 0 {
-			resolvedDate = plusDays(referenceDate, count*7)
+		count, parseErr := strconv.Atoi(strings.TrimSpace(countRaw))
+		if parseErr == nil && count >= 0 {
+			resolvedDate = reference.AddDate(0, 0, count*7)
 			confidence = 0.87
 		}
 	case strings.HasPrefix(lower, "in ") && strings.HasSuffix(lower, " days"):
 		countRaw := strings.TrimSuffix(strings.TrimPrefix(lower, "in "), " days")
-		count, err := strconv.Atoi(strings.TrimSpace(countRaw))
-		if err == nil && count >= 0 {
-			resolvedDate = plusDays(referenceDate, count)
+		count, parseErr := strconv.Atoi(strings.TrimSpace(countRaw))
+		if parseErr == nil && count >= 0 {
+			resolvedDate = reference.AddDate(0, 0, count)
 			confidence = 0.85
 		}
 	}
 
-	if timezone == "" {
-		if cfg, ok := s.GetConfig(workspaceID); ok {
-			timezone = cfg.DefaultTimezone
-		} else {
-			timezone = "UTC"
-		}
-	}
 	if cfg, ok := s.GetConfig(workspaceID); ok {
-		if horizonExceeded(referenceDate, resolvedDate, cfg.MaxHorizonDays) {
-			confidence = 0.10
+		if horizonExceeded(reference, resolvedDate, cfg.MaxHorizonDays) {
+			confidence = 0.1
 		}
 	}
 
 	return Resolution{
 		WorkspaceID:   workspaceID,
 		Expression:    expression,
-		ReferenceDate: referenceDate,
-		ResolvedDate:  resolvedDate,
-		Timezone:      timezone,
+		ReferenceDate: reference.Format("2006-01-02"),
+		ResolvedDate:  resolvedDate.Format("2006-01-02"),
+		Timezone:      timezoneName,
 		Confidence:    confidence,
-	}
+	}, nil
 }
 
-func (s *Service) DetectConflicts(workspaceID, proposedStart, proposedEnd string) []Conflict {
+func overlaps(startA, endA, startB, endB time.Time) bool {
+	return startA.Before(endB) && endA.After(startB)
+}
+
+func (s *Service) DetectConflicts(workspaceID, proposedStart, proposedEnd string) ([]Conflict, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
+
+	workspaceID = normalizeWorkspaceID(workspaceID)
+	start, err := parseTimestamp(proposedStart)
+	if err != nil {
+		return nil, fmt.Errorf("invalid proposed_start: %w", err)
+	}
+	end, err := parseTimestamp(proposedEnd)
+	if err != nil {
+		return nil, fmt.Errorf("invalid proposed_end: %w", err)
+	}
+	if !end.After(start) {
+		return nil, fmt.Errorf("proposed_end must be after proposed_start")
+	}
 
 	cfg, ok := s.configs[workspaceID]
 	threshold := 80
@@ -244,7 +339,12 @@ func (s *Service) DetectConflicts(workspaceID, proposedStart, proposedEnd string
 		if constraint.Priority < threshold {
 			continue
 		}
-		if overlaps(proposedStart, proposedEnd, constraint.StartsAt, constraint.EndsAt) {
+		constraintStart, startErr := parseTimestamp(constraint.StartsAt)
+		constraintEnd, endErr := parseTimestamp(constraint.EndsAt)
+		if startErr != nil || endErr != nil {
+			continue
+		}
+		if overlaps(start, end, constraintStart, constraintEnd) {
 			out = append(out, Conflict{
 				ConstraintID: constraint.ID,
 				Title:        constraint.Subject,
@@ -258,11 +358,14 @@ func (s *Service) DetectConflicts(workspaceID, proposedStart, proposedEnd string
 	sort.Slice(out, func(i, j int) bool {
 		return out[i].ConstraintID < out[j].ConstraintID
 	})
-	return out
+	return out, nil
 }
 
-func (s *Service) BuildConflictReport(workspaceID, proposedStart, proposedEnd string) ConflictReport {
-	conflicts := s.DetectConflicts(workspaceID, proposedStart, proposedEnd)
+func (s *Service) BuildConflictReport(workspaceID, proposedStart, proposedEnd string) (ConflictReport, error) {
+	conflicts, err := s.DetectConflicts(workspaceID, proposedStart, proposedEnd)
+	if err != nil {
+		return ConflictReport{}, err
+	}
 	report := ConflictReport{
 		HasConflict:    len(conflicts) > 0,
 		ResolutionHint: "No temporal conflicts detected",
@@ -271,7 +374,7 @@ func (s *Service) BuildConflictReport(workspaceID, proposedStart, proposedEnd st
 	if report.HasConflict {
 		report.ResolutionHint = "Shift schedule window or request manual override for high-priority constraints"
 	}
-	return report
+	return report, nil
 }
 
 func (s *Service) EstimateTravelMinutes(workspaceID, origin, destination string, distanceKM float64) int {
@@ -288,7 +391,7 @@ func (s *Service) EstimateTravelMinutes(workspaceID, origin, destination string,
 		minutes = 1
 	}
 
-	cacheKey := fmt.Sprintf("%s|%s|%s|%.3f", workspaceID, strings.ToLower(origin), strings.ToLower(destination), distanceKM)
+	cacheKey := fmt.Sprintf("%s|%s|%s|%.3f", normalizeWorkspaceID(workspaceID), strings.ToLower(origin), strings.ToLower(destination), distanceKM)
 	s.mu.Lock()
 	s.travelEstimate[cacheKey] = minutes
 	s.mu.Unlock()
@@ -296,35 +399,14 @@ func (s *Service) EstimateTravelMinutes(workspaceID, origin, destination string,
 }
 
 func (s *Service) LookupTravelMinutes(workspaceID, origin, destination string, distanceKM float64) (int, bool) {
-	cacheKey := fmt.Sprintf("%s|%s|%s|%.3f", workspaceID, strings.ToLower(origin), strings.ToLower(destination), distanceKM)
+	cacheKey := fmt.Sprintf("%s|%s|%s|%.3f", normalizeWorkspaceID(workspaceID), strings.ToLower(origin), strings.ToLower(destination), distanceKM)
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	minutes, ok := s.travelEstimate[cacheKey]
 	return minutes, ok
 }
 
-func plusDays(referenceDate string, days int) string {
-	const layout = "2006-01-02"
-	parsed, err := time.Parse(layout, referenceDate)
-	if err != nil {
-		return referenceDate
-	}
-	return parsed.Add(time.Duration(days) * 24 * time.Hour).Format(layout)
-}
-
-func overlaps(startA, endA, startB, endB string) bool {
-	if startA == "" || endA == "" || startB == "" || endB == "" {
-		return false
-	}
-	return startA < endB && endA > startB
-}
-
-func resolveNextWeekday(referenceDate, weekdayRaw string) (string, bool) {
-	const layout = "2006-01-02"
-	parsed, err := time.Parse(layout, referenceDate)
-	if err != nil {
-		return "", false
-	}
+func resolveNextWeekday(reference time.Time, weekdayRaw string) (time.Time, bool) {
 	targetWeekday := strings.ToLower(strings.TrimSpace(weekdayRaw))
 	weekdayIndex := map[string]time.Weekday{
 		"sunday":    time.Sunday,
@@ -337,25 +419,19 @@ func resolveNextWeekday(referenceDate, weekdayRaw string) (string, bool) {
 	}
 	target, ok := weekdayIndex[targetWeekday]
 	if !ok {
-		return "", false
+		return time.Time{}, false
 	}
-	offset := int(target-parsed.Weekday()) % 7
+	offset := int(target-reference.Weekday()) % 7
 	if offset <= 0 {
 		offset += 7
 	}
-	return parsed.Add(time.Duration(offset) * 24 * time.Hour).Format(layout), true
+	return reference.AddDate(0, 0, offset), true
 }
 
-func horizonExceeded(referenceDate, resolvedDate string, maxHorizonDays int) bool {
+func horizonExceeded(referenceDate, resolvedDate time.Time, maxHorizonDays int) bool {
 	if maxHorizonDays <= 0 {
 		return false
 	}
-	const layout = "2006-01-02"
-	ref, errRef := time.Parse(layout, referenceDate)
-	resolved, errResolved := time.Parse(layout, resolvedDate)
-	if errRef != nil || errResolved != nil {
-		return false
-	}
-	delta := resolved.Sub(ref).Hours() / 24
+	delta := resolvedDate.Sub(referenceDate).Hours() / 24
 	return delta > float64(maxHorizonDays)
 }

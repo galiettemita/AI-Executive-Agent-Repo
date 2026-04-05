@@ -2,10 +2,38 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import type { BrainConfig, DisambiguationRule } from './types.js';
+import type { BrainConfig, DisambiguationRuleConfig, DisambiguationRules, PlannerProvider } from './types.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+const REQUIRED_GROUPS = [
+  'apple-notes',
+  'notion',
+  'spotify',
+  'flight-tracking',
+  'healthkit',
+  'apple-mail',
+  'email-send',
+  'expense-tracking',
+  'package-tracking',
+  'places-location',
+  'youtube'
+] as const;
+
+const REQUIRED_FIELDS: Record<(typeof REQUIRED_GROUPS)[number], string[]> = {
+  'apple-notes': ['canonical'],
+  notion: ['canonical', 'fallback'],
+  spotify: ['cloud', 'local_mac', 'terminal', 'analytics'],
+  'flight-tracking': ['track', 'find', 'free_tier'],
+  healthkit: ['canonical'],
+  'apple-mail': ['crud', 'search'],
+  'email-send': ['by_preference'],
+  'expense-tracking': ['canonical'],
+  'package-tracking': ['international', 'carriers_17track', 'austrian_post'],
+  'places-location': ['navigate', 'near_me', 'find_all', 'simple_nearby'],
+  youtube: ['search', 'summarize', 'download']
+};
 
 function parsePositiveInt(raw: string | undefined, fallback: number, field: string): number {
   if (!raw || raw.trim() === '') {
@@ -16,6 +44,17 @@ function parsePositiveInt(raw: string | undefined, fallback: number, field: stri
     throw new Error(`invalid ${field}: expected positive integer`);
   }
   return parsed;
+}
+
+function parsePlannerProvider(raw: string | undefined): PlannerProvider {
+  if (!raw || raw.trim() === '') {
+    return 'deterministic';
+  }
+  const normalized = raw.trim().toLowerCase();
+  if (normalized === 'deterministic' || normalized === 'openai_responses') {
+    return normalized;
+  }
+  throw new Error('invalid BREVIO_BRAIN_PLANNER_PROVIDER: expected deterministic or openai_responses');
 }
 
 function resolveDisambiguationPath(inputPath: string | undefined): string {
@@ -41,91 +80,168 @@ function resolveDisambiguationPath(inputPath: string | undefined): string {
   throw new Error('unable to resolve skill-disambiguation.yaml path; set BREVIO_DISAMBIGUATION_CONFIG_PATH');
 }
 
-function parseValue(raw: string): string | string[] {
-  const trimmed = raw.trim();
-  if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
-    const inner = trimmed.slice(1, -1).trim();
-    if (inner === '') {
-      return [];
-    }
-    return inner
-      .split(',')
-      .map((entry) => entry.trim())
-      .map((entry) => {
-        if ((entry.startsWith('"') && entry.endsWith('"')) || (entry.startsWith("'") && entry.endsWith("'"))) {
-          return entry.slice(1, -1);
-        }
-        return entry;
-      })
-      .filter((entry) => entry.length > 0);
-  }
-
-  if ((trimmed.startsWith('"') && trimmed.endsWith('"')) || (trimmed.startsWith("'") && trimmed.endsWith("'"))) {
+function stripQuotes(value: string): string {
+  const trimmed = value.trim();
+  if (
+    (trimmed.startsWith('"') && trimmed.endsWith('"')) ||
+    (trimmed.startsWith("'") && trimmed.endsWith("'"))
+  ) {
     return trimmed.slice(1, -1);
   }
-
   return trimmed;
 }
 
-function parseDisambiguation(raw: string): DisambiguationRule[] {
-  const lines = raw.split('\n');
-  const rules: DisambiguationRule[] = [];
-  let current: DisambiguationRule | null = null;
+function parseInlineArray(value: string): string[] {
+  const inner = value.slice(1, -1).trim();
+  if (inner === '') {
+    return [];
+  }
+  return inner
+    .split(',')
+    .map((entry) => stripQuotes(entry))
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
+}
 
-  for (const line of lines) {
-    const trimmed = line.trim();
-    if (trimmed === '' || trimmed.startsWith('#') || trimmed === 'rules:' || trimmed.startsWith('version:')) {
-      continue;
+function parseScalar(value: string): string | string[] {
+  const trimmed = value.trim();
+  if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
+    return parseInlineArray(trimmed);
+  }
+  return stripQuotes(trimmed);
+}
+
+function splitKeyValue(line: string): { key: string; value: string } {
+  const idx = line.indexOf(':');
+  if (idx <= 0) {
+    throw new Error(`invalid config line: ${line}`);
+  }
+  return {
+    key: line.slice(0, idx).trim(),
+    value: line.slice(idx + 1).trim()
+  };
+}
+
+function validateRules(rules: DisambiguationRules): DisambiguationRules {
+  const groups = Object.keys(rules).sort();
+  const required = [...REQUIRED_GROUPS].sort();
+  if (groups.length !== required.length) {
+    throw new Error(`disambiguation group count mismatch: expected ${required.length}, got ${groups.length}`);
+  }
+  for (const group of required) {
+    const rule = rules[group];
+    if (!rule) {
+      throw new Error(`missing disambiguation group ${group}`);
     }
-
-    if (trimmed.startsWith('- group:')) {
-      if (current) {
-        rules.push(current);
+    for (const field of REQUIRED_FIELDS[group]) {
+      const value = (rule as Record<string, unknown>)[field];
+      if (!value || (Array.isArray(value) && value.length === 0)) {
+        throw new Error(`disambiguation group ${group} missing required field ${field}`);
       }
-      const group = trimmed.slice('- group:'.length).trim();
-      current = {
-        group,
-        values: {}
-      };
-      continue;
     }
-
-    if (!current) {
-      continue;
-    }
-
-    const idx = trimmed.indexOf(':');
-    if (idx <= 0) {
-      continue;
-    }
-    const key = trimmed.slice(0, idx).trim();
-    const valueRaw = trimmed.slice(idx + 1).trim();
-    current.values[key] = parseValue(valueRaw);
   }
-
-  if (current) {
-    rules.push(current);
-  }
-
   return rules;
+}
+
+function parseDisambiguation(raw: string): DisambiguationRules {
+  const lines = raw.split('\n');
+  const rules: DisambiguationRules = {};
+  let currentRule: DisambiguationRuleConfig | undefined;
+  let currentNestedKey: keyof DisambiguationRuleConfig | undefined;
+  let versionSeen = false;
+
+  for (const originalLine of lines) {
+    const lineWithoutComment = originalLine.replace(/\s+#.*$/, '');
+    if (lineWithoutComment.trim() === '') {
+      continue;
+    }
+
+    const indent = lineWithoutComment.match(/^ */)?.[0].length ?? 0;
+    const trimmed = lineWithoutComment.trim();
+
+    if (indent === 0 && trimmed.startsWith('version:')) {
+      const value = splitKeyValue(trimmed).value;
+      if (value !== '1') {
+        throw new Error(`unsupported disambiguation config version ${value}`);
+      }
+      versionSeen = true;
+      continue;
+    }
+
+    if (indent === 0 && trimmed === 'rules:') {
+      continue;
+    }
+
+    if (indent === 2 && trimmed.startsWith('- ')) {
+      const entry = trimmed.slice(2).trim();
+      const { key, value } = splitKeyValue(entry);
+      if (key !== 'group') {
+        throw new Error(`expected group declaration, got ${entry}`);
+      }
+      const group = stripQuotes(value);
+      if (rules[group]) {
+        throw new Error(`duplicate disambiguation group ${group}`);
+      }
+      currentRule = { group };
+      rules[group] = currentRule;
+      currentNestedKey = undefined;
+      continue;
+    }
+
+    if (!currentRule) {
+      throw new Error(`encountered config before any rule: ${trimmed}`);
+    }
+
+    if (indent === 4) {
+      const { key, value } = splitKeyValue(trimmed);
+      if (value === '') {
+        if (key !== 'by_preference') {
+          throw new Error(`unsupported nested config block ${key}`);
+        }
+        currentRule.by_preference = {};
+        currentNestedKey = 'by_preference';
+        continue;
+      }
+      currentNestedKey = undefined;
+      (currentRule as Record<string, unknown>)[key] = parseScalar(value);
+      continue;
+    }
+
+    if (indent === 6 && currentNestedKey === 'by_preference' && currentRule.by_preference) {
+      const { key, value } = splitKeyValue(trimmed);
+      currentRule.by_preference[key] = stripQuotes(value);
+      continue;
+    }
+
+    throw new Error(`unsupported disambiguation config indentation: ${trimmed}`);
+  }
+
+  if (!versionSeen) {
+    throw new Error('missing disambiguation config version');
+  }
+
+  return validateRules(rules);
 }
 
 export function loadBrainConfig(): BrainConfig {
   return {
     serviceName: 'brevio-brain',
-    version: process.env.SERVICE_VERSION ?? '0.2.0',
+    version: process.env.SERVICE_VERSION ?? process.env.npm_package_version ?? '0.3.0',
     environment: process.env.NODE_ENV ?? 'development',
     port: parsePositiveInt(process.env.PORT, 8081, 'PORT'),
     shutdownTimeoutMs: parsePositiveInt(process.env.BREVIO_BRAIN_SHUTDOWN_TIMEOUT_MS, 30000, 'BREVIO_BRAIN_SHUTDOWN_TIMEOUT_MS'),
-    disambiguationConfigPath: resolveDisambiguationPath(process.env.BREVIO_DISAMBIGUATION_CONFIG_PATH)
+    disambiguationConfigPath: resolveDisambiguationPath(process.env.BREVIO_DISAMBIGUATION_CONFIG_PATH),
+    plannerProvider: parsePlannerProvider(process.env.BREVIO_BRAIN_PLANNER_PROVIDER),
+    plannerModel: process.env.BREVIO_BRAIN_PLANNER_MODEL ?? 'gpt-5.2',
+    plannerFallbackModel: process.env.BREVIO_BRAIN_PLANNER_FALLBACK_MODEL ?? 'gpt-5-mini',
+    plannerTimeoutMs: parsePositiveInt(process.env.BREVIO_BRAIN_PLANNER_TIMEOUT_MS, 30000, 'BREVIO_BRAIN_PLANNER_TIMEOUT_MS'),
+    plannerBaseUrl: process.env.OPENAI_BASE_URL ?? 'https://api.openai.com/v1'
   };
 }
 
-export function loadDisambiguationRules(pathToConfig: string): DisambiguationRule[] {
+export function loadDisambiguationRules(pathToConfig: string): DisambiguationRules {
   const raw = readFileSync(pathToConfig, 'utf8');
-  const rules = parseDisambiguation(raw);
-  if (rules.length < 11) {
-    throw new Error(`expected at least 11 disambiguation rules, got ${rules.length}`);
-  }
-  return rules;
+  return parseDisambiguation(raw);
 }
+
+export { REQUIRED_GROUPS };
