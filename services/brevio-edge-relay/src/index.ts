@@ -2,6 +2,17 @@ import http from 'node:http';
 import { randomUUID } from 'node:crypto';
 import { URL } from 'node:url';
 import WebSocket, { WebSocketServer } from 'ws';
+import {
+  bindExecuteRequest,
+  buildSessionSummaries,
+  deriveSymmetricKey,
+  parseRelayAuthMode,
+  protectQueuedInput,
+  pseudonymize,
+  recoverQueuedInput,
+  verifyRelayToken,
+} from './security.js';
+import type { BoundExecuteRequest, ProtectedInputEnvelope, RelayAuthMode, RelayTokenClaims } from './security.js';
 
 type SkillStatus = 'SUCCESS' | 'PARTIAL' | 'FAILED' | 'TIMEOUT';
 
@@ -13,6 +24,10 @@ interface RelayConfig {
   relayPath: string;
   maxQueueAgeMs: number;
   maxQueuePerDevice: number;
+  authMode: RelayAuthMode;
+  tokenSecret?: string;
+  queueEncryptionKey: Buffer;
+  logSalt: string;
 }
 
 interface ExecuteSkillMessage {
@@ -65,7 +80,7 @@ interface QueuedExecution {
   userId: string;
   deviceId: string;
   skillId: string;
-  input: Record<string, unknown>;
+  protectedInput: ProtectedInputEnvelope;
   queuedAt: number;
 }
 
@@ -78,13 +93,9 @@ interface AgentSession {
   connectedAt: number;
   lastSeenAt: number;
   supportedSkills: Set<string>;
-}
-
-interface ExecuteRequest {
-  userId: string;
-  deviceId: string;
-  skillId: string;
-  input: Record<string, unknown>;
+  authBound: boolean;
+  allowedSkills: Set<string>;
+  tokenClaims: RelayTokenClaims | null;
 }
 
 const config = loadConfig(process.env);
@@ -92,39 +103,146 @@ const startedAt = Date.now();
 const sessions = new Map<string, AgentSession>();
 const offlineQueues = new Map<string, QueuedExecution[]>();
 
+class RelayHttpError extends Error {
+  statusCode: number;
+  code: string;
+
+  constructor(statusCode: number, code: string, message: string) {
+    super(message);
+    this.statusCode = statusCode;
+    this.code = code;
+  }
+}
+
+function extractRequestToken(req: http.IncomingMessage, requestUrl?: URL): string | undefined {
+  const authorization = normalizeHeader(req.headers.authorization);
+  if (authorization?.toLowerCase().startsWith('bearer ')) {
+    return authorization.slice(7).trim();
+  }
+  return (
+    normalizeHeader(req.headers['x-edge-token']) ??
+    normalizeHeader(req.headers['x-edge-agent-token']) ??
+    requestUrl?.searchParams.get('token')?.trim()
+  ) || undefined;
+}
+
+function authorizeHttpRequest(req: http.IncomingMessage, allowedRoles: readonly RelayTokenClaims['role'][]): RelayTokenClaims | null {
+  const token = extractRequestToken(req);
+  if (!token) {
+    if (config.authMode === 'required') {
+      throw new RelayHttpError(401, 'unauthorized', 'relay token is required');
+    }
+    return null;
+  }
+  if (!config.tokenSecret) {
+    throw new RelayHttpError(401, 'unauthorized', 'relay token verification is unavailable');
+  }
+  let claims: RelayTokenClaims;
+  try {
+    claims = verifyRelayToken(config.tokenSecret, token);
+  } catch (error) {
+    throw new RelayHttpError(401, 'unauthorized', error instanceof Error ? error.message : 'invalid relay token');
+  }
+  if (!allowedRoles.includes(claims.role)) {
+    throw new RelayHttpError(403, 'forbidden', 'relay token does not have the required role');
+  }
+  return claims;
+}
+
+function authorizeWebSocket(req: http.IncomingMessage, requestUrl: URL): RelayTokenClaims | null {
+  const token = extractRequestToken(req, requestUrl);
+  if (!token) {
+    if (config.authMode === 'required') {
+      throw new RelayHttpError(401, 'unauthorized', 'relay token is required for edge session establishment');
+    }
+    return null;
+  }
+  if (!config.tokenSecret) {
+    throw new RelayHttpError(401, 'unauthorized', 'relay token verification is unavailable');
+  }
+  let claims: RelayTokenClaims;
+  try {
+    claims = verifyRelayToken(config.tokenSecret, token);
+  } catch (error) {
+    throw new RelayHttpError(401, 'unauthorized', error instanceof Error ? error.message : 'invalid relay token');
+  }
+  if (claims.role !== 'device') {
+    throw new RelayHttpError(403, 'forbidden', 'edge session tokens must use the device role');
+  }
+  return claims;
+}
+
+function resolveBoundIdentity(requested: string | string[] | null | undefined, fallback: string | undefined, field: 'user_id' | 'device_id'): string {
+  const requestedValue = typeof requested === 'string' ? requested.trim() : undefined;
+  if (fallback && requestedValue && requestedValue !== fallback) {
+    throw new RelayHttpError(403, 'forbidden', `${field} does not match relay token`);
+  }
+  const value = fallback ?? requestedValue;
+  if (!value) {
+    throw new RelayHttpError(401, 'unauthorized', `${field} is required for relay session establishment`);
+  }
+  return value;
+}
+
+function queueContext(execution: Pick<QueuedExecution, 'requestId' | 'userId' | 'deviceId' | 'skillId'>): string {
+  return `${execution.requestId}:${execution.userId}:${execution.deviceId}:${execution.skillId}`;
+}
+
+function toIdentityRefs(userId: string, deviceId: string): Record<string, string> {
+  return {
+    user_ref: pseudonymize(userId, config.logSalt),
+    device_ref: pseudonymize(deviceId, config.logSalt),
+  };
+}
+
+function parseAuthorizedExecuteRequest(body: unknown, principal: RelayTokenClaims | null): BoundExecuteRequest {
+  try {
+    return bindExecuteRequest(isRecord(body) ? body : {}, principal);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'invalid execute request';
+    if (message.includes('does not match relay token') || message.includes('not permitted by relay token')) {
+      throw new RelayHttpError(403, 'forbidden', message);
+    }
+    throw new RelayHttpError(400, 'invalid_request', message);
+  }
+}
+
 const server = http.createServer((req, res) => {
   if (!req.url) {
     writeJson(res, 400, { error: 'invalid_request', message: 'request url is required' });
     return;
   }
+  const requestUrl = new URL(req.url, 'http://localhost');
 
-  if (req.method === 'GET' && req.url === '/health') {
+  if (req.method === 'GET' && requestUrl.pathname === '/health') {
     writeJson(res, 200, healthPayload(false));
     return;
   }
 
-  if (req.method === 'GET' && req.url === '/health/deep') {
+  if (req.method === 'GET' && requestUrl.pathname === '/health/deep') {
     writeJson(res, 200, healthPayload(true));
     return;
   }
 
-  if (req.method === 'GET' && req.url === '/v1/edge/sessions') {
-    writeJson(res, 200, {
-      sessions: Array.from(sessions.values()).map((session) => ({
-        user_id: session.userId,
-        device_id: session.deviceId,
-        device_name: session.deviceName,
-        connected_at: new Date(session.connectedAt).toISOString(),
-        last_seen_at: new Date(session.lastSeenAt).toISOString(),
-        supported_skills: Array.from(session.supportedSkills).sort(),
-      })),
-    });
+  if (req.method === 'GET' && requestUrl.pathname === '/v1/edge/sessions') {
+    try {
+      authorizeHttpRequest(req, ['admin']);
+      writeJson(res, 200, {
+        auth_mode: config.authMode,
+        sessions: buildSessionSummaries(Array.from(sessions.values()), config.logSalt),
+      });
+    } catch (error) {
+      const statusCode = error instanceof RelayHttpError ? error.statusCode : 401;
+      const code = error instanceof RelayHttpError ? error.code : 'unauthorized';
+      const message = error instanceof Error ? error.message : 'unauthorized';
+      writeJson(res, statusCode, { error: code, message });
+    }
     return;
   }
 
-  if (req.method === 'POST' && req.url === '/v1/edge/execute') {
+  if (req.method === 'POST' && requestUrl.pathname === '/v1/edge/execute') {
     readJsonBody(req)
-      .then((body) => parseExecuteRequest(body))
+      .then((body) => parseAuthorizedExecuteRequest(body, authorizeHttpRequest(req, ['admin', 'operator', 'device'])))
       .then((executeRequest) => {
         const requestId = randomUUID();
         const execution: QueuedExecution = {
@@ -132,7 +250,12 @@ const server = http.createServer((req, res) => {
           userId: executeRequest.userId,
           deviceId: executeRequest.deviceId,
           skillId: executeRequest.skillId,
-          input: executeRequest.input,
+          protectedInput: protectQueuedInput(executeRequest.input, config.queueEncryptionKey, queueContext({
+            requestId,
+            userId: executeRequest.userId,
+            deviceId: executeRequest.deviceId,
+            skillId: executeRequest.skillId,
+          })),
           queuedAt: Date.now(),
         };
 
@@ -155,8 +278,10 @@ const server = http.createServer((req, res) => {
         });
       })
       .catch((error: unknown) => {
+        const statusCode = error instanceof RelayHttpError ? error.statusCode : 400;
+        const code = error instanceof RelayHttpError ? error.code : 'invalid_request';
         const message = error instanceof Error ? error.message : 'invalid execute request';
-        writeJson(res, 400, { error: 'invalid_request', message });
+        writeJson(res, statusCode, { error: code, message });
       });
     return;
   }
@@ -181,15 +306,29 @@ server.on('upgrade', (req, socket, head) => {
 
 wss.on('connection', (socket, req) => {
   const requestUrl = new URL(req.url ?? '/', 'http://localhost');
-  const userId = requestUrl.searchParams.get('user_id') ?? req.headers['x-user-id'];
-  const deviceId = requestUrl.searchParams.get('device_id') ?? req.headers['x-device-id'];
-
-  if (typeof userId !== 'string' || typeof deviceId !== 'string' || userId.trim() === '' || deviceId.trim() === '') {
+  let tokenClaims: RelayTokenClaims | null = null;
+  try {
+    tokenClaims = authorizeWebSocket(req, requestUrl);
+  } catch (error) {
     sendMessage(socket, {
       type: 'error',
-      message: 'user_id and device_id are required for relay session establishment',
+      message: error instanceof Error ? error.message : 'relay session rejected',
     });
-    socket.close(1008, 'missing_identity');
+    socket.close(1008, 'unauthorized');
+    return;
+  }
+
+  let userId: string;
+  let deviceId: string;
+  try {
+    userId = resolveBoundIdentity(requestUrl.searchParams.get('user_id') ?? req.headers['x-user-id'], tokenClaims?.user_id, 'user_id');
+    deviceId = resolveBoundIdentity(requestUrl.searchParams.get('device_id') ?? req.headers['x-device-id'], tokenClaims?.device_id, 'device_id');
+  } catch (error) {
+    sendMessage(socket, {
+      type: 'error',
+      message: error instanceof Error ? error.message : 'relay session rejected',
+    });
+    socket.close(1008, 'unauthorized');
     return;
   }
 
@@ -199,16 +338,19 @@ wss.on('connection', (socket, req) => {
     userId: userId.trim(),
     deviceId: deviceId.trim(),
     deviceName: requestUrl.searchParams.get('device_name') ?? deviceId,
-    certFingerprint: normalizeHeader(req.headers['x-client-cert-fingerprint']) ?? 'unknown',
+    certFingerprint: tokenClaims?.cert_fingerprint ?? normalizeHeader(req.headers['x-client-cert-fingerprint']) ?? 'unknown',
     connectedAt: Date.now(),
     lastSeenAt: Date.now(),
     supportedSkills: new Set<string>(),
+    authBound: Boolean(tokenClaims),
+    allowedSkills: new Set(tokenClaims?.allowed_skills ?? []),
+    tokenClaims,
   };
 
   sessions.set(key, session);
   logEvent('edge_agent_connected', {
-    user_id: session.userId,
-    device_id: session.deviceId,
+    ...toIdentityRefs(session.userId, session.deviceId),
+    auth_bound: session.authBound,
   });
 
   sendMessage(socket, {
@@ -230,9 +372,30 @@ wss.on('connection', (socket, req) => {
     session.lastSeenAt = Date.now();
 
     if (message.type === 'register') {
+      if (session.authBound) {
+        if (message.user_id !== session.userId || message.device_id !== session.deviceId) {
+          sendMessage(socket, {
+            type: 'error',
+            message: 'registration identity does not match relay token',
+          });
+          socket.close(1008, 'identity_mismatch');
+          return;
+        }
+        if (session.tokenClaims?.cert_fingerprint && message.client_cert_fingerprint && message.client_cert_fingerprint !== session.tokenClaims.cert_fingerprint) {
+          sendMessage(socket, {
+            type: 'error',
+            message: 'client certificate fingerprint does not match relay token',
+          });
+          socket.close(1008, 'attestation_mismatch');
+          return;
+        }
+      }
       session.deviceName = message.device_name?.trim() || session.deviceName;
       session.certFingerprint = message.client_cert_fingerprint?.trim() || session.certFingerprint;
-      session.supportedSkills = new Set((message.supported_skills ?? []).filter((skill) => skill.trim() !== ''));
+      const supportedSkills = (message.supported_skills ?? []).filter((skill) => skill.trim() !== '');
+      session.supportedSkills = session.allowedSkills.size > 0
+        ? new Set(supportedSkills.filter((skill) => session.allowedSkills.has(skill)))
+        : new Set(supportedSkills);
 
       sendMessage(socket, {
         type: 'ack',
@@ -252,8 +415,7 @@ wss.on('connection', (socket, req) => {
 
     if (message.type === 'skill_result') {
       logEvent('edge_skill_result_received', {
-        user_id: session.userId,
-        device_id: session.deviceId,
+        ...toIdentityRefs(session.userId, session.deviceId),
         request_id: message.request_id,
         skill_id: message.skill_id,
         status: message.status,
@@ -269,15 +431,13 @@ wss.on('connection', (socket, req) => {
       sessions.delete(key);
     }
     logEvent('edge_agent_disconnected', {
-      user_id: session.userId,
-      device_id: session.deviceId,
+      ...toIdentityRefs(session.userId, session.deviceId),
     });
   });
 
   socket.on('error', (error) => {
     logEvent('edge_agent_socket_error', {
-      user_id: session.userId,
-      device_id: session.deviceId,
+      ...toIdentityRefs(session.userId, session.deviceId),
       error: error.message,
     });
   });
@@ -289,6 +449,8 @@ server.listen(config.port, () => {
     environment: config.environment,
     port: config.port,
     relay_path: config.relayPath,
+    auth_mode: config.authMode,
+    queue_encrypted: true,
   });
 });
 
@@ -314,14 +476,24 @@ process.on('SIGTERM', () => shutdown('SIGTERM'));
 process.on('SIGINT', () => shutdown('SIGINT'));
 
 function loadConfig(env: NodeJS.ProcessEnv): RelayConfig {
+  const environment = env.BREVIO_ENV?.trim() || 'local';
+  const tokenSecret = env.EDGE_RELAY_TOKEN_SECRET?.trim();
+  const authMode = parseRelayAuthMode(env.EDGE_AUTH_MODE, environment, Boolean(tokenSecret));
+  if (authMode === 'required' && !tokenSecret) {
+    throw new Error('EDGE_RELAY_TOKEN_SECRET is required when EDGE_AUTH_MODE resolves to required');
+  }
   return {
     serviceName: 'brevio-edge-relay',
     version: env.SERVICE_VERSION?.trim() || '0.1.0',
-    environment: env.BREVIO_ENV?.trim() || 'local',
+    environment,
     port: parseIntWithDefault(env.PORT, 8086),
     relayPath: env.EDGE_RELAY_PATH?.trim() || '/ws/edge',
     maxQueueAgeMs: parseIntWithDefault(env.EDGE_MAX_QUEUE_AGE_MS, 4 * 60 * 60 * 1000),
     maxQueuePerDevice: parseIntWithDefault(env.EDGE_MAX_QUEUE_PER_DEVICE, 100),
+    authMode,
+    tokenSecret,
+    queueEncryptionKey: deriveSymmetricKey(env.EDGE_QUEUE_ENCRYPTION_KEY?.trim(), tokenSecret ?? `${environment}:${env.SERVICE_VERSION ?? '0.1.0'}`),
+    logSalt: env.EDGE_RELAY_LOG_SALT?.trim() || tokenSecret || `${environment}:edge-relay`,
   };
 }
 
@@ -355,12 +527,15 @@ function healthPayload(deep: boolean): Record<string, unknown> {
   const checks: Record<string, unknown> = {
     process: 'ok',
     connected_agents: sessions.size,
+    auth_mode: config.authMode,
   };
 
   if (deep) {
     checks.queued_executions = queuedCount;
     checks.max_queue_age_ms = config.maxQueueAgeMs;
     checks.max_queue_per_device = config.maxQueuePerDevice;
+    checks.queue_encrypted = true;
+    checks.sessions_redacted = true;
   }
 
   return {
@@ -383,8 +558,7 @@ function enqueueExecution(key: string, execution: QueuedExecution): void {
 
   logEvent('edge_execution_queued', {
     request_id: execution.requestId,
-    user_id: execution.userId,
-    device_id: execution.deviceId,
+    ...toIdentityRefs(execution.userId, execution.deviceId),
     skill_id: execution.skillId,
   });
 }
@@ -418,26 +592,35 @@ function flushQueue(key: string): void {
     if (!execution) {
       break;
     }
-    dispatchExecution(session, execution);
+    try {
+      dispatchExecution(session, execution);
+    } catch (error) {
+      logEvent('edge_execution_drop_failed_decrypt', {
+        request_id: execution.requestId,
+        ...toIdentityRefs(execution.userId, execution.deviceId),
+        skill_id: execution.skillId,
+        error: error instanceof Error ? error.message : 'queue decrypt failed',
+      });
+    }
   }
 
   offlineQueues.delete(key);
 }
 
 function dispatchExecution(session: AgentSession, execution: QueuedExecution): void {
+  const input = recoverQueuedInput(execution.protectedInput, config.queueEncryptionKey, queueContext(execution));
   const payload: ExecuteSkillMessage = {
     type: 'execute_skill',
     request_id: execution.requestId,
     skill_id: execution.skillId,
-    input: execution.input,
+    input,
     queued_at: new Date(execution.queuedAt).toISOString(),
   };
 
   sendMessage(session.socket, payload);
   logEvent('edge_execution_dispatched', {
     request_id: execution.requestId,
-    user_id: execution.userId,
-    device_id: execution.deviceId,
+    ...toIdentityRefs(execution.userId, execution.deviceId),
     skill_id: execution.skillId,
   });
 }
@@ -447,26 +630,6 @@ function sendMessage(socket: WebSocket, message: OutboundAck | ExecuteSkillMessa
     return;
   }
   socket.send(JSON.stringify(message));
-}
-
-function parseExecuteRequest(value: unknown): ExecuteRequest {
-  if (!isRecord(value)) {
-    throw new Error('request body must be an object');
-  }
-
-  const userId = ensureNonEmptyString(value.user_id, 'user_id');
-  const deviceId = ensureNonEmptyString(value.device_id, 'device_id');
-  const skillId = ensureNonEmptyString(value.skill_id, 'skill_id');
-
-  const inputRaw = value.input;
-  const input = isRecord(inputRaw) ? inputRaw : {};
-
-  return {
-    userId,
-    deviceId,
-    skillId,
-    input,
-  };
 }
 
 function parseAgentInboundMessage(raw: string): AgentInboundMessage | null {

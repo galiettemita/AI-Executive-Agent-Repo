@@ -10,6 +10,7 @@ interface AgentConfig {
   serviceVersion: string;
   environment: string;
   relayUrl: string;
+  relayAuthToken?: string;
   userId: string;
   deviceId: string;
   deviceName: string;
@@ -157,6 +158,7 @@ function connectOnce(): Promise<void> {
     const ws = new WebSocket(buildRelayConnectionUrl(), {
       headers: {
         'x-client-cert-fingerprint': config.clientCertFingerprint,
+        ...(config.relayAuthToken ? { authorization: `Bearer ${config.relayAuthToken}` } : {}),
       },
     });
 
@@ -446,6 +448,7 @@ function loadConfig(env: NodeJS.ProcessEnv): AgentConfig {
     serviceVersion: env.SERVICE_VERSION?.trim() || '0.1.0',
     environment: env.BREVIO_ENV?.trim() || 'local',
     relayUrl: env.EDGE_RELAY_URL?.trim() || 'ws://127.0.0.1:8086/ws/edge',
+    relayAuthToken: env.EDGE_RELAY_AUTH_TOKEN?.trim() || undefined,
     userId: env.EDGE_USER_ID?.trim() || 'local-user',
     deviceId: env.EDGE_DEVICE_ID?.trim() || hostname,
     deviceName: env.EDGE_DEVICE_NAME?.trim() || hostname,
