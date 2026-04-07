@@ -18,7 +18,8 @@ describe('disambiguateSkills', () => {
       {
         message_text: 'send email to John and search inbox for his last reply',
         intent: 'email.search',
-        candidate_skills: ['apple-mail', 'apple-mail-search']
+        candidate_skills: ['apple-mail', 'apple-mail-search'],
+        enabled_skills: ['apple-mail', 'apple-mail-search']
       },
       rules
     );
@@ -31,7 +32,8 @@ describe('disambiguateSkills', () => {
     const result = disambiguateSkills(
       {
         message_text: 'play music',
-        candidate_skills: ['apple-music']
+        candidate_skills: ['apple-music'],
+        enabled_skills: ['apple-music']
       },
       rules
     );
@@ -44,7 +46,8 @@ describe('disambiguateSkills', () => {
       {
         message_text: 'navigate to jfk airport',
         intent: 'places.search',
-        candidate_skills: ['local-places']
+        candidate_skills: ['local-places'],
+        enabled_skills: ['google-maps']
       },
       rules
     );

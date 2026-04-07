@@ -25,6 +25,7 @@ message ClassifyIntentResponse {
   string reasoning = 5;
   bool clarification_required = 6;
   repeated string blocked_skills = 7;
+  string safe_reasoning = 8;
 }
 
 message DisambiguateSkillsRequest {
@@ -79,6 +80,8 @@ message ProcessTurnResponse {
   string verification_json = 5;
   string aggregation_json = 6;
   string execution_status = 7;
+  string policy_summary_json = 8;
+  string user_safe_summary = 9;
 }
 
 message BrainServiceHealthRequest {

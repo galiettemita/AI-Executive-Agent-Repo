@@ -25,6 +25,7 @@ describe('classifyIntent', () => {
       message_text: 'play music',
       deployment_mode: 'local_mac',
       user_profile: {
+        enabled_skills: ['apple-music'],
         preferences: { music_provider: 'apple_music' }
       }
     });
@@ -36,6 +37,7 @@ describe('classifyIntent', () => {
     const result = classifyIntent({
       message_text: 'add task to call the bank tomorrow',
       user_profile: {
+        enabled_skills: ['linear'],
         preferences: { task_app: 'linear' }
       }
     });

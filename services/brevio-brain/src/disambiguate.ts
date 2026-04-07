@@ -100,9 +100,17 @@ function resolveFromRule(
       return { skills: [rule.crud ?? 'apple-mail'], reasoning, clarificationRequired: false };
     }
     case 'email-send':
-      reasoning.push(`Email provider preference ${emailPreference} selected.`);
+      if (emailPreference === 'none') {
+        reasoning.push('Email execution requires an approved provider before routing can continue.');
+        return {
+          skills: [],
+          reasoning,
+          clarificationRequired: true
+        };
+      }
+      reasoning.push('Email routing used the approved provider preference.');
       return {
-        skills: [resolveEmailSkill(request.user_preferences, 'send', request.deployment_mode)],
+        skills: [resolveEmailSkill(request.user_preferences, 'send', request.deployment_mode)].filter((skill): skill is string => Boolean(skill)),
         reasoning,
         clarificationRequired: false
       };
@@ -162,7 +170,7 @@ export function disambiguateSkills(request: DisambiguationRequest, rules: Disamb
   const reasoning: string[] = [];
 
   if (blocked.length > 0) {
-    reasoning.push(`Blocked disabled skills: ${blocked.join(', ')}.`);
+    reasoning.push('One or more candidate skills are not approved for execution in the current capability set.');
   }
 
   const group = detectGroup(request.intent, allowed);
@@ -173,7 +181,7 @@ export function disambiguateSkills(request: DisambiguationRequest, rules: Disamb
         group_hits: [],
         blocked_skills: blocked,
         clarification_required: false,
-        reasoning: [...reasoning, 'Planner kept the explicit candidate skill selection.']
+        reasoning: [...reasoning, 'Planner kept the explicit approved connector selection.']
       };
     }
     const fallback = request.intent?.startsWith('tasks.') ? 'doing-tasks' : 'thinking-partner';
@@ -183,7 +191,7 @@ export function disambiguateSkills(request: DisambiguationRequest, rules: Disamb
       group_hits: allowedFallback.length > 0 ? ['fallback'] : [],
       blocked_skills: [...blocked, ...blockedFallback],
       clarification_required: allowedFallback.length === 0,
-      reasoning: [...reasoning, allowedFallback.length > 0 ? 'Fell back to a safe generic reasoning skill.' : 'No enabled fallback skill is available.']
+      reasoning: [...reasoning, allowedFallback.length > 0 ? 'Fell back to a generic approved reasoning skill.' : 'No approved fallback skill is available.']
     };
   }
 

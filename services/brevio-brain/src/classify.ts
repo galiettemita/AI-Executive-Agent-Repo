@@ -11,7 +11,7 @@ interface IntentPattern {
   intent: string;
   keywords: string[];
   operation: string;
-  candidateSkills: (input: IntentClassificationInput) => string[];
+  candidateSkills: (input: IntentClassificationInput) => Array<string | undefined>;
 }
 
 const ACTION_CUES = [
@@ -140,6 +140,16 @@ function defaultClarification(text: string): string {
   return 'I can help, but I need a little more specificity about the action you want.';
 }
 
+function clarifyForMissingCapability(intent: string): string {
+  if (intent.startsWith('email.')) {
+    return 'I need an approved email connector and enabled skill before I can handle email.';
+  }
+  if (intent === 'music.playback') {
+    return 'I need an approved music provider and enabled skill before I can start playback.';
+  }
+  return 'I need an explicit enabled skill before I can execute this request.';
+}
+
 export function classifyIntent(input: IntentClassificationInput): IntentClassificationOutput {
   const text = input.message_text.trim();
   const normalized = text.toLowerCase();
@@ -166,18 +176,29 @@ export function classifyIntent(input: IntentClassificationInput): IntentClassifi
     throw new Error(`missing intent pattern for ${bestEvidence.intent}`);
   }
 
-  const requestedSkills = selectedPattern.candidateSkills(input);
+  const requestedSkills = selectedPattern.candidateSkills(input).filter((skill): skill is string => Boolean(skill));
   const { allowed, blocked } = filterEnabledSkills(requestedSkills, input.user_profile?.enabled_skills);
   const scoreMargin = bestEvidence.score - (secondEvidence?.score ?? 0);
-  const clarificationRequired = scoreMargin < 0.35 || allowed.length === 0;
+  const missingCapability = requestedSkills.length === 0 || allowed.length === 0;
+  const clarificationRequired = scoreMargin < 0.35 || missingCapability;
   const confidence = confidenceFor(bestEvidence.score, secondEvidence?.score ?? 0, selectedPattern.keywords.length, clarificationRequired);
 
-  let reasoning = `Matched ${bestEvidence.intent} using keywords: ${bestEvidence.matched_keywords.join(', ')}.`;
-  if (blocked.length > 0) {
-    reasoning += ` Blocked by disabled skills: ${blocked.join(', ')}.`;
+  let reasoning = `Matched a supported ${bestEvidence.intent} request using deterministic policy-safe routing.`;
+  if (missingCapability) {
+    reasoning += ' Execution is paused until an approved skill is available for this intent.';
+  } else if (clarificationRequired && scoreMargin < 0.35) {
+    reasoning += ' Clarification is required before any external action is selected.';
   }
-  if (clarificationRequired && blocked.length === 0 && scoreMargin < 0.35) {
-    reasoning += ' Multiple intents scored closely, so the system is requesting clarification before execution.';
+
+  let suggestedClarification: string | undefined;
+  if (clarificationRequired) {
+    if (missingCapability) {
+      suggestedClarification = clarifyForMissingCapability(bestEvidence.intent);
+    } else if (blocked.length > 0) {
+      suggestedClarification = `Please enable one of these skills or choose another path: ${blocked.join(', ')}.`;
+    } else {
+      suggestedClarification = defaultClarification(text);
+    }
   }
 
   return {
@@ -189,12 +210,7 @@ export function classifyIntent(input: IntentClassificationInput): IntentClassifi
     clarification_required: clarificationRequired,
     blocked_skills: blocked,
     evidence: evidence.slice(0, 3),
-    suggested_clarification:
-      clarificationRequired
-        ? blocked.length > 0
-          ? `Please enable one of these skills or choose another path: ${blocked.join(', ')}.`
-          : defaultClarification(text)
-        : undefined,
+    suggested_clarification: suggestedClarification,
     operation: selectedPattern.operation
   };
 }

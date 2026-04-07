@@ -24,6 +24,7 @@ describe('aggregateResults', () => {
 
     assert.equal(result.completion_ratio, 0.5);
     assert.match(result.response_text, /Playback started/);
+    assert.doesNotMatch(result.response_text, /Need explicit confirmation/);
     assert.equal(result.warnings.length, 1);
   });
 });

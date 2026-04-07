@@ -23,6 +23,9 @@ describe('buildPlannerProposal', () => {
 
     const request = normalizeReasoningInput({
       message_text: 'send email to the team and then schedule a kickoff meeting',
+      user_profile: {
+        enabled_skills: ['google-workspace', 'google-calendar']
+      },
       user_preferences: { email_provider: 'google' }
     });
 
@@ -32,6 +35,7 @@ describe('buildPlannerProposal', () => {
     assert.equal(result.plan.requires_approval, true);
     assert.ok(result.plan.actions.every((action) => !('status_code' in action)));
     assert.ok(result.plan.actions.every((action) => action.action_type === 'execute_skill'));
+    assert.equal(result.plan.policy_summary.requires_consent, true);
   });
 
   it('keeps deterministic planning when model augmentation is configured without credentials', async () => {
@@ -43,12 +47,15 @@ describe('buildPlannerProposal', () => {
 
     const request = normalizeReasoningInput({
       message_text: 'play music',
-      user_preferences: { music_provider: 'spotify' }
+      user_profile: {
+        enabled_skills: ['spotify-web-api']
+      },
+      user_preferences: { music_provider: 'spotify', allow_external_reasoning: true }
     });
 
     const result = await buildPlannerProposal(request, rules, config);
 
     assert.equal(result.plan.planner_mode, 'deterministic');
-    assert.match(result.plan.reasoning.join(' '), /OPENAI_API_KEY is not set/);
+    assert.match(result.plan.reasoning.join(' '), /credentials are unavailable/);
   });
 });

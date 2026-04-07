@@ -111,8 +111,11 @@ export function resolveNotesSkill(preferences: UserPreferences | undefined): str
   return NOTES_APP_TO_SKILL[notesApp] ?? 'apple-notes-skill';
 }
 
-export function resolveMusicSkill(preferences: UserPreferences | undefined, deploymentMode: DeploymentMode | undefined): string {
-  const preferred = preferences?.music_provider ?? 'spotify';
+export function resolveMusicSkill(preferences: UserPreferences | undefined, deploymentMode: DeploymentMode | undefined): string | undefined {
+  const preferred = preferences?.music_provider ?? 'none';
+  if (preferred === 'none') {
+    return undefined;
+  }
   if (preferred === 'apple_music') {
     return 'apple-music';
   }
@@ -132,7 +135,7 @@ export function resolveEmailSkill(
   preferences: UserPreferences | undefined,
   operation: 'send' | 'search',
   deploymentMode: DeploymentMode | undefined
-): string {
+): string | undefined {
   const provider = preferences?.email_provider ?? 'none';
   switch (provider) {
     case 'google':
@@ -146,9 +149,9 @@ export function resolveEmailSkill(
     case 'none':
     default:
       if (operation === 'search' && deploymentMode === 'local_mac') {
-        return 'apple-mail-search';
+        return undefined;
       }
-      return operation === 'send' ? 'smtp-send' : 'apple-mail';
+      return undefined;
   }
 }
 
@@ -159,7 +162,7 @@ export function findGroupForSkill(skillId: string | undefined): string | undefin
 export function filterEnabledSkills(skills: string[], enabledSkills: string[] | undefined): { allowed: string[]; blocked: string[] } {
   const unique = [...new Set(skills.filter((skill) => toolExists(skill)))];
   if (!enabledSkills || enabledSkills.length === 0) {
-    return { allowed: unique, blocked: [] };
+    return { allowed: [], blocked: unique };
   }
   const enabled = new Set(enabledSkills);
   return {

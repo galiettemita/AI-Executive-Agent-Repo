@@ -10,6 +10,52 @@ export type ExecutionStatus = 'dispatch_ready' | 'completed' | 'clarification_re
 
 export type TaskStatus = 'planned' | 'clarify';
 
+export type PrivacyMode = 'strict' | 'balanced' | 'open';
+
+export type PolicyDataClass = 'general' | 'personal' | 'communications' | 'financial' | 'health' | 'credentials';
+
+export type PolicySensitivity = 'low' | 'moderate' | 'high' | 'critical';
+
+export type ConsentRequirement = 'none' | 'recommended' | 'required';
+
+export type HumanReviewLevel = 'none' | 'recommended' | 'required';
+
+export type ExternalModelEgress = 'allow' | 'redacted_only' | 'deny';
+
+export type PolicyLegalBasis = 'user_request' | 'user_consent' | 'contract' | 'legitimate_interest';
+
+export type RecipientVerification = 'not_applicable' | 'required' | 'verified';
+
+export type PolicyProvenance = 'user_message' | 'connector' | 'derived' | 'system';
+
+export interface ActionPolicyMetadata {
+  data_class: PolicyDataClass;
+  sensitivity: PolicySensitivity;
+  privacy_mode: PrivacyMode;
+  legal_basis: PolicyLegalBasis;
+  consent_requirement: ConsentRequirement;
+  consent_scope?: string;
+  consent_record?: string;
+  recipient_verification: RecipientVerification;
+  provenance: PolicyProvenance;
+  human_review: HumanReviewLevel;
+  external_model_egress: ExternalModelEgress;
+  contains_pii: boolean;
+  retention_class: 'ephemeral' | 'standard' | 'regulated';
+  allowed_processors: string[];
+}
+
+export interface PlanPolicySummary {
+  privacy_mode: PrivacyMode;
+  data_classes: PolicyDataClass[];
+  contains_pii: boolean;
+  highest_sensitivity: PolicySensitivity;
+  external_model_egress: ExternalModelEgress;
+  requires_consent: boolean;
+  requires_recipient_verification: boolean;
+  human_review_required: boolean;
+}
+
 export interface BrainConfig {
   serviceName: string;
   version: string;
@@ -49,6 +95,8 @@ export interface UserPreferences {
   notes_app?: 'apple_notes' | 'notion' | 'bear' | 'obsidian' | 'craft' | 'google_keep' | 'reflect' | 'none';
   finance_app?: 'ynab' | 'monarch' | 'copilot' | 'none';
   has_edge_agent?: boolean;
+  privacy_mode?: PrivacyMode;
+  allow_external_reasoning?: boolean;
 }
 
 export interface UserProfile {
@@ -200,6 +248,7 @@ export interface PlannedAction {
   idempotency_key: string;
   dependencies: string[];
   rationale: string;
+  policy: ActionPolicyMetadata;
   action_type: 'execute_skill' | 'clarify_user';
   status: 'pending' | 'blocked';
 }
@@ -212,6 +261,7 @@ export interface PlannerProposal {
   requires_clarification: boolean;
   clarification_question?: string;
   actions: PlannedAction[];
+  policy_summary: PlanPolicySummary;
   risk: {
     impact: string;
     rollback_plan: string;

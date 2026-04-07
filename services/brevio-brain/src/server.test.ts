@@ -62,6 +62,9 @@ describe('brevio-brain runtime', () => {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           message_text: 'play music',
+          user_profile: {
+            enabled_skills: ['spotify-web-api']
+          },
           user_preferences: { music_provider: 'spotify' }
         })
       });
@@ -86,6 +89,9 @@ describe('brevio-brain runtime', () => {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           message_text: 'play music',
+          user_profile: {
+            enabled_skills: ['spotify-web-api']
+          },
           user_preferences: { music_provider: 'spotify' },
           skill_results: [
             {

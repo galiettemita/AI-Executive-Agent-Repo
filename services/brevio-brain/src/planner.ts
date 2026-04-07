@@ -4,6 +4,13 @@ import { getToolDescriptor } from './catalog.js';
 import { classifyIntent } from './classify.js';
 import { decomposeTask } from './decompose.js';
 import { disambiguateSkills } from './disambiguate.js';
+import {
+  buildActionPolicyMetadata,
+  buildExternalPlannerInput,
+  buildPlanPolicySummary,
+  evaluateExternalPlannerPolicy,
+  redactSensitiveText
+} from './policy.js';
 import type {
   BrainConfig,
   DisambiguationResponse,
@@ -177,7 +184,12 @@ function buildParams(skillId: string | undefined, operation: string, goal: strin
 function requiresApproval(actions: PlannedAction[]): boolean {
   return actions.some((action) => {
     const descriptor = getToolDescriptor(action.skill_id);
-    return descriptor?.write_operations.includes(action.operation) ?? false;
+    return (
+      (descriptor?.write_operations.includes(action.operation) ?? false) ||
+      action.policy.consent_requirement === 'required' ||
+      action.policy.human_review === 'required' ||
+      action.policy.recipient_verification === 'required'
+    );
   });
 }
 
@@ -186,6 +198,13 @@ function buildRiskSummary(actions: PlannedAction[]) {
     return {
       impact: 'Low; the system is waiting for user clarification before executing any external action.',
       rollback_plan: 'No external change has been applied yet.'
+    };
+  }
+
+  if (actions.some((action) => action.policy.sensitivity === 'critical')) {
+    return {
+      impact: 'High; the plan touches regulated or critical data classes and requires explicit safeguards before execution.',
+      rollback_plan: 'Pause external execution, require human review, and re-issue only the approved steps with the same idempotency keys.'
     };
   }
 
@@ -226,22 +245,47 @@ function buildClarificationQuestion(classification: IntentClassificationOutput, 
   return 'What exactly would you like me to do first?';
 }
 
-function buildClarificationAction(task: TaskDescriptor, intent: string, reason: string): PlannedAction {
+function sanitizeReasoningLine(line: string): string {
+  const normalized = redactSensitiveText(line.trim());
+  if (normalized.length === 0) {
+    return 'Planner retained the deterministic policy-safe route.';
+  }
+  return normalized.length > 240 ? `${normalized.slice(0, 239).trimEnd()}…` : normalized;
+}
+
+function sanitizeReasoning(lines: string[]): string[] {
+  return [...new Set(lines.map((line) => sanitizeReasoningLine(line)).filter((line) => line.length > 0))];
+}
+
+function buildClarificationAction(
+  request: NormalizedReasoningRequest,
+  task: TaskDescriptor,
+  intent: string,
+  reason: string
+): PlannedAction {
+  const operation = 'clarify';
   return {
     step_id: `step_${task.id}`,
     task_id: task.id,
     intent,
-    operation: 'clarify',
+    operation,
     params: { prompt: reason, request_segment: task.goal },
     idempotency_key: idempotencyKey(task.id, undefined, task.goal),
     dependencies: task.dependencies,
-    rationale: reason,
+    rationale: sanitizeReasoningLine(reason),
+    policy: buildActionPolicyMetadata(request, task.goal, intent, operation, undefined),
     action_type: 'clarify_user',
     status: 'blocked'
   };
 }
 
-function buildExecutionAction(task: TaskDescriptor, skillId: string, intent: string, rationale: string): PlannedAction {
+function buildExecutionAction(
+  request: NormalizedReasoningRequest,
+  task: TaskDescriptor,
+  skillId: string,
+  intent: string,
+  rationale: string
+): PlannedAction {
   const operation = inferOperation(intent, skillId, task.goal);
   return {
     step_id: `step_${task.id}`,
@@ -253,7 +297,8 @@ function buildExecutionAction(task: TaskDescriptor, skillId: string, intent: str
     params: buildParams(skillId, operation, task.goal),
     idempotency_key: idempotencyKey(task.id, skillId, task.goal),
     dependencies: task.dependencies,
-    rationale,
+    rationale: sanitizeReasoningLine(rationale),
+    policy: buildActionPolicyMetadata(request, task.goal, intent, operation, skillId),
     action_type: 'execute_skill',
     status: 'pending'
   };
@@ -295,11 +340,19 @@ async function augmentWithOpenAI(
   config: BrainConfig,
   fetchImpl: typeof fetch = fetch
 ): Promise<PlannerProposal> {
+  const plannerPolicy = evaluateExternalPlannerPolicy(request, proposal.actions);
+  if (!plannerPolicy.allowed) {
+    return {
+      ...proposal,
+      reasoning: sanitizeReasoning([...proposal.reasoning, plannerPolicy.reason])
+    };
+  }
+
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
     return {
       ...proposal,
-      reasoning: [...proposal.reasoning, 'OpenAI planner requested but OPENAI_API_KEY is not set; deterministic planner retained.']
+      reasoning: sanitizeReasoning([...proposal.reasoning, 'External planner requested, but credentials are unavailable so the deterministic planner was retained.'])
     };
   }
 
@@ -317,14 +370,11 @@ async function augmentWithOpenAI(
       body: JSON.stringify({
         model: config.plannerModel,
         instructions:
-          'You are the planner/verifier for a multi-step agent. Return JSON only. Improve confidence, clarification prompts, and action rationale, but do not invent tools or bypass disabled skills.',
+          'You are the planner/verifier for a multi-step agent. Return JSON only. Improve confidence, clarification prompts, and action rationale, but do not invent tools, bypass disabled skills, or widen the provided privacy policy.',
         input: [
           {
             role: 'user',
-            content: JSON.stringify({
-              request,
-              draft_plan: proposal
-            })
+            content: JSON.stringify(buildExternalPlannerInput(request, proposal.actions, proposal.confidence))
           }
         ],
         text: {
@@ -342,7 +392,7 @@ async function augmentWithOpenAI(
     if (!response.ok) {
       return {
         ...proposal,
-        reasoning: [...proposal.reasoning, `OpenAI planner call failed with status ${response.status}; deterministic planner retained.`]
+        reasoning: sanitizeReasoning([...proposal.reasoning, `External planner returned status ${response.status}; deterministic planner retained.`])
       };
     }
 
@@ -351,7 +401,7 @@ async function augmentWithOpenAI(
     if (!outputText) {
       return {
         ...proposal,
-        reasoning: [...proposal.reasoning, 'OpenAI planner response did not contain structured text output; deterministic planner retained.']
+        reasoning: sanitizeReasoning([...proposal.reasoning, 'External planner did not return the expected structured output; deterministic planner retained.'])
       };
     }
 
@@ -363,8 +413,8 @@ async function augmentWithOpenAI(
       }
       return {
         ...action,
-        rationale: override.rationale ?? action.rationale,
-        params: override.query ? { ...action.params, query: override.query } : action.params
+        rationale: override.rationale ? sanitizeReasoningLine(override.rationale) : action.rationale,
+        params: override.query ? { ...action.params, query: redactSensitiveText(override.query) } : action.params
       };
     });
 
@@ -374,13 +424,14 @@ async function augmentWithOpenAI(
       confidence: Math.max(0.15, Math.min(0.99, Number(augmentation.confidence.toFixed(2)))),
       requires_clarification: augmentation.requires_clarification,
       clarification_question: augmentation.clarification_question ?? proposal.clarification_question,
-      reasoning: [...proposal.reasoning, ...augmentation.reasoning],
+      reasoning: sanitizeReasoning([...proposal.reasoning, ...augmentation.reasoning]),
       actions
     };
   } catch (error) {
+    void error;
     return {
       ...proposal,
-      reasoning: [...proposal.reasoning, `OpenAI planner exception: ${error instanceof Error ? error.message : String(error)}`]
+      reasoning: sanitizeReasoning([...proposal.reasoning, 'External planner was unavailable, so the deterministic planner was retained.'])
     };
   } finally {
     clearTimeout(timeout);
@@ -436,6 +487,7 @@ export async function buildPlannerProposal(
       requiresClarification = true;
       actions.push(
         buildClarificationAction(
+          request,
           task,
           taskClassification.intent,
           taskClassification.suggested_clarification ??
@@ -447,8 +499,8 @@ export async function buildPlannerProposal(
     }
 
     const skillId = taskDisambiguation.resolved_skills[0];
-    const reasoning = `Resolved ${task.goal} to ${skillId} for intent ${taskClassification.intent}.`;
-    actions.push(buildExecutionAction(task, skillId, taskClassification.intent, reasoning));
+    const reasoning = `Resolved the task to an approved ${taskClassification.intent} execution path.`;
+    actions.push(buildExecutionAction(request, task, skillId, taskClassification.intent, reasoning));
   }
 
   const disambiguation: DisambiguationResponse = {
@@ -467,13 +519,14 @@ export async function buildPlannerProposal(
     requires_clarification: requiresClarification,
     clarification_question: requiresClarification ? buildClarificationQuestion(initialClassification, disambiguation) : undefined,
     actions,
+    policy_summary: buildPlanPolicySummary(request, actions),
     risk: buildRiskSummary(actions),
     requires_approval: requiresApproval(actions),
-    reasoning: [
+    reasoning: sanitizeReasoning([
       initialClassification.reasoning,
       ...decomposition.reasoning,
       ...disambiguation.reasoning
-    ]
+    ])
   };
 
   if (config.plannerProvider === 'openai_responses') {

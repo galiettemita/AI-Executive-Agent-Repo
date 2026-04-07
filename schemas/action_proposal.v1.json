@@ -29,13 +29,137 @@
             "type": "string",
             "minLength": 16,
             "maxLength": 128
+          },
+          "policy": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "data_class": {
+                "type": "string",
+                "enum": [
+                  "general",
+                  "personal",
+                  "communications",
+                  "financial",
+                  "health",
+                  "credentials"
+                ]
+              },
+              "sensitivity": {
+                "type": "string",
+                "enum": [
+                  "low",
+                  "moderate",
+                  "high",
+                  "critical"
+                ]
+              },
+              "privacy_mode": {
+                "type": "string",
+                "enum": [
+                  "strict",
+                  "balanced",
+                  "open"
+                ]
+              },
+              "legal_basis": {
+                "type": "string",
+                "enum": [
+                  "user_request",
+                  "user_consent",
+                  "contract",
+                  "legitimate_interest"
+                ]
+              },
+              "consent_requirement": {
+                "type": "string",
+                "enum": [
+                  "none",
+                  "recommended",
+                  "required"
+                ]
+              },
+              "consent_scope": {
+                "type": "string"
+              },
+              "consent_record": {
+                "type": "string"
+              },
+              "recipient_verification": {
+                "type": "string",
+                "enum": [
+                  "not_applicable",
+                  "required",
+                  "verified"
+                ]
+              },
+              "provenance": {
+                "type": "string",
+                "enum": [
+                  "user_message",
+                  "connector",
+                  "derived",
+                  "system"
+                ]
+              },
+              "human_review": {
+                "type": "string",
+                "enum": [
+                  "none",
+                  "recommended",
+                  "required"
+                ]
+              },
+              "external_model_egress": {
+                "type": "string",
+                "enum": [
+                  "allow",
+                  "redacted_only",
+                  "deny"
+                ]
+              },
+              "contains_pii": {
+                "type": "boolean"
+              },
+              "retention_class": {
+                "type": "string",
+                "enum": [
+                  "ephemeral",
+                  "standard",
+                  "regulated"
+                ]
+              },
+              "allowed_processors": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            },
+            "required": [
+              "data_class",
+              "sensitivity",
+              "privacy_mode",
+              "legal_basis",
+              "consent_requirement",
+              "recipient_verification",
+              "provenance",
+              "human_review",
+              "external_model_egress",
+              "contains_pii",
+              "retention_class",
+              "allowed_processors"
+            ]
           }
         },
         "required": [
           "tool",
           "operation",
           "params",
-          "idempotency_key"
+          "idempotency_key",
+          "policy"
         ]
       }
     },
@@ -59,12 +183,80 @@
     },
     "requires_approval": {
       "type": "boolean"
+    },
+    "policy_summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "privacy_mode": {
+          "type": "string",
+          "enum": [
+            "strict",
+            "balanced",
+            "open"
+          ]
+        },
+        "data_classes": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "general",
+              "personal",
+              "communications",
+              "financial",
+              "health",
+              "credentials"
+            ]
+          }
+        },
+        "contains_pii": {
+          "type": "boolean"
+        },
+        "highest_sensitivity": {
+          "type": "string",
+          "enum": [
+            "low",
+            "moderate",
+            "high",
+            "critical"
+          ]
+        },
+        "external_model_egress": {
+          "type": "string",
+          "enum": [
+            "allow",
+            "redacted_only",
+            "deny"
+          ]
+        },
+        "requires_consent": {
+          "type": "boolean"
+        },
+        "requires_recipient_verification": {
+          "type": "boolean"
+        },
+        "human_review_required": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "privacy_mode",
+        "data_classes",
+        "contains_pii",
+        "highest_sensitivity",
+        "external_model_egress",
+        "requires_consent",
+        "requires_recipient_verification",
+        "human_review_required"
+      ]
     }
   },
   "required": [
     "intent",
     "actions",
     "risk",
-    "requires_approval"
+    "requires_approval",
+    "policy_summary"
   ]
 }

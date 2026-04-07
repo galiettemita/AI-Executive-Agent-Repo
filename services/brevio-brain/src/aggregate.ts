@@ -47,8 +47,7 @@ function summarizeResultLine(result: SkillResult): string {
     return `- ${result.skill_id}: timed out.`;
   }
   const errorCode = result.error?.code ?? 'UNKNOWN_ERROR';
-  const message = result.error?.message ? ` ${result.error.message}` : '';
-  return `- ${result.skill_id}: failed (${errorCode}).${message}`;
+  return `- ${result.skill_id}: failed (${errorCode}). Review the connector logs or approval requirements before retrying.`;
 }
 
 function stylePrefix(style: string | undefined): string {
