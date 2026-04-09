@@ -1,6 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import http from 'node:http';
+import { pathToFileURL } from 'node:url';
 
+import { parseCapabilityInventory, resolveCapabilityInventory } from '../../../packages/shared/src/capability-inventory.js';
 import type {
   CacheClient,
   SkillContext,
@@ -11,7 +13,11 @@ import type {
   UserProfile
 } from '@brevio/shared';
 
+import { evaluateApprovalGate, type ExecutionPolicy } from './approval-policy.js';
+import { applyExecutionRefs, parseExecutionRefs, type ExecutionRefs } from './execution-refs.js';
+import { isHandsExecutableAdapter } from './skills/plane-policy.js';
 import { getSkillAdapter, SkillRegistry } from './skills/index.js';
+import { reportExecutionResult } from './workflow-runtime.js';
 
 type CircuitBreakerState = 'CLOSED' | 'HALF_OPEN' | 'OPEN';
 
@@ -34,6 +40,9 @@ interface HandsConfig {
   circuitFailureThreshold: number;
   circuitRecoveryTimeoutMs: number;
   circuitHalfOpenMaxCalls: number;
+  temporalWorkerBaseUrl?: string;
+  temporalWorkerTimeoutMs: number;
+  capabilityInventoryJson?: string;
 }
 
 interface RequestContext {
@@ -45,10 +54,19 @@ interface RequestContext {
 
 interface ExecuteRequest {
   skill_id: string;
+  request_id?: string;
+  run_id?: string;
+  task_id?: string;
+  step_id?: string;
+  attempt?: number;
   user_id?: string;
+  tenant_id?: string;
+  workspace_id?: string;
+  allowed_skills?: string[];
   input: SkillInput;
   user_profile?: Partial<UserProfile>;
   config?: Record<string, unknown>;
+  policy?: ExecutionPolicy;
 }
 
 interface HandsRuntime {
@@ -89,7 +107,10 @@ function loadConfig(): HandsConfig {
     maxBodyBytes: parsePositiveInt(process.env.BREVIO_HANDS_MAX_BODY_BYTES, 2 * 1024 * 1024, 'BREVIO_HANDS_MAX_BODY_BYTES'),
     circuitFailureThreshold: parsePositiveInt(process.env.BREVIO_HANDS_CB_FAILURE_THRESHOLD, 5, 'BREVIO_HANDS_CB_FAILURE_THRESHOLD'),
     circuitRecoveryTimeoutMs: parsePositiveInt(process.env.BREVIO_HANDS_CB_RECOVERY_TIMEOUT_MS, 60000, 'BREVIO_HANDS_CB_RECOVERY_TIMEOUT_MS'),
-    circuitHalfOpenMaxCalls: parsePositiveInt(process.env.BREVIO_HANDS_CB_HALF_OPEN_MAX_CALLS, 3, 'BREVIO_HANDS_CB_HALF_OPEN_MAX_CALLS')
+    circuitHalfOpenMaxCalls: parsePositiveInt(process.env.BREVIO_HANDS_CB_HALF_OPEN_MAX_CALLS, 3, 'BREVIO_HANDS_CB_HALF_OPEN_MAX_CALLS'),
+    temporalWorkerBaseUrl: process.env.BREVIO_TEMPORAL_WORKER_BASE_URL?.trim() || undefined,
+    temporalWorkerTimeoutMs: parsePositiveInt(process.env.BREVIO_TEMPORAL_WORKER_TIMEOUT_MS, 1500, 'BREVIO_TEMPORAL_WORKER_TIMEOUT_MS'),
+    capabilityInventoryJson: process.env.BREVIO_CAPABILITY_INVENTORY_JSON?.trim() || undefined
   };
 }
 
@@ -182,6 +203,16 @@ function asObject(value: unknown): Record<string, unknown> | undefined {
   return undefined;
 }
 
+function asStringArray(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  const normalized = value
+    .map((item) => asString(item))
+    .filter((item): item is string => Boolean(item));
+  return normalized.length > 0 ? normalized : undefined;
+}
+
 function parseExecuteRequest(payload: Record<string, unknown>): ExecuteRequest {
   const skillId = asString(payload.skill_id);
   if (!skillId) {
@@ -191,13 +222,27 @@ function parseExecuteRequest(payload: Record<string, unknown>): ExecuteRequest {
   const input = asObject(payload.input) ?? {};
   const profile = asObject(payload.user_profile);
   const config = asObject(payload.config);
+  const policyRaw = asObject(payload.policy);
 
   return {
     skill_id: skillId,
+    ...parseExecutionRefs(payload),
     user_id: asString(payload.user_id),
+    tenant_id: asString(payload.tenant_id),
+    workspace_id: asString(payload.workspace_id),
+    allowed_skills: asStringArray(payload.allowed_skills),
     input,
     user_profile: profile as Partial<UserProfile> | undefined,
-    config
+    config,
+    policy: policyRaw
+      ? {
+          consent_requirement: asString(policyRaw.consent_requirement) as ExecutionPolicy['consent_requirement'],
+          consent_record: asString(policyRaw.consent_record),
+          human_review: asString(policyRaw.human_review) as ExecutionPolicy['human_review'],
+          human_review_record: asString(policyRaw.human_review_record),
+          recipient_verification: asString(policyRaw.recipient_verification) as ExecutionPolicy['recipient_verification']
+        }
+      : undefined
   };
 }
 
@@ -346,9 +391,10 @@ function normalizeSkillResult(
   skillId: string,
   result: SkillResult,
   latencyMs: number,
-  circuitState: CircuitBreakerState
+  circuitState: CircuitBreakerState,
+  refs: ExecutionRefs
 ): SkillResult {
-  return {
+  return applyExecutionRefs({
     skill_id: result.skill_id || skillId,
     status: result.status,
     data: result.data,
@@ -361,7 +407,7 @@ function normalizeSkillResult(
       circuit_breaker_state: circuitState,
       cache_hit: result.metadata?.cache_hit ?? false
     }
-  };
+  }, refs) as SkillResult;
 }
 
 function failureResult(
@@ -376,9 +422,10 @@ function failureResult(
   retryable: boolean,
   httpStatus: number,
   latencyMs: number,
-  circuitState: CircuitBreakerState
+  circuitState: CircuitBreakerState,
+  refs: ExecutionRefs
 ): SkillResult {
-  return {
+  return applyExecutionRefs({
     skill_id: skillId,
     status,
     error: {
@@ -393,7 +440,7 @@ function failureResult(
       circuit_breaker_state: circuitState,
       cache_hit: false
     }
-  };
+  }, refs) as SkillResult;
 }
 
 function healthPayload(runtime: HandsRuntime, deep: boolean): Record<string, unknown> {
@@ -453,9 +500,39 @@ function circuitSnapshot(runtime: HandsRuntime): Record<string, unknown> {
   };
 }
 
+function agentCardPayload(runtime: HandsRuntime): Record<string, unknown> {
+  return {
+    agent_id: runtime.config.serviceName,
+    name: 'Brevio Hands',
+    description: 'Execution-plane service for approved Brevio skills with circuit breakers, approval enforcement, and workflow result reporting.',
+    version: runtime.config.version,
+    protocol_version: '2026.a2a.v1',
+    default_endpoint: `http://localhost:${runtime.config.port}/api/v1/hands`,
+    capabilities: runtime.skills.map((skillId) => ({
+      id: skillId,
+      name: skillId,
+      description: `Hands execution capability for ${skillId}.`,
+      version: '1.0.0',
+      input_modes: ['application/json'],
+      output_modes: ['application/json'],
+      async: true
+    })),
+    supports: {
+      task_lifecycle: false,
+      task_query: false,
+      artifact_updates: true,
+      push_callbacks: false,
+      capability_inventory: true
+    }
+  };
+}
+
 function buildRuntime(config?: HandsConfig): HandsRuntime {
   const resolvedConfig = config ?? loadConfig();
-  const skills = Object.keys(SkillRegistry).sort();
+  const skills = Object.entries(SkillRegistry)
+    .filter(([, adapter]) => isHandsExecutableAdapter(adapter))
+    .map(([skillId]) => skillId)
+    .sort();
   const circuits = new Map<string, CircuitStateEntry>();
   const startedAtMs = Date.now();
 
@@ -501,6 +578,11 @@ function buildRuntime(config?: HandsConfig): HandsRuntime {
       return;
     }
 
+    if (method === 'GET' && path === '/.well-known/agent-card.json') {
+      sendJSON(res, 200, agentCardPayload(runtime));
+      return;
+    }
+
     if (method === 'GET' && skillsPaths.has(path)) {
       sendJSON(res, 200, listSkills(runtime));
       return;
@@ -528,11 +610,36 @@ function buildRuntime(config?: HandsConfig): HandsRuntime {
             false,
             404,
             Date.now() - started,
-            'CLOSED'
+            'CLOSED',
+            parsed
           );
           sendJSON(res, 404, result as unknown as Record<string, unknown>);
           logEvent(runtime, ctx, 'hands.execute.not_found', 'WARN', {
             skill_id: parsed.skill_id
+          });
+          return;
+        }
+
+        const approvalGate = evaluateApprovalGate(parsed.policy);
+        if (approvalGate) {
+          const blocked = failureResult(
+            parsed.skill_id,
+            'FAILED',
+            approvalGate.code,
+            approvalGate.message,
+            false,
+            approvalGate.httpStatus,
+            Date.now() - started,
+            'CLOSED',
+            parsed
+          );
+          const workflowReport = await reportExecutionResult(blocked, runtime.config);
+          sendJSON(res, approvalGate.httpStatus, blocked as unknown as Record<string, unknown>);
+          logEvent(runtime, ctx, 'hands.execute.approval_required', 'WARN', {
+            skill_id: parsed.skill_id,
+            approval_code: approvalGate.code,
+            workflow_runtime_delegated: workflowReport.delegated,
+            workflow_runtime_warning: workflowReport.warning
           });
           return;
         }
@@ -547,7 +654,8 @@ function buildRuntime(config?: HandsConfig): HandsRuntime {
             true,
             503,
             Date.now() - started,
-            'OPEN'
+            'OPEN',
+            parsed
           );
           sendJSON(res, 503, result as unknown as Record<string, unknown>);
           logEvent(runtime, ctx, 'hands.execute.circuit_open', 'WARN', {
@@ -563,6 +671,45 @@ function buildRuntime(config?: HandsConfig): HandsRuntime {
           timezone: parsed.user_profile?.timezone ?? 'UTC',
           locale: parsed.user_profile?.locale ?? 'en-US'
         };
+        const requestResolvedSkills = parsed.allowed_skills ?? parsed.user_profile?.enabled_skills;
+        const capabilityResolution = requestResolvedSkills && requestResolvedSkills.length > 0
+          ? {
+              enabledSkills: requestResolvedSkills,
+              deniedSkills: [],
+              source: 'explicit' as const
+            }
+          : resolveCapabilityInventory(
+              parseCapabilityInventory(runtime.config.capabilityInventoryJson),
+              {
+                tenantId: parsed.tenant_id,
+                workspaceId: parsed.workspace_id,
+                userId
+              }
+            );
+
+        if (capabilityResolution.source !== 'none' && !capabilityResolution.enabledSkills.includes(parsed.skill_id)) {
+          const blocked = failureResult(
+            parsed.skill_id,
+            'FAILED',
+            'CAPABILITY_NOT_ENABLED',
+            `skill ${parsed.skill_id} is not enabled for this user capability inventory`,
+            false,
+            403,
+            Date.now() - started,
+            'CLOSED',
+            parsed
+          );
+          const workflowReport = await reportExecutionResult(blocked, runtime.config);
+          sendJSON(res, 403, blocked as unknown as Record<string, unknown>);
+          logEvent(runtime, ctx, 'hands.execute.capability_blocked', 'WARN', {
+            skill_id: parsed.skill_id,
+            capability_source: capabilityResolution.source,
+            denied_skills: capabilityResolution.deniedSkills,
+            workflow_runtime_delegated: workflowReport.delegated,
+            workflow_runtime_warning: workflowReport.warning
+          });
+          return;
+        }
 
         const skillContext: SkillContext = {
           userId,
@@ -589,14 +736,24 @@ function buildRuntime(config?: HandsConfig): HandsRuntime {
             parsed.skill_id,
             rawResult,
             Date.now() - started,
-            getCircuit(runtime, parsed.skill_id).state
+            getCircuit(runtime, parsed.skill_id).state,
+            parsed
           );
+
+          const workflowReport = await reportExecutionResult(normalized, runtime.config);
 
           sendJSON(res, 200, normalized as unknown as Record<string, unknown>);
           logEvent(runtime, ctx, 'hands.execute.complete', 'INFO', {
+            request_id: parsed.request_id,
+            run_id: parsed.run_id,
+            task_id: parsed.task_id,
+            step_id: parsed.step_id,
+            attempt: parsed.attempt,
             skill_id: normalized.skill_id,
             status: normalized.status,
-            latency_ms: normalized.latency_ms
+            latency_ms: normalized.latency_ms,
+            workflow_runtime_delegated: workflowReport.delegated,
+            workflow_runtime_warning: workflowReport.warning
           });
           return;
         } catch (err) {
@@ -611,13 +768,17 @@ function buildRuntime(config?: HandsConfig): HandsRuntime {
               true,
               504,
               Date.now() - started,
-              stateAfterFailure
+              stateAfterFailure,
+              parsed
             );
+            const workflowReport = await reportExecutionResult(timeoutResult, runtime.config);
             sendJSON(res, 504, timeoutResult as unknown as Record<string, unknown>);
             logEvent(runtime, ctx, 'hands.execute.timeout', 'WARN', {
               skill_id: parsed.skill_id,
               circuit_breaker_state: stateAfterFailure,
-              timeout_ms: runtime.config.executionTimeoutMs
+              timeout_ms: runtime.config.executionTimeoutMs,
+              workflow_runtime_delegated: workflowReport.delegated,
+              workflow_runtime_warning: workflowReport.warning
             });
             return;
           }
@@ -630,13 +791,17 @@ function buildRuntime(config?: HandsConfig): HandsRuntime {
             true,
             502,
             Date.now() - started,
-            stateAfterFailure
+            stateAfterFailure,
+            parsed
           );
+          const workflowReport = await reportExecutionResult(failure, runtime.config);
           sendJSON(res, 502, failure as unknown as Record<string, unknown>);
           logEvent(runtime, ctx, 'hands.execute.failed', 'ERROR', {
             skill_id: parsed.skill_id,
             circuit_breaker_state: stateAfterFailure,
-            message: err instanceof Error ? err.message : String(err)
+            message: err instanceof Error ? err.message : String(err),
+            workflow_runtime_delegated: workflowReport.delegated,
+            workflow_runtime_warning: workflowReport.warning
           });
           return;
         }
@@ -751,17 +916,19 @@ async function main(): Promise<void> {
   });
 }
 
-void main().catch((err) => {
-  process.stderr.write(
-    JSON.stringify({
-      ts: new Date().toISOString(),
-      service: 'brevio-hands',
-      event: 'hands.start.failed',
-      severity: 'ERROR',
-      message: err instanceof Error ? err.message : String(err)
-    }) + '\n'
-  );
-  process.exit(1);
-});
+if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) {
+  void main().catch((err) => {
+    process.stderr.write(
+      JSON.stringify({
+        ts: new Date().toISOString(),
+        service: 'brevio-hands',
+        event: 'hands.start.failed',
+        severity: 'ERROR',
+        message: err instanceof Error ? err.message : String(err)
+      }) + '\n'
+    );
+    process.exit(1);
+  });
+}
 
 export { buildRuntime as createHandsRuntime };

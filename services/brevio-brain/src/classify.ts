@@ -64,7 +64,7 @@ const PATTERNS: IntentPattern[] = [
     intent: 'research.search',
     keywords: ['research', 'look up', 'find sources', 'search for', 'what are the latest'],
     operation: 'search',
-    candidateSkills: () => ['tavily']
+    candidateSkills: () => ['tavily', 'brave-search', 'firecrawl-search']
   },
   {
     intent: 'notes.capture',

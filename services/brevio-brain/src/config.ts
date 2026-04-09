@@ -235,7 +235,9 @@ export function loadBrainConfig(): BrainConfig {
     plannerModel: process.env.BREVIO_BRAIN_PLANNER_MODEL ?? 'gpt-5.2',
     plannerFallbackModel: process.env.BREVIO_BRAIN_PLANNER_FALLBACK_MODEL ?? 'gpt-5-mini',
     plannerTimeoutMs: parsePositiveInt(process.env.BREVIO_BRAIN_PLANNER_TIMEOUT_MS, 30000, 'BREVIO_BRAIN_PLANNER_TIMEOUT_MS'),
-    plannerBaseUrl: process.env.OPENAI_BASE_URL ?? 'https://api.openai.com/v1'
+    plannerBaseUrl: process.env.OPENAI_BASE_URL ?? 'https://api.openai.com/v1',
+    temporalWorkerBaseUrl: process.env.BREVIO_TEMPORAL_WORKER_BASE_URL?.trim() || undefined,
+    temporalWorkerTimeoutMs: parsePositiveInt(process.env.BREVIO_TEMPORAL_WORKER_TIMEOUT_MS, 4000, 'BREVIO_TEMPORAL_WORKER_TIMEOUT_MS')
   };
 }
 

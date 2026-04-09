@@ -23,6 +23,10 @@ export interface MessageEnvelope {
   context: {
     user_profile_hash: string;
     active_skills?: string[];
+    capability_source?: 'explicit' | 'inventory' | 'merged' | 'none';
+    denied_skills?: string[];
+    tenant_id?: string;
+    workspace_id?: string;
   };
 }
 
@@ -37,6 +41,9 @@ export interface GatewayConfig {
   whatsappVerifyToken: string;
   imessageAPIKey: string;
   temporalWebhookAPIKey: string;
+  temporalWorkerBaseUrl?: string;
+  temporalWorkerTimeoutMs: number;
+  capabilityInventoryJson?: string;
 
   idempotencyTtlMs: number;
   sessionIdleMs: number;

@@ -1,4 +1,4 @@
-import { filterEnabledSkills, findGroupForSkill, resolveEmailSkill, toolExists } from './catalog.js';
+import { filterEnabledSkills, findGroupForSkill, resolveEmailSkill, resolveTaskSkill, toolExists } from './catalog.js';
 import type { DisambiguationRequest, DisambiguationResponse, DisambiguationRuleConfig, DisambiguationRules } from './types.js';
 
 function unique(values: string[]): string[] {
@@ -184,7 +184,7 @@ export function disambiguateSkills(request: DisambiguationRequest, rules: Disamb
         reasoning: [...reasoning, 'Planner kept the explicit approved connector selection.']
       };
     }
-    const fallback = request.intent?.startsWith('tasks.') ? 'doing-tasks' : 'thinking-partner';
+    const fallback = request.intent?.startsWith('tasks.') ? resolveTaskSkill(request.user_preferences) : 'thinking-partner';
     const { allowed: allowedFallback, blocked: blockedFallback } = filterEnabledSkills([fallback], request.enabled_skills);
     return {
       resolved_skills: allowedFallback,

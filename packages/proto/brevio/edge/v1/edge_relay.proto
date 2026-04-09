@@ -12,6 +12,10 @@ message DispatchLocalSkillRequest {
   string device_id = 2;
   string skill_id = 3;
   string input_json = 4;
+  string run_id = 5;
+  string task_id = 6;
+  string step_id = 7;
+  int32 attempt = 8;
 }
 
 message DispatchLocalSkillResponse {

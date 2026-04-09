@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 
 import { getToolDescriptor } from './catalog.js';
 import { classifyIntent } from './classify.js';
@@ -257,6 +257,14 @@ function sanitizeReasoning(lines: string[]): string[] {
   return [...new Set(lines.map((line) => sanitizeReasoningLine(line)).filter((line) => line.length > 0))];
 }
 
+function executionStepId(taskId: string, skillId: string, skillCount: number): string {
+  return skillCount > 1 ? `step_${taskId}__${skillId.replace(/[^a-zA-Z0-9_-]+/g, '_')}` : `step_${taskId}`;
+}
+
+function fanoutGroupId(taskId: string, skillCount: number): string | undefined {
+  return skillCount > 1 ? `fanout_${taskId}` : undefined;
+}
+
 function buildClarificationAction(
   request: NormalizedReasoningRequest,
   task: TaskDescriptor,
@@ -265,8 +273,10 @@ function buildClarificationAction(
 ): PlannedAction {
   const operation = 'clarify';
   return {
+    run_id: request.run_id,
     step_id: `step_${task.id}`,
     task_id: task.id,
+    attempt: 1,
     intent,
     operation,
     params: { prompt: reason, request_segment: task.goal },
@@ -283,13 +293,17 @@ function buildExecutionAction(
   request: NormalizedReasoningRequest,
   task: TaskDescriptor,
   skillId: string,
+  stepId: string,
   intent: string,
-  rationale: string
+  rationale: string,
+  totalSpecialists: number
 ): PlannedAction {
   const operation = inferOperation(intent, skillId, task.goal);
   return {
-    step_id: `step_${task.id}`,
+    run_id: request.run_id,
+    step_id: stepId,
     task_id: task.id,
+    attempt: 1,
     intent,
     skill_id: skillId,
     tool: `${skillId}.${operation}`,
@@ -297,10 +311,40 @@ function buildExecutionAction(
     params: buildParams(skillId, operation, task.goal),
     idempotency_key: idempotencyKey(task.id, skillId, task.goal),
     dependencies: task.dependencies,
+    step_dependencies: [],
     rationale: sanitizeReasoningLine(rationale),
     policy: buildActionPolicyMetadata(request, task.goal, intent, operation, skillId),
     action_type: 'execute_skill',
-    status: 'pending'
+    status: 'pending',
+    fanout_group_id: fanoutGroupId(task.id, totalSpecialists)
+  };
+}
+
+function buildReconciliationAction(
+  request: NormalizedReasoningRequest,
+  task: TaskDescriptor,
+  specialistActions: PlannedAction[],
+  intent: string
+): PlannedAction {
+  return {
+    run_id: request.run_id,
+    step_id: `step_${task.id}__reconcile`,
+    task_id: task.id,
+    attempt: 1,
+    intent,
+    operation: 'reconcile',
+    params: {
+      reconciliation_for_task: task.goal,
+      specialist_steps: specialistActions.map((action) => action.step_id)
+    },
+    idempotency_key: idempotencyKey(task.id, 'reconcile', task.goal),
+    dependencies: task.dependencies,
+    step_dependencies: specialistActions.map((action) => action.step_id),
+    rationale: sanitizeReasoningLine(`Reconcile ${specialistActions.length} specialist outputs before final aggregation.`),
+    policy: buildActionPolicyMetadata(request, task.goal, intent, 'reconcile', undefined),
+    action_type: 'reconcile_results',
+    status: 'pending',
+    fanout_group_id: `fanout_${task.id}`
   };
 }
 
@@ -448,7 +492,14 @@ export async function buildPlannerProposal(
   disambiguation: DisambiguationResponse;
   plan: PlannerProposal;
 }> {
-  const initialClassification = classifyIntent(request);
+  const runId = request.run_id ?? randomUUID();
+  const threadId = request.thread_id ?? runId;
+  const requestWithRuntimeRefs: NormalizedReasoningRequest = {
+    ...request,
+    run_id: runId,
+    thread_id: threadId
+  };
+  const initialClassification = classifyIntent(requestWithRuntimeRefs);
   const decomposition = decomposeTask(request.message_text, initialClassification.skills, initialClassification.requires_decomposition);
   const combinedGroupHits = new Set<string>();
   const combinedBlockedSkills = new Set<string>();
@@ -458,7 +509,7 @@ export async function buildPlannerProposal(
 
   for (const task of decomposition.tasks) {
     const taskClassification = classifyIntent({
-      ...request,
+      ...requestWithRuntimeRefs,
       message_text: task.goal
     });
 
@@ -467,10 +518,10 @@ export async function buildPlannerProposal(
         message_text: task.goal,
         intent: taskClassification.intent,
         candidate_skills: taskClassification.skills,
-        deployment_mode: request.deployment_mode,
-        user_tier: request.user_tier,
-        user_preferences: request.user_preferences,
-        enabled_skills: request.user_profile.enabled_skills
+        deployment_mode: requestWithRuntimeRefs.deployment_mode,
+        user_tier: requestWithRuntimeRefs.user_tier,
+        user_preferences: requestWithRuntimeRefs.user_preferences,
+        enabled_skills: requestWithRuntimeRefs.user_profile.enabled_skills
       },
       rules
     );
@@ -487,7 +538,7 @@ export async function buildPlannerProposal(
       requiresClarification = true;
       actions.push(
         buildClarificationAction(
-          request,
+          requestWithRuntimeRefs,
           task,
           taskClassification.intent,
           taskClassification.suggested_clarification ??
@@ -498,9 +549,26 @@ export async function buildPlannerProposal(
       continue;
     }
 
-    const skillId = taskDisambiguation.resolved_skills[0];
-    const reasoning = `Resolved the task to an approved ${taskClassification.intent} execution path.`;
-    actions.push(buildExecutionAction(request, task, skillId, taskClassification.intent, reasoning));
+    const resolvedSkills = taskDisambiguation.resolved_skills;
+    const reasoning =
+      resolvedSkills.length > 1
+        ? `Resolved the task to ${resolvedSkills.length} approved specialist execution paths for parallel fan-out.`
+        : `Resolved the task to an approved ${taskClassification.intent} execution path.`;
+    const specialistActions = resolvedSkills.map((skillId) =>
+      buildExecutionAction(
+        requestWithRuntimeRefs,
+        task,
+        skillId,
+        executionStepId(task.id, skillId, resolvedSkills.length),
+        taskClassification.intent,
+        reasoning,
+        resolvedSkills.length
+      )
+    );
+    actions.push(...specialistActions);
+    if (specialistActions.length > 1) {
+      actions.push(buildReconciliationAction(requestWithRuntimeRefs, task, specialistActions, taskClassification.intent));
+    }
   }
 
   const disambiguation: DisambiguationResponse = {
@@ -512,6 +580,8 @@ export async function buildPlannerProposal(
   };
 
   let plan: PlannerProposal = {
+    run_id: runId,
+    thread_id: threadId,
     planner_provider: config.plannerProvider,
     planner_model: config.plannerModel,
     planner_mode: 'deterministic',
@@ -519,7 +589,7 @@ export async function buildPlannerProposal(
     requires_clarification: requiresClarification,
     clarification_question: requiresClarification ? buildClarificationQuestion(initialClassification, disambiguation) : undefined,
     actions,
-    policy_summary: buildPlanPolicySummary(request, actions),
+    policy_summary: buildPlanPolicySummary(requestWithRuntimeRefs, actions),
     risk: buildRiskSummary(actions),
     requires_approval: requiresApproval(actions),
     reasoning: sanitizeReasoning([
@@ -530,7 +600,7 @@ export async function buildPlannerProposal(
   };
 
   if (config.plannerProvider === 'openai_responses') {
-    plan = await augmentWithOpenAI(plan, request, config, fetchImpl);
+    plan = await augmentWithOpenAI(plan, requestWithRuntimeRefs, config, fetchImpl);
   }
 
   return {

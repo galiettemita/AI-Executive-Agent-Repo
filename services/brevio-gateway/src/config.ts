@@ -23,6 +23,9 @@ export function loadGatewayConfig(): GatewayConfig {
     whatsappVerifyToken: process.env.WHATSAPP_VERIFY_TOKEN ?? '',
     imessageAPIKey: process.env.IMESSAGE_API_KEY ?? '',
     temporalWebhookAPIKey: process.env.TEMPORAL_WEBHOOK_API_KEY ?? '',
+    temporalWorkerBaseUrl: process.env.BREVIO_TEMPORAL_WORKER_BASE_URL?.trim() || undefined,
+    temporalWorkerTimeoutMs: parsePositiveInt(process.env.BREVIO_TEMPORAL_WORKER_TIMEOUT_MS, 4000, 'BREVIO_TEMPORAL_WORKER_TIMEOUT_MS'),
+    capabilityInventoryJson: process.env.BREVIO_CAPABILITY_INVENTORY_JSON?.trim() || undefined,
 
     idempotencyTtlMs: parsePositiveInt(process.env.BREVIO_GATEWAY_IDEMPOTENCY_TTL_MS, 24 * 60 * 60 * 1000, 'BREVIO_GATEWAY_IDEMPOTENCY_TTL_MS'),
     sessionIdleMs: parsePositiveInt(process.env.BREVIO_GATEWAY_SESSION_IDLE_MS, 4 * 60 * 60 * 1000, 'BREVIO_GATEWAY_SESSION_IDLE_MS'),

@@ -34,6 +34,12 @@ message SkillMetadata {
 }
 
 message SkillResult {
+  string request_id = 9;
+  string run_id = 10;
+  string task_id = 11;
+  string step_id = 12;
+  int32 attempt = 13;
+  repeated string artifact_ids = 14;
   string skill_id = 1;
   string status = 2;
   string data_json = 3;

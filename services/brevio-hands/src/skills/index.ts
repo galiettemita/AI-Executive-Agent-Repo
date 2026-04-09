@@ -1,5 +1,6 @@
 import type { ISkillAdapter } from '@brevio/shared';
 
+import { isHandsExecutableAdapter } from './plane-policy.js';
 import adapter_aerobase_skill from './aerobase-skill/index.js';
 import adapter_alter_actions from './alter-actions/index.js';
 import adapter_apple_contacts from './apple-contacts/index.js';
@@ -13,7 +14,6 @@ import adapter_apple_photos from './apple-photos/index.js';
 import adapter_apple_remind_me from './apple-remind-me/index.js';
 import adapter_asana from './asana/index.js';
 import adapter_asr from './asr/index.js';
-import adapter_autoresponder from './autoresponder/index.js';
 import adapter_aviationstack_flight_tracker from './aviationstack-flight-tracker/index.js';
 import adapter_bear_notes from './bear-notes/index.js';
 import adapter_better_notion from './better-notion/index.js';
@@ -37,7 +37,6 @@ import adapter_craft from './craft/index.js';
 import adapter_daily_rhythm from './daily-rhythm/index.js';
 import adapter_de_ai_ify from './de-ai-ify/index.js';
 import adapter_dexcom from './dexcom/index.js';
-import adapter_doing_tasks from './doing-tasks/index.js';
 import adapter_exa from './exa/index.js';
 import adapter_excalidraw_flowchart from './excalidraw-flowchart/index.js';
 import adapter_expense_tracker_pro from './expense-tracker-pro/index.js';
@@ -178,7 +177,6 @@ export const SkillRegistry: Record<string, ISkillAdapter> = {
   'apple-remind-me': adapter_apple_remind_me,
   'asana': adapter_asana,
   'asr': adapter_asr,
-  'autoresponder': adapter_autoresponder,
   'aviationstack-flight-tracker': adapter_aviationstack_flight_tracker,
   'bear-notes': adapter_bear_notes,
   'better-notion': adapter_better_notion,
@@ -202,7 +200,6 @@ export const SkillRegistry: Record<string, ISkillAdapter> = {
   'daily-rhythm': adapter_daily_rhythm,
   'de-ai-ify': adapter_de_ai_ify,
   'dexcom': adapter_dexcom,
-  'doing-tasks': adapter_doing_tasks,
   'exa': adapter_exa,
   'excalidraw-flowchart': adapter_excalidraw_flowchart,
   'expense-tracker-pro': adapter_expense_tracker_pro,
@@ -330,6 +327,16 @@ export const SkillRegistry: Record<string, ISkillAdapter> = {
   'ytmusic': adapter_ytmusic,
 };
 
-export function getSkillAdapter(skillId: string): ISkillAdapter | null {
-  return SkillRegistry[skillId] ?? null;
+export function getSkillAdapter(skillId: string, plane: ISkillAdapter['plane'] = 'hands'): ISkillAdapter | null {
+  const adapter = SkillRegistry[skillId] ?? null;
+  if (!adapter) {
+    return null;
+  }
+  if (plane === 'hands' && !isHandsExecutableAdapter(adapter)) {
+    return null;
+  }
+  if (plane !== 'hands' && adapter.plane !== plane) {
+    return null;
+  }
+  return adapter;
 }

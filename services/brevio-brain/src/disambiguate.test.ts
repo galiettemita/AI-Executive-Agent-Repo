@@ -55,4 +55,21 @@ describe('disambiguateSkills', () => {
     assert.deepEqual(result.resolved_skills, ['google-maps']);
     assert.deepEqual(result.group_hits, ['places-location']);
   });
+
+  it('falls back to a real task adapter instead of the mock generic task router', () => {
+    const result = disambiguateSkills(
+      {
+        message_text: 'track my follow-up tasks',
+        intent: 'tasks.manage',
+        enabled_skills: ['todoist'],
+        user_preferences: {
+          task_app: 'todoist'
+        }
+      },
+      rules
+    );
+
+    assert.deepEqual(result.resolved_skills, ['todoist']);
+    assert.doesNotMatch(result.resolved_skills.join(','), /doing-tasks/);
+  });
 });

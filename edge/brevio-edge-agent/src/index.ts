@@ -2,6 +2,7 @@ import http from 'node:http';
 import os from 'node:os';
 import { setTimeout as delay } from 'node:timers/promises';
 import WebSocket from 'ws';
+import { executeImplementedLocalSkill, resolveSupportedLocalSkills } from './local-skills.js';
 
 type SkillStatus = 'SUCCESS' | 'PARTIAL' | 'FAILED' | 'TIMEOUT';
 
@@ -28,6 +29,10 @@ interface AgentConfig {
 interface ExecuteSkillMessage {
   type: 'execute_skill';
   request_id: string;
+  run_id?: string;
+  task_id?: string;
+  step_id?: string;
+  attempt?: number;
   skill_id: string;
   input: Record<string, unknown>;
   queued_at: string;
@@ -52,6 +57,10 @@ interface HeartbeatMessage {
 interface SkillResultMessage {
   type: 'skill_result';
   request_id: string;
+  run_id?: string;
+  task_id?: string;
+  step_id?: string;
+  attempt?: number;
   skill_id: string;
   status: SkillStatus;
   data?: Record<string, unknown>;
@@ -311,6 +320,10 @@ function parseExecuteMessage(value: Record<string, unknown>): ExecuteSkillMessag
   return {
     type: 'execute_skill',
     request_id: requestId,
+    run_id: optionalString(value.run_id),
+    task_id: optionalString(value.task_id),
+    step_id: optionalString(value.step_id),
+    attempt: typeof value.attempt === 'number' && Number.isInteger(value.attempt) && value.attempt > 0 ? value.attempt : undefined,
     skill_id: skillId,
     input,
     queued_at: optionalString(value.queued_at) ?? new Date().toISOString(),
@@ -326,6 +339,10 @@ async function executeSkillLocally(message: ExecuteSkillMessage): Promise<SkillR
     return {
       type: 'skill_result',
       request_id: message.request_id,
+      run_id: message.run_id,
+      task_id: message.task_id,
+      step_id: message.step_id,
+      attempt: message.attempt,
       skill_id: message.skill_id,
       status: 'FAILED',
       error: {
@@ -336,45 +353,35 @@ async function executeSkillLocally(message: ExecuteSkillMessage): Promise<SkillR
     };
   }
 
-  if (normalizedSkill === 'voice-wake-say') {
-    const text = optionalString(message.input.text) ?? 'done';
+  const execution = executeImplementedLocalSkill(normalizedSkill, message.input);
+  if (!execution) {
     return {
       type: 'skill_result',
       request_id: message.request_id,
+      run_id: message.run_id,
+      task_id: message.task_id,
+      step_id: message.step_id,
+      attempt: message.attempt,
       skill_id: message.skill_id,
-      status: 'SUCCESS',
-      data: {
-        spoken_text: text,
-        transport: 'local_say',
+      status: 'FAILED',
+      error: {
+        code: 'SKILL_NOT_IMPLEMENTED_LOCALLY',
+        message: `Local edge agent is configured for ${message.skill_id}, but no implementation is registered`
       },
-      latency_ms: Date.now() - started,
-    };
-  }
-
-  if (normalizedSkill === 'apple-remind-me') {
-    const title = optionalString(message.input.title) ?? 'Reminder from Brevio';
-    return {
-      type: 'skill_result',
-      request_id: message.request_id,
-      skill_id: message.skill_id,
-      status: 'SUCCESS',
-      data: {
-        reminder_title: title,
-        created: true,
-      },
-      latency_ms: Date.now() - started,
+      latency_ms: Date.now() - started
     };
   }
 
   return {
     type: 'skill_result',
     request_id: message.request_id,
+    run_id: message.run_id,
+    task_id: message.task_id,
+    step_id: message.step_id,
+    attempt: message.attempt,
     skill_id: message.skill_id,
     status: 'SUCCESS',
-    data: {
-      executed_locally: true,
-      skill_id: message.skill_id,
-    },
+    data: execution.data,
     latency_ms: Date.now() - started,
   };
 }
@@ -438,10 +445,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function loadConfig(env: NodeJS.ProcessEnv): AgentConfig {
   const hostname = os.hostname();
-  const supportedSkills = (env.EDGE_SUPPORTED_SKILLS ?? 'voice-wake-say,apple-remind-me,apple-notes-skill')
-    .split(',')
-    .map((skill) => skill.trim().toLowerCase())
-    .filter((skill) => skill !== '');
+  const supportedSkills = resolveSupportedLocalSkills(env.EDGE_SUPPORTED_SKILLS);
 
   return {
     serviceName: 'brevio-edge-agent',

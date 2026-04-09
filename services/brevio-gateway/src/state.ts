@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import type { DedupCachedResponse, GatewayConfig, RateLimitDecision, SessionState, UserTier } from './types.js';
+import type { Channel, DedupCachedResponse, GatewayConfig, RateLimitDecision, SessionState, UserTier } from './types.js';
 
 interface PrunedWindows {
   hourWindow: number[];
@@ -40,19 +40,20 @@ export class GatewayState {
     });
   }
 
-  sessionForUser(userId: string, providedSessionId: string | undefined, nowMs: number, idleMs: number): string {
+  sessionForUser(channel: Channel, userId: string, providedSessionId: string | undefined, nowMs: number, idleMs: number): string {
+    const sessionKey = `${channel}:${userId}`;
     if (providedSessionId && providedSessionId.trim() !== '') {
-      this.sessions.set(userId, {
+      this.sessions.set(sessionKey, {
         sessionId: providedSessionId,
         lastActivityMs: nowMs
       });
       return providedSessionId;
     }
 
-    const existing = this.sessions.get(userId);
+    const existing = this.sessions.get(sessionKey);
     if (!existing) {
       const newSession = randomUUID();
-      this.sessions.set(userId, {
+      this.sessions.set(sessionKey, {
         sessionId: newSession,
         lastActivityMs: nowMs
       });
@@ -61,7 +62,7 @@ export class GatewayState {
 
     if (nowMs-existing.lastActivityMs > idleMs) {
       const rotated = randomUUID();
-      this.sessions.set(userId, {
+      this.sessions.set(sessionKey, {
         sessionId: rotated,
         lastActivityMs: nowMs
       });

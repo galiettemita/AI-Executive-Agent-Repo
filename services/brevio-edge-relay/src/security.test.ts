@@ -50,8 +50,15 @@ describe('edge relay security', () => {
   it('binds execute requests to the authenticated subject', () => {
     const request = bindExecuteRequest(
       {
+        tenant_id: 'tenant_a',
+        workspace_id: 'workspace_a',
         skill_id: 'voice-wake-say',
+        allowed_skills: ['voice-wake-say'],
         input: { text: 'hello' },
+        run_id: 'run_a',
+        task_id: 'task_a',
+        step_id: 'step_a',
+        attempt: 1
       },
       {
         version: 1,
@@ -65,6 +72,13 @@ describe('edge relay security', () => {
 
     assert.equal(request.userId, 'user_a');
     assert.equal(request.deviceId, 'device_a');
+    assert.equal(request.tenantId, 'tenant_a');
+    assert.equal(request.workspaceId, 'workspace_a');
+    assert.equal(request.runId, 'run_a');
+    assert.equal(request.taskId, 'task_a');
+    assert.equal(request.stepId, 'step_a');
+    assert.equal(request.attempt, 1);
+    assert.deepEqual(request.allowedSkills, ['voice-wake-say']);
     assert.deepEqual(request.input, { text: 'hello' });
   });
 

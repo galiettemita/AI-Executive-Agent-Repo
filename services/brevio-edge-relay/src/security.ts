@@ -31,17 +31,31 @@ export interface SessionSummaryInput {
 }
 
 export interface ExecuteRequestInput {
+  tenant_id?: unknown;
+  workspace_id?: unknown;
   user_id?: unknown;
   device_id?: unknown;
   skill_id?: unknown;
+  allowed_skills?: unknown;
   input?: unknown;
+  run_id?: unknown;
+  task_id?: unknown;
+  step_id?: unknown;
+  attempt?: unknown;
 }
 
 export interface BoundExecuteRequest {
+  tenantId?: string;
+  workspaceId?: string;
   userId: string;
   deviceId: string;
   skillId: string;
+  allowedSkills?: string[];
   input: Record<string, unknown>;
+  runId?: string;
+  taskId?: string;
+  stepId?: string;
+  attempt?: number;
 }
 
 function encodeBase64Url(value: Buffer | string): string {
@@ -70,6 +84,26 @@ function ensureNonEmptyString(value: unknown, field: string): string {
 
 function ensureRecord(value: unknown): Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+}
+
+function normalizeStringArray(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  const normalized = value
+    .map((entry) => normalizeString(entry))
+    .filter((entry): entry is string => Boolean(entry));
+  return normalized.length > 0 ? normalized : undefined;
+}
+
+function normalizePositiveInt(value: unknown, field: string): number | undefined {
+  if (value === undefined || value === null || value === '') {
+    return undefined;
+  }
+  if (typeof value !== 'number' || !Number.isInteger(value) || value <= 0) {
+    throw new Error(`${field} must be a positive integer`);
+  }
+  return value;
 }
 
 export function parseRelayAuthMode(raw: string | undefined, environment: string, hasSecret: boolean): RelayAuthMode {
@@ -153,10 +187,17 @@ export function verifyRelayToken(secret: string, token: string, nowMs = Date.now
 }
 
 export function bindExecuteRequest(input: ExecuteRequestInput, principal: RelayTokenClaims | null): BoundExecuteRequest {
+  const tenantId = normalizeString(input.tenant_id);
+  const workspaceId = normalizeString(input.workspace_id);
   const requestedUserId = normalizeString(input.user_id);
   const requestedDeviceId = normalizeString(input.device_id);
   const skillId = ensureNonEmptyString(input.skill_id, 'skill_id');
+  const allowedSkills = normalizeStringArray(input.allowed_skills);
   const bodyInput = ensureRecord(input.input);
+  const runId = normalizeString(input.run_id);
+  const taskId = normalizeString(input.task_id);
+  const stepId = normalizeString(input.step_id);
+  const attempt = normalizePositiveInt(input.attempt, 'attempt');
 
   const userId = principal?.user_id ?? requestedUserId;
   const deviceId = principal?.device_id ?? requestedDeviceId;
@@ -177,10 +218,17 @@ export function bindExecuteRequest(input: ExecuteRequestInput, principal: RelayT
   }
 
   return {
+    tenantId,
+    workspaceId,
     userId,
     deviceId,
     skillId,
-    input: bodyInput
+    allowedSkills,
+    input: bodyInput,
+    runId,
+    taskId,
+    stepId,
+    attempt
   };
 }
 

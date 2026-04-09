@@ -1,5 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 
+import { parseCapabilityInventory, resolveCapabilityInventory } from '../../../packages/shared/src/capability-inventory.js';
+
 import type { Channel, ContentType, GatewayConfig, MessageEnvelope, NormalizedWebhookResult, UserTier } from './types.js';
 import { GatewayState } from './state.js';
 
@@ -103,8 +105,8 @@ function pickMediaURL(payload: GenericWebhookPayload): string | undefined {
   return asString(content.media_url) ?? asString(payload.media_url) ?? asString(payload.attachment_url);
 }
 
-function profileHash(userId: string, channelMessageId: string, sessionId: string): string {
-  return createHash('sha256').update(`${userId}:${channelMessageId}:${sessionId}`).digest('hex');
+function profileHash(channel: Channel, userId: string): string {
+  return createHash('sha256').update(`${channel}:${userId}`).digest('hex');
 }
 
 function tierFromPayload(payload: GenericWebhookPayload): UserTier | undefined {
@@ -138,6 +140,7 @@ export function normalizeWebhook(
   const dedupChannelMessageId = dedupKey.split(':').slice(1).join(':');
   const userId = userIdFromPayload(payload, channel);
   const sessionId = state.sessionForUser(
+    channel,
     userId,
     asString(metadata.session_id) ?? asString(payload.session_id),
     nowMs,
@@ -148,7 +151,15 @@ export function normalizeWebhook(
   const text = pickText(payload);
   const mediaURL = pickMediaURL(payload);
   const voiceDurationMs = asPositiveInt(asObject(payload.content).voice_duration_ms ?? payload.voice_duration_ms, 120000);
-  const activeSkills = asStringArray(context.active_skills) ?? asStringArray(payload.active_skills);
+  const explicitActiveSkills = asStringArray(context.active_skills) ?? asStringArray(payload.active_skills);
+  const tenantId = asString(context.tenant_id) ?? asString(metadata.tenant_id) ?? asString(payload.tenant_id);
+  const workspaceId = asString(context.workspace_id) ?? asString(metadata.workspace_id) ?? asString(payload.workspace_id);
+  const capabilityResolution = resolveCapabilityInventory(
+    parseCapabilityInventory(config.capabilityInventoryJson),
+    { tenantId, workspaceId, userId },
+    explicitActiveSkills
+  );
+  const activeSkills = capabilityResolution.enabledSkills.length > 0 ? capabilityResolution.enabledSkills : explicitActiveSkills;
 
   const envelope: MessageEnvelope = {
     id: randomUUID(),
@@ -167,8 +178,12 @@ export function normalizeWebhook(
       session_id: sessionId
     },
     context: {
-      user_profile_hash: profileHash(userId, dedupChannelMessageId, sessionId),
-      active_skills: activeSkills
+      user_profile_hash: profileHash(channel, userId),
+      active_skills: activeSkills,
+      capability_source: capabilityResolution.source,
+      denied_skills: capabilityResolution.deniedSkills.length > 0 ? capabilityResolution.deniedSkills : undefined,
+      tenant_id: tenantId,
+      workspace_id: workspaceId
     }
   };
 

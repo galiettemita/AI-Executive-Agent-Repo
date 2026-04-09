@@ -56,11 +56,11 @@ function splitByParallelCue(segment: string): string[] {
   return parts;
 }
 
-function splitRequestIntoSegments(request: string): { segments: string[]; executionOrder: 'parallel' | 'sequential' | 'mixed' } {
+function splitRequestIntoBatches(request: string): { batches: string[][]; executionOrder: 'parallel' | 'sequential' | 'mixed' } {
   const normalized = normalizeRequest(request);
   if (normalized === '') {
     return {
-      segments: [],
+      batches: [],
       executionOrder: 'sequential'
     };
   }
@@ -70,15 +70,17 @@ function splitRequestIntoSegments(request: string): { segments: string[]; execut
     .map((part) => part.trim())
     .filter((part) => part.length > 0);
 
-  const sequentialSegments = sentenceParts.flatMap((part) => splitBySequentialCues(part));
-  const finalSegments = sequentialSegments.flatMap((part) => splitByParallelCue(part));
+  const batches = sentenceParts
+    .flatMap((part) => splitBySequentialCues(part))
+    .map((part) => splitByParallelCue(part))
+    .filter((batch) => batch.length > 0);
 
-  const hasSequential = /\b(?:and then|then|after that|afterwards|next)\b/i.test(normalized);
-  const hasParallel = /\band\b/i.test(normalized) && finalSegments.length > sequentialSegments.length;
+  const hasSequential = batches.length > 1;
+  const hasParallel = batches.some((batch) => batch.length > 1);
 
   return {
-    segments: finalSegments.length > 0 ? finalSegments : [normalized],
-    executionOrder: hasSequential && hasParallel ? 'mixed' : hasSequential ? 'sequential' : finalSegments.length > 1 ? 'parallel' : 'sequential'
+    batches: batches.length > 0 ? batches : [[normalized]],
+    executionOrder: hasSequential && hasParallel ? 'mixed' : hasSequential ? 'sequential' : hasParallel ? 'parallel' : 'sequential'
   };
 }
 
@@ -109,25 +111,42 @@ export function decomposeTask(request: string, skills: string[], requiresDecompo
     throw new Error('TASK_GRAPH_INVALID: request_required');
   }
 
-  const { segments, executionOrder } = requiresDecomposition
-    ? splitRequestIntoSegments(normalized)
-    : { segments: [normalized], executionOrder: 'sequential' as const };
+  const { batches, executionOrder } = requiresDecomposition
+    ? splitRequestIntoBatches(normalized)
+    : { batches: [[normalized]], executionOrder: 'sequential' as const };
 
   const baseSkills = skills.length > 0 ? skills : [];
+  const tasks: TaskDescriptor[] = [];
+  let taskIndex = 0;
+  let previousBatchTaskIds: string[] = [];
 
-  const tasks: TaskDescriptor[] = segments.slice(0, 10).map((segment, index) => ({
-    id: `t${index + 1}`,
-    goal: segment,
-    intent: 'pending.intent',
-    skill_id: baseSkills[index] ?? baseSkills[0],
-    input: {
-      request_segment: segment
-    },
-    dependencies: executionOrder === 'sequential' && index > 0 ? [`t${index}`] : [],
-    priority: index + 1,
-    status: 'planned',
-    reasoning: `Segment ${index + 1} extracted from the original request.`
-  }));
+  for (const batch of batches) {
+    const currentBatchTaskIds: string[] = [];
+    for (const segment of batch) {
+      if (tasks.length >= 10) {
+        break;
+      }
+      taskIndex += 1;
+      const taskId = `t${taskIndex}`;
+      currentBatchTaskIds.push(taskId);
+      tasks.push({
+        id: taskId,
+        goal: segment,
+        intent: 'pending.intent',
+        skill_id: baseSkills[taskIndex - 1] ?? baseSkills[0],
+        input: {
+          request_segment: segment
+        },
+        dependencies: previousBatchTaskIds,
+        priority: taskIndex,
+        status: 'planned',
+        reasoning: `Segment ${taskIndex} extracted from the original request.`
+      });
+    }
+    if (currentBatchTaskIds.length > 0) {
+      previousBatchTaskIds = currentBatchTaskIds;
+    }
+  }
 
   validateTaskGraph(tasks);
 

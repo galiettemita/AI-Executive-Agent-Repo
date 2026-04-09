@@ -1,7 +1,9 @@
 import http from 'node:http';
 import { randomUUID } from 'node:crypto';
+import path from 'node:path';
 import { URL } from 'node:url';
 import WebSocket, { WebSocketServer } from 'ws';
+import { parseCapabilityInventory, resolveCapabilityInventory } from '../../../packages/shared/src/capability-inventory.js';
 import {
   bindExecuteRequest,
   buildSessionSummaries,
@@ -13,6 +15,9 @@ import {
   verifyRelayToken,
 } from './security.js';
 import type { BoundExecuteRequest, ProtectedInputEnvelope, RelayAuthMode, RelayTokenClaims } from './security.js';
+import { ExecutionStore } from './execution-store.js';
+import type { ExecutionRecord as StoredExecutionRecord } from './execution-store.js';
+import { reportExecutionLifecycle } from './workflow-runtime.js';
 
 type SkillStatus = 'SUCCESS' | 'PARTIAL' | 'FAILED' | 'TIMEOUT';
 
@@ -28,11 +33,21 @@ interface RelayConfig {
   tokenSecret?: string;
   queueEncryptionKey: Buffer;
   logSalt: string;
+  temporalWorkerBaseUrl?: string;
+  temporalWorkerTimeoutMs: number;
+  capabilityInventoryJson?: string;
+  executionStateFilePath: string;
+  workflowReportRetryBaseMs: number;
+  workflowReportMaxAttempts: number;
 }
 
 interface ExecuteSkillMessage {
   type: 'execute_skill';
   request_id: string;
+  run_id?: string;
+  task_id?: string;
+  step_id?: string;
+  attempt?: number;
   skill_id: string;
   input: Record<string, unknown>;
   queued_at: string;
@@ -57,6 +72,10 @@ interface HeartbeatMessage {
 interface SkillResultMessage {
   type: 'skill_result';
   request_id: string;
+  run_id?: string;
+  task_id?: string;
+  step_id?: string;
+  attempt?: number;
   skill_id: string;
   status: SkillStatus;
   data?: Record<string, unknown>;
@@ -80,6 +99,10 @@ interface QueuedExecution {
   userId: string;
   deviceId: string;
   skillId: string;
+  runId?: string;
+  taskId?: string;
+  stepId?: string;
+  attempt?: number;
   protectedInput: ProtectedInputEnvelope;
   queuedAt: number;
 }
@@ -102,6 +125,8 @@ const config = loadConfig(process.env);
 const startedAt = Date.now();
 const sessions = new Map<string, AgentSession>();
 const offlineQueues = new Map<string, QueuedExecution[]>();
+const scheduledWorkflowReports = new Map<string, NodeJS.Timeout>();
+const executionStore = new ExecutionStore(config.executionStateFilePath);
 
 class RelayHttpError extends Error {
   statusCode: number;
@@ -195,6 +220,28 @@ function toIdentityRefs(userId: string, deviceId: string): Record<string, string
   };
 }
 
+function capabilityResolutionFor(
+  identity: { tenantId?: string; workspaceId?: string; userId: string; deviceId: string },
+  explicitSkills?: string[]
+): ReturnType<typeof resolveCapabilityInventory> {
+  if (explicitSkills && explicitSkills.length > 0) {
+    return {
+      enabledSkills: [...new Set(explicitSkills)],
+      deniedSkills: [],
+      source: 'explicit' as const
+    };
+  }
+  return resolveCapabilityInventory(
+    parseCapabilityInventory(config.capabilityInventoryJson),
+    {
+      tenantId: identity.tenantId,
+      workspaceId: identity.workspaceId,
+      userId: identity.userId,
+      deviceId: identity.deviceId
+    }
+  );
+}
+
 function parseAuthorizedExecuteRequest(body: unknown, principal: RelayTokenClaims | null): BoundExecuteRequest {
   try {
     return bindExecuteRequest(isRecord(body) ? body : {}, principal);
@@ -219,6 +266,11 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  if (req.method === 'GET' && requestUrl.pathname === '/.well-known/agent-card.json') {
+    writeJson(res, 200, agentCardPayload());
+    return;
+  }
+
   if (req.method === 'GET' && requestUrl.pathname === '/health/deep') {
     writeJson(res, 200, healthPayload(true));
     return;
@@ -240,28 +292,142 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  if (req.method === 'POST' && requestUrl.pathname === '/v1/edge/execute') {
+  if (req.method === 'GET' && (requestUrl.pathname === '/v1/edge/requests' || requestUrl.pathname === '/api/v1/edge/requests')) {
+    try {
+      authorizeHttpRequest(req, ['admin', 'operator']);
+      const limitRaw = Number(requestUrl.searchParams.get('limit') ?? '50');
+      const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? Math.floor(limitRaw) : 50;
+      writeJson(res, 200, {
+        requests: executionStore.list(limit).map((record) => serializeExecutionRecord(record))
+      });
+    } catch (error) {
+      const statusCode = error instanceof RelayHttpError ? error.statusCode : 401;
+      const code = error instanceof RelayHttpError ? error.code : 'unauthorized';
+      const message = error instanceof Error ? error.message : 'unauthorized';
+      writeJson(res, statusCode, { error: code, message });
+    }
+    return;
+  }
+
+  const requestPathMatch = requestUrl.pathname.match(/^\/(?:api\/)?v1\/edge\/requests\/([^/]+)$/);
+  if (req.method === 'GET' && requestPathMatch) {
+    const requestId = requestPathMatch[1];
+    if (!requestId) {
+      writeJson(res, 400, { error: 'invalid_request', message: 'request id is required' });
+      return;
+    }
+    try {
+      authorizeHttpRequest(req, ['admin', 'operator']);
+      const record = executionStore.get(requestId);
+      if (!record) {
+        writeJson(res, 404, { error: 'not_found', request_id: requestId });
+        return;
+      }
+      writeJson(res, 200, serializeExecutionRecord(record));
+    } catch (error) {
+      const statusCode = error instanceof RelayHttpError ? error.statusCode : 401;
+      const code = error instanceof RelayHttpError ? error.code : 'unauthorized';
+      const message = error instanceof Error ? error.message : 'unauthorized';
+      writeJson(res, statusCode, { error: code, message });
+    }
+    return;
+  }
+
+  if (req.method === 'POST' && (requestUrl.pathname === '/v1/edge/execute' || requestUrl.pathname === '/api/v1/edge/execute')) {
     readJsonBody(req)
       .then((body) => parseAuthorizedExecuteRequest(body, authorizeHttpRequest(req, ['admin', 'operator', 'device'])))
       .then((executeRequest) => {
         const requestId = randomUUID();
+        const nowMs = Date.now();
         const execution: QueuedExecution = {
           requestId,
           userId: executeRequest.userId,
           deviceId: executeRequest.deviceId,
           skillId: executeRequest.skillId,
+          runId: executeRequest.runId,
+          taskId: executeRequest.taskId,
+          stepId: executeRequest.stepId,
+          attempt: executeRequest.attempt,
           protectedInput: protectQueuedInput(executeRequest.input, config.queueEncryptionKey, queueContext({
             requestId,
             userId: executeRequest.userId,
             deviceId: executeRequest.deviceId,
             skillId: executeRequest.skillId,
           })),
-          queuedAt: Date.now(),
+          queuedAt: nowMs,
         };
+        const capabilityResolution = capabilityResolutionFor(
+          {
+            tenantId: executeRequest.tenantId,
+            workspaceId: executeRequest.workspaceId,
+            userId: executeRequest.userId,
+            deviceId: executeRequest.deviceId
+          },
+          executeRequest.allowedSkills
+        );
+        if (capabilityResolution.source !== 'none' && !capabilityResolution.enabledSkills.includes(executeRequest.skillId)) {
+          executionStore.create(
+            {
+              requestId,
+              userId: executeRequest.userId,
+              deviceId: executeRequest.deviceId,
+              skillId: executeRequest.skillId,
+              runId: executeRequest.runId,
+              taskId: executeRequest.taskId,
+              stepId: executeRequest.stepId,
+              attempt: executeRequest.attempt
+            },
+            'WAITING_FOR_AGENT',
+            nowMs
+          );
+          const rejected = executionStore.markRejected(
+            requestId,
+            'CAPABILITY_NOT_ENABLED',
+            `skill ${executeRequest.skillId} is not enabled for this user/device capability inventory`,
+            nowMs
+          );
+          reportWorkflowRecord(rejected);
+          writeJson(res, 403, {
+            status: 'rejected',
+            request_id: requestId,
+            error: 'capability_not_enabled'
+          });
+          return;
+        }
 
         const key = sessionKey(executeRequest.userId, executeRequest.deviceId);
         const session = sessions.get(key);
-        if (session && session.socket.readyState === WebSocket.OPEN) {
+        if (session && session.socket.readyState === WebSocket.OPEN && session.supportedSkills.size > 0) {
+          const initialStatus = session.supportedSkills.has(executeRequest.skillId) ? 'DISPATCHED' : 'WAITING_FOR_AGENT';
+          executionStore.create(
+            {
+              requestId,
+              userId: executeRequest.userId,
+              deviceId: executeRequest.deviceId,
+              skillId: executeRequest.skillId,
+              runId: executeRequest.runId,
+              taskId: executeRequest.taskId,
+              stepId: executeRequest.stepId,
+              attempt: executeRequest.attempt
+            },
+            initialStatus,
+            nowMs
+          );
+          if (!session.supportedSkills.has(executeRequest.skillId)) {
+            const rejected = executionStore.markRejected(
+              requestId,
+              'SKILL_NOT_SUPPORTED_BY_SESSION',
+              `Connected device does not advertise support for ${executeRequest.skillId}`,
+              nowMs
+            );
+            reportWorkflowRecord(rejected);
+            writeJson(res, 409, {
+              status: 'rejected',
+              request_id: requestId,
+              error: 'skill_not_supported_by_session'
+            });
+            return;
+          }
           dispatchExecution(session, execution);
           writeJson(res, 200, {
             status: 'dispatched',
@@ -270,6 +436,20 @@ const server = http.createServer((req, res) => {
           return;
         }
 
+        executionStore.create(
+          {
+            requestId,
+            userId: executeRequest.userId,
+            deviceId: executeRequest.deviceId,
+            skillId: executeRequest.skillId,
+            runId: executeRequest.runId,
+            taskId: executeRequest.taskId,
+            stepId: executeRequest.stepId,
+            attempt: executeRequest.attempt
+          },
+          session && session.socket.readyState === WebSocket.OPEN ? 'WAITING_FOR_AGENT' : 'QUEUED',
+          nowMs
+        );
         enqueueExecution(key, execution);
         writeJson(res, 202, {
           status: 'queued',
@@ -357,10 +537,18 @@ wss.on('connection', (socket, req) => {
     type: 'ack',
     message: 'relay connection established',
   });
-  flushQueue(key);
 
   socket.on('message', (payload) => {
-    const message = parseAgentInboundMessage(payload.toString());
+    let message: AgentInboundMessage | null;
+    try {
+      message = parseAgentInboundMessage(payload.toString());
+    } catch (error) {
+      sendMessage(socket, {
+        type: 'error',
+        message: error instanceof Error ? error.message : 'invalid relay payload'
+      });
+      return;
+    }
     if (!message) {
       sendMessage(socket, {
         type: 'error',
@@ -393,9 +581,17 @@ wss.on('connection', (socket, req) => {
       session.deviceName = message.device_name?.trim() || session.deviceName;
       session.certFingerprint = message.client_cert_fingerprint?.trim() || session.certFingerprint;
       const supportedSkills = (message.supported_skills ?? []).filter((skill) => skill.trim() !== '');
+      const capabilityResolution = capabilityResolutionFor(
+        {
+          userId: session.userId,
+          deviceId: session.deviceId
+        },
+        supportedSkills
+      );
+      const inventoryAllowedSkills = capabilityResolution.source === 'none' ? supportedSkills : capabilityResolution.enabledSkills;
       session.supportedSkills = session.allowedSkills.size > 0
-        ? new Set(supportedSkills.filter((skill) => session.allowedSkills.has(skill)))
-        : new Set(supportedSkills);
+        ? new Set(inventoryAllowedSkills.filter((skill) => session.allowedSkills.has(skill)))
+        : new Set(inventoryAllowedSkills);
 
       sendMessage(socket, {
         type: 'ack',
@@ -414,6 +610,37 @@ wss.on('connection', (socket, req) => {
     }
 
     if (message.type === 'skill_result') {
+      const result = executionStore.applyResult(
+        {
+          requestId: message.request_id,
+          runId: message.run_id,
+          taskId: message.task_id,
+          stepId: message.step_id,
+          attempt: message.attempt,
+          skillId: message.skill_id,
+          status: message.status,
+          data: message.data,
+          error: message.error,
+          latencyMs: message.latency_ms
+        },
+        Date.now()
+      );
+      if (result.outcome === 'unknown_request' || result.outcome === 'skill_mismatch' || result.outcome === 'ref_mismatch') {
+        sendMessage(socket, {
+          type: 'error',
+          request_id: message.request_id,
+          message: `skill result rejected: ${result.outcome}`
+        });
+        return;
+      }
+      sendMessage(socket, {
+        type: 'ack',
+        request_id: message.request_id,
+        message: result.outcome === 'duplicate' ? 'skill result already recorded' : 'skill result accepted'
+      });
+      if (result.outcome === 'applied' || result.outcome === 'duplicate') {
+        reportWorkflowRecord(result.record ?? null);
+      }
       logEvent('edge_skill_result_received', {
         ...toIdentityRefs(session.userId, session.deviceId),
         request_id: message.request_id,
@@ -444,6 +671,9 @@ wss.on('connection', (socket, req) => {
 });
 
 server.listen(config.port, () => {
+  for (const record of executionStore.pendingWorkflowReports(Date.now())) {
+    scheduleWorkflowReport(record, 0);
+  }
   logEvent('service_started', {
     service: config.serviceName,
     environment: config.environment,
@@ -451,11 +681,17 @@ server.listen(config.port, () => {
     relay_path: config.relayPath,
     auth_mode: config.authMode,
     queue_encrypted: true,
+    workflow_report_pending: executionStore.stats().pendingWorkflowReports,
   });
 });
 
 function shutdown(signal: string): void {
   logEvent('shutdown_start', { signal });
+
+  for (const timer of scheduledWorkflowReports.values()) {
+    clearTimeout(timer);
+  }
+  scheduledWorkflowReports.clear();
 
   for (const session of sessions.values()) {
     session.socket.close(1001, 'server_shutdown');
@@ -494,6 +730,14 @@ function loadConfig(env: NodeJS.ProcessEnv): RelayConfig {
     tokenSecret,
     queueEncryptionKey: deriveSymmetricKey(env.EDGE_QUEUE_ENCRYPTION_KEY?.trim(), tokenSecret ?? `${environment}:${env.SERVICE_VERSION ?? '0.1.0'}`),
     logSalt: env.EDGE_RELAY_LOG_SALT?.trim() || tokenSecret || `${environment}:edge-relay`,
+    temporalWorkerBaseUrl: env.BREVIO_TEMPORAL_WORKER_BASE_URL?.trim() || undefined,
+    temporalWorkerTimeoutMs: parseIntWithDefault(env.BREVIO_TEMPORAL_WORKER_TIMEOUT_MS, 1500),
+    capabilityInventoryJson: env.BREVIO_CAPABILITY_INVENTORY_JSON?.trim() || undefined,
+    executionStateFilePath:
+      env.EDGE_EXECUTION_STATE_FILE?.trim() ||
+      path.join(process.cwd(), '.runtime', 'edge-relay-execution-state.json'),
+    workflowReportRetryBaseMs: parseIntWithDefault(env.EDGE_WORKFLOW_REPORT_RETRY_BASE_MS, 1000),
+    workflowReportMaxAttempts: parseIntWithDefault(env.EDGE_WORKFLOW_REPORT_MAX_ATTEMPTS, 5),
   };
 }
 
@@ -524,6 +768,7 @@ function sessionKey(userId: string, deviceId: string): string {
 
 function healthPayload(deep: boolean): Record<string, unknown> {
   const queuedCount = Array.from(offlineQueues.values()).reduce((acc, queue) => acc + queue.length, 0);
+  const executionStats = executionStore.stats();
   const checks: Record<string, unknown> = {
     process: 'ok',
     connected_agents: sessions.size,
@@ -536,6 +781,10 @@ function healthPayload(deep: boolean): Record<string, unknown> {
     checks.max_queue_per_device = config.maxQueuePerDevice;
     checks.queue_encrypted = true;
     checks.sessions_redacted = true;
+    checks.execution_records = executionStats.total;
+    checks.active_requests = executionStats.active;
+    checks.terminal_requests = executionStats.terminal;
+    checks.workflow_report_pending = executionStats.pendingWorkflowReports;
   }
 
   return {
@@ -561,6 +810,75 @@ function enqueueExecution(key: string, execution: QueuedExecution): void {
     ...toIdentityRefs(execution.userId, execution.deviceId),
     skill_id: execution.skillId,
   });
+}
+
+function workflowReportDelayMs(attempts: number): number {
+  return Math.min(config.workflowReportRetryBaseMs * Math.max(1, 2 ** Math.max(0, attempts - 1)), 30_000);
+}
+
+function scheduleWorkflowReport(record: StoredExecutionRecord | null, delayMs = 0): void {
+  if (!record?.workflowReport || !record.runId || !record.stepId) {
+    return;
+  }
+  const existing = scheduledWorkflowReports.get(record.requestId);
+  if (existing) {
+    clearTimeout(existing);
+  }
+  const timer = setTimeout(() => {
+    scheduledWorkflowReports.delete(record.requestId);
+    const latest = executionStore.get(record.requestId);
+    if (!latest?.workflowReport || latest.workflowReport.status === 'DELEGATED' || latest.workflowReport.status === 'FAILED') {
+      return;
+    }
+    void reportExecutionLifecycle(latest, config).then((result) => {
+      const nextRetryAt = result.delegated
+        ? undefined
+        : Date.now() + workflowReportDelayMs((latest.workflowReport?.attempts ?? 0) + 1);
+      const updated = executionStore.markWorkflowReportOutcome(
+        latest.requestId,
+        result.delegated,
+        Date.now(),
+        result.warning,
+        nextRetryAt,
+        config.workflowReportMaxAttempts
+      );
+      if (result.warning) {
+        logEvent('edge_workflow_report_deferred', {
+          request_id: latest.requestId,
+          run_id: latest.runId,
+          step_id: latest.stepId,
+          warning: result.warning,
+          attempts: updated?.workflowReport?.attempts,
+          workflow_report_status: updated?.workflowReport?.status
+        });
+      }
+      if (updated?.workflowReport?.status === 'RETRYING') {
+        scheduleWorkflowReport(updated, workflowReportDelayMs(updated.workflowReport.attempts));
+      }
+      if (updated?.workflowReport?.status === 'FAILED') {
+        logEvent('edge_workflow_report_failed', {
+          request_id: latest.requestId,
+          run_id: latest.runId,
+          step_id: latest.stepId,
+          warning: updated.workflowReport.warning,
+          attempts: updated.workflowReport.attempts
+        });
+      }
+    });
+  }, delayMs);
+  timer.unref();
+  scheduledWorkflowReports.set(record.requestId, timer);
+}
+
+function reportWorkflowRecord(record: StoredExecutionRecord | null): void {
+  if (
+    !record?.workflowReport ||
+    record.workflowReport.status === 'DELEGATED' ||
+    record.workflowReport.status === 'FAILED'
+  ) {
+    return;
+  }
+  scheduleWorkflowReport(record, 0);
 }
 
 function pruneExpiredFromQueue(key: string): void {
@@ -592,6 +910,21 @@ function flushQueue(key: string): void {
     if (!execution) {
       break;
     }
+    if (!session.supportedSkills.has(execution.skillId)) {
+      const rejected = executionStore.markRejected(
+        execution.requestId,
+        'SKILL_NOT_SUPPORTED_BY_SESSION',
+        `Connected device does not advertise support for ${execution.skillId}`,
+        Date.now()
+      );
+      reportWorkflowRecord(rejected);
+      logEvent('edge_execution_rejected_unsupported_skill', {
+        request_id: execution.requestId,
+        ...toIdentityRefs(execution.userId, execution.deviceId),
+        skill_id: execution.skillId,
+      });
+      continue;
+    }
     try {
       dispatchExecution(session, execution);
     } catch (error) {
@@ -609,9 +942,14 @@ function flushQueue(key: string): void {
 
 function dispatchExecution(session: AgentSession, execution: QueuedExecution): void {
   const input = recoverQueuedInput(execution.protectedInput, config.queueEncryptionKey, queueContext(execution));
+  executionStore.markDispatched(execution.requestId, Date.now());
   const payload: ExecuteSkillMessage = {
     type: 'execute_skill',
     request_id: execution.requestId,
+    run_id: execution.runId,
+    task_id: execution.taskId,
+    step_id: execution.stepId,
+    attempt: execution.attempt,
     skill_id: execution.skillId,
     input,
     queued_at: new Date(execution.queuedAt).toISOString(),
@@ -693,6 +1031,10 @@ function parseAgentInboundMessage(raw: string): AgentInboundMessage | null {
     return {
       type: 'skill_result',
       request_id: requestId,
+      run_id: optionalString(decoded.run_id),
+      task_id: optionalString(decoded.task_id),
+      step_id: optionalString(decoded.step_id),
+      attempt: typeof decoded.attempt === 'number' && Number.isInteger(decoded.attempt) && decoded.attempt > 0 ? decoded.attempt : undefined,
       skill_id: skillId,
       status: statusRaw,
       data: isRecord(decoded.data) ? decoded.data : undefined,
@@ -763,4 +1105,70 @@ function logEvent(event: string, attrs: Record<string, unknown>): void {
       attrs,
     })}\n`,
   );
+}
+
+function agentCardPayload(): Record<string, unknown> {
+  return {
+    agent_id: config.serviceName,
+    name: 'Brevio Edge Relay',
+    description: 'Relay for capability-aware local edge skill execution with request tracking and result correlation.',
+    version: config.version,
+    protocol_version: '2026.a2a.v1',
+    default_endpoint: `http://localhost:${config.port}/v1/edge/execute`,
+    capabilities: [
+      {
+        id: 'edge.local.execute',
+        name: 'Local Edge Skill Dispatch',
+        description: 'Dispatches local device-bound skills and tracks lifecycle state until completion.',
+        version: '1.0.0',
+        input_modes: ['application/json'],
+        output_modes: ['application/json'],
+        async: true
+      }
+    ],
+    supports: {
+      task_lifecycle: true,
+      task_query: true,
+      artifact_updates: false,
+      push_callbacks: true,
+      capability_inventory: true
+    }
+  };
+}
+
+function serializeExecutionRecord(record: StoredExecutionRecord): Record<string, unknown> {
+  return {
+    request_id: record.requestId,
+    run_id: record.runId,
+    task_id: record.taskId,
+    step_id: record.stepId,
+    attempt: record.attempt,
+    user_ref: pseudonymize(record.userId, config.logSalt),
+    device_ref: pseudonymize(record.deviceId, config.logSalt),
+    skill_id: record.skillId,
+    status: record.status,
+    created_at: new Date(record.createdAt).toISOString(),
+    updated_at: new Date(record.updatedAt).toISOString(),
+    queued_at: record.queuedAt ? new Date(record.queuedAt).toISOString() : undefined,
+    dispatched_at: record.dispatchedAt ? new Date(record.dispatchedAt).toISOString() : undefined,
+    completed_at: record.completedAt ? new Date(record.completedAt).toISOString() : undefined,
+    result: record.result
+      ? {
+          status: record.result.status,
+          data: record.result.data,
+          error: record.result.error,
+          latency_ms: record.result.latencyMs
+        }
+      : undefined,
+    last_error: record.lastError,
+    workflow_report: record.workflowReport
+      ? {
+          status: record.workflowReport.status,
+          attempts: record.workflowReport.attempts,
+          updated_at: new Date(record.workflowReport.updatedAt).toISOString(),
+          next_retry_at: record.workflowReport.nextRetryAt ? new Date(record.workflowReport.nextRetryAt).toISOString() : undefined,
+          warning: record.workflowReport.warning
+        }
+      : undefined
+  };
 }

@@ -21,6 +21,16 @@ describe('decomposeTask', () => {
     assert.deepEqual(output.tasks[1]?.dependencies, []);
   });
 
+  it('preserves mixed dependencies across parallel batches', () => {
+    const output = decomposeTask('search inbox and find the attachment, then draft a reply', [], true);
+
+    assert.equal(output.execution_order, 'mixed');
+    assert.equal(output.tasks.length, 3);
+    assert.deepEqual(output.tasks[0]?.dependencies, []);
+    assert.deepEqual(output.tasks[1]?.dependencies, []);
+    assert.deepEqual(output.tasks[2]?.dependencies, ['t1', 't2']);
+  });
+
   it('rejects empty requests', () => {
     assert.throws(() => decomposeTask('', [], true), /TASK_GRAPH_INVALID: request_required/);
   });

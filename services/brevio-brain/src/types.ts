@@ -6,7 +6,7 @@ export type DeploymentMode = 'cloud' | 'local_mac' | 'mcp' | 'terminal';
 
 export type PlannerProvider = 'deterministic' | 'openai_responses';
 
-export type ExecutionStatus = 'dispatch_ready' | 'completed' | 'clarification_required';
+export type ExecutionStatus = 'dispatch_ready' | 'completed' | 'clarification_required' | 'verification_failed';
 
 export type TaskStatus = 'planned' | 'clarify';
 
@@ -68,6 +68,8 @@ export interface BrainConfig {
   plannerFallbackModel: string;
   plannerTimeoutMs: number;
   plannerBaseUrl: string;
+  temporalWorkerBaseUrl?: string;
+  temporalWorkerTimeoutMs: number;
 }
 
 export interface RequestContext {
@@ -182,6 +184,11 @@ export interface TaskDecompositionOutput {
 }
 
 export interface SkillResult {
+  request_id?: string;
+  run_id?: string;
+  task_id?: string;
+  step_id?: string;
+  attempt?: number;
   skill_id: string;
   status: 'SUCCESS' | 'PARTIAL' | 'FAILED' | 'TIMEOUT';
   data?: Record<string, unknown>;
@@ -238,8 +245,10 @@ export interface DisambiguationRuleConfig {
 export type DisambiguationRules = Record<string, DisambiguationRuleConfig>;
 
 export interface PlannedAction {
+  run_id?: string;
   step_id: string;
   task_id: string;
+  attempt?: number;
   intent: string;
   skill_id?: string;
   tool?: string;
@@ -247,13 +256,17 @@ export interface PlannedAction {
   params: Record<string, unknown>;
   idempotency_key: string;
   dependencies: string[];
+  step_dependencies?: string[];
   rationale: string;
   policy: ActionPolicyMetadata;
-  action_type: 'execute_skill' | 'clarify_user';
+  action_type: 'execute_skill' | 'clarify_user' | 'reconcile_results';
   status: 'pending' | 'blocked';
+  fanout_group_id?: string;
 }
 
 export interface PlannerProposal {
+  run_id: string;
+  thread_id: string;
   planner_provider: PlannerProvider;
   planner_model: string;
   planner_mode: 'deterministic' | 'model_augmented';
@@ -277,10 +290,14 @@ export interface VerificationResult {
 }
 
 export interface ProcessRequest extends IntentClassificationInput {
+  run_id?: string;
+  thread_id?: string;
   skill_results?: SkillResult[];
 }
 
 export interface ProcessResponse {
+  run_id: string;
+  thread_id: string;
   classification: IntentClassificationOutput;
   disambiguation: DisambiguationResponse;
   decomposition: TaskDecompositionOutput;

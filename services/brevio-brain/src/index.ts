@@ -21,6 +21,7 @@ import type {
   SkillResult
 } from './types.js';
 import { verifyPlan } from './verify.js';
+import { annotateRunVerification, registerExecutionPlan, syncProcessRunState } from './workflow-runtime.js';
 
 interface BrainRuntime {
   config: BrainConfig;
@@ -150,6 +151,11 @@ function extractSkillResults(value: unknown): SkillResult[] {
     }
 
     out.push({
+      request_id: asString(raw.request_id),
+      run_id: asString(raw.run_id),
+      task_id: asString(raw.task_id),
+      step_id: asString(raw.step_id),
+      attempt: typeof raw.attempt === 'number' && Number.isInteger(raw.attempt) && raw.attempt > 0 ? raw.attempt : undefined,
       skill_id: skillId,
       status,
       data: raw.data && typeof raw.data === 'object' && !Array.isArray(raw.data) ? (raw.data as Record<string, unknown>) : undefined,
@@ -169,6 +175,8 @@ function extractSkillResults(value: unknown): SkillResult[] {
 function normalizePayload(payload: Record<string, unknown>): NormalizedReasoningRequest {
   const request: ProcessRequest = {
     message_text: asString(payload.message_text) ?? '',
+    run_id: asString(payload.run_id),
+    thread_id: asString(payload.thread_id),
     user_profile:
       payload.user_profile && typeof payload.user_profile === 'object' && !Array.isArray(payload.user_profile)
         ? (payload.user_profile as ProcessRequest['user_profile'])
@@ -211,6 +219,44 @@ function healthPayload(runtime: BrainRuntime, deep: boolean): Record<string, unk
     disambiguation: {
       rules_loaded: Object.keys(runtime.disambiguationRules).length,
       groups: Object.keys(runtime.disambiguationRules).sort()
+    }
+  };
+}
+
+function agentCardPayload(runtime: BrainRuntime): Record<string, unknown> {
+  return {
+    agent_id: runtime.config.serviceName,
+    name: 'Brevio Brain',
+    description: 'Planning and reasoning service for Brevio A2A multi-step orchestration, policy evaluation, and execution-plan registration.',
+    version: runtime.config.version,
+    protocol_version: '2026.a2a.v1',
+    default_endpoint: `http://localhost:${runtime.config.port}/api/v1/brain`,
+    capabilities: [
+      {
+        id: 'plan.reason',
+        name: 'Plan and reason',
+        description: 'Classify, decompose, disambiguate, and plan multi-step requests.',
+        version: '1.0.0',
+        input_modes: ['application/json'],
+        output_modes: ['application/json'],
+        async: true
+      },
+      {
+        id: 'policy.evaluate',
+        name: 'Policy evaluation',
+        description: 'Compute privacy, approval, and execution policy metadata for candidate actions.',
+        version: '1.0.0',
+        input_modes: ['application/json'],
+        output_modes: ['application/json'],
+        async: true
+      }
+    ],
+    supports: {
+      task_lifecycle: false,
+      task_query: false,
+      artifact_updates: true,
+      push_callbacks: false,
+      capability_inventory: false
     }
   };
 }
@@ -261,6 +307,11 @@ function buildRuntime(config?: BrainConfig): BrainRuntime {
 
     if (method === 'GET' && path === '/health/deep') {
       sendJSON(res, 200, healthPayload(runtime, true));
+      return;
+    }
+
+    if (method === 'GET' && path === '/.well-known/agent-card.json') {
+      sendJSON(res, 200, agentCardPayload(runtime));
       return;
     }
 
@@ -423,13 +474,45 @@ function buildRuntime(config?: BrainConfig): BrainRuntime {
             })
           : undefined;
 
-        const executionStatus = plan.requires_clarification
-          ? 'clarification_required'
-          : aggregation
-            ? 'completed'
-            : 'dispatch_ready';
+        const executionStatus = !verification.valid
+          ? 'verification_failed'
+          : plan.requires_clarification
+            ? 'clarification_required'
+            : aggregation
+              ? 'completed'
+              : 'dispatch_ready';
+
+        const planRegistration = verification.valid
+          ? await registerExecutionPlan(plan.run_id, plan, runtime.config)
+          : { delegated: false, registeredSteps: 0, warning: 'verification_blocked_execution_plan_registration' };
+        if (planRegistration.warning) {
+          logEvent(runtime, ctx, 'brain.process.workflow_plan_registration_skipped', 'WARN', {
+            run_id: plan.run_id,
+            warning: planRegistration.warning
+          });
+        }
+
+        const verificationAnnotation = !verification.valid
+          ? await annotateRunVerification(plan.run_id, verification, runtime.config)
+          : { delegated: false, warning: undefined };
+        if (verificationAnnotation.warning) {
+          logEvent(runtime, ctx, 'brain.process.workflow_verification_annotation_skipped', 'WARN', {
+            run_id: plan.run_id,
+            warning: verificationAnnotation.warning
+          });
+        }
+
+        const workflowSync = await syncProcessRunState(plan.run_id, executionStatus, runtime.config);
+        if (workflowSync.warning) {
+          logEvent(runtime, ctx, 'brain.process.workflow_sync_skipped', 'WARN', {
+            run_id: plan.run_id,
+            warning: workflowSync.warning
+          });
+        }
 
         sendJSON(res, 200, {
+          run_id: plan.run_id,
+          thread_id: plan.thread_id,
           classification,
           disambiguation,
           decomposition,
@@ -445,7 +528,12 @@ function buildRuntime(config?: BrainConfig): BrainRuntime {
           tasks: decomposition.tasks.length,
           planner_provider: plan.planner_provider,
           planner_mode: plan.planner_mode,
-          execution_status: executionStatus
+          execution_status: executionStatus,
+          workflow_plan_registered: planRegistration.delegated,
+          workflow_registered_steps: planRegistration.registeredSteps,
+          workflow_verification_annotated: verificationAnnotation.delegated,
+          workflow_runtime_delegated: workflowSync.delegated,
+          workflow_transitions: workflowSync.transitioned
         });
       })().catch((err) => {
         if (err instanceof Error && err.message.startsWith('TASK_GRAPH_INVALID')) {

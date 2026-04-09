@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import http from 'node:http';
+import { pathToFileURL } from 'node:url';
 
 import { loadGatewayConfig } from './config.js';
 import { formatOutboundText } from './format.js';
@@ -7,6 +8,7 @@ import { normalizeWebhook } from './normalize.js';
 import { verifyAPIKey, verifyWhatsAppSignature } from './security.js';
 import { GatewayState } from './state.js';
 import type { Channel, GatewayConfig, RequestContext, UserTier } from './types.js';
+import { startMessageWorkflow } from './workflow-runtime.js';
 
 interface GatewayRuntime {
   config: GatewayConfig;
@@ -251,14 +253,38 @@ async function handleWebhook(
     return;
   }
 
+  const runtimeStart = await startMessageWorkflow(
+    {
+      messageId: normalized.envelope.id,
+      userId: normalized.userId,
+      channel,
+      channelMessageId: normalized.envelope.metadata.channel_message_id,
+      sessionId: normalized.envelope.metadata.session_id,
+      messageText: normalized.envelope.content.text,
+      userProfileHash: normalized.envelope.context.user_profile_hash
+    },
+    runtime.config
+  );
+
+  if (runtimeStart.warning) {
+    logEvent(runtime.config, ctx, 'gateway.workflow_runtime.start_skipped', 'WARN', {
+      channel,
+      user_id: normalized.userId,
+      warning: runtimeStart.warning
+    });
+  }
+
   const accepted: Record<string, unknown> = {
     status: 'accepted',
     channel,
     message_id: normalized.envelope.id,
+    run_id: runtimeStart.runId ?? normalized.envelope.id,
+    thread_id: normalized.envelope.metadata.session_id,
     channel_message_id: normalized.envelope.metadata.channel_message_id,
     session_id: normalized.envelope.metadata.session_id,
     envelope: normalized.envelope,
-    next_stage: 'brain.classify',
+    next_stage: runtimeStart.delegated ? 'temporal-worker.message-processing' : 'brain.classify',
+    workflow_runtime: runtimeStart.delegated ? 'temporal-worker' : 'local',
     idempotent_replay: false
   };
 
@@ -557,17 +583,19 @@ async function main(): Promise<void> {
   });
 }
 
-void main().catch((err) => {
-  process.stderr.write(
-    JSON.stringify({
-      ts: new Date().toISOString(),
-      service: 'brevio-gateway',
-      event: 'gateway.start.failed',
-      severity: 'ERROR',
-      error: err instanceof Error ? err.message : String(err)
-    }) + '\n'
-  );
-  process.exit(1);
-});
+if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) {
+  void main().catch((err) => {
+    process.stderr.write(
+      JSON.stringify({
+        ts: new Date().toISOString(),
+        service: 'brevio-gateway',
+        event: 'gateway.start.failed',
+        severity: 'ERROR',
+        error: err instanceof Error ? err.message : String(err)
+      }) + '\n'
+    );
+    process.exit(1);
+  });
+}
 
 export { createGatewayRuntime };

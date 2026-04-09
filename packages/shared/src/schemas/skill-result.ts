@@ -2,6 +2,11 @@ import type { JSONSchema7 } from 'json-schema';
 import { z } from 'zod';
 
 export const SkillResultSchema = z.object({
+  request_id: z.string().optional(),
+  run_id: z.string().optional(),
+  task_id: z.string().optional(),
+  step_id: z.string().optional(),
+  attempt: z.number().int().positive().optional(),
   skill_id: z.string(),
   status: z.enum(['SUCCESS', 'PARTIAL', 'FAILED', 'TIMEOUT']),
   data: z.unknown().optional(),
@@ -44,6 +49,11 @@ export const SkillResultJsonSchema: JSONSchema7 = {
   additionalProperties: false,
   required: ['skill_id', 'status', 'latency_ms', 'metadata'],
   properties: {
+    request_id: { type: 'string' },
+    run_id: { type: 'string' },
+    task_id: { type: 'string' },
+    step_id: { type: 'string' },
+    attempt: { type: 'integer', minimum: 1 },
     skill_id: { type: 'string' },
     status: { type: 'string', enum: ['SUCCESS', 'PARTIAL', 'FAILED', 'TIMEOUT'] },
     data: {},

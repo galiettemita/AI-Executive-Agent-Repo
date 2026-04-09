@@ -1,5 +1,7 @@
 export * from './schemas/message-envelope.js';
 export * from './schemas/skill-result.js';
+export * from './schemas/a2a-runtime.js';
+export * from './capability-inventory.js';
 export * from './interfaces/skill-adapter.js';
 export * from './constants/index.js';
 export * from './errors/index.js';
