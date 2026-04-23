@@ -24,6 +24,8 @@ type Request struct {
 	WorkspaceID      string
 	PromptKey        string
 	Input            string
+	ContentParts     []LLMContentPart
+	MediaAssets      []LLMMediaAsset
 	Tier             string
 	ModelID          string
 	ProviderID       string
@@ -32,6 +34,21 @@ type Request struct {
 	TopP             float64
 	PresencePenalty  float64
 	FrequencyPenalty float64
+}
+
+type LLMContentPart struct {
+	Type    string
+	Text    string
+	AssetID string
+	Media   *LLMMediaAsset
+}
+
+type LLMMediaAsset struct {
+	AssetID    string
+	MIMEType   string
+	StorageURI string
+	SourceURI  string
+	SizeBytes  int64
 }
 
 type Response struct {
@@ -77,26 +94,26 @@ func DefaultTierModelMapping() map[string]TierModelSelection {
 	return map[string]TierModelSelection{
 		"T0": {
 			Tier:            "T0",
-			PrimaryModel:    "gpt-5.2-nano",
-			FallbackModel:   "gpt-5.2-mini",
+			PrimaryModel:    "gpt-5.4-mini",
+			FallbackModel:   "gpt-4o-mini",
 			MaxOutputTokens: 256,
 		},
 		"T1": {
 			Tier:            "T1",
-			PrimaryModel:    "gpt-5.2-mini",
-			FallbackModel:   "gpt-5.2-nano",
+			PrimaryModel:    "gpt-5.4-mini",
+			FallbackModel:   "gpt-4o-mini",
 			MaxOutputTokens: 512,
 		},
 		"T2": {
 			Tier:            "T2",
-			PrimaryModel:    "gpt-5.2",
-			FallbackModel:   "gpt-5.2-mini",
+			PrimaryModel:    "gpt-5.4",
+			FallbackModel:   "gpt-5.4-mini",
 			MaxOutputTokens: 1024,
 		},
 		"T3": {
 			Tier:            "T3",
-			PrimaryModel:    "gpt-5.2-pro",
-			FallbackModel:   "gpt-5.2",
+			PrimaryModel:    "gpt-5.4",
+			FallbackModel:   "claude-sonnet-4-20250514",
 			MaxOutputTokens: 2048,
 		},
 	}

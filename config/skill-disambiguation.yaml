@@ -44,3 +44,32 @@ rules:
     search: youtube-api
     summarize: youtube-summarizer
     download: video-transcript-downloader
+  - group: speech-transcription
+    canonical: asr
+    transcribe: gemini-stt
+  - group: speech-synthesis
+    canonical: openai-tts
+    tts: openai-tts
+    local_mac: voice-wake-say
+  - group: speech-conversation
+    canonical: vocal-chat
+    realtime: vocal-chat
+  - group: image-perception
+    analyze: thinking-partner
+    ocr: thinking-partner
+  - group: document-perception
+    canonical: pdf-tools
+    extract: pdf-tools
+  - group: video-perception
+    canonical: video-frames
+    frames: video-frames
+  - group: camera-perception
+    canonical: camsnap
+    capture: camsnap
+  - group: media-generation
+    canonical: fal-ai
+    generate: veo
+    caption: krea-api
+  - group: local-media
+    search: apple-media
+    search_photos: apple-photos

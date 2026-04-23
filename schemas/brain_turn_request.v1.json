@@ -9,6 +9,10 @@
     "user_id": { "type": "string", "format": "uuid" },
     "ingress_turn_id": { "type": "string", "format": "uuid" },
     "message": { "type": "string" },
+    "content_parts": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/content_part" }
+    },
     "attachments": {
       "type": "array",
       "items": {
@@ -20,6 +24,48 @@
           "mime_type": { "type": "string" },
           "size_bytes": { "type": "integer", "minimum": 0 }
         }
+      }
+    },
+    "media_assets": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/media_asset" }
+    }
+  },
+  "$defs": {
+    "content_part": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["text", "image", "audio", "video", "document", "location", "tool_result", "generated_asset", "file"]
+        },
+        "text": { "type": "string" },
+        "asset_id": { "type": "string" },
+        "media": { "$ref": "#/$defs/media_asset" }
+      }
+    },
+    "media_asset": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["asset_id", "mime_type"],
+      "properties": {
+        "asset_id": { "type": "string" },
+        "mime_type": { "type": "string" },
+        "size_bytes": { "type": "integer", "minimum": 0 },
+        "sha256": { "type": "string", "minLength": 64, "maxLength": 64 },
+        "storage_uri": { "type": "string" },
+        "source_uri": { "type": "string", "format": "uri" },
+        "filename": { "type": "string" },
+        "duration_ms": { "type": "integer", "minimum": 0 },
+        "width": { "type": "integer", "minimum": 1 },
+        "height": { "type": "integer", "minimum": 1 },
+        "page_count": { "type": "integer", "minimum": 1 },
+        "codec": { "type": "string" },
+        "provenance": { "type": "string" },
+        "safety_labels": { "type": "array", "items": { "type": "string" } },
+        "metadata": { "type": "object" }
       }
     }
   }

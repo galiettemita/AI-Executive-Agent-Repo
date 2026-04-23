@@ -15,18 +15,18 @@ const adapter: ISkillAdapter = {
     required: ['text'],
     properties: {
       text: { type: 'string', minLength: 1, maxLength: 500 },
-      voice: { type: 'string', minLength: 2, maxLength: 40 },
+      voice: { type: 'string', enum: ['Alex', 'Samantha', 'Victoria', 'Daniel', 'Moira'] },
       rate_wpm: { type: 'integer', minimum: 90, maximum: 320 }
     },
     additionalProperties: false
   },
   outputSchema: {
     type: 'object',
-    required: ['provider', 'voice', 'command', 'estimated_duration_ms', 'latency_budget_ms'],
+    required: ['provider', 'voice', 'command_argv', 'estimated_duration_ms', 'latency_budget_ms'],
     properties: {
       provider: { type: 'string', enum: ['voice-wake-say'] },
-      voice: { type: 'string' },
-      command: { type: 'string' },
+      voice: { type: 'string', enum: ['Alex', 'Samantha', 'Victoria', 'Daniel', 'Moira'] },
+      command_argv: { type: 'array', minItems: 7, maxItems: 7, items: { type: 'string' } },
       estimated_duration_ms: { type: 'integer', minimum: 1 },
       latency_budget_ms: { type: 'integer', enum: [500] }
     },

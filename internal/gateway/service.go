@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"os"
 	"path"
 	"regexp"
@@ -39,8 +38,10 @@ type AttachmentInput struct {
 
 type AttachmentReference struct {
 	ID        string
+	AssetID   string
 	SourceURL string
 	S3URI     string
+	SHA256    string
 	MIMEType  string
 	Filename  string
 	SizeBytes int64
@@ -428,20 +429,24 @@ type AttachmentUploader interface {
 	Upload(ctx context.Context, workspaceID uuid.UUID, attachment AttachmentInput) (AttachmentReference, error)
 }
 
-type InMemoryAttachmentUploader struct {
+type MediaIngestor struct {
 	bucket string
 }
 
-func NewInMemoryAttachmentUploader(bucket string) *InMemoryAttachmentUploader {
+func NewMediaIngestor(bucket string) *MediaIngestor {
 	if strings.TrimSpace(bucket) == "" {
 		bucket = "attachments"
 	}
-	return &InMemoryAttachmentUploader{bucket: bucket}
+	return &MediaIngestor{bucket: bucket}
 }
 
-func (u *InMemoryAttachmentUploader) Upload(_ context.Context, workspaceID uuid.UUID, attachment AttachmentInput) (AttachmentReference, error) {
-	if strings.TrimSpace(attachment.URL) == "" {
-		return AttachmentReference{}, fmt.Errorf("attachment url is required")
+func NewInMemoryAttachmentUploader(bucket string) *MediaIngestor {
+	return NewMediaIngestor(bucket)
+}
+
+func (u *MediaIngestor) Upload(_ context.Context, workspaceID uuid.UUID, attachment AttachmentInput) (AttachmentReference, error) {
+	if err := ValidateAttachmentInput(attachment); err != nil {
+		return AttachmentReference{}, err
 	}
 	attachmentID, err := uuid.NewV7()
 	if err != nil {
@@ -454,10 +459,24 @@ func (u *InMemoryAttachmentUploader) Upload(_ context.Context, workspaceID uuid.
 			filename = "attachment"
 		}
 	}
+	hash := AttachmentSHA256([]byte(strings.Join([]string{
+		workspaceID.String(),
+		attachmentID.String(),
+		strings.TrimSpace(attachment.URL),
+		strings.ToLower(strings.TrimSpace(attachment.MIMEType)),
+		strconv.FormatInt(attachment.SizeBytes, 10),
+	}, "\n")))
+	ext := ExtensionFromFilename(filename)
+	if ext == "" {
+		ext = strings.TrimPrefix(strings.ToLower(path.Ext(attachment.URL)), ".")
+	}
+	storageKey := AttachmentS3Key(workspaceID, attachmentID, hash, ext)
 	return AttachmentReference{
 		ID:        attachmentID.String(),
+		AssetID:   attachmentID.String(),
 		SourceURL: attachment.URL,
-		S3URI:     fmt.Sprintf("s3://%s/%s/%s-%s", u.bucket, workspaceID.String(), attachmentID.String(), filename),
+		S3URI:     fmt.Sprintf("s3://%s/%s", u.bucket, storageKey),
+		SHA256:    hash,
 		MIMEType:  attachment.MIMEType,
 		Filename:  filename,
 		SizeBytes: attachment.SizeBytes,
@@ -1125,11 +1144,10 @@ func (s *Service) PreprocessVoice(_ context.Context, audioURL string) string {
 	if audioURL == "" {
 		return ""
 	}
-	parsed, err := url.Parse(audioURL)
-	if err != nil || !strings.EqualFold(parsed.Scheme, "https") || parsed.Host == "" {
+	if err := ValidateMediaSourceURL(audioURL); err != nil {
 		return ""
 	}
-	return "transcript:" + audioURL
+	return "[transcription pending: verified audio attachment]"
 }
 
 func parseIntentFromText(raw string) string {

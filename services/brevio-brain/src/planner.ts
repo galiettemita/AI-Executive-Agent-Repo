@@ -130,6 +130,19 @@ function inferOperation(intent: string, skillId: string | undefined, goal: strin
     }
     return 'search';
   }
+  if (
+    intent === 'speech.transcribe' ||
+    intent === 'speech.synthesize' ||
+    intent === 'speech.conversation' ||
+    intent === 'image.analyze' ||
+    intent === 'image.ocr' ||
+    intent === 'document.parse' ||
+    intent === 'video.analyze' ||
+    intent === 'camera.capture' ||
+    intent === 'media.generate'
+  ) {
+    return descriptor.operations[0] ?? 'execute';
+  }
   if (intent === 'transport.flight_search') {
     return 'find';
   }
@@ -154,11 +167,16 @@ function inferOperation(intent: string, skillId: string | undefined, goal: strin
   return descriptor.operations[0] ?? 'execute';
 }
 
-function buildParams(skillId: string | undefined, operation: string, goal: string): Record<string, unknown> {
+function buildParams(skillId: string | undefined, operation: string, goal: string, request?: NormalizedReasoningRequest): Record<string, unknown> {
   const params: Record<string, unknown> = {
     action: operation,
     request_segment: goal
   };
+  const mediaAssets = request?.media_assets ?? request?.content_parts?.map((part) => part.media).filter((asset): asset is NonNullable<typeof asset> => Boolean(asset));
+  if (mediaAssets && mediaAssets.length > 0) {
+    params.media_assets = mediaAssets;
+    params.content_parts = request?.content_parts ?? [];
+  }
 
   if (operation === 'search' || operation === 'gmail_list' || operation === 'search_all' || operation === 'search_subject' || operation === 'search_sender') {
     params.query = goal;
@@ -308,7 +326,7 @@ function buildExecutionAction(
     skill_id: skillId,
     tool: `${skillId}.${operation}`,
     operation,
-    params: buildParams(skillId, operation, task.goal),
+    params: buildParams(skillId, operation, task.goal, request),
     idempotency_key: idempotencyKey(task.id, skillId, task.goal),
     dependencies: task.dependencies,
     step_dependencies: [],
@@ -378,6 +396,45 @@ function extractOutputText(payload: unknown): string | undefined {
   return fragments.length > 0 ? fragments.join('\n').trim() : undefined;
 }
 
+function buildPlannerModelContent(request: NormalizedReasoningRequest, actions: PlannedAction[], confidence: number): Array<Record<string, unknown>> {
+  const plannerInput = buildExternalPlannerInput(request, actions, confidence);
+  const content: Array<Record<string, unknown>> = [
+    {
+      type: 'input_text',
+      text: JSON.stringify(plannerInput)
+    }
+  ];
+  for (const part of request.content_parts ?? []) {
+    const media = part.media ?? request.media_assets?.find((asset) => asset.asset_id === part.asset_id);
+    if (part.type === 'text' && part.text) {
+      content.push({ type: 'input_text', text: redactSensitiveText(part.text) });
+      continue;
+    }
+    if (part.type === 'image' && media?.source_uri) {
+      content.push({ type: 'input_image', image_url: media.source_uri });
+      continue;
+    }
+    if (media) {
+      content.push({
+        type: 'input_text',
+        text: JSON.stringify({
+          multimodal_asset: {
+            type: part.type,
+            asset_id: media.asset_id,
+            mime_type: media.mime_type,
+            storage_uri: media.storage_uri,
+            size_bytes: media.size_bytes,
+            duration_ms: media.duration_ms,
+            page_count: media.page_count,
+            safety_labels: media.safety_labels
+          }
+        })
+      });
+    }
+  }
+  return content;
+}
+
 async function augmentWithOpenAI(
   proposal: PlannerProposal,
   request: NormalizedReasoningRequest,
@@ -418,7 +475,7 @@ async function augmentWithOpenAI(
         input: [
           {
             role: 'user',
-            content: JSON.stringify(buildExternalPlannerInput(request, proposal.actions, proposal.confidence))
+            content: buildPlannerModelContent(request, proposal.actions, proposal.confidence)
           }
         ],
         text: {

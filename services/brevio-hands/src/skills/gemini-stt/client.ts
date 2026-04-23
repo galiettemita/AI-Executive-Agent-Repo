@@ -1,18 +1,18 @@
 import type { GeminiSttInput, GeminiSttOutput } from './types.js';
 
 export async function runClient(input: GeminiSttInput): Promise<GeminiSttOutput> {
-  const transcript = input.audio_url.includes('interview')
-    ? 'Speaker A discussed roadmap scope. Speaker B requested a revised delivery plan by Friday.'
-    : 'Speaker A asked for a status update. Speaker B confirmed next milestones and owners.';
+  const transcript = 'Speaker-aware transcription completed; provider integration must supply the live transcript in production mode.';
 
   const midpoint = Math.max(500, Math.floor(input.duration_ms / 2));
   const includeSpeakers = input.include_speaker_labels ?? true;
 
   return {
     provider: 'gemini-stt',
+    provider_mode: 'dev_mock',
+    model: 'gemini-3-pro-preview',
     transcript,
     language: input.language_hint ?? 'en-US',
-    confidence: 0.94,
+    confidence: 0.72,
     speakers: includeSpeakers
       ? [
           {

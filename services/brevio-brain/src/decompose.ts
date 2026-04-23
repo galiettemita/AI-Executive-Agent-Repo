@@ -5,13 +5,17 @@ const ACTION_VERBS = [
   'book',
   'buy',
   'capture',
+  'caption',
   'compare',
   'create',
+  'describe',
   'draft',
   'email',
+  'extract',
   'find',
   'look up',
   'note',
+  'ocr',
   'play',
   'remind',
   'reply',
@@ -20,6 +24,7 @@ const ACTION_VERBS = [
   'search',
   'send',
   'summarize',
+  'transcribe',
   'track'
 ];
 

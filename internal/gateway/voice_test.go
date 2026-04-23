@@ -17,7 +17,7 @@ func TestVoicePipelineDefaults(t *testing.T) {
 	}
 
 	voices := AllowedTTSVoices()
-	if len(voices) != 6 {
+	if len(voices) != 11 {
 		t.Fatalf("unexpected voice count: %d", len(voices))
 	}
 	if !IsLowConfidenceTranscription(0.69) || IsLowConfidenceTranscription(0.70) {

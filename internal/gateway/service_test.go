@@ -204,7 +204,7 @@ func TestAttachmentInteractiveDiscoveryAndVoicePreprocess(t *testing.T) {
 	if turn.ParsedDiscoveryAnswer != "question=team_size;answer=12" {
 		t.Fatalf("unexpected discovery parse output: %s", turn.ParsedDiscoveryAnswer)
 	}
-	if turn.Transcript != "transcript:https://cdn.example.com/audio-note.ogg" {
+	if turn.Transcript != "[transcription pending: verified audio attachment]" {
 		t.Fatalf("unexpected transcript: %s", turn.Transcript)
 	}
 	if len(turn.Attachments) != 1 {
@@ -224,11 +224,14 @@ func TestAttachmentInteractiveDiscoveryAndVoicePreprocess(t *testing.T) {
 	if envelope.Content.Type != "VOICE" {
 		t.Fatalf("expected VOICE content type, got %s", envelope.Content.Type)
 	}
-	if envelope.Content.Text != "transcript:https://cdn.example.com/audio-note.ogg" {
+	if envelope.Content.Text != "[transcription pending: verified audio attachment]" {
 		t.Fatalf("unexpected envelope transcription text: %s", envelope.Content.Text)
 	}
 	if envelope.Content.MediaURL != "https://cdn.example.com/audio-note.ogg" {
 		t.Fatalf("unexpected envelope media_url: %s", envelope.Content.MediaURL)
+	}
+	if len(envelope.Content.Parts) != 2 || len(envelope.Content.MediaAssets) != 1 {
+		t.Fatalf("expected text+audio parts and one media asset, got parts=%d assets=%d", len(envelope.Content.Parts), len(envelope.Content.MediaAssets))
 	}
 }
 

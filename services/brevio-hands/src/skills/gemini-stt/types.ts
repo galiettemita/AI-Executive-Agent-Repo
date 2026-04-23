@@ -14,6 +14,8 @@ export interface GeminiSttInput {
 
 export interface GeminiSttOutput {
   provider: 'gemini-stt';
+  provider_mode: 'dev_mock' | 'live';
+  model: string;
   transcript: string;
   language: string;
   confidence: number;

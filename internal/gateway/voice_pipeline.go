@@ -12,7 +12,7 @@ type STTResult struct {
 }
 
 func SupportedVoiceInputFormats() []string {
-	return []string{"audio/ogg", "audio/opus", "audio/m4a", "audio/mpeg", "audio/wav"}
+	return []string{"audio/ogg", "audio/opus", "audio/m4a", "audio/mp4", "audio/mpeg", "audio/wav"}
 }
 
 func IsSupportedVoiceInput(mime string) bool {

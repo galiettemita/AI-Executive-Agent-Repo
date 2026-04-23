@@ -26,6 +26,11 @@ type ModelCatalogEntry struct {
 	CostPerOutputToken float64
 	MaxContextTokens   int
 	Capabilities       []string
+	InputModalities    []string
+	OutputModalities   []string
+	SupportsStreaming  bool
+	SupportsRealtime   bool
+	SupportsTools      bool
 }
 
 type TokenUsage struct {
@@ -45,7 +50,7 @@ func DefaultProviderRegistry() map[string]ProviderConfig {
 			ProviderID: "openai",
 			BaseURL:    "https://api.openai.com/v1",
 			AuthMethod: "authorization_bearer",
-			Models:     []string{"gpt-4o", "gpt-4o-mini"},
+			Models:     []string{"gpt-5.4", "gpt-5.4-mini", "gpt-realtime", "gpt-4o", "gpt-4o-mini"},
 		},
 	}
 }
@@ -73,7 +78,11 @@ func DefaultModelCatalog() map[string]ModelCatalogEntry {
 			CostPerInputToken:  0.000003,
 			CostPerOutputToken: 0.000015,
 			MaxContextTokens:   200000,
-			Capabilities:       []string{"planning", "synthesis", "extraction", "critique"},
+			Capabilities:       []string{"planning", "synthesis", "extraction", "critique", "vision", "document_reasoning"},
+			InputModalities:    []string{"text", "image", "document"},
+			OutputModalities:   []string{"text"},
+			SupportsStreaming:  true,
+			SupportsTools:      true,
 		},
 		"claude-haiku-4-5-20250929": {
 			ModelKey:           "claude-haiku-4-5-20250929",
@@ -81,7 +90,48 @@ func DefaultModelCatalog() map[string]ModelCatalogEntry {
 			CostPerInputToken:  0.0000008,
 			CostPerOutputToken: 0.000004,
 			MaxContextTokens:   200000,
-			Capabilities:       []string{"classification", "extraction", "routing", "simple_synthesis"},
+			Capabilities:       []string{"classification", "extraction", "routing", "simple_synthesis", "vision"},
+			InputModalities:    []string{"text", "image", "document"},
+			OutputModalities:   []string{"text"},
+			SupportsStreaming:  true,
+			SupportsTools:      true,
+		},
+		"gpt-5.4": {
+			ModelKey:           "gpt-5.4",
+			ProviderID:         "openai",
+			CostPerInputToken:  0.000002,
+			CostPerOutputToken: 0.000008,
+			MaxContextTokens:   1050000,
+			Capabilities:       []string{"planning", "synthesis", "extraction", "critique", "vision", "document_reasoning", "structured_outputs", "tool_use"},
+			InputModalities:    []string{"text", "image", "document"},
+			OutputModalities:   []string{"text"},
+			SupportsStreaming:  true,
+			SupportsTools:      true,
+		},
+		"gpt-5.4-mini": {
+			ModelKey:           "gpt-5.4-mini",
+			ProviderID:         "openai",
+			CostPerInputToken:  0.0000002,
+			CostPerOutputToken: 0.0000008,
+			MaxContextTokens:   256000,
+			Capabilities:       []string{"classification", "routing", "extraction", "vision", "structured_outputs", "tool_use"},
+			InputModalities:    []string{"text", "image", "document"},
+			OutputModalities:   []string{"text"},
+			SupportsStreaming:  true,
+			SupportsTools:      true,
+		},
+		"gpt-realtime": {
+			ModelKey:           "gpt-realtime",
+			ProviderID:         "openai",
+			CostPerInputToken:  0.000004,
+			CostPerOutputToken: 0.000016,
+			MaxContextTokens:   128000,
+			Capabilities:       []string{"realtime", "speech_to_speech", "vision", "tool_use"},
+			InputModalities:    []string{"text", "audio", "image"},
+			OutputModalities:   []string{"text", "audio"},
+			SupportsStreaming:  true,
+			SupportsRealtime:   true,
+			SupportsTools:      true,
 		},
 		"gpt-4o": {
 			ModelKey:           "gpt-4o",
@@ -89,7 +139,11 @@ func DefaultModelCatalog() map[string]ModelCatalogEntry {
 			CostPerInputToken:  0.0000025,
 			CostPerOutputToken: 0.00001,
 			MaxContextTokens:   128000,
-			Capabilities:       []string{"planning", "synthesis", "extraction", "critique"},
+			Capabilities:       []string{"planning", "synthesis", "extraction", "critique", "vision", "audio"},
+			InputModalities:    []string{"text", "image", "audio"},
+			OutputModalities:   []string{"text"},
+			SupportsStreaming:  true,
+			SupportsTools:      true,
 		},
 		"gpt-4o-mini": {
 			ModelKey:           "gpt-4o-mini",
@@ -97,9 +151,27 @@ func DefaultModelCatalog() map[string]ModelCatalogEntry {
 			CostPerInputToken:  0.00000015,
 			CostPerOutputToken: 0.0000006,
 			MaxContextTokens:   128000,
-			Capabilities:       []string{"classification", "extraction", "routing", "simple_synthesis"},
+			Capabilities:       []string{"classification", "extraction", "routing", "simple_synthesis", "vision"},
+			InputModalities:    []string{"text", "image"},
+			OutputModalities:   []string{"text"},
+			SupportsStreaming:  true,
+			SupportsTools:      true,
 		},
 	}
+}
+
+func ModelsForInputModality(modality string) []ModelCatalogEntry {
+	normalized := strings.ToLower(strings.TrimSpace(modality))
+	out := []ModelCatalogEntry{}
+	for _, entry := range DefaultModelCatalog() {
+		for _, supported := range entry.InputModalities {
+			if strings.EqualFold(supported, normalized) {
+				out = append(out, entry)
+				break
+			}
+		}
+	}
+	return out
 }
 
 func EstimateModelCostUSD(modelKey string, usage TokenUsage) (float64, error) {

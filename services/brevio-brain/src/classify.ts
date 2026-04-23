@@ -85,6 +85,60 @@ const PATTERNS: IntentPattern[] = [
     candidateSkills: () => ['youtube-api']
   },
   {
+    intent: 'speech.transcribe',
+    keywords: ['transcribe', 'speech to text', 'audio note', 'voice memo', 'diarize', 'speaker labels'],
+    operation: 'transcribe',
+    candidateSkills: () => ['asr', 'gemini-stt']
+  },
+  {
+    intent: 'speech.synthesize',
+    keywords: ['read this aloud', 'say this', 'text to speech', 'tts', 'speak this'],
+    operation: 'synthesize',
+    candidateSkills: (input) => [input.deployment_mode === 'local_mac' ? 'voice-wake-say' : 'openai-tts']
+  },
+  {
+    intent: 'speech.conversation',
+    keywords: ['voice chat', 'talk with me', 'audio conversation', 'speak with assistant'],
+    operation: 'conversation',
+    candidateSkills: () => ['vocal-chat']
+  },
+  {
+    intent: 'image.analyze',
+    keywords: ['describe this image', 'what is in this image', 'analyze this photo', 'caption this image', 'read this screenshot'],
+    operation: 'analyze',
+    candidateSkills: () => ['thinking-partner']
+  },
+  {
+    intent: 'image.ocr',
+    keywords: ['ocr', 'extract text from image', 'read the screenshot', 'read text in this photo'],
+    operation: 'ocr',
+    candidateSkills: () => ['thinking-partner']
+  },
+  {
+    intent: 'document.parse',
+    keywords: ['parse this pdf', 'extract text', 'extract table', 'document ocr', 'summarize this pdf'],
+    operation: 'extract_text',
+    candidateSkills: () => ['pdf-tools']
+  },
+  {
+    intent: 'video.analyze',
+    keywords: ['analyze this video', 'extract frames', 'summarize this video', 'what happens in this video'],
+    operation: 'extract_frames',
+    candidateSkills: () => ['video-frames']
+  },
+  {
+    intent: 'camera.capture',
+    keywords: ['take a picture', 'capture camera', 'camera snapshot', 'what do you see'],
+    operation: 'capture',
+    candidateSkills: () => ['camsnap']
+  },
+  {
+    intent: 'media.generate',
+    keywords: ['generate image', 'create image', 'make a video', 'generate video', 'upscale image'],
+    operation: 'generate',
+    candidateSkills: () => ['fal-ai', 'pollinations', 'krea-api', 'veo']
+  },
+  {
     intent: 'email.send',
     keywords: ['send email', 'email this', 'draft an email', 'reply to email', 'compose email'],
     operation: 'send',
@@ -117,6 +171,33 @@ function scorePattern(normalized: string, pattern: IntentPattern): IntentEvidenc
     matched_keywords: matched,
     score: Number(exactScore.toFixed(2))
   };
+}
+
+function inferIntentFromMedia(input: IntentClassificationInput): IntentEvidence | undefined {
+  const parts = input.content_parts ?? [];
+  const assets = input.media_assets ?? parts.map((part) => part.media).filter((asset): asset is NonNullable<typeof asset> => Boolean(asset));
+  const modalities = new Set<string>(parts.map((part) => part.type));
+  for (const asset of assets) {
+    const mime = asset.mime_type.toLowerCase();
+    if (mime.startsWith('audio/')) modalities.add('audio');
+    else if (mime.startsWith('image/')) modalities.add('image');
+    else if (mime.startsWith('video/')) modalities.add('video');
+    else if (mime === 'application/pdf' || mime.startsWith('text/')) modalities.add('document');
+    else modalities.add('file');
+  }
+  if (modalities.has('audio')) {
+    return { intent: 'speech.transcribe', matched_keywords: ['audio'], score: 1.8 };
+  }
+  if (modalities.has('video')) {
+    return { intent: 'video.analyze', matched_keywords: ['video'], score: 1.8 };
+  }
+  if (modalities.has('image')) {
+    return { intent: 'image.analyze', matched_keywords: ['image'], score: 1.6 };
+  }
+  if (modalities.has('document') || modalities.has('file')) {
+    return { intent: 'document.parse', matched_keywords: ['document'], score: 1.6 };
+  }
+  return undefined;
 }
 
 function confidenceFor(bestScore: number, secondScore: number, keywordCount: number, clarificationRequired: boolean): number {
@@ -153,7 +234,12 @@ function clarifyForMissingCapability(intent: string): string {
 export function classifyIntent(input: IntentClassificationInput): IntentClassificationOutput {
   const text = input.message_text.trim();
   const normalized = text.toLowerCase();
-  const evidence = PATTERNS.map((pattern) => scorePattern(normalized, pattern)).sort((left, right) => right.score - left.score);
+  const evidence = PATTERNS.map((pattern) => scorePattern(normalized, pattern));
+  const mediaEvidence = inferIntentFromMedia(input);
+  if (mediaEvidence) {
+    evidence.push(mediaEvidence);
+  }
+  evidence.sort((left, right) => right.score - left.score);
   const bestEvidence = evidence[0];
   const secondEvidence = evidence[1];
 

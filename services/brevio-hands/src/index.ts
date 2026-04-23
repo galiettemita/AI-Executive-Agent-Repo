@@ -501,6 +501,25 @@ function circuitSnapshot(runtime: HandsRuntime): Record<string, unknown> {
 }
 
 function agentCardPayload(runtime: HandsRuntime): Record<string, unknown> {
+  const mediaModesForSkill = (skillId: string): { input: string[]; output: string[] } => {
+    if (['asr', 'gemini-stt', 'vocal-chat'].includes(skillId)) {
+      return { input: ['application/json', 'audio/*'], output: ['application/json', 'text/plain'] };
+    }
+    if (['openai-tts', 'voice-wake-say', 'sag'].includes(skillId)) {
+      return { input: ['application/json', 'text/plain'], output: ['application/json', 'audio/*'] };
+    }
+    if (['pdf-tools'].includes(skillId)) {
+      return { input: ['application/json', 'application/pdf'], output: ['application/json', 'text/plain', 'application/pdf'] };
+    }
+    if (['video-frames', 'video-transcript-downloader', 'veo'].includes(skillId)) {
+      return { input: ['application/json', 'video/*'], output: ['application/json', 'image/*', 'video/*', 'text/plain'] };
+    }
+    if (['fal-ai', 'krea-api', 'pollinations', 'coloring-page', 'camsnap', 'apple-photos', 'apple-media'].includes(skillId)) {
+      return { input: ['application/json', 'image/*', 'text/plain'], output: ['application/json', 'image/*'] };
+    }
+    return { input: ['application/json'], output: ['application/json'] };
+  };
+
   return {
     agent_id: runtime.config.serviceName,
     name: 'Brevio Hands',
@@ -508,15 +527,18 @@ function agentCardPayload(runtime: HandsRuntime): Record<string, unknown> {
     version: runtime.config.version,
     protocol_version: '2026.a2a.v1',
     default_endpoint: `http://localhost:${runtime.config.port}/api/v1/hands`,
-    capabilities: runtime.skills.map((skillId) => ({
-      id: skillId,
-      name: skillId,
-      description: `Hands execution capability for ${skillId}.`,
-      version: '1.0.0',
-      input_modes: ['application/json'],
-      output_modes: ['application/json'],
-      async: true
-    })),
+    capabilities: runtime.skills.map((skillId) => {
+      const modes = mediaModesForSkill(skillId);
+      return {
+        id: skillId,
+        name: skillId,
+        description: `Hands execution capability for ${skillId}.`,
+        version: '1.0.0',
+        input_modes: modes.input,
+        output_modes: modes.output,
+        async: true
+      };
+    }),
     supports: {
       task_lifecycle: false,
       task_query: false,

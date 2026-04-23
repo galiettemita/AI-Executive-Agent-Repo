@@ -27,6 +27,14 @@ func TestAttachmentValidationAndS3Key(t *testing.T) {
 	if err := ValidateAttachmentInput(tooLargeImage); err == nil {
 		t.Fatal("expected oversized image rejection")
 	}
+	insecureAttachment := AttachmentInput{
+		URL:       "http://example.com/file.pdf",
+		MIMEType:  "application/pdf",
+		SizeBytes: 1024,
+	}
+	if err := ValidateAttachmentInput(insecureAttachment); err == nil {
+		t.Fatal("expected insecure url rejection")
+	}
 
 	workspaceID := uuid.MustParse("018f3f6a-9a0f-7cc6-8f2f-1f0f2d2f2d2f")
 	ingressTurnID := uuid.MustParse("018f3f6a-9a0f-7cc6-8f2f-1f0f2d2f2d2e")

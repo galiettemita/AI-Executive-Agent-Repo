@@ -45,4 +45,30 @@ describe('classifyIntent', () => {
     assert.equal(result.intent, 'tasks.manage');
     assert.deepEqual(result.skills, ['linear']);
   });
+
+  it('routes attached audio to transcription skills', () => {
+    const result = classifyIntent({
+      message_text: 'please handle this',
+      content_parts: [{ type: 'audio', asset_id: 'audio-1' }],
+      media_assets: [{ asset_id: 'audio-1', mime_type: 'audio/ogg' }],
+      user_profile: {
+        enabled_skills: ['asr', 'gemini-stt']
+      }
+    });
+
+    assert.equal(result.intent, 'speech.transcribe');
+    assert.deepEqual(result.skills, ['asr', 'gemini-stt']);
+  });
+
+  it('routes document parsing requests to pdf-tools', () => {
+    const result = classifyIntent({
+      message_text: 'extract text from this pdf',
+      user_profile: {
+        enabled_skills: ['pdf-tools']
+      }
+    });
+
+    assert.equal(result.intent, 'document.parse');
+    assert.deepEqual(result.skills, ['pdf-tools']);
+  });
 });

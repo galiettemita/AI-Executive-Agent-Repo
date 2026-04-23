@@ -9,9 +9,10 @@ describe('edge local skills', () => {
   });
 
   it('filters configured skills to implemented handlers only', () => {
-    assert.deepEqual(resolveSupportedLocalSkills('voice-wake-say,apple-notes-skill,apple-remind-me'), [
+    assert.deepEqual(resolveSupportedLocalSkills('voice-wake-say,apple-notes-skill,apple-remind-me,camsnap'), [
       'voice-wake-say',
-      'apple-remind-me'
+      'apple-remind-me',
+      'camsnap'
     ]);
   });
 
@@ -19,7 +20,8 @@ describe('edge local skills', () => {
     assert.deepEqual(executeImplementedLocalSkill('voice-wake-say', { text: 'hello' }), {
       data: {
         spoken_text: 'hello',
-        transport: 'local_say'
+        transport: 'local_say',
+        command_argv: ['say', '--', 'hello']
       }
     });
     assert.equal(executeImplementedLocalSkill('apple-notes-skill', {}), null);

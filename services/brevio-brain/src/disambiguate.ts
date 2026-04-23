@@ -16,6 +16,15 @@ function detectGroup(intent: string | undefined, candidateSkills: string[]): str
     'transport.flight_search': 'flight-tracking',
     'finance.expense': 'expense-tracking',
     'video.youtube': 'youtube',
+    'speech.transcribe': 'speech-transcription',
+    'speech.synthesize': 'speech-synthesis',
+    'speech.conversation': 'speech-conversation',
+    'image.analyze': 'image-perception',
+    'image.ocr': 'image-perception',
+    'document.parse': 'document-perception',
+    'video.analyze': 'video-perception',
+    'camera.capture': 'camera-perception',
+    'media.generate': 'media-generation',
     'places.search': 'places-location',
     'email.send': 'email-send',
     'email.search': 'apple-mail'
@@ -158,6 +167,61 @@ function resolveFromRule(
       }
       reasoning.push('Defaulting to YouTube search route.');
       return { skills: [rule.search ?? 'youtube-api'], reasoning, clarificationRequired: false };
+    case 'speech-transcription':
+      if (includesAny(message, ['speaker', 'diarize', 'meeting', 'interview'])) {
+        reasoning.push('Speaker-aware transcription requested.');
+        return { skills: [rule.transcribe ?? 'gemini-stt'], reasoning, clarificationRequired: false };
+      }
+      reasoning.push('Defaulting to low-latency ASR route.');
+      return { skills: [rule.canonical ?? 'asr'], reasoning, clarificationRequired: false };
+    case 'speech-synthesis':
+      if (deploymentMode === 'local_mac' && rule.local_mac) {
+        reasoning.push('Local mac speech output selected.');
+        return { skills: [rule.local_mac], reasoning, clarificationRequired: false };
+      }
+      reasoning.push('Cloud TTS route selected.');
+      return { skills: [rule.tts ?? rule.canonical ?? 'openai-tts'], reasoning, clarificationRequired: false };
+    case 'speech-conversation':
+      reasoning.push('Realtime-capable vocal conversation route selected.');
+      return { skills: [rule.realtime ?? rule.canonical ?? 'vocal-chat'], reasoning, clarificationRequired: false };
+    case 'image-perception':
+      if (includesAny(message, ['ocr', 'read text', 'screenshot'])) {
+        reasoning.push('Image OCR intent selected.');
+        return { skills: [rule.ocr ?? rule.analyze ?? 'thinking-partner'], reasoning, clarificationRequired: false };
+      }
+      reasoning.push('Image analysis intent selected.');
+      return { skills: [rule.analyze ?? 'thinking-partner'], reasoning, clarificationRequired: false };
+    case 'document-perception':
+      reasoning.push('Document extraction route selected.');
+      return { skills: [rule.extract ?? rule.canonical ?? 'pdf-tools'], reasoning, clarificationRequired: false };
+    case 'video-perception':
+      if (includesAny(message, ['frame', 'thumbnail', 'keyframe'])) {
+        reasoning.push('Video frame extraction selected.');
+        return { skills: [rule.frames ?? rule.canonical ?? 'video-frames'], reasoning, clarificationRequired: false };
+      }
+      reasoning.push('Video perception route selected.');
+      return { skills: [rule.canonical ?? 'video-frames'], reasoning, clarificationRequired: false };
+    case 'camera-perception':
+      reasoning.push('Camera capture requires explicit local capture route.');
+      return { skills: [rule.capture ?? rule.canonical ?? 'camsnap'], reasoning, clarificationRequired: false };
+    case 'media-generation':
+      if (includesAny(message, ['video'])) {
+        reasoning.push('Video generation route selected.');
+        return { skills: [rule.generate ?? 'veo'], reasoning, clarificationRequired: false };
+      }
+      if (includesAny(message, ['upscale', 'enhance'])) {
+        reasoning.push('Image enhancement route selected.');
+        return { skills: [rule.caption ?? 'krea-api'], reasoning, clarificationRequired: false };
+      }
+      reasoning.push('Image generation route selected.');
+      return { skills: [rule.canonical ?? 'fal-ai'], reasoning, clarificationRequired: false };
+    case 'local-media':
+      if (includesAny(message, ['photo', 'image', 'picture'])) {
+        reasoning.push('Local photo library route selected.');
+        return { skills: [rule.search_photos ?? 'apple-photos'], reasoning, clarificationRequired: false };
+      }
+      reasoning.push('Local media library route selected.');
+      return { skills: [rule.search ?? 'apple-media'], reasoning, clarificationRequired: false };
     default:
       return { skills: [], reasoning: [`No router available for group ${rule.group}.`], clarificationRequired: true };
   }

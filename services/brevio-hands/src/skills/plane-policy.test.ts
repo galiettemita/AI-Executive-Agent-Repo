@@ -8,8 +8,8 @@ describe('hands plane policy', () => {
     assert.equal(isHandsExecutableAdapter({ plane: 'hands' }), true);
   });
 
-  it('rejects gateway and brain adapters for hands execution', () => {
-    assert.equal(isHandsExecutableAdapter({ plane: 'gateway' }), false);
+  it('allows gateway perception adapters and rejects brain-only adapters', () => {
+    assert.equal(isHandsExecutableAdapter({ plane: 'gateway' }), true);
     assert.equal(isHandsExecutableAdapter({ plane: 'brain' }), false);
     assert.equal(isHandsExecutableAdapter(null), false);
   });

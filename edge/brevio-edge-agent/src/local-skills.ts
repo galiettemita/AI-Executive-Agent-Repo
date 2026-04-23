@@ -16,7 +16,34 @@ const LOCAL_SKILL_HANDLERS: Record<string, LocalSkillHandler> = {
   'voice-wake-say': (input) => ({
     data: {
       spoken_text: optionalString(input.text) ?? 'done',
-      transport: 'local_say'
+      transport: 'local_say',
+      command_argv: ['say', '--', optionalString(input.text) ?? 'done']
+    }
+  }),
+  'camsnap': () => ({
+    data: {
+      provider: 'camsnap',
+      status: 'permission_required',
+      consent_required: true,
+      output_modalities: ['image']
+    }
+  }),
+  'apple-photos': (input) => ({
+    data: {
+      provider: 'apple-photos',
+      query: optionalString(input.query) ?? '',
+      status: 'permission_required',
+      consent_required: true,
+      output_modalities: ['image', 'document']
+    }
+  }),
+  'apple-media': (input) => ({
+    data: {
+      provider: 'apple-media',
+      query: optionalString(input.query) ?? '',
+      status: 'permission_required',
+      consent_required: true,
+      output_modalities: ['audio', 'video', 'document']
     }
   }),
   'apple-remind-me': (input) => ({

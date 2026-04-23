@@ -5,6 +5,7 @@ import { InputSchema, OutputSchema } from './schema.js';
 import type { OpenAiTtsInput, OpenAiTtsOutput } from './types.js';
 
 const OPENAI_TTS_TEXT_REQUIRED = 'OPENAI_TTS_TEXT_REQUIRED';
+const OPENAI_TTS_VOICES = ['alloy', 'ash', 'ballad', 'coral', 'echo', 'fable', 'nova', 'onyx', 'sage', 'shimmer', 'verse'];
 
 const adapter: ISkillAdapter = {
   id: 'openai-tts',
@@ -15,7 +16,7 @@ const adapter: ISkillAdapter = {
     required: ['text'],
     properties: {
       text: { type: 'string', minLength: 1, maxLength: 500 },
-      voice: { type: 'string', enum: ['alloy', 'verse', 'sage'] },
+      voice: { type: 'string', enum: OPENAI_TTS_VOICES },
       format: { type: 'string', enum: ['mp3', 'wav', 'ogg'] }
     },
     additionalProperties: false
@@ -25,7 +26,7 @@ const adapter: ISkillAdapter = {
     required: ['provider', 'voice', 'format', 'audio_url', 'estimated_duration_ms', 'latency_budget_ms'],
     properties: {
       provider: { type: 'string', enum: ['openai-tts'] },
-      voice: { type: 'string', enum: ['alloy', 'verse', 'sage'] },
+      voice: { type: 'string', enum: OPENAI_TTS_VOICES },
       format: { type: 'string', enum: ['mp3', 'wav', 'ogg'] },
       audio_url: { type: 'string', format: 'uri', pattern: '^https://' },
       estimated_duration_ms: { type: 'integer', minimum: 1 },

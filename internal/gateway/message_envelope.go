@@ -29,10 +29,37 @@ type MessageEnvelope struct {
 }
 
 type MessageEnvelopeContent struct {
-	Type            string `json:"type"`
-	Text            string `json:"text,omitempty"`
-	MediaURL        string `json:"media_url,omitempty"`
-	VoiceDurationMS *int   `json:"voice_duration_ms,omitempty"`
+	Type            string               `json:"type"`
+	Text            string               `json:"text,omitempty"`
+	MediaURL        string               `json:"media_url,omitempty"`
+	VoiceDurationMS *int                 `json:"voice_duration_ms,omitempty"`
+	Parts           []MessageContentPart `json:"parts,omitempty"`
+	MediaAssets     []MediaAsset         `json:"media_assets,omitempty"`
+}
+
+type MessageContentPart struct {
+	Type    string      `json:"type"`
+	Text    string      `json:"text,omitempty"`
+	AssetID string      `json:"asset_id,omitempty"`
+	Media   *MediaAsset `json:"media,omitempty"`
+}
+
+type MediaAsset struct {
+	AssetID      string         `json:"asset_id"`
+	MIMEType     string         `json:"mime_type"`
+	SizeBytes    int64          `json:"size_bytes,omitempty"`
+	SHA256       string         `json:"sha256,omitempty"`
+	StorageURI   string         `json:"storage_uri,omitempty"`
+	SourceURI    string         `json:"source_uri,omitempty"`
+	Filename     string         `json:"filename,omitempty"`
+	DurationMS   *int           `json:"duration_ms,omitempty"`
+	Width        *int           `json:"width,omitempty"`
+	Height       *int           `json:"height,omitempty"`
+	PageCount    *int           `json:"page_count,omitempty"`
+	Codec        string         `json:"codec,omitempty"`
+	Provenance   string         `json:"provenance,omitempty"`
+	SafetyLabels []string       `json:"safety_labels,omitempty"`
+	Metadata     map[string]any `json:"metadata,omitempty"`
 }
 
 type MessageMetadata struct {
@@ -160,32 +187,119 @@ func buildEnvelopeContent(input BuildMessageEnvelopeInput) (MessageEnvelopeConte
 
 	mediaURL := ""
 	contentType := "TEXT"
+	parts := make([]MessageContentPart, 0, 1+len(input.Attachments))
+	assets := make([]MediaAsset, 0, len(input.Attachments)+1)
+	if text != "" {
+		parts = append(parts, MessageContentPart{
+			Type: "text",
+			Text: text,
+		})
+	}
 
 	audioURL := normalizeHTTPSURL(input.AudioURL)
 	if audioURL != "" {
 		contentType = "VOICE"
 		mediaURL = audioURL
-	} else if len(input.Attachments) > 0 {
-		first := input.Attachments[0]
-		mediaURL = normalizeHTTPSURL(first.SourceURL)
-		mime := strings.ToLower(strings.TrimSpace(first.MIMEType))
-		if strings.HasPrefix(mime, "image/") {
-			contentType = "IMAGE"
-		} else {
-			contentType = "DOCUMENT"
+		asset := MediaAsset{
+			AssetID:    "voice-" + DeriveStableAssetID(audioURL),
+			MIMEType:   "audio/ogg",
+			SourceURI:  audioURL,
+			Provenance: "user_message",
 		}
+		if input.VoiceDurationMS > 0 {
+			duration := input.VoiceDurationMS
+			asset.DurationMS = &duration
+		}
+		assets = append(assets, asset)
+		parts = append(parts, MessageContentPart{
+			Type:    "audio",
+			AssetID: asset.AssetID,
+			Media:   &asset,
+		})
+	} else if len(input.Attachments) > 0 {
+		contentType = legacyContentTypeForMime(input.Attachments[0].MIMEType)
+		mediaURL = normalizeHTTPSURL(input.Attachments[0].SourceURL)
+		for _, attachment := range input.Attachments {
+			asset := mediaAssetFromAttachment(attachment)
+			assets = append(assets, asset)
+			parts = append(parts, MessageContentPart{
+				Type:    contentPartTypeForMime(attachment.MIMEType),
+				AssetID: asset.AssetID,
+				Media:   &asset,
+			})
+		}
+	}
+	if len(parts) > 1 && contentType != "TEXT" && audioURL == "" {
+		contentType = "MULTIMODAL"
 	}
 
 	content := MessageEnvelopeContent{
-		Type:     contentType,
-		Text:     text,
-		MediaURL: mediaURL,
+		Type:        contentType,
+		Text:        text,
+		MediaURL:    mediaURL,
+		Parts:       parts,
+		MediaAssets: assets,
 	}
 	if input.VoiceDurationMS > 0 {
 		duration := input.VoiceDurationMS
 		content.VoiceDurationMS = &duration
 	}
 	return content, nil
+}
+
+func DeriveStableAssetID(raw string) string {
+	sum := sha256.Sum256([]byte(strings.TrimSpace(raw)))
+	return hex.EncodeToString(sum[:])[:24]
+}
+
+func mediaAssetFromAttachment(attachment AttachmentReference) MediaAsset {
+	assetID := strings.TrimSpace(attachment.AssetID)
+	if assetID == "" {
+		assetID = strings.TrimSpace(attachment.ID)
+	}
+	if assetID == "" {
+		assetID = DeriveStableAssetID(attachment.SourceURL + attachment.S3URI)
+	}
+	return MediaAsset{
+		AssetID:      assetID,
+		MIMEType:     strings.ToLower(strings.TrimSpace(attachment.MIMEType)),
+		SizeBytes:    attachment.SizeBytes,
+		SHA256:       strings.TrimSpace(attachment.SHA256),
+		StorageURI:   strings.TrimSpace(attachment.S3URI),
+		SourceURI:    normalizeHTTPSURL(attachment.SourceURL),
+		Filename:     strings.TrimSpace(attachment.Filename),
+		Provenance:   "user_message",
+		SafetyLabels: []string{},
+	}
+}
+
+func contentPartTypeForMime(mime string) string {
+	normalized := strings.ToLower(strings.TrimSpace(mime))
+	switch {
+	case strings.HasPrefix(normalized, "image/"):
+		return "image"
+	case strings.HasPrefix(normalized, "audio/"):
+		return "audio"
+	case strings.HasPrefix(normalized, "video/"):
+		return "video"
+	case normalized == "application/pdf" || strings.HasPrefix(normalized, "text/") || strings.Contains(normalized, "spreadsheet") || strings.Contains(normalized, "wordprocessingml"):
+		return "document"
+	default:
+		return "file"
+	}
+}
+
+func legacyContentTypeForMime(mime string) string {
+	switch contentPartTypeForMime(mime) {
+	case "image":
+		return "IMAGE"
+	case "audio":
+		return "VOICE"
+	case "video":
+		return "VIDEO"
+	default:
+		return "DOCUMENT"
+	}
 }
 
 func validateMessageEnvelope(envelope MessageEnvelope) error {
@@ -204,7 +318,7 @@ func validateMessageEnvelope(envelope MessageEnvelope) error {
 		}
 	}
 	switch envelope.Content.Type {
-	case "TEXT", "VOICE", "IMAGE", "DOCUMENT", "LOCATION":
+	case "TEXT", "VOICE", "IMAGE", "VIDEO", "DOCUMENT", "LOCATION", "MULTIMODAL":
 	default:
 		return fmt.Errorf("invalid content.type")
 	}
@@ -222,8 +336,18 @@ func validateMessageEnvelope(envelope MessageEnvelope) error {
 			return fmt.Errorf("content.voice_duration_ms must be <= %d", messageEnvelopeVoiceDurationMS)
 		}
 	}
-	if strings.TrimSpace(envelope.Content.Text) == "" && strings.TrimSpace(envelope.Content.MediaURL) == "" {
-		return fmt.Errorf("content must include text or media_url")
+	for _, part := range envelope.Content.Parts {
+		if err := validateMessageContentPart(part); err != nil {
+			return err
+		}
+	}
+	for _, asset := range envelope.Content.MediaAssets {
+		if err := validateMediaAsset(asset); err != nil {
+			return err
+		}
+	}
+	if strings.TrimSpace(envelope.Content.Text) == "" && strings.TrimSpace(envelope.Content.MediaURL) == "" && len(envelope.Content.Parts) == 0 {
+		return fmt.Errorf("content must include text, media_url, or parts")
 	}
 	if strings.TrimSpace(envelope.Metadata.ChannelMessageID) == "" {
 		return fmt.Errorf("metadata.channel_message_id is required")
@@ -245,6 +369,57 @@ func validateMessageEnvelope(envelope MessageEnvelope) error {
 	}
 	if len(envelope.Context.ActiveSkills) > 50 {
 		return fmt.Errorf("context.active_skills exceeds max length 50")
+	}
+	return nil
+}
+
+func validateMessageContentPart(part MessageContentPart) error {
+	switch strings.TrimSpace(part.Type) {
+	case "text":
+		if strings.TrimSpace(part.Text) == "" {
+			return fmt.Errorf("content.parts text part requires text")
+		}
+	case "image", "audio", "video", "document", "location", "tool_result", "generated_asset", "file":
+		if strings.TrimSpace(part.AssetID) == "" && part.Media == nil {
+			return fmt.Errorf("content.parts media part requires asset_id or media")
+		}
+	default:
+		return fmt.Errorf("invalid content.parts.type")
+	}
+	if part.Media != nil {
+		if err := validateMediaAsset(*part.Media); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateMediaAsset(asset MediaAsset) error {
+	if strings.TrimSpace(asset.AssetID) == "" {
+		return fmt.Errorf("media_assets.asset_id is required")
+	}
+	if strings.TrimSpace(asset.MIMEType) == "" {
+		return fmt.Errorf("media_assets.mime_type is required")
+	}
+	for _, raw := range []string{asset.SourceURI} {
+		if strings.TrimSpace(raw) == "" {
+			continue
+		}
+		parsed, err := url.Parse(raw)
+		if err != nil || !strings.EqualFold(parsed.Scheme, "https") || parsed.Host == "" {
+			return fmt.Errorf("media_assets.source_uri must be https url")
+		}
+	}
+	if asset.SizeBytes < 0 {
+		return fmt.Errorf("media_assets.size_bytes must be non-negative")
+	}
+	if strings.TrimSpace(asset.SHA256) != "" {
+		if len(asset.SHA256) != 64 {
+			return fmt.Errorf("media_assets.sha256 must be 64 chars")
+		}
+		if _, err := hex.DecodeString(asset.SHA256); err != nil {
+			return fmt.Errorf("media_assets.sha256 must be hex")
+		}
 	}
 	return nil
 }

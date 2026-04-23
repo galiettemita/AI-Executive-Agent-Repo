@@ -25,7 +25,7 @@ func DefaultVoicePipelineConfig() VoicePipelineConfig {
 }
 
 func AllowedTTSVoices() []string {
-	return []string{"alloy", "echo", "fable", "onyx", "nova", "shimmer"}
+	return []string{"alloy", "ash", "ballad", "coral", "echo", "fable", "nova", "onyx", "sage", "shimmer", "verse"}
 }
 
 func IsLowConfidenceTranscription(confidence float64) bool {

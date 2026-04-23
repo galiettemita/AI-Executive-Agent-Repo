@@ -23,13 +23,16 @@ const adapter: ISkillAdapter = {
   },
   outputSchema: {
     type: 'object',
-    required: ['provider', 'transcript', 'language', 'confidence', 'segments', 'latency_budget_ms'],
+    required: ['provider', 'provider_mode', 'model', 'transcript', 'language', 'confidence', 'segments', 'word_timestamps', 'latency_budget_ms'],
     properties: {
       provider: { type: 'string', enum: ['asr'] },
+      provider_mode: { type: 'string', enum: ['dev_mock', 'live'] },
+      model: { type: 'string' },
       transcript: { type: 'string' },
       language: { type: 'string' },
       confidence: { type: 'number', minimum: 0, maximum: 1 },
       segments: { type: 'array' },
+      word_timestamps: { type: 'array' },
       latency_budget_ms: { type: 'integer', enum: [3000] }
     },
     additionalProperties: false

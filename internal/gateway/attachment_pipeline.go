@@ -4,6 +4,8 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"net"
+	"net/url"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -18,9 +20,14 @@ var attachmentMimeAllowlist = map[string]struct{}{
 	"application/pdf": {},
 	"audio/ogg":       {},
 	"audio/mpeg":      {},
+	"audio/mp4":       {},
+	"audio/m4a":       {},
+	"audio/wav":       {},
 	"video/mp4":       {},
 	"text/plain":      {},
 	"text/csv":        {},
+	"text/html":       {},
+	"text/markdown":   {},
 	"application/vnd.openxmlformats-officedocument.wordprocessingml.document": {},
 	"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet":       {},
 }
@@ -47,6 +54,28 @@ func ValidateAttachmentInput(attachment AttachmentInput) error {
 	if attachment.SizeBytes < 0 || attachment.SizeBytes > maxAttachmentBytesForMime(mime) {
 		return fmt.Errorf("unsupported attachment type or size")
 	}
+	if err := ValidateMediaSourceURL(attachment.URL); err != nil {
+		return err
+	}
+	return nil
+}
+
+func ValidateMediaSourceURL(raw string) error {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return fmt.Errorf("attachment url is required")
+	}
+	parsed, err := url.Parse(trimmed)
+	if err != nil || !strings.EqualFold(parsed.Scheme, "https") || parsed.Host == "" {
+		return fmt.Errorf("attachment url must be https")
+	}
+	host := parsed.Hostname()
+	if host == "" {
+		return fmt.Errorf("attachment url host is required")
+	}
+	if ip := net.ParseIP(host); ip != nil && !ip.IsGlobalUnicast() {
+		return fmt.Errorf("attachment url host is not allowed")
+	}
 	return nil
 }
 
@@ -58,9 +87,14 @@ func ValidateAttachmentMagic(mimeType string, leadingBytes []byte) bool {
 		"application/pdf": {{0x25, 0x50, 0x44, 0x46}},
 		"audio/ogg":       {{0x4F, 0x67, 0x67, 0x53}},
 		"audio/mpeg":      {{0x49, 0x44, 0x33}, {0xFF, 0xFB}},
+		"audio/mp4":       {{0x00, 0x00, 0x00}},
+		"audio/m4a":       {{0x00, 0x00, 0x00}},
+		"audio/wav":       {{0x52, 0x49, 0x46, 0x46}},
 		"video/mp4":       {{0x00, 0x00, 0x00}},
 		"text/plain":      {},
 		"text/csv":        {},
+		"text/html":       {},
+		"text/markdown":   {},
 		"application/vnd.openxmlformats-officedocument.wordprocessingml.document": {},
 		"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet":       {},
 	}

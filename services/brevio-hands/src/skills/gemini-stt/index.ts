@@ -23,9 +23,11 @@ const adapter: ISkillAdapter = {
   },
   outputSchema: {
     type: 'object',
-    required: ['provider', 'transcript', 'language', 'confidence', 'speakers', 'latency_budget_ms'],
+    required: ['provider', 'provider_mode', 'model', 'transcript', 'language', 'confidence', 'speakers', 'latency_budget_ms'],
     properties: {
       provider: { type: 'string', enum: ['gemini-stt'] },
+      provider_mode: { type: 'string', enum: ['dev_mock', 'live'] },
+      model: { type: 'string' },
       transcript: { type: 'string' },
       language: { type: 'string' },
       confidence: { type: 'number', minimum: 0, maximum: 1 },

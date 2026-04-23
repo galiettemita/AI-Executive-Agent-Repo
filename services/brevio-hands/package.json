@@ -7,7 +7,7 @@
     "build": "tsc -p tsconfig.json",
     "dev": "node dist/index.js",
     "lint": "eslint src --ext .ts",
-    "test": "node --experimental-strip-types --loader ./test-loader.mjs --test src/approval-policy.test.ts src/execution-refs.test.ts src/workflow-runtime.test.ts src/skills/plane-policy.test.ts"
+    "test": "node --experimental-strip-types --loader ./test-loader.mjs --test src/approval-policy.test.ts src/execution-refs.test.ts src/workflow-runtime.test.ts src/skills/plane-policy.test.ts \"src/skills/asr/__tests__/*.test.ts\" \"src/skills/gemini-stt/__tests__/*.test.ts\" \"src/skills/openai-tts/__tests__/*.test.ts\" \"src/skills/vocal-chat/__tests__/*.test.ts\" \"src/skills/voice-wake-say/__tests__/*.test.ts\" \"src/skills/pdf-tools/__tests__/*.test.ts\" \"src/skills/video-frames/__tests__/*.test.ts\" \"src/skills/video-transcript-downloader/__tests__/*.test.ts\" \"src/skills/camsnap/__tests__/*.test.ts\" \"src/skills/pollinations/__tests__/*.test.ts\" \"src/skills/fal-ai/__tests__/*.test.ts\" \"src/skills/krea-api/__tests__/*.test.ts\" \"src/skills/veo/__tests__/*.test.ts\" \"src/skills/apple-photos/__tests__/*.test.ts\" \"src/skills/apple-media/__tests__/*.test.ts\""
   },
   "dependencies": {
     "@brevio/shared": "workspace:*"

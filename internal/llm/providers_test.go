@@ -18,6 +18,23 @@ func TestProviderRegistryAndRateLimits(t *testing.T) {
 	}
 }
 
+func TestModelCatalogTracksMultimodalCapabilities(t *testing.T) {
+	t.Parallel()
+
+	catalog := DefaultModelCatalog()
+	entry, ok := catalog["gpt-5.4"]
+	if !ok {
+		t.Fatal("expected gpt-5.4 in model catalog")
+	}
+	if entry.MaxContextTokens < 1_000_000 || !entry.SupportsTools || !entry.SupportsStreaming {
+		t.Fatalf("expected frontier multimodal metadata, got %+v", entry)
+	}
+	visionModels := ModelsForInputModality("image")
+	if len(visionModels) == 0 {
+		t.Fatal("expected image-capable model routing candidates")
+	}
+}
+
 func TestEstimateModelCostAndFailoverRules(t *testing.T) {
 	t.Parallel()
 

@@ -18,7 +18,16 @@ const REQUIRED_GROUPS = [
   'expense-tracking',
   'package-tracking',
   'places-location',
-  'youtube'
+  'youtube',
+  'speech-transcription',
+  'speech-synthesis',
+  'speech-conversation',
+  'image-perception',
+  'document-perception',
+  'video-perception',
+  'camera-perception',
+  'media-generation',
+  'local-media'
 ] as const;
 
 const REQUIRED_FIELDS: Record<(typeof REQUIRED_GROUPS)[number], string[]> = {
@@ -32,7 +41,16 @@ const REQUIRED_FIELDS: Record<(typeof REQUIRED_GROUPS)[number], string[]> = {
   'expense-tracking': ['canonical'],
   'package-tracking': ['international', 'carriers_17track', 'austrian_post'],
   'places-location': ['navigate', 'near_me', 'find_all', 'simple_nearby'],
-  youtube: ['search', 'summarize', 'download']
+  youtube: ['search', 'summarize', 'download'],
+  'speech-transcription': ['canonical', 'transcribe'],
+  'speech-synthesis': ['canonical', 'tts', 'local_mac'],
+  'speech-conversation': ['canonical', 'realtime'],
+  'image-perception': ['analyze', 'ocr'],
+  'document-perception': ['canonical', 'extract'],
+  'video-perception': ['canonical', 'frames'],
+  'camera-perception': ['canonical', 'capture'],
+  'media-generation': ['canonical', 'generate', 'caption'],
+  'local-media': ['search', 'search_photos']
 };
 
 function parsePositiveInt(raw: string | undefined, fallback: number, field: string): number {
@@ -134,7 +152,7 @@ function validateRules(rules: DisambiguationRules): DisambiguationRules {
       throw new Error(`missing disambiguation group ${group}`);
     }
     for (const field of REQUIRED_FIELDS[group]) {
-      const value = (rule as Record<string, unknown>)[field];
+      const value = (rule as unknown as Record<string, unknown>)[field];
       if (!value || (Array.isArray(value) && value.length === 0)) {
         throw new Error(`disambiguation group ${group} missing required field ${field}`);
       }
@@ -203,7 +221,7 @@ function parseDisambiguation(raw: string): DisambiguationRules {
         continue;
       }
       currentNestedKey = undefined;
-      (currentRule as Record<string, unknown>)[key] = parseScalar(value);
+      (currentRule as unknown as Record<string, unknown>)[key] = parseScalar(value);
       continue;
     }
 

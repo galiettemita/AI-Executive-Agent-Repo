@@ -28,6 +28,33 @@ export type RecipientVerification = 'not_applicable' | 'required' | 'verified';
 
 export type PolicyProvenance = 'user_message' | 'connector' | 'derived' | 'system';
 
+export type ContentPartType = 'text' | 'image' | 'audio' | 'video' | 'document' | 'location' | 'tool_result' | 'generated_asset' | 'file';
+
+export interface MediaAsset {
+  asset_id: string;
+  mime_type: string;
+  size_bytes?: number;
+  sha256?: string;
+  storage_uri?: string;
+  source_uri?: string;
+  filename?: string;
+  duration_ms?: number;
+  width?: number;
+  height?: number;
+  page_count?: number;
+  codec?: string;
+  provenance?: string;
+  safety_labels?: string[];
+  metadata?: Record<string, unknown>;
+}
+
+export interface ContentPart {
+  type: ContentPartType;
+  text?: string;
+  asset_id?: string;
+  media?: MediaAsset;
+}
+
 export interface ActionPolicyMetadata {
   data_class: PolicyDataClass;
   sensitivity: PolicySensitivity;
@@ -118,6 +145,8 @@ export interface ReasoningContext {
 
 export interface IntentClassificationInput {
   message_text: string;
+  content_parts?: ContentPart[];
+  media_assets?: MediaAsset[];
   user_profile?: UserProfile;
   user_preferences?: UserPreferences;
   deployment_mode?: DeploymentMode;
@@ -240,6 +269,17 @@ export interface DisambiguationRuleConfig {
   simple_nearby?: string;
   summarize?: string;
   download?: string;
+  transcribe?: string;
+  realtime?: string;
+  tts?: string;
+  analyze?: string;
+  ocr?: string;
+  extract?: string;
+  caption?: string;
+  generate?: string;
+  capture?: string;
+  frames?: string;
+  search_photos?: string;
 }
 
 export type DisambiguationRules = Record<string, DisambiguationRuleConfig>;

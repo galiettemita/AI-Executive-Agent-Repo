@@ -19,6 +19,8 @@ export const InputSchema = z
 export const OutputSchema = z
   .object({
     provider: z.literal('gemini-stt'),
+    provider_mode: z.enum(['dev_mock', 'live']),
+    model: z.string().min(1),
     transcript: z.string().min(1).max(4096),
     language: z.string().min(2).max(20),
     confidence: z.number().min(0).max(1),

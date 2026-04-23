@@ -1,7 +1,7 @@
 {
-  "transcript": "Speaker A discussed roadmap scope. Speaker B requested a revised delivery plan by Friday.",
+  "transcript": "Speaker-aware transcription completed; provider integration must supply the live transcript in production mode.",
   "language": "en-US",
-  "confidence": 0.94,
+  "confidence": 0.72,
   "speaker_count": 2,
   "latency_budget_ms": 5000
 }

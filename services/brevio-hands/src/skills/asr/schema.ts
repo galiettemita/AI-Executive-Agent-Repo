@@ -18,10 +18,22 @@ export const InputSchema = z
 export const OutputSchema = z
   .object({
     provider: z.literal('asr'),
+    provider_mode: z.enum(['dev_mock', 'live']),
+    model: z.string().min(1),
     transcript: z.string().min(1).max(4096),
     language: z.string().min(2).max(20),
     confidence: z.number().min(0).max(1),
     segments: z.array(SegmentSchema).max(40),
+    word_timestamps: z
+      .array(
+        z.object({
+          word: z.string().min(1),
+          start_ms: z.number().int().min(0),
+          end_ms: z.number().int().min(0),
+          confidence: z.number().min(0).max(1).optional()
+        })
+      )
+      .max(2000),
     latency_budget_ms: z.literal(3000)
   })
   .strict();

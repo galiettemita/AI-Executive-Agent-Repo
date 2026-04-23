@@ -18,6 +18,6 @@ describe('voice-wake-say adapter', () => {
 
     assert.equal(result.status, 'SUCCESS');
     assert.equal(result.data?.provider, 'voice-wake-say');
-    assert.match(result.data?.command ?? '', /^say -v/);
+    assert.deepEqual(result.data?.command_argv, ['say', '-v', 'Samantha', '-r', '200', '--', 'Meeting starts in ten minutes.']);
   });
 });
