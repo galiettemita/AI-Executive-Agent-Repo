@@ -10,6 +10,12 @@ async function startRuntime() {
     environment: 'test',
     port: 0,
     shutdownTimeoutMs: 1000,
+    internalAuthSecret: 'internal-secret',
+    internalAuthIssuer: 'https://auth.brevio.internal',
+    serviceAudience: 'brevio-gateway',
+    temporalWorkerAudience: 'brevio-temporal-worker',
+    callerContextSecret: 'caller-secret',
+    logSalt: 'gateway-test-salt',
     whatsappWebhookSecret: 'secret',
     whatsappVerifyToken: 'verify',
     imessageAPIKey: 'key',
@@ -65,7 +71,7 @@ describe('brevio-gateway runtime', () => {
           'x-api-key': 'key'
         },
         body: JSON.stringify({
-          user_id: '11111111-1111-4111-8111-111111111111',
+          sender_id: '+15551234567',
           message_id: 'msg-123',
           text: 'play music'
         })

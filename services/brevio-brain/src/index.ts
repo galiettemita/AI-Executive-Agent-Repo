@@ -2,6 +2,12 @@ import { randomUUID } from 'node:crypto';
 import http from 'node:http';
 import { pathToFileURL } from 'node:url';
 
+import {
+  extractBearerToken,
+  pseudonymizedRef,
+  verifyAccessToken,
+  verifyCallerContextEnvelope
+} from '../../../packages/shared/src/security.js';
 import { aggregateResults } from './aggregate.js';
 import { classifyIntent } from './classify.js';
 import { loadBrainConfig, loadDisambiguationRules } from './config.js';
@@ -31,6 +37,11 @@ interface BrainRuntime {
   close(): Promise<void>;
 }
 
+interface AuthenticatedIdentity {
+  subject: string;
+  userId?: string;
+}
+
 function getHeader(req: http.IncomingMessage, name: string): string | undefined {
   const value = req.headers[name.toLowerCase()];
   if (typeof value === 'string') {
@@ -47,7 +58,6 @@ function requestContext(req: http.IncomingMessage): RequestContext {
     traceId: getHeader(req, 'x-trace-id') ?? randomUUID(),
     spanId: getHeader(req, 'x-span-id') ?? randomUUID(),
     requestId: getHeader(req, 'x-request-id') ?? randomUUID(),
-    userId: getHeader(req, 'x-user-id')
   };
 }
 
@@ -66,12 +76,34 @@ function logEvent(
       trace_id: ctx.traceId,
       span_id: ctx.spanId,
       request_id: ctx.requestId,
-      user_id: ctx.userId,
+      subject_ref: ctx.subjectRef,
       event,
       severity,
       attrs
     }) + '\n'
   );
+}
+
+function authenticateRequest(runtime: BrainRuntime, req: http.IncomingMessage, ctx: RequestContext, mode: 'api' | 'admin'): AuthenticatedIdentity {
+  const token = extractBearerToken(getHeader(req, 'authorization'));
+  if (!token) {
+    throw new Error('authorization_required');
+  }
+  const principal = verifyAccessToken(runtime.config.internalAuthSecret, token, {
+    expectedAudience: runtime.config.serviceAudience,
+    expectedIssuer: runtime.config.internalAuthIssuer,
+    allowedTokenUses: mode === 'admin' ? ['admin_access'] : ['service_access', 'admin_access', 'user_access']
+  });
+  ctx.subjectRef = pseudonymizedRef(principal.sub, runtime.config.logSalt);
+  return {
+    subject: principal.sub,
+    userId: principal.token_use === 'user_access' || principal.token_use === 'admin_access' ? principal.sub : undefined
+  };
+}
+
+function callerContextFromRequest(runtime: BrainRuntime, req: http.IncomingMessage) {
+  const token = getHeader(req, 'x-brevio-caller-context');
+  return token ? verifyCallerContextEnvelope(runtime.config.callerContextSecret, token) : undefined;
 }
 
 function sendJSON(res: http.ServerResponse, statusCode: number, payload: Record<string, unknown>): void {
@@ -200,13 +232,17 @@ function extractSkillResults(value: unknown): SkillResult[] {
   return out;
 }
 
-function normalizePayload(payload: Record<string, unknown>): NormalizedReasoningRequest {
+function normalizePayload(
+  payload: Record<string, unknown>,
+  identity?: AuthenticatedIdentity,
+  callerContext?: ReturnType<typeof callerContextFromRequest>
+): NormalizedReasoningRequest {
   const request: ProcessRequest = {
     message_text: asString(payload.message_text) ?? '',
     run_id: asString(payload.run_id),
     thread_id: asString(payload.thread_id),
-    workspace_id: asString(payload.workspace_id),
-    user_id: asString(payload.user_id),
+    workspace_id: callerContext?.workspace_id,
+    user_id: callerContext?.user_id ?? identity?.userId,
     user_profile:
       payload.user_profile && typeof payload.user_profile === 'object' && !Array.isArray(payload.user_profile)
         ? (payload.user_profile as ProcessRequest['user_profile'])
@@ -336,6 +372,12 @@ function buildRuntime(config?: BrainConfig): BrainRuntime {
     }
 
     if (method === 'GET' && path === '/health/deep') {
+      try {
+        authenticateRequest(runtime, req, ctx, 'admin');
+      } catch (error) {
+        onError(401, error instanceof Error ? error.message : 'authorization_required');
+        return;
+      }
       sendJSON(res, 200, healthPayload(runtime, true));
       return;
     }
@@ -347,11 +389,20 @@ function buildRuntime(config?: BrainConfig): BrainRuntime {
 
     if (method === 'POST' && path === '/api/v1/brain/classify') {
       void (async () => {
+        let identity: AuthenticatedIdentity;
+        let callerContext: ReturnType<typeof callerContextFromRequest>;
+        try {
+          identity = authenticateRequest(runtime, req, ctx, 'api');
+          callerContext = callerContextFromRequest(runtime, req);
+        } catch (error) {
+          onError(401, error instanceof Error ? error.message : 'authorization_required');
+          return;
+        }
         const payload = await parseRequest();
         if (!payload) {
           return;
         }
-        const request = normalizePayload(payload);
+        const request = normalizePayload(payload, identity, callerContext);
         if (!request.message_text) {
           onError(400, 'message_text_required');
           return;
@@ -376,11 +427,20 @@ function buildRuntime(config?: BrainConfig): BrainRuntime {
 
     if (method === 'POST' && path === '/api/v1/brain/disambiguate') {
       void (async () => {
+        let identity: AuthenticatedIdentity;
+        let callerContext: ReturnType<typeof callerContextFromRequest>;
+        try {
+          identity = authenticateRequest(runtime, req, ctx, 'api');
+          callerContext = callerContextFromRequest(runtime, req);
+        } catch (error) {
+          onError(401, error instanceof Error ? error.message : 'authorization_required');
+          return;
+        }
         const payload = await parseRequest();
         if (!payload) {
           return;
         }
-        const request = normalizePayload(payload);
+        const request = normalizePayload(payload, identity, callerContext);
         if (!request.message_text) {
           onError(400, 'message_text_required');
           return;
@@ -415,6 +475,12 @@ function buildRuntime(config?: BrainConfig): BrainRuntime {
 
     if (method === 'POST' && path === '/api/v1/brain/decompose') {
       void (async () => {
+        try {
+          authenticateRequest(runtime, req, ctx, 'api');
+        } catch (error) {
+          onError(401, error instanceof Error ? error.message : 'authorization_required');
+          return;
+        }
         const payload = await parseRequest();
         if (!payload) {
           return;
@@ -451,17 +517,27 @@ function buildRuntime(config?: BrainConfig): BrainRuntime {
 
     if (method === 'POST' && path === '/api/v1/brain/aggregate') {
       void (async () => {
+        let identity: AuthenticatedIdentity;
+        let callerContext: ReturnType<typeof callerContextFromRequest>;
+        try {
+          identity = authenticateRequest(runtime, req, ctx, 'api');
+          callerContext = callerContextFromRequest(runtime, req);
+        } catch (error) {
+          onError(401, error instanceof Error ? error.message : 'authorization_required');
+          return;
+        }
         const payload = await parseRequest();
         if (!payload) {
           return;
         }
+        const normalized = normalizePayload(payload, identity, callerContext);
         const request: AggregationRequest = {
           skill_results: extractSkillResults(payload.skill_results),
           user_profile:
             payload.user_profile && typeof payload.user_profile === 'object' && !Array.isArray(payload.user_profile)
               ? (payload.user_profile as AggregationRequest['user_profile'])
               : undefined,
-          channel: asString(payload.channel) as AggregationRequest['channel']
+          channel: normalized.channel
         };
 
         const output = aggregateResults(request);
@@ -481,11 +557,20 @@ function buildRuntime(config?: BrainConfig): BrainRuntime {
 
     if (method === 'POST' && path === '/api/v1/brain/process') {
       void (async () => {
+        let identity: AuthenticatedIdentity;
+        let callerContext: ReturnType<typeof callerContextFromRequest>;
+        try {
+          identity = authenticateRequest(runtime, req, ctx, 'api');
+          callerContext = callerContextFromRequest(runtime, req);
+        } catch (error) {
+          onError(401, error instanceof Error ? error.message : 'authorization_required');
+          return;
+        }
         const payload = await parseRequest();
         if (!payload) {
           return;
         }
-        const request = normalizePayload(payload);
+        const request = normalizePayload(payload, identity, callerContext);
         if (!request.message_text) {
           onError(400, 'message_text_required');
           return;

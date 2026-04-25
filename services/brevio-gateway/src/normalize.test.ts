@@ -11,6 +11,12 @@ const config: GatewayConfig = {
   environment: 'test',
   port: 0,
   shutdownTimeoutMs: 1000,
+  internalAuthSecret: 'internal-secret',
+  internalAuthIssuer: 'https://auth.brevio.internal',
+  serviceAudience: 'brevio-gateway',
+  temporalWorkerAudience: 'brevio-temporal-worker',
+  callerContextSecret: 'caller-secret',
+  logSalt: 'gateway-test-salt',
   whatsappWebhookSecret: 'secret',
   whatsappVerifyToken: 'verify',
   imessageAPIKey: 'key',
@@ -34,7 +40,7 @@ describe('normalizeWebhook', () => {
     const first = normalizeWebhook(
       'API',
       {
-        user_id: '11111111-1111-4111-8111-111111111111',
+        sender_id: 'sender-1',
         message_id: 'm-1',
         text: 'hello'
       },
@@ -48,7 +54,7 @@ describe('normalizeWebhook', () => {
     const second = normalizeWebhook(
       'API',
       {
-        user_id: '11111111-1111-4111-8111-111111111111',
+        sender_id: 'sender-1',
         message_id: 'm-2',
         text: 'follow up'
       },
@@ -68,7 +74,7 @@ describe('normalizeWebhook', () => {
     const state = new GatewayState();
     const nowMs = Date.UTC(2026, 3, 9, 12, 0, 0);
     const payload = {
-      user_id: '11111111-1111-4111-8111-111111111111',
+      sender_id: 'sender-1',
       text: 'hello'
     };
 
@@ -99,11 +105,24 @@ describe('normalizeWebhook', () => {
   it('hydrates active skills from the shared capability inventory when the webhook omits them', () => {
     const state = new GatewayState();
     const nowMs = Date.UTC(2026, 3, 9, 12, 0, 0);
+    const baseline = normalizeWebhook(
+      'API',
+      {
+        sender_id: 'sender-2',
+        message_id: 'm-cap-0',
+        text: 'baseline'
+      },
+      Buffer.from('{"message_id":"m-cap-0"}'),
+      nowMs,
+      new GatewayState(),
+      config,
+      'pro'
+    );
 
     const normalized = normalizeWebhook(
       'API',
       {
-        user_id: '22222222-2222-4222-8222-222222222222',
+        sender_id: 'sender-2',
         message_id: 'm-cap-1',
         text: 'create a task'
       },
@@ -114,7 +133,7 @@ describe('normalizeWebhook', () => {
         ...config,
         capabilityInventoryJson: JSON.stringify([
           {
-            user_id: '22222222-2222-4222-8222-222222222222',
+            user_id: baseline.userId,
             enabled_skills: ['todoist']
           }
         ])

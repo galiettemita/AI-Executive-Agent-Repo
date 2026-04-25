@@ -40,6 +40,15 @@ export interface EnvConfig {
   environment: string;
   port: number;
   mapPath: string;
+  stateStoreFilePath?: string;
+  internalAuthSecret: string;
+  internalAuthIssuer: string;
+  serviceAudience: string;
+  callerContextSecret: string;
+  logSalt: string;
+  stateEncryptionSecret: string;
+  completionRedirectAllowlist: Record<string, string[]>;
+  tokenExchangeMode: 'simulated' | 'disabled';
   stateTtlMs: number;
   shutdownTimeoutMs: number;
 }
@@ -47,21 +56,20 @@ export interface EnvConfig {
 export interface RequestContext {
   traceId: string;
   spanId: string;
-  userId?: string;
   correlationId: string;
+  subjectRef?: string;
 }
 
 export interface OAuthStateRecord {
   service: string;
   userId: string;
-  redirectUri: string;
+  completionRedirectUri?: string;
   codeVerifier: string;
   createdAtMs: number;
   expiresAtMs: number;
 }
 
 export interface OAuthAuthorizeRequest {
-  user_id: string;
   redirect_uri?: string;
   scope_override?: string[];
 }

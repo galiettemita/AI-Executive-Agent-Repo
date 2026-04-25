@@ -3,11 +3,13 @@ package identity
 import "time"
 
 type UserJWTClaims struct {
+	Version     int      `json:"version,omitempty"`
 	Sub         string   `json:"sub"`
 	Iss         string   `json:"iss"`
 	Aud         string   `json:"aud"`
 	Iat         int64    `json:"iat"`
 	Exp         int64    `json:"exp"`
+	TokenUse    string   `json:"token_use,omitempty"`
 	WorkspaceID string   `json:"workspace_id"`
 	Role        string   `json:"role"`
 	Scopes      []string `json:"scopes"`
@@ -33,4 +35,12 @@ func JWKSPath() string {
 
 func JWTSigningAlgorithm() string {
 	return "RS256"
+}
+
+func UserJWTAudience() string {
+	return "brevio:user"
+}
+
+func AdminJWTAudience() string {
+	return "brevio:admin"
 }

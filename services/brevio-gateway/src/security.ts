@@ -1,5 +1,7 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 
+import type { BrevioEnvironment } from '../../../packages/shared/src/security.js';
+
 function normalizeSignature(signatureHeader: string): string {
   const trimmed = signatureHeader.trim();
   if (trimmed.startsWith('sha256=')) {
@@ -22,9 +24,9 @@ export function verifyWhatsAppSignature(rawBody: Buffer, signatureHeader: string
   return timingSafeEqual(Buffer.from(expected, 'utf8'), Buffer.from(actual, 'utf8'));
 }
 
-export function verifyAPIKey(provided: string | undefined, expected: string, environment: string): boolean {
+export function verifyAPIKey(provided: string | undefined, expected: string, environment: BrevioEnvironment | string): boolean {
   if (expected.trim() === '') {
-    return environment !== 'production';
+    return environment === 'local' || environment === 'test';
   }
   if (!provided) {
     return false;

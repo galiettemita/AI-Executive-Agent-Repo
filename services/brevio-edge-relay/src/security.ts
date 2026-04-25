@@ -1,5 +1,5 @@
 import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
-import type { EdgeExecutionAuthorizationEnvelope, EdgeExecutionPolicy } from '@brevio/shared';
+import type { AnyEdgeExecutionAuthorizationEnvelope, EdgeExecutionPolicy } from '@brevio/shared';
 
 export type RelayAuthMode = 'optional' | 'required';
 
@@ -59,7 +59,7 @@ export interface BoundExecuteRequest {
   operation?: string;
   input: Record<string, unknown>;
   policy?: EdgeExecutionPolicy;
-  authorization?: EdgeExecutionAuthorizationEnvelope;
+  authorization?: AnyEdgeExecutionAuthorizationEnvelope;
   runId?: string;
   taskId?: string;
   stepId?: string;
@@ -143,7 +143,7 @@ function normalizeExecutionPolicy(value: unknown): EdgeExecutionPolicy | undefin
   };
 }
 
-function normalizeExecutionAuthorization(value: unknown): EdgeExecutionAuthorizationEnvelope | undefined {
+function normalizeExecutionAuthorization(value: unknown): AnyEdgeExecutionAuthorizationEnvelope | undefined {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
     return undefined;
   }
@@ -155,28 +155,51 @@ function normalizeExecutionAuthorization(value: unknown): EdgeExecutionAuthoriza
   const policyHash = normalizeString(envelope.policy_hash);
   const signature = normalizeString(envelope.signature);
   const approved = typeof envelope.approved === 'boolean' ? envelope.approved : undefined;
-  if (
-    envelope.key_id !== 'edge-execution-v1' ||
-    !nonce ||
-    !issuedAt ||
-    !expiresAt ||
-    !dispatchReceiptId ||
-    !policyHash ||
-    !signature ||
-    approved === undefined
-  ) {
+  if (!nonce || !issuedAt || !expiresAt || !dispatchReceiptId || !policyHash || !signature || approved === undefined) {
     return undefined;
   }
-  return {
-    key_id: 'edge-execution-v1',
-    nonce,
-    issued_at: issuedAt,
-    expires_at: expiresAt,
-    dispatch_receipt_id: dispatchReceiptId,
-    policy_hash: policyHash,
-    approved,
-    signature
-  };
+  if (envelope.key_id === 'edge-execution-v1') {
+    return {
+      key_id: 'edge-execution-v1',
+      nonce,
+      issued_at: issuedAt,
+      expires_at: expiresAt,
+      dispatch_receipt_id: dispatchReceiptId,
+      policy_hash: policyHash,
+      approved,
+      signature
+    };
+  }
+  if (envelope.key_id === 'edge-execution-v2') {
+    const requestId = normalizeString(envelope.request_id);
+    const userId = normalizeString(envelope.user_id);
+    const deviceId = normalizeString(envelope.device_id);
+    const skillId = normalizeString(envelope.skill_id);
+    const tool = normalizeString(envelope.tool);
+    const operation = normalizeString(envelope.operation);
+    const inputHash = normalizeString(envelope.input_hash);
+    if (!requestId || !userId || !deviceId || !skillId || !tool || !operation || !inputHash) {
+      return undefined;
+    }
+    return {
+      key_id: 'edge-execution-v2',
+      nonce,
+      issued_at: issuedAt,
+      expires_at: expiresAt,
+      dispatch_receipt_id: dispatchReceiptId,
+      policy_hash: policyHash,
+      request_id: requestId,
+      user_id: userId,
+      device_id: deviceId,
+      skill_id: skillId,
+      tool,
+      operation,
+      input_hash: inputHash,
+      approved,
+      signature
+    };
+  }
+  return undefined;
 }
 
 export function parseRelayAuthMode(raw: string | undefined, environment: string, hasSecret: boolean): RelayAuthMode {

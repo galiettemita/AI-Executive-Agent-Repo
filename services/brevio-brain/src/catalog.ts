@@ -6,6 +6,7 @@ export interface ToolDescriptor {
   aliases: string[];
   operations: string[];
   write_operations: string[];
+  recipient_sensitive_operations?: string[];
   deployment_modes: DeploymentMode[];
   requires_confirmation?: boolean;
   input_modalities?: string[];
@@ -14,37 +15,38 @@ export interface ToolDescriptor {
 
 const TOOL_CATALOG_ENTRIES: ToolDescriptor[] = [
   { skill_id: 'aerobase-skill', group: 'flight-tracking', aliases: ['flight search'], operations: ['find'], write_operations: [], deployment_modes: ['cloud'] },
-  { skill_id: 'apple-mail', group: 'apple-mail', aliases: ['mail'], operations: ['list_inbox', 'search', 'send', 'reply'], write_operations: ['send', 'reply'], deployment_modes: ['local_mac'] },
+  { skill_id: 'apple-mail', group: 'apple-mail', aliases: ['mail'], operations: ['list_inbox', 'search', 'send', 'reply'], write_operations: ['send', 'reply'], recipient_sensitive_operations: ['send', 'reply'], deployment_modes: ['local_mac'] },
   { skill_id: 'apple-mail-search', group: 'apple-mail', aliases: ['mail search'], operations: ['search_all', 'search_sender', 'search_subject'], write_operations: [], deployment_modes: ['local_mac'] },
-  { skill_id: 'apple-media', group: 'local-media', aliases: ['local media', 'movies', 'music library'], operations: ['search', 'open'], write_operations: [], deployment_modes: ['local_mac'], input_modalities: ['text'], output_modalities: ['document'] },
+  { skill_id: 'apple-media', group: 'local-media', aliases: ['local media', 'movies', 'music library'], operations: ['discover_devices', 'playback_status', 'control_playback'], write_operations: ['control_playback'], deployment_modes: ['local_mac'], input_modalities: ['text'], output_modalities: ['document'] },
   { skill_id: 'apple-music', aliases: ['music'], operations: ['play'], write_operations: [], deployment_modes: ['local_mac'] },
   { skill_id: 'apple-notes-skill', group: 'apple-notes', aliases: ['notes'], operations: ['create_note'], write_operations: ['create_note'], deployment_modes: ['local_mac', 'cloud'] },
-  { skill_id: 'apple-photos', group: 'local-media', aliases: ['photos', 'photo library'], operations: ['search', 'describe'], write_operations: [], deployment_modes: ['local_mac'], input_modalities: ['text', 'image'], output_modalities: ['image', 'document'] },
+  { skill_id: 'apple-photos', group: 'local-media', aliases: ['photos', 'photo library'], operations: ['list_albums', 'search_photos', 'recent_photos'], write_operations: [], deployment_modes: ['local_mac'], input_modalities: ['text', 'image'], output_modalities: ['image', 'document'] },
+  { skill_id: 'apple-remind-me', aliases: ['reminders'], operations: ['create', 'list', 'complete', 'delete'], write_operations: ['create', 'complete', 'delete'], deployment_modes: ['local_mac'] },
   { skill_id: 'asana', aliases: ['tasks'], operations: ['create'], write_operations: ['create'], deployment_modes: ['cloud'] },
   { skill_id: 'asr', group: 'speech-transcription', aliases: ['transcribe audio', 'speech to text'], operations: ['transcribe'], write_operations: [], deployment_modes: ['cloud', 'local_mac'], input_modalities: ['audio'], output_modalities: ['text'] },
   { skill_id: 'aviationstack-flight-tracker', group: 'flight-tracking', aliases: ['flight status'], operations: ['track'], write_operations: [], deployment_modes: ['cloud'] },
   { skill_id: 'bear-notes', aliases: ['notes'], operations: ['create_note'], write_operations: ['create_note'], deployment_modes: ['local_mac'] },
   { skill_id: 'better-notion', group: 'notion', aliases: ['notion'], operations: ['create_page'], write_operations: ['create_page'], deployment_modes: ['cloud'] },
   { skill_id: 'brave-search', aliases: ['research'], operations: ['search'], write_operations: [], deployment_modes: ['cloud'] },
-  { skill_id: 'camsnap', group: 'camera-perception', aliases: ['camera', 'snapshot'], operations: ['capture', 'describe'], write_operations: [], deployment_modes: ['local_mac'], requires_confirmation: true, input_modalities: ['text'], output_modalities: ['image'] },
+  { skill_id: 'camsnap', group: 'camera-perception', aliases: ['camera', 'snapshot'], operations: ['capture_frame', 'capture_clip'], write_operations: [], deployment_modes: ['local_mac'], requires_confirmation: true, input_modalities: ['text'], output_modalities: ['image'] },
   { skill_id: 'clickup-mcp', aliases: ['tasks'], operations: ['create'], write_operations: ['create'], deployment_modes: ['mcp'] },
   { skill_id: 'craft', aliases: ['notes'], operations: ['create_note'], write_operations: ['create_note'], deployment_modes: ['cloud', 'local_mac'] },
   { skill_id: 'firecrawl-search', aliases: ['research'], operations: ['search'], write_operations: [], deployment_modes: ['cloud'] },
   { skill_id: 'flight-tracker', group: 'flight-tracking', aliases: ['flight status'], operations: ['track'], write_operations: [], deployment_modes: ['cloud'] },
   { skill_id: 'google-calendar', aliases: ['calendar'], operations: ['list', 'create', 'update', 'delete'], write_operations: ['create', 'update', 'delete'], deployment_modes: ['cloud', 'mcp'] },
   { skill_id: 'google-maps', group: 'places-location', aliases: ['maps', 'directions'], operations: ['navigate'], write_operations: [], deployment_modes: ['cloud', 'local_mac'] },
-  { skill_id: 'google-workspace', group: 'email-send', aliases: ['gmail', 'google'], operations: ['gmail_list', 'gmail_send', 'calendar_list', 'drive_search'], write_operations: ['gmail_send'], deployment_modes: ['cloud'] },
+  { skill_id: 'google-workspace', group: 'email-send', aliases: ['gmail', 'google'], operations: ['gmail_list', 'gmail_send', 'calendar_list', 'drive_search'], write_operations: ['gmail_send'], recipient_sensitive_operations: ['gmail_send'], deployment_modes: ['cloud'] },
   { skill_id: 'goplaces', group: 'places-location', aliases: ['near me'], operations: ['search'], write_operations: [], deployment_modes: ['cloud'] },
   { skill_id: 'gemini-stt', group: 'speech-transcription', aliases: ['diarize audio', 'meeting transcription'], operations: ['transcribe', 'diarize'], write_operations: [], deployment_modes: ['cloud'], input_modalities: ['audio'], output_modalities: ['text'] },
   { skill_id: 'gkeep', aliases: ['notes'], operations: ['create_note'], write_operations: ['create_note'], deployment_modes: ['cloud'] },
   { skill_id: 'healthkit-sync-apple', group: 'healthkit', aliases: ['healthkit'], operations: ['sync'], write_operations: [], deployment_modes: ['local_mac'] },
-  { skill_id: 'imap-email', aliases: ['email'], operations: ['list', 'search', 'send'], write_operations: ['send'], deployment_modes: ['cloud', 'local_mac'] },
+  { skill_id: 'imap-email', aliases: ['email'], operations: ['list', 'search', 'send'], write_operations: ['send'], recipient_sensitive_operations: ['send'], deployment_modes: ['cloud', 'local_mac'] },
   { skill_id: 'jira', aliases: ['tasks'], operations: ['create'], write_operations: ['create'], deployment_modes: ['cloud'] },
   { skill_id: 'linear', aliases: ['tasks'], operations: ['create'], write_operations: ['create'], deployment_modes: ['cloud'] },
   { skill_id: 'local-places', group: 'places-location', aliases: ['nearby'], operations: ['search'], write_operations: [], deployment_modes: ['local_mac', 'cloud'] },
   { skill_id: 'obsidian', aliases: ['notes'], operations: ['create_note'], write_operations: ['create_note'], deployment_modes: ['local_mac'] },
   { skill_id: 'omnifocus', aliases: ['tasks'], operations: ['create'], write_operations: ['create'], deployment_modes: ['local_mac'] },
-  { skill_id: 'outlook', group: 'email-send', aliases: ['outlook'], operations: ['inbox_list', 'send', 'calendar_list'], write_operations: ['send'], deployment_modes: ['cloud'] },
+  { skill_id: 'outlook', group: 'email-send', aliases: ['outlook'], operations: ['inbox_list', 'send', 'calendar_list'], write_operations: ['send'], recipient_sensitive_operations: ['send'], deployment_modes: ['cloud'] },
   { skill_id: 'parcel-package-tracking', group: 'package-tracking', aliases: ['package tracking'], operations: ['track'], write_operations: [], deployment_modes: ['cloud'] },
   { skill_id: 'post-at', group: 'package-tracking', aliases: ['austrian post'], operations: ['track'], write_operations: [], deployment_modes: ['cloud'] },
   { skill_id: 'reflect', aliases: ['notes'], operations: ['create_note'], write_operations: ['create_note'], deployment_modes: ['cloud'] },
@@ -55,7 +57,7 @@ const TOOL_CATALOG_ENTRIES: ToolDescriptor[] = [
   { skill_id: 'pdf-tools', group: 'document-perception', aliases: ['pdf', 'document parsing', 'ocr'], operations: ['extract_text', 'merge', 'split'], write_operations: [], deployment_modes: ['cloud', 'local_mac'], input_modalities: ['document'], output_modalities: ['text', 'document'] },
   { skill_id: 'pollinations', group: 'media-generation', aliases: ['generate image', 'generate media'], operations: ['generate_image', 'generate_audio'], write_operations: [], deployment_modes: ['cloud'], input_modalities: ['text'], output_modalities: ['image', 'audio'] },
   { skill_id: 'smart-expense-tracker', group: 'expense-tracking', aliases: ['expenses'], operations: ['analyze'], write_operations: [], deployment_modes: ['cloud'] },
-  { skill_id: 'smtp-send', aliases: ['email'], operations: ['send'], write_operations: ['send'], deployment_modes: ['cloud'] },
+  { skill_id: 'smtp-send', aliases: ['email'], operations: ['send'], write_operations: ['send'], recipient_sensitive_operations: ['send'], deployment_modes: ['cloud'] },
   { skill_id: 'spotify', group: 'spotify', aliases: ['spotify'], operations: ['play'], write_operations: [], deployment_modes: ['local_mac'] },
   { skill_id: 'spotify-history', group: 'spotify', aliases: ['spotify stats'], operations: ['analytics'], write_operations: [], deployment_modes: ['cloud'] },
   { skill_id: 'spotify-player', group: 'spotify', aliases: ['spotify cli'], operations: ['play'], write_operations: [], deployment_modes: ['terminal'] },

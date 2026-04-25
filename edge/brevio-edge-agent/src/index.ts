@@ -4,6 +4,7 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
 import WebSocket from 'ws';
+import type { AnyEdgeExecutionAuthorizationEnvelope } from '@brevio/shared';
 import { verifyEdgeExecutionAuthorization } from '@brevio/shared';
 import { buildToolKey, getToolDescriptor, isRegisteredOperation } from '../../../services/brevio-brain/src/catalog.js';
 import { executeImplementedLocalSkill, resolveSupportedLocalSkills, supportsLocalOperation } from './local-skills.js';
@@ -58,16 +59,7 @@ interface ExecuteSkillMessage {
     human_review_record?: string;
     recipient_verification?: 'not_applicable' | 'required' | 'verified';
   };
-  authorization: {
-    key_id: 'edge-execution-v1';
-    nonce: string;
-    issued_at: string;
-    expires_at: string;
-    dispatch_receipt_id: string;
-    policy_hash: string;
-    approved: boolean;
-    signature: string;
-  };
+  authorization: AnyEdgeExecutionAuthorizationEnvelope;
   dispatch_receipt_id: string;
   result_deadline_at: string;
   input: Record<string, unknown>;
@@ -398,6 +390,7 @@ function parseExecuteMessage(value: Record<string, unknown>): ExecuteSkillMessag
   }
   const authorization = isRecord(value.authorization)
     ? ({
+        ...value.authorization,
         key_id: value.authorization.key_id,
         nonce: optionalString(value.authorization.nonce),
         issued_at: optionalString(value.authorization.issued_at),
@@ -405,12 +398,18 @@ function parseExecuteMessage(value: Record<string, unknown>): ExecuteSkillMessag
         dispatch_receipt_id: optionalString(value.authorization.dispatch_receipt_id),
         policy_hash: optionalString(value.authorization.policy_hash),
         approved: value.authorization.approved,
-        signature: optionalString(value.authorization.signature)
+        signature: optionalString(value.authorization.signature),
+        request_id: optionalString(value.authorization.request_id),
+        user_id: optionalString(value.authorization.user_id),
+        device_id: optionalString(value.authorization.device_id),
+        skill_id: optionalString(value.authorization.skill_id),
+        tool: optionalString(value.authorization.tool),
+        operation: optionalString(value.authorization.operation),
+        input_hash: optionalString(value.authorization.input_hash)
       } as ExecuteSkillMessage['authorization'])
     : undefined;
   if (
     !authorization ||
-    authorization.key_id !== 'edge-execution-v1' ||
     !authorization.nonce ||
     !authorization.issued_at ||
     !authorization.expires_at ||
@@ -418,6 +417,21 @@ function parseExecuteMessage(value: Record<string, unknown>): ExecuteSkillMessag
     !authorization.policy_hash ||
     typeof authorization.approved !== 'boolean' ||
     !authorization.signature
+  ) {
+    return null;
+  }
+  if (
+    authorization.key_id !== 'edge-execution-v1' &&
+    !(
+      authorization.key_id === 'edge-execution-v2' &&
+      authorization.request_id &&
+      authorization.user_id &&
+      authorization.device_id &&
+      authorization.skill_id &&
+      authorization.tool &&
+      authorization.operation &&
+      authorization.input_hash
+    )
   ) {
     return null;
   }
@@ -450,7 +464,14 @@ function parseExecuteMessage(value: Record<string, unknown>): ExecuteSkillMessag
     authorization,
     {
       dispatchReceiptId,
-      policy
+      policy,
+      requestId,
+      userId: config.userId,
+      deviceId: config.deviceId,
+      skillId,
+      tool,
+      operation,
+      input
     }
   );
   if (!authCheck.valid) {

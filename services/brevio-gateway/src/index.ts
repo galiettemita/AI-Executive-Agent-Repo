@@ -1,7 +1,15 @@
 import { randomUUID } from 'node:crypto';
+import { existsSync } from 'node:fs';
 import http from 'node:http';
 import { pathToFileURL } from 'node:url';
 
+import {
+  extractBearerToken,
+  pseudonymizedRef,
+  signAccessToken,
+  signCallerContextEnvelope,
+  verifyAccessToken
+} from '../../../packages/shared/src/security.js';
 import { loadGatewayConfig } from './config.js';
 import { formatOutboundText } from './format.js';
 import { normalizeWebhook } from './normalize.js';
@@ -38,7 +46,6 @@ function requestContext(req: http.IncomingMessage): RequestContext {
     traceId: getHeader(req, 'x-trace-id') ?? randomUUID(),
     spanId: getHeader(req, 'x-span-id') ?? randomUUID(),
     requestId: getHeader(req, 'x-request-id') ?? randomUUID(),
-    userId: getHeader(req, 'x-user-id')
   };
 }
 
@@ -57,12 +64,25 @@ function logEvent(
       trace_id: ctx.traceId,
       span_id: ctx.spanId,
       request_id: ctx.requestId,
-      user_id: ctx.userId,
+      subject_ref: ctx.subjectRef,
       event,
       severity,
       attrs
     }) + '\n'
   );
+}
+
+function requireAdminRequest(req: http.IncomingMessage, config: GatewayConfig, ctx: RequestContext): void {
+  const token = extractBearerToken(getHeader(req, 'authorization'));
+  if (!token) {
+    throw new Error('admin_token_required');
+  }
+  const principal = verifyAccessToken(config.internalAuthSecret, token, {
+    expectedAudience: config.serviceAudience,
+    expectedIssuer: config.internalAuthIssuer,
+    allowedTokenUses: ['admin_access']
+  });
+  ctx.subjectRef = pseudonymizedRef(principal.sub, config.logSalt);
 }
 
 function parseTier(rawTier: string | undefined): UserTier {
@@ -131,7 +151,11 @@ function healthPayload(runtime: GatewayRuntime, deep: boolean): Record<string, u
       process: 'ok',
       webhook_secrets: runtime.config.whatsappWebhookSecret.trim() !== '' ? 'configured' : 'not_configured',
       imessage_api_key: runtime.config.imessageAPIKey.trim() !== '' ? 'configured' : 'not_configured',
-      temporal_api_key: runtime.config.temporalWebhookAPIKey.trim() !== '' ? 'configured' : 'not_configured'
+      temporal_api_key: runtime.config.temporalWebhookAPIKey.trim() !== '' ? 'configured' : 'not_configured',
+      state_backend: runtime.state.mode(),
+      durable_state: runtime.state.mode() !== 'in_memory',
+      shared_state_backend: false,
+      state_file_exists: runtime.state.snapshotPath() ? existsSync(runtime.state.snapshotPath()!) : false
     },
     idempotency: {
       ttl_ms: runtime.config.idempotencyTtlMs,
@@ -153,7 +177,7 @@ function healthPayload(runtime: GatewayRuntime, deep: boolean): Record<string, u
 function shouldAllowWhatsAppRequest(runtime: GatewayRuntime, req: http.IncomingMessage, rawBody: Buffer): boolean {
   const signature = getHeader(req, 'x-hub-signature-256');
   if (runtime.config.whatsappWebhookSecret.trim() === '') {
-    return runtime.config.environment !== 'production';
+    return runtime.config.environment === 'local' || runtime.config.environment === 'test';
   }
   return verifyWhatsAppSignature(rawBody, signature, runtime.config.whatsappWebhookSecret);
 }
@@ -180,7 +204,7 @@ function verifyWhatsAppChallenge(runtime: GatewayRuntime, req: http.IncomingMess
   }
 
   if (runtime.config.whatsappVerifyToken.trim() === '') {
-    if (runtime.config.environment === 'production') {
+    if (runtime.config.environment !== 'local' && runtime.config.environment !== 'test') {
       sendJSON(res, 500, { error: 'verify_token_not_configured' });
       return false;
     }
@@ -261,7 +285,30 @@ async function handleWebhook(
       channelMessageId: normalized.envelope.metadata.channel_message_id,
       sessionId: normalized.envelope.metadata.session_id,
       messageText: normalized.envelope.content.text,
-      userProfileHash: normalized.envelope.context.user_profile_hash
+      userProfileHash: normalized.envelope.context.user_profile_hash,
+      serviceToken: signAccessToken(runtime.config.internalAuthSecret, {
+        version: 2,
+        sub: runtime.config.serviceName,
+        iss: runtime.config.internalAuthIssuer,
+        aud: runtime.config.temporalWorkerAudience,
+        iat: Math.floor(nowMs / 1000),
+        exp: Math.floor((nowMs + 2 * 60 * 1000) / 1000),
+        token_use: 'service_access',
+        scopes: ['workflow:start'],
+        service: runtime.config.serviceName
+      }),
+      callerContextToken: signCallerContextEnvelope(runtime.config.callerContextSecret, {
+        subject: normalized.userId,
+        user_id: normalized.userId,
+        workspace_id: normalized.envelope.context.workspace_id,
+        tenant_id: normalized.envelope.context.tenant_id,
+        channel,
+        channel_subject: normalized.channelSubject,
+        auth_strength: channel === 'WHATSAPP' ? 'webhook_signature' : 'api_key',
+        provenance: `gateway:${channel.toLowerCase()}`,
+        issued_at: new Date(nowMs).toISOString(),
+        expires_at: new Date(nowMs + 5 * 60 * 1000).toISOString()
+      })
     },
     runtime.config
   );
@@ -374,7 +421,7 @@ async function handleFormat(runtime: GatewayRuntime, req: http.IncomingMessage, 
 
 function createGatewayRuntime(config?: GatewayConfig): GatewayRuntime {
   const resolvedConfig = config ?? loadGatewayConfig();
-  const state = new GatewayState();
+  const state = new GatewayState(resolvedConfig.stateFilePath);
   const startedAtMs = Date.now();
   let runtimeRef: GatewayRuntime | undefined;
 
@@ -408,6 +455,12 @@ function createGatewayRuntime(config?: GatewayConfig): GatewayRuntime {
       const runtime = runtimeRef;
       if (!runtime) {
         onError(500, 'runtime_not_ready');
+        return;
+      }
+      try {
+        requireAdminRequest(req, resolvedConfig, ctx);
+      } catch (error) {
+        onError(401, error instanceof Error ? error.message : 'unauthorized');
         return;
       }
       sendJSON(res, 200, healthPayload(runtime, true));

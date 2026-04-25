@@ -4,6 +4,14 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 import { parseCapabilityInventory, resolveCapabilityInventory } from '../../../packages/shared/src/capability-inventory.js';
+import {
+  extractBearerToken,
+  loadBrevioEnvironment,
+  pseudonymizedRef,
+  requireSharedSecret,
+  verifyAccessToken,
+  verifyCallerContextEnvelope
+} from '../../../packages/shared/src/security.js';
 import type {
   CacheClient,
   SkillContext,
@@ -14,7 +22,7 @@ import type {
   UserProfile
 } from '@brevio/shared';
 
-import { evaluateApprovalGate, type ExecutionPolicy } from './approval-policy.js';
+import { deriveRequiredPolicy, evaluateApprovalGate, mergeExecutionPolicy, type ExecutionPolicy } from './approval-policy.js';
 import { buildToolKey, getToolDescriptor, isRegisteredOperation } from '../../brevio-brain/src/catalog.js';
 import { CircuitStore, type CircuitBreakerState, type CircuitStateEntry } from './circuit-store.js';
 import { applyExecutionRefs, parseExecutionRefs, type ExecutionRefs } from './execution-refs.js';
@@ -37,13 +45,18 @@ interface HandsConfig {
   temporalWorkerBaseUrl?: string;
   temporalWorkerTimeoutMs: number;
   capabilityInventoryJson?: string;
+  internalAuthSecret: string;
+  internalAuthIssuer: string;
+  serviceAudience: string;
+  callerContextSecret: string;
+  logSalt: string;
 }
 
 interface RequestContext {
   traceId: string;
   spanId: string;
   requestId: string;
-  userId?: string;
+  subjectRef?: string;
 }
 
 interface ExecuteRequest {
@@ -73,6 +86,12 @@ interface HandsRuntime {
   close(): Promise<void>;
 }
 
+interface AuthenticatedIdentity {
+  subject: string;
+  userId?: string;
+  admin: boolean;
+}
+
 class SkillExecutionTimeoutError extends Error {
   constructor(skillId: string, timeoutMs: number) {
     super(`skill ${skillId} timed out after ${timeoutMs}ms`);
@@ -92,10 +111,11 @@ function parsePositiveInt(raw: string | undefined, fallback: number, field: stri
 }
 
 function loadConfig(): HandsConfig {
+  const environment = loadBrevioEnvironment();
   return {
     serviceName: 'brevio-hands',
     version: process.env.SERVICE_VERSION ?? '0.2.0',
-    environment: process.env.NODE_ENV ?? 'development',
+    environment,
     port: parsePositiveInt(process.env.PORT, 8082, 'PORT'),
     shutdownTimeoutMs: parsePositiveInt(process.env.BREVIO_HANDS_SHUTDOWN_TIMEOUT_MS, 30000, 'BREVIO_HANDS_SHUTDOWN_TIMEOUT_MS'),
     executionTimeoutMs: parsePositiveInt(process.env.BREVIO_HANDS_EXECUTION_TIMEOUT_MS, 60000, 'BREVIO_HANDS_EXECUTION_TIMEOUT_MS'),
@@ -106,7 +126,12 @@ function loadConfig(): HandsConfig {
     stateFilePath: path.resolve(process.env.BREVIO_HANDS_STATE_FILE ?? path.join(process.cwd(), 'data', 'hands', 'circuit-state.json')),
     temporalWorkerBaseUrl: process.env.BREVIO_TEMPORAL_WORKER_BASE_URL?.trim() || undefined,
     temporalWorkerTimeoutMs: parsePositiveInt(process.env.BREVIO_TEMPORAL_WORKER_TIMEOUT_MS, 1500, 'BREVIO_TEMPORAL_WORKER_TIMEOUT_MS'),
-    capabilityInventoryJson: process.env.BREVIO_CAPABILITY_INVENTORY_JSON?.trim() || undefined
+    capabilityInventoryJson: process.env.BREVIO_CAPABILITY_INVENTORY_JSON?.trim() || undefined,
+    internalAuthSecret: requireSharedSecret(process.env.BREVIO_INTERNAL_AUTH_SECRET, 'BREVIO_INTERNAL_AUTH_SECRET', environment, 'brevio-hands'),
+    internalAuthIssuer: process.env.BREVIO_INTERNAL_AUTH_ISSUER?.trim() || 'https://auth.brevio.internal',
+    serviceAudience: process.env.BREVIO_HANDS_AUDIENCE?.trim() || 'brevio-hands',
+    callerContextSecret: requireSharedSecret(process.env.BREVIO_CALLER_CONTEXT_SECRET, 'BREVIO_CALLER_CONTEXT_SECRET', environment, 'brevio-hands-caller'),
+    logSalt: process.env.BREVIO_HANDS_LOG_SALT?.trim() || `brevio-hands:${environment}`
   };
 }
 
@@ -126,7 +151,6 @@ function requestContext(req: http.IncomingMessage): RequestContext {
     traceId: getHeader(req, 'x-trace-id') ?? randomUUID(),
     spanId: getHeader(req, 'x-span-id') ?? randomUUID(),
     requestId: getHeader(req, 'x-request-id') ?? randomUUID(),
-    userId: getHeader(req, 'x-user-id')
   };
 }
 
@@ -145,12 +169,43 @@ function logEvent(
       trace_id: ctx.traceId,
       span_id: ctx.spanId,
       request_id: ctx.requestId,
-      user_id: ctx.userId,
+      subject_ref: ctx.subjectRef,
       event,
       severity,
       attrs
     }) + '\n'
   );
+}
+
+function authenticateRequest(
+  req: http.IncomingMessage,
+  runtime: HandsRuntime,
+  ctx: RequestContext,
+  mode: 'api' | 'admin'
+): AuthenticatedIdentity {
+  const token = extractBearerToken(getHeader(req, 'authorization'));
+  if (!token) {
+    throw new Error('authorization_required');
+  }
+  const principal = verifyAccessToken(runtime.config.internalAuthSecret, token, {
+    expectedAudience: runtime.config.serviceAudience,
+    expectedIssuer: runtime.config.internalAuthIssuer,
+    allowedTokenUses: mode === 'admin' ? ['admin_access'] : ['service_access', 'admin_access', 'user_access']
+  });
+  ctx.subjectRef = pseudonymizedRef(principal.sub, runtime.config.logSalt);
+  return {
+    subject: principal.sub,
+    userId: principal.token_use === 'user_access' || principal.token_use === 'admin_access' ? principal.sub : undefined,
+    admin: principal.token_use === 'admin_access'
+  };
+}
+
+function callerContextFromRequest(req: http.IncomingMessage, runtime: HandsRuntime): ReturnType<typeof verifyCallerContextEnvelope> | null {
+  const header = getHeader(req, 'x-brevio-caller-context');
+  if (!header) {
+    return null;
+  }
+  return verifyCallerContextEnvelope(runtime.config.callerContextSecret, header);
 }
 
 function sendJSON(res: http.ServerResponse, statusCode: number, payload: Record<string, unknown>): void {
@@ -621,6 +676,12 @@ function buildRuntime(config?: HandsConfig): HandsRuntime {
     }
 
     if (method === 'GET' && path === '/health/deep') {
+      try {
+        authenticateRequest(req, runtime, ctx, 'admin');
+      } catch (error) {
+        onError(401, error instanceof Error ? error.message : 'authorization_required');
+        return;
+      }
       sendJSON(res, 200, healthPayload(runtime, true));
       return;
     }
@@ -631,21 +692,47 @@ function buildRuntime(config?: HandsConfig): HandsRuntime {
     }
 
     if (method === 'GET' && skillsPaths.has(path)) {
+      try {
+        authenticateRequest(req, runtime, ctx, 'admin');
+      } catch (error) {
+        onError(401, error instanceof Error ? error.message : 'authorization_required');
+        return;
+      }
       sendJSON(res, 200, listSkills(runtime));
       return;
     }
 
     if (method === 'GET' && path === '/api/v1/hands/circuit-breakers') {
+      try {
+        authenticateRequest(req, runtime, ctx, 'admin');
+      } catch (error) {
+        onError(401, error instanceof Error ? error.message : 'authorization_required');
+        return;
+      }
       sendJSON(res, 200, circuitSnapshot(runtime));
       return;
     }
 
     if (method === 'POST' && executePaths.has(path)) {
       void (async () => {
+        let identity: AuthenticatedIdentity;
+        try {
+          identity = authenticateRequest(req, runtime, ctx, 'api');
+        } catch (error) {
+          onError(401, error instanceof Error ? error.message : 'authorization_required');
+          return;
+        }
         const started = Date.now();
         const rawBody = await readRawBody(req, runtime.config.maxBodyBytes);
         const payload = parseObject(rawBody);
         const parsed = parseExecuteRequest(payload);
+        let callerContext: ReturnType<typeof callerContextFromRequest>;
+        try {
+          callerContext = callerContextFromRequest(req, runtime);
+        } catch (error) {
+          onError(401, error instanceof Error ? error.message : 'invalid_caller_context');
+          return;
+        }
 
         const adapter = getSkillAdapter(parsed.skill_id);
         if (!adapter) {
@@ -692,7 +779,9 @@ function buildRuntime(config?: HandsConfig): HandsRuntime {
           return;
         }
 
-        const approvalGate = evaluateApprovalGate(parsed.policy);
+        const requiredPolicy = deriveRequiredPolicy(getToolDescriptor(parsed.skill_id), contract.operation);
+        const effectivePolicy = mergeExecutionPolicy(requiredPolicy, parsed.policy);
+        const approvalGate = evaluateApprovalGate(effectivePolicy);
         if (approvalGate) {
           const blocked = failureResult(
             parsed.skill_id,
@@ -737,7 +826,11 @@ function buildRuntime(config?: HandsConfig): HandsRuntime {
           return;
         }
 
-        const userId = parsed.user_id ?? ctx.userId ?? randomUUID();
+        const userId = callerContext?.user_id ?? identity.userId;
+        if (!userId) {
+          onError(400, 'caller_context_required');
+          return;
+        }
         const userProfile: UserProfile = {
           id: userId,
           timezone: parsed.user_profile?.timezone ?? 'UTC',
@@ -746,8 +839,8 @@ function buildRuntime(config?: HandsConfig): HandsRuntime {
         const capabilityResolution = resolveCapabilityInventory(
           parseCapabilityInventory(runtime.config.capabilityInventoryJson),
           {
-            tenantId: parsed.tenant_id,
-            workspaceId: parsed.workspace_id,
+            tenantId: callerContext?.tenant_id,
+            workspaceId: callerContext?.workspace_id,
             userId
           }
         );
@@ -789,9 +882,13 @@ function buildRuntime(config?: HandsConfig): HandsRuntime {
         };
 
         try {
+          const executorInput: SkillInput = {
+            ...parsed.input,
+            action: contract.operation
+          };
           const rawResult = await executeWithTimeout(
             adapter,
-            parsed.input,
+            executorInput,
             skillContext,
             runtime.config.executionTimeoutMs,
             parsed.skill_id

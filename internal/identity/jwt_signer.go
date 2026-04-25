@@ -19,6 +19,12 @@ type JWTSigner struct {
 	keyID      string
 }
 
+type jwtHeader struct {
+	Alg string `json:"alg"`
+	Typ string `json:"typ"`
+	Kid string `json:"kid"`
+}
+
 func NewJWTSigner(privateKey *rsa.PrivateKey) *JWTSigner {
 	keyID := ""
 	var publicKey *rsa.PublicKey
@@ -46,7 +52,7 @@ func (s *JWTSigner) IssueUserJWT(claims UserJWTClaims, now time.Time) (string, e
 		claims.Iss = "https://auth.brevio.app"
 	}
 	if claims.Aud == "" {
-		claims.Aud = "https://api.brevio.local"
+		claims.Aud = UserJWTAudience()
 	}
 	if claims.Iat == 0 {
 		claims.Iat = now.Unix()
@@ -54,7 +60,13 @@ func (s *JWTSigner) IssueUserJWT(claims UserJWTClaims, now time.Time) (string, e
 	if claims.Exp == 0 {
 		claims.Exp = now.Add(UserJWTLifetime()).Unix()
 	}
-	return s.issueToken(claims)
+	if claims.Version == 0 {
+		claims.Version = 2
+	}
+	if claims.TokenUse == "" {
+		claims.TokenUse = "user_access"
+	}
+	return s.issueToken(claims, "brevio-user+jwt")
 }
 
 func (s *JWTSigner) IssueAdminJWT(claims AdminJWTClaims, now time.Time) (string, error) {
@@ -65,7 +77,7 @@ func (s *JWTSigner) IssueAdminJWT(claims AdminJWTClaims, now time.Time) (string,
 		claims.Iss = "https://auth.brevio.app"
 	}
 	if claims.Aud == "" {
-		claims.Aud = "https://api.brevio.local"
+		claims.Aud = AdminJWTAudience()
 	}
 	if claims.Iat == 0 {
 		claims.Iat = now.Unix()
@@ -73,16 +85,22 @@ func (s *JWTSigner) IssueAdminJWT(claims AdminJWTClaims, now time.Time) (string,
 	if claims.Exp == 0 {
 		claims.Exp = now.Add(AdminJWTLifetime()).Unix()
 	}
-	return s.issueToken(claims)
+	if claims.Version == 0 {
+		claims.Version = 2
+	}
+	if claims.TokenUse == "" {
+		claims.TokenUse = "admin_access"
+	}
+	return s.issueToken(claims, "brevio-admin+jwt")
 }
 
-func (s *JWTSigner) issueToken(payload any) (string, error) {
+func (s *JWTSigner) issueToken(payload any, typ string) (string, error) {
 	if s == nil || s.privateKey == nil {
 		return "", fmt.Errorf("jwt signer private key is required")
 	}
 	header := map[string]string{
 		"alg": "RS256",
-		"typ": "JWT",
+		"typ": typ,
 		"kid": s.keyID,
 	}
 	headerJSON, err := json.Marshal(header)
@@ -105,7 +123,7 @@ func (s *JWTSigner) issueToken(payload any) (string, error) {
 }
 
 func (s *JWTSigner) VerifyUserJWT(token, expectedIssuer, expectedAudience string, now time.Time) (UserJWTClaims, error) {
-	payload, err := s.verifyTokenSignature(token)
+	header, payload, err := s.verifyTokenSignature(token)
 	if err != nil {
 		return UserJWTClaims{}, err
 	}
@@ -116,11 +134,19 @@ func (s *JWTSigner) VerifyUserJWT(token, expectedIssuer, expectedAudience string
 	if err := validateClaims(claims.Iss, claims.Aud, claims.Exp, expectedIssuer, expectedAudience, now); err != nil {
 		return UserJWTClaims{}, err
 	}
+	if claims.Version >= 2 {
+		if header.Typ != "brevio-user+jwt" {
+			return UserJWTClaims{}, fmt.Errorf("token type mismatch")
+		}
+		if claims.TokenUse != "user_access" {
+			return UserJWTClaims{}, fmt.Errorf("token_use mismatch")
+		}
+	}
 	return claims, nil
 }
 
 func (s *JWTSigner) VerifyAdminJWT(token, expectedIssuer, expectedAudience string, now time.Time) (AdminJWTClaims, error) {
-	payload, err := s.verifyTokenSignature(token)
+	header, payload, err := s.verifyTokenSignature(token)
 	if err != nil {
 		return AdminJWTClaims{}, err
 	}
@@ -131,31 +157,50 @@ func (s *JWTSigner) VerifyAdminJWT(token, expectedIssuer, expectedAudience strin
 	if err := validateClaims(claims.Iss, claims.Aud, claims.Exp, expectedIssuer, expectedAudience, now); err != nil {
 		return AdminJWTClaims{}, err
 	}
+	if claims.Version >= 2 {
+		if header.Typ != "brevio-admin+jwt" {
+			return AdminJWTClaims{}, fmt.Errorf("token type mismatch")
+		}
+		if claims.TokenUse != "admin_access" {
+			return AdminJWTClaims{}, fmt.Errorf("token_use mismatch")
+		}
+		if claims.AdminLevel == "" || len(claims.AdminScopes) == 0 {
+			return AdminJWTClaims{}, fmt.Errorf("admin claims missing")
+		}
+	}
 	return claims, nil
 }
 
-func (s *JWTSigner) verifyTokenSignature(token string) ([]byte, error) {
+func (s *JWTSigner) verifyTokenSignature(token string) (jwtHeader, []byte, error) {
 	if s == nil || s.publicKey == nil {
-		return nil, fmt.Errorf("jwt signer public key is required")
+		return jwtHeader{}, nil, fmt.Errorf("jwt signer public key is required")
 	}
 	parts := strings.Split(strings.TrimSpace(token), ".")
 	if len(parts) != 3 {
-		return nil, fmt.Errorf("invalid jwt format")
+		return jwtHeader{}, nil, fmt.Errorf("invalid jwt format")
 	}
 	signingInput := parts[0] + "." + parts[1]
 	signature, err := base64.RawURLEncoding.DecodeString(parts[2])
 	if err != nil {
-		return nil, fmt.Errorf("invalid jwt signature encoding")
+		return jwtHeader{}, nil, fmt.Errorf("invalid jwt signature encoding")
 	}
 	sum := sha256.Sum256([]byte(signingInput))
 	if err := rsa.VerifyPKCS1v15(s.publicKey, crypto.SHA256, sum[:], signature); err != nil {
-		return nil, fmt.Errorf("invalid jwt signature")
+		return jwtHeader{}, nil, fmt.Errorf("invalid jwt signature")
+	}
+	headerBytes, err := base64.RawURLEncoding.DecodeString(parts[0])
+	if err != nil {
+		return jwtHeader{}, nil, fmt.Errorf("invalid jwt header encoding")
+	}
+	var header jwtHeader
+	if err := json.Unmarshal(headerBytes, &header); err != nil {
+		return jwtHeader{}, nil, fmt.Errorf("invalid jwt header")
 	}
 	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
 	if err != nil {
-		return nil, fmt.Errorf("invalid jwt payload encoding")
+		return jwtHeader{}, nil, fmt.Errorf("invalid jwt payload encoding")
 	}
-	return payload, nil
+	return header, payload, nil
 }
 
 func validateClaims(issuer, audience string, exp int64, expectedIssuer, expectedAudience string, now time.Time) error {

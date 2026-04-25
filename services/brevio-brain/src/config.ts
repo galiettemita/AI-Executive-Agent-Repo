@@ -2,6 +2,8 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { loadBrevioEnvironment, requireSharedSecret } from '../../../packages/shared/src/security.js';
+
 import type { BrainConfig, DisambiguationRuleConfig, DisambiguationRules, PlannerProvider } from './types.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -242,10 +244,11 @@ function parseDisambiguation(raw: string): DisambiguationRules {
 }
 
 export function loadBrainConfig(): BrainConfig {
+  const environment = loadBrevioEnvironment();
   return {
     serviceName: 'brevio-brain',
     version: process.env.SERVICE_VERSION ?? process.env.npm_package_version ?? '0.3.0',
-    environment: process.env.NODE_ENV ?? 'development',
+    environment,
     port: parsePositiveInt(process.env.PORT, 8081, 'PORT'),
     shutdownTimeoutMs: parsePositiveInt(process.env.BREVIO_BRAIN_SHUTDOWN_TIMEOUT_MS, 30000, 'BREVIO_BRAIN_SHUTDOWN_TIMEOUT_MS'),
     disambiguationConfigPath: resolveDisambiguationPath(process.env.BREVIO_DISAMBIGUATION_CONFIG_PATH),
@@ -255,7 +258,12 @@ export function loadBrainConfig(): BrainConfig {
     plannerTimeoutMs: parsePositiveInt(process.env.BREVIO_BRAIN_PLANNER_TIMEOUT_MS, 30000, 'BREVIO_BRAIN_PLANNER_TIMEOUT_MS'),
     plannerBaseUrl: process.env.OPENAI_BASE_URL ?? 'https://api.openai.com/v1',
     temporalWorkerBaseUrl: process.env.BREVIO_TEMPORAL_WORKER_BASE_URL?.trim() || undefined,
-    temporalWorkerTimeoutMs: parsePositiveInt(process.env.BREVIO_TEMPORAL_WORKER_TIMEOUT_MS, 4000, 'BREVIO_TEMPORAL_WORKER_TIMEOUT_MS')
+    temporalWorkerTimeoutMs: parsePositiveInt(process.env.BREVIO_TEMPORAL_WORKER_TIMEOUT_MS, 4000, 'BREVIO_TEMPORAL_WORKER_TIMEOUT_MS'),
+    internalAuthSecret: requireSharedSecret(process.env.BREVIO_INTERNAL_AUTH_SECRET, 'BREVIO_INTERNAL_AUTH_SECRET', environment, 'brevio-brain'),
+    internalAuthIssuer: process.env.BREVIO_INTERNAL_AUTH_ISSUER?.trim() || 'https://auth.brevio.internal',
+    serviceAudience: process.env.BREVIO_BRAIN_AUDIENCE?.trim() || 'brevio-brain',
+    callerContextSecret: requireSharedSecret(process.env.BREVIO_CALLER_CONTEXT_SECRET, 'BREVIO_CALLER_CONTEXT_SECRET', environment, 'brevio-brain-caller'),
+    logSalt: process.env.BREVIO_BRAIN_LOG_SALT?.trim() || `brevio-brain:${environment}`
   };
 }
 

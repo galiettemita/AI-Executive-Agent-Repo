@@ -70,14 +70,20 @@ function timestampFromPayload(payload: GenericWebhookPayload, nowMs: number): st
   return new Date(parsedMs).toISOString();
 }
 
-function userIdFromPayload(payload: GenericWebhookPayload, channel: Channel): string {
-  const explicit = asString(payload.user_id);
-  if (explicit) {
-    return explicit;
+function channelSubjectFromPayload(payload: GenericWebhookPayload, channel: Channel): string {
+  const sender = asString(payload.sender_id) ?? asString(payload.from);
+  if (sender) {
+    return sender;
   }
+  const messageId = asString(payload.message_id) ?? asString(payload.id);
+  if (messageId) {
+    return `${channel.toLowerCase()}:${messageId}`;
+  }
+  return randomUUID();
+}
 
-  const sender = asString(payload.sender_id) ?? asString(payload.from) ?? randomUUID();
-  const stable = createHash('sha256').update(`${channel}:${sender}`).digest('hex').slice(0, 32);
+function userIdFromChannelSubject(channel: Channel, channelSubject: string): string {
+  const stable = createHash('sha256').update(`${channel}:${channelSubject}`).digest('hex').slice(0, 32);
   return `${stable.slice(0, 8)}-${stable.slice(8, 12)}-4${stable.slice(13, 16)}-a${stable.slice(17, 20)}-${stable.slice(20)}`;
 }
 
@@ -109,20 +115,6 @@ function profileHash(channel: Channel, userId: string): string {
   return createHash('sha256').update(`${channel}:${userId}`).digest('hex');
 }
 
-function tierFromPayload(payload: GenericWebhookPayload): UserTier | undefined {
-  const raw = asString(payload.user_tier)?.toLowerCase();
-  switch (raw) {
-    case 'free':
-    case 'pro':
-    case 'enterprise':
-    case 'admin':
-    case 'service':
-      return raw;
-    default:
-      return undefined;
-  }
-}
-
 export function normalizeWebhook(
   channel: Channel,
   payloadRaw: unknown,
@@ -138,7 +130,8 @@ export function normalizeWebhook(
 
   const dedupKey = dedupKeyFromPayload(payload, channel, rawBody);
   const dedupChannelMessageId = dedupKey.split(':').slice(1).join(':');
-  const userId = userIdFromPayload(payload, channel);
+  const channelSubject = channelSubjectFromPayload(payload, channel);
+  const userId = userIdFromChannelSubject(channel, channelSubject);
   const sessionId = state.sessionForUser(
     channel,
     userId,
@@ -195,6 +188,7 @@ export function normalizeWebhook(
     envelope,
     userId,
     dedupKey,
-    tier: tierFromPayload(payload) ?? fallbackTier
+    channelSubject,
+    tier: fallbackTier
   };
 }

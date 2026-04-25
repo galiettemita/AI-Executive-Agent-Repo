@@ -26,14 +26,17 @@ func TestIssueAndVerifyUserJWT(t *testing.T) {
 		t.Fatalf("issue user jwt: %v", err)
 	}
 
-	claims, err := signer.VerifyUserJWT(token, "https://auth.brevio.app", "https://api.brevio.local", now.Add(10*time.Minute))
+	claims, err := signer.VerifyUserJWT(token, "https://auth.brevio.app", UserJWTAudience(), now.Add(10*time.Minute))
 	if err != nil {
 		t.Fatalf("verify user jwt: %v", err)
 	}
 	if claims.Sub == "" || claims.WorkspaceID == "" || claims.Exp <= claims.Iat {
 		t.Fatalf("unexpected user claims: %+v", claims)
 	}
-	if _, err := signer.VerifyUserJWT(token, "https://bad-issuer", "https://api.brevio.local", now); err == nil {
+	if claims.TokenUse != "user_access" || claims.Version != 2 {
+		t.Fatalf("unexpected user token typing: %+v", claims)
+	}
+	if _, err := signer.VerifyUserJWT(token, "https://bad-issuer", UserJWTAudience(), now); err == nil {
 		t.Fatal("expected issuer validation failure")
 	}
 }
@@ -61,14 +64,17 @@ func TestIssueAndVerifyAdminJWT(t *testing.T) {
 		t.Fatalf("issue admin jwt: %v", err)
 	}
 
-	claims, err := signer.VerifyAdminJWT(token, "https://auth.brevio.app", "https://api.brevio.local", now.Add(10*time.Minute))
+	claims, err := signer.VerifyAdminJWT(token, "https://auth.brevio.app", AdminJWTAudience(), now.Add(10*time.Minute))
 	if err != nil {
 		t.Fatalf("verify admin jwt: %v", err)
 	}
 	if claims.AdminLevel != "operator" || len(claims.AdminScopes) == 0 {
 		t.Fatalf("unexpected admin claims: %+v", claims)
 	}
-	if _, err := signer.VerifyAdminJWT(token, "https://auth.brevio.app", "https://api.brevio.local", now.Add(16*time.Minute)); err == nil {
+	if claims.TokenUse != "admin_access" || claims.Version != 2 {
+		t.Fatalf("unexpected admin token typing: %+v", claims)
+	}
+	if _, err := signer.VerifyAdminJWT(token, "https://auth.brevio.app", AdminJWTAudience(), now.Add(16*time.Minute)); err == nil {
 		t.Fatal("expected admin token expiry failure")
 	}
 }

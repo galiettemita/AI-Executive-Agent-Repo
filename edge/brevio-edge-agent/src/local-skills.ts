@@ -33,7 +33,7 @@ const LOCAL_SKILL_DEFINITIONS: Record<string, LocalSkillDefinition> = {
     })
   },
   'camsnap': {
-    operations: ['capture', 'describe'],
+    operations: ['capture_frame', 'capture_clip'],
     execute: (_input, operation) => ({
       status: 'NEEDS_CONSENT',
       data: {
@@ -46,7 +46,7 @@ const LOCAL_SKILL_DEFINITIONS: Record<string, LocalSkillDefinition> = {
     })
   },
   'apple-photos': {
-    operations: ['search', 'describe'],
+    operations: ['list_albums', 'search_photos', 'recent_photos'],
     execute: (input, operation) => ({
       status: 'NEEDS_CONSENT',
       data: {
@@ -60,7 +60,7 @@ const LOCAL_SKILL_DEFINITIONS: Record<string, LocalSkillDefinition> = {
     })
   },
   'apple-media': {
-    operations: ['search', 'open'],
+    operations: ['discover_devices', 'playback_status', 'control_playback'],
     execute: (input, operation) => ({
       status: 'NEEDS_CONSENT',
       data: {
@@ -74,7 +74,7 @@ const LOCAL_SKILL_DEFINITIONS: Record<string, LocalSkillDefinition> = {
     })
   },
   'apple-remind-me': {
-    operations: ['create'],
+    operations: ['create', 'list', 'complete', 'delete'],
     execute: (input) => ({
       status: 'SIMULATED',
       data: {

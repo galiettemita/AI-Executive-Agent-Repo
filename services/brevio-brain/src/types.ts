@@ -97,13 +97,18 @@ export interface BrainConfig {
   plannerBaseUrl: string;
   temporalWorkerBaseUrl?: string;
   temporalWorkerTimeoutMs: number;
+  internalAuthSecret: string;
+  internalAuthIssuer: string;
+  serviceAudience: string;
+  callerContextSecret: string;
+  logSalt: string;
 }
 
 export interface RequestContext {
   traceId: string;
   spanId: string;
   requestId: string;
-  userId?: string;
+  subjectRef?: string;
 }
 
 export interface UserPreferences {

@@ -2,6 +2,8 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { loadBrevioEnvironment, requireSharedSecret } from '../../../packages/shared/src/security.js';
+
 import type { APIKeyService, AuthServiceMap, EnvConfig, NoAuthService, OAuthService } from './types.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -16,6 +18,36 @@ function parsePositiveInt(raw: string | undefined, fallback: number, field: stri
     throw new Error(`invalid ${field}: must be positive integer`);
   }
   return parsed;
+}
+
+function parseTokenExchangeMode(raw: string | undefined, environment: string): EnvConfig['tokenExchangeMode'] {
+  if (!raw || raw.trim() === '') {
+    return environment === 'local' || environment === 'test' ? 'simulated' : 'disabled';
+  }
+
+  if (raw === 'simulated' || raw === 'disabled') {
+    return raw;
+  }
+
+  throw new Error('invalid BREVIO_AUTH_TOKEN_EXCHANGE_MODE: expected simulated or disabled');
+}
+
+function parseRedirectAllowlist(raw: string | undefined): Record<string, string[]> {
+  if (!raw || raw.trim() === '') {
+    return {};
+  }
+  const parsed = JSON.parse(raw) as unknown;
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error('BREVIO_AUTH_COMPLETION_REDIRECT_ALLOWLIST_JSON must be a JSON object');
+  }
+  const out: Record<string, string[]> = {};
+  for (const [key, value] of Object.entries(parsed)) {
+    if (!Array.isArray(value) || value.some((entry) => typeof entry !== 'string' || entry.trim() === '')) {
+      throw new Error(`BREVIO_AUTH_COMPLETION_REDIRECT_ALLOWLIST_JSON.${key} must be a string array`);
+    }
+    out[key] = value.map((entry) => entry.trim());
+  }
+  return out;
 }
 
 function resolveMapPath(rawPath: string | undefined): string {
@@ -300,13 +332,23 @@ function validateAuthServiceMap(parsed: AuthServiceMap): void {
 
 export function loadEnvConfig(): EnvConfig {
   const mapPath = resolveMapPath(process.env.BREVIO_AUTH_MAP_PATH);
+  const environment = loadBrevioEnvironment();
 
   return {
     serviceName: 'brevio-auth',
     serviceVersion: process.env.SERVICE_VERSION ?? '0.2.0',
-    environment: process.env.NODE_ENV ?? 'development',
+    environment,
     port: parsePositiveInt(process.env.PORT, 8080, 'PORT'),
     mapPath,
+    stateStoreFilePath: path.resolve(process.env.BREVIO_AUTH_STATE_STORE_FILE ?? path.join(process.cwd(), 'data', 'auth', 'oauth-state.json')),
+    internalAuthSecret: requireSharedSecret(process.env.BREVIO_INTERNAL_AUTH_SECRET, 'BREVIO_INTERNAL_AUTH_SECRET', environment, 'brevio-auth'),
+    internalAuthIssuer: process.env.BREVIO_INTERNAL_AUTH_ISSUER?.trim() || 'https://auth.brevio.internal',
+    serviceAudience: process.env.BREVIO_AUTH_AUDIENCE?.trim() || 'brevio-auth',
+    callerContextSecret: requireSharedSecret(process.env.BREVIO_CALLER_CONTEXT_SECRET, 'BREVIO_CALLER_CONTEXT_SECRET', environment, 'brevio-auth-caller'),
+    logSalt: process.env.BREVIO_AUTH_LOG_SALT?.trim() || `brevio-auth:${environment}`,
+    stateEncryptionSecret: requireSharedSecret(process.env.BREVIO_AUTH_STATE_ENCRYPTION_SECRET, 'BREVIO_AUTH_STATE_ENCRYPTION_SECRET', environment, 'brevio-auth-state'),
+    completionRedirectAllowlist: parseRedirectAllowlist(process.env.BREVIO_AUTH_COMPLETION_REDIRECT_ALLOWLIST_JSON),
+    tokenExchangeMode: parseTokenExchangeMode(process.env.BREVIO_AUTH_TOKEN_EXCHANGE_MODE, environment),
     stateTtlMs: parsePositiveInt(process.env.BREVIO_AUTH_STATE_TTL_MS, 600000, 'BREVIO_AUTH_STATE_TTL_MS'),
     shutdownTimeoutMs: parsePositiveInt(
       process.env.BREVIO_AUTH_SHUTDOWN_TIMEOUT_MS,

@@ -32,11 +32,11 @@ describe('edge local skills', () => {
         command_argv: ['say', '--', 'hello']
       }
     });
-    assert.deepEqual(executeImplementedLocalSkill('camsnap', 'capture', {}), {
+    assert.deepEqual(executeImplementedLocalSkill('camsnap', 'capture_frame', {}), {
       status: 'NEEDS_CONSENT',
       data: {
         provider: 'camsnap',
-        operation: 'capture',
+        operation: 'capture_frame',
         status: 'permission_required',
         consent_required: true,
         output_modalities: ['image']

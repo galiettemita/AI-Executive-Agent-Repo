@@ -3,6 +3,7 @@ export * from './schemas/skill-result.js';
 export * from './schemas/a2a-runtime.js';
 export * from './edge-execution-contract.js';
 export * from './capability-inventory.js';
+export * from './security.js';
 export * from './interfaces/skill-adapter.js';
 export * from './constants/index.js';
 export * from './errors/index.js';

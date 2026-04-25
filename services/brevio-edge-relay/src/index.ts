@@ -5,12 +5,13 @@ import path from 'node:path';
 import { URL } from 'node:url';
 import WebSocket, { WebSocketServer } from 'ws';
 import {
+  edgeExecutionInputHash,
   edgeExecutionPolicyHash,
   parseCapabilityInventory,
   resolveCapabilityInventory,
   signEdgeExecutionAuthorization,
 } from '@brevio/shared';
-import type { EdgeExecutionAuthorizationEnvelope, EdgeExecutionPolicy } from '@brevio/shared';
+import type { AnyEdgeExecutionAuthorizationEnvelope, EdgeExecutionPolicy } from '@brevio/shared';
 import {
   bindExecuteRequest,
   buildSessionSummaries,
@@ -75,7 +76,7 @@ interface ExecuteSkillMessage {
   tool: string;
   operation: string;
   policy?: EdgeExecutionPolicy;
-  authorization: EdgeExecutionAuthorizationEnvelope;
+  authorization: AnyEdgeExecutionAuthorizationEnvelope;
   dispatch_receipt_id: string;
   result_deadline_at: string;
   input: Record<string, unknown>;
@@ -194,8 +195,7 @@ function extractRequestToken(req: http.IncomingMessage, requestUrl?: URL): strin
   }
   return (
     normalizeHeader(req.headers['x-edge-token']) ??
-    normalizeHeader(req.headers['x-edge-agent-token']) ??
-    requestUrl?.searchParams.get('token')?.trim()
+    normalizeHeader(req.headers['x-edge-agent-token'])
   ) || undefined;
 }
 
@@ -255,6 +255,10 @@ function resolveBoundIdentity(requested: string | string[] | null | undefined, f
     throw new RelayHttpError(401, 'unauthorized', `${field} is required for relay session establishment`);
   }
   return value;
+}
+
+function trustedClientFingerprint(req: http.IncomingMessage): string | undefined {
+  return normalizeHeader(req.headers['x-verified-client-cert-fingerprint']) ?? undefined;
 }
 
 function queueContext(execution: Pick<QueuedExecution, 'requestId' | 'userId' | 'deviceId' | 'skillId'>): string {
@@ -623,8 +627,8 @@ wss.on('connection', (socket, req) => {
   let userId: string;
   let deviceId: string;
   try {
-    userId = resolveBoundIdentity(requestUrl.searchParams.get('user_id') ?? req.headers['x-user-id'], tokenClaims?.user_id, 'user_id');
-    deviceId = resolveBoundIdentity(requestUrl.searchParams.get('device_id') ?? req.headers['x-device-id'], tokenClaims?.device_id, 'device_id');
+    userId = resolveBoundIdentity(requestUrl.searchParams.get('user_id'), tokenClaims?.user_id, 'user_id');
+    deviceId = resolveBoundIdentity(requestUrl.searchParams.get('device_id'), tokenClaims?.device_id, 'device_id');
   } catch (error) {
     sendMessage(socket, {
       type: 'error',
@@ -641,7 +645,7 @@ wss.on('connection', (socket, req) => {
     deviceId: deviceId.trim(),
     deviceName: requestUrl.searchParams.get('device_name') ?? deviceId,
     protocolVersion: '2026.edge.v1',
-    certFingerprint: tokenClaims?.cert_fingerprint ?? normalizeHeader(req.headers['x-client-cert-fingerprint']) ?? 'unknown',
+    certFingerprint: tokenClaims?.cert_fingerprint ?? trustedClientFingerprint(req) ?? 'unknown',
     connectedAt: Date.now(),
     lastSeenAt: Date.now(),
     supportedSkills: new Set<string>(),
@@ -713,10 +717,21 @@ wss.on('connection', (socket, req) => {
           socket.close(1008, 'attestation_mismatch');
           return;
         }
+        const transportFingerprint = trustedClientFingerprint(req);
+        if (session.tokenClaims?.cert_fingerprint && transportFingerprint && transportFingerprint !== session.tokenClaims.cert_fingerprint) {
+          sendMessage(socket, {
+            type: 'error',
+            message: 'transport certificate fingerprint does not match relay token',
+          });
+          socket.close(1008, 'attestation_mismatch');
+          return;
+        }
       }
       session.deviceName = message.device_name?.trim() || session.deviceName;
       session.protocolVersion = optionalString(message.protocol_version) ?? session.protocolVersion;
-      session.certFingerprint = message.client_cert_fingerprint?.trim() || session.certFingerprint;
+      if (trustedClientFingerprint(req)) {
+        session.certFingerprint = trustedClientFingerprint(req)!;
+      }
       const supportedSkills = (message.supported_skills ?? []).filter((skill) => skill.trim() !== '');
       const capabilityResolution = capabilityResolutionFor({
         userId: session.userId,
@@ -1190,12 +1205,19 @@ function dispatchExecution(session: AgentSession, execution: QueuedExecution): v
   const input = recoverQueuedInput(execution.protectedInput, config.queueEncryptionKey, queueContext(execution));
   const dispatchReceiptId = randomUUID();
   const authorization = signEdgeExecutionAuthorization(config.executionAuthSecret, {
-    key_id: 'edge-execution-v1',
+    key_id: 'edge-execution-v2',
     nonce: randomUUID(),
     issued_at: new Date(nowMs).toISOString(),
     expires_at: new Date(nowMs + config.resultDeadlineMs).toISOString(),
     dispatch_receipt_id: dispatchReceiptId,
     policy_hash: edgeExecutionPolicyHash(execution.policy),
+    request_id: execution.requestId,
+    user_id: execution.userId,
+    device_id: execution.deviceId,
+    skill_id: execution.skillId,
+    tool: execution.tool,
+    operation: execution.operation,
+    input_hash: edgeExecutionInputHash(input),
     approved: true
   });
   executionStore.markSent(execution.requestId, {

@@ -36,6 +36,13 @@ export interface GatewayConfig {
   environment: string;
   port: number;
   shutdownTimeoutMs: number;
+  stateFilePath?: string;
+  internalAuthSecret: string;
+  internalAuthIssuer: string;
+  serviceAudience: string;
+  temporalWorkerAudience: string;
+  callerContextSecret: string;
+  logSalt: string;
 
   whatsappWebhookSecret: string;
   whatsappVerifyToken: string;
@@ -59,7 +66,7 @@ export interface RequestContext {
   traceId: string;
   spanId: string;
   requestId: string;
-  userId?: string;
+  subjectRef?: string;
 }
 
 export interface RateLimitDecision {
@@ -85,4 +92,5 @@ export interface NormalizedWebhookResult {
   envelope: MessageEnvelope;
   userId: string;
   dedupKey: string;
+  channelSubject: string;
 }

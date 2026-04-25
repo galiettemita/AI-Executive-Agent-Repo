@@ -8,6 +8,8 @@ interface StartMessageWorkflowInput {
   sessionId: string;
   messageText?: string;
   userProfileHash: string;
+  serviceToken: string;
+  callerContextToken: string;
 }
 
 interface RuntimeResponsePayload {
@@ -51,7 +53,9 @@ export async function startMessageWorkflow(
       method: 'POST',
       signal: controller.signal,
       headers: {
-        'content-type': 'application/json'
+        'content-type': 'application/json',
+        authorization: `Bearer ${input.serviceToken}`,
+        'x-brevio-caller-context': input.callerContextToken
       },
       body: JSON.stringify({
         message_id: input.messageId,

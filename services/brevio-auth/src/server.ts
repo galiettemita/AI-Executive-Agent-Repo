@@ -1,8 +1,16 @@
 import { createHash, randomUUID } from 'node:crypto';
 import http from 'node:http';
 
+import {
+  extractBearerToken,
+  pseudonymizedRef,
+  signAccessToken,
+  verifyAccessToken,
+  verifyCallerContextEnvelope
+} from '../../../packages/shared/src/security.js';
 import { loadAuthServiceMap, loadEnvConfig } from './config.js';
 import { logJSON, requestContextFromHeaders } from './logger.js';
+import { OAuthStateStore } from './oauth-state-store.js';
 import { codeChallengeS256, generateCodeVerifier, generateState } from './pkce.js';
 import type {
   APIKeyService,
@@ -21,7 +29,13 @@ interface RuntimeState {
   oauthByService: Map<string, OAuthService>;
   apiKeyByService: Map<string, APIKeyService>;
   noAuthByService: Map<string, NoAuthService>;
-  stateStore: Map<string, OAuthStateRecord>;
+  stateStore: OAuthStateStore;
+}
+
+interface AuthenticatedRequestIdentity {
+  subject: string;
+  userId?: string;
+  admin: boolean;
 }
 
 export interface AuthServiceRuntime {
@@ -44,10 +58,10 @@ function envVarForServiceClientID(service: string): string {
   return `OAUTH_CLIENT_ID_${service.replace(/[^a-zA-Z0-9]/g, '_').toUpperCase()}`;
 }
 
-function resolveRedirectURI(map: AuthServiceMap, service: string): string {
+function resolveRedirectURI(map: AuthServiceMap, config: EnvConfig, service: string): string {
   return map.auth_config_storage.oauth_redirect_uri_pattern
     .replace('{service}', service)
-    .replace('{environment}', process.env.NODE_ENV ?? 'development');
+    .replace('{environment}', config.environment);
 }
 
 function resolveClientID(config: EnvConfig, map: AuthServiceMap, service: string): string {
@@ -64,8 +78,8 @@ function resolveClientID(config: EnvConfig, map: AuthServiceMap, service: string
 function scrubRecord(record: OAuthStateRecord): Record<string, unknown> {
   return {
     service: record.service,
-    user_id: record.userId,
-    redirect_uri: record.redirectUri,
+    user_ref: createHash('sha256').update(record.userId).digest('hex').slice(0, 12),
+    completion_redirect_configured: Boolean(record.completionRedirectUri),
     created_at_ms: record.createdAtMs,
     expires_at_ms: record.expiresAtMs
   };
@@ -103,14 +117,6 @@ async function parseBody<T>(req: http.IncomingMessage, maxBytes = 1024 * 1024): 
   });
 }
 
-function expireStateEntries(stateStore: Map<string, OAuthStateRecord>, nowMs: number): void {
-  for (const [state, record] of stateStore.entries()) {
-    if (record.expiresAtMs <= nowMs) {
-      stateStore.delete(state);
-    }
-  }
-}
-
 function assertOAuthService(runtime: RuntimeState, service: string): OAuthService | undefined {
   return runtime.oauthByService.get(service);
 }
@@ -119,7 +125,7 @@ function tokenHash(prefix: string, seed: string): string {
   return `${prefix}_${createHash('sha256').update(seed).digest('hex').slice(0, 40)}`;
 }
 
-function buildRuntimeState(serviceMap: AuthServiceMap): RuntimeState {
+function buildRuntimeState(config: EnvConfig, serviceMap: AuthServiceMap, stateStoreFilePath?: string): RuntimeState {
   const oauthByService = new Map<string, OAuthService>();
   for (const service of serviceMap.oauth_services) {
     oauthByService.set(service.service, service);
@@ -139,7 +145,7 @@ function buildRuntimeState(serviceMap: AuthServiceMap): RuntimeState {
     oauthByService,
     apiKeyByService,
     noAuthByService,
-    stateStore: new Map<string, OAuthStateRecord>()
+    stateStore: new OAuthStateStore(stateStoreFilePath, config.stateEncryptionSecret)
   };
 }
 
@@ -170,6 +176,68 @@ function requestContext(req: http.IncomingMessage): RequestContext {
   return requestContextFromHeaders(req.headers);
 }
 
+function authenticateRequest(
+  req: http.IncomingMessage,
+  config: EnvConfig,
+  ctx: RequestContext,
+  mode: 'api' | 'admin'
+): AuthenticatedRequestIdentity {
+  const token = extractBearerToken(req.headers.authorization);
+  if (!token) {
+    throw new Error('authorization_required');
+  }
+  const principal = verifyAccessToken(config.internalAuthSecret, token, {
+    expectedAudience: config.serviceAudience,
+    expectedIssuer: config.internalAuthIssuer,
+    allowedTokenUses: mode === 'admin' ? ['admin_access'] : ['service_access', 'admin_access', 'user_access']
+  });
+  ctx.subjectRef = pseudonymizedRef(principal.sub, config.logSalt);
+  return {
+    subject: principal.sub,
+    userId: principal.token_use === 'user_access' || principal.token_use === 'admin_access' ? principal.sub : undefined,
+    admin: principal.token_use === 'admin_access'
+  };
+}
+
+function callerUserId(req: http.IncomingMessage, config: EnvConfig): string | undefined {
+  const envelope = req.headers['x-brevio-caller-context'];
+  const token = typeof envelope === 'string' ? envelope.trim() : Array.isArray(envelope) ? envelope[0]?.trim() : undefined;
+  if (!token) {
+    return undefined;
+  }
+  return verifyCallerContextEnvelope(config.callerContextSecret, token).user_id;
+}
+
+function normalizeAllowlistedRedirect(urlValue: string): string {
+  const url = new URL(urlValue);
+  url.hash = '';
+  return url.toString();
+}
+
+function resolveCompletionRedirect(
+  config: EnvConfig,
+  service: string,
+  redirectUri: string | undefined
+): string | undefined {
+  const normalized = redirectUri?.trim();
+  if (!normalized) {
+    return undefined;
+  }
+  const allowlist = config.completionRedirectAllowlist[service] ?? config.completionRedirectAllowlist.default ?? [];
+  const expected = normalizeAllowlistedRedirect(normalized);
+  if (!allowlist.map((entry) => normalizeAllowlistedRedirect(entry)).includes(expected)) {
+    throw new Error('redirect_uri_not_allowlisted');
+  }
+  return expected;
+}
+
+function tokenExchangeDisabledPayload(config: EnvConfig): Record<string, unknown> {
+  return {
+    error: 'token_exchange_not_configured',
+    message: `oauth token exchange mode is ${config.tokenExchangeMode}; simulated exchange is only intended for development/test flows`
+  };
+}
+
 async function handleAuthorize(
   req: http.IncomingMessage,
   res: http.ServerResponse,
@@ -177,7 +245,8 @@ async function handleAuthorize(
   map: AuthServiceMap,
   runtime: RuntimeState,
   service: string,
-  ctx: RequestContext
+  ctx: RequestContext,
+  identity: AuthenticatedRequestIdentity
 ): Promise<void> {
   const oauthService = assertOAuthService(runtime, service);
   if (!oauthService) {
@@ -193,30 +262,39 @@ async function handleAuthorize(
     return;
   }
 
-  if (typeof body.user_id !== 'string' || body.user_id.trim() === '') {
-    sendJSON(res, 400, { error: 'user_id_required' });
-    return;
-  }
-
   const state = generateState();
   const codeVerifier = generateCodeVerifier();
   const codeChallenge = codeChallengeS256(codeVerifier);
   const createdAtMs = Date.now();
   const expiresAtMs = createdAtMs + config.stateTtlMs;
-  const redirectUri =
-    typeof body.redirect_uri === 'string' && body.redirect_uri.trim() !== ''
-      ? body.redirect_uri
-      : resolveRedirectURI(map, service);
+  let completionRedirectUri: string | undefined;
+  try {
+    completionRedirectUri = resolveCompletionRedirect(config, service, typeof body.redirect_uri === 'string' ? body.redirect_uri : undefined);
+  } catch (error) {
+    sendJSON(res, 400, { error: error instanceof Error ? error.message : 'redirect_uri_not_allowlisted' });
+    return;
+  }
+  let userId: string | undefined;
+  try {
+    userId = callerUserId(req, config) ?? identity.userId;
+  } catch (error) {
+    sendJSON(res, 401, { error: error instanceof Error ? error.message : 'invalid_caller_context' });
+    return;
+  }
+  if (!userId) {
+    sendJSON(res, 400, { error: 'caller_context_required' });
+    return;
+  }
 
   const scopes =
     Array.isArray(body.scope_override) && body.scope_override.length > 0
       ? body.scope_override.join(' ')
       : oauthService.required_scopes.join(' ');
 
-  runtime.stateStore.set(state, {
+  runtime.stateStore.put(state, {
     service,
-    userId: body.user_id,
-    redirectUri,
+    userId,
+    completionRedirectUri,
     codeVerifier,
     createdAtMs,
     expiresAtMs
@@ -225,7 +303,7 @@ async function handleAuthorize(
   const authURL = new URL(oauthService.provider_url);
   authURL.searchParams.set('response_type', 'code');
   authURL.searchParams.set('client_id', resolveClientID(config, map, service));
-  authURL.searchParams.set('redirect_uri', redirectUri);
+  authURL.searchParams.set('redirect_uri', resolveRedirectURI(map, config, service));
   authURL.searchParams.set('scope', scopes);
   authURL.searchParams.set('state', state);
   authURL.searchParams.set('code_challenge', codeChallenge);
@@ -233,10 +311,10 @@ async function handleAuthorize(
 
   logJSON('oauth_authorize_created', 'INFO', config.serviceName, config.environment, ctx, {
     oauth_service: service,
-    state,
-    user_id: body.user_id,
+    state_ref: createHash('sha256').update(state).digest('hex').slice(0, 12),
+    user_ref: pseudonymizedRef(userId, config.logSalt),
     expires_at_ms: expiresAtMs,
-    redirect_uri: redirectUri
+    completion_redirect_configured: Boolean(completionRedirectUri)
   });
 
   sendJSON(res, 200, {
@@ -245,24 +323,13 @@ async function handleAuthorize(
     authorize_url: authURL.toString(),
     state,
     expires_at: new Date(expiresAtMs).toISOString(),
-    pkce_required: map.auth_config_storage.pkce_required
+    pkce_required: map.auth_config_storage.pkce_required,
+    completion_redirect_configured: Boolean(completionRedirectUri)
   });
 }
 
 function consumeState(runtime: RuntimeState, service: string, state: string): OAuthStateRecord | null {
-  const record = runtime.stateStore.get(state);
-  if (!record) {
-    return null;
-  }
-  if (record.service !== service) {
-    return null;
-  }
-  if (record.expiresAtMs <= Date.now()) {
-    runtime.stateStore.delete(state);
-    return null;
-  }
-  runtime.stateStore.delete(state);
-  return record;
+  return runtime.stateStore.consume(service, state, Date.now());
 }
 
 async function handleExchange(
@@ -295,6 +362,11 @@ async function handleExchange(
     return;
   }
 
+  if (config.tokenExchangeMode !== 'simulated') {
+    sendJSON(res, 503, tokenExchangeDisabledPayload(config));
+    return;
+  }
+
   const record = consumeState(runtime, service, body.state);
   if (!record) {
     sendJSON(res, 409, { error: 'invalid_or_expired_state', service });
@@ -304,8 +376,8 @@ async function handleExchange(
   const token = simulateTokenExchange(service, record.userId, body.code, record.codeVerifier);
   logJSON('oauth_token_exchanged', 'INFO', config.serviceName, config.environment, ctx, {
     oauth_service: service,
-    state: body.state,
-    user_id: record.userId,
+    state_ref: createHash('sha256').update(body.state).digest('hex').slice(0, 12),
+    user_ref: pseudonymizedRef(record.userId, config.logSalt),
     state_record: scrubRecord(record)
   });
 
@@ -341,6 +413,11 @@ async function handleRefresh(
     return;
   }
 
+  if (config.tokenExchangeMode !== 'simulated') {
+    sendJSON(res, 503, tokenExchangeDisabledPayload(config));
+    return;
+  }
+
   const nowMs = Date.now();
   const expiresIn = 3600;
   const accessToken = tokenHash('access', `${service}:${body.refresh_token}:${nowMs}`);
@@ -369,7 +446,6 @@ function handleProviderList(
     oauth_services: map.oauth_services,
     api_key_services: map.api_key_services,
     no_auth_services: map.no_auth_services,
-    auth_config_storage: map.auth_config_storage,
     stats: {
       oauth_services: runtime.oauthByService.size,
       api_key_services: runtime.apiKeyByService.size,
@@ -390,15 +466,7 @@ function handleProviderByService(
   if (oauth) {
     sendJSON(res, 200, {
       type: 'oauth',
-      service: oauth,
-      secrets: {
-        client_id: map.auth_config_storage.secret_naming_convention[0]
-          .replace('{environment}', config.environment)
-          .replace('{service}', service),
-        client_secret: map.auth_config_storage.secret_naming_convention[1]
-          .replace('{environment}', config.environment)
-          .replace('{service}', service)
-      }
+      service: oauth
     });
     return;
   }
@@ -407,8 +475,7 @@ function handleProviderByService(
   if (apiKey) {
     sendJSON(res, 200, {
       type: 'api_key',
-      service: apiKey,
-      secret_path: `brevio/${config.environment}/${service}/api_key`
+      service: apiKey
     });
     return;
   }
@@ -427,11 +494,32 @@ function handleProviderByService(
 
 function handleCallback(
   res: http.ServerResponse,
+  config: EnvConfig,
   runtime: RuntimeState,
   service: string,
   state: string,
-  code: string
+  code: string,
+  issuerHint?: string
 ): void {
+  const oauthService = assertOAuthService(runtime, service);
+  if (!oauthService) {
+    sendJSON(res, 404, { error: 'oauth_service_not_found', service });
+    return;
+  }
+  if (issuerHint) {
+    const expectedIssuer = new URL(oauthService.provider_url).origin;
+    let actualIssuer: string;
+    try {
+      actualIssuer = new URL(issuerHint).origin;
+    } catch {
+      sendJSON(res, 400, { error: 'invalid_issuer_hint', service });
+      return;
+    }
+    if (actualIssuer !== expectedIssuer) {
+      sendJSON(res, 400, { error: 'issuer_mismatch', service });
+      return;
+    }
+  }
   const record = consumeState(runtime, service, state);
   if (!record) {
     sendJSON(res, 409, {
@@ -441,17 +529,31 @@ function handleCallback(
     return;
   }
 
+  const nowMs = Date.now();
+  const handoffToken = signAccessToken(config.internalAuthSecret, {
+    version: 2,
+    sub: record.userId,
+    iss: config.internalAuthIssuer,
+    aud: config.serviceAudience,
+    iat: Math.floor(nowMs / 1000),
+    exp: Math.floor((nowMs + 5 * 60 * 1000) / 1000),
+    token_use: 'user_access',
+    scopes: ['oauth:handoff']
+  });
+  if (record.completionRedirectUri) {
+    const redirectTarget = new URL(record.completionRedirectUri);
+    redirectTarget.searchParams.set('handoff_token', handoffToken);
+    redirectTarget.searchParams.set('service', service);
+    res.writeHead(303, { location: redirectTarget.toString() });
+    res.end();
+    return;
+  }
+
   sendJSON(res, 200, {
-    status: 'callback_received',
+    status: 'callback_processed',
     service,
-    state,
-    token_exchange_hint: {
-      endpoint: `/api/v1/oauth/${service}/exchange`,
-      body: {
-        state,
-        code
-      }
-    },
+    handoff_token: handoffToken,
+    token_exchange_mode: config.tokenExchangeMode,
     state_record: scrubRecord(record)
   });
 }
@@ -459,11 +561,12 @@ function handleCallback(
 export function createAuthServiceRuntime(config?: EnvConfig, serviceMap?: AuthServiceMap): AuthServiceRuntime {
   const resolvedConfig = config ?? loadEnvConfig();
   const resolvedServiceMap = serviceMap ?? loadAuthServiceMap(resolvedConfig.mapPath);
-  const runtime = buildRuntimeState(resolvedServiceMap);
+  const runtime = buildRuntimeState(resolvedConfig, resolvedServiceMap, resolvedConfig.stateStoreFilePath);
 
   const cleanup = setInterval(() => {
-    expireStateEntries(runtime.stateStore, Date.now());
+    runtime.stateStore.expire(Date.now());
   }, 60000);
+  cleanup.unref?.();
 
   const server = http.createServer((req, res) => {
     const ctx = requestContext(req);
@@ -490,6 +593,12 @@ export function createAuthServiceRuntime(config?: EnvConfig, serviceMap?: AuthSe
     }
 
     if (req.method === 'GET' && url.pathname === '/health/deep') {
+      try {
+        authenticateRequest(req, resolvedConfig, ctx, 'admin');
+      } catch (error) {
+        onError(401, error instanceof Error ? error.message : 'authorization_required');
+        return;
+      }
       sendJSON(res, 200, {
         status: 'healthy',
         version: resolvedConfig.serviceVersion,
@@ -499,18 +608,33 @@ export function createAuthServiceRuntime(config?: EnvConfig, serviceMap?: AuthSe
           oauth_provider_count: runtime.oauthByService.size,
           api_key_provider_count: runtime.apiKeyByService.size,
           no_auth_provider_count: runtime.noAuthByService.size,
-          active_oauth_states: runtime.stateStore.size
+          oauth_state_store_mode: runtime.stateStore.mode(),
+          oauth_state_file_path: runtime.stateStore.snapshotPath(),
+          token_exchange_mode: resolvedConfig.tokenExchangeMode,
+          active_oauth_states: runtime.stateStore.size()
         }
       });
       return;
     }
 
     if (req.method === 'GET' && segments.length === 3 && segments[0] === 'api' && segments[1] === 'v1' && segments[2] === 'providers') {
+      try {
+        authenticateRequest(req, resolvedConfig, ctx, 'admin');
+      } catch (error) {
+        onError(401, error instanceof Error ? error.message : 'authorization_required');
+        return;
+      }
       handleProviderList(res, resolvedServiceMap, runtime, resolvedConfig);
       return;
     }
 
     if (req.method === 'GET' && segments.length === 4 && segments[0] === 'api' && segments[1] === 'v1' && segments[2] === 'providers') {
+      try {
+        authenticateRequest(req, resolvedConfig, ctx, 'admin');
+      } catch (error) {
+        onError(401, error instanceof Error ? error.message : 'authorization_required');
+        return;
+      }
       const service = segments[3];
       if (!service) {
         onError(400, 'service_required');
@@ -521,16 +645,29 @@ export function createAuthServiceRuntime(config?: EnvConfig, serviceMap?: AuthSe
     }
 
     if (req.method === 'POST' && segments.length === 5 && segments[0] === 'api' && segments[1] === 'v1' && segments[2] === 'oauth' && segments[4] === 'authorize') {
+      let identity: AuthenticatedRequestIdentity;
+      try {
+        identity = authenticateRequest(req, resolvedConfig, ctx, 'api');
+      } catch (error) {
+        onError(401, error instanceof Error ? error.message : 'authorization_required');
+        return;
+      }
       const service = segments[3];
       if (!service) {
         onError(400, 'service_required');
         return;
       }
-      void handleAuthorize(req, res, resolvedConfig, resolvedServiceMap, runtime, service, ctx);
+      void handleAuthorize(req, res, resolvedConfig, resolvedServiceMap, runtime, service, ctx, identity);
       return;
     }
 
     if (req.method === 'POST' && segments.length === 5 && segments[0] === 'api' && segments[1] === 'v1' && segments[2] === 'oauth' && segments[4] === 'exchange') {
+      try {
+        authenticateRequest(req, resolvedConfig, ctx, 'api');
+      } catch (error) {
+        onError(401, error instanceof Error ? error.message : 'authorization_required');
+        return;
+      }
       const service = segments[3];
       if (!service) {
         onError(400, 'service_required');
@@ -541,6 +678,12 @@ export function createAuthServiceRuntime(config?: EnvConfig, serviceMap?: AuthSe
     }
 
     if (req.method === 'POST' && segments.length === 5 && segments[0] === 'api' && segments[1] === 'v1' && segments[2] === 'oauth' && segments[4] === 'refresh') {
+      try {
+        authenticateRequest(req, resolvedConfig, ctx, 'api');
+      } catch (error) {
+        onError(401, error instanceof Error ? error.message : 'authorization_required');
+        return;
+      }
       const service = segments[3];
       if (!service) {
         onError(400, 'service_required');
@@ -569,7 +712,7 @@ export function createAuthServiceRuntime(config?: EnvConfig, serviceMap?: AuthSe
         return;
       }
 
-      handleCallback(res, runtime, service, state, code);
+      handleCallback(res, resolvedConfig, runtime, service, state, code, url.searchParams.get('iss') ?? undefined);
       return;
     }
 

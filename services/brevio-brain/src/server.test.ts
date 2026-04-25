@@ -3,12 +3,39 @@ import path from 'node:path';
 import { describe, it } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
+import { signAccessToken, signCallerContextEnvelope } from '../../../packages/shared/src/security.js';
 import { createBrainRuntime } from './index.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const repoRoot = path.resolve(__dirname, '..', '..', '..');
 const configPath = path.join(repoRoot, 'config', 'skill-disambiguation.yaml');
+const internalAuthSecret = 'brain-test-secret';
+const callerContextSecret = 'brain-caller-secret';
+
+function authHeaders(userId = 'u-brain-test') {
+  return {
+    'content-type': 'application/json',
+    authorization: `Bearer ${signAccessToken(internalAuthSecret, {
+      version: 2,
+      sub: 'brevio-gateway',
+      iss: 'https://auth.brevio.internal',
+      aud: 'brevio-brain',
+      iat: Math.floor(Date.now() / 1000),
+      exp: Math.floor(Date.now() / 1000) + 300,
+      token_use: 'service_access',
+      scopes: ['brain:test']
+    })}`,
+    'x-brevio-caller-context': signCallerContextEnvelope(callerContextSecret, {
+      subject: userId,
+      user_id: userId,
+      auth_strength: 'service_token',
+      provenance: 'test',
+      issued_at: new Date().toISOString(),
+      expires_at: new Date(Date.now() + 300000).toISOString()
+    })
+  };
+}
 
 async function startRuntime() {
   const runtime = createBrainRuntime({
@@ -24,7 +51,12 @@ async function startRuntime() {
     plannerTimeoutMs: 1000,
     plannerBaseUrl: 'https://api.openai.com/v1',
     temporalWorkerBaseUrl: undefined,
-    temporalWorkerTimeoutMs: 1000
+    temporalWorkerTimeoutMs: 1000,
+    internalAuthSecret,
+    internalAuthIssuer: 'https://auth.brevio.internal',
+    serviceAudience: 'brevio-brain',
+    callerContextSecret,
+    logSalt: 'brain-test-salt'
   });
 
   await new Promise<void>((resolve, reject) => {
@@ -60,7 +92,7 @@ describe('brevio-brain runtime', () => {
     try {
       const response = await fetch(`${baseURL}/api/v1/brain/classify`, {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: authHeaders(),
         body: '{bad json'
       });
 
@@ -81,7 +113,7 @@ describe('brevio-brain runtime', () => {
     try {
       const response = await fetch(`${baseURL}/api/v1/brain/process`, {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: authHeaders(),
         body: JSON.stringify({
           message_text: 'play music',
           user_profile: {
@@ -116,7 +148,7 @@ describe('brevio-brain runtime', () => {
     try {
       const response = await fetch(`${baseURL}/api/v1/brain/process`, {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: authHeaders(),
         body: JSON.stringify({
           message_text: 'play music',
           run_id: 'run-server-123',
