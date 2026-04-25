@@ -242,6 +242,18 @@ function authorizeWebSocket(req: http.IncomingMessage, requestUrl: URL): RelayTo
   if (claims.role !== 'device') {
     throw new RelayHttpError(403, 'forbidden', 'edge session tokens must use the device role');
   }
+  if (config.environment !== 'local' && config.environment !== 'test') {
+    const transportFingerprint = trustedClientFingerprint(req);
+    if (!claims.cert_fingerprint) {
+      throw new RelayHttpError(401, 'unauthorized', 'device token certificate binding is required');
+    }
+    if (!transportFingerprint) {
+      throw new RelayHttpError(401, 'unauthorized', 'verified transport certificate fingerprint is required');
+    }
+    if (transportFingerprint !== claims.cert_fingerprint) {
+      throw new RelayHttpError(403, 'forbidden', 'transport certificate fingerprint does not match relay token');
+    }
+  }
   return claims;
 }
 
@@ -382,7 +394,15 @@ const server = http.createServer((req, res) => {
   }
 
   if (req.method === 'GET' && requestUrl.pathname === '/health/deep') {
-    writeJson(res, 200, healthPayload(true));
+    try {
+      authorizeHttpRequest(req, ['admin']);
+      writeJson(res, 200, healthPayload(true));
+    } catch (error) {
+      const statusCode = error instanceof RelayHttpError ? error.statusCode : 401;
+      const code = error instanceof RelayHttpError ? error.code : 'unauthorized';
+      const message = error instanceof Error ? error.message : 'unauthorized';
+      writeJson(res, statusCode, { error: code, message });
+    }
     return;
   }
 
@@ -645,7 +665,7 @@ wss.on('connection', (socket, req) => {
     deviceId: deviceId.trim(),
     deviceName: requestUrl.searchParams.get('device_name') ?? deviceId,
     protocolVersion: '2026.edge.v1',
-    certFingerprint: tokenClaims?.cert_fingerprint ?? trustedClientFingerprint(req) ?? 'unknown',
+    certFingerprint: trustedClientFingerprint(req) ?? tokenClaims?.cert_fingerprint ?? 'unknown',
     connectedAt: Date.now(),
     lastSeenAt: Date.now(),
     supportedSkills: new Set<string>(),

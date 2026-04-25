@@ -1,6 +1,10 @@
 import path from 'node:path';
 
-import { loadBrevioEnvironment, requireSharedSecret } from '../../../packages/shared/src/security.js';
+import {
+  loadBrevioEnvironment,
+  requireSharedSecret,
+  resolveAccessTokenSigningKey
+} from '../../../packages/shared/src/security.js';
 
 import type { GatewayConfig } from './types.js';
 
@@ -24,7 +28,13 @@ export function loadGatewayConfig(): GatewayConfig {
     port: parsePositiveInt(process.env.PORT, 8080, 'PORT'),
     shutdownTimeoutMs: parsePositiveInt(process.env.BREVIO_GATEWAY_SHUTDOWN_TIMEOUT_MS, 30000, 'BREVIO_GATEWAY_SHUTDOWN_TIMEOUT_MS'),
     stateFilePath: path.resolve(process.env.BREVIO_GATEWAY_STATE_FILE ?? path.join(process.cwd(), 'data', 'gateway', 'state.json')),
-    internalAuthSecret: requireSharedSecret(process.env.BREVIO_INTERNAL_AUTH_SECRET, 'BREVIO_INTERNAL_AUTH_SECRET', environment, 'brevio-gateway'),
+    internalAuthSecret: resolveAccessTokenSigningKey(
+      process.env.BREVIO_INTERNAL_AUTH_PRIVATE_KEY,
+      process.env.BREVIO_INTERNAL_AUTH_SECRET,
+      environment,
+      'BREVIO_INTERNAL_AUTH_PRIVATE_KEY',
+      'brevio-gateway'
+    ),
     internalAuthIssuer: process.env.BREVIO_INTERNAL_AUTH_ISSUER?.trim() || 'https://auth.brevio.internal',
     serviceAudience: process.env.BREVIO_GATEWAY_AUDIENCE?.trim() || 'brevio-gateway',
     temporalWorkerAudience: process.env.BREVIO_TEMPORAL_WORKER_AUDIENCE?.trim() || 'brevio-temporal-worker',

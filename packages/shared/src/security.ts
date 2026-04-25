@@ -1,4 +1,12 @@
-import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
+import {
+  createHash,
+  createHmac,
+  createPrivateKey,
+  createPublicKey,
+  createSign,
+  createVerify,
+  timingSafeEqual
+} from 'node:crypto';
 import type { IncomingHttpHeaders } from 'node:http';
 
 export type BrevioEnvironment = 'local' | 'test' | 'staging' | 'production';
@@ -58,7 +66,7 @@ export interface VerifiedCallerContext extends CallerContextClaims {
 }
 
 interface TokenHeader {
-  alg: 'HS256';
+  alg: 'HS256' | 'RS256';
   typ: string;
   kid: string;
 }
@@ -105,7 +113,12 @@ export function loadBrevioEnvironment(
   rawEnvironment = process.env.BREVIO_ENV,
   rawNodeEnvironment = process.env.NODE_ENV
 ): BrevioEnvironment {
-  const normalized = (rawEnvironment?.trim() || rawNodeEnvironment?.trim() || 'local').toLowerCase();
+  const explicitEnvironment = rawEnvironment?.trim().toLowerCase();
+  const fallbackEnvironment = rawNodeEnvironment?.trim().toLowerCase();
+  const normalized = explicitEnvironment || fallbackEnvironment || 'local';
+  if (!explicitEnvironment && fallbackEnvironment && !['local', 'development', 'dev', 'test'].includes(fallbackEnvironment)) {
+    throw new Error('BREVIO_ENV is required outside local/test environments');
+  }
   switch (normalized) {
     case 'local':
     case 'development':
@@ -190,24 +203,108 @@ function parseSignedToken(token: string): { header: TokenHeader; payload: Record
   };
 }
 
-function signSignedToken(secret: string, header: TokenHeader, payload: Record<string, unknown>): string {
+function normalizeKeyMaterial(keyMaterial: string): string {
+  return keyMaterial.includes('BEGIN ') ? keyMaterial.replace(/\\n/g, '\n').trim() : keyMaterial.trim();
+}
+
+function isPemPrivateKey(keyMaterial: string): boolean {
+  return normalizeKeyMaterial(keyMaterial).includes('BEGIN PRIVATE KEY');
+}
+
+function isPemKey(keyMaterial: string): boolean {
+  const normalized = normalizeKeyMaterial(keyMaterial);
+  return normalized.includes('BEGIN PRIVATE KEY') || normalized.includes('BEGIN PUBLIC KEY');
+}
+
+function signSignedToken(keyMaterial: string, header: TokenHeader, payload: Record<string, unknown>): string {
   const headerBase64 = encodeBase64Url(JSON.stringify(header));
   const payloadBase64 = encodeBase64Url(JSON.stringify(payload));
   const signingInput = `${headerBase64}.${payloadBase64}`;
-  const signature = createHmac('sha256', secret).update(signingInput).digest();
+  let signature: Buffer;
+  if (header.alg === 'RS256') {
+    const signer = createSign('RSA-SHA256');
+    signer.update(signingInput);
+    signer.end();
+    signature = signer.sign(createPrivateKey(normalizeKeyMaterial(keyMaterial)));
+  } else {
+    signature = createHmac('sha256', keyMaterial).update(signingInput).digest();
+  }
   return `${signingInput}.${encodeBase64Url(signature)}`;
 }
 
-function verifySignedToken(secret: string, token: string, expectedTyp: string): Record<string, unknown> {
+function verifySignedToken(keyMaterial: string, token: string, expectedTyp: string): Record<string, unknown> {
   const parsed = parseSignedToken(token);
-  if (parsed.header.alg !== 'HS256' || parsed.header.typ !== expectedTyp) {
+  if ((parsed.header.alg !== 'HS256' && parsed.header.alg !== 'RS256') || parsed.header.typ !== expectedTyp) {
     throw new Error('unsupported_token_type');
   }
-  const expectedSignature = createHmac('sha256', secret).update(parsed.signingInput).digest();
-  if (parsed.signature.length !== expectedSignature.length || !timingSafeEqual(parsed.signature, expectedSignature)) {
-    throw new Error('invalid_token_signature');
+  if (parsed.header.alg === 'RS256') {
+    const verifier = createVerify('RSA-SHA256');
+    verifier.update(parsed.signingInput);
+    verifier.end();
+    const verificationKey = isPemPrivateKey(keyMaterial)
+      ? createPublicKey(createPrivateKey(normalizeKeyMaterial(keyMaterial)))
+      : createPublicKey(normalizeKeyMaterial(keyMaterial));
+    if (!verifier.verify(verificationKey, parsed.signature)) {
+      throw new Error('invalid_token_signature');
+    }
+  } else {
+    const expectedSignature = createHmac('sha256', keyMaterial).update(parsed.signingInput).digest();
+    if (parsed.signature.length !== expectedSignature.length || !timingSafeEqual(parsed.signature, expectedSignature)) {
+      throw new Error('invalid_token_signature');
+    }
   }
   return parsed.payload;
+}
+
+export function resolveAccessTokenSigningKey(
+  rawPrivateKey: string | undefined,
+  rawSharedSecret: string | undefined,
+  environment: BrevioEnvironment,
+  fieldName: string,
+  devSeed?: string
+): string {
+  const privateKey = normalizeString(rawPrivateKey);
+  if (privateKey) {
+    return normalizeKeyMaterial(privateKey);
+  }
+  const sharedSecret = normalizeString(rawSharedSecret);
+  const allowSharedSecretFallback =
+    isPermissiveEnvironment(environment) || process.env.BREVIO_ALLOW_SHARED_INTERNAL_AUTH_SECRET?.trim() === 'true';
+  if (sharedSecret && allowSharedSecretFallback) {
+    return sharedSecret;
+  }
+  if (isPermissiveEnvironment(environment) && !sharedSecret) {
+    return requireSharedSecret(undefined, fieldName, environment, devSeed);
+  }
+  throw new Error(`${fieldName} is required outside local/test environments`);
+}
+
+export function resolveAccessTokenVerificationKey(
+  rawPublicKey: string | undefined,
+  rawPrivateKey: string | undefined,
+  rawSharedSecret: string | undefined,
+  environment: BrevioEnvironment,
+  fieldName: string,
+  devSeed?: string
+): string {
+  const publicKey = normalizeString(rawPublicKey);
+  if (publicKey) {
+    return normalizeKeyMaterial(publicKey);
+  }
+  const privateKey = normalizeString(rawPrivateKey);
+  if (privateKey) {
+    return normalizeKeyMaterial(privateKey);
+  }
+  const sharedSecret = normalizeString(rawSharedSecret);
+  const allowSharedSecretFallback =
+    isPermissiveEnvironment(environment) || process.env.BREVIO_ALLOW_SHARED_INTERNAL_AUTH_SECRET?.trim() === 'true';
+  if (sharedSecret && allowSharedSecretFallback) {
+    return sharedSecret;
+  }
+  if (isPermissiveEnvironment(environment) && !sharedSecret) {
+    return requireSharedSecret(undefined, fieldName, environment, devSeed);
+  }
+  throw new Error(`${fieldName} is required outside local/test environments`);
 }
 
 export function signAccessToken(secret: string, claims: AccessTokenClaims, keyId = 'brevio-internal-v2'): string {
@@ -217,7 +314,11 @@ export function signAccessToken(secret: string, claims: AccessTokenClaims, keyId
     token_use: claims.token_use ?? 'service_access',
     scopes: [...new Set((claims.scopes ?? []).map((scope) => scope.trim()).filter((scope) => scope.length > 0))]
   };
-  return signSignedToken(secret, { alg: 'HS256', typ: ACCESS_TOKEN_TYP, kid: keyId }, normalizedClaims as Record<string, unknown>);
+  return signSignedToken(
+    secret,
+    { alg: isPemPrivateKey(secret) ? 'RS256' : 'HS256', typ: ACCESS_TOKEN_TYP, kid: keyId },
+    normalizedClaims as Record<string, unknown>
+  );
 }
 
 export function verifyAccessToken(
@@ -228,8 +329,22 @@ export function verifyAccessToken(
 ): VerifiedAccessToken {
   const payload = verifySignedToken(secret, token, ACCESS_TOKEN_TYP);
   const claims = payload as AccessTokenClaims;
+  const allowLegacyTokens = process.env.BREVIO_ALLOW_LEGACY_INTERNAL_TOKENS?.trim() === 'true';
   const version = claims.version === 1 || claims.version === 2 ? claims.version : 1;
-  const tokenUse = claims.token_use ?? (typeof claims.role === 'string' && claims.role.toLowerCase().includes('admin') ? 'admin_access' : 'service_access');
+  const tokenUse = claims.token_use ?? (allowLegacyTokens
+    ? typeof claims.role === 'string' && claims.role.toLowerCase().includes('admin')
+      ? 'admin_access'
+      : 'service_access'
+    : undefined);
+  if (!allowLegacyTokens && version !== 2) {
+    throw new Error('token_version_mismatch');
+  }
+  if (!tokenUse) {
+    throw new Error('token_use_required');
+  }
+  if (!allowLegacyTokens && !isPemKey(secret) && !isPermissiveEnvironment(loadBrevioEnvironment())) {
+    throw new Error('shared_secret_tokens_not_allowed');
+  }
   const scopes = Array.isArray(claims.scopes)
     ? claims.scopes.map((scope) => normalizeString(scope)).filter((scope): scope is string => Boolean(scope))
     : [];

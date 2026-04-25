@@ -1,9 +1,20 @@
-import { createHash, randomUUID } from 'node:crypto';
-import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
+import { existsSync } from 'node:fs';
+import { mkdir } from 'node:fs/promises';
 import http from 'node:http';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 
-type KnowledgeFileName = 'USER.md' | 'SOUL.md' | 'AGENTS.md';
+import {
+  authenticateInternalRequest,
+  resolveEffectiveUserScope
+} from '../../../packages/shared/src/internal-http-auth.js';
+import {
+  loadBrevioEnvironment,
+  resolveAccessTokenVerificationKey,
+  requireSharedSecret
+} from '../../../packages/shared/src/security.js';
+import { KNOWLEDGE_FILES, ProfileStore, type KnowledgeFileName } from './profile-store.js';
 
 interface ProfileConfig {
   serviceName: string;
@@ -13,33 +24,27 @@ interface ProfileConfig {
   shutdownTimeoutMs: number;
   profilesRootDir: string;
   maxKnowledgeBytes: number;
+  internalAuthSecret: string;
+  internalAuthIssuer: string;
+  serviceAudience: string;
+  callerContextSecret: string;
+  logSalt: string;
 }
 
 interface RequestContext {
   traceId: string;
   spanId: string;
   requestId: string;
-  userId?: string;
-}
-
-interface ProfileRecord {
-  user_id: string;
-  timezone: string;
-  locale: string;
-  preferences: Record<string, unknown>;
-  profile_hash: string;
-  created_at: string;
-  updated_at: string;
+  subjectRef?: string;
 }
 
 interface ProfileRuntime {
   config: ProfileConfig;
   startedAtMs: number;
+  store: ProfileStore;
   server: http.Server;
   close(): Promise<void>;
 }
-
-const KNOWLEDGE_FILES: KnowledgeFileName[] = ['USER.md', 'SOUL.md', 'AGENTS.md'];
 
 function parsePositiveInt(raw: string | undefined, fallback: number, field: string): number {
   if (!raw || raw.trim() === '') {
@@ -53,14 +58,27 @@ function parsePositiveInt(raw: string | undefined, fallback: number, field: stri
 }
 
 function loadConfig(): ProfileConfig {
+  const environment = loadBrevioEnvironment();
   return {
     serviceName: 'brevio-profile',
     version: process.env.SERVICE_VERSION ?? '0.2.0',
-    environment: process.env.NODE_ENV ?? 'development',
+    environment,
     port: parsePositiveInt(process.env.PORT, 8084, 'PORT'),
     shutdownTimeoutMs: parsePositiveInt(process.env.BREVIO_PROFILE_SHUTDOWN_TIMEOUT_MS, 30000, 'BREVIO_PROFILE_SHUTDOWN_TIMEOUT_MS'),
     profilesRootDir: path.resolve(process.env.BREVIO_PROFILE_DATA_DIR ?? path.join(process.cwd(), 'data', 'profiles')),
-    maxKnowledgeBytes: parsePositiveInt(process.env.BREVIO_PROFILE_MAX_KNOWLEDGE_BYTES, 512 * 1024, 'BREVIO_PROFILE_MAX_KNOWLEDGE_BYTES')
+    maxKnowledgeBytes: parsePositiveInt(process.env.BREVIO_PROFILE_MAX_KNOWLEDGE_BYTES, 512 * 1024, 'BREVIO_PROFILE_MAX_KNOWLEDGE_BYTES'),
+    internalAuthSecret: resolveAccessTokenVerificationKey(
+      process.env.BREVIO_INTERNAL_AUTH_PUBLIC_KEY,
+      process.env.BREVIO_INTERNAL_AUTH_PRIVATE_KEY,
+      process.env.BREVIO_INTERNAL_AUTH_SECRET,
+      environment,
+      'BREVIO_INTERNAL_AUTH_PUBLIC_KEY',
+      'brevio-profile'
+    ),
+    internalAuthIssuer: process.env.BREVIO_INTERNAL_AUTH_ISSUER?.trim() || 'https://auth.brevio.internal',
+    serviceAudience: process.env.BREVIO_PROFILE_AUDIENCE?.trim() || 'brevio-profile',
+    callerContextSecret: requireSharedSecret(process.env.BREVIO_CALLER_CONTEXT_SECRET, 'BREVIO_CALLER_CONTEXT_SECRET', environment, 'brevio-profile-caller'),
+    logSalt: process.env.BREVIO_PROFILE_LOG_SALT?.trim() || `brevio-profile:${environment}`
   };
 }
 
@@ -80,7 +98,6 @@ function requestContext(req: http.IncomingMessage): RequestContext {
     traceId: getHeader(req, 'x-trace-id') ?? randomUUID(),
     spanId: getHeader(req, 'x-span-id') ?? randomUUID(),
     requestId: getHeader(req, 'x-request-id') ?? randomUUID(),
-    userId: getHeader(req, 'x-user-id')
   };
 }
 
@@ -99,7 +116,7 @@ function logEvent(
       trace_id: ctx.traceId,
       span_id: ctx.spanId,
       request_id: ctx.requestId,
-      user_id: ctx.userId,
+      subject_ref: ctx.subjectRef,
       event,
       severity,
       attrs
@@ -153,15 +170,6 @@ function asObject(value: unknown): Record<string, unknown> | undefined {
   return undefined;
 }
 
-function resolveProfilePath(config: ProfileConfig, userId: string): { profileDir: string; profileFile: string; knowledgeDir: string } {
-  const profileDir = path.resolve(config.profilesRootDir, userId);
-  return {
-    profileDir,
-    profileFile: path.join(profileDir, 'profile.json'),
-    knowledgeDir: path.join(profileDir, 'knowledge')
-  };
-}
-
 function sanitizeUserId(raw: string | undefined): string | undefined {
   if (!raw) {
     return undefined;
@@ -185,73 +193,6 @@ function resolveKnowledgeFile(raw: string | undefined): KnowledgeFileName | unde
     return 'AGENTS.md';
   }
   return undefined;
-}
-
-async function readKnowledgeContent(knowledgeDir: string, fileName: KnowledgeFileName): Promise<string> {
-  const knowledgePath = path.join(knowledgeDir, fileName);
-  try {
-    return await readFile(knowledgePath, 'utf8');
-  } catch {
-    return '';
-  }
-}
-
-async function computeProfileHash(knowledgeDir: string): Promise<string> {
-  const hash = createHash('sha256');
-  for (const fileName of KNOWLEDGE_FILES) {
-    const content = await readKnowledgeContent(knowledgeDir, fileName);
-    hash.update(fileName);
-    hash.update(':');
-    hash.update(content);
-    hash.update('\n');
-  }
-  return hash.digest('hex');
-}
-
-function defaultProfile(userId: string, hash: string): ProfileRecord {
-  const now = new Date().toISOString();
-  return {
-    user_id: userId,
-    timezone: 'UTC',
-    locale: 'en-US',
-    preferences: {},
-    profile_hash: hash,
-    created_at: now,
-    updated_at: now
-  };
-}
-
-async function ensureProfile(runtime: ProfileRuntime, userId: string): Promise<ProfileRecord> {
-  const { profileFile, knowledgeDir } = resolveProfilePath(runtime.config, userId);
-
-  await mkdir(knowledgeDir, { recursive: true });
-  for (const fileName of KNOWLEDGE_FILES) {
-    const filePath = path.join(knowledgeDir, fileName);
-    try {
-      await stat(filePath);
-    } catch {
-      await writeFile(filePath, '', 'utf8');
-    }
-  }
-
-  const hash = await computeProfileHash(knowledgeDir);
-  try {
-    const raw = await readFile(profileFile, 'utf8');
-    const parsed = JSON.parse(raw) as ProfileRecord;
-    parsed.profile_hash = hash;
-    parsed.updated_at = new Date().toISOString();
-    await writeFile(profileFile, JSON.stringify(parsed, null, 2), 'utf8');
-    return parsed;
-  } catch {
-    const profile = defaultProfile(userId, hash);
-    await writeFile(profileFile, JSON.stringify(profile, null, 2), 'utf8');
-    return profile;
-  }
-}
-
-async function persistProfile(runtime: ProfileRuntime, profile: ProfileRecord): Promise<void> {
-  const { profileFile } = resolveProfilePath(runtime.config, profile.user_id);
-  await writeFile(profileFile, JSON.stringify(profile, null, 2), 'utf8');
 }
 
 function parseApiPath(pathname: string): { base: 'api' | 'v1'; segments: string[] } | undefined {
@@ -286,10 +227,14 @@ function healthPayload(runtime: ProfileRuntime, deep: boolean): Record<string, u
     ...payload,
     checks: {
       process: 'ok',
-      db: process.env.DATABASE_URL ? 'configured' : 'not_configured',
-      redis: process.env.REDIS_URL ? 'configured' : 'not_configured',
-      temporal: process.env.TEMPORAL_HOST ? 'configured' : 'not_configured',
-      profile_storage: runtime.config.profilesRootDir
+      profile_storage_mode: runtime.store.mode(),
+      profile_storage_durable: true,
+      shared_storage_backend: false,
+      profile_storage_exists: existsSync(runtime.config.profilesRootDir)
+    },
+    profile_storage: {
+      root_dir: runtime.config.profilesRootDir,
+      max_knowledge_bytes: runtime.config.maxKnowledgeBytes
     }
   };
 }
@@ -297,6 +242,7 @@ function healthPayload(runtime: ProfileRuntime, deep: boolean): Record<string, u
 function buildRuntime(config?: ProfileConfig): ProfileRuntime {
   const resolvedConfig = config ?? loadConfig();
   const startedAtMs = Date.now();
+  const store = new ProfileStore(resolvedConfig.profilesRootDir);
 
   let runtimeRef: ProfileRuntime | undefined;
 
@@ -327,6 +273,12 @@ function buildRuntime(config?: ProfileConfig): ProfileRuntime {
     }
 
     if (method === 'GET' && pathname === '/health/deep') {
+      try {
+        authenticateInternalRequest(req, runtime.config, ctx, { mode: 'admin' });
+      } catch (error) {
+        onError(401, error instanceof Error ? error.message : 'admin_token_required');
+        return;
+      }
       sendJSON(res, 200, healthPayload(runtime, true));
       return;
     }
@@ -343,12 +295,28 @@ function buildRuntime(config?: ProfileConfig): ProfileRuntime {
       onError(400, 'invalid_user_id');
       return;
     }
-
-    ctx.userId = userId;
+    let auth: ReturnType<typeof authenticateInternalRequest>;
+    try {
+      auth = authenticateInternalRequest(req, runtime.config, ctx);
+    } catch (error) {
+      onError(401, error instanceof Error ? error.message : 'authorization_required');
+      return;
+    }
+    let effectiveScope;
+    try {
+      effectiveScope = resolveEffectiveUserScope(auth, { requireUserId: auth.principal.token_use !== 'admin_access' });
+    } catch (error) {
+      onError(400, error instanceof Error ? error.message : 'caller_context_required');
+      return;
+    }
+    if (auth.principal.token_use !== 'admin_access' && effectiveScope.userId !== userId) {
+      onError(403, 'forbidden');
+      return;
+    }
 
     if (method === 'GET' && segments.length === 2) {
       void (async () => {
-        const profile = await ensureProfile(runtime, userId);
+        const profile = await runtime.store.ensureProfile(userId);
         sendJSON(res, 200, {
           user_id: profile.user_id,
           timezone: profile.timezone,
@@ -381,21 +349,11 @@ function buildRuntime(config?: ProfileConfig): ProfileRuntime {
           return;
         }
 
-        const profile = await ensureProfile(runtime, userId);
-        profile.preferences = preferences;
-
-        const timezone = asString(payload.timezone);
-        if (timezone) {
-          profile.timezone = timezone;
-        }
-
-        const locale = asString(payload.locale);
-        if (locale) {
-          profile.locale = locale;
-        }
-
-        profile.updated_at = new Date().toISOString();
-        await persistProfile(runtime, profile);
+        const profile = await runtime.store.updatePreferences(userId, {
+          preferences,
+          timezone: asString(payload.timezone),
+          locale: asString(payload.locale)
+        });
 
         sendJSON(res, 200, {
           user_id: profile.user_id,
@@ -434,9 +392,7 @@ function buildRuntime(config?: ProfileConfig): ProfileRuntime {
       }
 
       void (async () => {
-        const profile = await ensureProfile(runtime, userId);
-        const { knowledgeDir } = resolveProfilePath(runtime.config, userId);
-        const content = await readKnowledgeContent(knowledgeDir, knowledgeFile);
+        const { profile, content } = await runtime.store.readKnowledge(userId, knowledgeFile);
 
         sendJSON(res, 200, {
           user_id: userId,
@@ -476,15 +432,7 @@ function buildRuntime(config?: ProfileConfig): ProfileRuntime {
           return;
         }
 
-        const paths = resolveProfilePath(runtime.config, userId);
-        await ensureProfile(runtime, userId);
-
-        const filePath = path.join(paths.knowledgeDir, knowledgeFile);
-        await writeFile(filePath, content, 'utf8');
-
-        const profile = await ensureProfile(runtime, userId);
-        profile.updated_at = new Date().toISOString();
-        await persistProfile(runtime, profile);
+        const profile = await runtime.store.writeKnowledge(userId, knowledgeFile, content);
 
         sendJSON(res, 200, {
           user_id: userId,
@@ -518,9 +466,7 @@ function buildRuntime(config?: ProfileConfig): ProfileRuntime {
 
     if (method === 'POST' && segments.length === 4 && segments[2] === 'hash' && segments[3] === 'refresh') {
       void (async () => {
-        const profile = await ensureProfile(runtime, userId);
-        profile.updated_at = new Date().toISOString();
-        await persistProfile(runtime, profile);
+        const profile = await runtime.store.refreshHash(userId);
 
         sendJSON(res, 200, {
           user_id: userId,
@@ -547,6 +493,7 @@ function buildRuntime(config?: ProfileConfig): ProfileRuntime {
   const runtime: ProfileRuntime = {
     config: resolvedConfig,
     startedAtMs,
+    store,
     server,
     async close(): Promise<void> {
       await new Promise<void>((resolve, reject) => {
@@ -629,17 +576,19 @@ async function main(): Promise<void> {
   });
 }
 
-void main().catch((err) => {
-  process.stderr.write(
-    JSON.stringify({
-      ts: new Date().toISOString(),
-      service: 'brevio-profile',
-      event: 'profile.start.failed',
-      severity: 'ERROR',
-      message: err instanceof Error ? err.message : String(err)
-    }) + '\n'
-  );
-  process.exit(1);
-});
+if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) {
+  void main().catch((err) => {
+    process.stderr.write(
+      JSON.stringify({
+        ts: new Date().toISOString(),
+        service: 'brevio-profile',
+        event: 'profile.start.failed',
+        severity: 'ERROR',
+        message: err instanceof Error ? err.message : String(err)
+      }) + '\n'
+    );
+    process.exit(1);
+  });
+}
 
 export { buildRuntime as createProfileRuntime };

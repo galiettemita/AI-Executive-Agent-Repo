@@ -9,6 +9,7 @@ import {
   loadBrevioEnvironment,
   pseudonymizedRef,
   requireSharedSecret,
+  resolveAccessTokenVerificationKey,
   verifyAccessToken,
   verifyCallerContextEnvelope
 } from '../../../packages/shared/src/security.js';
@@ -127,7 +128,14 @@ function loadConfig(): HandsConfig {
     temporalWorkerBaseUrl: process.env.BREVIO_TEMPORAL_WORKER_BASE_URL?.trim() || undefined,
     temporalWorkerTimeoutMs: parsePositiveInt(process.env.BREVIO_TEMPORAL_WORKER_TIMEOUT_MS, 1500, 'BREVIO_TEMPORAL_WORKER_TIMEOUT_MS'),
     capabilityInventoryJson: process.env.BREVIO_CAPABILITY_INVENTORY_JSON?.trim() || undefined,
-    internalAuthSecret: requireSharedSecret(process.env.BREVIO_INTERNAL_AUTH_SECRET, 'BREVIO_INTERNAL_AUTH_SECRET', environment, 'brevio-hands'),
+    internalAuthSecret: resolveAccessTokenVerificationKey(
+      process.env.BREVIO_INTERNAL_AUTH_PUBLIC_KEY,
+      process.env.BREVIO_INTERNAL_AUTH_PRIVATE_KEY,
+      process.env.BREVIO_INTERNAL_AUTH_SECRET,
+      environment,
+      'BREVIO_INTERNAL_AUTH_PUBLIC_KEY',
+      'brevio-hands'
+    ),
     internalAuthIssuer: process.env.BREVIO_INTERNAL_AUTH_ISSUER?.trim() || 'https://auth.brevio.internal',
     serviceAudience: process.env.BREVIO_HANDS_AUDIENCE?.trim() || 'brevio-hands',
     callerContextSecret: requireSharedSecret(process.env.BREVIO_CALLER_CONTEXT_SECRET, 'BREVIO_CALLER_CONTEXT_SECRET', environment, 'brevio-hands-caller'),

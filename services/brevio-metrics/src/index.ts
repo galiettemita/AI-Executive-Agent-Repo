@@ -1,5 +1,14 @@
 import { randomUUID } from 'node:crypto';
 import http from 'node:http';
+import path from 'node:path';
+import { pathToFileURL } from 'node:url';
+
+import { authenticateInternalRequest } from '../../../packages/shared/src/internal-http-auth.js';
+import {
+  loadBrevioEnvironment,
+  resolveAccessTokenVerificationKey
+} from '../../../packages/shared/src/security.js';
+import { MetricsStore } from './metrics-store.js';
 
 interface MetricsConfig {
   serviceName: string;
@@ -8,13 +17,18 @@ interface MetricsConfig {
   port: number;
   shutdownTimeoutMs: number;
   maxBodyBytes: number;
+  stateFilePath?: string;
+  internalAuthSecret: string;
+  internalAuthIssuer: string;
+  serviceAudience: string;
+  logSalt: string;
 }
 
 interface RequestContext {
   traceId: string;
   spanId: string;
   requestId: string;
-  userId?: string;
+  subjectRef?: string;
 }
 
 type MetricType = 'counter' | 'gauge' | 'histogram';
@@ -25,19 +39,11 @@ interface MetricDescriptor {
   help: string;
 }
 
-interface HistogramSeries {
-  count: number;
-  sum: number;
-  buckets: Map<number, number>;
-}
-
 interface MetricsRuntime {
   config: MetricsConfig;
   startedAtMs: number;
   server: http.Server;
-  counters: Map<string, number>;
-  gauges: Map<string, number>;
-  histograms: Map<string, HistogramSeries>;
+  store: MetricsStore;
   close(): Promise<void>;
 }
 
@@ -70,13 +76,26 @@ function parsePositiveInt(raw: string | undefined, fallback: number, field: stri
 }
 
 function loadConfig(): MetricsConfig {
+  const environment = loadBrevioEnvironment();
   return {
     serviceName: 'brevio-metrics',
     version: process.env.SERVICE_VERSION ?? '0.2.0',
-    environment: process.env.NODE_ENV ?? 'development',
+    environment,
     port: parsePositiveInt(process.env.PORT, 9090, 'PORT'),
     shutdownTimeoutMs: parsePositiveInt(process.env.BREVIO_METRICS_SHUTDOWN_TIMEOUT_MS, 30000, 'BREVIO_METRICS_SHUTDOWN_TIMEOUT_MS'),
-    maxBodyBytes: parsePositiveInt(process.env.BREVIO_METRICS_MAX_BODY_BYTES, 128 * 1024, 'BREVIO_METRICS_MAX_BODY_BYTES')
+    maxBodyBytes: parsePositiveInt(process.env.BREVIO_METRICS_MAX_BODY_BYTES, 128 * 1024, 'BREVIO_METRICS_MAX_BODY_BYTES'),
+    stateFilePath: path.resolve(process.env.BREVIO_METRICS_STATE_FILE ?? path.join(process.cwd(), 'data', 'metrics', 'state.json')),
+    internalAuthSecret: resolveAccessTokenVerificationKey(
+      process.env.BREVIO_INTERNAL_AUTH_PUBLIC_KEY,
+      process.env.BREVIO_INTERNAL_AUTH_PRIVATE_KEY,
+      process.env.BREVIO_INTERNAL_AUTH_SECRET,
+      environment,
+      'BREVIO_INTERNAL_AUTH_PUBLIC_KEY',
+      'brevio-metrics'
+    ),
+    internalAuthIssuer: process.env.BREVIO_INTERNAL_AUTH_ISSUER?.trim() || 'https://auth.brevio.internal',
+    serviceAudience: process.env.BREVIO_METRICS_AUDIENCE?.trim() || 'brevio-metrics',
+    logSalt: process.env.BREVIO_METRICS_LOG_SALT?.trim() || `brevio-metrics:${environment}`
   };
 }
 
@@ -96,7 +115,6 @@ function requestContext(req: http.IncomingMessage): RequestContext {
     traceId: getHeader(req, 'x-trace-id') ?? randomUUID(),
     spanId: getHeader(req, 'x-span-id') ?? randomUUID(),
     requestId: getHeader(req, 'x-request-id') ?? randomUUID(),
-    userId: getHeader(req, 'x-user-id')
   };
 }
 
@@ -115,7 +133,7 @@ function logEvent(
       trace_id: ctx.traceId,
       span_id: ctx.spanId,
       request_id: ctx.requestId,
-      user_id: ctx.userId,
+      subject_ref: ctx.subjectRef,
       event,
       severity,
       attrs
@@ -229,16 +247,6 @@ function labelsToPrometheus(labels: Record<string, string>): string {
   return `{${encoded}}`;
 }
 
-function observeHistogram(series: HistogramSeries, value: number): void {
-  series.count += 1;
-  series.sum += value;
-  for (const bucket of LATENCY_BUCKETS) {
-    if (value <= bucket) {
-      series.buckets.set(bucket, (series.buckets.get(bucket) ?? 0) + 1);
-    }
-  }
-}
-
 function upsertMetric(runtime: MetricsRuntime, payload: Record<string, unknown>): { metric: string; type: MetricType; labels: Record<string, string> } {
   const metricName = asString(payload.metric);
   if (!metricName) {
@@ -258,31 +266,19 @@ function upsertMetric(runtime: MetricsRuntime, payload: Record<string, unknown>)
     if (delta < 0) {
       throw new Error('counter_negative_increment');
     }
-    runtime.counters.set(key, (runtime.counters.get(key) ?? 0) + delta);
+    runtime.store.incrementCounter(key, delta);
   } else if (descriptor.type === 'gauge') {
     const value = asNumber(payload.value);
     if (typeof value !== 'number') {
       throw new Error('gauge_value_required');
     }
-    runtime.gauges.set(key, value);
+    runtime.store.setGauge(key, value);
   } else {
     const observation = asNumber(payload.value);
     if (typeof observation !== 'number') {
       throw new Error('histogram_value_required');
     }
-    let series = runtime.histograms.get(key);
-    if (!series) {
-      series = {
-        count: 0,
-        sum: 0,
-        buckets: new Map()
-      };
-      for (const bucket of LATENCY_BUCKETS) {
-        series.buckets.set(bucket, 0);
-      }
-      runtime.histograms.set(key, series);
-    }
-    observeHistogram(series, observation);
+    runtime.store.observeHistogram(key, observation, LATENCY_BUCKETS);
   }
 
   return {
@@ -301,7 +297,7 @@ function renderPrometheus(runtime: MetricsRuntime): string {
 
     if (descriptor.type === 'counter') {
       const prefix = `${descriptor.name}::`;
-      for (const [key, value] of runtime.counters.entries()) {
+      for (const [key, value] of runtime.store.counterEntries()) {
         if (!key.startsWith(prefix)) {
           continue;
         }
@@ -313,7 +309,7 @@ function renderPrometheus(runtime: MetricsRuntime): string {
 
     if (descriptor.type === 'gauge') {
       const prefix = `${descriptor.name}::`;
-      for (const [key, value] of runtime.gauges.entries()) {
+      for (const [key, value] of runtime.store.gaugeEntries()) {
         if (!key.startsWith(prefix)) {
           continue;
         }
@@ -324,7 +320,7 @@ function renderPrometheus(runtime: MetricsRuntime): string {
     }
 
     const prefix = `${descriptor.name}::`;
-    for (const [key, series] of runtime.histograms.entries()) {
+    for (const [key, series] of runtime.store.histogramEntries()) {
       if (!key.startsWith(prefix)) {
         continue;
       }
@@ -346,20 +342,7 @@ function renderPrometheus(runtime: MetricsRuntime): string {
 }
 
 function metricsSnapshot(runtime: MetricsRuntime): Record<string, unknown> {
-  const counters = Array.from(runtime.counters.entries()).map(([key, value]) => ({ key, value }));
-  const gauges = Array.from(runtime.gauges.entries()).map(([key, value]) => ({ key, value }));
-  const histograms = Array.from(runtime.histograms.entries()).map(([key, value]) => ({
-    key,
-    count: value.count,
-    sum: value.sum,
-    buckets: Array.from(value.buckets.entries()).map(([bucket, count]) => ({ bucket, count }))
-  }));
-
-  return {
-    counters,
-    gauges,
-    histograms
-  };
+  return runtime.store.snapshot();
 }
 
 function healthPayload(runtime: MetricsRuntime, deep: boolean): Record<string, unknown> {
@@ -377,14 +360,14 @@ function healthPayload(runtime: MetricsRuntime, deep: boolean): Record<string, u
     ...payload,
     checks: {
       process: 'ok',
-      db: process.env.DATABASE_URL ? 'configured' : 'not_configured',
-      redis: process.env.REDIS_URL ? 'configured' : 'not_configured',
-      temporal: process.env.TEMPORAL_HOST ? 'configured' : 'not_configured'
+      storage_mode: runtime.store.mode(),
+      durable_metrics_backend: runtime.store.mode() !== 'in_memory',
+      shared_metrics_backend: false
     },
     metric_series: {
-      counters: runtime.counters.size,
-      gauges: runtime.gauges.size,
-      histograms: runtime.histograms.size
+      counters: runtime.store.stats().counters,
+      gauges: runtime.store.stats().gauges,
+      histograms: runtime.store.stats().histograms
     }
   };
 }
@@ -392,6 +375,7 @@ function healthPayload(runtime: MetricsRuntime, deep: boolean): Record<string, u
 function buildRuntime(config?: MetricsConfig): MetricsRuntime {
   const resolvedConfig = config ?? loadConfig();
   const startedAtMs = Date.now();
+  const store = new MetricsStore(resolvedConfig.stateFilePath);
 
   let runtimeRef: MetricsRuntime | undefined;
 
@@ -422,6 +406,12 @@ function buildRuntime(config?: MetricsConfig): MetricsRuntime {
     }
 
     if (method === 'GET' && pathname === '/health/deep') {
+      try {
+        authenticateInternalRequest(req, runtime.config, ctx, { mode: 'admin' });
+      } catch (error) {
+        onError(401, error instanceof Error ? error.message : 'admin_token_required');
+        return;
+      }
       sendJSON(res, 200, healthPayload(runtime, true));
       return;
     }
@@ -435,6 +425,14 @@ function buildRuntime(config?: MetricsConfig): MetricsRuntime {
     const segments = parseApiPath(pathname);
     if (!segments || segments[0] !== 'metrics') {
       onError(404, 'not_found');
+      return;
+    }
+    try {
+      authenticateInternalRequest(req, runtime.config, ctx, {
+        allowedTokenUses: ['service_access', 'admin_access']
+      });
+    } catch (error) {
+      onError(401, error instanceof Error ? error.message : 'authorization_required');
       return;
     }
 
@@ -491,9 +489,7 @@ function buildRuntime(config?: MetricsConfig): MetricsRuntime {
     config: resolvedConfig,
     startedAtMs,
     server,
-    counters: new Map(),
-    gauges: new Map(),
-    histograms: new Map(),
+    store,
     async close(): Promise<void> {
       await new Promise<void>((resolve, reject) => {
         server.close((err) => {
@@ -572,17 +568,19 @@ async function main(): Promise<void> {
   });
 }
 
-void main().catch((err) => {
-  process.stderr.write(
-    JSON.stringify({
-      ts: new Date().toISOString(),
-      service: 'brevio-metrics',
-      event: 'metrics.start.failed',
-      severity: 'ERROR',
-      message: err instanceof Error ? err.message : String(err)
-    }) + '\n'
-  );
-  process.exit(1);
-});
+if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) {
+  void main().catch((err) => {
+    process.stderr.write(
+      JSON.stringify({
+        ts: new Date().toISOString(),
+        service: 'brevio-metrics',
+        event: 'metrics.start.failed',
+        severity: 'ERROR',
+        message: err instanceof Error ? err.message : String(err)
+      }) + '\n'
+    );
+    process.exit(1);
+  });
+}
 
 export { buildRuntime as createMetricsRuntime };

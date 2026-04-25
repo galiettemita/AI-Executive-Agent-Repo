@@ -1,8 +1,18 @@
 import { randomUUID } from 'node:crypto';
+import { existsSync } from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
+import {
+  authenticateInternalRequest,
+  resolveEffectiveUserScope
+} from '../../../packages/shared/src/internal-http-auth.js';
+import {
+  loadBrevioEnvironment,
+  resolveAccessTokenVerificationKey,
+  requireSharedSecret
+} from '../../../packages/shared/src/security.js';
 import type {
   CreateWorkflowRunInput,
   WorkflowArtifact,
@@ -34,13 +44,18 @@ interface WorkerConfig {
   shutdownTimeoutMs: number;
   maxBodyBytes: number;
   stateFilePath: string;
+  internalAuthSecret: string;
+  internalAuthIssuer: string;
+  serviceAudience: string;
+  callerContextSecret: string;
+  logSalt: string;
 }
 
 interface RequestContext {
   traceId: string;
   spanId: string;
   requestId: string;
-  userId?: string;
+  subjectRef?: string;
 }
 
 interface WorkerRuntime {
@@ -76,16 +91,29 @@ function parsePositiveInt(raw: string | undefined, fallback: number, field: stri
 }
 
 function loadConfig(): WorkerConfig {
+  const environment = loadBrevioEnvironment();
   return {
     serviceName: 'brevio-temporal-worker',
     version: process.env.SERVICE_VERSION ?? '0.2.0',
-    environment: process.env.NODE_ENV ?? 'development',
+    environment,
     port: parsePositiveInt(process.env.PORT, 8087, 'PORT'),
     shutdownTimeoutMs: parsePositiveInt(process.env.BREVIO_TEMPORAL_WORKER_SHUTDOWN_TIMEOUT_MS, 30000, 'BREVIO_TEMPORAL_WORKER_SHUTDOWN_TIMEOUT_MS'),
     maxBodyBytes: parsePositiveInt(process.env.BREVIO_TEMPORAL_WORKER_MAX_BODY_BYTES, 256 * 1024, 'BREVIO_TEMPORAL_WORKER_MAX_BODY_BYTES'),
     stateFilePath:
       process.env.BREVIO_TEMPORAL_WORKER_STATE_FILE?.trim() ||
-      path.join(process.cwd(), '.runtime', 'temporal-worker-state.json')
+      path.join(process.cwd(), '.runtime', 'temporal-worker-state.json'),
+    internalAuthSecret: resolveAccessTokenVerificationKey(
+      process.env.BREVIO_INTERNAL_AUTH_PUBLIC_KEY,
+      process.env.BREVIO_INTERNAL_AUTH_PRIVATE_KEY,
+      process.env.BREVIO_INTERNAL_AUTH_SECRET,
+      environment,
+      'BREVIO_INTERNAL_AUTH_PUBLIC_KEY',
+      'brevio-temporal-worker'
+    ),
+    internalAuthIssuer: process.env.BREVIO_INTERNAL_AUTH_ISSUER?.trim() || 'https://auth.brevio.internal',
+    serviceAudience: process.env.BREVIO_TEMPORAL_WORKER_AUDIENCE?.trim() || 'brevio-temporal-worker',
+    callerContextSecret: requireSharedSecret(process.env.BREVIO_CALLER_CONTEXT_SECRET, 'BREVIO_CALLER_CONTEXT_SECRET', environment, 'brevio-temporal-worker-caller'),
+    logSalt: process.env.BREVIO_TEMPORAL_WORKER_LOG_SALT?.trim() || `brevio-temporal-worker:${environment}`
   };
 }
 
@@ -105,7 +133,6 @@ function requestContext(req: http.IncomingMessage): RequestContext {
     traceId: getHeader(req, 'x-trace-id') ?? randomUUID(),
     spanId: getHeader(req, 'x-span-id') ?? randomUUID(),
     requestId: getHeader(req, 'x-request-id') ?? randomUUID(),
-    userId: getHeader(req, 'x-user-id')
   };
 }
 
@@ -124,7 +151,7 @@ function logEvent(
       trace_id: ctx.traceId,
       span_id: ctx.spanId,
       request_id: ctx.requestId,
-      user_id: ctx.userId,
+      subject_ref: ctx.subjectRef,
       event,
       severity,
       attrs
@@ -421,9 +448,9 @@ function healthPayload(runtime: WorkerRuntime, deep: boolean): Record<string, un
     ...payload,
     checks: {
       process: 'ok',
-      db: process.env.DATABASE_URL ? 'configured' : 'not_configured',
-      redis: process.env.REDIS_URL ? 'configured' : 'not_configured',
-      temporal: process.env.TEMPORAL_HOST ? 'configured' : 'not_configured'
+      workflow_store_mode: 'local_file_snapshot',
+      durable_execution: false,
+      state_file_exists: existsSync(runtime.config.stateFilePath)
     },
     workflow_store: runtime.store.stats()
   };
@@ -530,6 +557,12 @@ function buildRuntime(config?: WorkerConfig): WorkerRuntime {
     }
 
     if (method === 'GET' && pathname === '/health/deep') {
+      try {
+        authenticateInternalRequest(req, runtime.config, ctx, { mode: 'admin' });
+      } catch (error) {
+        onError(401, error instanceof Error ? error.message : 'admin_token_required');
+        return;
+      }
       sendJSON(res, 200, healthPayload(runtime, true));
       return;
     }
@@ -537,6 +570,24 @@ function buildRuntime(config?: WorkerConfig): WorkerRuntime {
     const segments = parseApiPath(pathname);
     if (!segments || (segments[0] !== 'temporal-worker' && segments[0] !== 'a2a')) {
       onError(404, 'not_found');
+      return;
+    }
+
+    const isWorkflowStartRoute =
+      method === 'POST' &&
+      segments[0] === 'temporal-worker' &&
+      segments.length === 3 &&
+      segments[1] === 'workflows' &&
+      (segments[2] === 'message-processing' || segments[2] === 'daily-rhythm');
+    let auth: ReturnType<typeof authenticateInternalRequest>;
+    try {
+      auth = authenticateInternalRequest(req, runtime.config, ctx, {
+        allowedTokenUses: isWorkflowStartRoute
+          ? ['service_access', 'admin_access', 'user_access']
+          : ['service_access', 'admin_access']
+      });
+    } catch (error) {
+      onError(401, error instanceof Error ? error.message : 'authorization_required');
       return;
     }
 
@@ -990,6 +1041,7 @@ function buildRuntime(config?: WorkerConfig): WorkerRuntime {
       void (async () => {
         const rawBody = await readRawBody(req, runtime.config.maxBodyBytes);
         const payload = parseObject(rawBody);
+        const scope = resolveEffectiveUserScope(auth, { requireUserId: true });
 
         const messageId = asString(payload.message_id);
         if (!messageId) {
@@ -1007,7 +1059,7 @@ function buildRuntime(config?: WorkerConfig): WorkerRuntime {
           run_id: runId,
           workflow_id: workflowId,
           workflow_type: 'message-processing',
-          user_id: asString(payload.user_id),
+          user_id: scope.userId,
           status: plan.status,
           current_state: plan.current_state,
           started_at: now,
@@ -1037,6 +1089,10 @@ function buildRuntime(config?: WorkerConfig): WorkerRuntime {
           onError(400, code);
           return;
         }
+        if (code === 'caller_context_required') {
+          onError(400, code);
+          return;
+        }
         onError(500, 'workflow_start_failed');
         logEvent(runtime, ctx, 'temporal_worker.message_processing.exception', 'ERROR', {
           message: err instanceof Error ? err.message : String(err)
@@ -1049,12 +1105,8 @@ function buildRuntime(config?: WorkerConfig): WorkerRuntime {
       void (async () => {
         const rawBody = await readRawBody(req, runtime.config.maxBodyBytes);
         const payload = parseObject(rawBody);
-
-        const userId = asString(payload.user_id);
-        if (!userId) {
-          onError(400, 'user_id_required');
-          return;
-        }
+        const scope = resolveEffectiveUserScope(auth, { requireUserId: true });
+        const userId = scope.userId!;
 
         const workflowId = `daily-rhythm-${userId}-${new Date().toISOString().slice(0, 10)}`;
         const now = new Date().toISOString();
@@ -1092,6 +1144,10 @@ function buildRuntime(config?: WorkerConfig): WorkerRuntime {
           return;
         }
         if (code === 'invalid_json') {
+          onError(400, code);
+          return;
+        }
+        if (code === 'caller_context_required') {
           onError(400, code);
           return;
         }

@@ -1,5 +1,18 @@
 import { randomUUID } from 'node:crypto';
 import http from 'node:http';
+import path from 'node:path';
+import { pathToFileURL } from 'node:url';
+
+import {
+  authenticateInternalRequest,
+  resolveEffectiveUserScope
+} from '../../../packages/shared/src/internal-http-auth.js';
+import {
+  loadBrevioEnvironment,
+  resolveAccessTokenVerificationKey,
+  requireSharedSecret
+} from '../../../packages/shared/src/security.js';
+import { SchedulerStore, type ScheduledJob, type TriggerEvent } from './scheduler-store.js';
 
 interface SchedulerConfig {
   serviceName: string;
@@ -9,46 +22,26 @@ interface SchedulerConfig {
   shutdownTimeoutMs: number;
   maxBodyBytes: number;
   maxJobs: number;
+  stateFilePath?: string;
+  internalAuthSecret: string;
+  internalAuthIssuer: string;
+  serviceAudience: string;
+  callerContextSecret: string;
+  logSalt: string;
 }
 
 interface RequestContext {
   traceId: string;
   spanId: string;
   requestId: string;
-  userId?: string;
-}
-
-type JobStatus = 'active' | 'paused' | 'disabled';
-
-interface ScheduledJob {
-  id: string;
-  user_id: string;
-  skill_id: string;
-  schedule: string;
-  timezone: string;
-  status: JobStatus;
-  payload: Record<string, unknown>;
-  last_run_at?: string;
-  next_run_at: string;
-  created_at: string;
-  updated_at: string;
-}
-
-interface TriggerEvent {
-  id: string;
-  user_id: string;
-  skill_id: string;
-  payload: Record<string, unknown>;
-  status: 'queued' | 'dispatched' | 'failed';
-  created_at: string;
+  subjectRef?: string;
 }
 
 interface SchedulerRuntime {
   config: SchedulerConfig;
   startedAtMs: number;
   server: http.Server;
-  jobs: Map<string, ScheduledJob>;
-  triggers: TriggerEvent[];
+  store: SchedulerStore;
   close(): Promise<void>;
 }
 
@@ -64,14 +57,28 @@ function parsePositiveInt(raw: string | undefined, fallback: number, field: stri
 }
 
 function loadConfig(): SchedulerConfig {
+  const environment = loadBrevioEnvironment();
   return {
     serviceName: 'brevio-scheduler',
     version: process.env.SERVICE_VERSION ?? '0.2.0',
-    environment: process.env.NODE_ENV ?? 'development',
+    environment,
     port: parsePositiveInt(process.env.PORT, 8085, 'PORT'),
     shutdownTimeoutMs: parsePositiveInt(process.env.BREVIO_SCHEDULER_SHUTDOWN_TIMEOUT_MS, 30000, 'BREVIO_SCHEDULER_SHUTDOWN_TIMEOUT_MS'),
     maxBodyBytes: parsePositiveInt(process.env.BREVIO_SCHEDULER_MAX_BODY_BYTES, 256 * 1024, 'BREVIO_SCHEDULER_MAX_BODY_BYTES'),
-    maxJobs: parsePositiveInt(process.env.BREVIO_SCHEDULER_MAX_JOBS, 5000, 'BREVIO_SCHEDULER_MAX_JOBS')
+    maxJobs: parsePositiveInt(process.env.BREVIO_SCHEDULER_MAX_JOBS, 5000, 'BREVIO_SCHEDULER_MAX_JOBS'),
+    stateFilePath: path.resolve(process.env.BREVIO_SCHEDULER_STATE_FILE ?? path.join(process.cwd(), 'data', 'scheduler', 'state.json')),
+    internalAuthSecret: resolveAccessTokenVerificationKey(
+      process.env.BREVIO_INTERNAL_AUTH_PUBLIC_KEY,
+      process.env.BREVIO_INTERNAL_AUTH_PRIVATE_KEY,
+      process.env.BREVIO_INTERNAL_AUTH_SECRET,
+      environment,
+      'BREVIO_INTERNAL_AUTH_PUBLIC_KEY',
+      'brevio-scheduler'
+    ),
+    internalAuthIssuer: process.env.BREVIO_INTERNAL_AUTH_ISSUER?.trim() || 'https://auth.brevio.internal',
+    serviceAudience: process.env.BREVIO_SCHEDULER_AUDIENCE?.trim() || 'brevio-scheduler',
+    callerContextSecret: requireSharedSecret(process.env.BREVIO_CALLER_CONTEXT_SECRET, 'BREVIO_CALLER_CONTEXT_SECRET', environment, 'brevio-scheduler-caller'),
+    logSalt: process.env.BREVIO_SCHEDULER_LOG_SALT?.trim() || `brevio-scheduler:${environment}`
   };
 }
 
@@ -91,7 +98,6 @@ function requestContext(req: http.IncomingMessage): RequestContext {
     traceId: getHeader(req, 'x-trace-id') ?? randomUUID(),
     spanId: getHeader(req, 'x-span-id') ?? randomUUID(),
     requestId: getHeader(req, 'x-request-id') ?? randomUUID(),
-    userId: getHeader(req, 'x-user-id')
   };
 }
 
@@ -110,7 +116,7 @@ function logEvent(
       trace_id: ctx.traceId,
       span_id: ctx.spanId,
       request_id: ctx.requestId,
-      user_id: ctx.userId,
+      subject_ref: ctx.subjectRef,
       event,
       severity,
       attrs
@@ -204,13 +210,13 @@ function healthPayload(runtime: SchedulerRuntime, deep: boolean): Record<string,
     ...payload,
     checks: {
       process: 'ok',
-      db: process.env.DATABASE_URL ? 'configured' : 'not_configured',
-      redis: process.env.REDIS_URL ? 'configured' : 'not_configured',
-      temporal: process.env.TEMPORAL_HOST ? 'configured' : 'not_configured'
+      persistence_mode: runtime.store.mode(),
+      durable_schedules: runtime.store.mode() !== 'in_memory',
+      shared_schedule_backend: false
     },
     scheduler: {
-      jobs: runtime.jobs.size,
-      queued_triggers: runtime.triggers.filter((entry) => entry.status === 'queued').length
+      jobs: runtime.store.stats().jobs,
+      queued_triggers: runtime.store.stats().queuedTriggers
     }
   };
 }
@@ -231,18 +237,14 @@ function normalizeJob(job: ScheduledJob): Record<string, unknown> {
   };
 }
 
-function createJob(runtime: SchedulerRuntime, payload: Record<string, unknown>): ScheduledJob {
-  if (runtime.jobs.size >= runtime.config.maxJobs) {
+function createJob(runtime: SchedulerRuntime, payload: Record<string, unknown>, userId: string): ScheduledJob {
+  if (runtime.store.jobCount() >= runtime.config.maxJobs) {
     throw new Error('job_limit_exceeded');
   }
 
-  const userId = sanitizeUserId(asString(payload.user_id));
   const skillId = asString(payload.skill_id);
   const schedule = asString(payload.schedule);
 
-  if (!userId) {
-    throw new Error('invalid_user_id');
-  }
   if (!skillId) {
     throw new Error('skill_id_required');
   }
@@ -264,17 +266,12 @@ function createJob(runtime: SchedulerRuntime, payload: Record<string, unknown>):
     updated_at: now
   };
 
-  runtime.jobs.set(job.id, job);
-  return job;
+  return runtime.store.saveJob(job);
 }
 
-function createTrigger(runtime: SchedulerRuntime, payload: Record<string, unknown>): TriggerEvent {
-  const userId = sanitizeUserId(asString(payload.user_id));
+function createTrigger(runtime: SchedulerRuntime, payload: Record<string, unknown>, userId: string): TriggerEvent {
   const skillId = asString(payload.skill_id);
 
-  if (!userId) {
-    throw new Error('invalid_user_id');
-  }
   if (!skillId) {
     throw new Error('skill_id_required');
   }
@@ -288,16 +285,14 @@ function createTrigger(runtime: SchedulerRuntime, payload: Record<string, unknow
     created_at: new Date().toISOString()
   };
 
-  runtime.triggers.unshift(trigger);
-  runtime.triggers = runtime.triggers.slice(0, 500);
-  return trigger;
+  return runtime.store.appendTrigger(trigger, 500);
 }
 
 function runJob(runtime: SchedulerRuntime, job: ScheduledJob): TriggerEvent {
   job.last_run_at = new Date().toISOString();
   job.next_run_at = new Date(Date.now() + 60_000).toISOString();
   job.updated_at = new Date().toISOString();
-  runtime.jobs.set(job.id, job);
+  runtime.store.saveJob(job);
 
   const trigger: TriggerEvent = {
     id: randomUUID(),
@@ -308,14 +303,13 @@ function runJob(runtime: SchedulerRuntime, job: ScheduledJob): TriggerEvent {
     created_at: new Date().toISOString()
   };
 
-  runtime.triggers.unshift(trigger);
-  runtime.triggers = runtime.triggers.slice(0, 500);
-  return trigger;
+  return runtime.store.appendTrigger(trigger, 500);
 }
 
 function buildRuntime(config?: SchedulerConfig): SchedulerRuntime {
   const resolvedConfig = config ?? loadConfig();
   const startedAtMs = Date.now();
+  const store = new SchedulerStore(resolvedConfig.stateFilePath);
 
   let runtimeRef: SchedulerRuntime | undefined;
 
@@ -346,6 +340,12 @@ function buildRuntime(config?: SchedulerConfig): SchedulerRuntime {
     }
 
     if (method === 'GET' && pathname === '/health/deep') {
+      try {
+        authenticateInternalRequest(req, runtime.config, ctx, { mode: 'admin' });
+      } catch (error) {
+        onError(401, error instanceof Error ? error.message : 'admin_token_required');
+        return;
+      }
       sendJSON(res, 200, healthPayload(runtime, true));
       return;
     }
@@ -356,8 +356,22 @@ function buildRuntime(config?: SchedulerConfig): SchedulerRuntime {
       return;
     }
 
+    let auth: ReturnType<typeof authenticateInternalRequest>;
+    try {
+      auth = authenticateInternalRequest(req, runtime.config, ctx);
+    } catch (error) {
+      onError(401, error instanceof Error ? error.message : 'authorization_required');
+      return;
+    }
+
+    const effectiveScope = resolveEffectiveUserScope(auth);
+    const requestUserId = effectiveScope.userId;
+
     if (method === 'GET' && segments.length === 2 && segments[1] === 'jobs') {
-      const jobs = Array.from(runtime.jobs.values()).map((job) => normalizeJob(job));
+      const jobs = runtime.store
+        .listJobs()
+        .filter((job) => auth.principal.token_use !== 'user_access' || job.user_id === requestUserId)
+        .map((job) => normalizeJob(job));
       sendJSON(res, 200, {
         total: jobs.length,
         jobs
@@ -369,7 +383,11 @@ function buildRuntime(config?: SchedulerConfig): SchedulerRuntime {
       void (async () => {
         const rawBody = await readRawBody(req, runtime.config.maxBodyBytes);
         const payload = parseObject(rawBody);
-        const job = createJob(runtime, payload);
+        const userId = sanitizeUserId(requestUserId);
+        if (!userId) {
+          throw new Error('caller_context_required');
+        }
+        const job = createJob(runtime, payload, userId);
 
         sendJSON(res, 201, {
           job: normalizeJob(job)
@@ -387,7 +405,7 @@ function buildRuntime(config?: SchedulerConfig): SchedulerRuntime {
             onError(413, code);
             return;
           case 'invalid_json':
-          case 'invalid_user_id':
+          case 'caller_context_required':
           case 'skill_id_required':
           case 'schedule_required':
             onError(400, code);
@@ -406,9 +424,13 @@ function buildRuntime(config?: SchedulerConfig): SchedulerRuntime {
     }
 
     if (method === 'POST' && segments.length === 4 && segments[1] === 'jobs' && segments[3] === 'run') {
-      const job = runtime.jobs.get(segments[2]);
+      const job = runtime.store.getJob(segments[2]);
       if (!job) {
         onError(404, 'job_not_found');
+        return;
+      }
+      if (auth.principal.token_use === 'user_access' && job.user_id !== requestUserId) {
+        onError(403, 'forbidden');
         return;
       }
       if (job.status !== 'active') {
@@ -430,15 +452,19 @@ function buildRuntime(config?: SchedulerConfig): SchedulerRuntime {
     }
 
     if (method === 'DELETE' && segments.length === 3 && segments[1] === 'jobs') {
-      const job = runtime.jobs.get(segments[2]);
+      const job = runtime.store.getJob(segments[2]);
       if (!job) {
         onError(404, 'job_not_found');
+        return;
+      }
+      if (auth.principal.token_use === 'user_access' && job.user_id !== requestUserId) {
+        onError(403, 'forbidden');
         return;
       }
 
       job.status = 'disabled';
       job.updated_at = new Date().toISOString();
-      runtime.jobs.set(job.id, job);
+      runtime.store.saveJob(job);
 
       sendJSON(res, 200, {
         job: normalizeJob(job)
@@ -454,7 +480,11 @@ function buildRuntime(config?: SchedulerConfig): SchedulerRuntime {
       void (async () => {
         const rawBody = await readRawBody(req, runtime.config.maxBodyBytes);
         const payload = parseObject(rawBody);
-        const trigger = createTrigger(runtime, payload);
+        const userId = sanitizeUserId(requestUserId);
+        if (!userId) {
+          throw new Error('caller_context_required');
+        }
+        const trigger = createTrigger(runtime, payload, userId);
 
         sendJSON(res, 202, { trigger });
 
@@ -470,7 +500,7 @@ function buildRuntime(config?: SchedulerConfig): SchedulerRuntime {
             onError(413, code);
             return;
           case 'invalid_json':
-          case 'invalid_user_id':
+          case 'caller_context_required':
           case 'skill_id_required':
             onError(400, code);
             return;
@@ -485,9 +515,12 @@ function buildRuntime(config?: SchedulerConfig): SchedulerRuntime {
     }
 
     if (method === 'GET' && segments.length === 2 && segments[1] === 'triggers') {
+      const triggers = runtime.store
+        .listTriggers()
+        .filter((trigger) => auth.principal.token_use !== 'user_access' || trigger.user_id === requestUserId);
       sendJSON(res, 200, {
-        total: runtime.triggers.length,
-        triggers: runtime.triggers
+        total: triggers.length,
+        triggers
       });
       return;
     }
@@ -499,8 +532,7 @@ function buildRuntime(config?: SchedulerConfig): SchedulerRuntime {
     config: resolvedConfig,
     startedAtMs,
     server,
-    jobs: new Map(),
-    triggers: [],
+    store,
     async close(): Promise<void> {
       await new Promise<void>((resolve, reject) => {
         server.close((err) => {
@@ -579,17 +611,19 @@ async function main(): Promise<void> {
   });
 }
 
-void main().catch((err) => {
-  process.stderr.write(
-    JSON.stringify({
-      ts: new Date().toISOString(),
-      service: 'brevio-scheduler',
-      event: 'scheduler.start.failed',
-      severity: 'ERROR',
-      message: err instanceof Error ? err.message : String(err)
-    }) + '\n'
-  );
-  process.exit(1);
-});
+if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) {
+  void main().catch((err) => {
+    process.stderr.write(
+      JSON.stringify({
+        ts: new Date().toISOString(),
+        service: 'brevio-scheduler',
+        event: 'scheduler.start.failed',
+        severity: 'ERROR',
+        message: err instanceof Error ? err.message : String(err)
+      }) + '\n'
+    );
+    process.exit(1);
+  });
+}
 
 export { buildRuntime as createSchedulerRuntime };

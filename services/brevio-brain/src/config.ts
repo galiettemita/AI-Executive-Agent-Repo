@@ -2,7 +2,11 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { loadBrevioEnvironment, requireSharedSecret } from '../../../packages/shared/src/security.js';
+import {
+  loadBrevioEnvironment,
+  requireSharedSecret,
+  resolveAccessTokenVerificationKey
+} from '../../../packages/shared/src/security.js';
 
 import type { BrainConfig, DisambiguationRuleConfig, DisambiguationRules, PlannerProvider } from './types.js';
 
@@ -259,7 +263,14 @@ export function loadBrainConfig(): BrainConfig {
     plannerBaseUrl: process.env.OPENAI_BASE_URL ?? 'https://api.openai.com/v1',
     temporalWorkerBaseUrl: process.env.BREVIO_TEMPORAL_WORKER_BASE_URL?.trim() || undefined,
     temporalWorkerTimeoutMs: parsePositiveInt(process.env.BREVIO_TEMPORAL_WORKER_TIMEOUT_MS, 4000, 'BREVIO_TEMPORAL_WORKER_TIMEOUT_MS'),
-    internalAuthSecret: requireSharedSecret(process.env.BREVIO_INTERNAL_AUTH_SECRET, 'BREVIO_INTERNAL_AUTH_SECRET', environment, 'brevio-brain'),
+    internalAuthSecret: resolveAccessTokenVerificationKey(
+      process.env.BREVIO_INTERNAL_AUTH_PUBLIC_KEY,
+      process.env.BREVIO_INTERNAL_AUTH_PRIVATE_KEY,
+      process.env.BREVIO_INTERNAL_AUTH_SECRET,
+      environment,
+      'BREVIO_INTERNAL_AUTH_PUBLIC_KEY',
+      'brevio-brain'
+    ),
     internalAuthIssuer: process.env.BREVIO_INTERNAL_AUTH_ISSUER?.trim() || 'https://auth.brevio.internal',
     serviceAudience: process.env.BREVIO_BRAIN_AUDIENCE?.trim() || 'brevio-brain',
     callerContextSecret: requireSharedSecret(process.env.BREVIO_CALLER_CONTEXT_SECRET, 'BREVIO_CALLER_CONTEXT_SECRET', environment, 'brevio-brain-caller'),

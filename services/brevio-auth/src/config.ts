@@ -2,7 +2,11 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { loadBrevioEnvironment, requireSharedSecret } from '../../../packages/shared/src/security.js';
+import {
+  loadBrevioEnvironment,
+  requireSharedSecret,
+  resolveAccessTokenSigningKey
+} from '../../../packages/shared/src/security.js';
 
 import type { APIKeyService, AuthServiceMap, EnvConfig, NoAuthService, OAuthService } from './types.js';
 
@@ -341,7 +345,13 @@ export function loadEnvConfig(): EnvConfig {
     port: parsePositiveInt(process.env.PORT, 8080, 'PORT'),
     mapPath,
     stateStoreFilePath: path.resolve(process.env.BREVIO_AUTH_STATE_STORE_FILE ?? path.join(process.cwd(), 'data', 'auth', 'oauth-state.json')),
-    internalAuthSecret: requireSharedSecret(process.env.BREVIO_INTERNAL_AUTH_SECRET, 'BREVIO_INTERNAL_AUTH_SECRET', environment, 'brevio-auth'),
+    internalAuthSecret: resolveAccessTokenSigningKey(
+      process.env.BREVIO_INTERNAL_AUTH_PRIVATE_KEY,
+      process.env.BREVIO_INTERNAL_AUTH_SECRET,
+      environment,
+      'BREVIO_INTERNAL_AUTH_PRIVATE_KEY',
+      'brevio-auth'
+    ),
     internalAuthIssuer: process.env.BREVIO_INTERNAL_AUTH_ISSUER?.trim() || 'https://auth.brevio.internal',
     serviceAudience: process.env.BREVIO_AUTH_AUDIENCE?.trim() || 'brevio-auth',
     callerContextSecret: requireSharedSecret(process.env.BREVIO_CALLER_CONTEXT_SECRET, 'BREVIO_CALLER_CONTEXT_SECRET', environment, 'brevio-auth-caller'),
