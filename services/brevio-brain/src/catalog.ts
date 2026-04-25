@@ -114,6 +114,26 @@ export function getToolDescriptor(skillId: string | undefined): ToolDescriptor |
   return TOOL_CATALOG[skillId];
 }
 
+export function buildToolKey(skillId: string, operation: string): string {
+  return `${skillId}.${operation}`;
+}
+
+export function isRegisteredOperation(skillId: string | undefined, operation: string | undefined): boolean {
+  const descriptor = getToolDescriptor(skillId);
+  if (!descriptor || !operation) {
+    return false;
+  }
+  return descriptor.operations.includes(operation);
+}
+
+export function isRegisteredToolKey(toolKey: string | undefined): boolean {
+  if (!toolKey || !toolKey.includes('.')) {
+    return false;
+  }
+  const [skillId, operation] = toolKey.split('.', 2);
+  return isRegisteredOperation(skillId, operation);
+}
+
 export function toolExists(skillId: string | undefined): boolean {
   return Boolean(getToolDescriptor(skillId));
 }

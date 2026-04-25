@@ -39,7 +39,7 @@ function artifactPayload(result: SkillResult) {
 }
 
 function mapStatus(result: SkillResult): 'COMPLETED' | 'FAILED' {
-  return result.status === 'FAILED' || result.status === 'TIMEOUT' ? 'FAILED' : 'COMPLETED';
+  return result.status === 'SUCCESS' || result.status === 'PARTIAL' ? 'COMPLETED' : 'FAILED';
 }
 
 export async function reportExecutionResult(

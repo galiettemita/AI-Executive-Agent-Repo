@@ -1,4 +1,5 @@
 import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
+import type { EdgeExecutionAuthorizationEnvelope, EdgeExecutionPolicy } from '@brevio/shared';
 
 export type RelayAuthMode = 'optional' | 'required';
 
@@ -37,7 +38,11 @@ export interface ExecuteRequestInput {
   device_id?: unknown;
   skill_id?: unknown;
   allowed_skills?: unknown;
+  tool?: unknown;
+  operation?: unknown;
   input?: unknown;
+  policy?: unknown;
+  authorization?: unknown;
   run_id?: unknown;
   task_id?: unknown;
   step_id?: unknown;
@@ -50,8 +55,11 @@ export interface BoundExecuteRequest {
   userId: string;
   deviceId: string;
   skillId: string;
-  allowedSkills?: string[];
+  tool?: string;
+  operation?: string;
   input: Record<string, unknown>;
+  policy?: EdgeExecutionPolicy;
+  authorization?: EdgeExecutionAuthorizationEnvelope;
   runId?: string;
   taskId?: string;
   stepId?: string;
@@ -106,6 +114,71 @@ function normalizePositiveInt(value: unknown, field: string): number | undefined
   return value;
 }
 
+function normalizeExecutionPolicy(value: unknown): EdgeExecutionPolicy | undefined {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    return undefined;
+  }
+  const policy = value as Record<string, unknown>;
+  return {
+    consent_requirement:
+      policy.consent_requirement === 'none' ||
+      policy.consent_requirement === 'recommended' ||
+      policy.consent_requirement === 'required'
+        ? policy.consent_requirement
+        : undefined,
+    consent_record: normalizeString(policy.consent_record),
+    human_review:
+      policy.human_review === 'none' ||
+      policy.human_review === 'recommended' ||
+      policy.human_review === 'required'
+        ? policy.human_review
+        : undefined,
+    human_review_record: normalizeString(policy.human_review_record),
+    recipient_verification:
+      policy.recipient_verification === 'not_applicable' ||
+      policy.recipient_verification === 'required' ||
+      policy.recipient_verification === 'verified'
+        ? policy.recipient_verification
+        : undefined
+  };
+}
+
+function normalizeExecutionAuthorization(value: unknown): EdgeExecutionAuthorizationEnvelope | undefined {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    return undefined;
+  }
+  const envelope = value as Record<string, unknown>;
+  const nonce = normalizeString(envelope.nonce);
+  const issuedAt = normalizeString(envelope.issued_at);
+  const expiresAt = normalizeString(envelope.expires_at);
+  const dispatchReceiptId = normalizeString(envelope.dispatch_receipt_id);
+  const policyHash = normalizeString(envelope.policy_hash);
+  const signature = normalizeString(envelope.signature);
+  const approved = typeof envelope.approved === 'boolean' ? envelope.approved : undefined;
+  if (
+    envelope.key_id !== 'edge-execution-v1' ||
+    !nonce ||
+    !issuedAt ||
+    !expiresAt ||
+    !dispatchReceiptId ||
+    !policyHash ||
+    !signature ||
+    approved === undefined
+  ) {
+    return undefined;
+  }
+  return {
+    key_id: 'edge-execution-v1',
+    nonce,
+    issued_at: issuedAt,
+    expires_at: expiresAt,
+    dispatch_receipt_id: dispatchReceiptId,
+    policy_hash: policyHash,
+    approved,
+    signature
+  };
+}
+
 export function parseRelayAuthMode(raw: string | undefined, environment: string, hasSecret: boolean): RelayAuthMode {
   const normalized = raw?.trim().toLowerCase() ?? 'auto';
   if (normalized === 'optional') {
@@ -120,7 +193,7 @@ export function parseRelayAuthMode(raw: string | undefined, environment: string,
   if (environment.trim().toLowerCase() === 'local') {
     return 'optional';
   }
-  return hasSecret ? 'required' : 'optional';
+  return hasSecret ? 'required' : 'required';
 }
 
 export function deriveSymmetricKey(raw: string | undefined, fallbackSeed?: string): Buffer {
@@ -192,8 +265,11 @@ export function bindExecuteRequest(input: ExecuteRequestInput, principal: RelayT
   const requestedUserId = normalizeString(input.user_id);
   const requestedDeviceId = normalizeString(input.device_id);
   const skillId = ensureNonEmptyString(input.skill_id, 'skill_id');
-  const allowedSkills = normalizeStringArray(input.allowed_skills);
+  const tool = normalizeString(input.tool);
+  const operation = normalizeString(input.operation);
   const bodyInput = ensureRecord(input.input);
+  const policy = normalizeExecutionPolicy(input.policy);
+  const authorization = normalizeExecutionAuthorization(input.authorization);
   const runId = normalizeString(input.run_id);
   const taskId = normalizeString(input.task_id);
   const stepId = normalizeString(input.step_id);
@@ -223,8 +299,11 @@ export function bindExecuteRequest(input: ExecuteRequestInput, principal: RelayT
     userId,
     deviceId,
     skillId,
-    allowedSkills,
+    tool,
+    operation,
     input: bodyInput,
+    policy,
+    authorization,
     runId,
     taskId,
     stepId,

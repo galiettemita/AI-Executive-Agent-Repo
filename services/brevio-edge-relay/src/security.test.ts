@@ -16,6 +16,7 @@ describe('edge relay security', () => {
   it('resolves auth mode from environment and secret presence', () => {
     assert.equal(parseRelayAuthMode(undefined, 'local', false), 'optional');
     assert.equal(parseRelayAuthMode(undefined, 'production', true), 'required');
+    assert.equal(parseRelayAuthMode(undefined, 'production', false), 'required');
     assert.equal(parseRelayAuthMode('optional', 'production', true), 'optional');
   });
 
@@ -53,7 +54,8 @@ describe('edge relay security', () => {
         tenant_id: 'tenant_a',
         workspace_id: 'workspace_a',
         skill_id: 'voice-wake-say',
-        allowed_skills: ['voice-wake-say'],
+        tool: 'voice-wake-say.speak',
+        operation: 'speak',
         input: { text: 'hello' },
         run_id: 'run_a',
         task_id: 'task_a',
@@ -78,7 +80,8 @@ describe('edge relay security', () => {
     assert.equal(request.taskId, 'task_a');
     assert.equal(request.stepId, 'step_a');
     assert.equal(request.attempt, 1);
-    assert.deepEqual(request.allowedSkills, ['voice-wake-say']);
+    assert.equal(request.tool, 'voice-wake-say.speak');
+    assert.equal(request.operation, 'speak');
     assert.deepEqual(request.input, { text: 'hello' });
   });
 

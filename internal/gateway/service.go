@@ -854,8 +854,20 @@ func (s *Service) HandleInjectToolCall(w http.ResponseWriter, r *http.Request) {
 	s.injectedCnt++
 	s.injectedMu.Unlock()
 
-	w.WriteHeader(http.StatusAccepted)
-	_, _ = w.Write([]byte(`{"status":"accepted"}`))
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusGone)
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"execution_id":    "00000000-0000-0000-0000-000000000000",
+		"phase":           "rejected",
+		"status":          "retired",
+		"tool_key":        call.ToolKey,
+		"idempotency_key": "legacy-tool-call-plane",
+		"error": map[string]any{
+			"code":      "LEGACY_TOOL_CALL_RETIRED",
+			"message":   "Use the canonical action envelope instead of /v1/gateway/inject/tool_call.",
+			"retryable": false,
+		},
+	})
 }
 
 func (s *Service) HandleTemporalWebhook(w http.ResponseWriter, r *http.Request) {

@@ -1,10 +1,22 @@
 import http from 'node:http';
 import os from 'node:os';
+import path from 'node:path';
+import { randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
 import WebSocket from 'ws';
-import { executeImplementedLocalSkill, resolveSupportedLocalSkills } from './local-skills.js';
+import { verifyEdgeExecutionAuthorization } from '@brevio/shared';
+import { buildToolKey, getToolDescriptor, isRegisteredOperation } from '../../../services/brevio-brain/src/catalog.js';
+import { executeImplementedLocalSkill, resolveSupportedLocalSkills, supportsLocalOperation } from './local-skills.js';
+import { ResultOutboxStore } from './result-outbox-store.js';
 
-type SkillStatus = 'SUCCESS' | 'PARTIAL' | 'FAILED' | 'TIMEOUT';
+type SkillStatus =
+  | 'SUCCESS'
+  | 'PARTIAL'
+  | 'FAILED'
+  | 'TIMEOUT'
+  | 'NEEDS_CONSENT'
+  | 'NOT_EXECUTED'
+  | 'SIMULATED';
 
 interface AgentConfig {
   serviceName: string;
@@ -23,23 +35,48 @@ interface AgentConfig {
   maxReconnectAttempts: number;
   healthPort: number;
   maxQueueAgeMs: number;
+  executionAuthSecret: string;
+  resultOutboxFilePath: string;
   supportedSkills: string[];
 }
 
 interface ExecuteSkillMessage {
   type: 'execute_skill';
+  protocol_version: '2026.edge.v2';
   request_id: string;
   run_id?: string;
   task_id?: string;
   step_id?: string;
   attempt?: number;
   skill_id: string;
+  tool: string;
+  operation: string;
+  policy?: {
+    consent_requirement?: 'none' | 'recommended' | 'required';
+    consent_record?: string;
+    human_review?: 'none' | 'recommended' | 'required';
+    human_review_record?: string;
+    recipient_verification?: 'not_applicable' | 'required' | 'verified';
+  };
+  authorization: {
+    key_id: 'edge-execution-v1';
+    nonce: string;
+    issued_at: string;
+    expires_at: string;
+    dispatch_receipt_id: string;
+    policy_hash: string;
+    approved: boolean;
+    signature: string;
+  };
+  dispatch_receipt_id: string;
+  result_deadline_at: string;
   input: Record<string, unknown>;
   queued_at: string;
 }
 
 interface RegisterMessage {
   type: 'register';
+  protocol_version: '2026.edge.v2';
   user_id: string;
   device_id: string;
   device_name: string;
@@ -52,6 +89,12 @@ interface RegisterMessage {
 interface HeartbeatMessage {
   type: 'heartbeat';
   ts: string;
+}
+
+interface ExecuteAckMessage {
+  type: 'execute_ack';
+  request_id: string;
+  dispatch_receipt_id: string;
 }
 
 interface SkillResultMessage {
@@ -69,11 +112,15 @@ interface SkillResultMessage {
     message: string;
   };
   latency_ms: number;
+  dispatch_receipt_id: string;
+  result_receipt_id: string;
 }
 
-interface PendingResult {
-  queuedAt: number;
-  result: SkillResultMessage;
+interface ResultAckMessage {
+  type: 'result_ack';
+  request_id: string;
+  result_receipt_id: string;
+  message?: string;
 }
 
 interface AgentState {
@@ -82,7 +129,6 @@ interface AgentState {
   lastConnectedAt: number | null;
   lastDisconnectedAt: number | null;
   lastHeartbeatAt: number | null;
-  queue: PendingResult[];
 }
 
 const config = loadConfig(process.env);
@@ -92,8 +138,8 @@ const state: AgentState = {
   lastConnectedAt: null,
   lastDisconnectedAt: null,
   lastHeartbeatAt: null,
-  queue: [],
 };
+const outbox = new ResultOutboxStore(config.resultOutboxFilePath);
 
 let socket: WebSocket | null = null;
 let heartbeatHandle: NodeJS.Timeout | null = null;
@@ -221,6 +267,7 @@ function buildRelayConnectionUrl(): string {
 function sendRegister(ws: WebSocket): void {
   const payload: RegisterMessage = {
     type: 'register',
+    protocol_version: '2026.edge.v2',
     user_id: config.userId,
     device_id: config.deviceId,
     device_name: config.deviceName,
@@ -263,6 +310,20 @@ function handleRelayMessage(ws: WebSocket, raw: string): void {
     return;
   }
 
+  if (decoded.type === 'result_ack') {
+    const message = parseResultAckMessage(decoded);
+    if (!message) {
+      logEvent('edge_agent_invalid_result_ack', { payload: raw });
+      return;
+    }
+    outbox.markAcked(message.result_receipt_id);
+    logEvent('edge_agent_result_acked', {
+      request_id: message.request_id,
+      result_receipt_id: message.result_receipt_id
+    });
+    return;
+  }
+
   if (decoded.type === 'error') {
     logEvent('edge_agent_error_message', { message: optionalString(decoded.message) ?? 'unknown' });
     return;
@@ -279,18 +340,25 @@ function handleRelayMessage(ws: WebSocket, raw: string): void {
     return;
   }
 
+  sendMessage(ws, {
+    type: 'execute_ack',
+    request_id: message.request_id,
+    dispatch_receipt_id: message.dispatch_receipt_id
+  });
+
   void executeSkillLocally(message)
     .then((result) => {
-      if (ws.readyState === WebSocket.OPEN) {
-        sendMessage(ws, result);
-        return;
-      }
-      queueResult(result);
+      enqueueResult(result);
+      flushQueuedResults(ws);
     })
     .catch((error) => {
       const failure: SkillResultMessage = {
         type: 'skill_result',
         request_id: message.request_id,
+        run_id: message.run_id,
+        task_id: message.task_id,
+        step_id: message.step_id,
+        attempt: message.attempt,
         skill_id: message.skill_id,
         status: 'FAILED',
         error: {
@@ -298,35 +366,128 @@ function handleRelayMessage(ws: WebSocket, raw: string): void {
           message: error instanceof Error ? error.message : 'local execution failed',
         },
         latency_ms: 0,
+        dispatch_receipt_id: message.dispatch_receipt_id,
+        result_receipt_id: randomUUID(),
       };
-
-      if (ws.readyState === WebSocket.OPEN) {
-        sendMessage(ws, failure);
-        return;
-      }
-      queueResult(failure);
+      enqueueResult(failure);
+      flushQueuedResults(ws);
     });
 }
 
 function parseExecuteMessage(value: Record<string, unknown>): ExecuteSkillMessage | null {
   const requestId = optionalString(value.request_id);
   const skillId = optionalString(value.skill_id);
-  if (!requestId || !skillId) {
+  const tool = optionalString(value.tool);
+  const operation = optionalString(value.operation);
+  const dispatchReceiptId = optionalString(value.dispatch_receipt_id);
+  const resultDeadlineAt = optionalString(value.result_deadline_at);
+  if (!requestId || !skillId || !tool || !operation || !dispatchReceiptId || !resultDeadlineAt) {
     return null;
   }
 
   const input = isRecord(value.input) ? value.input : {};
+  const descriptor = getToolDescriptor(skillId);
+  if (!descriptor || !isRegisteredOperation(skillId, operation) || tool !== buildToolKey(skillId, operation)) {
+    return null;
+  }
+  if (!config.supportedSkills.includes(skillId.trim().toLowerCase())) {
+    return null;
+  }
+  if (!supportsLocalOperation(skillId, operation)) {
+    return null;
+  }
+  const authorization = isRecord(value.authorization)
+    ? ({
+        key_id: value.authorization.key_id,
+        nonce: optionalString(value.authorization.nonce),
+        issued_at: optionalString(value.authorization.issued_at),
+        expires_at: optionalString(value.authorization.expires_at),
+        dispatch_receipt_id: optionalString(value.authorization.dispatch_receipt_id),
+        policy_hash: optionalString(value.authorization.policy_hash),
+        approved: value.authorization.approved,
+        signature: optionalString(value.authorization.signature)
+      } as ExecuteSkillMessage['authorization'])
+    : undefined;
+  if (
+    !authorization ||
+    authorization.key_id !== 'edge-execution-v1' ||
+    !authorization.nonce ||
+    !authorization.issued_at ||
+    !authorization.expires_at ||
+    !authorization.dispatch_receipt_id ||
+    !authorization.policy_hash ||
+    typeof authorization.approved !== 'boolean' ||
+    !authorization.signature
+  ) {
+    return null;
+  }
+  const policy = isRecord(value.policy)
+    ? {
+        consent_requirement:
+          value.policy.consent_requirement === 'none' ||
+          value.policy.consent_requirement === 'recommended' ||
+          value.policy.consent_requirement === 'required'
+            ? value.policy.consent_requirement
+            : undefined,
+        consent_record: optionalString(value.policy.consent_record),
+        human_review:
+          value.policy.human_review === 'none' ||
+          value.policy.human_review === 'recommended' ||
+          value.policy.human_review === 'required'
+            ? value.policy.human_review
+            : undefined,
+        human_review_record: optionalString(value.policy.human_review_record),
+        recipient_verification:
+          value.policy.recipient_verification === 'not_applicable' ||
+          value.policy.recipient_verification === 'required' ||
+          value.policy.recipient_verification === 'verified'
+            ? value.policy.recipient_verification
+            : undefined
+      }
+    : undefined;
+  const authCheck = verifyEdgeExecutionAuthorization(
+    config.executionAuthSecret,
+    authorization,
+    {
+      dispatchReceiptId,
+      policy
+    }
+  );
+  if (!authCheck.valid) {
+    return null;
+  }
 
   return {
     type: 'execute_skill',
+    protocol_version: '2026.edge.v2',
     request_id: requestId,
     run_id: optionalString(value.run_id),
     task_id: optionalString(value.task_id),
     step_id: optionalString(value.step_id),
     attempt: typeof value.attempt === 'number' && Number.isInteger(value.attempt) && value.attempt > 0 ? value.attempt : undefined,
     skill_id: skillId,
+    tool,
+    operation,
+    policy,
+    authorization,
+    dispatch_receipt_id: dispatchReceiptId,
+    result_deadline_at: resultDeadlineAt,
     input,
     queued_at: optionalString(value.queued_at) ?? new Date().toISOString(),
+  };
+}
+
+function parseResultAckMessage(value: Record<string, unknown>): ResultAckMessage | null {
+  const requestId = optionalString(value.request_id);
+  const resultReceiptId = optionalString(value.result_receipt_id);
+  if (!requestId || !resultReceiptId) {
+    return null;
+  }
+  return {
+    type: 'result_ack',
+    request_id: requestId,
+    result_receipt_id: resultReceiptId,
+    message: optionalString(value.message)
   };
 }
 
@@ -334,6 +495,7 @@ async function executeSkillLocally(message: ExecuteSkillMessage): Promise<SkillR
   const started = Date.now();
 
   const normalizedSkill = message.skill_id.trim().toLowerCase();
+  const resultReceiptId = randomUUID();
 
   if (!config.supportedSkills.includes(normalizedSkill)) {
     return {
@@ -350,10 +512,33 @@ async function executeSkillLocally(message: ExecuteSkillMessage): Promise<SkillR
         message: `Local edge agent does not support skill ${message.skill_id}`,
       },
       latency_ms: Date.now() - started,
+      dispatch_receipt_id: message.dispatch_receipt_id,
+      result_receipt_id: resultReceiptId,
     };
   }
 
-  const execution = executeImplementedLocalSkill(normalizedSkill, message.input);
+  const descriptor = getToolDescriptor(message.skill_id);
+  if (!descriptor || !isRegisteredOperation(message.skill_id, message.operation) || message.tool !== buildToolKey(message.skill_id, message.operation)) {
+    return {
+      type: 'skill_result',
+      request_id: message.request_id,
+      run_id: message.run_id,
+      task_id: message.task_id,
+      step_id: message.step_id,
+      attempt: message.attempt,
+      skill_id: message.skill_id,
+      status: 'FAILED',
+      error: {
+        code: 'UNSUPPORTED_OPERATION',
+        message: `Local edge agent rejected invalid tool contract ${message.tool}`
+      },
+      latency_ms: Date.now() - started,
+      dispatch_receipt_id: message.dispatch_receipt_id,
+      result_receipt_id: resultReceiptId
+    };
+  }
+
+  const execution = executeImplementedLocalSkill(normalizedSkill, message.operation, message.input);
   if (!execution) {
     return {
       type: 'skill_result',
@@ -366,9 +551,11 @@ async function executeSkillLocally(message: ExecuteSkillMessage): Promise<SkillR
       status: 'FAILED',
       error: {
         code: 'SKILL_NOT_IMPLEMENTED_LOCALLY',
-        message: `Local edge agent is configured for ${message.skill_id}, but no implementation is registered`
+        message: `Local edge agent is configured for ${message.skill_id}.${message.operation}, but no implementation is registered`
       },
-      latency_ms: Date.now() - started
+      latency_ms: Date.now() - started,
+      dispatch_receipt_id: message.dispatch_receipt_id,
+      result_receipt_id: resultReceiptId
     };
   }
 
@@ -380,43 +567,52 @@ async function executeSkillLocally(message: ExecuteSkillMessage): Promise<SkillR
     step_id: message.step_id,
     attempt: message.attempt,
     skill_id: message.skill_id,
-    status: 'SUCCESS',
-    data: execution.data,
+    status: execution.status,
+    data:
+      execution.status === 'SUCCESS'
+        ? {
+            ...(execution.data ?? {}),
+            execution_receipt: {
+              executor: 'brevio-edge-agent',
+              mode: 'local',
+              issued_at: new Date().toISOString(),
+              receipt_id: resultReceiptId
+            }
+          }
+        : execution.data,
     latency_ms: Date.now() - started,
+    dispatch_receipt_id: message.dispatch_receipt_id,
+    result_receipt_id: resultReceiptId,
   };
 }
 
-function queueResult(result: SkillResultMessage): void {
-  pruneExpiredQueue();
-  state.queue.push({ queuedAt: Date.now(), result });
+function enqueueResult(result: SkillResultMessage): void {
+  outbox.enqueue({
+    requestId: result.request_id,
+    resultReceiptId: result.result_receipt_id,
+    queuedAt: Date.now(),
+    result
+  });
   logEvent('edge_agent_result_queued', {
     request_id: result.request_id,
     skill_id: result.skill_id,
-    queue_size: state.queue.length,
+    queue_size: outbox.size(Date.now(), config.maxQueueAgeMs),
   });
 }
 
 function flushQueuedResults(ws: WebSocket): void {
-  pruneExpiredQueue();
-  if (state.queue.length === 0 || ws.readyState !== WebSocket.OPEN) {
+  const pending = outbox.pending(Date.now(), config.maxQueueAgeMs);
+  if (pending.length === 0 || ws.readyState !== WebSocket.OPEN) {
     return;
   }
 
-  while (state.queue.length > 0) {
-    const next = state.queue.shift();
-    if (!next) {
-      break;
-    }
+  for (const next of pending) {
     sendMessage(ws, next.result);
+    outbox.markSent(next.resultReceiptId, Date.now());
   }
 }
 
-function pruneExpiredQueue(): void {
-  const now = Date.now();
-  state.queue = state.queue.filter((entry) => now - entry.queuedAt <= config.maxQueueAgeMs);
-}
-
-function sendMessage(ws: WebSocket, payload: RegisterMessage | HeartbeatMessage | SkillResultMessage): void {
+function sendMessage(ws: WebSocket, payload: RegisterMessage | HeartbeatMessage | SkillResultMessage | ExecuteAckMessage): void {
   if (ws.readyState !== WebSocket.OPEN) {
     return;
   }
@@ -446,11 +642,16 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function loadConfig(env: NodeJS.ProcessEnv): AgentConfig {
   const hostname = os.hostname();
   const supportedSkills = resolveSupportedLocalSkills(env.EDGE_SUPPORTED_SKILLS);
+  const environment = env.BREVIO_ENV?.trim() || 'local';
+  const executionAuthSecret = env.EDGE_EXECUTION_AUTH_SECRET?.trim() || (environment === 'local' ? 'local-edge-execution-auth' : undefined);
+  if (!executionAuthSecret) {
+    throw new Error('EDGE_EXECUTION_AUTH_SECRET is required outside local environments');
+  }
 
   return {
     serviceName: 'brevio-edge-agent',
     serviceVersion: env.SERVICE_VERSION?.trim() || '0.1.0',
-    environment: env.BREVIO_ENV?.trim() || 'local',
+    environment,
     relayUrl: env.EDGE_RELAY_URL?.trim() || 'ws://127.0.0.1:8086/ws/edge',
     relayAuthToken: env.EDGE_RELAY_AUTH_TOKEN?.trim() || undefined,
     userId: env.EDGE_USER_ID?.trim() || 'local-user',
@@ -464,6 +665,10 @@ function loadConfig(env: NodeJS.ProcessEnv): AgentConfig {
     maxReconnectAttempts: parseIntWithDefault(env.EDGE_MAX_RECONNECT_ATTEMPTS, 100),
     healthPort: parseIntWithDefault(env.EDGE_HEALTH_PORT, 18090),
     maxQueueAgeMs: parseIntWithDefault(env.EDGE_MAX_QUEUE_AGE_MS, 4 * 60 * 60 * 1000),
+    executionAuthSecret,
+    resultOutboxFilePath:
+      env.EDGE_RESULT_OUTBOX_FILE?.trim() ||
+      path.join(process.cwd(), '.runtime', 'edge-agent-result-outbox.json'),
     supportedSkills,
   };
 }
@@ -483,11 +688,13 @@ function healthPayload(deep: boolean): Record<string, unknown> {
   };
 
   if (deep) {
-    checks.queue_size = state.queue.length;
+    checks.queue_size = outbox.size(Date.now(), config.maxQueueAgeMs);
     checks.last_connected_at = state.lastConnectedAt ? new Date(state.lastConnectedAt).toISOString() : null;
     checks.last_disconnected_at = state.lastDisconnectedAt ? new Date(state.lastDisconnectedAt).toISOString() : null;
     checks.last_heartbeat_at = state.lastHeartbeatAt ? new Date(state.lastHeartbeatAt).toISOString() : null;
     checks.max_queue_age_ms = config.maxQueueAgeMs;
+    checks.outbox_mode = outbox.mode();
+    checks.outbox_path = outbox.snapshotPath();
     checks.supported_skills = config.supportedSkills;
   }
 

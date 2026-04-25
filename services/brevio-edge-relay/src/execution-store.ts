@@ -1,8 +1,31 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
-export type SkillStatus = 'SUCCESS' | 'PARTIAL' | 'FAILED' | 'TIMEOUT';
-export type ExecutionLifecycleStatus = 'QUEUED' | 'WAITING_FOR_AGENT' | 'DISPATCHED' | 'SUCCESS' | 'PARTIAL' | 'FAILED' | 'TIMEOUT' | 'REJECTED';
+import type { EdgeExecutionPolicy } from '@brevio/shared';
+import type { ProtectedInputEnvelope } from './security.js';
+
+export type SkillStatus =
+  | 'SUCCESS'
+  | 'PARTIAL'
+  | 'FAILED'
+  | 'TIMEOUT'
+  | 'NEEDS_CONSENT'
+  | 'NOT_EXECUTED'
+  | 'SIMULATED';
+export type ExecutionLifecycleStatus =
+  | 'QUEUED'
+  | 'WAITING_FOR_AGENT'
+  | 'SENT'
+  | 'ACKED'
+  | 'DISPATCHED'
+  | 'SUCCESS'
+  | 'PARTIAL'
+  | 'FAILED'
+  | 'TIMEOUT'
+  | 'NEEDS_CONSENT'
+  | 'NOT_EXECUTED'
+  | 'SIMULATED'
+  | 'REJECTED';
 export type WorkflowReportStatus = 'PENDING' | 'RETRYING' | 'DELEGATED' | 'FAILED';
 
 export interface ExecutionRefs {
@@ -17,6 +40,10 @@ export interface ExecutionCreateInput extends ExecutionRefs {
   userId: string;
   deviceId: string;
   skillId: string;
+  tool?: string;
+  operation?: string;
+  policy?: EdgeExecutionPolicy;
+  protectedInput?: ProtectedInputEnvelope;
 }
 
 export interface ExecutionResultUpdate extends ExecutionRefs {
@@ -29,6 +56,9 @@ export interface ExecutionResultUpdate extends ExecutionRefs {
     message: string;
   };
   latencyMs: number;
+  sessionKey?: string;
+  dispatchReceiptId?: string;
+  resultReceiptId?: string;
 }
 
 export interface WorkflowReportState {
@@ -44,12 +74,22 @@ export interface ExecutionRecord extends ExecutionRefs {
   userId: string;
   deviceId: string;
   skillId: string;
+  tool?: string;
+  operation?: string;
+  policy?: EdgeExecutionPolicy;
   status: ExecutionLifecycleStatus;
   createdAt: number;
   updatedAt: number;
   queuedAt?: number;
   dispatchedAt?: number;
+  deliveryAckAt?: number;
   completedAt?: number;
+  dispatchLeaseExpiresAt?: number;
+  resultDeadlineAt?: number;
+  dispatchedSessionKey?: string;
+  dispatchReceiptId?: string;
+  lastResultReceiptId?: string;
+  protectedInput?: ProtectedInputEnvelope;
   result?: {
     status: SkillStatus;
     data?: Record<string, unknown>;
@@ -58,6 +98,7 @@ export interface ExecutionRecord extends ExecutionRefs {
       message: string;
     };
     latencyMs: number;
+    resultReceiptId?: string;
   };
   lastError?: {
     code: string;
@@ -67,15 +108,44 @@ export interface ExecutionRecord extends ExecutionRefs {
 }
 
 export interface ApplyResultResponse {
-  outcome: 'applied' | 'duplicate' | 'unknown_request' | 'skill_mismatch' | 'ref_mismatch';
+  outcome:
+    | 'applied'
+    | 'duplicate'
+    | 'unknown_request'
+    | 'skill_mismatch'
+    | 'ref_mismatch'
+    | 'provenance_mismatch';
   record?: ExecutionRecord;
 }
 
-const TERMINAL_STATUSES = new Set<ExecutionLifecycleStatus>(['SUCCESS', 'PARTIAL', 'FAILED', 'TIMEOUT', 'REJECTED']);
+const TERMINAL_STATUSES = new Set<ExecutionLifecycleStatus>([
+  'SUCCESS',
+  'PARTIAL',
+  'FAILED',
+  'TIMEOUT',
+  'NEEDS_CONSENT',
+  'NOT_EXECUTED',
+  'SIMULATED',
+  'REJECTED'
+]);
+
+const EXPIRABLE_DISPATCH_STATUSES = new Set<ExecutionLifecycleStatus>(['SENT', 'ACKED', 'DISPATCHED']);
+
+function cloneProtectedInput(input: ProtectedInputEnvelope | undefined): ProtectedInputEnvelope | undefined {
+  if (!input) {
+    return undefined;
+  }
+  return {
+    alg: input.alg,
+    nonce: input.nonce,
+    ciphertext: input.ciphertext
+  };
+}
 
 function cloneRecord(record: ExecutionRecord): ExecutionRecord {
   return {
     ...record,
+    protectedInput: cloneProtectedInput(record.protectedInput),
     result: record.result
       ? {
           ...record.result,
@@ -113,21 +183,37 @@ export class ExecutionStore {
     this.records = this.loadSnapshot();
   }
 
-  create(input: ExecutionCreateInput, initialStatus: Extract<ExecutionLifecycleStatus, 'QUEUED' | 'WAITING_FOR_AGENT' | 'DISPATCHED'>, nowMs: number): ExecutionRecord {
+  mode(): 'in_memory' | 'local_file_snapshot' {
+    return this.filePath ? 'local_file_snapshot' : 'in_memory';
+  }
+
+  snapshotPath(): string | undefined {
+    return this.filePath;
+  }
+
+  create(
+    input: ExecutionCreateInput,
+    initialStatus: Extract<ExecutionLifecycleStatus, 'QUEUED' | 'WAITING_FOR_AGENT' | 'SENT' | 'DISPATCHED'>,
+    nowMs: number
+  ): ExecutionRecord {
     const record: ExecutionRecord = {
       requestId: input.requestId,
       userId: input.userId,
       deviceId: input.deviceId,
       skillId: input.skillId,
+      tool: input.tool,
+      operation: input.operation,
+      policy: input.policy,
       runId: input.runId,
       taskId: input.taskId,
       stepId: input.stepId,
       attempt: input.attempt,
-      status: initialStatus,
+      protectedInput: cloneProtectedInput(input.protectedInput),
+      status: initialStatus === 'DISPATCHED' ? 'SENT' : initialStatus,
       createdAt: nowMs,
       updatedAt: nowMs,
-      queuedAt: initialStatus === 'DISPATCHED' ? undefined : nowMs,
-      dispatchedAt: initialStatus === 'DISPATCHED' ? nowMs : undefined
+      queuedAt: initialStatus === 'QUEUED' || initialStatus === 'WAITING_FOR_AGENT' ? nowMs : undefined,
+      dispatchedAt: initialStatus === 'SENT' || initialStatus === 'DISPATCHED' ? nowMs : undefined
     };
     this.records.set(record.requestId, record);
     this.persist();
@@ -162,7 +248,28 @@ export class ExecutionStore {
       .map((record) => cloneRecord(record));
   }
 
-  markQueued(requestId: string, nowMs: number, status: Extract<ExecutionLifecycleStatus, 'QUEUED' | 'WAITING_FOR_AGENT'> = 'QUEUED'): ExecutionRecord | null {
+  collectExpiredDispatches(nowMs: number): ExecutionRecord[] {
+    return Array.from(this.records.values())
+      .filter((record) => {
+        if (!EXPIRABLE_DISPATCH_STATUSES.has(record.status)) {
+          return false;
+        }
+        if (record.dispatchLeaseExpiresAt && record.dispatchLeaseExpiresAt <= nowMs) {
+          return true;
+        }
+        if (record.resultDeadlineAt && record.resultDeadlineAt <= nowMs) {
+          return true;
+        }
+        return false;
+      })
+      .map((record) => cloneRecord(record));
+  }
+
+  markQueued(
+    requestId: string,
+    nowMs: number,
+    status: Extract<ExecutionLifecycleStatus, 'QUEUED' | 'WAITING_FOR_AGENT'> = 'QUEUED'
+  ): ExecutionRecord | null {
     const record = this.records.get(requestId);
     if (!record || TERMINAL_STATUSES.has(record.status)) {
       return record ? cloneRecord(record) : null;
@@ -170,6 +277,39 @@ export class ExecutionStore {
     record.status = status;
     record.updatedAt = nowMs;
     record.queuedAt = record.queuedAt ?? nowMs;
+    record.dispatchedAt = undefined;
+    record.deliveryAckAt = undefined;
+    record.dispatchLeaseExpiresAt = undefined;
+    record.resultDeadlineAt = undefined;
+    record.dispatchedSessionKey = undefined;
+    record.dispatchReceiptId = undefined;
+    record.lastResultReceiptId = undefined;
+    this.persist();
+    return cloneRecord(record);
+  }
+
+  markSent(
+    requestId: string,
+    input: {
+      nowMs: number;
+      sessionKey: string;
+      dispatchReceiptId: string;
+      dispatchLeaseExpiresAt: number;
+      resultDeadlineAt: number;
+    }
+  ): ExecutionRecord | null {
+    const record = this.records.get(requestId);
+    if (!record || TERMINAL_STATUSES.has(record.status)) {
+      return record ? cloneRecord(record) : null;
+    }
+    record.status = 'SENT';
+    record.updatedAt = input.nowMs;
+    record.dispatchedAt = input.nowMs;
+    record.queuedAt = record.queuedAt ?? input.nowMs;
+    record.dispatchedSessionKey = input.sessionKey;
+    record.dispatchReceiptId = input.dispatchReceiptId;
+    record.dispatchLeaseExpiresAt = input.dispatchLeaseExpiresAt;
+    record.resultDeadlineAt = input.resultDeadlineAt;
     this.persist();
     return cloneRecord(record);
   }
@@ -183,6 +323,36 @@ export class ExecutionStore {
     record.updatedAt = nowMs;
     record.dispatchedAt = nowMs;
     record.queuedAt = record.queuedAt ?? nowMs;
+    this.persist();
+    return cloneRecord(record);
+  }
+
+  markAcknowledged(
+    requestId: string,
+    sessionKey: string,
+    dispatchReceiptId: string,
+    nowMs: number,
+    resultDeadlineAt?: number
+  ): ExecutionRecord | null {
+    const record = this.records.get(requestId);
+    if (!record || TERMINAL_STATUSES.has(record.status)) {
+      return record ? cloneRecord(record) : null;
+    }
+    if (record.dispatchedSessionKey && record.dispatchedSessionKey !== sessionKey) {
+      return cloneRecord(record);
+    }
+    if (record.dispatchReceiptId && record.dispatchReceiptId !== dispatchReceiptId) {
+      return cloneRecord(record);
+    }
+    record.status = 'ACKED';
+    record.updatedAt = nowMs;
+    record.deliveryAckAt = nowMs;
+    record.dispatchedSessionKey = sessionKey;
+    record.dispatchReceiptId = dispatchReceiptId;
+    record.dispatchLeaseExpiresAt = undefined;
+    if (resultDeadlineAt !== undefined) {
+      record.resultDeadlineAt = resultDeadlineAt;
+    }
     this.persist();
     return cloneRecord(record);
   }
@@ -204,6 +374,34 @@ export class ExecutionStore {
     return cloneRecord(record);
   }
 
+  markFailedTerminal(
+    requestId: string,
+    status: Extract<ExecutionLifecycleStatus, 'FAILED' | 'TIMEOUT' | 'NEEDS_CONSENT' | 'NOT_EXECUTED' | 'SIMULATED'>,
+    code: string,
+    message: string,
+    nowMs: number
+  ): ExecutionRecord | null {
+    const record = this.records.get(requestId);
+    if (!record) {
+      return null;
+    }
+    if (TERMINAL_STATUSES.has(record.status)) {
+      return cloneRecord(record);
+    }
+    record.status = status;
+    record.updatedAt = nowMs;
+    record.completedAt = nowMs;
+    record.lastError = { code, message };
+    record.result = {
+      status,
+      error: { code, message },
+      latencyMs: Math.max(0, nowMs - record.createdAt)
+    };
+    this.markWorkflowReportPendingForRecord(record, nowMs);
+    this.persist();
+    return cloneRecord(record);
+  }
+
   applyResult(update: ExecutionResultUpdate, nowMs: number): ApplyResultResponse {
     const record = this.records.get(update.requestId);
     if (!record) {
@@ -215,6 +413,12 @@ export class ExecutionStore {
     if (!refsMatch(record, update)) {
       return { outcome: 'ref_mismatch', record: cloneRecord(record) };
     }
+    if (
+      (record.dispatchedSessionKey && update.sessionKey && record.dispatchedSessionKey !== update.sessionKey) ||
+      (record.dispatchReceiptId && update.dispatchReceiptId && record.dispatchReceiptId !== update.dispatchReceiptId)
+    ) {
+      return { outcome: 'provenance_mismatch', record: cloneRecord(record) };
+    }
     if (TERMINAL_STATUSES.has(record.status)) {
       return { outcome: 'duplicate', record: cloneRecord(record) };
     }
@@ -222,11 +426,13 @@ export class ExecutionStore {
     record.status = update.status;
     record.updatedAt = nowMs;
     record.completedAt = nowMs;
+    record.lastResultReceiptId = update.resultReceiptId;
     record.result = {
       status: update.status,
       data: update.data,
       error: update.error,
-      latencyMs: update.latencyMs
+      latencyMs: update.latencyMs,
+      resultReceiptId: update.resultReceiptId
     };
     if (update.error) {
       record.lastError = { ...update.error };
@@ -305,11 +511,34 @@ export class ExecutionStore {
     }
     try {
       const raw = readFileSync(this.filePath, 'utf8');
-      const parsed = JSON.parse(raw) as { records?: ExecutionRecord[] };
-      const records = Array.isArray(parsed?.records) ? parsed.records : [];
-      return new Map(records.map((record) => [record.requestId, record]));
-    } catch {
-      return new Map();
+      const parsed = JSON.parse(raw) as { version?: number; records?: unknown };
+      if (!parsed || typeof parsed !== 'object') {
+        throw new Error('snapshot must be a JSON object');
+      }
+      if (parsed.version !== undefined && parsed.version !== 1) {
+        throw new Error(`unsupported snapshot version: ${parsed.version}`);
+      }
+      if (parsed.records !== undefined && !Array.isArray(parsed.records)) {
+        throw new Error('snapshot records must be an array');
+      }
+      const records = (parsed.records ?? []) as ExecutionRecord[];
+      for (const record of records) {
+        if (!record || typeof record !== 'object' || typeof record.requestId !== 'string' || record.requestId.trim() === '') {
+          throw new Error('snapshot record is missing requestId');
+        }
+      }
+      return new Map(
+        records.map((record) => [
+          record.requestId,
+          {
+            ...record,
+            status: record.status === 'DISPATCHED' ? 'SENT' : record.status
+          }
+        ])
+      );
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      throw new Error(`execution state snapshot is corrupt at ${this.filePath}: ${detail}`);
     }
   }
 

@@ -1,4 +1,4 @@
-import { getToolDescriptor } from './catalog.js';
+import { buildToolKey, getToolDescriptor, isRegisteredOperation, isRegisteredToolKey } from './catalog.js';
 import type { PlannerProposal, ProcessRequest, SkillResult, VerificationResult } from './types.js';
 
 function collectPlannedSkillIds(plan: PlannerProposal): Set<string> {
@@ -61,6 +61,20 @@ export function verifyPlan(plan: PlannerProposal, skillResults: SkillResult[] | 
     }
     if (action.action_type === 'execute_skill' && !action.tool) {
       issues.push(`missing_tool_for_${action.step_id}`);
+    }
+    if (action.action_type === 'execute_skill' && action.skill_id && !isRegisteredOperation(action.skill_id, action.operation)) {
+      issues.push(`unregistered_operation_for_${action.step_id}`);
+    }
+    if (action.action_type === 'execute_skill' && action.tool && !isRegisteredToolKey(action.tool)) {
+      issues.push(`unregistered_tool_key_for_${action.step_id}`);
+    }
+    if (
+      action.action_type === 'execute_skill' &&
+      action.skill_id &&
+      action.tool &&
+      action.tool !== buildToolKey(action.skill_id, action.operation)
+    ) {
+      issues.push(`tool_operation_mismatch_for_${action.step_id}`);
     }
     if (action.action_type === 'reconcile_results' && (!action.step_dependencies || action.step_dependencies.length < 2)) {
       issues.push(`missing_specialist_dependencies_for_${action.step_id}`);
@@ -143,6 +157,9 @@ export function verifyPlan(plan: PlannerProposal, skillResults: SkillResult[] | 
       }
       if (!plannedSkills.has(result.skill_id)) {
         warnings.push(`unplanned_skill_result:${result.skill_id}`);
+      }
+      if (result.status === 'SUCCESS' && !result.execution_receipt) {
+        warnings.push(`missing_execution_receipt:${result.skill_id}`);
       }
     }
   }

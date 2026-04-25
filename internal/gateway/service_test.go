@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -358,7 +359,7 @@ func TestChannelMessageIdIdempotencyReplayReturnsCachedResponse(t *testing.T) {
 	}
 }
 
-func TestInjectToolCallAccepted(t *testing.T) {
+func TestInjectToolCallDeprecated(t *testing.T) {
 	t.Parallel()
 
 	svc := NewService("test-secret")
@@ -369,11 +370,14 @@ func TestInjectToolCallAccepted(t *testing.T) {
 	resp := httptest.NewRecorder()
 
 	mux.ServeHTTP(resp, req)
-	if resp.Code != http.StatusAccepted {
+	if resp.Code != http.StatusGone {
 		t.Fatalf("unexpected status: %d", resp.Code)
 	}
 	if svc.InjectedToolCallCount() != 1 {
 		t.Fatalf("expected one injected tool call, got %d", svc.InjectedToolCallCount())
+	}
+	if !strings.Contains(resp.Body.String(), "LEGACY_TOOL_CALL_RETIRED") {
+		t.Fatalf("expected deprecation payload, got %s", resp.Body.String())
 	}
 }
 

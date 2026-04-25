@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 
-import { getToolDescriptor } from './catalog.js';
+import { buildToolKey, getToolDescriptor, isRegisteredOperation } from './catalog.js';
 import { classifyIntent } from './classify.js';
 import { decomposeTask } from './decompose.js';
 import { disambiguateSkills } from './disambiguate.js';
@@ -63,8 +63,46 @@ const MODEL_AUGMENTATION_SCHEMA = {
   required: ['confidence', 'requires_clarification', 'reasoning', 'action_overrides']
 } as const;
 
-function idempotencyKey(taskId: string, skillId: string | undefined, goal: string): string {
-  return createHash('sha256').update(`${taskId}::${skillId ?? 'clarify'}::${goal}`).digest('hex');
+function stableSerialize(value: unknown): string {
+  if (value === null || value === undefined) {
+    return 'null';
+  }
+  if (typeof value !== 'object') {
+    return JSON.stringify(value);
+  }
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => stableSerialize(item)).join(',')}]`;
+  }
+  const entries = Object.entries(value as Record<string, unknown>).sort(([left], [right]) => left.localeCompare(right));
+  return `{${entries.map(([key, entry]) => `${JSON.stringify(key)}:${stableSerialize(entry)}`).join(',')}}`;
+}
+
+function idempotencyKey(input: {
+  runId: string | undefined;
+  threadId: string | undefined;
+  workspaceId: string | undefined;
+  userId: string | undefined;
+  taskId: string;
+  skillId: string | undefined;
+  operation: string;
+  attempt: number;
+  params: Record<string, unknown>;
+}): string {
+  return createHash('sha256')
+    .update(
+      stableSerialize({
+        run_id: input.runId,
+        thread_id: input.threadId,
+        workspace_id: input.workspaceId,
+        user_id: input.userId,
+        task_id: input.taskId,
+        skill_id: input.skillId ?? 'clarify',
+        operation: input.operation,
+        attempt: input.attempt,
+        params: input.params
+      })
+    )
+    .digest('hex');
 }
 
 function inferOperation(intent: string, skillId: string | undefined, goal: string): string {
@@ -290,6 +328,7 @@ function buildClarificationAction(
   reason: string
 ): PlannedAction {
   const operation = 'clarify';
+  const params = { prompt: reason, request_segment: task.goal };
   return {
     run_id: request.run_id,
     step_id: `step_${task.id}`,
@@ -297,8 +336,18 @@ function buildClarificationAction(
     attempt: 1,
     intent,
     operation,
-    params: { prompt: reason, request_segment: task.goal },
-    idempotency_key: idempotencyKey(task.id, undefined, task.goal),
+    params,
+    idempotency_key: idempotencyKey({
+      runId: request.run_id,
+      threadId: request.thread_id,
+      workspaceId: request.workspace_id,
+      userId: request.user_id,
+      taskId: task.id,
+      skillId: undefined,
+      operation,
+      attempt: 1,
+      params
+    }),
     dependencies: task.dependencies,
     rationale: sanitizeReasoningLine(reason),
     policy: buildActionPolicyMetadata(request, task.goal, intent, operation, undefined),
@@ -317,6 +366,15 @@ function buildExecutionAction(
   totalSpecialists: number
 ): PlannedAction {
   const operation = inferOperation(intent, skillId, task.goal);
+  if (!isRegisteredOperation(skillId, operation)) {
+    return buildClarificationAction(
+      request,
+      task,
+      intent,
+      `Need a registered operation for ${skillId} before execution can continue.`
+    );
+  }
+  const params = buildParams(skillId, operation, task.goal, request);
   return {
     run_id: request.run_id,
     step_id: stepId,
@@ -324,10 +382,20 @@ function buildExecutionAction(
     attempt: 1,
     intent,
     skill_id: skillId,
-    tool: `${skillId}.${operation}`,
+    tool: buildToolKey(skillId, operation),
     operation,
-    params: buildParams(skillId, operation, task.goal, request),
-    idempotency_key: idempotencyKey(task.id, skillId, task.goal),
+    params,
+    idempotency_key: idempotencyKey({
+      runId: request.run_id,
+      threadId: request.thread_id,
+      workspaceId: request.workspace_id,
+      userId: request.user_id,
+      taskId: task.id,
+      skillId,
+      operation,
+      attempt: 1,
+      params
+    }),
     dependencies: task.dependencies,
     step_dependencies: [],
     rationale: sanitizeReasoningLine(rationale),
@@ -344,6 +412,10 @@ function buildReconciliationAction(
   specialistActions: PlannedAction[],
   intent: string
 ): PlannedAction {
+  const params = {
+    reconciliation_for_task: task.goal,
+    specialist_steps: specialistActions.map((action) => action.step_id)
+  };
   return {
     run_id: request.run_id,
     step_id: `step_${task.id}__reconcile`,
@@ -351,11 +423,18 @@ function buildReconciliationAction(
     attempt: 1,
     intent,
     operation: 'reconcile',
-    params: {
-      reconciliation_for_task: task.goal,
-      specialist_steps: specialistActions.map((action) => action.step_id)
-    },
-    idempotency_key: idempotencyKey(task.id, 'reconcile', task.goal),
+    params,
+    idempotency_key: idempotencyKey({
+      runId: request.run_id,
+      threadId: request.thread_id,
+      workspaceId: request.workspace_id,
+      userId: request.user_id,
+      taskId: task.id,
+      skillId: 'reconcile',
+      operation: 'reconcile',
+      attempt: 1,
+      params
+    }),
     dependencies: task.dependencies,
     step_dependencies: specialistActions.map((action) => action.step_id),
     rationale: sanitizeReasoningLine(`Reconcile ${specialistActions.length} specialist outputs before final aggregation.`),
@@ -398,6 +477,8 @@ function extractOutputText(payload: unknown): string | undefined {
 
 function buildPlannerModelContent(request: NormalizedReasoningRequest, actions: PlannedAction[], confidence: number): Array<Record<string, unknown>> {
   const plannerInput = buildExternalPlannerInput(request, actions, confidence);
+  const policySummary = buildPlanPolicySummary(request, actions);
+  const stripDirectMediaUris = policySummary.external_model_egress === 'redacted_only';
   const content: Array<Record<string, unknown>> = [
     {
       type: 'input_text',
@@ -410,7 +491,7 @@ function buildPlannerModelContent(request: NormalizedReasoningRequest, actions: 
       content.push({ type: 'input_text', text: redactSensitiveText(part.text) });
       continue;
     }
-    if (part.type === 'image' && media?.source_uri) {
+    if (part.type === 'image' && media?.source_uri && !stripDirectMediaUris) {
       content.push({ type: 'input_image', image_url: media.source_uri });
       continue;
     }
@@ -422,11 +503,16 @@ function buildPlannerModelContent(request: NormalizedReasoningRequest, actions: 
             type: part.type,
             asset_id: media.asset_id,
             mime_type: media.mime_type,
-            storage_uri: media.storage_uri,
             size_bytes: media.size_bytes,
             duration_ms: media.duration_ms,
             page_count: media.page_count,
-            safety_labels: media.safety_labels
+            safety_labels: media.safety_labels,
+            ...(stripDirectMediaUris
+              ? {}
+              : {
+                  storage_uri: media.storage_uri,
+                  source_uri: media.source_uri
+                })
           }
         })
       });

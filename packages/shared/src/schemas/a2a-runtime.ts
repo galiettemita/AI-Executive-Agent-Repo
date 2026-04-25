@@ -44,16 +44,7 @@ export const AgentTaskArtifactSchema = z.object({
   inline_data: z.unknown().optional()
 });
 
-export const AgentTaskStateSchema = z.enum([
-  'QUEUED',
-  'WAITING_FOR_AGENT',
-  'DISPATCHED',
-  'SUCCESS',
-  'PARTIAL',
-  'FAILED',
-  'TIMEOUT',
-  'REJECTED'
-]);
+export const AgentTaskStateSchema = z.enum(AgentTaskStateValues);
 
 export const AgentTaskSchema = AgentExecutionRefSchema.extend({
   agent_id: z.string().min(1),
@@ -148,7 +139,7 @@ export const AgentTaskJsonSchema: JSONSchema7 = {
     device_id: { type: 'string', minLength: 1 },
     status: {
       type: 'string',
-      enum: ['QUEUED', 'WAITING_FOR_AGENT', 'DISPATCHED', 'SUCCESS', 'PARTIAL', 'FAILED', 'TIMEOUT', 'REJECTED']
+      enum: [...AgentTaskStateValues]
     },
     created_at: { type: 'string', format: 'date-time' },
     updated_at: { type: 'string', format: 'date-time' },
@@ -188,3 +179,19 @@ export type AgentTaskArtifact = z.infer<typeof AgentTaskArtifactSchema>;
 export type AgentTaskState = z.infer<typeof AgentTaskStateSchema>;
 export type AgentTask = z.infer<typeof AgentTaskSchema>;
 export type CapabilityInventoryEntry = z.infer<typeof CapabilityInventoryEntrySchema>;
+export const AgentTaskStateValues = [
+  'QUEUED',
+  'WAITING_FOR_AGENT',
+  'SENT',
+  'ACKED',
+  'RUNNING',
+  'DISPATCHED',
+  'SUCCESS',
+  'PARTIAL',
+  'FAILED',
+  'TIMEOUT',
+  'NEEDS_CONSENT',
+  'NOT_EXECUTED',
+  'SIMULATED',
+  'REJECTED'
+] as const;

@@ -23,7 +23,7 @@ function baseUrl(config: { temporalWorkerBaseUrl?: string }): string | undefined
 }
 
 function isTerminalStatus(status: ExecutionLifecycleStatus): boolean {
-  return ['SUCCESS', 'PARTIAL', 'FAILED', 'TIMEOUT', 'REJECTED'].includes(status);
+  return ['SUCCESS', 'PARTIAL', 'FAILED', 'TIMEOUT', 'NEEDS_CONSENT', 'NOT_EXECUTED', 'SIMULATED', 'REJECTED'].includes(status);
 }
 
 function mapStatus(status: ExecutionLifecycleStatus): 'COMPLETED' | 'FAILED' {

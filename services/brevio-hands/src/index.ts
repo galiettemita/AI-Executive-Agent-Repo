@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import http from 'node:http';
+import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 import { parseCapabilityInventory, resolveCapabilityInventory } from '../../../packages/shared/src/capability-inventory.js';
@@ -14,20 +15,12 @@ import type {
 } from '@brevio/shared';
 
 import { evaluateApprovalGate, type ExecutionPolicy } from './approval-policy.js';
+import { buildToolKey, getToolDescriptor, isRegisteredOperation } from '../../brevio-brain/src/catalog.js';
+import { CircuitStore, type CircuitBreakerState, type CircuitStateEntry } from './circuit-store.js';
 import { applyExecutionRefs, parseExecutionRefs, type ExecutionRefs } from './execution-refs.js';
 import { isHandsExecutableAdapter } from './skills/plane-policy.js';
 import { getSkillAdapter, SkillRegistry } from './skills/index.js';
 import { reportExecutionResult } from './workflow-runtime.js';
-
-type CircuitBreakerState = 'CLOSED' | 'HALF_OPEN' | 'OPEN';
-
-interface CircuitStateEntry {
-  state: CircuitBreakerState;
-  failureCount: number;
-  openedAtMs?: number;
-  halfOpenRemaining: number;
-  updatedAtMs: number;
-}
 
 interface HandsConfig {
   serviceName: string;
@@ -40,6 +33,7 @@ interface HandsConfig {
   circuitFailureThreshold: number;
   circuitRecoveryTimeoutMs: number;
   circuitHalfOpenMaxCalls: number;
+  stateFilePath?: string;
   temporalWorkerBaseUrl?: string;
   temporalWorkerTimeoutMs: number;
   capabilityInventoryJson?: string;
@@ -54,6 +48,8 @@ interface RequestContext {
 
 interface ExecuteRequest {
   skill_id: string;
+  tool?: string;
+  operation?: string;
   request_id?: string;
   run_id?: string;
   task_id?: string;
@@ -62,7 +58,6 @@ interface ExecuteRequest {
   user_id?: string;
   tenant_id?: string;
   workspace_id?: string;
-  allowed_skills?: string[];
   input: SkillInput;
   user_profile?: Partial<UserProfile>;
   config?: Record<string, unknown>;
@@ -74,7 +69,7 @@ interface HandsRuntime {
   startedAtMs: number;
   server: http.Server;
   skills: string[];
-  circuits: Map<string, CircuitStateEntry>;
+  circuitStore: CircuitStore;
   close(): Promise<void>;
 }
 
@@ -108,6 +103,7 @@ function loadConfig(): HandsConfig {
     circuitFailureThreshold: parsePositiveInt(process.env.BREVIO_HANDS_CB_FAILURE_THRESHOLD, 5, 'BREVIO_HANDS_CB_FAILURE_THRESHOLD'),
     circuitRecoveryTimeoutMs: parsePositiveInt(process.env.BREVIO_HANDS_CB_RECOVERY_TIMEOUT_MS, 60000, 'BREVIO_HANDS_CB_RECOVERY_TIMEOUT_MS'),
     circuitHalfOpenMaxCalls: parsePositiveInt(process.env.BREVIO_HANDS_CB_HALF_OPEN_MAX_CALLS, 3, 'BREVIO_HANDS_CB_HALF_OPEN_MAX_CALLS'),
+    stateFilePath: path.resolve(process.env.BREVIO_HANDS_STATE_FILE ?? path.join(process.cwd(), 'data', 'hands', 'circuit-state.json')),
     temporalWorkerBaseUrl: process.env.BREVIO_TEMPORAL_WORKER_BASE_URL?.trim() || undefined,
     temporalWorkerTimeoutMs: parsePositiveInt(process.env.BREVIO_TEMPORAL_WORKER_TIMEOUT_MS, 1500, 'BREVIO_TEMPORAL_WORKER_TIMEOUT_MS'),
     capabilityInventoryJson: process.env.BREVIO_CAPABILITY_INVENTORY_JSON?.trim() || undefined
@@ -226,11 +222,12 @@ function parseExecuteRequest(payload: Record<string, unknown>): ExecuteRequest {
 
   return {
     skill_id: skillId,
+    tool: asString(payload.tool),
+    operation: asString(payload.operation),
     ...parseExecutionRefs(payload),
     user_id: asString(payload.user_id),
     tenant_id: asString(payload.tenant_id),
     workspace_id: asString(payload.workspace_id),
-    allowed_skills: asStringArray(payload.allowed_skills),
     input,
     user_profile: profile as Partial<UserProfile> | undefined,
     config,
@@ -246,72 +243,87 @@ function parseExecuteRequest(payload: Record<string, unknown>): ExecuteRequest {
   };
 }
 
-function getCircuit(runtime: HandsRuntime, skillId: string): CircuitStateEntry {
-  const existing = runtime.circuits.get(skillId);
-  if (existing) {
-    return existing;
+function resolveExecutionContract(parsed: ExecuteRequest): { tool: string; operation: string } {
+  const descriptor = getToolDescriptor(parsed.skill_id);
+  if (!descriptor) {
+    throw new Error('skill_contract_missing');
   }
-
-  const created: CircuitStateEntry = {
-    state: 'CLOSED',
-    failureCount: 0,
-    halfOpenRemaining: runtime.config.circuitHalfOpenMaxCalls,
-    updatedAtMs: Date.now()
+  const requestedOperation =
+    parsed.operation ??
+    (typeof parsed.input.action === 'string' && parsed.input.action.trim() !== '' ? parsed.input.action.trim() : undefined) ??
+    (descriptor.operations.length === 1 ? descriptor.operations[0] : undefined);
+  if (!requestedOperation || !isRegisteredOperation(parsed.skill_id, requestedOperation)) {
+    throw new Error('invalid_operation_contract');
+  }
+  const expectedTool = buildToolKey(parsed.skill_id, requestedOperation);
+  if (parsed.tool && parsed.tool !== expectedTool) {
+    throw new Error('tool_operation_mismatch');
+  }
+  return {
+    tool: expectedTool,
+    operation: requestedOperation
   };
+}
 
-  runtime.circuits.set(skillId, created);
-  return created;
+function getCircuit(runtime: HandsRuntime, skillId: string): CircuitStateEntry {
+  return runtime.circuitStore.get(skillId, runtime.config.circuitHalfOpenMaxCalls);
 }
 
 function checkCircuitBeforeExecution(runtime: HandsRuntime, skillId: string): CircuitStateEntry {
-  const circuit = getCircuit(runtime, skillId);
   const now = Date.now();
+  return runtime.circuitStore.update(
+    skillId,
+    runtime.config.circuitHalfOpenMaxCalls,
+    (circuit) => {
+      if (circuit.state === 'OPEN') {
+        const openedAt = circuit.openedAtMs ?? 0;
+        if (now - openedAt >= runtime.config.circuitRecoveryTimeoutMs) {
+          circuit.state = 'HALF_OPEN';
+          circuit.failureCount = 0;
+          circuit.halfOpenRemaining = runtime.config.circuitHalfOpenMaxCalls;
+          circuit.updatedAtMs = now;
+        }
+      }
 
-  if (circuit.state === 'OPEN') {
-    const openedAt = circuit.openedAtMs ?? 0;
-    if (now - openedAt >= runtime.config.circuitRecoveryTimeoutMs) {
-      circuit.state = 'HALF_OPEN';
-      circuit.failureCount = 0;
-      circuit.halfOpenRemaining = runtime.config.circuitHalfOpenMaxCalls;
-      circuit.updatedAtMs = now;
-    } else {
-      return circuit;
-    }
-  }
-
-  if (circuit.state === 'HALF_OPEN' && circuit.halfOpenRemaining > 0) {
-    circuit.halfOpenRemaining -= 1;
-    circuit.updatedAtMs = now;
-  }
-
-  return circuit;
+      if (circuit.state === 'HALF_OPEN' && circuit.halfOpenRemaining > 0) {
+        circuit.halfOpenRemaining -= 1;
+        circuit.updatedAtMs = now;
+      }
+    },
+    now
+  );
 }
 
 function markExecutionSuccess(runtime: HandsRuntime, skillId: string): void {
-  const circuit = getCircuit(runtime, skillId);
-  circuit.state = 'CLOSED';
-  circuit.failureCount = 0;
-  circuit.halfOpenRemaining = runtime.config.circuitHalfOpenMaxCalls;
-  circuit.openedAtMs = undefined;
-  circuit.updatedAtMs = Date.now();
+  runtime.circuitStore.update(skillId, runtime.config.circuitHalfOpenMaxCalls, (circuit) => {
+    circuit.state = 'CLOSED';
+    circuit.failureCount = 0;
+    circuit.halfOpenRemaining = runtime.config.circuitHalfOpenMaxCalls;
+    circuit.openedAtMs = undefined;
+    circuit.updatedAtMs = Date.now();
+  });
 }
 
 function markExecutionFailure(runtime: HandsRuntime, skillId: string): CircuitBreakerState {
-  const circuit = getCircuit(runtime, skillId);
   const now = Date.now();
+  return runtime.circuitStore.update(
+    skillId,
+    runtime.config.circuitHalfOpenMaxCalls,
+    (circuit) => {
+      circuit.failureCount += 1;
 
-  circuit.failureCount += 1;
+      if (circuit.state === 'HALF_OPEN' || circuit.failureCount >= runtime.config.circuitFailureThreshold) {
+        circuit.state = 'OPEN';
+        circuit.openedAtMs = now;
+        circuit.halfOpenRemaining = runtime.config.circuitHalfOpenMaxCalls;
+      } else {
+        circuit.state = 'CLOSED';
+      }
 
-  if (circuit.state === 'HALF_OPEN' || circuit.failureCount >= runtime.config.circuitFailureThreshold) {
-    circuit.state = 'OPEN';
-    circuit.openedAtMs = now;
-    circuit.halfOpenRemaining = runtime.config.circuitHalfOpenMaxCalls;
-  } else {
-    circuit.state = 'CLOSED';
-  }
-
-  circuit.updatedAtMs = now;
-  return circuit.state;
+      circuit.updatedAtMs = now;
+    },
+    now
+  ).state;
 }
 
 function createSkillLogger(runtime: HandsRuntime, ctx: RequestContext, skillId: string): StructuredLogger {
@@ -399,6 +411,16 @@ function normalizeSkillResult(
     status: result.status,
     data: result.data,
     error: result.error,
+    execution_receipt:
+      result.execution_receipt ??
+      (result.status === 'SUCCESS'
+        ? {
+            executor: 'brevio-hands',
+            mode: 'delegated',
+            issued_at: new Date().toISOString(),
+            receipt_id: `hands:${refs.request_id ?? skillId}:${Date.now()}`
+          }
+        : undefined),
     latency_ms: Number.isInteger(result.latency_ms) ? result.latency_ms : latencyMs,
     tokens_used: result.tokens_used,
     cost_cents: result.cost_cents,
@@ -454,8 +476,9 @@ function healthPayload(runtime: HandsRuntime, deep: boolean): Record<string, unk
     return payload;
   }
 
-  const circuitsOpen = Array.from(runtime.circuits.values()).filter((entry) => entry.state === 'OPEN').length;
-  const circuitsHalfOpen = Array.from(runtime.circuits.values()).filter((entry) => entry.state === 'HALF_OPEN').length;
+  const circuitEntries = runtime.circuitStore.entries().map(([, entry]) => entry);
+  const circuitsOpen = circuitEntries.filter((entry) => entry.state === 'OPEN').length;
+  const circuitsHalfOpen = circuitEntries.filter((entry) => entry.state === 'HALF_OPEN').length;
 
   return {
     ...payload,
@@ -464,7 +487,9 @@ function healthPayload(runtime: HandsRuntime, deep: boolean): Record<string, unk
       db: process.env.DATABASE_URL ? 'configured' : 'not_configured',
       redis: process.env.REDIS_URL ? 'configured' : 'not_configured',
       temporal: process.env.TEMPORAL_HOST ? 'configured' : 'not_configured',
-      skill_registry: runtime.skills.length > 0 ? 'loaded' : 'empty'
+      skill_registry: runtime.skills.length > 0 ? 'loaded' : 'empty',
+      circuit_store_mode: runtime.circuitStore.mode(),
+      circuit_store_path: runtime.circuitStore.snapshotPath()
     },
     skills: {
       total: runtime.skills.length
@@ -472,7 +497,7 @@ function healthPayload(runtime: HandsRuntime, deep: boolean): Record<string, unk
     circuit_breakers: {
       open: circuitsOpen,
       half_open: circuitsHalfOpen,
-      tracked: runtime.circuits.size
+      tracked: runtime.circuitStore.size()
     }
   };
 }
@@ -485,7 +510,7 @@ function listSkills(runtime: HandsRuntime): Record<string, unknown> {
 }
 
 function circuitSnapshot(runtime: HandsRuntime): Record<string, unknown> {
-  const entries = Array.from(runtime.circuits.entries()).map(([skillId, state]) => ({
+  const entries = runtime.circuitStore.entries().map(([skillId, state]) => ({
     skill_id: skillId,
     state: state.state,
     failure_count: state.failureCount,
@@ -555,7 +580,7 @@ function buildRuntime(config?: HandsConfig): HandsRuntime {
     .filter(([, adapter]) => isHandsExecutableAdapter(adapter))
     .map(([skillId]) => skillId)
     .sort();
-  const circuits = new Map<string, CircuitStateEntry>();
+  const circuitStore = new CircuitStore(resolvedConfig.stateFilePath);
   const startedAtMs = Date.now();
 
   let runtimeRef: HandsRuntime | undefined;
@@ -642,11 +667,36 @@ function buildRuntime(config?: HandsConfig): HandsRuntime {
           return;
         }
 
+        let contract: { tool: string; operation: string };
+        try {
+          contract = resolveExecutionContract(parsed);
+        } catch (error) {
+          const validation = failureResult(
+            parsed.skill_id,
+            'FAILED',
+            'VALIDATION_FAILED',
+            error instanceof Error ? error.message : 'invalid execution contract',
+            false,
+            400,
+            Date.now() - started,
+            'CLOSED',
+            parsed
+          );
+          const workflowReport = await reportExecutionResult(validation, runtime.config);
+          sendJSON(res, 400, validation as unknown as Record<string, unknown>);
+          logEvent(runtime, ctx, 'hands.execute.invalid_contract', 'WARN', {
+            skill_id: parsed.skill_id,
+            workflow_runtime_delegated: workflowReport.delegated,
+            workflow_runtime_warning: workflowReport.warning
+          });
+          return;
+        }
+
         const approvalGate = evaluateApprovalGate(parsed.policy);
         if (approvalGate) {
           const blocked = failureResult(
             parsed.skill_id,
-            'FAILED',
+            'NEEDS_CONSENT',
             approvalGate.code,
             approvalGate.message,
             false,
@@ -693,21 +743,14 @@ function buildRuntime(config?: HandsConfig): HandsRuntime {
           timezone: parsed.user_profile?.timezone ?? 'UTC',
           locale: parsed.user_profile?.locale ?? 'en-US'
         };
-        const requestResolvedSkills = parsed.allowed_skills ?? parsed.user_profile?.enabled_skills;
-        const capabilityResolution = requestResolvedSkills && requestResolvedSkills.length > 0
-          ? {
-              enabledSkills: requestResolvedSkills,
-              deniedSkills: [],
-              source: 'explicit' as const
-            }
-          : resolveCapabilityInventory(
-              parseCapabilityInventory(runtime.config.capabilityInventoryJson),
-              {
-                tenantId: parsed.tenant_id,
-                workspaceId: parsed.workspace_id,
-                userId
-              }
-            );
+        const capabilityResolution = resolveCapabilityInventory(
+          parseCapabilityInventory(runtime.config.capabilityInventoryJson),
+          {
+            tenantId: parsed.tenant_id,
+            workspaceId: parsed.workspace_id,
+            userId
+          }
+        );
 
         if (capabilityResolution.source !== 'none' && !capabilityResolution.enabledSkills.includes(parsed.skill_id)) {
           const blocked = failureResult(
@@ -725,6 +768,8 @@ function buildRuntime(config?: HandsConfig): HandsRuntime {
           sendJSON(res, 403, blocked as unknown as Record<string, unknown>);
           logEvent(runtime, ctx, 'hands.execute.capability_blocked', 'WARN', {
             skill_id: parsed.skill_id,
+            tool: contract.tool,
+            operation: contract.operation,
             capability_source: capabilityResolution.source,
             denied_skills: capabilityResolution.deniedSkills,
             workflow_runtime_delegated: workflowReport.delegated,
@@ -772,6 +817,8 @@ function buildRuntime(config?: HandsConfig): HandsRuntime {
             step_id: parsed.step_id,
             attempt: parsed.attempt,
             skill_id: normalized.skill_id,
+            tool: contract.tool,
+            operation: contract.operation,
             status: normalized.status,
             latency_ms: normalized.latency_ms,
             workflow_runtime_delegated: workflowReport.delegated,
@@ -856,7 +903,7 @@ function buildRuntime(config?: HandsConfig): HandsRuntime {
     startedAtMs,
     server,
     skills,
-    circuits,
+    circuitStore,
     async close(): Promise<void> {
       await new Promise<void>((resolve, reject) => {
         server.close((err) => {

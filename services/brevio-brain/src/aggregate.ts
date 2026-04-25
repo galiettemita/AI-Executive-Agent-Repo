@@ -43,6 +43,15 @@ function summarizeResultLine(result: SkillResult): string {
   if (result.status === 'PARTIAL') {
     return `- ${result.skill_id}: partial success (${summarizeData(result.data)}).`;
   }
+  if (result.status === 'NEEDS_CONSENT') {
+    return `- ${result.skill_id}: waiting for consent or approval before execution.`;
+  }
+  if (result.status === 'SIMULATED') {
+    return `- ${result.skill_id}: simulated only; no external side effect was committed.`;
+  }
+  if (result.status === 'NOT_EXECUTED') {
+    return `- ${result.skill_id}: not executed.`;
+  }
   if (result.status === 'TIMEOUT') {
     return `- ${result.skill_id}: timed out.`;
   }
@@ -65,7 +74,13 @@ export function aggregateResults(request: AggregationRequest): AggregationRespon
   const lines = request.skill_results.map((result) => summarizeResultLine(result));
   const successCount = request.skill_results.filter((result) => result.status === 'SUCCESS').length;
   const partialCount = request.skill_results.filter((result) => result.status === 'PARTIAL').length;
-  const failureCount = request.skill_results.filter((result) => result.status === 'FAILED' || result.status === 'TIMEOUT').length;
+  const failureCount = request.skill_results.filter((result) =>
+    result.status === 'FAILED' ||
+    result.status === 'TIMEOUT' ||
+    result.status === 'NOT_EXECUTED' ||
+    result.status === 'SIMULATED' ||
+    result.status === 'NEEDS_CONSENT'
+  ).length;
   const total = Math.max(request.skill_results.length, 1);
   const completionRatio = Number(((successCount + partialCount * 0.5) / total).toFixed(2));
 
@@ -75,6 +90,10 @@ export function aggregateResults(request: AggregationRequest): AggregationRespon
   }
   if (partialCount > 0) {
     warnings.push(`${partialCount} skill execution${partialCount === 1 ? '' : 's'} completed only partially.`);
+  }
+  const consentCount = request.skill_results.filter((result) => result.status === 'NEEDS_CONSENT').length;
+  if (consentCount > 0) {
+    warnings.push(`${consentCount} skill execution${consentCount === 1 ? '' : 's'} require consent or approval before retry.`);
   }
 
   const responseText = [

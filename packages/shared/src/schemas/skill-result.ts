@@ -1,6 +1,42 @@
 import type { JSONSchema7 } from 'json-schema';
 import { z } from 'zod';
 
+export const SkillExecutionStatusValues = [
+  'SUCCESS',
+  'PARTIAL',
+  'FAILED',
+  'TIMEOUT',
+  'NEEDS_CONSENT',
+  'NOT_EXECUTED',
+  'SIMULATED'
+] as const;
+
+export const SkillErrorCodeValues = [
+  'SKILL_NOT_FOUND',
+  'SKILL_DISABLED',
+  'AUTH_EXPIRED',
+  'AUTH_REVOKED',
+  'RATE_LIMITED',
+  'EXTERNAL_TIMEOUT',
+  'EXTERNAL_ERROR',
+  'VALIDATION_FAILED',
+  'CIRCUIT_OPEN',
+  'LLM_HALLUCINATION',
+  'BUDGET_EXCEEDED',
+  'TASK_GRAPH_INVALID',
+  'IDEMPOTENCY_CONFLICT',
+  'CONSENT_REQUIRED',
+  'HUMAN_REVIEW_REQUIRED',
+  'RECIPIENT_VERIFICATION_REQUIRED',
+  'POLICY_REQUIRED',
+  'UNSUPPORTED_OPERATION',
+  'QUEUE_DECRYPT_FAILED',
+  'STALE_DISPATCH',
+  'RESULT_PROVENANCE_MISMATCH',
+  'PAYLOAD_TOO_LARGE',
+  'LEGACY_TOOL_CALL_DEPRECATED'
+] as const;
+
 export const SkillResultSchema = z.object({
   request_id: z.string().optional(),
   run_id: z.string().optional(),
@@ -8,28 +44,22 @@ export const SkillResultSchema = z.object({
   step_id: z.string().optional(),
   attempt: z.number().int().positive().optional(),
   skill_id: z.string(),
-  status: z.enum(['SUCCESS', 'PARTIAL', 'FAILED', 'TIMEOUT']),
+  status: z.enum(SkillExecutionStatusValues),
   data: z.unknown().optional(),
   error: z
     .object({
-      code: z.enum([
-        'SKILL_NOT_FOUND',
-        'SKILL_DISABLED',
-        'AUTH_EXPIRED',
-        'AUTH_REVOKED',
-        'RATE_LIMITED',
-        'EXTERNAL_TIMEOUT',
-        'EXTERNAL_ERROR',
-        'VALIDATION_FAILED',
-        'CIRCUIT_OPEN',
-        'LLM_HALLUCINATION',
-        'BUDGET_EXCEEDED',
-        'TASK_GRAPH_INVALID',
-        'IDEMPOTENCY_CONFLICT'
-      ]),
+      code: z.enum(SkillErrorCodeValues),
       message: z.string(),
       retryable: z.boolean(),
       http_status: z.number()
+    })
+    .optional(),
+  execution_receipt: z
+    .object({
+      executor: z.string().min(1),
+      mode: z.enum(['direct', 'delegated', 'local', 'simulated']),
+      issued_at: z.string().datetime(),
+      receipt_id: z.string().min(1)
     })
     .optional(),
   latency_ms: z.number().int(),
@@ -55,7 +85,7 @@ export const SkillResultJsonSchema: JSONSchema7 = {
     step_id: { type: 'string' },
     attempt: { type: 'integer', minimum: 1 },
     skill_id: { type: 'string' },
-    status: { type: 'string', enum: ['SUCCESS', 'PARTIAL', 'FAILED', 'TIMEOUT'] },
+    status: { type: 'string', enum: [...SkillExecutionStatusValues] },
     data: {},
     error: {
       type: 'object',
@@ -64,25 +94,22 @@ export const SkillResultJsonSchema: JSONSchema7 = {
       properties: {
         code: {
           type: 'string',
-          enum: [
-            'SKILL_NOT_FOUND',
-            'SKILL_DISABLED',
-            'AUTH_EXPIRED',
-            'AUTH_REVOKED',
-            'RATE_LIMITED',
-            'EXTERNAL_TIMEOUT',
-            'EXTERNAL_ERROR',
-            'VALIDATION_FAILED',
-            'CIRCUIT_OPEN',
-            'LLM_HALLUCINATION',
-            'BUDGET_EXCEEDED',
-            'TASK_GRAPH_INVALID',
-            'IDEMPOTENCY_CONFLICT'
-          ]
+          enum: [...SkillErrorCodeValues]
         },
         message: { type: 'string' },
         retryable: { type: 'boolean' },
         http_status: { type: 'number' }
+      }
+    },
+    execution_receipt: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['executor', 'mode', 'issued_at', 'receipt_id'],
+      properties: {
+        executor: { type: 'string', minLength: 1 },
+        mode: { type: 'string', enum: ['direct', 'delegated', 'local', 'simulated'] },
+        issued_at: { type: 'string', format: 'date-time' },
+        receipt_id: { type: 'string', minLength: 1 }
       }
     },
     latency_ms: { type: 'integer' },

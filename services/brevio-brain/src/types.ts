@@ -219,11 +219,17 @@ export interface SkillResult {
   step_id?: string;
   attempt?: number;
   skill_id: string;
-  status: 'SUCCESS' | 'PARTIAL' | 'FAILED' | 'TIMEOUT';
+  status: 'SUCCESS' | 'PARTIAL' | 'FAILED' | 'TIMEOUT' | 'NEEDS_CONSENT' | 'NOT_EXECUTED' | 'SIMULATED';
   data?: Record<string, unknown>;
   error?: {
     code: string;
     message: string;
+  };
+  execution_receipt?: {
+    executor: string;
+    mode: 'direct' | 'delegated' | 'local' | 'simulated';
+    issued_at: string;
+    receipt_id: string;
   };
   source?: 'hands' | 'external';
 }
@@ -332,6 +338,8 @@ export interface VerificationResult {
 export interface ProcessRequest extends IntentClassificationInput {
   run_id?: string;
   thread_id?: string;
+  workspace_id?: string;
+  user_id?: string;
   skill_results?: SkillResult[];
 }
 

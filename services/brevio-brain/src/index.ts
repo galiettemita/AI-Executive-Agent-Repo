@@ -130,6 +130,18 @@ function asBool(value: unknown): boolean | undefined {
   return undefined;
 }
 
+function asExecutionReceiptMode(
+  value: unknown
+): SkillResult['execution_receipt'] extends infer Receipt
+  ? Receipt extends { mode: infer Mode }
+    ? Mode
+    : never
+  : never {
+  return value === 'direct' || value === 'delegated' || value === 'local' || value === 'simulated'
+    ? value
+    : 'delegated';
+}
+
 function extractSkillResults(value: unknown): SkillResult[] {
   if (!Array.isArray(value)) {
     return [];
@@ -146,7 +158,15 @@ function extractSkillResults(value: unknown): SkillResult[] {
     if (!skillId || !status) {
       continue;
     }
-    if (status !== 'SUCCESS' && status !== 'PARTIAL' && status !== 'FAILED' && status !== 'TIMEOUT') {
+    if (
+      status !== 'SUCCESS' &&
+      status !== 'PARTIAL' &&
+      status !== 'FAILED' &&
+      status !== 'TIMEOUT' &&
+      status !== 'NEEDS_CONSENT' &&
+      status !== 'NOT_EXECUTED' &&
+      status !== 'SIMULATED'
+    ) {
       continue;
     }
 
@@ -165,6 +185,14 @@ function extractSkillResults(value: unknown): SkillResult[] {
             message: asString((raw.error as Record<string, unknown>).message) ?? 'unknown error'
           }
         : undefined,
+      execution_receipt: raw.execution_receipt && typeof raw.execution_receipt === 'object' && !Array.isArray(raw.execution_receipt)
+        ? {
+            executor: asString((raw.execution_receipt as Record<string, unknown>).executor) ?? 'unknown',
+            mode: asExecutionReceiptMode((raw.execution_receipt as Record<string, unknown>).mode),
+            issued_at: asString((raw.execution_receipt as Record<string, unknown>).issued_at) ?? new Date().toISOString(),
+            receipt_id: asString((raw.execution_receipt as Record<string, unknown>).receipt_id) ?? `missing-${skillId}`
+          }
+        : undefined,
       source: asString(raw.source) === 'external' ? 'external' : 'hands'
     });
   }
@@ -177,6 +205,8 @@ function normalizePayload(payload: Record<string, unknown>): NormalizedReasoning
     message_text: asString(payload.message_text) ?? '',
     run_id: asString(payload.run_id),
     thread_id: asString(payload.thread_id),
+    workspace_id: asString(payload.workspace_id),
+    user_id: asString(payload.user_id),
     user_profile:
       payload.user_profile && typeof payload.user_profile === 'object' && !Array.isArray(payload.user_profile)
         ? (payload.user_profile as ProcessRequest['user_profile'])

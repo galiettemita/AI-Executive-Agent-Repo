@@ -6,56 +6,88 @@ function optionalString(value: unknown): string | undefined {
   return trimmed.length > 0 ? trimmed : undefined;
 }
 
-export interface LocalSkillExecutionSuccess {
-  data: Record<string, unknown>;
+export interface LocalSkillExecution {
+  status: 'SUCCESS' | 'NEEDS_CONSENT' | 'NOT_EXECUTED' | 'SIMULATED';
+  data?: Record<string, unknown>;
+  error?: {
+    code: string;
+    message: string;
+  };
 }
 
-type LocalSkillHandler = (input: Record<string, unknown>) => LocalSkillExecutionSuccess;
+interface LocalSkillDefinition {
+  operations: string[];
+  execute: (input: Record<string, unknown>, operation: string) => LocalSkillExecution;
+}
 
-const LOCAL_SKILL_HANDLERS: Record<string, LocalSkillHandler> = {
-  'voice-wake-say': (input) => ({
-    data: {
-      spoken_text: optionalString(input.text) ?? 'done',
-      transport: 'local_say',
-      command_argv: ['say', '--', optionalString(input.text) ?? 'done']
-    }
-  }),
-  'camsnap': () => ({
-    data: {
-      provider: 'camsnap',
-      status: 'permission_required',
-      consent_required: true,
-      output_modalities: ['image']
-    }
-  }),
-  'apple-photos': (input) => ({
-    data: {
-      provider: 'apple-photos',
-      query: optionalString(input.query) ?? '',
-      status: 'permission_required',
-      consent_required: true,
-      output_modalities: ['image', 'document']
-    }
-  }),
-  'apple-media': (input) => ({
-    data: {
-      provider: 'apple-media',
-      query: optionalString(input.query) ?? '',
-      status: 'permission_required',
-      consent_required: true,
-      output_modalities: ['audio', 'video', 'document']
-    }
-  }),
-  'apple-remind-me': (input) => ({
-    data: {
-      reminder_title: optionalString(input.title) ?? 'Reminder from Brevio',
-      created: true
-    }
-  })
+const LOCAL_SKILL_DEFINITIONS: Record<string, LocalSkillDefinition> = {
+  'voice-wake-say': {
+    operations: ['speak'],
+    execute: (input) => ({
+      status: 'SUCCESS',
+      data: {
+        spoken_text: optionalString(input.text) ?? 'done',
+        transport: 'local_say',
+        command_argv: ['say', '--', optionalString(input.text) ?? 'done']
+      }
+    })
+  },
+  'camsnap': {
+    operations: ['capture', 'describe'],
+    execute: (_input, operation) => ({
+      status: 'NEEDS_CONSENT',
+      data: {
+        provider: 'camsnap',
+        operation,
+        status: 'permission_required',
+        consent_required: true,
+        output_modalities: ['image']
+      }
+    })
+  },
+  'apple-photos': {
+    operations: ['search', 'describe'],
+    execute: (input, operation) => ({
+      status: 'NEEDS_CONSENT',
+      data: {
+        provider: 'apple-photos',
+        operation,
+        query: optionalString(input.query) ?? '',
+        status: 'permission_required',
+        consent_required: true,
+        output_modalities: ['image', 'document']
+      }
+    })
+  },
+  'apple-media': {
+    operations: ['search', 'open'],
+    execute: (input, operation) => ({
+      status: 'NEEDS_CONSENT',
+      data: {
+        provider: 'apple-media',
+        operation,
+        query: optionalString(input.query) ?? '',
+        status: 'permission_required',
+        consent_required: true,
+        output_modalities: ['audio', 'video', 'document']
+      }
+    })
+  },
+  'apple-remind-me': {
+    operations: ['create'],
+    execute: (input) => ({
+      status: 'SIMULATED',
+      data: {
+        reminder_title: optionalString(input.title) ?? 'Reminder from Brevio',
+        created: false,
+        simulated: true
+      }
+    })
+  }
 };
 
 export function implementedLocalSkills(): string[] {
-  return Object.keys(LOCAL_SKILL_HANDLERS);
+  return Object.keys(LOCAL_SKILL_DEFINITIONS);
 }
 
 export function resolveSupportedLocalSkills(raw: string | undefined): string[] {
@@ -78,7 +110,19 @@ export function resolveSupportedLocalSkills(raw: string | undefined): string[] {
   return supported;
 }
 
-export function executeImplementedLocalSkill(skillId: string, input: Record<string, unknown>): LocalSkillExecutionSuccess | null {
-  const handler = LOCAL_SKILL_HANDLERS[skillId.trim().toLowerCase()];
-  return handler ? handler(input) : null;
+export function supportsLocalOperation(skillId: string, operation: string): boolean {
+  const definition = LOCAL_SKILL_DEFINITIONS[skillId.trim().toLowerCase()];
+  return Boolean(definition?.operations.includes(operation.trim().toLowerCase()));
+}
+
+export function executeImplementedLocalSkill(
+  skillId: string,
+  operation: string,
+  input: Record<string, unknown>
+): LocalSkillExecution | null {
+  const definition = LOCAL_SKILL_DEFINITIONS[skillId.trim().toLowerCase()];
+  if (!definition || !definition.operations.includes(operation.trim().toLowerCase())) {
+    return null;
+  }
+  return definition.execute(input, operation.trim().toLowerCase());
 }

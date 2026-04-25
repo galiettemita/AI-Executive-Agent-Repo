@@ -7,6 +7,30 @@
       "type": "string",
       "pattern": "^[a-z0-9_]+\\.[a-z0-9_]+$"
     },
+    "tool_contract_version": {
+      "type": "string",
+      "const": "2026.tool-use.v2"
+    },
+    "request_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "run_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "thread_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "step_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "attempt": {
+      "type": "integer",
+      "minimum": 1
+    },
     "idempotency_key": {
       "type": "string",
       "minLength": 16,
@@ -30,6 +54,24 @@
         "level",
         "reversible"
       ]
+    },
+    "policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "consent_requirement": {
+          "type": "string",
+          "enum": ["none", "recommended", "required"]
+        },
+        "human_review": {
+          "type": "string",
+          "enum": ["none", "recommended", "required"]
+        },
+        "recipient_verification": {
+          "type": "string",
+          "enum": ["not_applicable", "required", "verified"]
+        }
+      }
     },
     "workspace_id": {
       "type": "string",

@@ -6,10 +6,34 @@
   "required": ["execution_id", "phase", "status", "tool_key", "idempotency_key"],
   "properties": {
     "execution_id": { "type": "string", "format": "uuid" },
-    "phase": { "type": "string" },
-    "status": { "type": "string" },
-    "tool_key": { "type": "string" },
-    "idempotency_key": { "type": "string" },
-    "result": { "type": "object", "additionalProperties": true }
+    "phase": {
+      "type": "string",
+      "enum": ["queued", "sent", "acked", "running", "completed", "failed", "rejected"]
+    },
+    "status": {
+      "type": "string",
+      "enum": ["accepted", "processing", "completed", "failed", "retired", "rejected"]
+    },
+    "tool_key": {
+      "type": "string",
+      "pattern": "^[a-z0-9_]+\\.[a-z0-9_]+$"
+    },
+    "idempotency_key": { "type": "string", "minLength": 16, "maxLength": 128 },
+    "request_id": { "type": "string" },
+    "step_id": { "type": "string" },
+    "attempt": { "type": "integer", "minimum": 1 },
+    "created_at": { "type": "string", "format": "date-time" },
+    "updated_at": { "type": "string", "format": "date-time" },
+    "result": { "type": "object", "additionalProperties": true },
+    "error": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "code": { "type": "string" },
+        "message": { "type": "string" },
+        "retryable": { "type": "boolean" }
+      },
+      "required": ["code", "message", "retryable"]
+    }
   }
 }
