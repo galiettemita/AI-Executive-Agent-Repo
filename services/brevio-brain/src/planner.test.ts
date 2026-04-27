@@ -13,6 +13,8 @@ const repoRoot = path.resolve(__dirname, '..', '..', '..');
 const configPath = path.join(repoRoot, 'config', 'skill-disambiguation.yaml');
 const rules = loadDisambiguationRules(configPath);
 
+process.env.BREVIO_ENV ??= 'test';
+
 describe('buildPlannerProposal', () => {
   it('produces a dispatch-ready plan instead of synthetic success results', async () => {
     const config = {

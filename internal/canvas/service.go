@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/brevio/brevio/internal/identity"
 	runtimeserver "github.com/brevio/brevio/internal/runtime"
 	"github.com/gorilla/websocket"
 )
@@ -198,6 +199,12 @@ func (s *Service) HandleHealth(w http.ResponseWriter, r *http.Request) {
 			"process": "ok",
 		}
 		if r.URL.Path == "/health/deep" {
+			if _, err := identity.VerifyAdminHTTPRequest(r, identity.AdminJWTAudience(), time.Now().UTC()); err != nil {
+				writeJSON(w, http.StatusUnauthorized, map[string]any{
+					"error": "admin_token_required",
+				})
+				return
+			}
 			for key, status := range runtimeserver.DeepDependencyChecks(os.Getenv) {
 				checks[key] = status
 			}

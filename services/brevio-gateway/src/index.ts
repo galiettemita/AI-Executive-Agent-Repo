@@ -5,6 +5,7 @@ import { pathToFileURL } from 'node:url';
 
 import {
   extractBearerToken,
+  hashTokenBinding,
   pseudonymizedRef,
   signAccessToken,
   signCallerContextEnvelope,
@@ -77,9 +78,9 @@ function requireAdminRequest(req: http.IncomingMessage, config: GatewayConfig, c
   if (!token) {
     throw new Error('admin_token_required');
   }
-  const principal = verifyAccessToken(config.internalAuthSecret, token, {
+  const principal = verifyAccessToken(config.accessTokenIssuers, token, {
     expectedAudience: config.serviceAudience,
-    expectedIssuer: config.internalAuthIssuer,
+    expectedIssuer: config.adminTokenIssuer,
     allowedTokenUses: ['admin_access']
   });
   ctx.subjectRef = pseudonymizedRef(principal.sub, config.logSalt);
@@ -277,38 +278,45 @@ async function handleWebhook(
     return;
   }
 
+  const serviceToken = signAccessToken(runtime.config.serviceTokenSigningKey, {
+    version: 2,
+    sub: runtime.config.serviceName,
+    iss: runtime.config.serviceTokenIssuer,
+    aud: runtime.config.temporalWorkerAudience,
+    iat: Math.floor(nowMs / 1000),
+    exp: Math.floor((nowMs + 2 * 60 * 1000) / 1000),
+    token_use: 'service_access',
+    scopes: ['workflow:start'],
+    service: runtime.config.serviceName
+  });
+  const callerContextToken = signCallerContextEnvelope(runtime.config.callerContextSigningKey, {
+        iss: runtime.config.callerContextIssuer,
+        aud: runtime.config.temporalWorkerAudience,
+        sub: normalized.userId,
+        user_id: normalized.userId,
+        workspace_id: normalized.envelope.context.workspace_id,
+        tenant_id: normalized.envelope.context.tenant_id,
+        actor_service: runtime.config.serviceName,
+        channel,
+        channel_subject: normalized.channelSubject,
+        auth_strength: channel === 'WHATSAPP' ? 'webhook_signature' : 'api_key',
+        provenance: `gateway:${channel.toLowerCase()}`,
+        jti: `${normalized.envelope.id}:${ctx.requestId}`,
+        iat: Math.floor(nowMs / 1000),
+        nbf: Math.floor(nowMs / 1000),
+        exp: Math.floor((nowMs + 5 * 60 * 1000) / 1000),
+        ath: hashTokenBinding(serviceToken)
+      });
   const runtimeStart = await startMessageWorkflow(
     {
       messageId: normalized.envelope.id,
-      userId: normalized.userId,
       channel,
       channelMessageId: normalized.envelope.metadata.channel_message_id,
       sessionId: normalized.envelope.metadata.session_id,
       messageText: normalized.envelope.content.text,
       userProfileHash: normalized.envelope.context.user_profile_hash,
-      serviceToken: signAccessToken(runtime.config.internalAuthSecret, {
-        version: 2,
-        sub: runtime.config.serviceName,
-        iss: runtime.config.internalAuthIssuer,
-        aud: runtime.config.temporalWorkerAudience,
-        iat: Math.floor(nowMs / 1000),
-        exp: Math.floor((nowMs + 2 * 60 * 1000) / 1000),
-        token_use: 'service_access',
-        scopes: ['workflow:start'],
-        service: runtime.config.serviceName
-      }),
-      callerContextToken: signCallerContextEnvelope(runtime.config.callerContextSecret, {
-        subject: normalized.userId,
-        user_id: normalized.userId,
-        workspace_id: normalized.envelope.context.workspace_id,
-        tenant_id: normalized.envelope.context.tenant_id,
-        channel,
-        channel_subject: normalized.channelSubject,
-        auth_strength: channel === 'WHATSAPP' ? 'webhook_signature' : 'api_key',
-        provenance: `gateway:${channel.toLowerCase()}`,
-        issued_at: new Date(nowMs).toISOString(),
-        expires_at: new Date(nowMs + 5 * 60 * 1000).toISOString()
-      })
+      serviceToken,
+      callerContextToken
     },
     runtime.config
   );

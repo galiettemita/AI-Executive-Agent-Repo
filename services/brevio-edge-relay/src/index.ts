@@ -5,13 +5,28 @@ import path from 'node:path';
 import { URL } from 'node:url';
 import WebSocket, { WebSocketServer } from 'ws';
 import {
+  buildAccessTokenIssuerRegistry,
+  isPermissiveEnvironment,
+  loadBrevioEnvironment,
+  resolveAccessTokenVerificationKey,
+} from '../../../packages/shared/src/security.js';
+import {
   edgeExecutionInputHash,
   edgeExecutionPolicyHash,
+  signEdgeExecutionAuthorization,
+} from '../../../packages/shared/src/edge-execution-contract.js';
+import {
   parseCapabilityInventory,
   resolveCapabilityInventory,
-  signEdgeExecutionAuthorization,
-} from '@brevio/shared';
-import type { AnyEdgeExecutionAuthorizationEnvelope, EdgeExecutionPolicy } from '@brevio/shared';
+} from '../../../packages/shared/src/capability-inventory.js';
+import type {
+  AccessTokenIssuerRegistry,
+  BrevioEnvironment,
+} from '../../../packages/shared/src/security.js';
+import type {
+  AnyEdgeExecutionAuthorizationEnvelope,
+  EdgeExecutionPolicy,
+} from '../../../packages/shared/src/edge-execution-contract.js';
 import {
   bindExecuteRequest,
   buildSessionSummaries,
@@ -41,7 +56,8 @@ type SkillStatus =
 interface RelayConfig {
   serviceName: string;
   version: string;
-  environment: string;
+  environment: BrevioEnvironment;
+  serviceAudience: string;
   port: number;
   relayPath: string;
   maxQueueAgeMs: number;
@@ -51,7 +67,7 @@ interface RelayConfig {
   dispatchLeaseMs: number;
   resultDeadlineMs: number;
   authMode: RelayAuthMode;
-  tokenSecret?: string;
+  accessTokenIssuers: AccessTokenIssuerRegistry;
   executionAuthSecret: string;
   queueEncryptionKey: Buffer;
   logSalt: string;
@@ -207,12 +223,16 @@ function authorizeHttpRequest(req: http.IncomingMessage, allowedRoles: readonly 
     }
     return null;
   }
-  if (!config.tokenSecret) {
-    throw new RelayHttpError(401, 'unauthorized', 'relay token verification is unavailable');
-  }
   let claims: RelayTokenClaims;
   try {
-    claims = verifyRelayToken(config.tokenSecret, token);
+    claims = verifyRelayToken(
+      {
+        issuers: config.accessTokenIssuers,
+        expectedAudience: config.serviceAudience,
+        allowedRoles
+      },
+      token
+    );
   } catch (error) {
     throw new RelayHttpError(401, 'unauthorized', error instanceof Error ? error.message : 'invalid relay token');
   }
@@ -230,28 +250,28 @@ function authorizeWebSocket(req: http.IncomingMessage, requestUrl: URL): RelayTo
     }
     return null;
   }
-  if (!config.tokenSecret) {
-    throw new RelayHttpError(401, 'unauthorized', 'relay token verification is unavailable');
-  }
+  const transportFingerprint = trustedClientFingerprint(req);
   let claims: RelayTokenClaims;
   try {
-    claims = verifyRelayToken(config.tokenSecret, token);
+    claims = verifyRelayToken(
+      {
+        issuers: config.accessTokenIssuers,
+        expectedAudience: config.serviceAudience,
+        allowedRoles: ['device'],
+        expectedConfirmationThumbprint:
+          isPermissiveEnvironment(config.environment) ? undefined : transportFingerprint
+      },
+      token
+    );
   } catch (error) {
     throw new RelayHttpError(401, 'unauthorized', error instanceof Error ? error.message : 'invalid relay token');
   }
   if (claims.role !== 'device') {
     throw new RelayHttpError(403, 'forbidden', 'edge session tokens must use the device role');
   }
-  if (config.environment !== 'local' && config.environment !== 'test') {
-    const transportFingerprint = trustedClientFingerprint(req);
-    if (!claims.cert_fingerprint) {
-      throw new RelayHttpError(401, 'unauthorized', 'device token certificate binding is required');
-    }
+  if (!isPermissiveEnvironment(config.environment)) {
     if (!transportFingerprint) {
       throw new RelayHttpError(401, 'unauthorized', 'verified transport certificate fingerprint is required');
-    }
-    if (transportFingerprint !== claims.cert_fingerprint) {
-      throw new RelayHttpError(403, 'forbidden', 'transport certificate fingerprint does not match relay token');
     }
   }
   return claims;
@@ -729,14 +749,6 @@ wss.on('connection', (socket, req) => {
           socket.close(1008, 'identity_mismatch');
           return;
         }
-        if (session.tokenClaims?.cert_fingerprint && message.client_cert_fingerprint && message.client_cert_fingerprint !== session.tokenClaims.cert_fingerprint) {
-          sendMessage(socket, {
-            type: 'error',
-            message: 'client certificate fingerprint does not match relay token',
-          });
-          socket.close(1008, 'attestation_mismatch');
-          return;
-        }
         const transportFingerprint = trustedClientFingerprint(req);
         if (session.tokenClaims?.cert_fingerprint && transportFingerprint && transportFingerprint !== session.tokenClaims.cert_fingerprint) {
           sendMessage(socket, {
@@ -934,16 +946,47 @@ process.on('SIGTERM', () => shutdown('SIGTERM'));
 process.on('SIGINT', () => shutdown('SIGINT'));
 
 function loadConfig(env: NodeJS.ProcessEnv): RelayConfig {
-  const environment = env.BREVIO_ENV?.trim() || 'local';
-  const tokenSecret = env.EDGE_RELAY_TOKEN_SECRET?.trim();
-  const authMode = parseRelayAuthMode(env.EDGE_AUTH_MODE, environment, Boolean(tokenSecret));
+  const environment = loadBrevioEnvironment(env.BREVIO_ENV, env.NODE_ENV);
+  const accessTokenIssuers = buildAccessTokenIssuerRegistry([
+    {
+      issuer: env.BREVIO_AUTH_ACCESS_ISSUER?.trim() || 'https://auth.brevio.internal',
+      verificationKey: resolveAccessTokenVerificationKey(
+        env.BREVIO_AUTH_ACCESS_PUBLIC_KEY,
+        undefined,
+        undefined,
+        environment,
+        'BREVIO_AUTH_ACCESS_PUBLIC_KEY',
+        'auth-access'
+      ),
+      allowedTokenUses: ['admin_access']
+    },
+    {
+      issuer: env.BREVIO_GATEWAY_SERVICE_ISSUER?.trim() || 'https://gateway.brevio.internal',
+      verificationKey: resolveAccessTokenVerificationKey(
+        env.BREVIO_GATEWAY_SERVICE_PUBLIC_KEY,
+        undefined,
+        undefined,
+        environment,
+        'BREVIO_GATEWAY_SERVICE_PUBLIC_KEY',
+        'gateway-service'
+      ),
+      allowedTokenUses: ['service_access']
+    },
+    {
+      issuer: env.BREVIO_DEVICE_ACCESS_ISSUER?.trim() || 'https://device-auth.brevio.internal',
+      verificationKey: resolveAccessTokenVerificationKey(
+        env.BREVIO_DEVICE_ACCESS_PUBLIC_KEY,
+        undefined,
+        undefined,
+        environment,
+        'BREVIO_DEVICE_ACCESS_PUBLIC_KEY',
+        'device-access'
+      ),
+      allowedTokenUses: ['device_access']
+    }
+  ]);
+  const authMode = parseRelayAuthMode(env.EDGE_AUTH_MODE, environment, Object.keys(accessTokenIssuers).length > 0);
   const executionAuthSecret = env.EDGE_EXECUTION_AUTH_SECRET?.trim() || (environment === 'local' ? 'local-edge-execution-auth' : undefined);
-  if (environment !== 'local' && !tokenSecret) {
-    throw new Error('EDGE_RELAY_TOKEN_SECRET is required outside local environments');
-  }
-  if (authMode === 'required' && !tokenSecret) {
-    throw new Error('EDGE_RELAY_TOKEN_SECRET is required when EDGE_AUTH_MODE resolves to required');
-  }
   if (!executionAuthSecret) {
     throw new Error('EDGE_EXECUTION_AUTH_SECRET is required outside local environments');
   }
@@ -951,6 +994,7 @@ function loadConfig(env: NodeJS.ProcessEnv): RelayConfig {
     serviceName: 'brevio-edge-relay',
     version: env.SERVICE_VERSION?.trim() || '0.1.0',
     environment,
+    serviceAudience: 'brevio-edge-relay',
     port: parseIntWithDefault(env.PORT, 8086),
     relayPath: env.EDGE_RELAY_PATH?.trim() || '/ws/edge',
     maxQueueAgeMs: parseIntWithDefault(env.EDGE_MAX_QUEUE_AGE_MS, 4 * 60 * 60 * 1000),
@@ -960,10 +1004,13 @@ function loadConfig(env: NodeJS.ProcessEnv): RelayConfig {
     dispatchLeaseMs: parseIntWithDefault(env.EDGE_DISPATCH_LEASE_MS, 30_000),
     resultDeadlineMs: parseIntWithDefault(env.EDGE_RESULT_DEADLINE_MS, 5 * 60 * 1000),
     authMode,
-    tokenSecret,
+    accessTokenIssuers,
     executionAuthSecret,
-    queueEncryptionKey: deriveSymmetricKey(env.EDGE_QUEUE_ENCRYPTION_KEY?.trim(), tokenSecret ?? `${environment}:${env.SERVICE_VERSION ?? '0.1.0'}`),
-    logSalt: env.EDGE_RELAY_LOG_SALT?.trim() || tokenSecret || `${environment}:edge-relay`,
+    queueEncryptionKey: deriveSymmetricKey(
+      env.EDGE_QUEUE_ENCRYPTION_KEY?.trim(),
+      `${environment}:edge-relay:${env.SERVICE_VERSION ?? '0.1.0'}`
+    ),
+    logSalt: env.EDGE_RELAY_LOG_SALT?.trim() || `${environment}:edge-relay`,
     temporalWorkerBaseUrl: env.BREVIO_TEMPORAL_WORKER_BASE_URL?.trim() || undefined,
     temporalWorkerTimeoutMs: parseIntWithDefault(env.BREVIO_TEMPORAL_WORKER_TIMEOUT_MS, 1500),
     capabilityInventoryJson: env.BREVIO_CAPABILITY_INVENTORY_JSON?.trim() || undefined,

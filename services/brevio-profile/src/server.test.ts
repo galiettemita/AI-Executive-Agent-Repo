@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { signAccessToken } from '../../../packages/shared/src/security.js';
+import { signTestAuthAccessToken, testAccessTokenIssuers, testCallerContextIssuers } from '../../../packages/shared/src/security-test-fixtures.js';
 import { createProfileRuntime } from './index.js';
 
 async function startRuntime() {
@@ -13,10 +13,9 @@ async function startRuntime() {
     shutdownTimeoutMs: 1000,
     profilesRootDir: '.tmp-profile-tests',
     maxKnowledgeBytes: 128 * 1024,
-    internalAuthSecret: 'internal-secret',
-    internalAuthIssuer: 'https://auth.brevio.internal',
+    accessTokenIssuers: testAccessTokenIssuers(),
     serviceAudience: 'brevio-profile',
-    callerContextSecret: 'caller-secret',
+    callerContextIssuers: testCallerContextIssuers(),
     logSalt: 'profile-test-salt'
   });
 
@@ -46,14 +45,9 @@ async function startRuntimeOrSkip(t: { skip(message?: string): void }) {
 }
 
 function userToken(userId: string): string {
-  const nowSeconds = Math.floor(Date.now() / 1000);
-  return signAccessToken('internal-secret', {
-    version: 2,
+  return signTestAuthAccessToken({
     sub: userId,
-    iss: 'https://auth.brevio.internal',
     aud: 'brevio-profile',
-    iat: nowSeconds,
-    exp: nowSeconds + 60,
     token_use: 'user_access'
   });
 }

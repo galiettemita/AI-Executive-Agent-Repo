@@ -8,9 +8,13 @@ import {
   resolveEffectiveUserScope
 } from '../../../packages/shared/src/internal-http-auth.js';
 import {
+  buildAccessTokenIssuerRegistry,
+  buildCallerContextIssuerRegistry,
   loadBrevioEnvironment,
   resolveAccessTokenVerificationKey,
-  requireSharedSecret
+  resolveCallerContextVerificationKey,
+  type AccessTokenIssuerRegistry,
+  type CallerContextIssuerRegistry
 } from '../../../packages/shared/src/security.js';
 import { SchedulerStore, type ScheduledJob, type TriggerEvent } from './scheduler-store.js';
 
@@ -23,10 +27,9 @@ interface SchedulerConfig {
   maxBodyBytes: number;
   maxJobs: number;
   stateFilePath?: string;
-  internalAuthSecret: string;
-  internalAuthIssuer: string;
+  accessTokenIssuers: AccessTokenIssuerRegistry;
   serviceAudience: string;
-  callerContextSecret: string;
+  callerContextIssuers: CallerContextIssuerRegistry;
   logSalt: string;
 }
 
@@ -67,17 +70,44 @@ function loadConfig(): SchedulerConfig {
     maxBodyBytes: parsePositiveInt(process.env.BREVIO_SCHEDULER_MAX_BODY_BYTES, 256 * 1024, 'BREVIO_SCHEDULER_MAX_BODY_BYTES'),
     maxJobs: parsePositiveInt(process.env.BREVIO_SCHEDULER_MAX_JOBS, 5000, 'BREVIO_SCHEDULER_MAX_JOBS'),
     stateFilePath: path.resolve(process.env.BREVIO_SCHEDULER_STATE_FILE ?? path.join(process.cwd(), 'data', 'scheduler', 'state.json')),
-    internalAuthSecret: resolveAccessTokenVerificationKey(
-      process.env.BREVIO_INTERNAL_AUTH_PUBLIC_KEY,
-      process.env.BREVIO_INTERNAL_AUTH_PRIVATE_KEY,
-      process.env.BREVIO_INTERNAL_AUTH_SECRET,
-      environment,
-      'BREVIO_INTERNAL_AUTH_PUBLIC_KEY',
-      'brevio-scheduler'
-    ),
-    internalAuthIssuer: process.env.BREVIO_INTERNAL_AUTH_ISSUER?.trim() || 'https://auth.brevio.internal',
+    accessTokenIssuers: buildAccessTokenIssuerRegistry([
+      {
+        issuer: process.env.BREVIO_AUTH_ACCESS_ISSUER?.trim() || 'https://auth.brevio.internal',
+        verificationKey: resolveAccessTokenVerificationKey(
+          process.env.BREVIO_AUTH_ACCESS_PUBLIC_KEY,
+          undefined,
+          undefined,
+          environment,
+          'BREVIO_AUTH_ACCESS_PUBLIC_KEY',
+          'auth-access'
+        ),
+        allowedTokenUses: ['user_access', 'admin_access']
+      },
+      {
+        issuer: process.env.BREVIO_GATEWAY_SERVICE_ISSUER?.trim() || 'https://gateway.brevio.internal',
+        verificationKey: resolveAccessTokenVerificationKey(
+          process.env.BREVIO_GATEWAY_SERVICE_PUBLIC_KEY,
+          undefined,
+          undefined,
+          environment,
+          'BREVIO_GATEWAY_SERVICE_PUBLIC_KEY',
+          'gateway-service'
+        ),
+        allowedTokenUses: ['service_access']
+      }
+    ]),
     serviceAudience: process.env.BREVIO_SCHEDULER_AUDIENCE?.trim() || 'brevio-scheduler',
-    callerContextSecret: requireSharedSecret(process.env.BREVIO_CALLER_CONTEXT_SECRET, 'BREVIO_CALLER_CONTEXT_SECRET', environment, 'brevio-scheduler-caller'),
+    callerContextIssuers: buildCallerContextIssuerRegistry([
+      {
+        issuer: process.env.BREVIO_GATEWAY_CALLER_CONTEXT_ISSUER?.trim() || 'https://gateway.brevio.internal/caller-context',
+        verificationKey: resolveCallerContextVerificationKey(
+          process.env.BREVIO_GATEWAY_CALLER_CONTEXT_PUBLIC_KEY,
+          environment,
+          'BREVIO_GATEWAY_CALLER_CONTEXT_PUBLIC_KEY',
+          'gateway-caller-context'
+        )
+      }
+    ]),
     logSalt: process.env.BREVIO_SCHEDULER_LOG_SALT?.trim() || `brevio-scheduler:${environment}`
   };
 }

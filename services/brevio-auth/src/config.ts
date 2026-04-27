@@ -3,9 +3,13 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import {
+  buildAccessTokenIssuerRegistry,
+  buildCallerContextIssuerRegistry,
   loadBrevioEnvironment,
   requireSharedSecret,
-  resolveAccessTokenSigningKey
+  resolveAccessTokenSigningKey,
+  resolveAccessTokenVerificationKey,
+  resolveCallerContextVerificationKey
 } from '../../../packages/shared/src/security.js';
 
 import type { APIKeyService, AuthServiceMap, EnvConfig, NoAuthService, OAuthService } from './types.js';
@@ -345,16 +349,52 @@ export function loadEnvConfig(): EnvConfig {
     port: parsePositiveInt(process.env.PORT, 8080, 'PORT'),
     mapPath,
     stateStoreFilePath: path.resolve(process.env.BREVIO_AUTH_STATE_STORE_FILE ?? path.join(process.cwd(), 'data', 'auth', 'oauth-state.json')),
-    internalAuthSecret: resolveAccessTokenSigningKey(
-      process.env.BREVIO_INTERNAL_AUTH_PRIVATE_KEY,
-      process.env.BREVIO_INTERNAL_AUTH_SECRET,
+    accessTokenIssuers: buildAccessTokenIssuerRegistry([
+      {
+        issuer: process.env.BREVIO_AUTH_ACCESS_ISSUER?.trim() || 'https://auth.brevio.internal',
+        verificationKey: resolveAccessTokenVerificationKey(
+          process.env.BREVIO_AUTH_ACCESS_PUBLIC_KEY,
+          undefined,
+          undefined,
+          environment,
+          'BREVIO_AUTH_ACCESS_PUBLIC_KEY',
+          'auth-access'
+        ),
+        allowedTokenUses: ['user_access', 'admin_access']
+      },
+      {
+        issuer: process.env.BREVIO_GATEWAY_SERVICE_ISSUER?.trim() || 'https://gateway.brevio.internal',
+        verificationKey: resolveAccessTokenVerificationKey(
+          process.env.BREVIO_GATEWAY_SERVICE_PUBLIC_KEY,
+          undefined,
+          undefined,
+          environment,
+          'BREVIO_GATEWAY_SERVICE_PUBLIC_KEY',
+          'gateway-service'
+        ),
+        allowedTokenUses: ['service_access']
+      }
+    ]),
+    userTokenSigningKey: resolveAccessTokenSigningKey(
+      process.env.BREVIO_AUTH_ACCESS_PRIVATE_KEY,
+      undefined,
       environment,
-      'BREVIO_INTERNAL_AUTH_PRIVATE_KEY',
-      'brevio-auth'
+      'BREVIO_AUTH_ACCESS_PRIVATE_KEY',
+      'auth-access'
     ),
-    internalAuthIssuer: process.env.BREVIO_INTERNAL_AUTH_ISSUER?.trim() || 'https://auth.brevio.internal',
+    userTokenIssuer: process.env.BREVIO_AUTH_ACCESS_ISSUER?.trim() || 'https://auth.brevio.internal',
     serviceAudience: process.env.BREVIO_AUTH_AUDIENCE?.trim() || 'brevio-auth',
-    callerContextSecret: requireSharedSecret(process.env.BREVIO_CALLER_CONTEXT_SECRET, 'BREVIO_CALLER_CONTEXT_SECRET', environment, 'brevio-auth-caller'),
+    callerContextIssuers: buildCallerContextIssuerRegistry([
+      {
+        issuer: process.env.BREVIO_GATEWAY_CALLER_CONTEXT_ISSUER?.trim() || 'https://gateway.brevio.internal/caller-context',
+        verificationKey: resolveCallerContextVerificationKey(
+          process.env.BREVIO_GATEWAY_CALLER_CONTEXT_PUBLIC_KEY,
+          environment,
+          'BREVIO_GATEWAY_CALLER_CONTEXT_PUBLIC_KEY',
+          'gateway-caller-context'
+        )
+      }
+    ]),
     logSalt: process.env.BREVIO_AUTH_LOG_SALT?.trim() || `brevio-auth:${environment}`,
     stateEncryptionSecret: requireSharedSecret(process.env.BREVIO_AUTH_STATE_ENCRYPTION_SECRET, 'BREVIO_AUTH_STATE_ENCRYPTION_SECRET', environment, 'brevio-auth-state'),
     completionRedirectAllowlist: parseRedirectAllowlist(process.env.BREVIO_AUTH_COMPLETION_REDIRECT_ALLOWLIST_JSON),

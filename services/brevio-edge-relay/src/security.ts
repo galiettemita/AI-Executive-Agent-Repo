@@ -1,18 +1,41 @@
-import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
-import type { AnyEdgeExecutionAuthorizationEnvelope, EdgeExecutionPolicy } from '@brevio/shared';
+import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:crypto';
+import {
+  signAccessToken,
+  verifyAccessToken,
+  type AccessTokenClaims,
+  type AccessTokenIssuerRegistry,
+  type AccessTokenUse,
+} from '../../../packages/shared/src/security.js';
+import type {
+  AnyEdgeExecutionAuthorizationEnvelope,
+  EdgeExecutionPolicy,
+} from '../../../packages/shared/src/edge-execution-contract.js';
 
 export type RelayAuthMode = 'optional' | 'required';
 
 export type RelayRole = 'device' | 'operator' | 'admin';
 
 export interface RelayTokenClaims {
-  version: 1;
+  version: 2;
   role: RelayRole;
+  iss: string;
+  aud: string;
+  sub: string;
+  token_use: AccessTokenUse;
+  iat: number;
+  scopes: string[];
   user_id?: string;
   device_id?: string;
   cert_fingerprint?: string;
   allowed_skills?: string[];
   exp: number;
+}
+
+export interface VerifyRelayTokenPolicy {
+  issuers: AccessTokenIssuerRegistry;
+  expectedAudience: string | string[];
+  allowedRoles: readonly RelayRole[];
+  expectedConfirmationThumbprint?: string;
 }
 
 export interface ProtectedInputEnvelope {
@@ -228,57 +251,80 @@ export function pseudonymize(value: string, salt: string): string {
   return createHash('sha256').update(`${salt}:${value}`).digest('hex').slice(0, 16);
 }
 
-export function signRelayToken(secret: string, claims: RelayTokenClaims): string {
-  const normalizedClaims: RelayTokenClaims = {
-    ...claims,
-    version: 1,
-    role: claims.role,
-    exp: claims.exp,
-    user_id: normalizeString(claims.user_id),
-    device_id: normalizeString(claims.device_id),
-    cert_fingerprint: normalizeString(claims.cert_fingerprint),
-    allowed_skills: claims.allowed_skills?.map((skill) => skill.trim()).filter((skill) => skill.length > 0)
-  };
-  const payload = encodeBase64Url(JSON.stringify(normalizedClaims));
-  const signature = createHmac('sha256', secret).update(payload).digest();
-  return `brev1.${payload}.${encodeBase64Url(signature)}`;
+function tokenUseForRole(role: RelayRole): AccessTokenUse {
+  switch (role) {
+    case 'admin':
+      return 'admin_access';
+    case 'operator':
+      return 'service_access';
+    case 'device':
+      return 'device_access';
+  }
 }
 
-export function verifyRelayToken(secret: string, token: string, nowMs = Date.now()): RelayTokenClaims {
-  const parts = token.split('.');
-  if (parts.length !== 3 || parts[0] !== 'brev1') {
-    throw new Error('invalid relay token');
+function roleForTokenUse(tokenUse: AccessTokenUse): RelayRole {
+  switch (tokenUse) {
+    case 'admin_access':
+      return 'admin';
+    case 'service_access':
+      return 'operator';
+    case 'device_access':
+      return 'device';
+    case 'user_access':
+      throw new Error('user_access tokens are not valid relay credentials');
   }
+}
 
-  const payload = parts[1];
-  const signature = decodeBase64Url(parts[2]);
-  const expected = createHmac('sha256', secret).update(payload).digest();
-  if (signature.length !== expected.length || !timingSafeEqual(signature, expected)) {
-    throw new Error('invalid relay token signature');
-  }
+function allowedTokenUsesForRoles(roles: readonly RelayRole[]): AccessTokenUse[] {
+  return [...new Set(roles.map((role) => tokenUseForRole(role)))];
+}
 
-  const decoded = JSON.parse(decodeBase64Url(payload).toString('utf8')) as Partial<RelayTokenClaims>;
-  if (decoded.version !== 1) {
-    throw new Error('unsupported relay token version');
-  }
-  if (decoded.role !== 'device' && decoded.role !== 'operator' && decoded.role !== 'admin') {
-    throw new Error('invalid relay token role');
-  }
-  if (typeof decoded.exp !== 'number' || !Number.isFinite(decoded.exp)) {
-    throw new Error('invalid relay token expiry');
-  }
-  if (nowMs >= decoded.exp * 1000) {
-    throw new Error('relay token expired');
-  }
+export function signRelayToken(signingKey: string, claims: RelayTokenClaims, keyId = 'brevio-relay-access-v2'): string {
+  const normalizedClaims = {
+    ...claims,
+    version: 2,
+    token_use: tokenUseForRole(claims.role),
+    scopes: [...new Set((claims.scopes ?? []).map((scope) => scope.trim()).filter((scope) => scope.length > 0))],
+    user_id: normalizeString(claims.user_id),
+    device_id: normalizeString(claims.device_id),
+    allowed_skills: claims.allowed_skills?.map((skill) => skill.trim()).filter((skill) => skill.length > 0),
+    cnf: claims.cert_fingerprint ? { 'x5t#S256': claims.cert_fingerprint.trim() } : undefined
+  };
+  return signAccessToken(signingKey, normalizedClaims as AccessTokenClaims, keyId);
+}
 
+export function verifyRelayToken(policy: VerifyRelayTokenPolicy, token: string, nowMs = Date.now()): RelayTokenClaims {
+  const verified = verifyAccessToken(
+    policy.issuers,
+    token,
+    {
+      expectedAudience: policy.expectedAudience,
+      allowedTokenUses: allowedTokenUsesForRoles(policy.allowedRoles),
+      expectedConfirmationThumbprint: policy.expectedConfirmationThumbprint
+    },
+    nowMs
+  );
+  const claims = verified as RelayTokenClaims & Record<string, unknown>;
+  const role = roleForTokenUse(verified.token_use);
+  const explicitRole = normalizeString(claims.role);
+  if (explicitRole && explicitRole !== role) {
+    throw new Error('relay_role_mismatch');
+  }
+  const allowedSkills = normalizeStringArray(claims.allowed_skills);
   return {
-    version: 1,
-    role: decoded.role,
-    user_id: normalizeString(decoded.user_id),
-    device_id: normalizeString(decoded.device_id),
-    cert_fingerprint: normalizeString(decoded.cert_fingerprint),
-    allowed_skills: decoded.allowed_skills?.map((skill) => skill.trim()).filter((skill) => skill.length > 0),
-    exp: decoded.exp
+    version: 2,
+    role,
+    iss: verified.iss,
+    aud: verified.aud,
+    sub: verified.sub,
+    token_use: verified.token_use,
+    iat: verified.iat,
+    exp: verified.exp,
+    scopes: verified.scopes,
+    user_id: normalizeString(claims.user_id),
+    device_id: normalizeString(claims.device_id) ?? (role === 'device' ? verified.sub : undefined),
+    cert_fingerprint: normalizeString(verified.cnf?.['x5t#S256']),
+    allowed_skills: allowedSkills
   };
 }
 

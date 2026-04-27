@@ -3,9 +3,11 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import {
+  buildAccessTokenIssuerRegistry,
+  buildCallerContextIssuerRegistry,
   loadBrevioEnvironment,
-  requireSharedSecret,
-  resolveAccessTokenVerificationKey
+  resolveAccessTokenVerificationKey,
+  resolveCallerContextVerificationKey
 } from '../../../packages/shared/src/security.js';
 
 import type { BrainConfig, DisambiguationRuleConfig, DisambiguationRules, PlannerProvider } from './types.js';
@@ -263,17 +265,44 @@ export function loadBrainConfig(): BrainConfig {
     plannerBaseUrl: process.env.OPENAI_BASE_URL ?? 'https://api.openai.com/v1',
     temporalWorkerBaseUrl: process.env.BREVIO_TEMPORAL_WORKER_BASE_URL?.trim() || undefined,
     temporalWorkerTimeoutMs: parsePositiveInt(process.env.BREVIO_TEMPORAL_WORKER_TIMEOUT_MS, 4000, 'BREVIO_TEMPORAL_WORKER_TIMEOUT_MS'),
-    internalAuthSecret: resolveAccessTokenVerificationKey(
-      process.env.BREVIO_INTERNAL_AUTH_PUBLIC_KEY,
-      process.env.BREVIO_INTERNAL_AUTH_PRIVATE_KEY,
-      process.env.BREVIO_INTERNAL_AUTH_SECRET,
-      environment,
-      'BREVIO_INTERNAL_AUTH_PUBLIC_KEY',
-      'brevio-brain'
-    ),
-    internalAuthIssuer: process.env.BREVIO_INTERNAL_AUTH_ISSUER?.trim() || 'https://auth.brevio.internal',
+    accessTokenIssuers: buildAccessTokenIssuerRegistry([
+      {
+        issuer: process.env.BREVIO_AUTH_ACCESS_ISSUER?.trim() || 'https://auth.brevio.internal',
+        verificationKey: resolveAccessTokenVerificationKey(
+          process.env.BREVIO_AUTH_ACCESS_PUBLIC_KEY,
+          undefined,
+          undefined,
+          environment,
+          'BREVIO_AUTH_ACCESS_PUBLIC_KEY',
+          'auth-access'
+        ),
+        allowedTokenUses: ['user_access', 'admin_access']
+      },
+      {
+        issuer: process.env.BREVIO_GATEWAY_SERVICE_ISSUER?.trim() || 'https://gateway.brevio.internal',
+        verificationKey: resolveAccessTokenVerificationKey(
+          process.env.BREVIO_GATEWAY_SERVICE_PUBLIC_KEY,
+          undefined,
+          undefined,
+          environment,
+          'BREVIO_GATEWAY_SERVICE_PUBLIC_KEY',
+          'gateway-service'
+        ),
+        allowedTokenUses: ['service_access']
+      }
+    ]),
     serviceAudience: process.env.BREVIO_BRAIN_AUDIENCE?.trim() || 'brevio-brain',
-    callerContextSecret: requireSharedSecret(process.env.BREVIO_CALLER_CONTEXT_SECRET, 'BREVIO_CALLER_CONTEXT_SECRET', environment, 'brevio-brain-caller'),
+    callerContextIssuers: buildCallerContextIssuerRegistry([
+      {
+        issuer: process.env.BREVIO_GATEWAY_CALLER_CONTEXT_ISSUER?.trim() || 'https://gateway.brevio.internal/caller-context',
+        verificationKey: resolveCallerContextVerificationKey(
+          process.env.BREVIO_GATEWAY_CALLER_CONTEXT_PUBLIC_KEY,
+          environment,
+          'BREVIO_GATEWAY_CALLER_CONTEXT_PUBLIC_KEY',
+          'gateway-caller-context'
+        )
+      }
+    ]),
     logSalt: process.env.BREVIO_BRAIN_LOG_SALT?.trim() || `brevio-brain:${environment}`
   };
 }

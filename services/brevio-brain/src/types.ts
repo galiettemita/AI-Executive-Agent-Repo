@@ -1,3 +1,5 @@
+import type { AccessTokenIssuerRegistry, CallerContextIssuerRegistry } from '../../../packages/shared/src/security.js';
+
 export type Channel = 'WHATSAPP' | 'IMESSAGE' | 'API';
 
 export type UserTier = 'free' | 'pro' | 'enterprise' | 'admin' | 'service';
@@ -97,10 +99,9 @@ export interface BrainConfig {
   plannerBaseUrl: string;
   temporalWorkerBaseUrl?: string;
   temporalWorkerTimeoutMs: number;
-  internalAuthSecret: string;
-  internalAuthIssuer: string;
+  accessTokenIssuers: AccessTokenIssuerRegistry;
   serviceAudience: string;
-  callerContextSecret: string;
+  callerContextIssuers: CallerContextIssuerRegistry;
   logSalt: string;
 }
 

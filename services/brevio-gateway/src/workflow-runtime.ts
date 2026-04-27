@@ -2,7 +2,6 @@ import type { Channel, GatewayConfig } from './types.js';
 
 interface StartMessageWorkflowInput {
   messageId: string;
-  userId: string;
   channel: Channel;
   channelMessageId: string;
   sessionId: string;
@@ -59,7 +58,6 @@ export async function startMessageWorkflow(
       },
       body: JSON.stringify({
         message_id: input.messageId,
-        user_id: input.userId,
         channel: input.channel,
         session_id: input.sessionId,
         channel_message_id: input.channelMessageId,

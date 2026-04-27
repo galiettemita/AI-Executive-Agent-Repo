@@ -3,6 +3,7 @@ import http from 'node:http';
 
 import {
   extractBearerToken,
+  hashTokenBinding,
   pseudonymizedRef,
   signAccessToken,
   verifyAccessToken,
@@ -186,9 +187,8 @@ function authenticateRequest(
   if (!token) {
     throw new Error('authorization_required');
   }
-  const principal = verifyAccessToken(config.internalAuthSecret, token, {
+  const principal = verifyAccessToken(config.accessTokenIssuers, token, {
     expectedAudience: config.serviceAudience,
-    expectedIssuer: config.internalAuthIssuer,
     allowedTokenUses: mode === 'admin' ? ['admin_access'] : ['service_access', 'admin_access', 'user_access']
   });
   ctx.subjectRef = pseudonymizedRef(principal.sub, config.logSalt);
@@ -205,7 +205,14 @@ function callerUserId(req: http.IncomingMessage, config: EnvConfig): string | un
   if (!token) {
     return undefined;
   }
-  return verifyCallerContextEnvelope(config.callerContextSecret, token).user_id;
+  const bearerToken = extractBearerToken(getHeader(req, 'authorization'));
+  if (!bearerToken) {
+    throw new Error('authorization_required');
+  }
+  return verifyCallerContextEnvelope(config.callerContextIssuers, token, {
+    expectedAudience: config.serviceAudience,
+    expectedAccessTokenHash: hashTokenBinding(bearerToken)
+  }).user_id;
 }
 
 function normalizeAllowlistedRedirect(urlValue: string): string {
@@ -530,10 +537,10 @@ function handleCallback(
   }
 
   const nowMs = Date.now();
-  const handoffToken = signAccessToken(config.internalAuthSecret, {
+  const handoffToken = signAccessToken(config.userTokenSigningKey, {
     version: 2,
     sub: record.userId,
-    iss: config.internalAuthIssuer,
+    iss: config.userTokenIssuer,
     aud: config.serviceAudience,
     iat: Math.floor(nowMs / 1000),
     exp: Math.floor((nowMs + 5 * 60 * 1000) / 1000),

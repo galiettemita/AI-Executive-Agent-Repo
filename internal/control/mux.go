@@ -27,6 +27,7 @@ import (
 	"github.com/brevio/brevio/internal/feature_flags"
 	"github.com/brevio/brevio/internal/goals"
 	"github.com/brevio/brevio/internal/guardrails"
+	"github.com/brevio/brevio/internal/identity"
 	"github.com/brevio/brevio/internal/learning"
 	"github.com/brevio/brevio/internal/model_tiers"
 	"github.com/brevio/brevio/internal/observability"
@@ -92,7 +93,13 @@ func NewMuxWithDependencies(service *Service, deps MuxDependencies) *http.ServeM
 			},
 		})
 	})
-	mux.HandleFunc("GET /health/deep", func(w http.ResponseWriter, _ *http.Request) {
+	mux.HandleFunc("GET /health/deep", func(w http.ResponseWriter, r *http.Request) {
+		if _, err := identity.VerifyAdminHTTPRequest(r, identity.AdminJWTAudience(), time.Now().UTC()); err != nil {
+			writeJSON(w, http.StatusUnauthorized, map[string]any{
+				"error": "admin_token_required",
+			})
+			return
+		}
 		version := strings.TrimSpace(os.Getenv("SERVICE_VERSION"))
 		if version == "" {
 			version = "0.1.0"
@@ -1796,24 +1803,18 @@ func handleTemporalReasoning(w http.ResponseWriter, r *http.Request, svc *tempor
 			writeError(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-			if strings.TrimSpace(payload.ReferenceDate) == "" && strings.TrimSpace(payload.ReferenceTS) != "" {
-				if parsed, err := time.Parse(time.RFC3339, payload.ReferenceTS); err == nil {
-					loc := time.UTC
-					if strings.TrimSpace(payload.Timezone) != "" {
-						if tz, tzErr := time.LoadLocation(payload.Timezone); tzErr == nil {
-							loc = tz
-						}
-					}
-					payload.ReferenceDate = parsed.In(loc).Format("2006-01-02")
-				}
+		if strings.TrimSpace(payload.ReferenceDate) == "" && strings.TrimSpace(payload.ReferenceTS) != "" {
+			if parsed, err := time.Parse(time.RFC3339, payload.ReferenceTS); err == nil {
+				payload.ReferenceDate = parsed.UTC().Format("2006-01-02")
 			}
-			resolution, err := svc.ResolveExpression(payload.WorkspaceID, payload.Expression, payload.ReferenceDate, payload.Timezone)
-			if err != nil {
-				writeError(w, err.Error(), http.StatusBadRequest)
-				return
-			}
-			writeJSON(w, http.StatusOK, resolution)
+		}
+		resolution, err := svc.ResolveExpression(payload.WorkspaceID, payload.Expression, payload.ReferenceDate, payload.Timezone)
+		if err != nil {
+			writeError(w, err.Error(), http.StatusBadRequest)
 			return
+		}
+		writeJSON(w, http.StatusOK, resolution)
+		return
 
 	case "conflicts":
 		if r.Method != http.MethodPost {
@@ -1829,13 +1830,13 @@ func handleTemporalReasoning(w http.ResponseWriter, r *http.Request, svc *tempor
 			writeError(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-			report, err := svc.BuildConflictReport(payload.WorkspaceID, payload.ProposedStart, payload.ProposedEnd)
-			if err != nil {
-				writeError(w, err.Error(), http.StatusBadRequest)
-				return
-			}
-			writeJSON(w, http.StatusOK, report)
+		report, err := svc.BuildConflictReport(payload.WorkspaceID, payload.ProposedStart, payload.ProposedEnd)
+		if err != nil {
+			writeError(w, err.Error(), http.StatusBadRequest)
 			return
+		}
+		writeJSON(w, http.StatusOK, report)
+		return
 
 	case "travel-time":
 		if r.Method != http.MethodPost {

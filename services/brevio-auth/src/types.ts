@@ -27,6 +27,8 @@ export interface AuthConfigStorage {
   pkce_required: boolean;
 }
 
+import type { AccessTokenIssuerRegistry, CallerContextIssuerRegistry } from '../../../packages/shared/src/security.js';
+
 export interface AuthServiceMap {
   oauth_services: OAuthService[];
   api_key_services: APIKeyService[];
@@ -41,10 +43,11 @@ export interface EnvConfig {
   port: number;
   mapPath: string;
   stateStoreFilePath?: string;
-  internalAuthSecret: string;
-  internalAuthIssuer: string;
+  accessTokenIssuers: AccessTokenIssuerRegistry;
+  userTokenSigningKey: string;
+  userTokenIssuer: string;
   serviceAudience: string;
-  callerContextSecret: string;
+  callerContextIssuers: CallerContextIssuerRegistry;
   logSalt: string;
   stateEncryptionSecret: string;
   completionRedirectAllowlist: Record<string, string[]>;

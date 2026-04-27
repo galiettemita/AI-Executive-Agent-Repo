@@ -40,6 +40,14 @@ func NewJWTSigner(privateKey *rsa.PrivateKey) *JWTSigner {
 	}
 }
 
+func NewJWTVerifier(publicKey *rsa.PublicKey) *JWTSigner {
+	return &JWTSigner{
+		privateKey: nil,
+		publicKey:  publicKey,
+		keyID:      "",
+	}
+}
+
 func GenerateJWTSigningKey() (*rsa.PrivateKey, error) {
 	return rsa.GenerateKey(rand.Reader, 2048)
 }

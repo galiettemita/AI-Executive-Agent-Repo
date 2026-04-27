@@ -5,11 +5,16 @@ import { pathToFileURL } from 'node:url';
 
 import { parseCapabilityInventory, resolveCapabilityInventory } from '../../../packages/shared/src/capability-inventory.js';
 import {
+  buildAccessTokenIssuerRegistry,
+  buildCallerContextIssuerRegistry,
   extractBearerToken,
+  hashTokenBinding,
   loadBrevioEnvironment,
   pseudonymizedRef,
-  requireSharedSecret,
   resolveAccessTokenVerificationKey,
+  resolveCallerContextVerificationKey,
+  type AccessTokenIssuerRegistry,
+  type CallerContextIssuerRegistry,
   verifyAccessToken,
   verifyCallerContextEnvelope
 } from '../../../packages/shared/src/security.js';
@@ -46,10 +51,9 @@ interface HandsConfig {
   temporalWorkerBaseUrl?: string;
   temporalWorkerTimeoutMs: number;
   capabilityInventoryJson?: string;
-  internalAuthSecret: string;
-  internalAuthIssuer: string;
+  accessTokenIssuers: AccessTokenIssuerRegistry;
   serviceAudience: string;
-  callerContextSecret: string;
+  callerContextIssuers: CallerContextIssuerRegistry;
   logSalt: string;
 }
 
@@ -128,17 +132,44 @@ function loadConfig(): HandsConfig {
     temporalWorkerBaseUrl: process.env.BREVIO_TEMPORAL_WORKER_BASE_URL?.trim() || undefined,
     temporalWorkerTimeoutMs: parsePositiveInt(process.env.BREVIO_TEMPORAL_WORKER_TIMEOUT_MS, 1500, 'BREVIO_TEMPORAL_WORKER_TIMEOUT_MS'),
     capabilityInventoryJson: process.env.BREVIO_CAPABILITY_INVENTORY_JSON?.trim() || undefined,
-    internalAuthSecret: resolveAccessTokenVerificationKey(
-      process.env.BREVIO_INTERNAL_AUTH_PUBLIC_KEY,
-      process.env.BREVIO_INTERNAL_AUTH_PRIVATE_KEY,
-      process.env.BREVIO_INTERNAL_AUTH_SECRET,
-      environment,
-      'BREVIO_INTERNAL_AUTH_PUBLIC_KEY',
-      'brevio-hands'
-    ),
-    internalAuthIssuer: process.env.BREVIO_INTERNAL_AUTH_ISSUER?.trim() || 'https://auth.brevio.internal',
+    accessTokenIssuers: buildAccessTokenIssuerRegistry([
+      {
+        issuer: process.env.BREVIO_AUTH_ACCESS_ISSUER?.trim() || 'https://auth.brevio.internal',
+        verificationKey: resolveAccessTokenVerificationKey(
+          process.env.BREVIO_AUTH_ACCESS_PUBLIC_KEY,
+          undefined,
+          undefined,
+          environment,
+          'BREVIO_AUTH_ACCESS_PUBLIC_KEY',
+          'auth-access'
+        ),
+        allowedTokenUses: ['user_access', 'admin_access']
+      },
+      {
+        issuer: process.env.BREVIO_GATEWAY_SERVICE_ISSUER?.trim() || 'https://gateway.brevio.internal',
+        verificationKey: resolveAccessTokenVerificationKey(
+          process.env.BREVIO_GATEWAY_SERVICE_PUBLIC_KEY,
+          undefined,
+          undefined,
+          environment,
+          'BREVIO_GATEWAY_SERVICE_PUBLIC_KEY',
+          'gateway-service'
+        ),
+        allowedTokenUses: ['service_access']
+      }
+    ]),
     serviceAudience: process.env.BREVIO_HANDS_AUDIENCE?.trim() || 'brevio-hands',
-    callerContextSecret: requireSharedSecret(process.env.BREVIO_CALLER_CONTEXT_SECRET, 'BREVIO_CALLER_CONTEXT_SECRET', environment, 'brevio-hands-caller'),
+    callerContextIssuers: buildCallerContextIssuerRegistry([
+      {
+        issuer: process.env.BREVIO_GATEWAY_CALLER_CONTEXT_ISSUER?.trim() || 'https://gateway.brevio.internal/caller-context',
+        verificationKey: resolveCallerContextVerificationKey(
+          process.env.BREVIO_GATEWAY_CALLER_CONTEXT_PUBLIC_KEY,
+          environment,
+          'BREVIO_GATEWAY_CALLER_CONTEXT_PUBLIC_KEY',
+          'gateway-caller-context'
+        )
+      }
+    ]),
     logSalt: process.env.BREVIO_HANDS_LOG_SALT?.trim() || `brevio-hands:${environment}`
   };
 }
@@ -195,9 +226,8 @@ function authenticateRequest(
   if (!token) {
     throw new Error('authorization_required');
   }
-  const principal = verifyAccessToken(runtime.config.internalAuthSecret, token, {
+  const principal = verifyAccessToken(runtime.config.accessTokenIssuers, token, {
     expectedAudience: runtime.config.serviceAudience,
-    expectedIssuer: runtime.config.internalAuthIssuer,
     allowedTokenUses: mode === 'admin' ? ['admin_access'] : ['service_access', 'admin_access', 'user_access']
   });
   ctx.subjectRef = pseudonymizedRef(principal.sub, runtime.config.logSalt);
@@ -213,7 +243,14 @@ function callerContextFromRequest(req: http.IncomingMessage, runtime: HandsRunti
   if (!header) {
     return null;
   }
-  return verifyCallerContextEnvelope(runtime.config.callerContextSecret, header);
+  const bearerToken = extractBearerToken(getHeader(req, 'authorization'));
+  if (!bearerToken) {
+    throw new Error('authorization_required');
+  }
+  return verifyCallerContextEnvelope(runtime.config.callerContextIssuers, header, {
+    expectedAudience: runtime.config.serviceAudience,
+    expectedAccessTokenHash: hashTokenBinding(bearerToken)
+  });
 }
 
 function sendJSON(res: http.ServerResponse, statusCode: number, payload: Record<string, unknown>): void {
@@ -288,7 +325,6 @@ function parseExecuteRequest(payload: Record<string, unknown>): ExecuteRequest {
     tool: asString(payload.tool),
     operation: asString(payload.operation),
     ...parseExecutionRefs(payload),
-    user_id: asString(payload.user_id),
     tenant_id: asString(payload.tenant_id),
     workspace_id: asString(payload.workspace_id),
     input,

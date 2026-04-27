@@ -3,7 +3,15 @@ import { describe, it } from 'node:test';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { signAccessToken, signCallerContextEnvelope } from '../../../packages/shared/src/security.js';
+import {
+  signTestAuthAccessToken,
+  signTestCallerContext,
+  signTestGatewayServiceToken,
+  testAccessTokenIssuers,
+  testCallerContextIssuers,
+  TEST_AUTH_ACCESS_ISSUER
+} from '../../../packages/shared/src/security-test-fixtures.js';
+import { resolveAccessTokenSigningKey } from '../../../packages/shared/src/security.js';
 import { loadAuthServiceMap } from './config.js';
 import { createAuthServiceRuntime } from './server.js';
 import type { EnvConfig } from './types.js';
@@ -12,30 +20,30 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const repoRoot = path.resolve(__dirname, '..', '..', '..');
 const mapPath = path.join(repoRoot, 'config', 'auth-service-map.yaml');
-const internalAuthSecret = 'auth-test-secret';
-const callerContextSecret = 'auth-caller-secret';
-
 function serviceToken(audience: string, tokenUse: 'service_access' | 'admin_access' = 'service_access'): string {
-  return signAccessToken(internalAuthSecret, {
-    version: 2,
-    sub: tokenUse === 'admin_access' ? 'admin-user' : 'brevio-gateway',
-    iss: 'https://auth.brevio.internal',
-    aud: audience,
-    iat: Math.floor(Date.now() / 1000),
-    exp: Math.floor(Date.now() / 1000) + 300,
-    token_use: tokenUse,
-    scopes: ['oauth:test']
-  });
+  return tokenUse === 'admin_access'
+    ? signTestAuthAccessToken({
+        sub: 'admin-user',
+        aud: audience,
+        token_use: 'admin_access',
+        scopes: ['oauth:test']
+      })
+    : signTestGatewayServiceToken({
+        sub: 'brevio-gateway',
+        aud: audience,
+        scopes: ['oauth:test']
+      });
 }
 
-function callerContext(userId = 'u-test-1'): string {
-  return signCallerContextEnvelope(callerContextSecret, {
-    subject: userId,
+function callerContext(accessToken: string, userId = 'u-test-1'): string {
+  return signTestCallerContext({
+    aud: 'brevio-auth',
+    sub: userId,
     user_id: userId,
+    actor_service: 'brevio-gateway',
     auth_strength: 'service_token',
     provenance: 'test',
-    issued_at: new Date().toISOString(),
-    expires_at: new Date(Date.now() + 300000).toISOString()
+    accessToken
   });
 }
 
@@ -47,10 +55,11 @@ async function startRuntime() {
     environment: 'test',
     port: 0,
     mapPath,
-    internalAuthSecret,
-    internalAuthIssuer: 'https://auth.brevio.internal',
+    accessTokenIssuers: testAccessTokenIssuers(),
+    userTokenSigningKey: resolveAccessTokenSigningKey(undefined, undefined, 'test', 'TEST_AUTH_ACCESS_PRIVATE_KEY', 'auth-access'),
+    userTokenIssuer: TEST_AUTH_ACCESS_ISSUER,
     serviceAudience: 'brevio-auth',
-    callerContextSecret,
+    callerContextIssuers: testCallerContextIssuers(),
     logSalt: 'auth-test-salt',
     stateEncryptionSecret: 'auth-state-secret',
     completionRedirectAllowlist: {
@@ -136,12 +145,13 @@ describe('brevio-auth server', () => {
     }
     const { runtime, baseURL } = started;
     try {
+      const authorizeToken = serviceToken('brevio-auth');
       const authorizeRes = await fetch(`${baseURL}/api/v1/oauth/google/authorize`, {
         method: 'POST',
         headers: {
           'content-type': 'application/json',
-          authorization: `Bearer ${serviceToken('brevio-auth')}`,
-          'x-brevio-caller-context': callerContext('u-test-1')
+          authorization: `Bearer ${authorizeToken}`,
+          'x-brevio-caller-context': callerContext(authorizeToken, 'u-test-1')
         },
         body: JSON.stringify({ redirect_uri: 'https://app.brevio.test/oauth/callback' })
       });
@@ -199,10 +209,11 @@ describe('brevio-auth server', () => {
         environment: 'production',
         port: 0,
         mapPath,
-        internalAuthSecret,
-        internalAuthIssuer: 'https://auth.brevio.internal',
+        accessTokenIssuers: testAccessTokenIssuers(),
+        userTokenSigningKey: resolveAccessTokenSigningKey(undefined, undefined, 'test', 'TEST_AUTH_ACCESS_PRIVATE_KEY', 'auth-access'),
+        userTokenIssuer: TEST_AUTH_ACCESS_ISSUER,
         serviceAudience: 'brevio-auth',
-        callerContextSecret,
+        callerContextIssuers: testCallerContextIssuers(),
         logSalt: 'auth-test-salt',
         stateEncryptionSecret: 'auth-state-secret',
         completionRedirectAllowlist: {
@@ -243,12 +254,13 @@ describe('brevio-auth server', () => {
       const deep = (await deepRes.json()) as { checks: { token_exchange_mode: string } };
       assert.equal(deep.checks.token_exchange_mode, 'disabled');
 
+      const authorizeToken = serviceToken('brevio-auth');
       const authorizeRes = await fetch(`${baseURL}/api/v1/oauth/google/authorize`, {
         method: 'POST',
         headers: {
           'content-type': 'application/json',
-          authorization: `Bearer ${serviceToken('brevio-auth')}`,
-          'x-brevio-caller-context': callerContext('u-prod-1')
+          authorization: `Bearer ${authorizeToken}`,
+          'x-brevio-caller-context': callerContext(authorizeToken, 'u-prod-1')
         },
         body: JSON.stringify({ redirect_uri: 'https://app.brevio.test/oauth/callback' })
       });

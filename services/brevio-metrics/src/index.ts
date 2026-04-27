@@ -5,8 +5,10 @@ import { pathToFileURL } from 'node:url';
 
 import { authenticateInternalRequest } from '../../../packages/shared/src/internal-http-auth.js';
 import {
+  buildAccessTokenIssuerRegistry,
   loadBrevioEnvironment,
-  resolveAccessTokenVerificationKey
+  resolveAccessTokenVerificationKey,
+  type AccessTokenIssuerRegistry
 } from '../../../packages/shared/src/security.js';
 import { MetricsStore } from './metrics-store.js';
 
@@ -18,8 +20,7 @@ interface MetricsConfig {
   shutdownTimeoutMs: number;
   maxBodyBytes: number;
   stateFilePath?: string;
-  internalAuthSecret: string;
-  internalAuthIssuer: string;
+  accessTokenIssuers: AccessTokenIssuerRegistry;
   serviceAudience: string;
   logSalt: string;
 }
@@ -85,15 +86,32 @@ function loadConfig(): MetricsConfig {
     shutdownTimeoutMs: parsePositiveInt(process.env.BREVIO_METRICS_SHUTDOWN_TIMEOUT_MS, 30000, 'BREVIO_METRICS_SHUTDOWN_TIMEOUT_MS'),
     maxBodyBytes: parsePositiveInt(process.env.BREVIO_METRICS_MAX_BODY_BYTES, 128 * 1024, 'BREVIO_METRICS_MAX_BODY_BYTES'),
     stateFilePath: path.resolve(process.env.BREVIO_METRICS_STATE_FILE ?? path.join(process.cwd(), 'data', 'metrics', 'state.json')),
-    internalAuthSecret: resolveAccessTokenVerificationKey(
-      process.env.BREVIO_INTERNAL_AUTH_PUBLIC_KEY,
-      process.env.BREVIO_INTERNAL_AUTH_PRIVATE_KEY,
-      process.env.BREVIO_INTERNAL_AUTH_SECRET,
-      environment,
-      'BREVIO_INTERNAL_AUTH_PUBLIC_KEY',
-      'brevio-metrics'
-    ),
-    internalAuthIssuer: process.env.BREVIO_INTERNAL_AUTH_ISSUER?.trim() || 'https://auth.brevio.internal',
+    accessTokenIssuers: buildAccessTokenIssuerRegistry([
+      {
+        issuer: process.env.BREVIO_AUTH_ACCESS_ISSUER?.trim() || 'https://auth.brevio.internal',
+        verificationKey: resolveAccessTokenVerificationKey(
+          process.env.BREVIO_AUTH_ACCESS_PUBLIC_KEY,
+          undefined,
+          undefined,
+          environment,
+          'BREVIO_AUTH_ACCESS_PUBLIC_KEY',
+          'auth-access'
+        ),
+        allowedTokenUses: ['user_access', 'admin_access']
+      },
+      {
+        issuer: process.env.BREVIO_GATEWAY_SERVICE_ISSUER?.trim() || 'https://gateway.brevio.internal',
+        verificationKey: resolveAccessTokenVerificationKey(
+          process.env.BREVIO_GATEWAY_SERVICE_PUBLIC_KEY,
+          undefined,
+          undefined,
+          environment,
+          'BREVIO_GATEWAY_SERVICE_PUBLIC_KEY',
+          'gateway-service'
+        ),
+        allowedTokenUses: ['service_access']
+      }
+    ]),
     serviceAudience: process.env.BREVIO_METRICS_AUDIENCE?.trim() || 'brevio-metrics',
     logSalt: process.env.BREVIO_METRICS_LOG_SALT?.trim() || `brevio-metrics:${environment}`
   };

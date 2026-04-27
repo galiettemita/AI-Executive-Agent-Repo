@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
+import { resolveAccessTokenSigningKey, resolveCallerContextSigningKey } from '../../../packages/shared/src/security.js';
+import { testAccessTokenIssuers, testCallerContextIssuers } from '../../../packages/shared/src/security-test-fixtures.js';
 import { normalizeWebhook } from './normalize.js';
 import { GatewayState } from './state.js';
 import type { GatewayConfig } from './types.js';
@@ -11,11 +13,15 @@ const config: GatewayConfig = {
   environment: 'test',
   port: 0,
   shutdownTimeoutMs: 1000,
-  internalAuthSecret: 'internal-secret',
-  internalAuthIssuer: 'https://auth.brevio.internal',
+  accessTokenIssuers: testAccessTokenIssuers(),
+  adminTokenIssuer: 'https://auth.brevio.internal',
+  serviceTokenSigningKey: resolveAccessTokenSigningKey(undefined, undefined, 'test', 'TEST_GATEWAY_SERVICE_PRIVATE_KEY', 'gateway-service'),
+  serviceTokenIssuer: 'https://gateway.brevio.internal',
   serviceAudience: 'brevio-gateway',
   temporalWorkerAudience: 'brevio-temporal-worker',
-  callerContextSecret: 'caller-secret',
+  callerContextIssuers: testCallerContextIssuers(),
+  callerContextSigningKey: resolveCallerContextSigningKey(undefined, 'test', 'TEST_GATEWAY_CALLER_CONTEXT_PRIVATE_KEY', 'gateway-caller-context'),
+  callerContextIssuer: 'https://gateway.brevio.internal/caller-context',
   logSalt: 'gateway-test-salt',
   whatsappWebhookSecret: 'secret',
   whatsappVerifyToken: 'verify',

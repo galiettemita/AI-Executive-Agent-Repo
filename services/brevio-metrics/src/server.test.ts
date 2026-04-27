@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { signAccessToken } from '../../../packages/shared/src/security.js';
+import { signTestAuthAccessToken, testAccessTokenIssuers } from '../../../packages/shared/src/security-test-fixtures.js';
 import { createMetricsRuntime } from './index.js';
 
 async function startRuntime() {
@@ -13,8 +13,7 @@ async function startRuntime() {
     shutdownTimeoutMs: 1000,
     maxBodyBytes: 128 * 1024,
     stateFilePath: undefined,
-    internalAuthSecret: 'internal-secret',
-    internalAuthIssuer: 'https://auth.brevio.internal',
+    accessTokenIssuers: testAccessTokenIssuers(),
     serviceAudience: 'brevio-metrics',
     logSalt: 'metrics-test-salt'
   });
@@ -45,15 +44,11 @@ async function startRuntimeOrSkip(t: { skip(message?: string): void }) {
 }
 
 function adminToken(): string {
-  const nowSeconds = Math.floor(Date.now() / 1000);
-  return signAccessToken('internal-secret', {
-    version: 2,
+  return signTestAuthAccessToken({
     sub: 'admin-user',
-    iss: 'https://auth.brevio.internal',
     aud: 'brevio-metrics',
-    iat: nowSeconds,
-    exp: nowSeconds + 60,
-    token_use: 'admin_access'
+    token_use: 'admin_access',
+    scopes: ['metrics:read']
   });
 }
 

@@ -1,3 +1,5 @@
+import type { AccessTokenIssuerRegistry, CallerContextIssuerRegistry } from '../../../packages/shared/src/security.js';
+
 export type Channel = 'WHATSAPP' | 'IMESSAGE' | 'API';
 
 export type ContentType = 'TEXT' | 'VOICE' | 'IMAGE' | 'DOCUMENT' | 'LOCATION';
@@ -37,11 +39,15 @@ export interface GatewayConfig {
   port: number;
   shutdownTimeoutMs: number;
   stateFilePath?: string;
-  internalAuthSecret: string;
-  internalAuthIssuer: string;
+  accessTokenIssuers: AccessTokenIssuerRegistry;
+  adminTokenIssuer: string;
+  serviceTokenSigningKey: string;
+  serviceTokenIssuer: string;
   serviceAudience: string;
   temporalWorkerAudience: string;
-  callerContextSecret: string;
+  callerContextIssuers: CallerContextIssuerRegistry;
+  callerContextSigningKey: string;
+  callerContextIssuer: string;
   logSalt: string;
 
   whatsappWebhookSecret: string;

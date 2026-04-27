@@ -4,6 +4,7 @@ import { pathToFileURL } from 'node:url';
 
 import {
   extractBearerToken,
+  hashTokenBinding,
   pseudonymizedRef,
   verifyAccessToken,
   verifyCallerContextEnvelope
@@ -89,9 +90,8 @@ function authenticateRequest(runtime: BrainRuntime, req: http.IncomingMessage, c
   if (!token) {
     throw new Error('authorization_required');
   }
-  const principal = verifyAccessToken(runtime.config.internalAuthSecret, token, {
+  const principal = verifyAccessToken(runtime.config.accessTokenIssuers, token, {
     expectedAudience: runtime.config.serviceAudience,
-    expectedIssuer: runtime.config.internalAuthIssuer,
     allowedTokenUses: mode === 'admin' ? ['admin_access'] : ['service_access', 'admin_access', 'user_access']
   });
   ctx.subjectRef = pseudonymizedRef(principal.sub, runtime.config.logSalt);
@@ -103,7 +103,13 @@ function authenticateRequest(runtime: BrainRuntime, req: http.IncomingMessage, c
 
 function callerContextFromRequest(runtime: BrainRuntime, req: http.IncomingMessage) {
   const token = getHeader(req, 'x-brevio-caller-context');
-  return token ? verifyCallerContextEnvelope(runtime.config.callerContextSecret, token) : undefined;
+  const bearerToken = extractBearerToken(getHeader(req, 'authorization'));
+  return token && bearerToken
+    ? verifyCallerContextEnvelope(runtime.config.callerContextIssuers, token, {
+        expectedAudience: runtime.config.serviceAudience,
+        expectedAccessTokenHash: hashTokenBinding(bearerToken)
+      })
+    : undefined;
 }
 
 function sendJSON(res: http.ServerResponse, statusCode: number, payload: Record<string, unknown>): void {

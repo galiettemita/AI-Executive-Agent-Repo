@@ -3,8 +3,11 @@ import type http from 'node:http';
 import {
   extractBearerToken,
   extractHeaderValue,
+  hashTokenBinding,
   pseudonymizedRef,
+  type AccessTokenIssuerRegistry,
   type AccessTokenUse,
+  type CallerContextIssuerRegistry,
   type VerifiedAccessToken,
   type VerifiedCallerContext,
   verifyAccessToken,
@@ -12,10 +15,9 @@ import {
 } from './security.js';
 
 export interface InternalHttpAuthConfig {
-  internalAuthSecret: string;
-  internalAuthIssuer: string;
+  accessTokenIssuers: AccessTokenIssuerRegistry;
   serviceAudience: string;
-  callerContextSecret?: string;
+  callerContextIssuers?: CallerContextIssuerRegistry;
   logSalt: string;
 }
 
@@ -47,17 +49,19 @@ export function authenticateInternalRequest(
   const allowedTokenUses =
     options.allowedTokenUses ??
     (options.mode === 'admin' ? ['admin_access'] : ['service_access', 'admin_access', 'user_access']);
-  const principal = verifyAccessToken(config.internalAuthSecret, token, {
+  const principal = verifyAccessToken(config.accessTokenIssuers, token, {
     expectedAudience: config.serviceAudience,
-    expectedIssuer: config.internalAuthIssuer,
     allowedTokenUses
   });
   ctx.subjectRef = pseudonymizedRef(principal.sub, config.logSalt);
 
   const callerContextToken = extractHeaderValue(req.headers, 'x-brevio-caller-context');
   const callerContext =
-    callerContextToken && config.callerContextSecret
-      ? verifyCallerContextEnvelope(config.callerContextSecret, callerContextToken)
+    callerContextToken && config.callerContextIssuers
+      ? verifyCallerContextEnvelope(config.callerContextIssuers, callerContextToken, {
+          expectedAudience: config.serviceAudience,
+          expectedAccessTokenHash: hashTokenBinding(token)
+        })
       : undefined;
   if (options.requireCallerContext && !callerContext) {
     throw new Error('caller_context_required');

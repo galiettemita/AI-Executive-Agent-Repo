@@ -6,15 +6,15 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/brevio/brevio/internal/canvas"
 	"github.com/brevio/brevio/internal/control"
 	"github.com/brevio/brevio/internal/gateway"
+	"github.com/brevio/brevio/internal/identity"
 )
 
 func TestServiceHealthEndpointClosure(t *testing.T) {
-	t.Parallel()
-
 	root := repositoryRoot(t)
 	requiredHealthTokens := []string{
 		"GET /healthz/ready",
@@ -60,14 +60,14 @@ func TestServiceHealthEndpointClosure(t *testing.T) {
 func assertRuntimeHealthEndpoints(t *testing.T, mux *http.ServeMux) {
 	t.Helper()
 
-	for _, path := range []string{"/healthz/ready", "/healthz/live", "/health", "/health/deep"} {
+	for _, path := range []string{"/healthz/ready", "/healthz/live", "/health"} {
 		req := httptest.NewRequest(http.MethodGet, path, nil)
 		rec := httptest.NewRecorder()
 		mux.ServeHTTP(rec, req)
 		if rec.Code != http.StatusOK {
 			t.Fatalf("unexpected health status for %s: got=%d want=%d", path, rec.Code, http.StatusOK)
 		}
-		if path == "/health" || path == "/health/deep" {
+		if path == "/health" {
 			var payload map[string]any
 			if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
 				t.Fatalf("health endpoint %s did not return JSON: %v", path, err)
@@ -77,4 +77,59 @@ func assertRuntimeHealthEndpoints(t *testing.T, mux *http.ServeMux) {
 			}
 		}
 	}
+
+	unauthorized := httptest.NewRequest(http.MethodGet, "/health/deep", nil)
+	unauthorizedRec := httptest.NewRecorder()
+	mux.ServeHTTP(unauthorizedRec, unauthorized)
+	if unauthorizedRec.Code != http.StatusUnauthorized {
+		t.Fatalf("unexpected health status for /health/deep without auth: got=%d want=%d", unauthorizedRec.Code, http.StatusUnauthorized)
+	}
+
+	authorized := adminHealthRequest(t, "/health/deep")
+	authorizedRec := httptest.NewRecorder()
+	mux.ServeHTTP(authorizedRec, authorized)
+	if authorizedRec.Code != http.StatusOK {
+		t.Fatalf("unexpected health status for /health/deep with admin auth: got=%d want=%d", authorizedRec.Code, http.StatusOK)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(authorizedRec.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("health endpoint /health/deep did not return JSON: %v", err)
+	}
+	if payload["status"] != "healthy" {
+		t.Fatalf("unexpected health payload status for /health/deep: %#v", payload)
+	}
+}
+
+func adminHealthRequest(t *testing.T, path string) *http.Request {
+	t.Helper()
+
+	privateKey, err := identity.GenerateJWTSigningKey()
+	if err != nil {
+		t.Fatalf("generate admin jwt key: %v", err)
+	}
+	publicKeyPEM, err := identity.MarshalRSAPublicKeyPEM(&privateKey.PublicKey)
+	if err != nil {
+		t.Fatalf("marshal public key: %v", err)
+	}
+	t.Setenv("BREVIO_AUTH_ACCESS_PUBLIC_KEY", publicKeyPEM)
+	t.Setenv("BREVIO_AUTH_ACCESS_ISSUER", "https://auth.brevio.internal")
+
+	token, err := identity.NewJWTSigner(privateKey).IssueAdminJWT(identity.AdminJWTClaims{
+		UserJWTClaims: identity.UserJWTClaims{
+			Version:  2,
+			Sub:      "admin-user",
+			Iss:      "https://auth.brevio.internal",
+			Aud:      identity.AdminJWTAudience(),
+			TokenUse: "admin_access",
+		},
+		AdminLevel:  "ops",
+		AdminScopes: []string{"health:read"},
+	}, time.Now().UTC())
+	if err != nil {
+		t.Fatalf("issue admin jwt: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, path, nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	return req
 }

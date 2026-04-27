@@ -10,12 +10,47 @@ import (
 	"testing"
 	"time"
 
+	"github.com/brevio/brevio/internal/identity"
 	"github.com/google/uuid"
 )
 
 func signedRequestBody(secret, path string, payload []byte) *http.Request {
 	req := httptest.NewRequest(http.MethodPost, path, bytes.NewReader(payload))
 	req.Header.Set("X-Signature", signatureFor([]byte(secret), payload))
+	return req
+}
+
+func adminHealthRequest(t *testing.T, path string) *http.Request {
+	t.Helper()
+
+	privateKey, err := identity.GenerateJWTSigningKey()
+	if err != nil {
+		t.Fatalf("generate admin jwt key: %v", err)
+	}
+	publicKeyPEM, err := identity.MarshalRSAPublicKeyPEM(&privateKey.PublicKey)
+	if err != nil {
+		t.Fatalf("marshal public key: %v", err)
+	}
+	t.Setenv("BREVIO_AUTH_ACCESS_PUBLIC_KEY", publicKeyPEM)
+	t.Setenv("BREVIO_AUTH_ACCESS_ISSUER", "https://auth.brevio.internal")
+
+	token, err := identity.NewJWTSigner(privateKey).IssueAdminJWT(identity.AdminJWTClaims{
+		UserJWTClaims: identity.UserJWTClaims{
+			Version:  2,
+			Sub:      "admin-user",
+			Iss:      "https://auth.brevio.internal",
+			Aud:      identity.AdminJWTAudience(),
+			TokenUse: "admin_access",
+		},
+		AdminLevel:  "ops",
+		AdminScopes: []string{"health:read"},
+	}, time.Now().UTC())
+	if err != nil {
+		t.Fatalf("issue admin jwt: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, path, nil)
+	req.Header.Set("Authorization", "Bearer "+token)
 	return req
 }
 
@@ -443,19 +478,17 @@ func TestOutboundSendQueuesRequest(t *testing.T) {
 }
 
 func TestHealthEndpoints(t *testing.T) {
-	t.Parallel()
-
 	svc := NewService("test-secret")
 	mux := NewMux(svc)
 
-	for _, path := range []string{"/healthz/ready", "/healthz/live", "/health", "/health/deep"} {
+	for _, path := range []string{"/healthz/ready", "/healthz/live", "/health"} {
 		req := httptest.NewRequest(http.MethodGet, path, nil)
 		resp := httptest.NewRecorder()
 		mux.ServeHTTP(resp, req)
 		if resp.Code != http.StatusOK {
 			t.Fatalf("unexpected status for %s: %d", path, resp.Code)
 		}
-		if path == "/health" || path == "/health/deep" {
+		if path == "/health" {
 			var payload map[string]any
 			if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
 				t.Fatalf("expected json response for %s: %v", path, err)
@@ -464,6 +497,27 @@ func TestHealthEndpoints(t *testing.T) {
 				t.Fatalf("unexpected health payload for %s: %+v", path, payload)
 			}
 		}
+	}
+
+	unauthorizedDeep := httptest.NewRequest(http.MethodGet, "/health/deep", nil)
+	unauthorizedResp := httptest.NewRecorder()
+	mux.ServeHTTP(unauthorizedResp, unauthorizedDeep)
+	if unauthorizedResp.Code != http.StatusUnauthorized {
+		t.Fatalf("unexpected unauthenticated deep health status: %d", unauthorizedResp.Code)
+	}
+
+	authedDeep := adminHealthRequest(t, "/health/deep")
+	authedResp := httptest.NewRecorder()
+	mux.ServeHTTP(authedResp, authedDeep)
+	if authedResp.Code != http.StatusOK {
+		t.Fatalf("unexpected authenticated deep health status: %d", authedResp.Code)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(authedResp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("expected json response for /health/deep: %v", err)
+	}
+	if payload["status"] != "healthy" {
+		t.Fatalf("unexpected health payload for /health/deep: %+v", payload)
 	}
 }
 

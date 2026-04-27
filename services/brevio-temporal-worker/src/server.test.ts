@@ -1,7 +1,12 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { signAccessToken, signCallerContextEnvelope } from '../../../packages/shared/src/security.js';
+import {
+  signTestGatewayServiceToken,
+  signTestCallerContext,
+  testAccessTokenIssuers,
+  testCallerContextIssuers
+} from '../../../packages/shared/src/security-test-fixtures.js';
 import { createTemporalWorkerRuntime } from './index.js';
 
 async function startRuntime() {
@@ -13,10 +18,9 @@ async function startRuntime() {
     shutdownTimeoutMs: 1000,
     maxBodyBytes: 128 * 1024,
     stateFilePath: '.tmp-temporal-worker-state.json',
-    internalAuthSecret: 'internal-secret',
-    internalAuthIssuer: 'https://auth.brevio.internal',
+    accessTokenIssuers: testAccessTokenIssuers(),
     serviceAudience: 'brevio-temporal-worker',
-    callerContextSecret: 'caller-secret',
+    callerContextIssuers: testCallerContextIssuers(),
     logSalt: 'temporal-worker-test-salt'
   });
 
@@ -46,27 +50,22 @@ async function startRuntimeOrSkip(t: { skip(message?: string): void }) {
 }
 
 function serviceToken(): string {
-  const nowSeconds = Math.floor(Date.now() / 1000);
-  return signAccessToken('internal-secret', {
-    version: 2,
+  return signTestGatewayServiceToken({
     sub: 'gateway-service',
-    iss: 'https://auth.brevio.internal',
     aud: 'brevio-temporal-worker',
-    iat: nowSeconds,
-    exp: nowSeconds + 60,
-    token_use: 'service_access'
+    scopes: ['workflow:start']
   });
 }
 
-function callerContext(userId: string): string {
-  const now = Date.now();
-  return signCallerContextEnvelope('caller-secret', {
-    subject: 'gateway-service',
+function callerContext(userId: string, accessToken: string): string {
+  return signTestCallerContext({
+    aud: 'brevio-temporal-worker',
+    sub: 'gateway-service',
     user_id: userId,
+    actor_service: 'brevio-gateway',
     auth_strength: 'service_token',
     provenance: 'gateway.webhook',
-    issued_at: new Date(now).toISOString(),
-    expires_at: new Date(now + 60_000).toISOString()
+    accessToken
   });
 }
 
@@ -92,12 +91,13 @@ describe('brevio-temporal-worker auth', () => {
     }
     const { runtime, baseUrl } = started;
     try {
+      const token = serviceToken();
       const response = await fetch(`${baseUrl}/api/v1/temporal-worker/workflows/message-processing`, {
         method: 'POST',
         headers: {
           'content-type': 'application/json',
-          authorization: `Bearer ${serviceToken()}`,
-          'x-brevio-caller-context': callerContext('user-12345678')
+          authorization: `Bearer ${token}`,
+          'x-brevio-caller-context': callerContext('user-12345678', token)
         },
         body: JSON.stringify({
           message_id: 'msg-123',
