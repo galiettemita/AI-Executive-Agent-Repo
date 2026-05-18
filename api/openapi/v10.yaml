@@ -1,0 +1,830 @@
+openapi: 3.1.0
+info:
+  title: BREVIO API v10
+  version: 10.0.0
+  description: |
+    BREVIO Executive AI Agent API v10.
+    Implements federation, wallet, cost tracking, capability registry,
+    authorization receipts, admin intelligence, voice/call capabilities,
+    and OpenClaw adoption features.
+
+servers:
+  - url: https://api.brevio.ai/v10
+    description: Production
+  - url: http://localhost:18080/v10
+    description: Local development
+
+paths:
+  /health:
+    get:
+      operationId: getHealth
+      summary: Health check
+      responses:
+        '200':
+          description: Service healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+
+  /messages:
+    post:
+      operationId: processMessage
+      summary: Submit a message for processing
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MessageRequest'
+      responses:
+        '202':
+          description: Message accepted for processing
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageAcceptedResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /workspaces/{workspaceId}/federation/peers:
+    get:
+      operationId: listFederationPeers
+      summary: List federation peers
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/PageCursor'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: Federation peers
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FederationPeerList'
+    post:
+      operationId: createFederationPeer
+      summary: Propose federation with another workspace
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateFederationPeerRequest'
+      responses:
+        '201':
+          description: Federation peer created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FederationPeer'
+
+  /workspaces/{workspaceId}/federation/negotiations:
+    post:
+      operationId: startNegotiation
+      summary: Start a federation negotiation
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StartNegotiationRequest'
+      responses:
+        '201':
+          description: Negotiation started
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FederationNegotiation'
+
+  /workspaces/{workspaceId}/wallet:
+    get:
+      operationId: getWallet
+      summary: Get workspace wallet
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceId'
+      responses:
+        '200':
+          description: Wallet details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Wallet'
+
+  /workspaces/{workspaceId}/wallet/transactions:
+    get:
+      operationId: listWalletTransactions
+      summary: List wallet transactions
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/PageCursor'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: Wallet transactions
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WalletTransactionList'
+
+  /workspaces/{workspaceId}/costs:
+    get:
+      operationId: getCostSummary
+      summary: Get cost summary for workspace
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceId'
+        - name: period_start
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: period_end
+          in: query
+          schema:
+            type: string
+            format: date-time
+      responses:
+        '200':
+          description: Cost summary
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CostSummary'
+
+  /workspaces/{workspaceId}/capabilities:
+    get:
+      operationId: listCapabilities
+      summary: List workspace capabilities
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceId'
+      responses:
+        '200':
+          description: Capabilities
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CapabilityList'
+
+  /workspaces/{workspaceId}/kill-switch:
+    get:
+      operationId: getKillSwitchStatus
+      summary: Get kill switch status
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceId'
+      responses:
+        '200':
+          description: Kill switch status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KillSwitchStatus'
+    post:
+      operationId: toggleKillSwitch
+      summary: Toggle kill switch
+      security:
+        - AdminAuth: []
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/KillSwitchToggleRequest'
+      responses:
+        '200':
+          description: Kill switch toggled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KillSwitchStatus'
+
+  /workspaces/{workspaceId}/calls:
+    post:
+      operationId: initiateCall
+      summary: Request an outbound call
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InitiateCallRequest'
+      responses:
+        '202':
+          description: Call request accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CallResponse'
+        '403':
+          description: Call denied by approval gate
+
+  /workspaces/{workspaceId}/calls/{callId}/transcript:
+    get:
+      operationId: getCallTranscript
+      summary: Get call transcript (no raw audio)
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceId'
+        - name: callId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Call transcript
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CallTranscript'
+
+  /admin/auth/login:
+    post:
+      operationId: adminLogin
+      summary: Admin login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminLoginRequest'
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminLoginResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /admin/workspaces:
+    get:
+      operationId: adminListWorkspaces
+      summary: List all workspaces (admin)
+      security:
+        - AdminAuth: []
+      parameters:
+        - $ref: '#/components/parameters/PageCursor'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: Workspaces list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminWorkspaceList'
+
+  /admin/workspaces/{workspaceId}/health:
+    get:
+      operationId: adminGetWorkspaceHealth
+      summary: Get workspace health snapshot
+      security:
+        - AdminAuth: []
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceId'
+      responses:
+        '200':
+          description: Health snapshot
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkspaceHealthSnapshot'
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+    AdminAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: AdminJWT
+
+  parameters:
+    WorkspaceId:
+      name: workspaceId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    PageCursor:
+      name: cursor
+      in: query
+      schema:
+        type: string
+    PageSize:
+      name: limit
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+
+  responses:
+    BadRequest:
+      description: Bad request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Unauthorized:
+      description: Unauthorized
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    RateLimited:
+      description: Rate limited
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+  schemas:
+    negotiation_state:
+      type: string
+      enum:
+        - proposed
+        - evaluating
+        - accepted
+        - rejected
+        - expired
+        - executing
+        - executed
+        - failed
+        - compensating
+
+    federation_permission_type:
+      type: string
+      enum:
+        - calendar_query
+        - calendar_write
+        - routing_negotiate
+        - task_delegate
+        - knowledge_share
+        - status_query
+
+    HealthResponse:
+      type: object
+      required: [status, version]
+      additionalProperties: false
+      properties:
+        status:
+          type: string
+          enum: [healthy, degraded, unhealthy]
+        version:
+          type: string
+        uptime_ms:
+          type: integer
+        checks:
+          type: object
+          additionalProperties:
+            type: string
+
+    ErrorResponse:
+      type: object
+      required: [error, code]
+      additionalProperties: false
+      properties:
+        error:
+          type: string
+        code:
+          type: string
+        details:
+          type: object
+
+    MessageRequest:
+      type: object
+      required: [workspace_id, channel_type, payload]
+      additionalProperties: false
+      properties:
+        workspace_id:
+          type: string
+          format: uuid
+        channel_type:
+          type: string
+          enum: [whatsapp, imessage, web, email, voice]
+        payload:
+          type: string
+        idempotency_key:
+          type: string
+        attachments:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            properties:
+              type:
+                type: string
+              url:
+                type: string
+              name:
+                type: string
+
+    MessageAcceptedResponse:
+      type: object
+      required: [message_id, workflow_id, status]
+      additionalProperties: false
+      properties:
+        message_id:
+          type: string
+          format: uuid
+        workflow_id:
+          type: string
+        status:
+          type: string
+          enum: [accepted, deduplicated]
+
+    FederationPeer:
+      type: object
+      required: [id, workspace_id, peer_workspace_id, status]
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          format: uuid
+        workspace_id:
+          type: string
+          format: uuid
+        peer_workspace_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [pending, active, suspended, revoked, expired]
+        permissions:
+          type: array
+          items:
+            type: string
+            enum: [calendar_query, calendar_write, routing_negotiate, task_delegate, knowledge_share, status_query]
+        trust_score:
+          type: number
+        established_at:
+          type: string
+          format: date-time
+
+    FederationPeerList:
+      type: object
+      required: [items, cursor]
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/FederationPeer'
+        cursor:
+          type: string
+
+    CreateFederationPeerRequest:
+      type: object
+      required: [peer_workspace_id, requested_permissions]
+      additionalProperties: false
+      properties:
+        peer_workspace_id:
+          type: string
+          format: uuid
+        requested_permissions:
+          type: array
+          items:
+            type: string
+            enum: [calendar_query, calendar_write, routing_negotiate, task_delegate, knowledge_share, status_query]
+
+    StartNegotiationRequest:
+      type: object
+      required: [peer_id, proposed_permissions]
+      additionalProperties: false
+      properties:
+        peer_id:
+          type: string
+          format: uuid
+        proposed_permissions:
+          type: array
+          items:
+            type: string
+            enum: [calendar_query, calendar_write, routing_negotiate, task_delegate, knowledge_share, status_query]
+        expires_in_hours:
+          type: integer
+          default: 72
+
+    FederationNegotiation:
+      type: object
+      required: [id, workspace_id, peer_id, state]
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          format: uuid
+        workspace_id:
+          type: string
+          format: uuid
+        peer_id:
+          type: string
+          format: uuid
+        state:
+          type: string
+          enum: [proposed, evaluating, accepted, rejected, expired, executing, executed, failed, compensating]
+        proposed_permissions:
+          type: array
+          items:
+            type: string
+        accepted_permissions:
+          type: array
+          items:
+            type: string
+        expires_at:
+          type: string
+          format: date-time
+
+    Wallet:
+      type: object
+      required: [id, workspace_id, balance_usd, currency]
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          format: uuid
+        workspace_id:
+          type: string
+          format: uuid
+        balance_usd:
+          type: string
+        credit_limit_usd:
+          type: string
+        currency:
+          type: string
+        is_active:
+          type: boolean
+
+    WalletTransactionList:
+      type: object
+      required: [items, cursor]
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            properties:
+              id:
+                type: string
+                format: uuid
+              transaction_type:
+                type: string
+                enum: [credit, debit, refund, adjustment, rollup]
+              amount_usd:
+                type: string
+              category:
+                type: string
+              created_at:
+                type: string
+                format: date-time
+        cursor:
+          type: string
+
+    CostSummary:
+      type: object
+      required: [workspace_id, total_usd, period_start, period_end]
+      additionalProperties: false
+      properties:
+        workspace_id:
+          type: string
+          format: uuid
+        total_usd:
+          type: string
+        period_start:
+          type: string
+          format: date-time
+        period_end:
+          type: string
+          format: date-time
+        by_category:
+          type: object
+          additionalProperties:
+            type: string
+
+    CapabilityList:
+      type: object
+      required: [items]
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            properties:
+              capability_key:
+                type: string
+              version:
+                type: string
+              status:
+                type: string
+                enum: [active, deprecated, disabled, experimental]
+              required_plan_tier:
+                type: string
+
+    KillSwitchStatus:
+      type: object
+      required: [workspace_id, is_active]
+      additionalProperties: false
+      properties:
+        workspace_id:
+          type: string
+          format: uuid
+        is_active:
+          type: boolean
+        activated_at:
+          type: string
+          format: date-time
+        reason:
+          type: string
+
+    KillSwitchToggleRequest:
+      type: object
+      required: [activate, reason]
+      additionalProperties: false
+      properties:
+        activate:
+          type: boolean
+        reason:
+          type: string
+
+    InitiateCallRequest:
+      type: object
+      required: [target_number_hash, purpose]
+      additionalProperties: false
+      properties:
+        target_number_hash:
+          type: string
+        purpose:
+          type: string
+        preferred_provider:
+          type: string
+        max_duration_seconds:
+          type: integer
+          default: 1800
+
+    CallResponse:
+      type: object
+      required: [call_id, status, approval_status]
+      additionalProperties: false
+      properties:
+        call_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [pending_approval, approved, dialing, ringing, in_progress, completed, failed, cancelled]
+        approval_status:
+          type: string
+          enum: [pending, approved, denied, expired, auto_approved]
+
+    CallTranscript:
+      type: object
+      required: [call_id, segments]
+      additionalProperties: false
+      properties:
+        call_id:
+          type: string
+          format: uuid
+        segments:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            properties:
+              segment_index:
+                type: integer
+              segment_type:
+                type: string
+                enum: [agent, user, system, dtmf, silence]
+              speaker:
+                type: string
+              content:
+                type: string
+              started_at_ms:
+                type: integer
+              duration_ms:
+                type: integer
+
+    AdminLoginRequest:
+      type: object
+      required: [email, password]
+      additionalProperties: false
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+        mfa_code:
+          type: string
+
+    AdminLoginResponse:
+      type: object
+      required: [token, admin_user]
+      additionalProperties: false
+      properties:
+        token:
+          type: string
+        expires_at:
+          type: string
+          format: date-time
+        admin_user:
+          type: object
+          additionalProperties: false
+          properties:
+            id:
+              type: string
+              format: uuid
+            email:
+              type: string
+            display_name:
+              type: string
+            admin_role:
+              type: string
+
+    AdminWorkspaceList:
+      type: object
+      required: [items, cursor]
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            properties:
+              id:
+                type: string
+                format: uuid
+              name:
+                type: string
+              status:
+                type: string
+              created_at:
+                type: string
+                format: date-time
+        cursor:
+          type: string
+
+    WorkspaceHealthSnapshot:
+      type: object
+      required: [workspace_id, health_score]
+      additionalProperties: false
+      properties:
+        workspace_id:
+          type: string
+          format: uuid
+        health_score:
+          type: number
+        active_workflows:
+          type: integer
+        failed_workflows_24h:
+          type: integer
+        dlq_depth:
+          type: integer
+        avg_latency_ms:
+          type: integer
+        error_rate_pct:
+          type: number
+        cost_today_usd:
+          type: string

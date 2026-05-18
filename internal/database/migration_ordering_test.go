@@ -14,6 +14,12 @@ func TestMigrationOrderingRuleZ(t *testing.T) {
 		"003_BREVIO_v92_production_hardening.sql",
 		"004_BREVIO_ops_operational_systems.sql",
 		"006_BREVIO_v93_addendum_specification_closure.sql",
+		"008_BREVIO_v10_gap_closure.sql",
+		"009_BREVIO_v10_authorization_receipts.sql",
+		"010_BREVIO_v101_admin_intelligence.sql",
+		"011_BREVIO_v102_v103_intelligence.sql",
+		"012_BREVIO_v104_voice_calls.sql",
+		"013_BREVIO_openclaw_adoption.sql",
 	}
 
 	for _, name := range migrations {

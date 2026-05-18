@@ -1,0 +1,107 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "RequirementsGraph",
+  "type": "object",
+  "required": ["version", "generated_at", "blueprints", "requirements", "edges", "conflicts", "design_completions"],
+  "properties": {
+    "version": { "type": "string" },
+    "generated_at": { "type": "string" },
+    "blueprints": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["blueprint_id", "sha256", "path"],
+        "properties": {
+          "blueprint_id": { "type": "string" },
+          "sha256": { "type": "string" },
+          "path": { "type": "string" }
+        }
+      }
+    },
+    "requirements": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["requirement_id", "canonical_name", "subsystem", "requirement_type", "classification", "criticality", "sources", "dependencies", "acceptance_criteria", "artifact_bundle"],
+        "properties": {
+          "requirement_id": { "type": "string" },
+          "canonical_name": { "type": "string" },
+          "subsystem": { "type": "string" },
+          "requirement_type": { "type": "string" },
+          "classification": { "enum": ["MANDATORY", "MANDATORY_WITH_RECONCILIATION", "MANDATORY_WITH_DESIGN_COMPLETION", "DERIVED_REQUIRED_FOR_DEPLOYABILITY"] },
+          "criticality": { "enum": ["P0", "P1", "P2"] },
+          "sources": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["blueprint_id", "line_ids"],
+              "properties": {
+                "blueprint_id": { "type": "string" },
+                "line_ids": { "type": "array", "items": { "type": "string" } }
+              }
+            }
+          },
+          "dependencies": { "type": "array", "items": { "type": "string" } },
+          "acceptance_criteria": { "type": "array", "items": { "type": "string" } },
+          "reconciliation_note": { "type": ["string", "null"] },
+          "design_completion_note": { "type": ["string", "null"] },
+          "artifact_bundle": {
+            "type": "object",
+            "required": ["ddl", "api", "policy", "workflow", "tests", "docs", "observability", "infra"],
+            "properties": {
+              "ddl": { "type": "array", "items": { "type": "string" } },
+              "api": { "type": "array", "items": { "type": "string" } },
+              "policy": { "type": "array", "items": { "type": "string" } },
+              "workflow": { "type": "array", "items": { "type": "string" } },
+              "tests": { "type": "array", "items": { "type": "string" } },
+              "docs": { "type": "array", "items": { "type": "string" } },
+              "observability": { "type": "array", "items": { "type": "string" } },
+              "infra": { "type": "array", "items": { "type": "string" } }
+            }
+          }
+        }
+      }
+    },
+    "edges": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["from", "to", "edge_type"],
+        "properties": {
+          "from": { "type": "string" },
+          "to": { "type": "string" },
+          "edge_type": { "enum": ["depends_on", "enforces", "implements", "validates", "emits", "consumes"] }
+        }
+      }
+    },
+    "conflicts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["conflict_id", "involved", "type", "impact", "resolution", "rationale"],
+        "properties": {
+          "conflict_id": { "type": "string" },
+          "involved": { "type": "array", "items": { "type": "string" } },
+          "type": { "enum": ["blueprint_vs_blueprint", "blueprint_vs_code", "code_vs_code", "hidden_dependency", "missing_scope_assumption"] },
+          "technical_incompatibility": { "type": ["string", "null"] },
+          "impact": { "type": "string" },
+          "resolution": { "type": "string" },
+          "rationale": { "type": "string" }
+        }
+      }
+    },
+    "design_completions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["completion_id", "requirement_id", "decision", "rationale"],
+        "properties": {
+          "completion_id": { "type": "string" },
+          "requirement_id": { "type": "string" },
+          "decision": { "type": "string" },
+          "rationale": { "type": "string" }
+        }
+      }
+    }
+  }
+}

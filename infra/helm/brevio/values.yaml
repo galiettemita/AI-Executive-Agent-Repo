@@ -144,3 +144,81 @@ additionalServices:
       minReplicas: 2
       maxReplicas: 6
       targetCPUUtilizationPercentage: 70
+  browser:
+    enabled: true
+    replicaCount: 2
+    containerPort: 18090
+    servicePort: 18090
+    image:
+      repository: ghcr.io/brevio/browser
+      tag: v9.3.0
+    hpa:
+      enabled: true
+      minReplicas: 2
+      maxReplicas: 8
+      targetCPUUtilizationPercentage: 70
+  marketing:
+    enabled: true
+    replicaCount: 2
+    containerPort: 18091
+    servicePort: 18091
+    image:
+      repository: ghcr.io/brevio/marketing
+      tag: v9.3.0
+    hpa:
+      enabled: true
+      minReplicas: 2
+      maxReplicas: 6
+      targetCPUUtilizationPercentage: 70
+  agents:
+    enabled: true
+    replicaCount: 2
+    containerPort: 18092
+    servicePort: 18092
+    image:
+      repository: ghcr.io/brevio/agents
+      tag: v9.3.0
+    hpa:
+      enabled: true
+      minReplicas: 2
+      maxReplicas: 10
+      targetCPUUtilizationPercentage: 70
+  memory-svc:
+    enabled: true
+    replicaCount: 2
+    containerPort: 18093
+    servicePort: 18093
+    image:
+      repository: ghcr.io/brevio/memory
+      tag: v9.3.0
+    hpa:
+      enabled: true
+      minReplicas: 2
+      maxReplicas: 6
+      targetCPUUtilizationPercentage: 70
+  router:
+    enabled: true
+    replicaCount: 2
+    containerPort: 18094
+    servicePort: 18094
+    image:
+      repository: ghcr.io/brevio/router
+      tag: v9.3.0
+    hpa:
+      enabled: true
+      minReplicas: 2
+      maxReplicas: 6
+      targetCPUUtilizationPercentage: 70
+  cron:
+    enabled: true
+    replicaCount: 1
+    containerPort: 18095
+    servicePort: 18095
+    image:
+      repository: ghcr.io/brevio/cron
+      tag: v9.3.0
+    hpa:
+      enabled: true
+      minReplicas: 1
+      maxReplicas: 3
+      targetCPUUtilizationPercentage: 70

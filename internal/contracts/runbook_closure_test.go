@@ -50,6 +50,22 @@ func TestRunbookClosure(t *testing.T) {
 		})
 	}
 
+	// V10 runbooks — kill switch, calls, billing, brain ingress.
+	v10Tokens := map[string]string{
+		"RB-V10-001.md": "Kill Switch",
+		"RB-V10-002.md": "Outbound Call",
+		"RB-V10-003.md": "Billing",
+		"RB-V10-004.md": "Brain Ingress",
+	}
+	for name, token := range v10Tokens {
+		path := filepath.Join(root, "runbooks", name)
+		assertFileNonEmpty(t, path)
+		content := readRunbook(t, path)
+		if !strings.Contains(content, token) {
+			t.Fatalf("v10 runbook missing token %q in %s", token, name)
+		}
+	}
+
 	v92TriggerTokens := map[string]string{
 		"RB-V92-001.md": "more than 10%",
 		"RB-V92-002.md": "BREVIO.tool_health.quarantined.v1",
@@ -71,12 +87,15 @@ func TestRunbookClosure(t *testing.T) {
 }
 
 func expectedRunbookNames() []string {
-	names := make([]string, 0, 18)
+	names := make([]string, 0, 22)
 	for i := 1; i <= 9; i++ {
 		names = append(names, fmt.Sprintf("RB-%03d.md", i))
 	}
 	for i := 1; i <= 9; i++ {
 		names = append(names, fmt.Sprintf("RB-V92-%03d.md", i))
+	}
+	for i := 1; i <= 4; i++ {
+		names = append(names, fmt.Sprintf("RB-V10-%03d.md", i))
 	}
 	return names
 }

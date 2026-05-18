@@ -1,6 +1,7 @@
 package runtime
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"net/url"
@@ -17,10 +18,19 @@ const (
 
 type DialTimeoutFunc func(network, address string, timeout time.Duration) (net.Conn, error)
 
+// RedisPinger validates Redis connectivity beyond TCP dial.
+// Implementations should issue a PING command and return nil on PONG.
+type RedisPinger interface {
+	Ping(ctx context.Context) error
+}
+
 type DeepHealthProbeOptions struct {
 	Getenv      func(string) string
 	DialTimeout DialTimeoutFunc
 	Timeout     time.Duration
+	// RedisPinger, when set, is used instead of TCP dial for the Redis check.
+	// This allows deep health to validate Redis at the protocol level (PING/PONG).
+	RedisPinger RedisPinger
 }
 
 type dependencyTarget struct {
@@ -67,6 +77,19 @@ func DeepDependencyChecksWithOptions(options DeepHealthProbeOptions) map[string]
 		raw := strings.TrimSpace(options.Getenv(target.envKey))
 		if raw == "" {
 			checks[checkKey] = DependencyStatusNotConfigured
+			continue
+		}
+
+		// Redis: use protocol-level PING when a RedisPinger is available.
+		if checkKey == "redis" && options.RedisPinger != nil {
+			ctx, cancel := context.WithTimeout(context.Background(), options.Timeout)
+			err := options.RedisPinger.Ping(ctx)
+			cancel()
+			if err != nil {
+				checks[checkKey] = DependencyStatusUnreachable
+			} else {
+				checks[checkKey] = DependencyStatusOK
+			}
 			continue
 		}
 

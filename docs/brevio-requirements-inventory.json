@@ -1,0 +1,1400 @@
+{
+  "_meta": {
+    "title": "BREVIO Normalized Requirements Inventory",
+    "generated": "2026-03-07",
+    "source_files": 17,
+    "blueprint_versions": ["V9", "V9.1", "V9.2", "V10", "V10.1", "V10.2", "V10.3", "V10.4"],
+    "authority_hierarchy": [
+      "V9 Consolidated Master Blueprint (HIGHEST)",
+      "V9.1 Soft Intelligence Layer",
+      "V9.2 Production Hardening",
+      "OpenClaw Skills Integration v1.0",
+      "Missing Categories Addendum (42 skills)",
+      "V10 Gap-Closure Blueprint",
+      "V10.1 Admin Intelligence Addendum",
+      "V10.2 Intelligence & Performance Addendum",
+      "V10.3 Cognitive Intelligence Addendum",
+      "V10.4 Voice & Calling Blueprint"
+    ]
+  },
+
+  "non_negotiable_rules": {
+    "V9": {
+      "NNR-001": "Schema closure: every identifier referenced is defined exactly once with type/nullability/default/validation/index/ownership/migration",
+      "NNR-002": "Only Control service may authorize any side effect. Brain PROPOSES, never executes",
+      "NNR-003": "Two-phase simulate->commit for every write-capable tool",
+      "NNR-004": "RLS enabled on ALL tables with workspace_id scoping via app.workspace_id",
+      "NNR-005": "Deterministic reasoning: temperature=0, top_p=1, lexical tool ordering",
+      "NNR-006": "All async operations run on Temporal. No goroutines, no cron, no background threads",
+      "NNR-007": "All event emissions via transactional outbox pattern",
+      "NNR-008": "Forward-only migrations. No down migrations",
+      "NNR-009": "Deterministic jitter: jitter_ms = fnv1a_hash(workflow_run_id + attempt) % max_jitter"
+    },
+    "V9.1": {
+      "NNR-V91-001": "All V9.1 tables additive; no V9 table modifications",
+      "NNR-V91-002": "Lesson activation requires explicit operator confirmation",
+      "NNR-V91-003": "Trust promotion requires trust_score>=0.85 AND success_count_30d>=20",
+      "NNR-V91-004": "AI self-modification of workspace_personas/behavior_policies/learning_config DENY by default"
+    },
+    "V9.2": {
+      "NNR-V92-001": "Guardrails runtime wraps every LLM call. No unguarded model invocation",
+      "NNR-V92-002": "Context budget mandatory for every LLM request. No unbounded context assembly",
+      "NNR-V92-003": "RAG retrievals logged with latency, relevance scores, chunk provenance",
+      "NNR-V92-004": "Feature flags gate all V9.2 capabilities",
+      "NNR-V92-005": "Multi-turn sessions expire after configurable idle timeout",
+      "NNR-V92-006": "Temporal reasoning uses UTC internally; user-facing times via workspace timezone",
+      "NNR-V92-007": "Admin backend requires AdminJWT. No admin operation without auth + audit",
+      "NNR-V92-008": "Streaming responses first byte within 500ms",
+      "NNR-V92-009": "Tool health scores computed continuously. Auto-quarantine non-overridable without admin",
+      "NNR-V92-010": "Event schema changes pass compatibility check before deploy",
+      "NNR-V92-011": "CRDT vector clocks mandatory for multi-device workspace memory writes",
+      "NNR-V92-012": "All V9.2 tables workspace-scoped with RLS. No exceptions"
+    },
+    "V10": {
+      "NNR-V10-001": "V9 architectural patterns WIN all conflicts between source documents",
+      "NNR-V10-002": "All cost values stored as NUMERIC(18,8) in USD",
+      "NNR-V10-003": "All new tables: UUIDv7 PKs, workspace_id RLS scope, forward-only migrations"
+    },
+    "V10.1": {
+      "NNR-101": "V10 architectural patterns authoritative. Extends, never modifies",
+      "NNR-102": "All new tables: UUIDv7 PKs, workspace_id RLS, migration 004_brevio_v101_admin_intelligence.sql",
+      "NNR-103": "Cost values NUMERIC(18,8) USD. Integer cents never used for LLM costs",
+      "NNR-104": "Cost writes async via outbox. 0ms latency added to hot path",
+      "NNR-105": "All dashboards read from materialized views, never raw tables"
+    },
+    "V10.4": {
+      "NNR-V104-001": "Every outbound call requires explicit user approval",
+      "NNR-V104-002": "Full transcript delivered on completion",
+      "NNR-V104-003": "End-to-end voice latency target <900ms"
+    }
+  },
+
+  "database_tables": {
+    "V9_core": {
+      "migration_file": "001_brevio_v9_init.sql",
+      "estimated_tables": "90+",
+      "critical_tables": [
+        {
+          "name": "workspaces",
+          "purpose": "Workspace-scoped RLS mandatory on ALL tables",
+          "key_columns": ["id:uuid", "workspace_id:uuid"]
+        },
+        {
+          "name": "users",
+          "purpose": "User accounts",
+          "key_columns": ["id:uuid", "workspace_id:uuid"]
+        },
+        {
+          "name": "user_channels",
+          "purpose": "WhatsApp/iMessage channel links",
+          "key_columns": ["id:uuid", "workspace_id:uuid", "channel_type:text"]
+        },
+        {
+          "name": "ingress_turns",
+          "purpose": "Every inbound message logged",
+          "key_columns": ["id:uuid", "workspace_id:uuid", "raw_body:text"]
+        },
+        {
+          "name": "tool_executions",
+          "purpose": "Two-phase commit log (simulate+commit rows for every tool call)",
+          "key_columns": ["id:uuid", "workspace_id:uuid", "phase:text", "tool_key:text", "idem_key:text"]
+        },
+        {
+          "name": "execution_gate_decisions",
+          "purpose": "Every OPA PDP decision recorded",
+          "key_columns": ["id:uuid", "workspace_id:uuid", "policy_checks_json:jsonb"]
+        },
+        {
+          "name": "trust_receipts",
+          "purpose": "Cryptographic receipt for every committed tool execution",
+          "key_columns": ["id:uuid", "workspace_id:uuid", "receipt_hash:text"]
+        },
+        {
+          "name": "audit_log_entries",
+          "purpose": "Append-only, hash-chain HMAC. DB trigger prevents UPDATE/DELETE",
+          "key_columns": ["id:uuid", "workspace_id:uuid", "event:text", "hmac:text"]
+        },
+        {
+          "name": "outbox_items",
+          "purpose": "Transactional outbox for all event emissions",
+          "key_columns": ["id:uuid", "workspace_id:uuid", "event_type:text", "payload:jsonb"]
+        },
+        {
+          "name": "prompt_versions",
+          "purpose": "All prompts versioned; shadow eval mandatory before promotion",
+          "key_columns": ["id:uuid", "prompt_key:text", "version:int", "template:text"]
+        },
+        {
+          "name": "key_versions",
+          "purpose": "KMS key rotation tracking; dual-key read window >=10 min",
+          "key_columns": ["id:uuid", "key_purpose:text", "version:int"]
+        },
+        {
+          "name": "schema_migrations",
+          "purpose": "Forward-only migration tracking",
+          "key_columns": ["version:int", "applied_at:timestamptz"]
+        },
+        {
+          "name": "connectors",
+          "purpose": "Registered tool connectors",
+          "key_columns": ["id:uuid", "workspace_id:uuid", "connector_key:text"]
+        },
+        {
+          "name": "skills_registry",
+          "purpose": "153 skills with deployment mode, retry policy, circuit breaker config",
+          "key_columns": ["id:uuid", "skill_id:text", "plane:text", "deployment_mode:text", "enabled:boolean"]
+        },
+        {
+          "name": "memory_items",
+          "purpose": "Five-modality memory: episodic, semantic, procedural, goal-oriented, relational",
+          "key_columns": ["id:uuid", "workspace_id:uuid", "memory_type:text", "content:text", "embedding:vector"],
+          "v10_2_added_columns": ["relevance_score:decimal(4,3)", "access_count:int", "last_accessed_at:timestamptz", "decay_enabled:boolean", "archive_threshold:decimal(4,3)", "archived_at:timestamptz"]
+        },
+        {
+          "name": "workspace_personas",
+          "purpose": "Agent personality and communication style config",
+          "key_columns": ["id:uuid", "workspace_id:uuid"]
+        },
+        {
+          "name": "knowledge_files",
+          "purpose": "SOUL.md and USER.md behavioral knowledge files",
+          "key_columns": ["id:uuid", "workspace_id:uuid", "file_type:text", "content:text"]
+        },
+        {
+          "name": "oauth_tokens",
+          "purpose": "AES-256-GCM envelope encrypted OAuth tokens",
+          "key_columns": ["id:uuid", "workspace_id:uuid", "ciphertext:bytea", "nonce:bytea", "key_version:int"]
+        }
+      ]
+    },
+
+    "V9.1_soft_intelligence": {
+      "migration_file": "002_brevio_v91_soft_intelligence.sql",
+      "table_count": 23,
+      "tables": [
+        {
+          "name": "goal_items",
+          "purpose": "Temporal goal tracking",
+          "key_columns": ["id:uuid", "workspace_id:uuid", "title:text", "target_date:date", "status:goal_status"]
+        },
+        {
+          "name": "goal_milestones",
+          "purpose": "Goal milestone tracking",
+          "key_columns": ["id:uuid", "goal_id:uuid", "title:text"]
+        },
+        {
+          "name": "goal_progress_logs",
+          "purpose": "Progress events on goals",
+          "key_columns": ["id:uuid", "goal_id:uuid", "progress_pct:numeric"]
+        },
+        {
+          "name": "autonomy_trust_scores",
+          "purpose": "Deterministic trust formula; promotion threshold >=0.85",
+          "key_columns": ["id:uuid", "workspace_id:uuid", "domain:text", "trust_score:numeric", "autonomy_level:text"],
+          "v10_2_added_columns": ["demotion_incident_threshold:decimal(3,2)", "demotion_drift_days:int", "last_demotion_at:timestamptz", "demotion_reason:text", "demotion_count_90d:int"]
+        },
+        {
+          "name": "interaction_feedback",
+          "purpose": "Per-interaction feedback for learning pipeline",
+          "key_columns": ["id:uuid", "workspace_id:uuid", "ingress_turn_id:uuid", "feedback_type:text"]
+        },
+        {
+          "name": "learned_lessons",
+          "purpose": "Activated rules derived from feedback, requires operator confirmation",
+          "key_columns": ["id:uuid", "workspace_id:uuid", "topic:text", "rule:text", "status:lesson_status"]
+        },
+        {
+          "name": "daily_captures",
+          "purpose": "UNIQUE(workspace_id, capture_date); links to memory_items",
+          "key_columns": ["id:uuid", "workspace_id:uuid", "capture_date:date"]
+        },
+        {
+          "name": "technical_debt_items",
+          "purpose": "Cross-repo debt tracking",
+          "key_columns": ["id:uuid", "workspace_id:uuid", "title:text", "severity:text"]
+        },
+        {
+          "name": "debt_resolution_tasks",
+          "purpose": "Tasks to resolve technical debt",
+          "key_columns": ["id:uuid", "debt_item_id:uuid"]
+        },
+        {
+          "name": "self_modification_policies",
+          "purpose": "DENY by default for AI self-modification",
+          "key_columns": ["id:uuid", "workspace_id:uuid", "target_table:text", "action:text"]
+        },
+        {
+          "name": "mission_control_config",
+          "purpose": "Mission control dashboard configuration",
+          "key_columns": ["id:uuid", "workspace_id:uuid"]
+        },
+        {
+          "name": "mission_control_widgets",
+          "purpose": "Dashboard widget definitions",
+          "key_columns": ["id:uuid", "config_id:uuid", "widget_type:text"]
+        },
+        {
+          "name": "capability_recommendations",
+          "purpose": "Proactive capability recommendation engine",
+          "key_columns": ["id:uuid", "workspace_id:uuid", "skill_id:text"]
+        },
+        {
+          "name": "exploration_history",
+          "purpose": "Capability exploration tracking",
+          "key_columns": ["id:uuid", "workspace_id:uuid"]
+        },
+        {
+          "name": "project_templates",
+          "purpose": "Template generation from repo pattern analysis",
+          "key_columns": ["id:uuid", "workspace_id:uuid", "template_name:text"]
+        },
+        {
+          "name": "introspection_templates",
+          "purpose": "Templates for daily introspection",
+          "key_columns": ["id:uuid", "workspace_id:uuid"]
+        },
+        {
+          "name": "behavior_policies",
+          "purpose": "Agent behavior policies",
+          "key_columns": ["id:uuid", "workspace_id:uuid"]
+        },
+        {
+          "name": "learning_config",
+          "purpose": "Learning pipeline configuration",
+          "key_columns": ["id:uuid", "workspace_id:uuid"]
+        },
+        {
+          "name": "emotional_state_log",
+          "purpose": "EQ signal detection log",
+          "key_columns": ["id:uuid", "workspace_id:uuid", "detected_state:text"]
+        }
+      ]
+    },
+
+    "V9.2_production_hardening": {
+      "migration_file": "003_brevio_v92_production_hardening.sql",
+      "table_count": 47,
+      "tables": [
+        "context_budgets", "context_budget_allocations", "context_budget_audit",
+        "rag_collections", "rag_chunks", "rag_retrievals", "rag_reranker_config",
+        "conversation_sessions", "session_entities", "session_intents",
+        "temporal_reasoning_config", "temporal_constraints", "travel_time_cache",
+        "guardrails_config", "guardrails_rule_sets", "guardrails_events",
+        "tool_health_scores", "tool_quarantine_rules", "tool_health_events",
+        "feature_flags", "feature_flag_rules", "feature_flag_evaluations",
+        "memory_vector_clocks", "memory_conflict_log",
+        "latency_budgets", "streaming_config",
+        "error_taxonomy", "error_templates",
+        "event_schema_registry", "event_schema_versions",
+        "compliance_frameworks", "compliance_evidence", "compliance_dsr_requests",
+        "cache_policies", "cache_audit_log",
+        "model_tier_policies", "model_tier_overrides",
+        "react_execution_policies",
+        "pii_encryption_policies", "mcp_sandbox_profiles",
+        "constrained_decoding_config",
+        "admin_dashboard_config", "admin_saved_views", "admin_alert_rules", "admin_alert_channels"
+      ],
+      "detailed_schemas_available": true,
+      "key_tables_with_full_ddl": {
+        "context_budgets": {
+          "columns": ["id:uuid PK", "workspace_id:uuid FK", "model_tier:model_tier_id", "total_budget_tokens:int CHECK 1024..200000", "system_prompt_pct:numeric(4,2)", "memory_pct:numeric(4,2)", "rag_pct:numeric(4,2)", "conversation_history_pct:numeric(4,2)", "tool_results_pct:numeric(4,2)", "learned_lessons_pct:numeric(4,2)", "active_goals_pct:numeric(4,2)", "overflow_strategy:text", "expansion_enabled:boolean", "expansion_max_pct:numeric(4,2)"],
+          "constraints": "UNIQUE(workspace_id, model_tier). Percentages must sum to 100.00",
+          "v10_2_added": "selection_config:jsonb"
+        },
+        "rag_collections": {
+          "columns": ["id:uuid PK", "workspace_id:uuid FK", "name:text", "source_type:rag_source_type", "chunk_strategy:rag_chunk_strategy", "chunk_size_tokens:int", "chunk_overlap_tokens:int", "embedding_model:text DEFAULT 'text-embedding-3-small'", "embedding_dimensions:int DEFAULT 1536", "search_mode:rag_search_mode DEFAULT 'hybrid'", "hybrid_alpha:numeric(3,2) DEFAULT 0.70", "reranker_enabled:boolean DEFAULT true", "reranker_model:text", "reranker_top_k:int DEFAULT 5", "retrieval_top_k:int DEFAULT 20"],
+          "v10_2_added": ["temporal_config:jsonb", "chunking_strategy_config:jsonb"]
+        },
+        "rag_chunks": {
+          "columns": ["id:uuid PK", "workspace_id:uuid FK", "collection_id:uuid FK", "source_uri:text", "content:text", "content_hash:text SHA-256", "embedding:vector", "bm25_tokens:tsvector", "token_count:int", "chunk_index:int", "metadata_json:jsonb", "data_class:text", "sensitivity_label:text"],
+          "indexes": ["GIN on bm25_tokens", "HNSW on embedding", "UNIQUE(workspace_id, collection_id, content_hash)"],
+          "v10_2_added": ["temporal_relevance_score", "temporal_lambda"]
+        },
+        "conversation_sessions": {
+          "columns": ["id:uuid PK", "workspace_id:uuid FK", "user_channel_id:uuid FK", "state:session_state", "idle_timeout_seconds:int DEFAULT 1800", "turn_ids:uuid[]", "turn_count:int", "active_intent_json:jsonb", "resolved_entities_json:jsonb", "task_context_json:jsonb", "summary_text:text"]
+        },
+        "guardrails_config": {
+          "columns": ["id:uuid PK", "workspace_id:uuid FK UNIQUE", "enabled:boolean", "input_rails_enabled:boolean", "output_rails_enabled:boolean", "dialog_rails_enabled:boolean", "retrieval_rails_enabled:boolean", "execution_rails_enabled:boolean", "jailbreak_detection_enabled:boolean", "hallucination_check_enabled:boolean", "pii_redaction_enabled:boolean", "topic_control_enabled:boolean", "allowed_topics_json:jsonb", "max_rail_latency_ms:int DEFAULT 200", "fail_open:boolean DEFAULT false"]
+        },
+        "tool_health_scores": {
+          "columns": ["id:uuid PK", "workspace_id:uuid FK", "tool_key:text", "health_status:tool_health_status", "health_score:numeric(5,4)", "error_rate_1h:numeric(5,4)", "error_rate_24h:numeric(5,4)", "p50_latency_ms:int", "p95_latency_ms:int", "p99_latency_ms:int", "timeout_rate_1h:numeric(5,4)", "schema_validity_rate:numeric(5,4)", "avg_cost_per_call:numeric(10,6)"],
+          "formula": "health_score = (1-error_rate_1h)*0.4 + (1-timeout_rate_1h)*0.2 + schema_validity_rate*0.2 + latency_score*0.2"
+        },
+        "temporal_reasoning_config": {
+          "columns": ["id:uuid PK", "workspace_id:uuid FK UNIQUE", "home_timezone:text IANA", "business_hours_start:time DEFAULT '09:00'", "business_hours_end:time DEFAULT '17:00'", "business_days:int[] DEFAULT '{1,2,3,4,5}'", "default_meeting_duration_min:int DEFAULT 30", "default_buffer_minutes:int DEFAULT 10", "travel_time_enabled:boolean DEFAULT true", "quiet_hours_start:time", "quiet_hours_end:time"]
+        }
+      }
+    },
+
+    "V10_gap_closure": {
+      "migration_files": ["004-015 (V10 phases)"],
+      "new_tables_include": [
+        "multimodal_attachments", "attachment_analysis_results",
+        "agent_federations", "federation_permissions", "federation_audit_log",
+        "fast_path_precomputed", "fast_path_route_patterns",
+        "eq_signals", "communication_profiles",
+        "wallet_accounts", "wallet_transactions", "wallet_limits",
+        "onboarding_flows", "onboarding_steps", "onboarding_responses",
+        "billing_plans", "billing_subscriptions", "billing_invoices",
+        "imessage_bridge_config",
+        "experiment_definitions", "experiment_variants", "experiment_assignments"
+      ],
+      "key_new_schemas": {
+        "wallet_accounts": {
+          "purpose": "Per-workspace spending wallet for tool usage",
+          "columns": ["id:uuid", "workspace_id:uuid", "balance_cents:bigint", "daily_limit_cents:bigint", "monthly_limit_cents:bigint", "hard_block_cents:bigint", "is_active:boolean"]
+        },
+        "agent_federations": {
+          "purpose": "Inter-workspace agent delegation",
+          "columns": ["id:uuid", "source_workspace_id:uuid", "target_workspace_id:uuid", "permissions_granted:text[]", "status:federation_status"],
+          "privacy_invariant": "Raw memory items and conversation content CANNOT cross federation boundary"
+        },
+        "fast_path_precomputed": {
+          "purpose": "Precomputed answers for high-confidence pattern matches (<500ms)",
+          "columns": ["id:uuid", "workspace_id:uuid", "pattern_hash:text", "answer:text", "valid_until:timestamptz"]
+        }
+      }
+    },
+
+    "V10.1_admin_intelligence": {
+      "migration_file": "004_brevio_v101_admin_intelligence.sql",
+      "gaps_closed": 12,
+      "new_tables": [
+        {
+          "name": "llm_cost_ledger",
+          "purpose": "Token-level LLM cost attribution",
+          "key_columns": ["id:uuid", "workspace_id:uuid", "model_id:text", "input_tokens:int", "output_tokens:int", "cost_usd:numeric(18,8)"]
+        },
+        {
+          "name": "operator_margins",
+          "purpose": "Operator margin and business P&L",
+          "key_columns": ["id:uuid", "workspace_id:uuid", "revenue_usd:numeric(18,8)", "cost_usd:numeric(18,8)", "margin_pct:numeric(5,2)"]
+        },
+        {
+          "name": "mrr_snapshots",
+          "purpose": "MRR/ARR revenue operations tracking",
+          "key_columns": ["id:uuid", "snapshot_date:date", "mrr_usd:numeric(18,8)"]
+        },
+        {
+          "name": "user_retention_cohorts",
+          "purpose": "User retention cohort analysis",
+          "key_columns": ["id:uuid", "cohort_month:date", "retained_count:int"]
+        },
+        {
+          "name": "agent_kill_switches",
+          "purpose": "Per-user agent kill switch",
+          "key_columns": ["id:uuid", "user_id:uuid", "scope:text", "expires_at:timestamptz"]
+        },
+        {
+          "name": "skill_acls",
+          "purpose": "Skill-level ACL per user",
+          "key_columns": ["id:uuid", "user_id:uuid", "skill_id:text", "allowed:boolean"]
+        },
+        {
+          "name": "oauth_token_expiry_tracking",
+          "purpose": "OAuth token expiry proactive tracking",
+          "key_columns": ["id:uuid", "workspace_id:uuid", "provider:text", "expires_at:timestamptz"]
+        },
+        {
+          "name": "behavioral_risk_scores",
+          "purpose": "Behavioral risk scoring per user",
+          "key_columns": ["id:uuid", "user_id:uuid", "risk_score:numeric(4,3)", "risk_factors_json:jsonb"]
+        },
+        {
+          "name": "agent_action_replays",
+          "purpose": "Agent action replay for debugging",
+          "key_columns": ["id:uuid", "workspace_id:uuid", "turn_id:uuid", "replay_data_json:jsonb"]
+        },
+        {
+          "name": "tool_mttr_tracking",
+          "purpose": "Mean time to recovery per tool",
+          "key_columns": ["id:uuid", "tool_key:text", "incident_start:timestamptz", "recovery_at:timestamptz", "mttr_seconds:int"]
+        },
+        {
+          "name": "feature_adoption_heatmap",
+          "purpose": "Feature adoption tracking",
+          "key_columns": ["id:uuid", "feature_key:text", "adoption_count:int", "period:date"]
+        },
+        {
+          "name": "connector_cost_attribution",
+          "purpose": "Cost attribution per connector/service",
+          "key_columns": ["id:uuid", "connector_key:text", "cost_usd:numeric(18,8)", "period:date"]
+        }
+      ]
+    },
+
+    "V10.2_intelligence_performance": {
+      "new_tables": [
+        "eq_response_strategy_matrix",
+        "confidence_calibration_config",
+        "lesson_conflict_resolutions",
+        "world_model_cache",
+        "keyword_routing_rules"
+      ],
+      "extended_tables": {
+        "memory_items": ["relevance_score", "access_count", "last_accessed_at", "decay_enabled", "archive_threshold", "archived_at"],
+        "autonomy_trust_scores": ["demotion_incident_threshold", "demotion_drift_days", "last_demotion_at", "demotion_reason", "demotion_count_90d"],
+        "context_budgets": ["selection_config:jsonb"],
+        "rag_chunks": ["temporal_relevance_score", "temporal_lambda"],
+        "rag_collections": ["temporal_config:jsonb", "chunking_strategy_config:jsonb"]
+      }
+    },
+
+    "V10.3_cognitive_intelligence": {
+      "new_tables_count": 8,
+      "new_tables": [
+        "system1_heuristics",
+        "thought_graphs",
+        "thought_nodes",
+        "thought_edges",
+        "self_consistency_samples",
+        "belief_states",
+        "prospective_memory_triggers",
+        "meta_cognitive_monitors"
+      ],
+      "new_columns_on_existing": 16,
+      "cognitive_modules": [
+        "COG-01: Dual-Process Architecture (System 1 heuristics)",
+        "COG-02: Graph-of-Thought Reasoning (branching/merging thought nodes)",
+        "COG-03: Self-Consistency Sampling (multiple reasoning paths, majority vote)",
+        "COG-04: Belief State Tracking (probabilistic beliefs under uncertainty)",
+        "COG-05: Analogical Reasoning (cross-domain pattern matching)",
+        "COG-06: Theory of Mind (modeling user knowledge state)",
+        "COG-07: Prospective Memory (future intention triggers)",
+        "COG-08: Memory Consolidation (sleep-like memory integration)",
+        "COG-09: Constitutional Preference Learning (learning from preferences not just corrections)",
+        "COG-10: Meta-Cognition (monitoring own reasoning quality)",
+        "COG-11: Explanation Generation (causal explanations for actions)",
+        "COG-12: Attention Allocation (dynamic focus on most relevant context)"
+      ]
+    },
+
+    "V10.4_voice_calling": {
+      "migration_files": ["016_brevio_v104_outbound.sql", "017_brevio_v104_voice.sql"],
+      "new_tables_count": 9,
+      "outbound_call_tables": [
+        "outbound_call_requests",
+        "outbound_call_sessions",
+        "outbound_call_transcripts",
+        "call_objective_templates",
+        "call_approval_tokens",
+        "call_provider_config"
+      ],
+      "voice_session_tables": [
+        "voice_sessions",
+        "voice_session_segments",
+        "voice_provider_config"
+      ]
+    },
+
+    "openclaw_addendum_tables": {
+      "source": "brevio-blueprint-addendum.docx + brevio_openclaw_blueprint_v1.0.1_unified.docx",
+      "tables": [
+        "browser_sessions", "browser_actions", "browser_results",
+        "agent_councils", "agent_council_members", "agent_council_votes",
+        "agent_spawn_log",
+        "memory_collections", "memory_embeddings",
+        "smart_router_config", "router_model_selection_log",
+        "cron_jobs", "cron_executions", "cron_job_dependencies",
+        "social_accounts", "social_posts", "social_analytics",
+        "plugin_registry", "plugin_hook_registrations", "plugin_hook_executions",
+        "dm_policies", "dm_allowlist", "dm_message_log",
+        "token_budgets", "token_usage_log",
+        "session_state_snapshots",
+        "knowledge_base_documents", "knowledge_base_chunks"
+      ]
+    }
+  },
+
+  "enums": {
+    "V9_core": [
+      "channel_type: whatsapp, imessage, web, api",
+      "message_direction: inbound, outbound",
+      "tool_execution_phase: simulate, commit",
+      "data_classification: PUBLIC, INTERNAL, CONFIDENTIAL, RESTRICTED, PRIVATE",
+      "risk_level: low, medium, high, critical",
+      "rbac_role: owner, admin, delegate, auditor, operator"
+    ],
+    "V9.1": [
+      "goal_status: active, paused, completed, abandoned",
+      "lesson_status: proposed, confirmed, active, deprecated",
+      "autonomy_level: none, low, medium, high, full",
+      "feedback_type: positive, negative, correction, suggestion",
+      "eq_state_enum: neutral, positive, stressed, frustrated, confused, rushed",
+      "communication_style_enum: concise, detailed, contextual"
+    ],
+    "V9.2_count": 34,
+    "V9.2_enums": [
+      "guardrail_type: input_rail, dialog_rail, retrieval_rail, execution_rail, output_rail",
+      "guardrail_action: allow, block, redact, warn, escalate",
+      "guardrail_severity: info, warning, critical, block",
+      "schema_compat_mode: backward, forward, full, none",
+      "schema_status: draft, active, deprecated, archived",
+      "compliance_framework_type: soc2, gdpr, ccpa, hipaa",
+      "evidence_collection_method: automatic, manual, hybrid",
+      "dsr_type: access, deletion, portability, rectification, opt_out",
+      "dsr_status: received, verified, processing, completed, denied",
+      "streaming_mode: disabled, progressive, full_stream",
+      "error_severity_ux: info, warning, recoverable_error, blocking_error",
+      "error_audience: end_user, operator, admin, developer",
+      "tool_health_status: healthy, degraded, unhealthy, quarantined, recovering",
+      "cache_layer: prompt_embedding, tool_result, compiled_context",
+      "cache_invalidation_trigger: ttl_expired, dependency_changed, manual, schema_update",
+      "model_tier_id: T0_trivial, T1_simple, T2_standard, T3_complex, T4_expert",
+      "tier_override_reason: user_request, complexity_threshold, fallback, admin_override",
+      "early_exit_signal: confidence_sufficient, user_interrupt, budget_exhausted, loop_detected, max_steps_reached, tool_failure_cascade",
+      "rag_chunk_strategy: fixed_size, semantic, sentence, paragraph, recursive_split",
+      "rag_search_mode: dense, sparse, hybrid",
+      "rag_source_type: email, document, calendar, web, memory, conversation",
+      "feature_flag_status: active, archived, killed",
+      "flag_evaluation_context: user, workspace, global, percentage",
+      "conflict_resolution_strategy: last_writer_wins, crdt_merge, manual_resolve, highest_confidence",
+      "context_source_type: system_prompt, memory, rag_chunks, conversation_history, tool_results, learned_lessons, active_goals",
+      "session_state: active, idle, expired, closed",
+      "coreference_type: pronoun, ellipsis, definite_reference, temporal_reference",
+      "temporal_expression_type: absolute, relative, recurring, duration, range",
+      "scheduling_conflict_type: overlap, travel_time, buffer_violation, quiet_hours, back_to_back",
+      "admin_resource_type: user, workspace, tool, workflow, model, flag, alert",
+      "alert_channel_type: email, slack_webhook, pagerduty, custom_webhook",
+      "alert_severity: info, warning, critical, emergency",
+      "pii_field_type: name, email, phone, address, ssn, financial, health, custom",
+      "sandbox_isolation_level: shared, namespace, network, full"
+    ]
+  },
+
+  "api_endpoints": {
+    "total_estimated": "200+",
+    "auth_types": ["UserJWT", "AdminJWT", "mTLS (internal)"],
+    "V9_core_mandatory": [
+      "GET /healthz/ready",
+      "GET /healthz/live",
+      "POST /v1/webhooks/whatsapp",
+      "POST /v1/capabilities/resolve",
+      "POST /v1/provision/start",
+      "GET/PUT /v1/knowledge-files/{file_type}"
+    ],
+    "V9.1_endpoints_count": 32,
+    "V9.1_key_endpoints": [
+      "GET/POST /v1/goals",
+      "GET/PUT /v1/goals/{id}",
+      "GET /v1/autonomy/{domain}",
+      "POST /v1/autonomy/{domain}/demote",
+      "GET /v1/trust-scores",
+      "GET/POST /v1/learned-lessons",
+      "GET /v1/daily-captures",
+      "POST /v1/feedback",
+      "GET /v1/mission-control",
+      "GET/PUT /v1/exploration/recommendations",
+      "POST /v1/code-context/export"
+    ],
+    "V9.2_endpoints_count": 67,
+    "V9.2_endpoints": [
+      "GET/PUT /v1/context/budget",
+      "GET /v1/context/allocation/{turn_id}",
+      "GET/POST /v1/rag/collections",
+      "GET/PUT/DELETE /v1/rag/collections/{id}",
+      "POST /v1/rag/collections/{id}/ingest",
+      "POST /v1/rag/search",
+      "GET /v1/rag/retrievals/{turn_id}",
+      "GET /v1/rag/eval/scores",
+      "GET /v1/sessions/active",
+      "GET /v1/sessions/{id}",
+      "GET /v1/sessions/{id}/entities",
+      "GET/PUT /v1/temporal/config",
+      "GET/POST /v1/temporal/constraints",
+      "PUT/DELETE /v1/temporal/constraints/{id}",
+      "POST /v1/temporal/resolve",
+      "POST /v1/temporal/conflicts",
+      "POST /v1/temporal/travel-time",
+      "GET/PUT /v1/guardrails/config",
+      "GET/POST /v1/guardrails/rule-sets",
+      "PUT/DELETE /v1/guardrails/rule-sets/{id}",
+      "GET /v1/guardrails/events",
+      "GET /v1/tools/health",
+      "GET /v1/tools/health/{tool_key}",
+      "POST /v1/tools/quarantine/{tool_key}/override",
+      "GET/POST /v1/tools/quarantine/rules",
+      "GET/POST /v1/flags",
+      "GET/PUT/DELETE /v1/flags/{key}",
+      "POST /v1/flags/{key}/evaluate",
+      "GET/POST /v1/flags/{key}/rules",
+      "GET/PUT /v1/streaming/config",
+      "GET /v1/errors/taxonomy",
+      "GET/POST /v1/errors/templates",
+      "GET/POST /v1/compliance/frameworks",
+      "GET /v1/compliance/evidence",
+      "GET/POST /v1/compliance/dsr",
+      "GET/PUT /v1/compliance/dsr/{id}",
+      "GET/POST /v1/cache/policies",
+      "GET /v1/cache/stats",
+      "POST /v1/cache/invalidate",
+      "GET/POST /v1/model-tiers/policies",
+      "GET /v1/model-tiers/overrides",
+      "GET /v1/event-schemas",
+      "GET/POST /v1/event-schemas/{type}/versions",
+      "POST /v1/event-schemas/{type}/validate",
+      "GET /v1/admin/users",
+      "GET/PUT /v1/admin/users/{id}",
+      "GET /v1/admin/users/{id}/sessions",
+      "GET /v1/admin/operations/dashboard",
+      "GET /v1/admin/operations/workflows",
+      "GET /v1/admin/operations/queues",
+      "GET /v1/admin/costs/summary",
+      "GET /v1/admin/costs/anomalies",
+      "GET/PUT /v1/admin/costs/budgets",
+      "GET /v1/admin/security/audit-log",
+      "GET /v1/admin/security/trust-receipts",
+      "GET /v1/admin/security/failed-auth",
+      "GET/PUT /v1/admin/config/system",
+      "GET/POST /v1/admin/alerts/rules",
+      "PUT/DELETE /v1/admin/alerts/rules/{id}",
+      "GET/POST /v1/admin/alerts/channels",
+      "GET /v1/admin/alerts/history",
+      "GET /v1/admin/kpi/report",
+      "GET /v1/admin/mcp/servers",
+      "POST /v1/admin/mcp/servers/{id}/quarantine"
+    ],
+    "addendum_endpoints": [
+      "POST /v1/browser/stealth-session",
+      "POST /v1/agents/spawn",
+      "POST /v1/agents/council/create",
+      "GET/POST /v1/memory/search",
+      "POST /v1/router/select-model",
+      "GET/POST /v1/cron/jobs",
+      "GET/POST /v1/social/posts"
+    ]
+  },
+
+  "temporal_workflows": {
+    "V9": [
+      {"name": "MessageProcessingWorkflow", "queue": "message-processing", "timeout": "120s"},
+      {"name": "ProvisioningWorkflow", "queue": "provisioning", "note": "Super-workflow with compensation in reverse order"},
+      {"name": "CapabilityResolutionWorkflow", "queue": "capability-resolution", "note": "cache->rules->LLM->rank"},
+      {"name": "OnboardingWorkflow", "queue": "discovery", "note": "3-phase onboarding + adaptive follow-ups"},
+      {"name": "DailyRhythmWorkflow", "queue": "cron-workflows", "note": "User local 07:00"},
+      {"name": "DriftMonitoringWorkflow", "queue": "drift-monitoring"}
+    ],
+    "V9.1": [
+      {"name": "DailyIntrospectionWorkflow", "queue": "daily-introspection"},
+      {"name": "TrustScoringWorkflow", "queue": "trust-scoring", "schedule": "nightly"},
+      {"name": "GoalProgressWorkflow", "queue": "goal-progress", "schedule": "weekly"},
+      {"name": "LearningConsolidationWorkflow", "queue": "learning-consolidation"},
+      {"name": "CapabilityExplorationWorkflow", "queue": "capability-exploration"},
+      {"name": "mission_control_refresh_v1", "note": "Dashboard data refresh"},
+      {"name": "capability_exploration_v1", "note": "Proactive recommendation engine"},
+      {"name": "codebase_map_ingestion", "note": "Repo pattern analysis for templates"}
+    ],
+    "V9.2": [
+      {"name": "rag_ingest_v1", "trigger": "On connector sync / daily / manual"},
+      {"name": "rag_eval_v1", "trigger": "Nightly / pre-release gate"},
+      {"name": "tool_health_eval_v1", "trigger": "Continuous every 60s per tool"},
+      {"name": "compliance_evidence_v1", "trigger": "Scheduled per audit cadence"},
+      {"name": "memory_conflict_resolve_v1", "trigger": "On memory write conflict"},
+      {"name": "session_cleanup_v1", "trigger": "Every 5 minutes"},
+      {"name": "admin_report_v1", "trigger": "Daily/weekly per alert rules"},
+      {"name": "dsr_processing_v1", "trigger": "On DSR creation / SLA monitoring"}
+    ],
+    "V10": [
+      {"name": "MultimodalProcessingWorkflow", "note": "Image/audio/video attachment analysis"},
+      {"name": "FederationNegotiationWorkflow", "note": "Inter-workspace delegation"},
+      {"name": "WalletTransactionWorkflow", "note": "Spending wallet operations"},
+      {"name": "OnboardingAdaptiveWorkflow", "note": "Adaptive onboarding with skip paths"},
+      {"name": "BillingReconciliationWorkflow", "note": "Monthly billing"},
+      {"name": "ExperimentAssignmentWorkflow", "note": "A/B experiment enrollment"}
+    ],
+    "V10.1": [
+      {"name": "CostRollupWorkflow", "note": "Token-level cost aggregation"},
+      {"name": "RetentionCohortWorkflow", "note": "User retention analysis"},
+      {"name": "OAuthExpiryMonitorWorkflow", "note": "Proactive token expiry alerts"},
+      {"name": "BehavioralRiskScoringWorkflow", "note": "Risk score computation"},
+      {"name": "FeatureAdoptionWorkflow", "note": "Adoption heatmap aggregation"}
+    ],
+    "V10.2": [
+      {"name": "MemoryDecayWorkflow", "schedule": "Weekly", "note": "Relevance score exponential decay"},
+      {"name": "LessonConsolidationWorkflow", "schedule": "Weekly", "note": "Feedback clustering + conflict detection"},
+      {"name": "CalibrationWorkflow", "schedule": "Weekly", "note": "Classifier confidence recalibration"},
+      {"name": "KnowledgeFileDriftDetector", "schedule": "Monthly", "note": "SOUL.md/USER.md staleness check"},
+      {"name": "SpeculativePrefetchWorker", "schedule": "15-minute cron", "note": "Predictive fast-path warming"},
+      {"name": "FastPathCacheWarmer", "schedule": "Nightly", "note": "Pattern analysis + answer pre-generation"}
+    ],
+    "V10.3": [
+      {"name": "System1HeuristicLearning", "note": "Train System 1 heuristics from execution traces"},
+      {"name": "MemoryConsolidationWorkflow", "schedule": "Nightly", "note": "Sleep-like memory integration"},
+      {"name": "BeliefStateUpdateWorkflow", "note": "Probabilistic belief revision"},
+      {"name": "ProspectiveMemoryCheckWorkflow", "schedule": "Continuous", "note": "Future intention trigger checks"},
+      {"name": "MetaCognitiveCalibrationWorkflow", "schedule": "Weekly", "note": "Reasoning quality calibration"},
+      {"name": "ConstitutionalPreferenceLearning", "note": "Learning from user preferences"}
+    ],
+    "V10.4": [
+      {"name": "OutboundCallWorkflow", "note": "VAPI.ai call lifecycle with approval gate"},
+      {"name": "VoiceSessionWorkflow", "note": "LiveKit WebRTC voice session management"}
+    ]
+  },
+
+  "opa_policies": {
+    "V9_core": [
+      "ExecutionGate: allow/deny based on autonomy, domain, risk_level, role, rate-limit, budget, content firewall",
+      "Provisioning: denied_server_ids -> allowed_server_ids -> risk_level -> budget -> operator review",
+      "Self-modification: AI modifying workspace_personas/behavior_policies/learning_config -> DENY or require_approval",
+      "No user can execute disabled skill",
+      "No user can exceed monthly LLM budget without admin override",
+      "No user can access another user's OAuth tokens",
+      "No skill executes when circuit breaker OPEN",
+      "No message bypasses Gateway normalization",
+      "No external API call outside Temporal Activity",
+      "No PII logged in plaintext after 30-day retention"
+    ],
+    "V9.2_rules": [
+      "Context Budget Enforcement: DENY LLM call without budget allocation",
+      "RAG Retrieval Rate Limit: DENY >50 retrievals/workspace/hour",
+      "Session Expiry Gate: DENY tool call referencing expired session",
+      "Temporal Constraint Violation: DENY scheduling violating hard constraint (priority>=80)",
+      "Guardrail Block Override: DENY bypass without admin approval",
+      "Tool Quarantine Gate: DENY call to quarantined tool, route to fallback",
+      "Feature Flag Gate: DENY action behind disabled flag",
+      "Model Tier Cap: DENY exceeding max_tier, downgrade",
+      "ReAct Step Limit: TERMINATE at max_steps, return partial results",
+      "PII Encryption Gate: DENY PII write without encryption",
+      "MCP Sandbox Enforcement: DENY sandbox violation",
+      "DSR SLA Warning: ESCALATE DSR within 5 days of deadline",
+      "Event Schema Validation: DENY invalid schema emission",
+      "Cache Write Size Limit: DENY >1MB cache entry",
+      "Conflict Resolution Manual: PAUSE on failed CRDT merge",
+      "Streaming First Byte SLA: WARN on first_byte breach, send ack immediately",
+      "Admin Action Audit: ALLOW with mandatory audit_log_entry",
+      "Compliance Evidence Integrity: DENY upload without SHA-256 hash"
+    ],
+    "V10_additions": [
+      "Federation: deny raw memory/conversation crossing federation boundary",
+      "Wallet: allow_purchase if balance >= amount AND daily/monthly limits not exceeded",
+      "Agent Kill Switch: deny all actions for user with active kill switch"
+    ],
+    "openclaw_additions": [
+      "Hook execution policy: plugin enabled + registration enabled + valid hook point",
+      "DM access policy: sender on allowlist OR explicit open mode ack",
+      "Token budget policy: deny if monthly LLM budget exhausted"
+    ]
+  },
+
+  "services_architecture": {
+    "core_services": [
+      {
+        "name": "brevio-gateway",
+        "language": "Go 1.22",
+        "responsibilities": ["WhatsApp/iMessage webhook verify (HMAC-SHA256 timing-safe)", "Rate limiter (60 req/min token bucket)", "STT/TTS pipeline", "MessageEnvelope normalization", "Channel formatter"],
+        "port": 8080
+      },
+      {
+        "name": "brevio-brain",
+        "language": "Go 1.22",
+        "responsibilities": ["4-state ReAct loop (PLANNER->EXECUTOR->CRITIC->REFLECTOR)", "temp=0 determinism", "Context loader (USER.md/SOUL.md/AGENTS.md)", "Plan DAG builder", "OPA pre-call", "Multi-turn session awareness"],
+        "port": 8081
+      },
+      {
+        "name": "brevio-control",
+        "language": "Go 1.22",
+        "responsibilities": ["ExecutionGate PDP (OPA eval per tool call)", "Approval flows", "Budget enforcement", "Simulate->commit orchestration", "RBAC enforcement"],
+        "port": 8082
+      },
+      {
+        "name": "brevio-executor",
+        "language": "Go 1.22",
+        "responsibilities": ["Temporal activity host only (no direct API)", "Skill dispatch", "SkillResult return", "Idempotency key enforcement", "DLQ handling"],
+        "port": 8083
+      },
+      {
+        "name": "brevio-canvas",
+        "language": "Go 1.22",
+        "responsibilities": ["A2UI WebSocket server", "Mission control widget assembly", "Real-time dashboard"],
+        "port": 8084
+      }
+    ],
+    "additional_services": [
+      {
+        "name": "brevio-edge-agent",
+        "language": "Node.js 20",
+        "responsibilities": ["macOS Launch Agent with mTLS + WebSocket", "24 local skills (AppleScript, CLI, FS)", "Launch Agent plist", "DMG installer"],
+        "deployment": "Local macOS"
+      },
+      {
+        "name": "brevio-admin",
+        "components": ["React SPA", "Go admin API"],
+        "responsibilities": ["User management", "Agent ops dashboard", "Tool health UI", "KPI reports", "Cost management", "Audit log viewer", "MCP registry UI", "Alert rules"]
+      },
+      {
+        "name": "brevio-browser",
+        "language": "Go/Python",
+        "port": 8010,
+        "responsibilities": ["Stealth browser sessions via Playwright", "Web scraping", "Form filling", "Booking automation"]
+      },
+      {
+        "name": "brevio-agents",
+        "language": "Go",
+        "port": 8012,
+        "responsibilities": ["Multi-agent spawning", "Agent councils with voting", "Delegation"]
+      },
+      {
+        "name": "brevio-memory",
+        "language": "Go",
+        "port": 8013,
+        "responsibilities": ["ChromaDB/pgvector embedding management", "Semantic search", "Memory lifecycle"]
+      },
+      {
+        "name": "brevio-router",
+        "language": "Go",
+        "port": 8014,
+        "responsibilities": ["Smart model selection", "Latency-aware routing", "Fallback chains"]
+      },
+      {
+        "name": "brevio-cron",
+        "language": "Go",
+        "port": 8015,
+        "responsibilities": ["Scheduled task management", "Cron expression validation", "Dependency graphs"]
+      },
+      {
+        "name": "brevio-marketing",
+        "language": "Go",
+        "port": 8011,
+        "responsibilities": ["Social media posting", "Analytics aggregation", "Content scheduling"]
+      }
+    ],
+    "infrastructure_services": [
+      "PostgreSQL 16 (primary DB, pgvector extension, pgcrypto)",
+      "Redis 7 (cache, feature flag evaluation, session state)",
+      "Temporal Server (workflow orchestration)",
+      "OpenSearch (BM25 sparse search for RAG)",
+      "ChromaDB (optional vector store for addendum features)"
+    ]
+  },
+
+  "skills_registry": {
+    "total_skills": 195,
+    "openclaw_skills": 153,
+    "addendum_skills": 42,
+    "deployment_modes": {
+      "cloud_kubernetes": 127,
+      "local_macos_edge_agent": 24,
+      "mcp_protocol": 2,
+      "addendum_cloud": 42
+    },
+    "skill_categories": [
+      "Communication (email, messaging, contacts)",
+      "Calendar & Scheduling",
+      "Task Management",
+      "Research & Information",
+      "File & Document Management",
+      "Finance & Payments",
+      "Travel & Booking",
+      "Smart Home & IoT",
+      "Music & Media",
+      "Development & Code",
+      "Browser Automation (stealth sessions)",
+      "Multi-Agent Orchestration (councils, delegation)",
+      "Advanced Memory (semantic search, embeddings)",
+      "Smart Router (model selection, cost optimization)",
+      "Cron & Scheduling Automation",
+      "Social Media Marketing"
+    ],
+    "local_macos_skills_24": [
+      "AppleScript automation", "macOS CLI commands", "Local filesystem access",
+      "Finder operations", "System Preferences", "Spotlight search",
+      "Notification management", "Screenshot capture", "App launching",
+      "Clipboard management", "Time Machine", "Keychain access"
+    ]
+  },
+
+  "llm_prompts": {
+    "core_prompts": [
+      {
+        "key": "PROMPT_INTENT_CLASSIFY_V1",
+        "model": "claude-haiku-4-5",
+        "temperature": 0.1,
+        "max_tokens": 256,
+        "confidence_threshold": 0.7,
+        "fast_path_threshold": 0.92,
+        "v10_2_update": "Multi-intent output: intents:Intent[] with compound_request_detected flag"
+      },
+      {
+        "key": "PROMPT_RESPONSE_GEN_V1",
+        "model": "claude-sonnet-4-5",
+        "temperature": 0.3,
+        "max_tokens": 2048,
+        "notes": "Channel-aware, PII-safe, persona-adapted, EQ-responsive"
+      },
+      {
+        "key": "PROMPT_TASK_DECOMPOSE_V1",
+        "model": "claude-sonnet-4-5",
+        "output": "DAG",
+        "constraints": "max 10 tasks, max depth 5, acyclic validation",
+        "v10_2_update": "Dynamic limits based on complexity_signals"
+      },
+      {
+        "key": "PROMPT_CRITIC_V1",
+        "model": "claude-sonnet-4-6",
+        "temperature": 0.0,
+        "source": "V10.2 GAP-R01",
+        "dimensions": ["GOAL_ALIGNMENT", "COMPLETENESS", "ACCURACY", "EFFICIENCY", "SAFETY"],
+        "output": "{overall_score, dimension_scores, passed, failure_modes, improvement_directive}"
+      },
+      {
+        "key": "PROMPT_REFLECTOR_V1",
+        "model": "claude-haiku-4-5",
+        "source": "V10.2 GAP-R01",
+        "input": "critic_output + execution_trace + user_correction",
+        "output": "{lesson_candidates, pattern_detected, escalate_to_feedback_pipeline}"
+      }
+    ],
+    "V9.2_prompts": [
+      "brain.context_compiler.v1 - Context assembly with budget",
+      "brain.session_resolver.v1 - Entity and intent resolution",
+      "brain.temporal_resolver.v1 - Temporal expression disambiguation",
+      "brain.error_communicator.v1 - User-facing error generation",
+      "brain.rag_query_rewriter.v1 - RAG query optimization",
+      "brain.admin_report_synthesizer.v1 - Admin KPI reports"
+    ]
+  },
+
+  "infrastructure": {
+    "cloud_provider": "AWS",
+    "kubernetes": "EKS",
+    "database": {
+      "engine": "PostgreSQL 16",
+      "extensions": ["pgvector", "pgcrypto"],
+      "deployment": "Multi-AZ RDS with PgBouncer",
+      "rls": "Mandatory on all tables via app.workspace_id"
+    },
+    "cache": "ElastiCache Redis 7 (TLS, at-rest encryption)",
+    "queues": "SQS FIFO + Standard with DLQs per service",
+    "secrets": "AWS Secrets Manager + KMS CMKs",
+    "cdn": "CloudFront + S3 (admin SPA)",
+    "waf": "AWS WAF (OWASP top-10, rate rules, admin IP allowlist)",
+    "observability": {
+      "metrics": "OpenTelemetry -> Prometheus/Grafana",
+      "logs": "Structured JSON -> Loki",
+      "traces": "OpenTelemetry -> Jaeger",
+      "alerting": "PagerDuty + Slack + email"
+    },
+    "networking": {
+      "vpc_cidr": "10.0.0.0/16",
+      "public_subnets": ["10.0.1.0/24", "10.0.2.0/24", "10.0.3.0/24"],
+      "private_subnets": ["10.0.10.0/24", "10.0.11.0/24", "10.0.12.0/24"],
+      "isolated_subnets": ["10.0.20.0/24", "10.0.21.0/24"],
+      "security_groups": {
+        "sg-alb": "Inbound 443, Outbound to sg-eks 8080",
+        "sg-eks": "Inbound 8080 from sg-alb and sg-eks, Outbound to sg-rds/sg-redis/NAT",
+        "sg-rds": "Inbound 5432 from sg-eks ONLY",
+        "sg-redis": "Inbound 6379 from sg-eks ONLY",
+        "sg-websocket": "Inbound 443 for Edge Agent connections"
+      }
+    },
+    "deployment_strategy": {
+      "pattern": "Blue/Green with Canary",
+      "canary_percentage": "10%",
+      "canary_duration": "15 minutes",
+      "rollback_triggers": ["error rate >1%", "P99 latency >2x baseline", "SLO breach"],
+      "gitops": "ArgoCD"
+    },
+    "terraform_modules": [
+      "terraform/modules/eks",
+      "terraform/modules/rds",
+      "terraform/modules/elasticache",
+      "terraform/modules/sqs",
+      "terraform/modules/secrets",
+      "terraform/modules/acm_waf",
+      "terraform/modules/opensearch (V9.2)",
+      "terraform/modules/admin-frontend (V9.2)",
+      "terraform/modules/feature-flags-cache (V9.2)",
+      "terraform/modules/rag_worker (V9.2)"
+    ],
+    "helm_charts": [
+      "helm/brevio-gateway",
+      "helm/brevio-brain",
+      "helm/brevio-control",
+      "helm/brevio-executor",
+      "helm/brevio-canvas",
+      "helm/temporal",
+      "helm/pgbouncer",
+      "helm/otel-collector",
+      "helm/brevio-rag-worker (V9.2)",
+      "helm/brevio-admin (V9.2)",
+      "helm/brevio-admin-api (V9.2)",
+      "helm/brevio-admin-frontend (V9.2)",
+      "helm/brevio-guardrails (V9.2)",
+      "helm/brevio-health-checker (V9.2)"
+    ],
+    "containers": {
+      "base": "Go 1.22 builder, distroless base",
+      "user": "non-root 65532:65532",
+      "filesystem": "read-only",
+      "capabilities": "drop ALL",
+      "sbom": "syft generated",
+      "scanning": "grype daily CVE scans"
+    },
+    "dead_letter_queues": [
+      "interactive_turns_dlq",
+      "workflow_tasks_dlq",
+      "ledger_writes_dlq",
+      "trajectory_writes_dlq",
+      "rate_limit_ledger_writes_dlq"
+    ]
+  },
+
+  "features_capabilities": {
+    "core_assistant": {
+      "channels": ["WhatsApp Business API", "Apple iMessage (Beeper/Matrix bridge)", "Web chat"],
+      "onboarding": {
+        "stages": [
+          "Stage 1: Welcome - first message, personality establishment",
+          "Stage 2: Discovery - 5 questions to build USER.md profile",
+          "Stage 3: Connect Services - OAuth for Gmail, Calendar, Outlook, Slack",
+          "Stage 4: Preference Calibration - proactive frequency, approval format",
+          "Stage 5: First Value Moment - immediate inbox triage before user asks",
+          "Stage 6: Wrap Up - daily briefing schedule, open invitation"
+        ],
+        "skip_paths": ["skip single question", "skip all questions", "skip OAuth", "skip edge agent install", "skip mid-task clarification"],
+        "error_states": {
+          "silent_user": ["1h nudge", "24h resume/restart offer", "72h pivot to value"],
+          "oauth_failures": ["connection failed retry", "link expired refresh"],
+          "unexpected_responses": ["rephrase (never repeat)", "off-topic (answer then resume)"],
+          "task_failures": ["generic failure with retry", "missing permission with connect prompt", "approval gate with preview"],
+          "system_limits": ["rate limit (friendly)", "timeout (progress message)"]
+        }
+      },
+      "daily_rhythm": {
+        "morning_briefing": {
+          "variants": ["standard day", "light day", "hectic day", "missed yesterday"],
+          "content": ["calendar with conflict detection", "inbox triage (urgent/FYI/noise)", "open tasks from yesterday"],
+          "time": "User preferred (default 8am)"
+        },
+        "end_of_day_recap": {
+          "variants": ["standard recap", "low-activity day", "big productive day", "unresolved items"],
+          "content": ["done today", "still open", "carry-forward to tomorrow"]
+        }
+      },
+      "approval_system": {
+        "types": ["email sending", "calendar modification", "payment", "sensitive/irreversible action"],
+        "timeout_handling": "One reminder, then drop with notification",
+        "autonomy_levels": {
+          "none": "always ask",
+          "low": "ask for big things, do small stuff",
+          "medium": "use judgment with learning",
+          "high": "autonomous with daily summary",
+          "full": "fully autonomous"
+        },
+        "trust_building": {
+          "promotion": "trust_score>=0.85 AND success_count_30d>=20",
+          "milestone": "30-day trust milestone with stats",
+          "demotion_triggers": ["INCIDENT: any HIGH severity failure", "DRIFT: trust_score<0.60 for 7 days", "MANUAL: operator demote"]
+        }
+      },
+      "proactive_intelligence": {
+        "conflict_detection": "Spot calendar clashes with suggested fixes",
+        "unusual_charges": "Flag suspicious transactions",
+        "forgotten_followups": "Detect emails without reply after N days",
+        "weather_travel": "Surface weather/traffic for upcoming meetings with travel",
+        "goal_nudges": "Gentle reminders for falling-behind goals"
+      },
+      "correction_handling": {
+        "misunderstanding": "Rephrase with clarifying question, never defensive",
+        "factual_error": "Own it, correct immediately, offer next step",
+        "repeated_mistake": "Acknowledge pattern, offer to make a rule",
+        "undo": "Move fast, confirm done, offer prevention"
+      },
+      "recurring_tasks": {
+        "setup": "Confirm schedule precisely (day, time, action)",
+        "modification": "Confirm what changes, what stays same",
+        "pausing": "Pause vs delete distinction, auto-resume option",
+        "conflict_handling": "Surface conflicts proactively with options"
+      },
+      "learning_loop": {
+        "correction_to_rule": "Every 'stop doing X' becomes potential permanent rule",
+        "preference_setting": "'always' triggers rule creation",
+        "lesson_proposal": "Agent spots pattern, proposes rule with edit/confirm/reject",
+        "lesson_adjustment": "User can tweak proposed rule before confirming"
+      }
+    },
+    "billing_and_plans": {
+      "trial": "Free trial with usage tracking and 3-day warning",
+      "upgrade_prompts": "Feature-gated upgrade suggestions (not blocks)",
+      "payment_failure": "Calm, practical notification with 7-day grace",
+      "plan_limits": "Monthly usage cap with upgrade or wait options",
+      "plans": ["Free (limited tasks)", "Pro ($29/month, unlimited)"]
+    },
+    "re_authentication": {
+      "single_service_expired": "Plain language explanation with reconnect link",
+      "multiple_services_expired": "Single reconnect page for all",
+      "mid_task_expiry": "Explain what was interrupted, confirm email NOT sent, offer retry"
+    },
+    "service_outages": {
+      "single_service_down": "Specific service named, workaround offered, monitoring communicated",
+      "outage_resolved": "Close the loop with catch-up triage",
+      "partial_outage": "Precise degradation description"
+    },
+    "voice_and_calling_v104": {
+      "outbound_calls": {
+        "provider": "VAPI.ai (Retell AI fallback)",
+        "approval": "Explicit user approval required for every call",
+        "capabilities": ["Restaurant reservations", "Appointments", "Any real-world call"],
+        "transcript": "Full transcript delivered on completion"
+      },
+      "realtime_voice": {
+        "provider": "LiveKit (Daily.co fallback)",
+        "transport": "WebRTC",
+        "stt": "Deepgram streaming",
+        "tts": "ElevenLabs",
+        "latency_target": "<900ms end-to-end",
+        "features": ["Interruption handling", "Headset support"]
+      }
+    },
+    "consumer_delight_features": {
+      "F01_multi_bubble_delivery": "Responses split into 2-3 paced chat bubbles with typing indicators",
+      "F02_send_button_pulse": "Haptic-equivalent blue glow animation on message arrival",
+      "F03_scenario_starter_chips": "3 tappable scenarios on splash (Morning briefing, Inbox triage, Fix a conflict)",
+      "F04_name_personalization": "Detects user name from first message, weaves into responses naturally"
+    },
+    "browser_automation": {
+      "stealth_sessions": "Playwright with proxy rotation for booking sites",
+      "action_scripts": ["navigate", "click", "fill", "extract"],
+      "use_cases": ["Restaurant reservations", "Flight searches", "Price monitoring"]
+    },
+    "multi_agent": {
+      "spawning": "Max 10 concurrent agents",
+      "councils": "Deliberation with voting and quorum",
+      "cost_budget": "Per-agent cost limits"
+    }
+  },
+
+  "copy_and_ux": {
+    "source_files": ["brevio-onboarding-copy.jsx", "brevio-error-states-copy.jsx", "brevio-copy-part2.jsx", "brevio-copy-part3.jsx"],
+    "onboarding_copy": {
+      "stages": {
+        "welcome": {
+          "messages": ["Greeting with personality", "Setup invitation with time estimate", "Name ask"],
+          "copy_principle": "Hook fast. No feature lists, just personality and a single ask"
+        },
+        "discovery": {
+          "question_count": 5,
+          "questions": [
+            "What best describes you? (business/professional/personal/mix)",
+            "What eats most of your time? (email/scheduling/research/tasks/all)",
+            "Communication style? (short/detailed/contextual)",
+            "Autonomy level? (always ask/big things/trust you)",
+            "One thing that would prove value?"
+          ],
+          "copy_principle": "5 questions max. Numbers, not paragraphs"
+        },
+        "oauth_connect": {
+          "services_offered": ["Gmail", "Google Calendar", "Outlook/M365", "Slack", "Other"],
+          "copy_principle": "Frame OAuth as enabling their goal, not technical step. Always offer skip"
+        },
+        "calibration": {
+          "questions": ["Proactive check-in frequency", "Approval presentation format"],
+          "copy_principle": "Only ask what changes behavior. 2 questions max"
+        },
+        "first_value": {
+          "action": "Inbox triage before user asks (14 emails sorted: 3 urgent, 7 FYI, 4 noise)",
+          "copy_principle": "Most important moment. Show output before asking for input"
+        },
+        "wrap_up": {
+          "copy_principle": "End with openness, not closure"
+        }
+      }
+    },
+    "error_states_copy": {
+      "categories": {
+        "silent_user": {"color": "#F7C94F", "scenarios": ["1h", "24h", "72h"]},
+        "oauth_connections": {"color": "#F7824F", "scenarios": ["failed", "expired"]},
+        "unexpected_responses": {"color": "#7C6AF7", "scenarios": ["unrecognized", "off-topic"]},
+        "task_failures": {"color": "#F74F4F", "scenarios": ["generic", "permission", "approval"]},
+        "system_limits": {"color": "#4FC9F7", "scenarios": ["rate-limit", "timeout"]}
+      }
+    },
+    "part2_copy": {
+      "morning_briefing": {"scenarios": ["standard", "light", "hectic", "missed_yesterday"]},
+      "approval_requests": {"scenarios": ["email", "calendar", "payment", "sensitive", "timeout"]},
+      "skip_paths": {"scenarios": ["single_question", "all_questions", "oauth", "edge_agent", "mid_task", "preference_update"]}
+    },
+    "part3_copy": {
+      "proactive_suggestions": {"scenarios": ["conflict", "unusual_charge", "followup", "weather", "goal_nudge"]},
+      "correction_handling": {"scenarios": ["wrong_intent", "factual_error", "repeated_mistake", "undo"]},
+      "end_of_day_recap": {"scenarios": ["standard", "low_activity", "big_day", "unresolved"]},
+      "trust_and_autonomy": {"scenarios": ["first_action", "promotion_propose", "promotion_declined", "30_day_milestone"]},
+      "billing_and_plans": {"scenarios": ["trial_ending", "upgrade_prompt", "payment_failed", "limit_reached"]},
+      "re_authentication": {"scenarios": ["google_expired", "multiple_expired", "mid_task_expired"]},
+      "service_outages": {"scenarios": ["single_down", "resolved", "partial"]},
+      "learning_loop": {"scenarios": ["correction", "preference", "lesson_confirm", "lesson_adjust"]},
+      "recurring_tasks": {"scenarios": ["first_setup", "weekly", "modify", "pause", "conflict"]}
+    },
+    "persona_guidelines": {
+      "tone": "Warm, confident, concise. Never robotic or sycophantic",
+      "length": "2-4 sentences max unless showing a draft or list",
+      "formatting": "*bold* for key data, numbered emoji for choices, max 2 emoji per message",
+      "principles": [
+        "Never blame the user",
+        "Always offer a way forward AND a way out",
+        "Rephrase, don't repeat",
+        "Own mistakes fully, correct immediately",
+        "Show exactly what will happen before it happens",
+        "One reminder then let it go",
+        "Never say 'rate limit' or technical terms",
+        "Frame permissions as features unlocked, not errors",
+        "When user says 'just do it', do it. Don't confirm the confirmation"
+      ]
+    }
+  },
+
+  "security_requirements": {
+    "cryptographic_controls": {
+      "approval_tokens": "HMAC-SHA256 signed, CRITICAL TTL=30s, ELEVATED TTL=5min, nonce-unique",
+      "oauth_storage": "AES-256-GCM envelope {ciphertext, nonce, key_version, encrypted_at}",
+      "key_rotation": "Dual-key read window >=10min, background re-encryption",
+      "webhook_signatures": "HMAC-SHA256 timing-safe compare, replay protection nonce TTL=600s",
+      "audit_log_integrity": "Hash chain HMAC, append-only DB triggers, separate DB role",
+      "artifact_verification": "Ed25519 on image digests, SBOM + vulnerability scan required"
+    },
+    "pii_protection": {
+      "field_level_encryption": "AES-256-GCM per pii_encryption_policies",
+      "searchable_blind_index": "Optional for encrypted searchable fields",
+      "retention": "Auto-delete after configurable days",
+      "redaction": "Guardrails PII redaction before external model calls"
+    },
+    "mcp_sandboxing": {
+      "isolation_levels": ["shared", "namespace", "network", "full"],
+      "resource_limits": "CPU, memory, execution time per profile",
+      "network_policy": "egress_restricted, egress_denied, egress_allowed",
+      "filesystem": "Read-only by default",
+      "blocked_cidrs": ["169.254.169.254/32", "127.0.0.0/8", "10.0.0.0/8"]
+    },
+    "compliance": {
+      "frameworks": ["SOC2", "GDPR", "CCPA", "HIPAA"],
+      "dsr_sla": {"GDPR": "30 days", "CCPA": "45 days"},
+      "evidence_collection": "Automated via compliance_evidence_v1 workflow",
+      "data_retention": "Configurable per workspace, memory_exclusion_rules"
+    }
+  },
+
+  "slos": {
+    "latency": {
+      "T1_simple_P99": "<3s",
+      "T2_standard_P99": "<10s",
+      "T3_complex_P99": "<30s",
+      "streaming_first_byte": "<=500ms",
+      "RAG_retrieval_P95_dense": "<=300ms",
+      "RAG_retrieval_P95_hybrid": "<=500ms",
+      "context_budget_allocation_P95": "<=50ms",
+      "session_resolution_P95": "<=100ms",
+      "temporal_expression_P95": "<=50ms",
+      "guardrail_evaluation_P95": "<=200ms",
+      "tool_health_computation_P95": "<=100ms",
+      "feature_flag_evaluation_P95": "<=5ms",
+      "CRDT_conflict_resolution_P95": "<=200ms",
+      "admin_API_P95": "<=500ms",
+      "event_schema_validation_P95": "<=10ms",
+      "voice_end_to_end": "<900ms"
+    },
+    "quality": {
+      "RAG_faithfulness": ">=0.80",
+      "RAG_relevance": ">=0.75",
+      "guardrail_false_positive_rate": "<=2%",
+      "DSR_SLA_compliance": ">=99%",
+      "intent_classification_accuracy": ">=95%",
+      "LLM_success_rate": ">=98%"
+    },
+    "cache": {
+      "prompt_embedding_hit_rate": ">=60%",
+      "tool_result_hit_rate": ">=40%",
+      "compiled_context_hit_rate": ">=30%"
+    }
+  },
+
+  "ci_cd_pipeline": {
+    "mandatory_blocking_gates_in_order": [
+      "1. lint (golangci-lint v1.57)",
+      "2. unit tests (go test -race -count=1)",
+      "3. security scan (gosec)",
+      "4. SBOM generation (syft)",
+      "5. container image build + sign (cosign/Sigstore)",
+      "6. migration safety check (forward-only validation)",
+      "7. OpenAPI contract validation",
+      "8. OPA policy bundle validation (opa test)",
+      "9. determinism test suite",
+      "10. eval suite (AI model tests)",
+      "11. compliance matrix row-count check",
+      "12. production deploy gates (staging smoke -> canary 10% -> SLO watch -> promote)"
+    ],
+    "V9.2_additional_gates": [
+      "context budget validation",
+      "RAG pipeline tests",
+      "RAG eval gate (faithfulness>=0.80, relevance>=0.75)",
+      "session management tests",
+      "temporal reasoning tests",
+      "guardrails tests",
+      "tool health tests",
+      "feature flag tests",
+      "CRDT tests",
+      "streaming SLA tests",
+      "error taxonomy tests",
+      "event schema compatibility",
+      "compliance tests",
+      "admin API tests",
+      "PII encryption tests",
+      "MCP sandbox tests",
+      "cache layer tests",
+      "model tier policy tests"
+    ]
+  },
+
+  "runbooks": {
+    "V9": [
+      "RB-001: Deployment (blue/green canary, ArgoCD)",
+      "RB-002: Rollback (ArgoCD + down migration)",
+      "RB-003: Incident response (P1-P4 severity, war room, RCA)",
+      "RB-004: Key rotation (KMS, Secrets Manager, OAuth re-encryption)",
+      "RB-005: Scaling (HPA, Cluster Autoscaler, RDS, Redis)",
+      "RB-006: Database recovery (snapshot restore + forward migration)",
+      "RB-007: Circuit breaker override (manual OPEN/CLOSE + recovery)",
+      "RB-008: Provisioning failure recovery (compensation replay)",
+      "RB-009: Eval degradation response (shadow eval, rollback)"
+    ],
+    "V9.2": [
+      "RB-V92-001: RAG Collection Degradation",
+      "RB-V92-002: Tool Auto-Quarantine Response",
+      "RB-V92-003: Context Budget Overflow Spike",
+      "RB-V92-004: Streaming SLA Breach",
+      "RB-V92-005: Feature Flag Rollback",
+      "RB-V92-006: CRDT Conflict Storm",
+      "RB-V92-007: Compliance DSR SLA Risk",
+      "RB-V92-008: Guardrail False Positive Storm",
+      "RB-V92-009: Admin Dashboard Incident"
+    ]
+  },
+
+  "load_shedding_tiers": {
+    "D0": "Nominal - all features active",
+    "D1": "Reduce non-critical background tasks",
+    "D2": "Disable proactive features",
+    "D3": "Disable non-critical skills, maintain core messaging",
+    "D4": "Read-only mode for non-essential services",
+    "D5": "Minimal read-only: messaging, auth, audit only"
+  },
+
+  "total_counts_summary": {
+    "database_tables": "260+ across all versions",
+    "enums": "50+",
+    "api_endpoints": "200+",
+    "temporal_workflows": "45+",
+    "opa_policy_rules": "35+",
+    "json_schemas": "30+",
+    "prompt_templates": "15+",
+    "metrics": "80+",
+    "canonical_events": "70+",
+    "terraform_modules": "10+",
+    "helm_charts": "14+",
+    "ci_cd_gates": "30+",
+    "slo_targets": "20+",
+    "runbooks": "18",
+    "skills": "195 (153 OpenClaw + 42 addendum)",
+    "acceptance_gates": "30+",
+    "copy_scenarios": "50+ across 4 JSX files"
+  }
+}

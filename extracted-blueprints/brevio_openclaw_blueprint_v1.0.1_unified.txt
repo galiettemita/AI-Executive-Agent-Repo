@@ -1,0 +1,2743 @@
+
+
+
+BREVIO PLATFORM
+OpenClaw Adoption Blueprint
+v1.0.0  |  Production-Grade  |  Machine-Executable
+
+
+
+
+SECTION 1 — EXECUTIVE ARCHITECTURE OVERVIEW
+This blueprint specifies the integration of 12 production-hardened patterns derived from the OpenClaw codebase into the Brevio 3-plane architecture (Gateway / Brain / Hands). Each feature is fully specified across architecture, database, API, workflow, policy, infrastructure, observability, testing, security, failure handling, and operational runbooks.
+
+1.1 Brevio Plane Mapping
+The Brevio platform operates across three execution planes. The 12 features map as follows:
+
+1.2 Logical Architecture
+All 12 features integrate through a unified event bus and hook registry that lives in the Brain plane. The following describes the logical data-flow path for an inbound message including all 12 feature intercept points:
+WhatsApp / iMessage Inbound
+  │
+  ▼
+[FEATURE 2] DM Pairing Check ──── unknown sender? → emit pairing_code, HALT
+  │ trusted sender
+  ▼
+[FEATURE 4] Queue Lane Policy ─── collect | steer | followup mode applied per channel
+  │ lane = ACTIVE, mode = process
+  ▼
+[FEATURE 7] Idempotency Gate ──── duplicate request_id? → return cached response
+  │ novel request
+  ▼
+[FEATURE 1] Hook: message_received ── plugins intercept, mutate, or halt
+  │
+  ▼
+[FEATURE 10] Bootstrap Hook ──── before_agent_start: inject RAG context, user profile
+  │
+  ▼
+[FEATURE 6] Skills Gate ─────── load skills where prerequisites.met = true
+  │
+  ▼
+[FEATURE 1] Hook: before_model_resolve ── route to provider + model
+  │
+  ▼
+[FEATURE 9] Auth Profile Rotation ─ select active profile, check rate limits
+  │
+  ▼
+[FEATURE 1] Hook: before_prompt_build ── final prompt assembly
+  │
+  ▼
+LLM Invocation
+  │
+  ▼
+[FEATURE 11] NO_REPLY Filter ─── response == NO_REPLY? → log, suppress, exit
+  │ normal response
+  ▼
+[FEATURE 8] Compaction Check ─── buffer threshold exceeded? → compact + retry
+  │
+  ▼
+[FEATURE 1] Hook: before_tool_call ── policy check before each tool execution
+  │
+  ▼
+[FEATURE 5] Sandbox Gate ──────── group/channel session? → enforce tool allowlist
+  │
+  ▼
+[FEATURE 3] A2A Gate ────────── multi-agent? → sessions_send / sessions_spawn
+  │
+  ▼
+[FEATURE 1] Hook: after_tool_call + tool_result_persist
+  │
+  ▼
+[FEATURE 1] Hook: message_sending → message_sent
+  │
+  ▼
+Outbound Delivery (WhatsApp / iMessage)
+
+1.3 Physical Architecture
+
+1.4 Feature Dependency Graph
+The following dependency constraints must be observed during implementation. A feature listed under DEPENDS ON must not be implemented before its dependencies are complete.
+
+SECTION 2 — COMPONENT-BY-COMPONENT SPECIFICATION
+
+2.1.1 Architecture
+The Plugin Hook System implements a composable event interception layer across every significant stage of Brevio's Brain plane agent loop. Hooks are synchronous or asynchronous registered functions (plugins) that receive a context envelope, can mutate it, emit side effects, or return HALT to abort the current pipeline stage.
+Hook lifecycle: register → persist → evaluate at runtime → dispatch ordered callbacks → collect mutations → continue or halt.
+Hook Points (complete enumeration)
+
+Hook Registration Contract
+interface HookRegistration {
+  id:         string;   // UUIDv7, assigned at registration
+  hook_point: HookPoint;
+  plugin_id:  string;   // must reference plugins.id
+  priority:   number;   // 0-1000, lower = earlier execution
+  is_async:   boolean;  // if true, run in parallel; collect mutations at barrier
+  timeout_ms: number;   // 0 = no timeout (sync only); max 30000
+  can_halt:   boolean;  // must be true to return HALT signal
+  config:     Record<string, unknown>; // static plugin config, JSON
+  enabled:    boolean;
+  created_at: string;   // ISO-8601
+}
+
+Hook Dispatch Algorithm
+Hooks for a given point are dispatched in priority order. Synchronous hooks execute sequentially; async hooks are dispatched in parallel with a barrier at timeout_ms. Mutations are merged using last-write-wins by priority. If any hook returns HALT and can_halt=true, the pipeline is aborted and the halt_reason is logged.
+function dispatchHooks(hookPoint, context):
+  registrations = sortByPriority(getEnabled(hookPoint))
+  sync_hooks  = filter(registrations, r => !r.is_async)
+  async_hooks = filter(registrations, r => r.is_async)
+ 
+  // Execute sync hooks sequentially
+  for hook in sync_hooks:
+    result = executeWithTimeout(hook, context, hook.timeout_ms)
+    if result.signal == HALT and hook.can_halt:
+      logHalt(hookPoint, hook.id, result.halt_reason)
+      return HaltResult(result.halt_reason)
+    mergeMutations(context, result.mutations, hook.priority)
+ 
+  // Execute async hooks in parallel with barrier
+  results = awaitAll(async_hooks, context, max_timeout=30000)
+  for result in sortByPriority(results):
+    if result.signal == HALT and hook.can_halt:
+      logHalt(hookPoint, hook.id, result.halt_reason)
+      return HaltResult(result.halt_reason)
+    mergeMutations(context, result.mutations, hook.priority)
+ 
+  return ContinueResult(context)
+
+
+2.2.1 Architecture
+All inbound DM (direct message) senders are untrusted by default. The Gateway executes a pairing state machine that issues a short-lived numeric pairing code to unknown senders and only promotes them to the allowlist after explicit operator approval. The dmPolicy has two modes: pairing (default, secure) and open (explicit opt-in, logged).
+DM Pairing State Machine
+States:  UNKNOWN → PENDING_PAIRING → APPROVED | REJECTED | EXPIRED
+ 
+UNKNOWN:
+  on inbound_message:
+    if sender in allowlist → APPROVED (skip pairing)
+    if dmPolicy == OPEN    → APPROVED (log open-mode grant)
+    else:
+      generate pairing_code = crypto.randomInt(100000, 999999)
+      create pairing_request(sender, code, expires_at = now + 15min)
+      send pairing_invite_message(sender, code)
+      transition → PENDING_PAIRING
+ 
+PENDING_PAIRING:
+  on approve_command(sender, code):
+    if code matches and not expired → add to allowlist → transition → APPROVED
+    if expired                      → transition → EXPIRED (resend allowed)
+    if wrong code (3x)              → transition → REJECTED (24h cooldown)
+  on timeout(15min):
+    transition → EXPIRED
+ 
+APPROVED:
+  on revoke_command(sender):
+    remove from allowlist → transition → UNKNOWN
+ 
+REJECTED:
+  on cooldown_elapsed(24h):
+    transition → UNKNOWN
+
+DM Policy Modes
+
+
+2.3.1 Architecture
+The Session Tool Protocol provides a minimal, deterministic agent-to-agent (A2A) coordination model. Four tool primitives are exposed to agents: sessions_list, sessions_history, sessions_send, sessions_spawn. The protocol enforces a ping-pong alternation loop with explicit REPLY_SKIP and ANNOUNCE_SKIP escape tokens.
+A2A Tool Primitives
+
+Ping-Pong Loop Protocol
+Protocol: Requester (R) and Target (T) alternate turns.
+ 
+R sends sessions_send(target_id, message, idempotency_key)
+  → T receives turn, executes, replies via sessions_send(requester_id, response)
+  → R receives response, processes
+  → R may send next message OR emit REPLY_SKIP to terminate loop
+  → T receives REPLY_SKIP → closes coordination, returns final_result
+ 
+Invariants:
+  - Max loop depth:  configurable, default 10 turns per coordination
+  - Turn timeout:    30 seconds per turn; expired turns emit REPLY_SKIP automatically
+  - Idempotency:     each sessions_send requires unique idempotency_key
+  - Loop detection:  same message hash within session → auto REPLY_SKIP
+
+
+2.4.1 Architecture
+Each channel session has a dedicated queue lane that serializes agent runs and enforces an inbound message handling policy during an active run. Three queue modes govern how new messages arriving during an active run are processed.
+Queue Lane Modes
+
+Lane Lifecycle
+On session_start:
+  create lane_record(session_id, mode=collect, status=IDLE)
+  create Redis queue: brevio:lane:{session_id}
+ 
+On inbound_message(session_id, message):
+  lane = getLane(session_id)
+  if lane.status == IDLE:
+    lane.status = RUNNING
+    enqueue(message) → Temporal workflow
+  else:  // lane is RUNNING
+    if lane.mode == COLLECT:  push to buffer list
+    if lane.mode == STEER:    replace steer_context with message
+    if lane.mode == FOLLOWUP: push to followup_queue
+ 
+On run_complete(session_id):
+  lane.status = IDLE
+  if buffer_queue non-empty:
+    flush_buffer → new run
+
+
+2.5.1 Architecture
+Group and channel sessions execute agent runs inside per-session Docker containers (rootless mode). Main (direct) sessions run unsandboxed. Sandbox containers enforce a tool allowlist/denylist and have a configurable sessionToolsVisibility mode.
+Session Type → Sandbox Policy
+
+Sandbox Container Spec
+Container runtime: Docker rootless (runc)
+Base image:        brevio/sandbox-agent:1.0.0 (Alpine 3.19 + tool binaries)
+CPU limit:         0.5 vCPU
+Memory limit:      512 MiB
+Network:           isolated bridge; egress to Hands service only
+Filesystem:        tmpfs /workspace (1 GiB); read-only /tools
+Lifetime:          session duration + 30s drain; hard-killed at 5min idle
+IPC:               Unix socket injected at /run/brevio/agent.sock
+
+
+2.6.1 Architecture
+Skills (prompt context files representing tool/domain capabilities) are loaded at session start only when their prerequisite conditions are satisfied. This prevents token bloat from injecting all 153 skills unconditionally and ensures context relevance.
+Frontmatter Gate Schema
+# skill: calendar_integration.md
+metadata:
+  openclaw.always: false       # if true, bypasses all gate checks
+  scope: per-agent             # per-agent | shared
+  version: 1.0.0
+requires:
+  bins:
+    - gcal-cli                 # must be in PATH
+  env:
+    - GOOGLE_OAUTH_CLIENT_ID   # must be non-empty
+    - GOOGLE_OAUTH_CLIENT_SECRET
+  config:
+    - calendar.enabled         # must be true in user config
+    - calendar.oauth_token     # must be non-null
+
+Gate Evaluation Logic
+function evaluateSkillGate(skill, session):
+  if skill.metadata.always == true: return PASS
+ 
+  for bin in skill.requires.bins:
+    if not which(bin): return FAIL(reason=f"binary {bin} not in PATH")
+ 
+  for envVar in skill.requires.env:
+    if not os.getenv(envVar): return FAIL(reason=f"env {envVar} missing")
+ 
+  for configKey in skill.requires.config:
+    val = session.user_config.get(configKey)
+    if val is None or val == false: return FAIL(reason=f"config {configKey} not set")
+ 
+  return PASS
+ 
+// Skills resolved ONCE at session_start.
+// Hot-reload: file watcher triggers re-evaluation on skill file change.
+
+
+2.7.1 Architecture
+All side-effecting RPC calls from Gateway into Brain (and Brain into Hands) must carry a client-generated idempotency_key. The server maintains a dedupe cache with a TTL of 24 hours. Duplicate requests within TTL return the cached response without re-execution.
+Idempotency Key Contract
+Header: X-Idempotency-Key: <UUIDv4>
+ 
+Rules:
+  1. Key must be UUIDv4 format (RFC 4122). Others rejected with 400.
+  2. Key is scoped to (user_id, key). Cross-user reuse is blocked.
+  3. Cache TTL: 24 hours from first request.
+  4. Status PROCESSING: concurrent duplicate → 409 Conflict.
+  5. Status COMPLETE:   subsequent duplicate → 200 with cached body.
+  6. WhatsApp retries auto-generate key from message_id hash:
+     key = UUIDv5(NAMESPACE_DNS, "brevio:" + whatsapp_message_id)
+
+Idempotency State Machine
+States: ABSENT → PROCESSING → COMPLETE | FAILED
+ 
+ABSENT:    first request → write PROCESSING record → execute → write COMPLETE/FAILED
+PROCESSING: duplicate concurrent → return 409 { error: "request_in_progress" }
+COMPLETE:  duplicate → return 200 with cached_response_body
+FAILED:    duplicate → return cached error response (preserves original HTTP status)
+
+
+2.8.1 Architecture
+When an agent turn exhausts the context window or exceeds a token threshold, the compaction engine triggers: in-memory message buffers and tool output summaries are compressed into a condensed context snapshot, existing stream buffers are flushed and reset, and the LLM call is retried with the compacted context. This prevents duplicate output on retry.
+Compaction Trigger Conditions
+
+Compaction Algorithm
+function compact(session, buffer):
+  // 1. Emit compaction stream event (for UI: "Summarizing context...")
+  emit(COMPACTION_STARTED, session_id)
+ 
+  // 2. Summarize tool outputs
+  tool_summary = summarizeToolHistory(buffer.tool_results, max_tokens=2000)
+ 
+  // 3. Summarize conversation history
+  conversation_summary = summarizeMessages(buffer.messages, max_tokens=3000)
+ 
+  // 4. Reset in-memory buffers (prevents duplicate output on retry)
+  buffer.messages = []
+  buffer.tool_results = []
+  buffer.stream_chunks = []
+ 
+  // 5. Rebuild context from summary
+  buffer.messages = [
+    { role: "system", content: session.system_prompt },
+    { role: "assistant", content: f"[COMPACTED CONTEXT] {conversation_summary}" },
+    { role: "assistant", content: f"[TOOL HISTORY] {tool_summary}" },
+  ]
+ 
+  emit(COMPACTION_COMPLETE, session_id)
+  return buffer
+
+
+2.9.1 Architecture
+The system maintains a pool of model authentication profiles per provider (OAuth profiles + API keys). Profiles are selected using a weighted round-robin with rate-limit awareness. When a profile exhausts its rate limit or errors, it is deprioritized with exponential backoff and the next available profile is promoted.
+Profile Selection Algorithm
+function selectProfile(provider, model):
+  profiles = getActiveProfiles(provider)
+    |> filter(p => p.status == ACTIVE)
+    |> filter(p => p.rate_limit_resets_at < now() OR p.current_rpm < p.max_rpm)
+    |> sortBy(p => p.weight * (1 - p.current_utilization))
+ 
+  if profiles.empty:
+    // All profiles exhausted — wait for soonest reset
+    soonest = min(allProfiles.rate_limit_resets_at)
+    raise RateLimitExhaustedException(retry_after=soonest)
+ 
+  selected = profiles[0]
+  selected.current_rpm++
+  recordUsage(selected.id)
+  return selected
+ 
+function onProfileError(profile_id, error):
+  if error.type == RATE_LIMIT:
+    profile.status = RATE_LIMITED
+    profile.rate_limit_resets_at = parseRetryAfter(error.headers)
+  if error.type == AUTH_EXPIRED:
+    profile.status = AUTH_FAILED
+    alertOps(profile_id, "OAuth token expired — refresh required")
+  if error.type == QUOTA_EXCEEDED:
+    profile.status = QUOTA_EXHAUSTED
+    alertOps(profile_id, "Monthly quota exhausted")
+
+
+2.10.1 Architecture
+The agent:bootstrap hook fires during the bootstrap file assembly phase, before the system prompt is finalized. Registered bootstrap handlers can add, remove, or replace context files (RAG results, user profile, temporal state, tool manifests) dynamically based on session properties.
+Bootstrap Phase Contract
+interface BootstrapContext {
+  session_id:     string;
+  user_id:        string;
+  channel_type:   "direct" | "group" | "channel";
+  context_files:  ContextFile[];  // mutable — handlers add/remove
+  bootstrap_data: Record<string, unknown>;  // arbitrary KV for handler use
+}
+ 
+interface ContextFile {
+  id:       string;       // unique within session
+  role:     "system" | "context" | "user_profile" | "temporal_state" | "rag";
+  content:  string;
+  token_estimate: number; // must be set by handler
+  priority: number;       // if context exceeds budget, lowest priority dropped first
+}
+
+
+2.11.1 Architecture
+NO_REPLY is a reserved response token that an agent emits to signal a silent turn — no outbound message should be delivered to the user. The Brain plane filters this from all outbound payloads automatically. This is required for cron job turns, background async tool chains, and A2A coordination turns.
+NO_REPLY Token Spec
+Token value (exact string, case-sensitive):
+  "##NO_REPLY##"
+ 
+Detection logic:
+  response_text.trim() == "##NO_REPLY##"
+  OR
+  response_text.trim().startsWith("##NO_REPLY##")
+    // allows: "##NO_REPLY## [optional debug suffix not sent to user]"
+ 
+On detection:
+  1. Set message.outbound_suppressed = true
+  2. Log no_reply_event(session_id, turn_id, trigger_reason)
+  3. Execute hook: message_sending with suppression=true → hook sees suppression flag
+  4. DO NOT call delivery service
+  5. Continue session lifecycle normally (session remains open)
+
+
+2.12.1 Architecture
+The brevio doctor CLI command runs a structured set of named health checks across DM policies, channel configurations, sandbox permissions, tool connectivity, database migrations, and secret availability. Each check has a name, severity (CRITICAL, WARNING, INFO), and a deterministic pass/fail condition.
+Health Check Registry (complete)
+
+SECTION 3 — DATABASE DDL & MIGRATION ORDER
+All tables use PostgreSQL 16. UUIDs use gen_random_uuid() (PostgreSQL native). Primary keys are UUIDv4. Timestamps are TIMESTAMPTZ. All foreign keys are explicitly named. Row-level security is enabled on multi-tenant tables.
+
+3.1 Migration Order
+
+3.2 Complete DDL
+V001 — plugins
+CREATE TABLE plugins (
+  id             UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  name           TEXT        NOT NULL UNIQUE,
+  version        TEXT        NOT NULL DEFAULT '1.0.0',
+  description    TEXT,
+  entry_module   TEXT        NOT NULL, -- module path: e.g. plugins.cost_tracker
+  is_enabled     BOOLEAN     NOT NULL DEFAULT true,
+  config_schema  JSONB       NOT NULL DEFAULT '{}'::jsonb,
+  created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX idx_plugins_name ON plugins(name);
+
+V002 — hook_registrations
+CREATE TYPE hook_point_enum AS ENUM (
+  'before_model_resolve', 'before_prompt_build', 'before_tool_call',
+  'after_tool_call', 'tool_result_persist', 'message_received',
+  'message_sending', 'message_sent', 'session_start', 'session_end',
+  'gateway_start', 'gateway_stop', 'agent_bootstrap'
+);
+ 
+CREATE TABLE hook_registrations (
+  id             UUID            PRIMARY KEY DEFAULT gen_random_uuid(),
+  plugin_id      UUID            NOT NULL REFERENCES plugins(id) ON DELETE CASCADE,
+  hook_point     hook_point_enum NOT NULL,
+  priority       INTEGER         NOT NULL DEFAULT 500
+                                 CHECK (priority >= 0 AND priority <= 1000),
+  is_async       BOOLEAN         NOT NULL DEFAULT false,
+  timeout_ms     INTEGER         NOT NULL DEFAULT 0
+                                 CHECK (timeout_ms >= 0 AND timeout_ms <= 30000),
+  can_halt       BOOLEAN         NOT NULL DEFAULT false,
+  config         JSONB           NOT NULL DEFAULT '{}'::jsonb,
+  is_enabled     BOOLEAN         NOT NULL DEFAULT true,
+  created_at     TIMESTAMPTZ     NOT NULL DEFAULT now(),
+  updated_at     TIMESTAMPTZ     NOT NULL DEFAULT now(),
+  CONSTRAINT uq_plugin_hook UNIQUE (plugin_id, hook_point)
+);
+CREATE INDEX idx_hook_reg_point_priority ON hook_registrations(hook_point, priority)
+  WHERE is_enabled = true;
+
+V003 — hook_executions
+CREATE TYPE hook_result_enum AS ENUM ('CONTINUE', 'HALT', 'ERROR', 'TIMEOUT');
+ 
+CREATE TABLE hook_executions (
+  id                  UUID             PRIMARY KEY DEFAULT gen_random_uuid(),
+  hook_registration_id UUID            NOT NULL REFERENCES hook_registrations(id),
+  session_id          UUID,
+  turn_id             UUID,
+  hook_point          hook_point_enum  NOT NULL,
+  result              hook_result_enum NOT NULL,
+  halt_reason         TEXT,
+  mutations_applied   JSONB            NOT NULL DEFAULT '{}'::jsonb,
+  duration_ms         INTEGER          NOT NULL,
+  error_message       TEXT,
+  executed_at         TIMESTAMPTZ      NOT NULL DEFAULT now()
+) PARTITION BY RANGE (executed_at);
+ 
+CREATE TABLE hook_executions_2025 PARTITION OF hook_executions
+  FOR VALUES FROM ('2025-01-01') TO ('2026-01-01');
+CREATE TABLE hook_executions_2026 PARTITION OF hook_executions
+  FOR VALUES FROM ('2026-01-01') TO ('2027-01-01');
+
+V004 — dm_allowlist & dm_pairing_requests
+CREATE TYPE dm_policy_enum AS ENUM ('pairing', 'open');
+ 
+CREATE TABLE dm_allowlist (
+  id              UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id       UUID        NOT NULL,
+  sender_id       TEXT        NOT NULL, -- platform-specific sender identifier
+  platform        TEXT        NOT NULL CHECK (platform IN ('whatsapp', 'imessage')),
+  approved_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+  approved_by     UUID        NOT NULL, -- operator user_id
+  revoked_at      TIMESTAMPTZ,
+  is_active       BOOLEAN     NOT NULL GENERATED ALWAYS AS (revoked_at IS NULL) STORED,
+  CONSTRAINT uq_dm_allowlist UNIQUE (tenant_id, sender_id, platform)
+);
+ 
+CREATE TYPE pairing_status_enum AS ENUM (
+  'PENDING', 'APPROVED', 'REJECTED', 'EXPIRED'
+);
+ 
+CREATE TABLE dm_pairing_requests (
+  id              UUID                PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id       UUID                NOT NULL,
+  sender_id       TEXT                NOT NULL,
+  platform        TEXT                NOT NULL CHECK (platform IN ('whatsapp', 'imessage')),
+  pairing_code    CHAR(6)             NOT NULL
+                                      CHECK (pairing_code ~ '^[0-9]{6}$'),
+  status          pairing_status_enum NOT NULL DEFAULT 'PENDING',
+  attempt_count   INTEGER             NOT NULL DEFAULT 0 CHECK (attempt_count <= 3),
+  expires_at      TIMESTAMPTZ         NOT NULL DEFAULT now() + INTERVAL '15 minutes',
+  resolved_at     TIMESTAMPTZ,
+  resolved_by     UUID,
+  created_at      TIMESTAMPTZ         NOT NULL DEFAULT now()
+);
+CREATE INDEX idx_pairing_sender ON dm_pairing_requests(tenant_id, sender_id, status);
+ALTER TABLE dm_allowlist ENABLE ROW LEVEL SECURITY;
+ALTER TABLE dm_pairing_requests ENABLE ROW LEVEL SECURITY;
+
+V005 — dm_pairing_audit
+CREATE TABLE dm_pairing_audit (
+  id              UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id       UUID        NOT NULL,
+  pairing_id      UUID        REFERENCES dm_pairing_requests(id),
+  event_type      TEXT        NOT NULL
+                              CHECK (event_type IN (
+                                'CODE_ISSUED', 'APPROVE_ATTEMPT', 'APPROVED',
+                                'REJECTED', 'EXPIRED', 'REVOKED', 'OPEN_GRANT'
+                              )),
+  actor_id        UUID,
+  actor_ip        INET,
+  metadata        JSONB       NOT NULL DEFAULT '{}'::jsonb,
+  occurred_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX idx_pairing_audit_tenant ON dm_pairing_audit(tenant_id, occurred_at DESC);
+
+V006 — agent_sessions
+CREATE TYPE session_type_enum   AS ENUM ('direct', 'group', 'channel', 'spawned');
+CREATE TYPE session_status_enum AS ENUM ('ACTIVE', 'IDLE', 'CLOSED', 'ERROR');
+ 
+CREATE TABLE agent_sessions (
+  id              UUID                PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id       UUID                NOT NULL,
+  user_id         UUID                NOT NULL,
+  channel_id      TEXT                NOT NULL,
+  session_type    session_type_enum   NOT NULL DEFAULT 'direct',
+  status          session_status_enum NOT NULL DEFAULT 'IDLE',
+  parent_id       UUID                REFERENCES agent_sessions(id),
+  sandbox_enabled BOOLEAN             NOT NULL GENERATED ALWAYS AS
+                                        (session_type IN ('group', 'channel', 'spawned')) STORED,
+  metadata        JSONB               NOT NULL DEFAULT '{}'::jsonb,
+  started_at      TIMESTAMPTZ         NOT NULL DEFAULT now(),
+  last_active_at  TIMESTAMPTZ         NOT NULL DEFAULT now(),
+  closed_at       TIMESTAMPTZ
+);
+CREATE INDEX idx_sessions_tenant_status ON agent_sessions(tenant_id, status);
+CREATE INDEX idx_sessions_channel ON agent_sessions(channel_id, status);
+ALTER TABLE agent_sessions ENABLE ROW LEVEL SECURITY;
+
+V007 — a2a_messages
+CREATE TYPE a2a_message_type_enum AS ENUM (
+  'SEND', 'REPLY', 'REPLY_SKIP', 'ANNOUNCE', 'ANNOUNCE_SKIP'
+);
+ 
+CREATE TABLE a2a_messages (
+  id                  UUID                  PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id           UUID                  NOT NULL,
+  requester_session_id UUID                 NOT NULL REFERENCES agent_sessions(id),
+  target_session_id   UUID                  REFERENCES agent_sessions(id),
+  message_type        a2a_message_type_enum NOT NULL,
+  idempotency_key     UUID                  NOT NULL,
+  payload             JSONB                 NOT NULL,
+  loop_depth          INTEGER               NOT NULL DEFAULT 0
+                                            CHECK (loop_depth >= 0 AND loop_depth <= 10),
+  is_processed        BOOLEAN               NOT NULL DEFAULT false,
+  processed_at        TIMESTAMPTZ,
+  sent_at             TIMESTAMPTZ           NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX idx_a2a_idempotency ON a2a_messages(tenant_id, idempotency_key);
+
+V008 — session_announcements
+CREATE TABLE session_announcements (
+  id              UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  session_id      UUID        NOT NULL REFERENCES agent_sessions(id) ON DELETE CASCADE,
+  announced_to    UUID[]      NOT NULL DEFAULT ARRAY[]::UUID[],
+  result_summary  TEXT,
+  is_suppressed   BOOLEAN     NOT NULL DEFAULT false, -- ANNOUNCE_SKIP
+  announced_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+V009 — queue_lanes & queue_messages
+CREATE TYPE lane_status_enum AS ENUM ('IDLE', 'RUNNING', 'DRAINING');
+CREATE TYPE queue_mode_enum  AS ENUM ('collect', 'steer', 'followup');
+ 
+CREATE TABLE queue_lanes (
+  id              UUID             PRIMARY KEY DEFAULT gen_random_uuid(),
+  session_id      UUID             NOT NULL UNIQUE REFERENCES agent_sessions(id) ON DELETE CASCADE,
+  status          lane_status_enum NOT NULL DEFAULT 'IDLE',
+  queue_mode      queue_mode_enum  NOT NULL DEFAULT 'collect',
+  steer_context   TEXT,
+  run_started_at  TIMESTAMPTZ,
+  updated_at      TIMESTAMPTZ      NOT NULL DEFAULT now()
+);
+ 
+CREATE TYPE queue_msg_status_enum AS ENUM ('PENDING', 'PROCESSED', 'DROPPED');
+ 
+CREATE TABLE queue_messages (
+  id              UUID                  PRIMARY KEY DEFAULT gen_random_uuid(),
+  lane_id         UUID                  NOT NULL REFERENCES queue_lanes(id) ON DELETE CASCADE,
+  session_id      UUID                  NOT NULL,
+  message_payload JSONB                 NOT NULL,
+  queue_position  INTEGER               NOT NULL,
+  status          queue_msg_status_enum NOT NULL DEFAULT 'PENDING',
+  enqueued_at     TIMESTAMPTZ           NOT NULL DEFAULT now(),
+  processed_at    TIMESTAMPTZ
+);
+CREATE INDEX idx_queue_messages_lane ON queue_messages(lane_id, queue_position)
+  WHERE status = 'PENDING';
+
+V010 — sandbox_configs
+CREATE TABLE sandbox_configs (
+  id                    UUID      PRIMARY KEY DEFAULT gen_random_uuid(),
+  session_type          session_type_enum NOT NULL UNIQUE,
+  allowed_tools         TEXT[]    NOT NULL DEFAULT ARRAY[]::TEXT[],
+  denied_tools          TEXT[]    NOT NULL DEFAULT ARRAY[]::TEXT[],
+  tool_visibility_mode  TEXT      NOT NULL DEFAULT 'spawned-only'
+                                  CHECK (tool_visibility_mode IN ('all', 'spawned-only')),
+  cpu_limit_vcpu        NUMERIC   NOT NULL DEFAULT 0.5,
+  memory_limit_mb       INTEGER   NOT NULL DEFAULT 512,
+  network_policy        TEXT      NOT NULL DEFAULT 'isolated'
+                                  CHECK (network_policy IN ('isolated', 'egress-only', 'full')),
+  idle_timeout_seconds  INTEGER   NOT NULL DEFAULT 300,
+  created_at            TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at            TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+V011 — session_tool_policies (runtime overrides)
+CREATE TABLE session_tool_policies (
+  id              UUID      PRIMARY KEY DEFAULT gen_random_uuid(),
+  session_id      UUID      NOT NULL REFERENCES agent_sessions(id) ON DELETE CASCADE,
+  tool_name       TEXT      NOT NULL,
+  policy          TEXT      NOT NULL CHECK (policy IN ('allow', 'deny')),
+  reason          TEXT,
+  applied_by      UUID      NOT NULL,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+V012 — skill_definitions
+CREATE TABLE skill_definitions (
+  id                UUID      PRIMARY KEY DEFAULT gen_random_uuid(),
+  name              TEXT      NOT NULL UNIQUE,
+  file_path         TEXT      NOT NULL UNIQUE,
+  version           TEXT      NOT NULL DEFAULT '1.0.0',
+  scope             TEXT      NOT NULL DEFAULT 'per-agent'
+                              CHECK (scope IN ('per-agent', 'shared')),
+  always_load       BOOLEAN   NOT NULL DEFAULT false,
+  requires_bins     TEXT[]    NOT NULL DEFAULT ARRAY[]::TEXT[],
+  requires_env      TEXT[]    NOT NULL DEFAULT ARRAY[]::TEXT[],
+  requires_config   TEXT[]    NOT NULL DEFAULT ARRAY[]::TEXT[],
+  token_estimate    INTEGER,
+  is_enabled        BOOLEAN   NOT NULL DEFAULT true,
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at        TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+V013 — skill_gate_evaluations
+CREATE TYPE gate_result_enum AS ENUM ('PASS', 'FAIL');
+ 
+CREATE TABLE skill_gate_evaluations (
+  id              UUID            PRIMARY KEY DEFAULT gen_random_uuid(),
+  skill_id        UUID            NOT NULL REFERENCES skill_definitions(id),
+  session_id      UUID            NOT NULL REFERENCES agent_sessions(id) ON DELETE CASCADE,
+  result          gate_result_enum NOT NULL,
+  fail_reason     TEXT,
+  evaluated_at    TIMESTAMPTZ     NOT NULL DEFAULT now()
+);
+CREATE INDEX idx_gate_evals_session ON skill_gate_evaluations(session_id, result);
+
+V014 — skill_sessions (loaded skills per session)
+CREATE TABLE skill_sessions (
+  id              UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  session_id      UUID        NOT NULL REFERENCES agent_sessions(id) ON DELETE CASCADE,
+  skill_id        UUID        NOT NULL REFERENCES skill_definitions(id),
+  loaded_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+  reloaded_at     TIMESTAMPTZ,
+  token_cost      INTEGER,
+  CONSTRAINT uq_skill_session UNIQUE (session_id, skill_id)
+);
+
+V015 — idempotency_keys
+CREATE TYPE idem_status_enum AS ENUM ('PROCESSING', 'COMPLETE', 'FAILED');
+ 
+CREATE TABLE idempotency_keys (
+  id              UUID             PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id       UUID             NOT NULL,
+  user_id         UUID             NOT NULL,
+  key             UUID             NOT NULL,
+  status          idem_status_enum NOT NULL DEFAULT 'PROCESSING',
+  request_hash    TEXT             NOT NULL, -- SHA-256 of request body
+  response_status INTEGER,
+  response_body   JSONB,
+  expires_at      TIMESTAMPTZ      NOT NULL DEFAULT now() + INTERVAL '24 hours',
+  created_at      TIMESTAMPTZ      NOT NULL DEFAULT now(),
+  completed_at    TIMESTAMPTZ,
+  CONSTRAINT uq_idem_key UNIQUE (tenant_id, user_id, key)
+);
+CREATE INDEX idx_idem_expiry ON idempotency_keys(expires_at)
+  WHERE status != 'COMPLETE';
+ALTER TABLE idempotency_keys ENABLE ROW LEVEL SECURITY;
+
+V016 — compaction_state
+CREATE TYPE compaction_status_enum AS ENUM ('IDLE', 'IN_PROGRESS', 'COMPLETE', 'FAILED');
+ 
+CREATE TABLE compaction_state (
+  id              UUID                   PRIMARY KEY DEFAULT gen_random_uuid(),
+  session_id      UUID                   NOT NULL REFERENCES agent_sessions(id) ON DELETE CASCADE,
+  status          compaction_status_enum  NOT NULL DEFAULT 'IDLE',
+  turn_count_at_compaction INTEGER,
+  tokens_before   INTEGER,
+  tokens_after    INTEGER,
+  trigger_reason  TEXT                   NOT NULL
+                                         CHECK (trigger_reason IN (
+                                           'SOFT_LIMIT', 'HARD_LIMIT', 'TOOL_OVERFLOW',
+                                           'CONTEXT_ERROR', 'TURN_THRESHOLD'
+                                         )),
+  compact_summary TEXT,
+  started_at      TIMESTAMPTZ            NOT NULL DEFAULT now(),
+  completed_at    TIMESTAMPTZ
+);
+
+V017 — model_auth_profiles
+CREATE TYPE profile_status_enum AS ENUM (
+  'ACTIVE', 'RATE_LIMITED', 'AUTH_FAILED', 'QUOTA_EXHAUSTED', 'DISABLED'
+);
+CREATE TYPE auth_type_enum AS ENUM ('api_key', 'oauth');
+ 
+CREATE TABLE model_auth_profiles (
+  id                   UUID                PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id            UUID                NOT NULL,
+  provider             TEXT                NOT NULL
+                                           CHECK (provider IN ('anthropic', 'openai', 'gemini', 'groq')),
+  profile_name         TEXT                NOT NULL,
+  auth_type            auth_type_enum      NOT NULL,
+  vault_secret_path    TEXT                NOT NULL,
+  status               profile_status_enum NOT NULL DEFAULT 'ACTIVE',
+  weight               INTEGER             NOT NULL DEFAULT 100
+                                           CHECK (weight >= 1 AND weight <= 1000),
+  max_rpm              INTEGER             NOT NULL DEFAULT 60,
+  current_rpm          INTEGER             NOT NULL DEFAULT 0,
+  rate_limit_resets_at TIMESTAMPTZ,
+  last_error_at        TIMESTAMPTZ,
+  last_used_at         TIMESTAMPTZ,
+  created_at           TIMESTAMPTZ         NOT NULL DEFAULT now(),
+  updated_at           TIMESTAMPTZ         NOT NULL DEFAULT now(),
+  CONSTRAINT uq_profile_name UNIQUE (tenant_id, provider, profile_name)
+);
+ALTER TABLE model_auth_profiles ENABLE ROW LEVEL SECURITY;
+
+V018 — profile_usage_stats
+CREATE TABLE profile_usage_stats (
+  id              UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  profile_id      UUID        NOT NULL REFERENCES model_auth_profiles(id) ON DELETE CASCADE,
+  period_start    TIMESTAMPTZ NOT NULL,
+  period_end      TIMESTAMPTZ NOT NULL,
+  request_count   INTEGER     NOT NULL DEFAULT 0,
+  token_count     INTEGER     NOT NULL DEFAULT 0,
+  error_count     INTEGER     NOT NULL DEFAULT 0,
+  cost_usd        NUMERIC(12,6) NOT NULL DEFAULT 0,
+  CONSTRAINT uq_profile_period UNIQUE (profile_id, period_start)
+);
+
+V019 — bootstrap_hooks
+CREATE TABLE bootstrap_hooks (
+  id              UUID      PRIMARY KEY DEFAULT gen_random_uuid(),
+  plugin_id       UUID      NOT NULL REFERENCES plugins(id) ON DELETE CASCADE,
+  handler_module  TEXT      NOT NULL,
+  priority        INTEGER   NOT NULL DEFAULT 500 CHECK (priority >= 0 AND priority <= 1000),
+  is_enabled      BOOLEAN   NOT NULL DEFAULT true,
+  config          JSONB     NOT NULL DEFAULT '{}'::jsonb,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+ 
+CREATE TABLE bootstrap_context_snapshots (
+  id              UUID      PRIMARY KEY DEFAULT gen_random_uuid(),
+  session_id      UUID      NOT NULL REFERENCES agent_sessions(id) ON DELETE CASCADE,
+  context_files   JSONB     NOT NULL,
+  total_tokens    INTEGER   NOT NULL,
+  snapshotted_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+V020 — no_reply_log
+CREATE TABLE no_reply_log (
+  id              UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  session_id      UUID        NOT NULL REFERENCES agent_sessions(id) ON DELETE CASCADE,
+  turn_id         UUID        NOT NULL,
+  trigger_reason  TEXT        NOT NULL
+                              CHECK (trigger_reason IN (
+                                'CRON_JOB', 'BACKGROUND_TASK', 'A2A_COORDINATION', 'EXPLICIT'
+                              )),
+  raw_response    TEXT,
+  suppressed_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+V021 — health_check_definitions
+CREATE TYPE hc_severity_enum AS ENUM ('CRITICAL', 'WARNING', 'INFO');
+ 
+CREATE TABLE health_check_definitions (
+  id              UUID             PRIMARY KEY DEFAULT gen_random_uuid(),
+  check_id        TEXT             NOT NULL UNIQUE, -- e.g. HC-001
+  name            TEXT             NOT NULL UNIQUE,
+  severity        hc_severity_enum NOT NULL,
+  description     TEXT             NOT NULL,
+  pass_condition  TEXT             NOT NULL,
+  check_module    TEXT             NOT NULL, -- Go package path for implementation
+  is_enabled      BOOLEAN          NOT NULL DEFAULT true,
+  created_at      TIMESTAMPTZ      NOT NULL DEFAULT now()
+);
+
+V022 — health_check_results
+CREATE TYPE hc_result_enum AS ENUM ('PASS', 'FAIL', 'SKIP', 'ERROR');
+ 
+CREATE TABLE health_check_results (
+  id              UUID           PRIMARY KEY DEFAULT gen_random_uuid(),
+  check_id        TEXT           NOT NULL REFERENCES health_check_definitions(check_id),
+  result          hc_result_enum NOT NULL,
+  message         TEXT,
+  metadata        JSONB          NOT NULL DEFAULT '{}'::jsonb,
+  duration_ms     INTEGER        NOT NULL,
+  run_id          UUID           NOT NULL, -- groups all checks in one doctor run
+  checked_at      TIMESTAMPTZ    NOT NULL DEFAULT now()
+);
+CREATE INDEX idx_hc_results_run ON health_check_results(run_id, check_id);
+
+V023 — RLS Policies
+-- dm_allowlist: tenant isolation
+CREATE POLICY dm_allowlist_tenant ON dm_allowlist
+  USING (tenant_id = current_setting('app.current_tenant_id')::UUID);
+ 
+-- dm_pairing_requests: tenant isolation
+CREATE POLICY dm_pairing_tenant ON dm_pairing_requests
+  USING (tenant_id = current_setting('app.current_tenant_id')::UUID);
+ 
+-- agent_sessions: user-scoped within tenant
+CREATE POLICY sessions_tenant ON agent_sessions
+  USING (tenant_id = current_setting('app.current_tenant_id')::UUID);
+ 
+-- idempotency_keys: user-scoped
+CREATE POLICY idem_user ON idempotency_keys
+  USING (tenant_id = current_setting('app.current_tenant_id')::UUID
+    AND user_id = current_setting('app.current_user_id')::UUID);
+ 
+-- model_auth_profiles: tenant-scoped
+CREATE POLICY profiles_tenant ON model_auth_profiles
+  USING (tenant_id = current_setting('app.current_tenant_id')::UUID);
+
+V024 — Performance Indexes
+CREATE INDEX idx_a2a_msg_target ON a2a_messages(target_session_id, is_processed)
+  WHERE is_processed = false;
+CREATE INDEX idx_compaction_session ON compaction_state(session_id, status);
+CREATE INDEX idx_model_profiles_active ON model_auth_profiles(tenant_id, provider, status)
+  WHERE status = 'ACTIVE';
+CREATE INDEX idx_queue_lanes_status ON queue_lanes(status);
+CREATE INDEX idx_sessions_active ON agent_sessions(tenant_id, status, last_active_at)
+  WHERE status = 'ACTIVE';
+CREATE INDEX idx_no_reply_session ON no_reply_log(session_id, suppressed_at DESC);
+
+V025 — Seed Data
+-- Seed health check definitions (15 checks)
+INSERT INTO health_check_definitions (check_id, name, severity, description, pass_condition, check_module)
+VALUES
+  ('HC-001', 'dm_policy_mode', 'WARNING',
+   'DM policy should be pairing mode', 'dmPolicy != OPEN OR explicit_open_ack',
+   'github.com/brevio/cli/checks.DMPolicyCheck'),
+  ('HC-002', 'pairing_code_ttl', 'WARNING',
+   'Pairing codes should expire within 30 minutes', 'pairing_code_ttl_minutes <= 30',
+   'github.com/brevio/cli/checks.PairingTTLCheck'),
+  ('HC-003', 'allowlist_populated', 'INFO',
+   'At least one DM sender approved', 'allowlist.count > 0',
+   'github.com/brevio/cli/checks.AllowlistCheck'),
+  ('HC-004', 'hook_registry_accessible', 'CRITICAL',
+   'Redis hook event bus must respond', 'Redis PING = PONG',
+   'github.com/brevio/cli/checks.HookBusCheck'),
+  ('HC-005', 'db_migrations_current', 'CRITICAL',
+   'All DB migrations applied', 'applied == expected',
+   'github.com/brevio/cli/checks.MigrationCheck'),
+  ('HC-006', 'vault_unsealed', 'CRITICAL',
+   'Vault must be initialized and unsealed', 'initialized=true, sealed=false',
+   'github.com/brevio/cli/checks.VaultCheck'),
+  ('HC-007', 'model_profiles_active', 'CRITICAL',
+   'At least one active profile per provider', 'count >= 1',
+   'github.com/brevio/cli/checks.ProfileCheck'),
+  ('HC-008', 'temporal_worker_healthy', 'CRITICAL',
+   'Temporal worker must be polling', 'poll healthy',
+   'github.com/brevio/cli/checks.TemporalCheck'),
+  ('HC-009', 'sandbox_pool_available', 'WARNING',
+   'Docker rootless must be running', 'docker info ok',
+   'github.com/brevio/cli/checks.SandboxCheck'),
+  ('HC-010', 'idempotency_cache_ttl', 'WARNING',
+   'Idempotency namespace must have active TTLs', 'TTL > 0',
+   'github.com/brevio/cli/checks.IdempotencyCheck'),
+  ('HC-011', 'skills_directory_readable', 'WARNING',
+   'Skills files readable and parseable', 'all skills parseable',
+   'github.com/brevio/cli/checks.SkillsCheck'),
+  ('HC-012', 'no_reply_filter_active', 'INFO',
+   'NO_REPLY hook registered', 'hook registered',
+   'github.com/brevio/cli/checks.NoReplyCheck'),
+  ('HC-013', 'queue_lane_redis_keys', 'INFO',
+   'No stale queue lane keys', 'no stale keys > 24h',
+   'github.com/brevio/cli/checks.QueueLaneCheck'),
+  ('HC-014', 'a2a_session_table_clean', 'INFO',
+   'No orphaned agent sessions', 'no orphans > 1h',
+   'github.com/brevio/cli/checks.A2ACleanCheck'),
+  ('HC-015', 'compaction_state_clean', 'INFO',
+   'No stuck compaction records', 'no IN_PROGRESS > 5min',
+   'github.com/brevio/cli/checks.CompactionCheck');
+ 
+-- Seed sandbox configs for all session types
+INSERT INTO sandbox_configs (session_type, allowed_tools, denied_tools)
+VALUES
+  ('direct',  ARRAY['bash','process','read','write','browser','canvas','nodes','cron'], ARRAY[]::TEXT[]),
+  ('group',   ARRAY['bash','process','read','write'], ARRAY['browser','canvas','nodes','cron']),
+  ('channel', ARRAY['read','write'], ARRAY['bash','process','browser','canvas','nodes','cron']),
+  ('spawned', ARRAY['bash','process','read','write'], ARRAY['browser','canvas','nodes','cron']);
+
+SECTION 4 — API CONTRACTS (OpenAPI 3.1 Summary)
+All endpoints require Authorization: Bearer <JWT> and X-Tenant-ID header unless noted. Base URL: https://api.brevio.ai/v1. Full OpenAPI YAML lives at docs/openapi/brevio-v1.yaml in the repository. This section defines all endpoints introduced by the 12 features with complete request/response schemas.
+
+4.1 Hook Registry API
+
+POST /hooks/registrations — Request Body
+{
+  "plugin_id":   "uuid",
+  "hook_point":  "before_tool_call",
+  "priority":    300,
+  "is_async":    false,
+  "timeout_ms":  5000,
+  "can_halt":    true,
+  "config":      { "blocked_tools": ["bash"] }
+}
+
+POST /hooks/registrations — 201 Response
+{
+  "id":         "uuid",
+  "plugin_id":  "uuid",
+  "hook_point": "before_tool_call",
+  "priority":   300,
+  "is_async":   false,
+  "timeout_ms": 5000,
+  "can_halt":   true,
+  "config":     { "blocked_tools": ["bash"] },
+  "is_enabled": true,
+  "created_at": "2026-01-01T00:00:00Z"
+}
+
+4.2 DM Pairing API
+
+4.3 Session Tool Protocol (A2A) API
+
+4.4 Queue Lane API
+
+4.5 Model Auth Profile API
+
+4.6 Skills API
+
+4.7 Doctor / Health API
+
+4.8 Error Contract (all endpoints)
+
+SECTION 5 — WORKFLOW SPECIFICATIONS (Temporal)
+All workflows run on Temporal 1.24. Task queue: brevio-main. All retry policies use deterministic jitter formula: delay_ms = base_ms * 2^attempt + random_int(0, floor(base_ms * 0.1)). Workflow IDs follow pattern: {WorkflowType}-{entity_id}-{timestamp_ms}.
+
+5.1 HookDispatchWorkflow
+WorkflowID:     HookDispatch-{session_id}-{turn_id}
+TaskQueue:      brevio-hooks
+ExecutionTimeout: 60s
+ 
+Activities:
+  LoadHookRegistrations(hook_point) → []HookRegistration
+    retry: max_attempts=3, initial_interval=500ms, backoff=2.0, jitter=50ms
+  ExecuteHookSync(registration, context) → HookResult
+    retry: max_attempts=1 (hooks are not retried — fail fast)
+    timeout: registration.timeout_ms
+  ExecuteHooksAsync(registrations, context) → []HookResult
+    retry: max_attempts=1
+    timeout: 30s (barrier timeout)
+  PersistHookExecution(hook_registration_id, result) → void
+    retry: max_attempts=5, initial_interval=200ms, backoff=2.0, jitter=20ms
+ 
+State machine: see Section 2.1.1 hook dispatch algorithm
+Replay safety: all hook payloads are deterministic snapshots; no live DB reads in workflow code
+
+5.2 DMPairingWorkflow
+WorkflowID:     DMPairing-{tenant_id}-{sender_id}-{platform}
+TaskQueue:      brevio-gateway
+ExecutionTimeout: 16min (code TTL 15min + 1min drain)
+ 
+Activities:
+  CreatePairingRequest(tenant_id, sender_id, platform) → PairingRequest
+    retry: max_attempts=3, initial_interval=300ms
+  SendPairingCodeMessage(sender_id, platform, code) → DeliveryReceipt
+    retry: max_attempts=5, initial_interval=1s, backoff=2.0
+  WaitForApproval() → ApprovalResult  [signal-driven, timeout=15min]
+  AddToAllowlist(tenant_id, sender_id, platform, approved_by) → AllowlistEntry
+    retry: max_attempts=3, initial_interval=300ms
+  UpdatePairingStatus(id, status) → void
+    retry: max_attempts=3, initial_interval=300ms
+  WritePairingAudit(event_type, metadata) → void
+    retry: max_attempts=5, initial_interval=200ms
+ 
+Signals:
+  approve_pairing(operator_id, submitted_code) → void
+  reject_pairing(operator_id, reason) → void
+ 
+Queries:
+  get_status() → PairingStatus
+ 
+Compensation:
+  On EXPIRED: UpdatePairingStatus(EXPIRED) + WritePairingAudit(EXPIRED)
+  On REJECTED (3 bad attempts): UpdatePairingStatus(REJECTED) + WritePairingAudit(REJECTED)
+    + schedule_reopen = now + 24h (child workflow)
+
+5.3 A2ACoordinationWorkflow
+WorkflowID:     A2ACoord-{requester_session_id}-{idempotency_key}
+TaskQueue:      brevio-brain
+ExecutionTimeout: 10min (max loop depth 10 * 30s turn timeout + margin)
+ 
+Activities:
+  ResolveTargetSession(target_session_id) → AgentSession
+    retry: max_attempts=3, initial_interval=300ms
+  SendA2AMessage(target_session_id, payload, idempotency_key) → A2AMessage
+    retry: max_attempts=3, initial_interval=500ms
+  WaitForReply(target_session_id, timeout=30s) → A2AReply
+    retry: max_attempts=1 (timeout = REPLY_SKIP)
+  ProcessReply(reply) → ProcessedReply
+    retry: max_attempts=2, initial_interval=200ms
+  EmitAnnouncement(session_id, result, announced_to) → void
+    retry: max_attempts=3, initial_interval=500ms
+ 
+Invariants:
+  - loop_depth incremented on each round trip; halt at 10
+  - WaitForReply timeout → automatic REPLY_SKIP
+  - Same message hash detection → immediate REPLY_SKIP
+
+5.4 QueueLaneWorkflow
+WorkflowID:     QueueLane-{session_id}
+TaskQueue:      brevio-gateway
+ExecutionTimeout: unbounded (session lifetime)
+ 
+Activities:
+  GetLaneStatus(session_id) → QueueLane
+  SetLaneStatus(session_id, status) → void
+  DequeueNextMessage(session_id) → QueueMessage | null
+  DispatchToAgentRun(session_id, message) → RunID
+  FlushSteerContext(session_id, message) → void
+ 
+Signals:
+  inbound_message(message) → void  // enqueues to lane
+  run_complete(run_id) → void       // triggers next dequeue
+  change_mode(mode) → void          // collect|steer|followup
+ 
+Loop logic: see Section 2.4.1 lane lifecycle algorithm
+
+5.5 CompactionWorkflow
+WorkflowID:     Compaction-{session_id}-{turn_id}
+TaskQueue:      brevio-brain
+ExecutionTimeout: 120s
+ 
+Activities:
+  ReadSessionBuffer(session_id) → SessionBuffer
+    retry: max_attempts=3, initial_interval=300ms
+  SummarizeToolHistory(buffer.tool_results, max_tokens=2000) → string
+    retry: max_attempts=3, initial_interval=1s, backoff=2.0
+  SummarizeMessages(buffer.messages, max_tokens=3000) → string
+    retry: max_attempts=3, initial_interval=1s, backoff=2.0
+  ResetBuffers(session_id) → void
+    retry: max_attempts=5, initial_interval=200ms
+  WriteCompactedContext(session_id, summary) → void
+    retry: max_attempts=5, initial_interval=200ms
+  UpdateCompactionState(session_id, status, tokens_before, tokens_after) → void
+    retry: max_attempts=5, initial_interval=200ms
+  EmitCompactionEvent(session_id, event_type) → void  [COMPACTION_STARTED, COMPLETE]
+    retry: max_attempts=3, initial_interval=300ms
+ 
+Compensation on FAILED:
+  UpdateCompactionState(session_id, FAILED)
+  Restore original buffer from pre-compaction snapshot (kept for 5min)
+
+5.6 ModelProfileRotationWorkflow (periodic)
+WorkflowID:     ProfileRotation-{tenant_id}-{provider}-cron
+TaskQueue:      brevio-brain
+Schedule:       every 1 minute (Temporal Cron: "* * * * *")
+ 
+Activities:
+  ResetExpiredRateLimits(provider) → []profile_id  // resets rate_limit_resets_at < now()
+    retry: max_attempts=3
+  ResetRPMCounters(provider) → void               // resets current_rpm to 0 each minute window
+    retry: max_attempts=3
+  AlertOnExhaustedProfiles(provider) → void       // fires if all profiles non-ACTIVE
+    retry: max_attempts=3
+
+5.7 DoctorRunWorkflow
+WorkflowID:     DoctorRun-{run_id}
+TaskQueue:      brevio-cli
+ExecutionTimeout: 60s
+ 
+Activities:
+  RunHealthCheck(check_definition) → HealthCheckResult
+    retry: max_attempts=2, initial_interval=500ms
+    timeout: 10s per check
+  PersistHealthCheckResult(run_id, result) → void
+    retry: max_attempts=3, initial_interval=300ms
+  EmitDoctorSummary(run_id, results) → DoctorSummary
+    retry: max_attempts=2
+ 
+All 15 health checks run in parallel (saga pattern; failures recorded not thrown)
+Final result: HEALTHY (all PASS), DEGRADED (≥1 WARNING fail), CRITICAL (≥1 CRITICAL fail)
+
+SECTION 6 — POLICY DEFINITIONS (OPA)
+All OPA policies live in rego/. Policy bundle is compiled and signed on each CI build. The Temporal worker and Brain service query OPA via sidecar on localhost:8181.
+
+6.1 Hook Execution Policy
+package brevio.hooks
+ 
+import future.keywords.if
+import future.keywords.in
+ 
+# Hook execution is allowed if:
+#  1. Plugin is enabled
+#  2. Hook registration is enabled
+#  3. Hook point is a valid enum value
+#  4. Session tenant matches hook registration tenant (or hook is global)
+ 
+default allow_hook_execution = false
+ 
+allow_hook_execution if {
+  input.plugin.is_enabled == true
+  input.registration.is_enabled == true
+  input.hook_point in valid_hook_points
+}
+ 
+valid_hook_points := {
+  "before_model_resolve", "before_prompt_build", "before_tool_call",
+  "after_tool_call", "tool_result_persist", "message_received",
+  "message_sending", "message_sent", "session_start", "session_end",
+  "gateway_start", "gateway_stop", "agent_bootstrap"
+}
+ 
+# HALT is only allowed if registration.can_halt = true
+allow_halt if {
+  allow_hook_execution
+  input.registration.can_halt == true
+}
+
+6.2 DM Access Policy
+package brevio.dm
+ 
+import future.keywords.if
+ 
+default allow_dm_message = false
+ 
+# Allow if sender is on allowlist
+allow_dm_message if {
+  input.dm_policy.mode == "pairing"
+  some entry in input.allowlist
+  entry.sender_id == input.sender_id
+  entry.platform  == input.platform
+  entry.is_active == true
+}
+ 
+# Allow if policy is open (explicit opt-in)
+allow_dm_message if {
+  input.dm_policy.mode == "open"
+  input.dm_policy.explicit_open_ack == true
+}
+ 
+# Deny with reason
+deny_reason = "sender_not_paired" if {
+  not allow_dm_message
+  input.dm_policy.mode == "pairing"
+}
+ 
+deny_reason = "open_mode_missing_ack" if {
+  not allow_dm_message
+  input.dm_policy.mode == "open"
+  input.dm_policy.explicit_open_ack != true
+}
+
+6.3 Tool Execution Policy (Sandbox)
+package brevio.sandbox
+ 
+import future.keywords.if
+import future.keywords.in
+ 
+default allow_tool = false
+ 
+# Direct sessions: all tools allowed
+allow_tool if {
+  input.session.session_type == "direct"
+}
+ 
+# Sandboxed sessions: tool must be in allowed_tools and not in denied_tools
+allow_tool if {
+  input.session.session_type != "direct"
+  input.tool_name in input.sandbox_config.allowed_tools
+  not input.tool_name in input.sandbox_config.denied_tools
+}
+ 
+# Runtime overrides (session_tool_policies) take precedence
+allow_tool if {
+  some policy in input.runtime_overrides
+  policy.tool_name == input.tool_name
+  policy.policy == "allow"
+}
+ 
+deny_tool if {
+  some policy in input.runtime_overrides
+  policy.tool_name == input.tool_name
+  policy.policy == "deny"
+}
+
+6.4 Model Profile Selection Policy
+package brevio.model_routing
+ 
+import future.keywords.if
+import future.keywords.in
+ 
+# A profile is eligible if:
+#   status == ACTIVE
+#   current_rpm < max_rpm OR rate_limit_resets_at < now
+ 
+eligible_profiles[profile] if {
+  some profile in input.profiles
+  profile.status == "ACTIVE"
+  profile.current_rpm < profile.max_rpm
+}
+ 
+eligible_profiles[profile] if {
+  some profile in input.profiles
+  profile.status == "RATE_LIMITED"
+  profile.rate_limit_resets_at < input.now_unix
+}
+ 
+deny_all_exhausted if {
+  count(eligible_profiles) == 0
+}
+
+6.5 Role Definitions
+
+SECTION 7 — LLM CONTRACTS
+
+7.1 Prompt Templates
+7.1.1 Compaction Summarization Prompt
+SYSTEM:
+You are a context compression engine for the Brevio AI assistant platform.
+Your task is to produce a faithful, dense summary of the conversation and tool
+history provided. The summary must preserve all action outcomes, user decisions,
+pending tasks, and critical facts. Output only the summary text. No commentary.
+ 
+USER:
+Compress the following conversation history into a summary of at most {max_tokens} tokens.
+Preserve: decisions made, tasks completed, tasks pending, key data values.
+Discard: pleasantries, repetition, intermediate reasoning steps.
+ 
+CONVERSATION_HISTORY:
+{conversation_history_json}
+ 
+TOOL_HISTORY:
+{tool_history_json}
+
+7.1.2 Compaction — Input Schema
+{
+  "max_tokens": 3000,                    // integer, 500–5000
+  "conversation_history_json": "string", // JSON array of {role, content} objects
+  "tool_history_json": "string"          // JSON array of {tool_name, input, output}
+}
+
+7.1.3 Compaction — Output Validation Contract
+Validations applied to compaction LLM output:
+  1. Output must be plain text (not JSON, not markdown with headers)
+  2. Length: 100 chars minimum, max_tokens * 4 chars maximum
+  3. Must not contain: "I cannot", "As an AI", "I don't have access"
+     (these indicate the model misunderstood the task)
+  4. Must not contain raw tool call XML/JSON artifacts
+ 
+On validation failure:
+  Retry with simplified prompt (omit tool history)
+  Max 2 retries
+  On final failure: use truncated raw history as compacted context (safe fallback)
+
+7.2 Cost Bounds
+
+7.3 Deterministic Fallback Paths
+
+7.4 NO_REPLY Token — Output Verification
+function verifyNoReply(response_text):
+  trimmed = response_text.trim()
+ 
+  // Primary match
+  if trimmed == "##NO_REPLY##": return { is_no_reply: true, debug_suffix: null }
+ 
+  // Prefixed match (allows debug suffix)
+  if trimmed.startsWith("##NO_REPLY##"):
+    debug = trimmed.slice(len("##NO_REPLY##")).trim()
+    return { is_no_reply: true, debug_suffix: debug }
+ 
+  return { is_no_reply: false }
+ 
+// Note: case-sensitive. "##no_reply##" is NOT matched.
+// Guardrail: if response contains ##NO_REPLY## anywhere except at start → log WARNING,
+//            do NOT suppress (may be intentional user text discussing the token).
+
+SECTION 8 — INFRASTRUCTURE AS CODE
+All infrastructure is defined in Terraform 1.8+. Helm charts are in charts/. All secrets use Vault dynamic secrets or Kubernetes ExternalSecrets. Production runs on Kubernetes 1.30 (EKS/GKE/AKS).
+
+8.1 Terraform Module Structure
+infra/
+├── modules/
+│   ├── brevio-db/           # PostgreSQL 16 (RDS or CloudNativeDB)
+│   ├── brevio-cache/        # Redis 7.2 cluster
+│   ├── brevio-temporal/     # Temporal server + worker
+│   ├── brevio-vault/        # HashiCorp Vault cluster
+│   ├── brevio-sandbox-pool/ # Docker rootless node pool
+│   ├── brevio-gateway/      # Gateway service deployment
+│   ├── brevio-brain/        # Brain service deployment
+│   ├── brevio-hands/        # Hands service deployment
+│   └── brevio-networking/   # VPC, subnets, security groups
+├── environments/
+│   ├── local/               # docker-compose.yml + .env.local
+│   ├── staging/             # staging.tfvars
+│   └── production/          # production.tfvars + remote state
+└── main.tf                  # Root module wiring
+
+8.2 Key Terraform Variables
+
+8.3 Kubernetes Manifests — Key Resources
+Hook Event Bus ConfigMap
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: brevio-hook-bus-config
+  namespace: brevio
+data:
+  HOOK_BUS_REDIS_URL: "redis://brevio-cache:6379/1"
+  HOOK_BUS_CHANNEL_PREFIX: "brevio:hooks:"
+  HOOK_DISPATCH_TIMEOUT_MS: "30000"
+  HOOK_MAX_ASYNC_PARALLELISM: "10"
+
+Brain Deployment (key env vars)
+env:
+  - name: HOOK_BUS_REDIS_URL
+    valueFrom: { configMapKeyRef: { name: brevio-hook-bus-config, key: HOOK_BUS_REDIS_URL } }
+  - name: VAULT_ADDR
+    value: "http://vault:8200"
+  - name: VAULT_ROLE
+    value: "brevio-brain"
+  - name: COMPACTION_SOFT_LIMIT_PCT
+    value: "80"
+  - name: COMPACTION_HARD_LIMIT_PCT
+    value: "95"
+  - name: NO_REPLY_TOKEN
+    value: "##NO_REPLY##"
+  - name: SKILL_HOT_RELOAD_ENABLED
+    value: "true"
+
+8.4 Sandbox Pool Infrastructure
+resource "kubernetes_daemonset" "sandbox_pool" {
+  metadata { name = "brevio-sandbox-pool" namespace = "brevio" }
+  spec {
+    selector { match_labels = { app = "sandbox-pool" } }
+    template {
+      spec {
+        node_selector = { "brevio/sandbox-node" = "true" }
+        security_context {
+          run_as_non_root = true
+          seccomp_profile { type = "RuntimeDefault" }
+        }
+        container {
+          name  = "dockerd-rootless"
+          image = "docker:26-rootless"
+          resources {
+            limits   = { cpu = "4", memory = "8Gi" }
+            requests = { cpu = "2", memory = "4Gi" }
+          }
+        }
+      }
+    }
+  }
+}
+
+8.5 Autoscaling Rules
+
+SECTION 9 — CI/CD PIPELINES
+All pipelines run on GitHub Actions. Artifact signing uses cosign. Deployment strategy: blue/green for Gateway and Brain; rolling for Workers; canary (10%→50%→100%) for Hands.
+
+9.1 Pipeline Stages (ordered)
+
+9.2 Migration Safety Rules
+Forbidden in non-backward-compatible migrations:
+  - DROP TABLE
+  - DROP COLUMN
+  - ALTER COLUMN type change (incompatible cast)
+  - RENAME TABLE or RENAME COLUMN
+  - Adding NOT NULL without DEFAULT on existing table
+ 
+Allowed without code deploy:
+  - CREATE TABLE (new table)
+  - CREATE INDEX CONCURRENTLY
+  - Adding NULLABLE column
+  - Adding DEFAULT to existing column
+ 
+Two-phase deployment for breaking changes:
+  Phase 1: Add new column/table (backward compatible)
+  Phase 2: Remove old column after all consumers migrated
+
+9.3 Rollback Strategy
+Trigger conditions for automatic rollback:
+  - Health check POST /health/doctor/run returns CRITICAL within 5min of deploy
+  - Error rate > 1% sustained for 2min (Datadog SLO breach)
+  - p99 latency > 5s sustained for 2min
+ 
+Rollback procedure (automated):
+  1. Helm rollback brevio-{service} --wait
+  2. If DB migration was applied: run DOWN migration (reversible only)
+  3. Alert PagerDuty: "Auto-rollback executed for {service} at {timestamp}"
+  4. Hold next deploy until operator acks in Slack: /brevio deploy-unblock
+
+SECTION 10 — OBSERVABILITY SPEC
+
+10.1 Key Metrics (Prometheus)
+
+10.2 Log Schema (structured JSON)
+{
+  "timestamp":    "2026-01-01T00:00:00.000Z",
+  "level":        "INFO | WARN | ERROR",
+  "service":      "brevio-brain | brevio-gateway | brevio-hands | brevio-worker",
+  "trace_id":     "uuid",
+  "span_id":      "uuid",
+  "tenant_id":    "uuid",
+  "session_id":   "uuid",
+  "user_id":      "uuid",
+  "event":        "string  // e.g. hook.dispatched, dm.pairing.approved, no_reply.suppressed",
+  "feature":      "string  // feature slug: hook_system, dm_pairing, a2a, etc.",
+  "duration_ms":  "number | null",
+  "metadata":     "object  // event-specific structured data",
+  "error":        "string | null"
+}
+
+10.3 Distributed Tracing
+OpenTelemetry SDK (OTLP) instrumented in all services. Trace propagation header: traceparent (W3C). Spans created at: inbound message receipt, hook dispatch per point, LLM call, tool execution, DB query, Redis command. Sampling rate: 100% errors, 10% success traces in production.
+
+10.4 Alert Thresholds
+
+10.5 SLO Definitions
+
+SECTION 11 — TESTING SUITE
+
+11.1 Test Coverage Matrix
+
+11.2 Critical Unit Tests
+Hook System
+test_hook_priority_ordering:
+  Given: 3 hooks registered at priority 100, 500, 900 on before_tool_call
+  When:  dispatch is called
+  Then:  hooks execute in priority order 100 → 500 → 900
+ 
+test_hook_halt_stops_pipeline:
+  Given: hook at priority 200 with can_halt=true returns HALT
+  When:  dispatch is called
+  Then:  hook at priority 300 never executes; pipeline returns HaltResult
+ 
+test_async_hook_barrier:
+  Given: 2 async hooks; one times out at 5000ms
+  When:  dispatch with 30s barrier
+  Then:  barrier resolves after non-timeout hook completes; timeout hook result is ERROR
+ 
+test_hook_mutation_merge:
+  Given: 2 sync hooks both mutate context.model; hook1 priority=100, hook2 priority=200
+  When:  both return mutations
+  Then:  hook2 mutation wins (last write by priority, higher priority = later write)
+
+DM Pairing
+test_unknown_sender_gets_pairing_code:
+  Given: dm_policy = pairing, sender not in allowlist
+  When:  inbound message received
+  Then:  pairing code sent, message dropped, pairing_request created with status=PENDING
+ 
+test_pairing_code_expires_at_15min:
+  Given: pairing_request created, 15min 1sec elapsed
+  When:  approve attempted
+  Then:  status = EXPIRED, approve rejected
+ 
+test_wrong_code_3x_rejects:
+  Given: pending pairing, attempt_count reaches 3 with wrong codes
+  When:  fourth attempt
+  Then:  status = REJECTED, 24h cooldown applied
+ 
+test_open_mode_requires_explicit_ack:
+  Given: dm_policy = open, explicit_open_ack = false
+  When:  OPA policy evaluated
+  Then:  deny_reason = "open_mode_missing_ack"
+
+Idempotency
+test_duplicate_request_returns_cached:
+  Given: request with key K processed (status=COMPLETE, response=R)
+  When:  second request with same key K
+  Then:  response = R (from cache), no second execution
+ 
+test_concurrent_duplicate_returns_409:
+  Given: request with key K in status=PROCESSING
+  When:  concurrent second request with same key K
+  Then:  HTTP 409 { error: "request_in_progress" }
+ 
+test_whatsapp_key_derivation:
+  Given: WhatsApp message_id = "wamid.abc123"
+  When:  idempotency key derived
+  Then:  key = UUIDv5(NAMESPACE_DNS, "brevio:wamid.abc123") (deterministic)
+
+NO_REPLY Token
+test_exact_match_suppressed:
+  Input: "##NO_REPLY##" → is_no_reply=true
+ 
+test_prefix_match_suppressed:
+  Input: "##NO_REPLY## internal debug info" → is_no_reply=true
+ 
+test_embedded_not_suppressed:
+  Input: "Here is the result. ##NO_REPLY## should not trigger" → is_no_reply=false
+  (logs WARNING: NO_REPLY token found but not at start)
+ 
+test_case_sensitive:
+  Input: "##no_reply##" → is_no_reply=false
+
+11.3 Workflow Replay Tests
+Each Temporal workflow must pass determinism replay tests. Test procedure: record workflow history from integration test run, then replay using Temporal test framework, assert identical final state. This validates replay safety of all workflow code.
+Replay test targets:
+  - HookDispatchWorkflow: 3 scenarios (all pass, one halt, one timeout)
+  - DMPairingWorkflow:    4 scenarios (approved, rejected, expired, open mode)
+  - A2ACoordinationWorkflow: 3 scenarios (normal loop, REPLY_SKIP, max depth)
+  - QueueLaneWorkflow:    3 scenarios (collect flush, steer override, followup queue)
+  - CompactionWorkflow:   2 scenarios (success, fallback on LLM failure)
+
+11.4 Load Test Spec
+
+11.5 Chaos Tests
+
+SECTION 12 — SECURITY & GOVERNANCE
+
+12.1 Threat Model
+
+12.2 Encryption Standards
+
+12.3 Key Rotation Policy
+
+12.4 SBOM Definition
+SBOM generated by Syft on every container build.
+Format: SPDX 2.3 (JSON)
+Attestation: cosign attest --type spdxjson
+Storage: attached to container image in OCI registry
+ 
+Included packages: OS layer, language runtime dependencies,
+  application dependencies, plugins bundled in image.
+ 
+Verification: verifyco sign-verify-attestation on every kubectl deploy
+  via Kyverno policy: require-sbom-attestation
+
+SECTION 13 — FAILURE & RECOVERY MODEL
+
+13.1 Failure Taxonomy
+
+13.2 Retry Matrix (all services)
+
+13.3 Dead-Letter Handling
+Dead-letter queue: Temporal DLQ + Redis list brevio:dlq:{service}
+ 
+DLQ conditions:
+  - Workflow fails after all retries exhausted
+  - Activity non-retryable error (e.g. bad request body)
+  - Compensating transaction itself fails
+ 
+DLQ processing:
+  - All DLQ items alertPagerDuty(severity=WARNING)
+  - Ops reviews within 4 hours (business hours) or 1 hour (P1)
+  - Replay via: brevio-cli dlq replay --workflow-id {id}
+  - Purge via:  brevio-cli dlq purge --before {timestamp} --dry-run first
+
+13.4 Disaster Recovery
+
+SECTION 14 — RUNBOOKS & DEPLOYMENT ASSEMBLY ORDER
+
+14.1 Deployment Assembly Order (blank repo → production)
+
+14.2 Deployment Runbook
+
+
+14.3 Rollback Runbook
+
+
+14.4 Key Rotation Runbook
+# JWT Signing Key Rotation (zero-downtime)
+1. vault write transit/keys/brevio-jwt/rotate
+2. Set BREVIO_JWT_OLD_KEY_VERSION = current version in ConfigMap
+3. Set BREVIO_JWT_NEW_KEY_VERSION = current + 1
+4. Deploy brain + gateway (both versions accepted for 24h)
+5. After 24h (old tokens expired): remove BREVIO_JWT_OLD_KEY_VERSION
+6. Redeploy brain + gateway
+7. Log rotation event: brevio-cli audit log --event jwt_key_rotation
+ 
+# Model API Key Rotation
+1. Provision new API key in provider portal
+2. vault kv put secret/brevio/model-profiles/{id} api_key=<new_key>
+3. brevio-cli model-profiles test --id {id}  (verify new key works)
+4. brevio-cli model-profiles enable --id {id}
+5. Revoke old key in provider portal
+6. brevio-cli doctor  (confirm HC-007 passes)
+
+14.5 Incident Response Runbook
+# Severity: CRITICAL — All model profiles exhausted
+1. Alert fires: brevio_model_profile_rpm all at max
+2. Immediately: brevio-cli model-profiles status (identify which profiles are affected)
+3. If RATE_LIMITED: wait for rate_limit_resets_at (auto-resolved by rotation workflow)
+4. If AUTH_FAILED: rotate credential (see Key Rotation Runbook)
+5. If QUOTA_EXHAUSTED: provision new profile from provider portal
+6. User communication: queue full message with ETA notification
+7. Post-incident: analyze usage spike, adjust max_rpm and weight distribution
+ 
+# Severity: CRITICAL — DM messages not being processed
+1. Run: brevio-cli doctor  (check HC-001 through HC-005)
+2. If HC-004 fails (hook bus): check Redis cluster health
+3. If HC-005 fails (migrations): check Flyway status, run migrate if safe
+4. If DM policy misconfigured: brevio-cli config set dm-policy=pairing
+5. Check gateway logs for dm.pairing.blocked events
+
+14.6 Migration Runbook
+# Apply a new migration safely
+1. Write migration file: db/migrations/V{N}__{description}.sql
+2. Write undo migration:  db/migrations/U{N}__{description}.sql  (required)
+3. Test locally: make db-migrate-local
+4. PR review: DBA and senior engineer sign off
+5. CI gate: flyway validate (ensures migration file matches checksum)
+6. Deploy: migration runs automatically before service deploy (Flyway in init container)
+7. Verify: flyway info | grep V{N} → Success
+ 
+# Emergency undo
+1. brevio-cli db migration undo --version {N}
+2. Verify: flyway info shows V{N} undone
+3. Alert team in #eng-deploys
+
+14.7 Scaling Runbook
+# Scale Brain service manually (when HPA insufficient)
+kubectl scale deployment brevio-brain --replicas=10 -n brevio
+ 
+# Scale sandbox pool
+terraform apply -var="sandbox_pool_node_count=6" infra/modules/brevio-sandbox-pool
+ 
+# Add new model auth profile for provider scaling
+brevio-cli model-profiles add \
+  --provider anthropic \
+  --name "claude-account-3" \
+  --auth-type oauth \
+  --vault-path secret/brevio/model-profiles/anthropic-3 \
+  --weight 100 \
+  --max-rpm 60
+ 
+# Verify scaling had intended effect
+brevio-cli doctor  # confirm HC-007 active profiles >= new expected count
+
+
+
+GAP CLOSURE ADDENDUM
+v1.0.1 — 29 Gaps Resolved — Formally Complete
+The following sections close all gaps identified in the v1.0.0 blueprint audit.
+
+
+
+
+BREVIO PLATFORM
+OpenClaw Adoption Blueprint — GAP CLOSURE ADDENDUM
+v1.0.1  |  29 Gaps Resolved  |  Formally Complete
+
+
+
+Each Brevio service corresponds to a bounded context with a defined ubiquitous language, explicit context boundaries, and anti-corruption layers (ACL) at integration points.
+
+
+Anti-Corruption Layer Contracts
+// ACL: Platform Message → Brevio Message (in brevio-gateway)
+interface PlatformMessage {  // WhatsApp / iMessage native shape
+  wamid?: string;
+  imessage_guid?: string;
+  from: string;
+  body: string;
+  timestamp_unix: number;
+}
+ 
+interface BrevioMessage {   // canonical domain object
+  message_id:    string;    // deterministic: UUIDv5(NS_DNS, platform+":"+native_id)
+  session_id:    string;
+  sender_id:     string;
+  channel_id:    string;
+  platform:      "whatsapp" | "imessage";
+  body:          string;
+  received_at:   string;    // ISO-8601
+  idempotency_key: string;  // derived per Section 7 of v1.0.0
+}
+ 
+// ACL: Brevio ModelRequest → Anthropic API (in brevio-brain)
+interface BrevioModelRequest {
+  profile_id:     string;
+  model:          string;
+  messages:       {role: string; content: string}[];
+  max_tokens:     number;
+  temperature:    number;  // always 0 for deterministic tasks
+  tool_choice?:   string;
+}
+// ProviderAdapter translates to anthropic.messages.create() params — gateway code never sees SDK types
+
+
+A failure domain is a set of components that can fail together without causing failure in components outside the domain. The following defines all Brevio failure domains, their blast radius, and isolation mechanisms.
+
+
+Cross-Domain Failure Invariants
+INVARIANT FD-INV-001: FD-05 (Redis) failure must NOT cause FD-01 (Gateway) crash.
+  Enforcement: Gateway uses Redis with connection timeout=2s, fallback=degraded mode.
+  Degraded mode: idempotency checks skipped (logged), hook bus disabled (hooks skip),
+  queue lanes managed in-memory (volatile, lost on restart).
+ 
+INVARIANT FD-INV-002: FD-04 (PostgreSQL) failure must NOT cause FD-06 (Temporal) crash.
+  Enforcement: Temporal activities have max_attempts; DB retry bounded at 5x.
+  After 5x failure: activity fails → workflow DLQ. Temporal itself uses its own DB.
+ 
+INVARIANT FD-INV-003: FD-08 (sandbox pool) failure must NOT affect FD-01 (direct sessions).
+  Enforcement: Sandbox containers are isolated from gateway pod networking.
+  Direct sessions never contact sandbox pool.
+ 
+INVARIANT FD-INV-004: No single FD failure may cascade to data loss.
+  Enforcement: All writes go to PostgreSQL (durable). Redis is cache-only.
+  Temporal event history is source of truth for workflow state.
+
+
+Feature 1 — Hook Dispatch Sequence
+Client          Gateway         Brain (HookDispatcher)    Plugin A     Plugin B    DB
+  │──message──▶│                      │                     │            │           │
+  │             │──dispatch(msg_recv)─▶│                     │            │           │
+  │             │                      │──load_registrations─────────────────────────▶│
+  │             │                      │◀─[PluginA(p=100), PluginB(p=500)]────────────│
+  │             │                      │──execute(PluginA)──▶│            │           │
+  │             │                      │◀─CONTINUE+mutations─│            │           │
+  │             │                      │──execute(PluginB)───────────────▶│           │
+  │             │                      │◀─CONTINUE+mutations──────────────│           │
+  │             │                      │──persist_executions─────────────────────────▶│
+  │             │◀─merged_context──────│                     │            │           │
+  │             │──continue_pipeline──▶│                     │            │           │
+
+Feature 2 — DM Pairing Sequence
+UnknownSender   Gateway         DMPairingWorkflow       Operator        DB
+  │──msg──────▶│                      │                   │             │
+  │             │──check_allowlist────────────────────────────────────▶│
+  │             │◀─not_found──────────────────────────────────────────│
+  │             │──start_workflow─────▶│                   │             │
+  │             │                      │──CreatePairingReq──────────────▶│
+  │             │                      │──SendPairingCode──▶(to sender)  │
+  │◀─pairing_code_msg─────────────────│                   │             │
+  │             │                      │──WaitForApproval (signal, 15min)│
+  │             │                      │                   │──approve──▶│ (signal)
+  │             │                      │◀─signal:approved──│             │
+  │             │                      │──AddToAllowlist────────────────▶│
+  │             │                      │──WritePairingAudit──────────────▶│
+  │──next_msg──▶│──check_allowlist────────────────────────────────────▶│
+  │             │◀─found+active───────────────────────────────────────│
+  │             │──process_message────▶│                   │             │
+
+Feature 7 — Idempotency Gate Sequence
+WhatsApp      Gateway          IdempotencyCache(Redis)       Brain
+  │──msg──────▶│                      │                          │
+  │             │──derive_key(msg_id)─▶│                          │
+  │             │◀─ABSENT─────────────│                          │
+  │             │──write(key,PROCESS)─▶│                          │
+  │             │──forward_to_brain────────────────────────────▶│
+  │             │◀─response────────────────────────────────────│
+  │             │──write(key,COMPLETE,response)──▶│              │
+  │◀─response──│                      │                          │
+ 
+  [WhatsApp retry — same message_id]
+  │──retry─────▶│                      │                          │
+  │             │──derive_key(msg_id)─▶│                          │
+  │             │◀─COMPLETE+response──│                          │
+  │◀─response──│   (no Brain call)     │                          │
+  (Brain never invoked — full dedup)
+
+Feature 5 — Sandbox Tool Call Sequence
+Brain(Agent)   OPA Sidecar    Hands(SandboxMgr)   SandboxContainer    ToolBinary
+  │──tool_call─▶│                   │                    │                 │
+  │             │──eval_policy──────│                    │                 │
+  │             │  (session_type,   │                    │                 │
+  │             │   tool_name,      │                    │                 │
+  │             │   sandbox_config) │                    │                 │
+  │             │◀─allow────────────│                    │                 │
+  │◀─allowed───│                   │                    │                 │
+  │──execute───────────────────────▶│                    │                 │
+  │                                 │──get_or_create_ctr─▶│                │
+  │                                 │                    │──exec(tool)─────▶│
+  │                                 │                    │◀─output──────────│
+  │                                 │◀─tool_output───────│                 │
+  │◀─tool_result────────────────────│                    │                 │
+  │──hook:after_tool_call (result)  │                    │                 │
+
+Feature 9 — Model Profile Rotation Sequence
+Brain(Router)  ProfileSelector    Vault           Provider API    UsageStats
+  │──select()─▶│                   │                   │               │
+  │             │──get_profiles()──────────────────────────────────────│
+  │             │◀─[P1:ACTIVE,P2:RATE_LIMITED,P3:ACTIVE]───────────────│
+  │             │──filter(ACTIVE, RPM < max)                            │
+  │             │──sort(weight * (1-utilization))                       │
+  │             │──select P1 (highest score)                            │
+  │◀─P1────────│                   │                   │               │
+  │──read_secret(P1.vault_path)────▶│                   │               │
+  │◀─api_key───────────────────────│                   │               │
+  │──POST /messages────────────────────────────────────▶│               │
+  │◀─429 RateLimited────────────────────────────────────│               │
+  │──onProfileError(P1, RATE_LIMITED)▶│                 │               │
+  │             │──set P1.status=RATE_LIMITED, resets_at=retry_after    │
+  │             │──increment P3 (next eligible)                         │
+  │──select()─▶│  → returns P3                          │               │
+  │──record_usage(P3)────────────────────────────────────────────────▶│
+
+
+W1 — HookDispatchWorkflow
+
+W2 — DMPairingWorkflow
+
+W3 — A2ACoordinationWorkflow
+
+W4 — QueueLaneWorkflow
+
+W5 — CompactionWorkflow
+
+W6 — ModelProfileRotationWorkflow (cron)
+
+W7 — DoctorRunWorkflow
+
+
+Package: @brevio/sdk — TypeScript 5.x. Distributed as ESM + CJS. Auto-generated from OpenAPI 3.1 spec via openapi-typescript. The following canonical types cover all 12 features.
+
+Core Types
+// packages/sdk/src/types/index.ts
+ 
+export type UUID = string;
+export type ISO8601 = string;
+export type Platform = "whatsapp" | "imessage";
+export type SessionType = "direct" | "group" | "channel" | "spawned";
+export type SessionStatus = "ACTIVE" | "IDLE" | "CLOSED" | "ERROR";
+ 
+export type HookPoint =
+  | "before_model_resolve" | "before_prompt_build" | "before_tool_call"
+  | "after_tool_call" | "tool_result_persist" | "message_received"
+  | "message_sending" | "message_sent" | "session_start" | "session_end"
+  | "gateway_start" | "gateway_stop" | "agent_bootstrap";
+ 
+export type HookResult = "CONTINUE" | "HALT" | "ERROR" | "TIMEOUT";
+export type PairingStatus = "PENDING" | "APPROVED" | "REJECTED" | "EXPIRED";
+export type DmPolicyMode = "pairing" | "open";
+export type QueueMode = "collect" | "steer" | "followup";
+export type LaneStatus = "IDLE" | "RUNNING" | "DRAINING";
+export type IdempotencyStatus = "PROCESSING" | "COMPLETE" | "FAILED";
+export type CompactionTrigger = "SOFT_LIMIT"|"HARD_LIMIT"|"TOOL_OVERFLOW"|"CONTEXT_ERROR"|"TURN_THRESHOLD";
+export type ProfileStatus = "ACTIVE"|"RATE_LIMITED"|"AUTH_FAILED"|"QUOTA_EXHAUSTED"|"DISABLED";
+export type AuthType = "api_key" | "oauth";
+export type Provider = "anthropic" | "openai" | "gemini" | "groq";
+export type GateResult = "PASS" | "FAIL";
+export type HCSeverity = "CRITICAL" | "WARNING" | "INFO";
+export type HCResult = "PASS" | "FAIL" | "SKIP" | "ERROR";
+export type A2AMessageType = "SEND"|"REPLY"|"REPLY_SKIP"|"ANNOUNCE"|"ANNOUNCE_SKIP";
+
+export interface Plugin {
+  id: UUID; name: string; version: string;
+  description?: string; entry_module: string;
+  is_enabled: boolean; config_schema: Record<string,unknown>;
+  created_at: ISO8601; updated_at: ISO8601;
+}
+ 
+export interface HookRegistration {
+  id: UUID; plugin_id: UUID; hook_point: HookPoint;
+  priority: number; is_async: boolean; timeout_ms: number;
+  can_halt: boolean; config: Record<string,unknown>;
+  is_enabled: boolean; created_at: ISO8601; updated_at: ISO8601;
+}
+ 
+export interface DmAllowlistEntry {
+  id: UUID; tenant_id: UUID; sender_id: string; platform: Platform;
+  approved_at: ISO8601; approved_by: UUID;
+  revoked_at?: ISO8601; is_active: boolean;
+}
+ 
+export interface PairingRequest {
+  id: UUID; tenant_id: UUID; sender_id: string; platform: Platform;
+  pairing_code: string; status: PairingStatus;
+  attempt_count: number; expires_at: ISO8601;
+  resolved_at?: ISO8601; resolved_by?: UUID; created_at: ISO8601;
+}
+ 
+export interface AgentSession {
+  id: UUID; tenant_id: UUID; user_id: UUID;
+  channel_id: string; session_type: SessionType; status: SessionStatus;
+  parent_id?: UUID; sandbox_enabled: boolean;
+  metadata: Record<string,unknown>;
+  started_at: ISO8601; last_active_at: ISO8601; closed_at?: ISO8601;
+}
+ 
+export interface QueueLane {
+  id: UUID; session_id: UUID; status: LaneStatus;
+  queue_mode: QueueMode; steer_context?: string;
+  run_started_at?: ISO8601; updated_at: ISO8601;
+}
+ 
+export interface ModelAuthProfile {
+  id: UUID; tenant_id: UUID; provider: Provider;
+  profile_name: string; auth_type: AuthType;
+  vault_secret_path: string; status: ProfileStatus;
+  weight: number; max_rpm: number; current_rpm: number;
+  rate_limit_resets_at?: ISO8601; last_error_at?: ISO8601;
+  last_used_at?: ISO8601; created_at: ISO8601; updated_at: ISO8601;
+}
+ 
+export interface SkillDefinition {
+  id: UUID; name: string; file_path: string; version: string;
+  scope: "per-agent" | "shared"; always_load: boolean;
+  requires_bins: string[]; requires_env: string[]; requires_config: string[];
+  token_estimate?: number; is_enabled: boolean;
+  created_at: ISO8601; updated_at: ISO8601;
+}
+ 
+export interface HealthCheckDefinition {
+  id: UUID; check_id: string; name: string;
+  severity: HCSeverity; description: string;
+  pass_condition: string; check_module: string; is_enabled: boolean;
+}
+ 
+export interface HealthCheckResult {
+  id: UUID; check_id: string; result: HCResult;
+  message?: string; metadata: Record<string,unknown>;
+  duration_ms: number; run_id: UUID; checked_at: ISO8601;
+}
+ 
+export interface DoctorRunSummary {
+  run_id: UUID;
+  status: "HEALTHY" | "DEGRADED" | "CRITICAL";
+  results: HealthCheckResult[];
+  duration_ms: number;
+  completed_at: ISO8601;
+}
+ 
+// API Error shape (all endpoints)
+export interface BrevioError {
+  error: string;   // machine-readable code e.g. "DM_NOT_PAIRED"
+  message: string; // human-readable description
+  request_id: UUID;
+  timestamp: ISO8601;
+}
+
+SDK Client Interface
+export interface BrevioClient {
+  hooks: {
+    registerPlugin(req: Omit<Plugin,"id"|"created_at"|"updated_at">): Promise<Plugin>;
+    registerHook(req: Omit<HookRegistration,"id"|"created_at"|"updated_at">): Promise<HookRegistration>;
+    listRegistrations(hookPoint?: HookPoint): Promise<HookRegistration[]>;
+    patchRegistration(id: UUID, patch: Partial<HookRegistration>): Promise<HookRegistration>;
+  };
+  dm: {
+    getPolicy(): Promise<{mode: DmPolicyMode; explicit_open_ack: boolean}>;
+    setPolicy(mode: DmPolicyMode, ack?: boolean): Promise<void>;
+    getPendingPairings(): Promise<PairingRequest[]>;
+    approvePairing(id: UUID): Promise<DmAllowlistEntry>;
+    rejectPairing(id: UUID, reason?: string): Promise<void>;
+    getAllowlist(): Promise<DmAllowlistEntry[]>;
+    revokeAllowlistEntry(id: UUID): Promise<void>;
+  };
+  sessions: {
+    list(): Promise<AgentSession[]>;
+    getHistory(sessionId: UUID, max?: number): Promise<Turn[]>;
+    send(sessionId: UUID, message: string, idempotencyKey: UUID): Promise<A2AReply>;
+    spawn(config: SpawnConfig): Promise<{session_id: UUID}>;
+    getSpawnResult(sessionId: UUID): Promise<SpawnResult | null>;
+    getLane(sessionId: UUID): Promise<QueueLane>;
+    setLaneMode(sessionId: UUID, mode: QueueMode): Promise<QueueLane>;
+  };
+  modelProfiles: {
+    list(): Promise<ModelAuthProfile[]>;
+    add(req: CreateProfileRequest): Promise<ModelAuthProfile>;
+    patch(id: UUID, patch: Partial<ModelAuthProfile>): Promise<ModelAuthProfile>;
+    remove(id: UUID): Promise<void>;
+    test(id: UUID): Promise<{success: boolean; latency_ms: number}>;
+  };
+  skills: {
+    list(): Promise<SkillDefinition[]>;
+    evaluate(sessionId: UUID): Promise<{skill_id: UUID; result: GateResult; fail_reason?: string}[]>;
+    getLoadedSkills(sessionId: UUID): Promise<SkillDefinition[]>;
+    reloadSkills(sessionId: UUID): Promise<void>;
+  };
+  health: {
+    runDoctor(): Promise<{run_id: UUID}>;
+    getRunResults(runId: UUID): Promise<DoctorRunSummary>;
+    getLatest(): Promise<DoctorRunSummary>;
+  };
+}
+
+
+Versioning Strategy
+URL versioning: /v{major} (e.g. /v1/hooks/plugins)
+Current version: v1
+ 
+Version lifecycle:
+  CURRENT → DEPRECATED (6-month notice) → SUNSET (removed)
+ 
+Deprecation procedure:
+  1. Add Deprecation: date="YYYY-MM-DD" header to all deprecated endpoint responses
+  2. Add Sunset: date="YYYY-MM-DD" header
+  3. Log deprecation_warning per request in observability
+  4. Notify all active API consumers via email + Slack 6 months before sunset
+  5. On sunset date: return 410 Gone for deprecated version endpoints
+
+Backward Compatibility Rules
+
+Contract Enforcement
+All API responses validated against OpenAPI 3.1 schema on every request in staging.
+Schema drift detection: oasdiff run in CI on every PR.
+Breaking change in PR: CI gate fails with message:
+  "Breaking API change detected: requires major version bump or explicit override."
+Override: PR must include docs/api-changes/BREAKING-{date}-{description}.md
+  with migration guide and consumer notification plan.
+
+
+The following cross-table invariants are enforced by DB triggers, application-layer checks, and integration tests. Each invariant has a unique ID, a formal statement, and the enforcement mechanism.
+
+
+
+Liveness guarantees state that each workflow will eventually terminate (reach a TERMINAL state) under any finite sequence of events, including all failure paths. The following formally states the liveness property for each workflow.
+
+
+
+
+
+Hook Execution Policy — Evaluation Examples
+// Example 1: ALLOW — plugin enabled, registration enabled, valid hook_point
+input = {
+  "plugin": { "is_enabled": true },
+  "registration": { "is_enabled": true, "can_halt": false },
+  "hook_point": "before_tool_call"
+}
+// → allow_hook_execution = true, allow_halt = false
+ 
+// Example 2: DENY — plugin disabled
+input = {
+  "plugin": { "is_enabled": false },
+  "registration": { "is_enabled": true, "can_halt": true },
+  "hook_point": "message_received"
+}
+// → allow_hook_execution = false, allow_halt = false
+ 
+// Example 3: ALLOW HALT — plugin enabled, can_halt=true
+input = {
+  "plugin": { "is_enabled": true },
+  "registration": { "is_enabled": true, "can_halt": true },
+  "hook_point": "session_start"
+}
+// → allow_hook_execution = true, allow_halt = true
+ 
+// Example 4: DENY — invalid hook_point
+input = {
+  "plugin": { "is_enabled": true },
+  "registration": { "is_enabled": true, "can_halt": false },
+  "hook_point": "invalid_hook_xyz"
+}
+// → allow_hook_execution = false
+
+DM Access Policy — Evaluation Examples
+// Example 1: ALLOW — sender on allowlist
+input = {
+  "dm_policy": { "mode": "pairing", "explicit_open_ack": false },
+  "allowlist": [
+    { "sender_id": "+1234567890", "platform": "whatsapp", "is_active": true }
+  ],
+  "sender_id": "+1234567890", "platform": "whatsapp"
+}
+// → allow_dm_message = true
+ 
+// Example 2: DENY — pairing mode, sender not on allowlist
+input = {
+  "dm_policy": { "mode": "pairing", "explicit_open_ack": false },
+  "allowlist": [],
+  "sender_id": "+9876543210", "platform": "whatsapp"
+}
+// → allow_dm_message = false, deny_reason = "sender_not_paired"
+ 
+// Example 3: ALLOW — open mode with explicit ack
+input = {
+  "dm_policy": { "mode": "open", "explicit_open_ack": true },
+  "allowlist": [], "sender_id": "any", "platform": "whatsapp"
+}
+// → allow_dm_message = true
+ 
+// Example 4: DENY — open mode, missing ack
+input = {
+  "dm_policy": { "mode": "open", "explicit_open_ack": false },
+  "allowlist": [], "sender_id": "any", "platform": "whatsapp"
+}
+// → allow_dm_message = false, deny_reason = "open_mode_missing_ack"
+
+OPA Policy Regression Tests (Rego test format)
+# rego/tests/dm_test.rego
+package brevio.dm_test
+import data.brevio.dm
+ 
+test_allow_paired_sender {
+  dm.allow_dm_message with input as {
+    "dm_policy": {"mode":"pairing","explicit_open_ack":false},
+    "allowlist": [{"sender_id":"A","platform":"whatsapp","is_active":true}],
+    "sender_id":"A","platform":"whatsapp"
+  }
+}
+ 
+test_deny_unpaired_sender {
+  not dm.allow_dm_message with input as {
+    "dm_policy": {"mode":"pairing","explicit_open_ack":false},
+    "allowlist": [], "sender_id":"B","platform":"whatsapp"
+  }
+  dm.deny_reason == "sender_not_paired" with input as {
+    "dm_policy": {"mode":"pairing","explicit_open_ack":false},
+    "allowlist": [], "sender_id":"B","platform":"whatsapp"
+  }
+}
+ 
+test_deny_revoked_allowlist_entry {
+  not dm.allow_dm_message with input as {
+    "dm_policy": {"mode":"pairing","explicit_open_ack":false},
+    "allowlist": [{"sender_id":"C","platform":"whatsapp","is_active":false}],
+    "sender_id":"C","platform":"whatsapp"
+  }
+}
+ 
+# rego/tests/sandbox_test.rego
+package brevio.sandbox_test
+import data.brevio.sandbox
+ 
+test_direct_session_allows_all_tools {
+  sandbox.allow_tool with input as {
+    "session": {"session_type":"direct"},
+    "tool_name": "browser",
+    "sandbox_config": {"allowed_tools":[],"denied_tools":[]},
+    "runtime_overrides": []
+  }
+}
+ 
+test_group_session_denies_browser {
+  not sandbox.allow_tool with input as {
+    "session": {"session_type":"group"},
+    "tool_name": "browser",
+    "sandbox_config": {
+      "allowed_tools":["bash","process","read","write"],
+      "denied_tools":["browser","canvas","nodes","cron"]
+    },
+    "runtime_overrides": []
+  }
+}
+ 
+test_runtime_override_allows_denied_tool {
+  sandbox.allow_tool with input as {
+    "session": {"session_type":"group"},
+    "tool_name": "browser",
+    "sandbox_config": {
+      "allowed_tools":["bash"],"denied_tools":["browser"]
+    },
+    "runtime_overrides": [{"tool_name":"browser","policy":"allow"}]
+  }
+}
+
+
+10.1 A2A Message Processing Prompt
+SYSTEM:
+You are a sub-agent in the Brevio AI assistant platform responding to an agent-to-agent
+(A2A) coordination request. Process the incoming request, execute any required actions,
+and return a structured response. If no further coordination is needed, end your response
+with the exact token: REPLY_SKIP
+ 
+USER:
+A2A_REQUEST from session {requester_session_id}:
+{a2a_payload_json}
+ 
+Your context:
+{session_context_summary}
+ 
+Respond with your result. If this completes the coordination, append REPLY_SKIP on the final line.
+
+A2A Processing — Input Schema
+{
+  "requester_session_id": "uuid",
+  "a2a_payload_json": "string (JSON object: {task, context, expected_output_format})",
+  "session_context_summary": "string (max 2000 tokens)"
+}
+
+A2A Processing — Output Verification Contract
+Validations:
+  1. Response must not be empty (min 10 chars)
+  2. If ending in REPLY_SKIP: trim last line must == "REPLY_SKIP"
+  3. Must not contain: raw internal identifiers (UUIDs in system format)
+     (signals agent leaked internal state to user-facing output)
+  4. Max length: 8000 chars. If exceeded: truncate to 8000 + " [TRUNCATED]"
+ 
+On validation failure:
+  - Return error to requester session: { error: "A2A_RESPONSE_INVALID", detail: reason }
+  - Do NOT retry A2A processing (idempotency key prevents dedup issues)
+
+10.2 Bootstrap Context Assembly Prompt
+SYSTEM:
+You are the context assembly engine for the Brevio AI assistant. Your task is to
+synthesize a concise user context summary from the provided profile and recent history.
+This summary will be injected into the agent system prompt. Be factual, structured,
+and do not add commentary. Output ONLY the summary JSON object.
+ 
+USER:
+User profile: {user_profile_json}
+Recent session summaries (last 3): {recent_summaries_json}
+Temporal state (pending tasks, goals): {temporal_state_json}
+ 
+Produce a JSON object with this exact schema:
+{
+  "user_summary": "string (2-3 sentences, factual user context)",
+  "active_goals": ["string", ...],   // max 5
+  "pending_tasks": ["string", ...],  // max 5
+  "context_notes": "string"         // anything critical the agent must know
+}
+
+Bootstrap Context — Input Schema
+{
+  "user_profile_json": "string (JSON: name, preferences, subscription_tier, timezone)",
+  "recent_summaries_json": "string (JSON array of past session summary strings)",
+  "temporal_state_json": "string (JSON: active goals, pending tasks from memory tables)"
+}
+
+Bootstrap Context — Output Verification Contract
+Validations:
+  1. Output must be valid JSON (JSON.parse() succeeds)
+  2. Must contain all 4 required keys: user_summary, active_goals, pending_tasks, context_notes
+  3. user_summary: string, 10-500 chars
+  4. active_goals: array, max 5 items, each item string < 200 chars
+  5. pending_tasks: array, max 5 items, each item string < 200 chars
+  6. context_notes: string, max 1000 chars
+  7. Must not contain: "I cannot", "I don't have", "As an AI" (model error indicators)
+ 
+On validation failure:
+  Retry once with simplified prompt (omit temporal_state_json)
+  On second failure: use fallback = { user_summary: "Context unavailable.", active_goals: [], pending_tasks: [], context_notes: "" }
+
+10.3 Tool Routing Classification Prompt
+SYSTEM:
+You are a tool routing classifier for the Brevio AI assistant platform.
+Given a user message, classify which tools from the available tool set are required.
+Return ONLY a JSON object. No preamble. No commentary.
+ 
+USER:
+Available tools: {available_tools_json}
+User message: {user_message}
+Session context: {session_context_brief}
+ 
+Return JSON: { "required_tools": ["tool_name", ...], "confidence": 0.0-1.0,
+               "reasoning": "one sentence" }
+
+Tool Routing — Output Verification Contract
+Validations:
+  1. Valid JSON
+  2. required_tools: array of strings, each must be in available_tools_json
+     (unknown tool names rejected — prevents hallucinated tool calls)
+  3. confidence: number 0.0-1.0
+  4. reasoning: string, max 200 chars
+  5. If confidence < 0.4: treat as no_tools_required (log low_confidence routing)
+ 
+On validation failure:
+  Fallback: required_tools = [] (no tools), confidence = 0.0
+  This is safe: agent proceeds without pre-routed tools, may call tools during turn
+
+10.4 LLM Guardrails (complete rule set)
+
+
+Helm Chart Structure
+charts/
+├── brevio-gateway/
+│   ├── Chart.yaml           # name: brevio-gateway, version: 1.0.0, appVersion: "1.0.0"
+│   ├── values.yaml          # see values spec below
+│   └── templates/
+│       ├── deployment.yaml
+│       ├── service.yaml
+│       ├── hpa.yaml
+│       ├── pdb.yaml         # PodDisruptionBudget: minAvailable: 2
+│       ├── configmap.yaml
+│       └── serviceaccount.yaml
+├── brevio-brain/            # identical structure
+├── brevio-hands/            # identical structure
+├── brevio-worker/           # identical structure
+└── brevio-cli/              # Job template (not Deployment)
+
+Helm values.yaml — brevio-brain (complete)
+replicaCount: 3
+ 
+image:
+  repository: ghcr.io/brevio/brevio-brain
+  pullPolicy: IfNotPresent
+  tag: ""  # overridden by CI via --set image.tag=$COMMIT_SHA
+ 
+service:
+  type: ClusterIP
+  port: 8080
+  metricsPort: 9090
+ 
+resources:
+  requests: { cpu: "500m", memory: "512Mi" }
+  limits:   { cpu: "2000m", memory: "2Gi" }
+ 
+autoscaling:
+  enabled: true
+  minReplicas: 3
+  maxReplicas: 15
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 80
+ 
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 2
+ 
+nodeSelector: { "brevio/workload-type": "brain" }
+ 
+tolerations:
+  - key: "brevio/brain-dedicated" operator: "Exists" effect: "NoSchedule"
+ 
+affinity:
+  podAntiAffinity:
+    requiredDuringSchedulingIgnoredDuringExecution:
+      - labelSelector: { matchLabels: { app: brevio-brain } }
+        topologyKey: kubernetes.io/hostname
+ 
+livenessProbe:
+  httpGet: { path: /healthz, port: 8080 }
+  initialDelaySeconds: 30
+  periodSeconds: 10
+  failureThreshold: 3
+ 
+readinessProbe:
+  httpGet: { path: /readyz, port: 8080 }
+  initialDelaySeconds: 10
+  periodSeconds: 5
+  failureThreshold: 2
+ 
+vault:
+  role: "brevio-brain"
+  secretPaths:
+    - "secret/brevio/model-profiles"
+    - "secret/brevio/jwt-signing"
+ 
+config:
+  COMPACTION_SOFT_LIMIT_PCT: "80"
+  COMPACTION_HARD_LIMIT_PCT: "95"
+  NO_REPLY_TOKEN: "##NO_REPLY##"
+  SKILL_HOT_RELOAD_ENABLED: "true"
+  OPA_SIDECAR_URL: "http://localhost:8181"
+  TEMPORAL_HOST: "temporal-frontend:7233"
+  TEMPORAL_NAMESPACE: "brevio"
+
+Networking Topology
+VPC: 10.0.0.0/16
+ 
+Subnets:
+  public-az1:   10.0.1.0/24  (Load balancers, NAT Gateway)
+  public-az2:   10.0.2.0/24
+  private-az1:  10.0.10.0/24 (Gateway, Brain, Hands, Worker pods)
+  private-az2:  10.0.11.0/24
+  data-az1:     10.0.20.0/24 (RDS, ElastiCache, Temporal DB)
+  data-az2:     10.0.21.0/24
+  sandbox-az1:  10.0.30.0/24 (Sandbox pool nodes — isolated)
+  sandbox-az2:  10.0.31.0/24
+ 
+Security Groups:
+  sg-alb:         ingress: 443 from 0.0.0.0/0; egress: 8080 to sg-gateway
+  sg-gateway:     ingress: 8080 from sg-alb; egress: 8080 to sg-brain; egress: 6379 to sg-redis
+  sg-brain:       ingress: 8080 from sg-gateway; egress: 8080 to sg-hands; egress: 5432 to sg-db; egress: 6379 to sg-redis; egress: 8200 to sg-vault
+  sg-hands:       ingress: 8080 from sg-brain; egress: 2376 to sg-sandbox
+  sg-sandbox:     ingress: 2376 from sg-hands; egress: 8080 to sg-hands ONLY (all other egress DENY)
+  sg-db:          ingress: 5432 from sg-brain, sg-worker; no public ingress
+  sg-redis:       ingress: 6379 from sg-gateway, sg-brain, sg-worker; no public ingress
+  sg-vault:       ingress: 8200 from sg-brain, sg-worker; ingress: 8200 from sg-ops-bastion
+  sg-temporal:    ingress: 7233 from sg-brain, sg-worker, sg-gateway; no public ingress
+
+Load Balancing Definitions
+External Load Balancer: AWS ALB (Application Load Balancer)
+  Algorithm: Least Outstanding Requests
+  Listener: HTTPS:443 → Target Group: brevio-gateway pods :8080
+  Health check: GET /healthz → 200, interval=30s, threshold=2
+  Idle timeout: 60s
+  Connection draining: 30s
+  Sticky sessions: DISABLED (stateless gateway)
+  WAF: AWS WAF attached, rule set: AWSManagedRulesCommonRuleSet
+ 
+Internal Load Balancer: Kubernetes Service (ClusterIP) for service-to-service
+  brevio-brain Service: ClusterIP, port 8080, sessionAffinity: None
+  brevio-hands Service: ClusterIP, port 8080, sessionAffinity: None
+  All internal traffic load balanced by kube-proxy (iptables round-robin)
+ 
+Temporal Frontend: Kubernetes Service (ClusterIP)
+  Port: 7233 (gRPC)
+  sessionAffinity: ClientIP (sticky to frontend pod for workflow locality)
+
+Environment Isolation Strategy
+
+Environment-Specific Invariants
+INVARIANT ENV-001: production namespace must NEVER share credentials with staging/local.
+  Enforcement: separate AWS accounts, separate Vault clusters, separate K8s clusters.
+ 
+INVARIANT ENV-002: staging DB must be seeded from anonymized prod snapshot, not raw prod.
+  Enforcement: weekly snapshot anonymization job (masks sender_id, user PII fields).
+ 
+INVARIANT ENV-003: brevio-cli doctor must pass in staging before any production deploy.
+  Enforcement: CI gate (step 11) runs doctor against staging; blocks prod deploy if CRITICAL.
+ 
+INVARIANT ENV-004: sandbox containers in production must use rootless Docker with seccomp.
+  Enforcement: Kyverno policy require-rootless-sandbox rejects pods without runAsNonRoot=true.
+
+
+TypeScript / Node.js (ESLint)
+// .eslintrc.json (brevio-gateway)
+{
+  "extends": ["eslint:recommended", "@typescript-eslint/recommended", "plugin:security/recommended"],
+  "rules": {
+    "@typescript-eslint/no-explicit-any": "error",       // no any types
+    "@typescript-eslint/no-unused-vars": "error",
+    "no-console": "error",                               // use structured logger only
+    "security/detect-object-injection": "error",
+    "security/detect-non-literal-regexp": "error",
+    "@typescript-eslint/explicit-function-return-type": "error",
+    "no-process-env": "error",                           // use config module, not process.env directly
+    "no-throw-literal": "error",                         // throw Error objects only
+  }
+}
+
+Python (Ruff)
+# ruff.toml (brevio-brain, brevio-worker)
+[tool.ruff]
+target-version = "py312"
+select = ["E","F","W","C90","I","N","S","T20","ANN","RUF"]
+ignore = []
+line-length = 120
+ 
+[tool.ruff.per-file-ignores]
+"tests/*" = ["S101"]    # allow assert in tests
+ 
+# Required rules:
+# S — bandit security rules (S104: hardcoded IPs, S105: hardcoded passwords)
+# T20 — no print() (use structlog)
+# ANN — all functions must have type annotations
+# C90 — max complexity 10 (McCabe)
+
+Go (golangci-lint)
+# .golangci.yml (brevio-hands, brevio-cli)
+linters:
+  enable:
+    - errcheck        # all errors must be handled
+    - gosec           # security checks (G304: file inclusion, G401: MD5 usage, etc.)
+    - staticcheck
+    - unused
+    - govet
+    - gocyclo         # max complexity 15
+    - misspell
+    - godot           # comments end with period
+    - exhaustive      # switch on enum must cover all cases
+ 
+linters-settings:
+  gosec:
+    excludes: []       # no exclusions — all G rules enforced
+  gocyclo:
+    min-complexity: 15
+
+OPA / Rego (opa check)
+# CI command: opa check --strict rego/
+# Additional: opa test rego/tests/ --coverage
+# Required coverage: 100% of policy rules covered by regression tests (GAP-09)
+ 
+# Custom check: all policy files must have:
+#   - package declaration
+#   - default value for every rule used in allow/deny decisions
+#   - at least one denial invariant
+# Enforced by: conftest (OPA-based policy testing framework)
+# conftest config: .conftest/policy/brevio_opa_meta.rego
+
+Terraform (tflint + checkov)
+# tflint: detects unused variables, deprecated resources, invalid types
+# checkov: security policy checks
+ 
+# Required checkov passes:
+#   CKV_AWS_* — all AWS resource security rules
+#   CKV_K8S_* — all Kubernetes security rules
+#   CKV2_AWS_* — advanced AWS security rules
+ 
+# Enforced failures (any of these blocks deploy):
+#   CKV_AWS_135: RDS deletion protection disabled
+#   CKV_AWS_26:  SNS encryption disabled
+#   CKV_AWS_16:  RDS encryption disabled
+#   CKV_K8S_30:  runAsNonRoot not set
+#   CKV_K8S_43:  image tag "latest" used (must be pinned)
+
+
+
+PagerDuty Schedule
+Primary On-call: rotating weekly (Monday 9am → Monday 9am)
+Secondary On-call: rotating weekly (shadow rota)
+ 
+P1 escalation path:
+  0min:  PagerDuty pages primary on-call (phone + SMS)
+  5min:  No ack → page secondary on-call
+  15min: No ack → page Head of Engineering
+  30min: No resolution → page CTO
+ 
+P2 escalation path:
+  0min:  PagerDuty pages primary on-call (SMS only)
+  15min: No ack → page secondary on-call
+  30min: No resolution → page Head of Engineering
+ 
+P3: Slack alert to #eng-oncall. No PagerDuty. Business hours only.
+
+
+Integration Test Specifications
+
+Consumer-Driven Contract Tests (Pact)
+# Contract: brevio-gateway (consumer) ↔ brevio-brain (provider)
+ 
+Contract: dispatch_agent_task
+  Consumer expects:
+    POST /internal/agent/dispatch
+    Request: { session_id: uuid, message: string, idempotency_key: uuid }
+    Response 202: { task_id: uuid, status: "queued" }
+    Response 409: { error: "request_in_progress" }
+ 
+Contract: get_session_context
+  Consumer expects:
+    GET /internal/sessions/{id}/context
+    Response 200: { session_id: uuid, loaded_skills: [{id,name}], lane_status: string }
+    Response 404: { error: "NOT_FOUND" }
+ 
+# Contract: brevio-brain (consumer) ↔ brevio-hands (provider)
+ 
+Contract: execute_tool
+  Consumer expects:
+    POST /internal/tools/execute
+    Request: { session_id: uuid, tool_name: string, tool_input: object }
+    Response 200: { output: string, duration_ms: number }
+    Response 403: { error: "TOOL_DENIED" }
+ 
+Contract: get_sandbox_status
+  Consumer expects:
+    GET /internal/sandbox/{session_id}/status
+    Response 200: { container_id: string, status: "running"|"starting"|"idle" }
+    Response 404: { error: "NOT_FOUND" }
+
+Security Test Cases
+
+Data Migration Tests
+
+
+Trust Boundary Definitions
+
+Supply Chain Integrity Enforcement (complete)
+# Build phase — container images
+1. All container images built via GitHub Actions only (branch protection enforced)
+2. Multi-stage builds: builder stage (full toolchain) → runtime stage (minimal base)
+   Base images: distroless/base-nossl:latest (pinned by digest, not tag)
+3. cosign sign: each image signed at build time with Sigstore keyless signing
+   cosign sign --key awskms://alias/brevio-signing-key ghcr.io/brevio/{service}:{tag}
+4. Syft SBOM generated: syft ghcr.io/brevio/{service}:{tag} -o spdx-json
+5. SBOM attached as OCI attestation: cosign attest --type spdxjson
+ 
+# Verification phase — deployment
+6. Kyverno policy: verify-image-signatures
+   verifyImages:
+     - imageReferences: ["ghcr.io/brevio/*"]
+       attestors:
+         - entries:
+             - keyless:
+                 subject: "https://github.com/brevio/*/.github/workflows/*.yml@refs/heads/main"
+                 issuer: "https://token.actions.githubusercontent.com"
+ 
+7. Kyverno policy: require-sbom-attestation
+   verifyImages:
+     - imageReferences: ["ghcr.io/brevio/*"]
+       attestations:
+         - predicateType: "https://spdx.dev/Document"
+           conditions:
+             - all: [{ key: "{{spdxVersion}}", operator: NotEquals, value: "" }]
+ 
+# Dependency integrity
+8. npm: package-lock.json committed; npm ci used in CI (not npm install)
+9. pip: requirements.txt pinned to exact versions with hashes:
+   pip install --require-hashes -r requirements.txt
+10. Go: go.sum committed; go mod verify in CI
+ 
+# Artifact signing chain summary
+Developer commit → GitHub Actions (OIDC) → cosign keyless sign (Fulcio CA)
+→ Rekor transparency log entry → OCI registry with signature + SBOM attestation
+→ Kyverno admission controller verifies signature + SBOM before pod scheduled
+→ No unsigned image can run in production cluster (admission webhook enforces)
+
+
+The following defines every compensating transaction in the system — actions that undo or mitigate the effects of a failed operation. Each entry specifies the failed operation, the compensation action, the trigger condition, and the durability guarantee.
+
+
+
+Backup Schedule
+
+Restore Procedures
+PostgreSQL Point-in-Time Recovery (PITR)
+# Restore PostgreSQL to specific point in time
+1. Identify restore target time: incident_occurred_at - 5min (before corruption)
+2. In AWS Console (or CLI):
+   aws rds restore-db-instance-to-point-in-time \
+     --source-db-instance-identifier brevio-prod-db \
+     --target-db-instance-identifier brevio-prod-db-restored \
+     --restore-time 2026-01-01T12:00:00Z
+3. Update Kubernetes secret: brevio-db-host → restored instance endpoint
+4. Restart all pods: kubectl rollout restart deployment -n brevio-production
+5. Verify: brevio-cli doctor (HC-005 should pass)
+6. Decommission original instance after 48h validation window
+ 
+RTO for PITR: < 30min
+RPO for PITR: < 5min (WAL archiving continuous)
+
+Vault Snapshot Restore
+# Restore Vault from snapshot
+1. Stop Vault writes: vault operator seal (if compromise detected)
+2. Get latest snapshot:
+   aws s3 ls s3://brevio-vault-backups/ --recursive | sort | tail -1
+3. Restore:
+   vault operator raft snapshot restore latest-snapshot.bak
+4. Unseal: vault operator unseal (3 of 5 key shares required)
+5. Verify: vault status + brevio-cli doctor (HC-006)
+6. Notify all services to re-auth (Vault AppRole tokens invalidated)
+ 
+RTO for Vault restore: < 10min
+RPO for Vault restore: < 6h (snapshot frequency)
+
+Redis Restore
+# Redis data is cache-only for hooks bus and idempotency.
+# On full Redis loss:
+1. Provision new Redis cluster from ElastiCache (< 5min)
+2. Update K8s ConfigMaps with new endpoint
+3. Restart affected pods (gateway, brain, worker)
+4. Accept: idempotency keys for last 24h are lost (safe — WhatsApp retries get new processing)
+5. Accept: in-flight queue lane messages lost (safe — WhatsApp retries via idempotency)
+6. Verify: brevio-cli doctor (HC-010)
+ 
+RTO for Redis: < 10min
+RPO for Redis: Last 6h RDB snapshot (for warm reload); cold start acceptable
+
+
+IR-01: Vault Sealed / Unavailable
+SYMPTOMS: All services return 503. brevio-cli doctor HC-006 FAIL.
+          Logs: "vault: connection refused" or "vault: permission denied".
+ 
+IMMEDIATE STEPS:
+1. Check Vault cluster status: vault status (from ops bastion)
+2. If sealed (initialized=true, sealed=true):
+   vault operator unseal  (requires 3 of 5 key shares)
+   Contact on-call key holders (PagerDuty: "Vault unseal required")
+3. If unavailable (node crash): check Vault HA — other nodes should auto-elect leader
+   vault operator raft list-peers  (verify quorum)
+4. If all nodes down: restore from snapshot (see Backup Runbook)
+5. After recovery: brevio-cli doctor  (confirm HC-006 PASS)
+6. Monitor for 10min: no new 503s from services
+RTO TARGET: < 15min
+
+IR-02: Hook Bus (Redis) Unavailable
+SYMPTOMS: Hook dispatch failing. brevio-cli doctor HC-004 FAIL.
+          Logs: "redis: connection timeout" from brain service.
+ 
+IMMEDIATE STEPS:
+1. Check Redis cluster: redis-cli -h brevio-cache PING (from pod)
+2. If single shard down: ElastiCache auto-failover should promote replica (< 2min)
+3. If all shards down: services enter degraded mode automatically (see FD-INV-001)
+   - Hooks skip (non-blocking)
+   - Queue lanes managed in-memory
+   - Idempotency checks skipped (logged)
+4. Provision replacement Redis if needed: terraform apply (brevio-cache module)
+5. Update K8s ConfigMaps + restart pods
+6. brevio-cli doctor HC-004 + HC-010 must PASS before declaring resolved
+RTO TARGET: < 10min (auto-failover 2min, manual 10min)
+
+IR-03: Sandbox Container Escape Detected
+SYMPTOMS: CloudTrail anomaly alert OR container audit log shows unauthorized host access.
+          Container process reading files outside /workspace or /tools.
+ 
+IMMEDIATE STEPS (SECURITY INCIDENT — P1):
+1. IMMEDIATELY: kubectl cordon all sandbox nodes (prevent new scheduling)
+   kubectl cordon -l brevio/sandbox-node=true
+2. Kill all running sandbox containers:
+   kubectl delete pods -n brevio -l brevio/sandbox=true
+3. Disable all group/channel sessions: brevio-cli sessions disable-sandboxed
+4. Isolate affected nodes: revoke network access at security group level (sg-sandbox)
+5. Preserve evidence: docker logs <container_id> before killing
+6. Forensic analysis: identify which session triggered escape, what was accessed
+7. Patch and re-image sandbox nodes before re-enabling
+8. File security incident report. Legal review required if PII was accessed.
+RTO TARGET: 30min to full isolation. Re-enable only after security sign-off.
+
+IR-04: Mass Pairing Code Flood (DDoS via Unknown Senders)
+SYMPTOMS: dm_pairing_requests table growing rapidly. Gateway CPU elevated.
+          Logs: high volume of CODE_ISSUED audit events from varied sender_ids.
+ 
+IMMEDIATE STEPS:
+1. Enable rate limiting at ALB level: aws wafv2 update-rule-group (add sender_id rate limit)
+2. Check pairing_requests volume: SELECT COUNT(*) FROM dm_pairing_requests
+   WHERE status='PENDING' AND created_at > now() - interval '1 hour'
+3. If > 1000 PENDING: trigger bulk expiry: UPDATE dm_pairing_requests
+   SET status='EXPIRED' WHERE status='PENDING' AND created_at < now() - interval '5 minutes'
+4. Add IP-based block at ALB WAF if attack source identifiable
+5. Consider switching dm_policy to open + IP allowlist temporarily (operator decision)
+6. Monitor: pairing rate should drop to < 10/min after mitigation
+RTO TARGET: < 15min to traffic reduction
+
+IR-05: Skill Gate Blocking All Sessions (mis-deployed config)
+SYMPTOMS: All sessions start but no skills load. Agents have minimal context.
+          brevio-cli doctor HC-011 FAIL. Logs: all skill gate evals = FAIL.
+ 
+IMMEDIATE STEPS:
+1. Identify cause: check skill frontmatter for recently changed skills
+   brevio-cli skills list --gate-status  (shows which prerequisites failing)
+2. If env var missing: verify K8s secrets/configmaps for affected env vars
+3. If binary missing: check Pod image (may need rebuild with missing binary)
+4. Emergency override: set metadata.openclaw.always: true on critical skills
+   (deployed via brevio-cli skills patch --id {id} --always-load true)
+5. Force skill reload: brevio-cli sessions reload-skills --all-active
+6. Monitor: skill_gate_evaluations.result = PASS rate should recover
+RTO TARGET: < 20min
+
+IR-06: A2A Deadlock — All Sessions Stuck at Max Loop Depth
+SYMPTOMS: a2a_loop_depth p99 = 10 sustained 5min. Sessions not completing.
+          A2ACoordinationWorkflow all in WAITING_REPLY state.
+ 
+IMMEDIATE STEPS:
+1. Identify stuck workflows: temporal workflow list --query "WorkflowType='A2ACoord' AND ExecutionStatus='Running'"
+2. Terminate stuck workflows (they will auto-emit REPLY_SKIP on cancel):
+   temporal workflow terminate --query "WorkflowType='A2ACoord'" --reason "deadlock recovery"
+3. Sessions should recover: QueueLane signals run_complete, resumes normal processing
+4. Identify root cause: check loop_detection code (message hash check in Brain)
+5. If code bug: hotfix and deploy brevio-brain
+6. Verify: a2a_loop_depth p99 drops; sessions complete normally
+RTO TARGET: < 20min
+
+IR-07: Compaction In-Progress Stuck (INV-007 violation)
+SYMPTOMS: compaction_state rows with status=IN_PROGRESS older than 5min.
+          Sessions unable to proceed (compaction blocking turn execution).
+ 
+IMMEDIATE STEPS:
+1. Background cleanup job should auto-resolve (runs every 30s): wait 2 min.
+2. If not resolved: manually mark stuck compactions as FAILED:
+   UPDATE compaction_state SET status='FAILED'
+   WHERE status='IN_PROGRESS' AND started_at < now() - interval '5 minutes'
+3. Sessions will use fallback: truncated context (safe degraded mode)
+4. Identify root cause: check SummarizeMessages LLM call — likely timeout or rate limit
+5. If LLM rate limited: check model profile status (run doctor HC-007)
+RTO TARGET: < 5min (auto-resolved by cleanup job in most cases)
+
+
+
+ADDENDUM CLOSURE STATEMENT
+
+
+

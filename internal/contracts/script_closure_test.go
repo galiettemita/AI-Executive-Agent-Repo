@@ -167,12 +167,7 @@ func TestDatabaseVerificationScriptClosure(t *testing.T) {
 	assertFileNonEmpty(t, path)
 	assertFileContainsTokens(t, path, []string{
 		"pgvector/pgvector:pg16",
-		"001_BREVIO_v9_init.sql",
-		"002_BREVIO_v91_soft_intelligence.sql",
-		"003_BREVIO_v92_production_hardening.sql",
-		"004_BREVIO_ops_operational_systems.sql",
-		"005_BREVIO_mcp_execution_oauth_hardening.sql",
-		"006_BREVIO_v93_addendum_specification_closure.sql",
+		"db/migrations",
 		"enum count mismatch",
 		"RLS coverage failure",
 		"missing MCP/oauth hardening columns",

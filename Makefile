@@ -1,4 +1,4 @@
-.PHONY: dev build test lint migrate db-verify docker-build docker-build-infra contracts acceptance policy-validate ci ci-full load-test security-validate infra-validate api-docs api-docs-check tools-md tools-md-check skills-scaffolds-check proto-validate evals generate-remote-catalog-keys mcp-wave1-checklist mcp-wave56-checklist mcp-fleet-validate mcp-runtime-rollout deploy-helm staging-smoke-tests external-closeout-check external-closeout-regression-check external-phase-transition-check production-deployment-signoff-check production-canary-check production-deployment-todo production-post-deploy-validation production-phase-sync phase-closure-manifest phase-handoff-bundle phase-status go-live-signoff go-live-approval-packet go-live-approval-confirm manual-closeout-todo manual-provider-steps manual-closeout-batch-commands manual-closeout-confirm manual-closeout-unconfirm external-phase-sync
+.PHONY: dev build test lint migrate db-verify docker-build docker-build-infra contracts acceptance policy-validate ci ci-full load-test security-validate infra-validate api-docs api-docs-check tools-md tools-md-check skills-scaffolds-check proto-validate evals generate-remote-catalog-keys mcp-wave1-checklist mcp-wave56-checklist mcp-fleet-validate mcp-runtime-rollout deploy-helm staging-smoke-tests external-closeout-check external-closeout-regression-check external-phase-transition-check production-deployment-signoff-check production-canary-check production-deployment-todo production-post-deploy-validation production-phase-sync phase-closure-manifest phase-handoff-bundle phase-status go-live-signoff go-live-approval-packet go-live-approval-confirm manual-closeout-todo manual-provider-steps manual-closeout-batch-commands manual-closeout-confirm manual-closeout-unconfirm external-phase-sync local-verify
 
 GO_EXEC := ./scripts/dev/go_exec.sh
 GOFMT_EXEC := ./scripts/dev/gofmt_exec.sh
@@ -23,6 +23,14 @@ migrate:
 	test -f db/migrations/003_BREVIO_v92_production_hardening.sql
 	test -f db/migrations/004_BREVIO_ops_operational_systems.sql
 	test -f db/migrations/005_BREVIO_mcp_execution_oauth_hardening.sql
+	test -f db/migrations/006_BREVIO_v93_addendum_specification_closure.sql
+	test -f db/migrations/007_BREVIO_uuidv7_reconciliation.sql
+	test -f db/migrations/008_BREVIO_v10_gap_closure.sql
+	test -f db/migrations/009_BREVIO_v10_authorization_receipts.sql
+	test -f db/migrations/010_BREVIO_v101_admin_intelligence.sql
+	test -f db/migrations/011_BREVIO_v102_v103_intelligence.sql
+	test -f db/migrations/012_BREVIO_v104_voice_calls.sql
+	test -f db/migrations/013_BREVIO_openclaw_adoption.sql
 	$(GO_EXEC) test ./internal/database -run TestMigration -count=1
 
 db-verify:
@@ -32,13 +40,13 @@ contracts:
 	$(GO_EXEC) test ./internal/contracts -count=1
 
 acceptance:
-	$(GO_EXEC) test ./internal/contracts -run "TestAcceptanceGatesV9|TestAcceptanceGatesV91|TestAcceptanceGatesV92" -count=1
+	$(GO_EXEC) test ./internal/contracts -run "TestAcceptanceGates" -count=1
 
 policy-validate:
 	bash scripts/policies/run_opa_tests.sh
 
 docker-build:
-	@for svc in gateway brain control executor canvas temporal-worker; do \
+	@for svc in gateway brain control executor canvas temporal-worker browser marketing agents memory router cron; do \
 		echo "building $$svc"; \
 		docker build --build-arg SERVICE=$$svc -t brevio-$$svc:local .; \
 	done
@@ -56,6 +64,18 @@ docker-build-infra:
 ci: proto-validate lint build test migrate api-docs-check tools-md-check skills-scaffolds-check mcp-wave1-checklist mcp-wave56-checklist mcp-fleet-validate mcp-runtime-rollout policy-validate contracts acceptance evals
 
 ci-full: ci security-validate infra-validate db-verify
+
+# local-verify: fast pre-push gate — vet, build, test (includes contracts).
+# No Docker, no external services, no staticcheck download required.
+# For full lint (gofmt + staticcheck), use `make lint`.
+local-verify:
+	@echo "==> [1/3] go vet"
+	$(GO_EXEC) vet ./...
+	@echo "==> [2/3] build"
+	$(GO_EXEC) build ./...
+	@echo "==> [3/3] tests + contracts"
+	$(GO_EXEC) test ./... -count=1
+	@echo "==> local-verify passed"
 
 load-test:
 	@echo "Run: k6 run evals/load/k6_interactive_turn.js"

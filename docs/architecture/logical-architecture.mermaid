@@ -1,0 +1,67 @@
+graph TB
+    subgraph "Gateway Plane"
+        GW[Gateway :18080]
+    end
+
+    subgraph "Brain Plane"
+        BR[Brain :18081]
+        AG[Agents :18092]
+        MEM[Memory :18093]
+        RT[Router :18094]
+    end
+
+    subgraph "Hands Plane"
+        EX[Executor :18083]
+        BRW[Browser :18090]
+        MKT[Marketing :18091]
+        CRN[Cron :18095]
+    end
+
+    subgraph "Control Plane"
+        CTL[Control :18082]
+        CV[Canvas :18793]
+    end
+
+    subgraph "Async Plane"
+        TW[Temporal Worker :18084]
+        TEMP[Temporal Server :7233]
+    end
+
+    subgraph "Data Plane"
+        PG[(PostgreSQL + pgvector)]
+        RD[(Redis)]
+    end
+
+    GW -->|classify & route| BR
+    GW -->|context recall| MEM
+    BR -->|model select| RT
+    BR -->|delegate tasks| AG
+    BR -->|store/recall| MEM
+    BR -->|execute skills| EX
+    BR -->|browser tasks| BRW
+    BR -->|marketing tasks| MKT
+    BR -->|scheduled tasks| CRN
+    AG -->|sub-agent execution| EX
+    AG -->|tool execution| BRW
+    AG -->|tool execution| MKT
+    CRN -->|trigger workflows| TW
+    EX -->|async workflows| TW
+    BRW -->|async workflows| TW
+    MKT -->|async workflows| TW
+    TW --> TEMP
+    CTL -->|admin ops| PG
+    CV -->|websocket| GW
+
+    BR --> PG
+    BR --> RD
+    EX --> PG
+    EX --> RD
+    BRW --> PG
+    BRW --> RD
+    MKT --> PG
+    MKT --> RD
+    AG --> PG
+    MEM --> PG
+    RT --> PG
+    CRN --> PG
+    CRN --> RD

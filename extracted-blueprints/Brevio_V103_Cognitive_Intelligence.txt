@@ -1,0 +1,488 @@
+
+BREVIO
+V10.3  —  Cognitive Intelligence Addendum
+Cutting-Edge AI Cognition  •  Neuroscience-Informed Memory  •  Frontier Reasoning Architectures
+
+Version 10.3.0  |  March 2026  |  Extends V9 through V10.2
+PURELY ADDITIVE  •  ZERO-AMBIGUITY  •  IMPLEMENTATION-COMPLETE
+
+1. Executive Summary — The Intelligence Ceiling
+V9 through V10.2 build an exceptional execution infrastructure. The reasoning loop, memory scaffolding, context engineering, and production hardening are production-grade. V10.2 closed the most urgent prompt and algorithm gaps.
+
+What remains is a deeper class of problem: the cognitive architecture itself. Brevio currently implements a competent linear reasoning pipeline. What it lacks are the cognitive mechanisms that separate reactive task execution from genuine intelligence — the ability to hold beliefs under uncertainty, reason by analogy, model what the user doesn't know, learn implicitly from behavior, think about its own thinking, and anticipate rather than only respond.
+
+V10.3 closes 12 cognitive architecture gaps derived from three sources: (1) dual-process cognitive theory, (2) frontier AI research from 2024–2026 (Graph-of-Thought, self-consistency, constitutional preference learning), and (3) cognitive science research on memory consolidation, prospective memory, and theory of mind.
+
+
+
+2. COG-01 — Dual-Process Cognitive Architecture
+
+2.1 Current State & Gap
+Brevio's 4-tier reasoning depth (INSTANT → SHALLOW → STANDARD → DEEP) maps structurally to dual-process. But the INSTANT tier is purely cache-based: it hits or misses. If miss, it falls to SHALLOW. There is no intermediate 'learned intuition' layer — a fast pattern recognizer that has internalized thousands of successful executions into implicit heuristics.
+
+
+2.2 Improvement: Learned Heuristic Network
+
+New Table: system1_heuristics
+system1_heuristics (
+  id                    UUIDv7 PK,
+  workspace_id          UUID NOT NULL,
+  pattern_embedding     vector(1536) NOT NULL,  -- centroid of matched request cluster
+  skill_sequence        JSONB NOT NULL,          -- [{skill_id, input_template}]
+  response_template     TEXT,                    -- if fully templatable
+  activation_count      INTEGER NOT NULL DEFAULT 0,
+  success_rate_30d      DECIMAL(4,3) NOT NULL DEFAULT 0.0,
+  heuristic_confidence  DECIMAL(4,3) NOT NULL DEFAULT 0.0,
+  last_activated_at     TIMESTAMPTZ,
+  last_updated_at       TIMESTAMPTZ NOT NULL,
+  UNIQUE(workspace_id, pattern_embedding)  -- approximate via pgvector
+)
+
+Decision Logic: INSTANT Tier (Updated)
+function instantTierDecide(request_embedding, workspace_id):
+  // 1. Check heuristic layer FIRST (before cache check)
+  heuristic = queryHeuristics(request_embedding, workspace_id, threshold=0.88)
+  if heuristic AND heuristic.activation_count >= 10:
+    return { source: 'HEURISTIC', skill_sequence: heuristic.skill_sequence }
+  // 2. Fall back to precomputed cache
+  cached = queryFastPathCache(request_embedding, workspace_id)
+  if cached AND not expired:
+    return { source: 'CACHE', response: cached.answer_payload }
+  // 3. Neither — fall to SHALLOW
+  return { source: 'MISS' }
+
+
+3. COG-02 — Graph-of-Thought Reasoning
+
+3.1 Current State & Gap
+The PLANNER→EXECUTOR→CRITIC→REFLECTOR loop is linear. Even in DEEP tier, the plan candidates (max 3 for T3) are evaluated sequentially. There is no mechanism for the agent to explore two conflicting sub-strategies in parallel, discover which assumptions held, and synthesize a merged conclusion.
+
+
+3.2 Improvement: GoT Reasoning for DEEP Tier
+
+New Table: thought_graphs
+thought_graphs (
+  id                 UUIDv7 PK,
+  workspace_id       UUID NOT NULL,
+  ingress_turn_id    UUID NOT NULL REFERENCES ingress_turns(id),
+  root_thought_id    UUID,  -- self-ref to thought_nodes
+  conclusion_id      UUID,  -- winning synthesis node
+  node_count         INTEGER NOT NULL DEFAULT 0,
+  branch_count       INTEGER NOT NULL DEFAULT 0,
+  merge_count        INTEGER NOT NULL DEFAULT 0,
+  max_depth          INTEGER NOT NULL DEFAULT 4,
+  status             VARCHAR(16) CHECK IN ('building','evaluating','concluded','aborted'),
+  cost_usd           DECIMAL(8,4),
+  created_at         TIMESTAMPTZ NOT NULL DEFAULT now()
+)
+
+thought_nodes (
+  id                 UUIDv7 PK,
+  graph_id           UUID NOT NULL REFERENCES thought_graphs(id),
+  parent_ids         UUID[],          -- empty for root, multiple for merge nodes
+  node_type          VARCHAR(16) CHECK IN ('root','branch','merge','conclusion'),
+  thought_content    TEXT NOT NULL,   -- the actual reasoning text
+  critic_score       DECIMAL(4,3),    -- null until evaluated
+  is_pruned          BOOLEAN DEFAULT false,  -- low-score branches pruned
+  depth              INTEGER NOT NULL DEFAULT 0,
+  created_at         TIMESTAMPTZ NOT NULL DEFAULT now()
+)
+
+GoT Algorithm
+function graphOfThought(problem, max_nodes=20, max_depth=4):
+  root = createThought(problem, type='root')
+  active_frontier = [root]
+  while frontier not empty AND total_nodes < max_nodes:
+    for each node in active_frontier:
+      branches = generateBranches(node, count=2)  // 2 divergent sub-thoughts
+      for branch in branches:
+        branch.critic_score = CRITIC.evaluate(branch)
+        if branch.critic_score < 0.40: prune(branch)
+        else: add_to_frontier(branch)
+    if len(active_frontier) >= 2:
+      merge_candidates = selectMergePairs(active_frontier)
+      for (a, b) in merge_candidates:
+        merged = mergThoughts(a, b)
+        if merged.critic_score > max(a.score, b.score): promote_merge(merged)
+  return concludeGraph(best_frontier_nodes)
+
+
+4. COG-03 — Metacognitive Monitor
+
+4.1 Current State & Gap
+Brevio has domain autonomy levels and trust scores (V9.1). These govern execution permissions. What's missing is the cognitive equivalent: adjusting reasoning depth and confidence thresholds based on domain-specific performance history. An agent that has been wrong 30% of the time on financial planning tasks should automatically escalate those to STANDARD reasoning even if complexity signals suggest SHALLOW.
+
+
+4.2 Improvement: Metacognitive Calibration Layer
+
+New Table: domain_performance_history
+domain_performance_history (
+  id                          UUIDv7 PK,
+  workspace_id                UUID NOT NULL,
+  domain                      VARCHAR(64) NOT NULL,  -- matches autonomy domain
+  skill_id                    VARCHAR(128),          -- null = domain-level
+  total_executions_30d        INTEGER NOT NULL DEFAULT 0,
+  successful_executions_30d   INTEGER NOT NULL DEFAULT 0,
+  user_corrections_30d        INTEGER NOT NULL DEFAULT 0,
+  empirical_success_rate      DECIMAL(4,3),          -- computed by workflow
+  metacognitive_tier_floor    VARCHAR(16) DEFAULT 'SHALLOW',  -- minimum tier for domain
+  confidence_adjustment       DECIMAL(4,3) DEFAULT 0.0,       -- applied to classifier thresholds
+  last_recalculated_at        TIMESTAMPTZ,
+  UNIQUE (workspace_id, domain, skill_id)
+)
+
+MetacognitiveMonitor Decision Logic
+function metacognitiveAdjust(domain, raw_tier, workspace_id):
+  perf = queryDomainPerformance(workspace_id, domain)
+  if perf.empirical_success_rate < 0.75:
+    floor = perf.metacognitive_tier_floor  // e.g. 'STANDARD'
+    if TIER_RANK[raw_tier] < TIER_RANK[floor]:
+      emit METACOGNITIVE_UPGRADE(domain, raw_tier, floor)
+      return floor
+  if perf.empirical_success_rate > 0.95 AND perf.total_executions_30d > 50:
+    // Optionally downgrade (save compute on high-confidence domains)
+    return max(INSTANT, raw_tier - 1)
+  return raw_tier
+
+
+5. COG-04 — Theory of Mind Layer
+
+5.1 Current State & Gap
+USER.md models who the user is. SOUL.md models how Brevio behaves. Neither captures a model of what the user currently knows or believes. If the user asks 'can you book the restaurant for Tuesday?' while their calendar shows a conflict on Tuesday that they clearly haven't noticed, Brevio either books it (wrong) or says 'you have a conflict' (reactive). A ToM-equipped agent proactively surfaces: 'You have a board meeting Tuesday 7-9pm — did you know?' before answering.
+
+
+5.2 Improvement: User Knowledge State Model
+
+New Table: user_knowledge_model
+user_knowledge_model (
+  id                   UUIDv7 PK,
+  workspace_id         UUID NOT NULL,
+  knowledge_type       VARCHAR(16) CHECK IN ('known_fact','knowledge_gap','belief'),
+  subject              TEXT NOT NULL,       -- what the knowledge is about
+  content              TEXT NOT NULL,       -- what the agent knows / gap / belief
+  confidence           DECIMAL(4,3) NOT NULL DEFAULT 0.8,
+  source               VARCHAR(32),         -- 'calendar','email','correction','inference'
+  user_awareness       VARCHAR(16) DEFAULT 'unknown',  -- 'aware'|'unaware'|'unknown'
+  surfaced_at          TIMESTAMPTZ,         -- when this was surfaced to user
+  resolved_at          TIMESTAMPTZ,         -- when gap was addressed
+  expires_at           TIMESTAMPTZ,         -- TTL for time-sensitive facts
+  created_at           TIMESTAMPTZ NOT NULL DEFAULT now()
+)
+
+ToM Integration in PLANNER Prompt
+PROMPT_PLANNER must receive a knowledge_gaps_summary field: the top 3 material knowledge gaps relevant to the current request (ranked by urgency × relevance × user_unaware confidence). The planner decides whether to: (A) surface the gap before executing, (B) adjust the plan to account for it, or (C) note it at the end of the response.
+
+
+6. COG-05 — Bayesian Belief Updater
+
+6.1 Current State & Gap
+V9.1 learned_lessons stores active rules as binary confirmed/denied. A lesson is either active or it isn't. This means preference modeling is: 3 corrections → proposed → confirmed → rule. The rule fires 100% of the time until contradicted. There is no uncertainty, no context-dependence, no gradient. The result is brittle — one context-specific correction overwrites a broadly-accurate rule.
+
+
+6.2 Improvement: Probabilistic Preference Beliefs
+
+New Table: belief_distributions
+belief_distributions (
+  id                  UUIDv7 PK,
+  workspace_id        UUID NOT NULL,
+  preference_dim      VARCHAR(64) NOT NULL,  -- e.g. 'response_verbosity'
+  context_key         VARCHAR(64),           -- null = context-agnostic
+  context_value       VARCHAR(128),          -- e.g. 'topic=legal'
+  mean                DECIMAL(5,4) NOT NULL, -- 0.0-1.0 on preference scale
+  variance            DECIMAL(5,4) NOT NULL DEFAULT 0.1,
+  observation_count   INTEGER NOT NULL DEFAULT 0,
+  prior_source        VARCHAR(32),           -- 'soul_md'|'onboarding'|'learned'
+  last_updated_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (workspace_id, preference_dim, context_key, context_value)
+)
+
+Bayesian Update Rule
+function updateBelief(belief, observation_value, observation_weight=1.0):
+  // Bayesian update with Normal-Normal conjugate prior
+  N = belief.observation_count
+  prior_mean = belief.mean
+  prior_var  = belief.variance
+  // Update mean
+  new_mean = (prior_mean / prior_var + observation_value / OBS_VARIANCE) /
+             (1 / prior_var + 1 / OBS_VARIANCE)
+  // Update variance (decreases as observations accumulate)
+  new_var = 1 / (1/prior_var + 1/OBS_VARIANCE)
+  // Update belief in DB
+  UPDATE belief_distributions SET mean=new_mean, variance=new_var,
+    observation_count=N+1, last_updated_at=now()
+
+
+7. COG-06 — Prospective Memory Engine
+
+7.1 Current State & Gap
+Brevio has retrospective memory (what happened), goal tracking (what to achieve), and cron scheduling (what to do at a set time). None of these handle the prospective memory class: 'remember to X when event Y occurs', where Y is a semantic event (not a clock time) and X is a context-dependent action. The difference: a cron fires at 9am every Tuesday. Prospective memory fires the next time the user mentions a specific person, topic, or context.
+
+
+7.2 Improvement: Prospective Memory Engine
+
+New Table: prospective_memories
+prospective_memories (
+  id                  UUIDv7 PK,
+  workspace_id        UUID NOT NULL,
+  action_description  TEXT NOT NULL,       -- what to remind/do
+  trigger_type        VARCHAR(16) CHECK IN ('person','topic','event','time','location'),
+  trigger_condition   TEXT NOT NULL,       -- 'next mention of John Smith'
+  trigger_embedding   vector(1536),        -- for semantic matching
+  trigger_keywords    TEXT[],              -- fast pre-filter before embedding
+  expires_at          TIMESTAMPTZ,         -- optional TTL
+  fired_at            TIMESTAMPTZ,         -- null = pending
+  fire_count          INTEGER DEFAULT 0,   -- 0 = one-shot, >0 = recurring
+  max_fires           INTEGER DEFAULT 1,   -- 1 = one-shot
+  created_at          TIMESTAMPTZ NOT NULL DEFAULT now()
+)
+
+Trigger Evaluation on Every Request
+function checkProspectiveTriggers(request_embedding, request_text, workspace_id):
+  // Fast pre-filter: keyword overlap
+  candidates = queryByKeywordOverlap(request_text, workspace_id)
+  // Semantic match for candidates
+  for mem in candidates:
+    similarity = cosineSimilarity(request_embedding, mem.trigger_embedding)
+    if similarity >= 0.72:
+      injectIntoContext(mem)  // surfaced before PLANNER
+      if mem.fire_count + 1 >= mem.max_fires: markFired(mem)
+      else: incrementFireCount(mem)
+
+
+8. COG-07 — Implicit Preference Learner
+
+8.1 Current State & Gap
+V9.1 learns from interaction_feedback — explicit corrections. V10.2 added lesson consolidation logic. Both require the user to explicitly correct the agent. The far richer signal — user edits a draft email (revealed preference for different tone), user sends a follow-up seconds after response (revealed preference for more detail), user abandons a response mid-read (revealed preference for shorter) — is never captured.
+
+8.2 Improvement: Behavioral Signal Extraction
+
+New Table: implicit_behavior_signals
+implicit_behavior_signals (
+  id               UUIDv7 PK,
+  workspace_id     UUID NOT NULL,
+  ingress_turn_id  UUID NOT NULL,
+  signal_type      VARCHAR(32) CHECK IN (
+                     'draft_edited',          -- user edited AI draft before sending
+                     'response_abandoned',     -- user stopped reading mid-response
+                     'immediate_followup',     -- follow-up query < 10s after response
+                     'explicit_regenerate',    -- user asked to redo
+                     'shared_externally',      -- user forwarded/copied response
+                     'saved_to_memory',        -- user explicitly saved
+                     'response_timing'),        -- how quickly user read/responded
+  raw_signal_data  JSONB NOT NULL,
+  inferred_pref    VARCHAR(64),   -- e.g. 'verbosity', 'formality', 'detail_level'
+  inferred_value   DECIMAL(4,3),  -- 0.0=less, 1.0=more on inferred_pref dimension
+  confidence       DECIMAL(4,3) NOT NULL DEFAULT 0.6,
+  processed_at     TIMESTAMPTZ,
+  created_at       TIMESTAMPTZ NOT NULL DEFAULT now()
+)
+
+Signal-to-inference mappings (examples):
+draft_edited + length_reduction > 20% → verbosity preference observation = 0.2 (shorter)
+immediate_followup with 'more detail' keywords → detail_level observation = 0.8 (more)
+response_abandoned + response_length > 800 chars → verbosity observation = 0.15 (much shorter)
+shared_externally → quality satisfaction observation = 0.9 (high quality)
+
+
+9. COG-08 — Analogical Reasoning Engine
+
+9.1 Current State & Gap
+Brevio treats every request as novel. The task decomposition generates a plan from the PLANNER prompt + current context. Successful past executions are stored in skill_execution_logs but never retrieved as reasoning inputs. The accumulated problem-solution library from thousands of successful executions is entirely unused during planning.
+
+9.2 Improvement: Case-Based Reasoning Layer
+
+New Table: case_library
+case_library (
+  id                  UUIDv7 PK,
+  workspace_id        UUID NOT NULL,
+  problem_embedding   vector(1536) NOT NULL,  -- embedding of original request
+  problem_summary     TEXT NOT NULL,
+  domain              VARCHAR(64) NOT NULL,
+  task_graph_json     JSONB NOT NULL,         -- the successful task decomposition
+  execution_summary   TEXT NOT NULL,          -- what happened
+  outcome_score       DECIMAL(4,3) NOT NULL,  -- critic score at completion
+  reuse_count         INTEGER DEFAULT 0,
+  last_reused_at      TIMESTAMPTZ,
+  created_at          TIMESTAMPTZ NOT NULL DEFAULT now()
+)
+
+Cases are written to case_library by the REFLECTOR when outcome_score ≥ 0.80 (high-quality executions worth preserving). Low-quality executions are stored as negative cases — what not to do — with a is_negative_case flag. The PLANNER receives both types: analogous successes to adapt from, and analogous failures to avoid.
+
+
+10. COG-09 — Active Information Acquisition
+
+10.1 Current State & Gap
+Brevio asks clarifying questions when intent confidence < 0.70 (fallback path). The question is generated by the PLANNER as a natural language clarification request. There is no mechanism to evaluate which question to ask, how much uncertainty it would resolve, or whether a question is necessary at all (vs. acting with the best current estimate and course-correcting).
+
+
+10.2 Improvement: Optimal Clarification Policy
+
+New Table: clarification_candidates
+clarification_candidates (
+  id                UUIDv7 PK,
+  ingress_turn_id   UUID NOT NULL,
+  workspace_id      UUID NOT NULL,
+  question_text     TEXT NOT NULL,
+  estimated_gain    DECIMAL(4,3) NOT NULL,  -- information gain estimate 0.0-1.0
+  disambiguates     TEXT[],                 -- intent IDs this question would resolve
+  was_selected      BOOLEAN DEFAULT false,
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT now()
+)
+
+Ask-vs-Act Decision Rule
+function askOrAct(intents, clarification_candidates, workspace_id):
+  best_question = max(clarification_candidates, key=estimated_gain)
+  top_intent_confidence = max(intents, key=confidence).confidence
+  // If top intent is close to threshold AND acting-then-correcting is low-risk
+  if top_intent_confidence >= 0.60 AND task_is_reversible(top_intent):
+    return ACT_WITH_MONITORING  // act on best estimate, watch for correction
+  if best_question.estimated_gain < 0.20:
+    return ACT_WITH_BEST_ESTIMATE  // question wouldn't help much
+  return ASK(best_question)
+
+
+11. COG-10 — Episodic-to-Semantic Consolidation
+
+11.1 Current State & Gap
+V9.1 defines daily_captures (episodic) and memory_items (semantic). V10.2 added decay for episodic memory and an episodic retriever. But there is no consolidation pathway: episodic memories never automatically generate semantic patterns. A pattern that appears in 30 daily captures ('user always reviews documents in the evening', 'user consistently cancels Monday meetings') remains 30 separate episodic records, never consolidated into a single semantic fact.
+
+11.2 Improvement: Overnight Consolidation Workflow
+
+New Table: consolidation_runs
+consolidation_runs (
+  id                   UUIDv7 PK,
+  workspace_id         UUID NOT NULL,
+  run_date             DATE NOT NULL,
+  episodes_analyzed    INTEGER NOT NULL DEFAULT 0,
+  patterns_extracted   INTEGER NOT NULL DEFAULT 0,
+  patterns_promoted    INTEGER NOT NULL DEFAULT 0,  -- met confidence threshold
+  patterns_discarded   INTEGER NOT NULL DEFAULT 0,
+  cost_usd             DECIMAL(8,4),
+  status               VARCHAR(16) CHECK IN ('running','complete','failed'),
+  UNIQUE (workspace_id, run_date)
+)
+
+-- New column on memory_items:
+source_episode_ids     UUID[],   -- daily_capture IDs this was consolidated from
+consolidation_run_id   UUID,     -- null = user-created, non-null = consolidated
+pattern_frequency      INTEGER,  -- how many episodes supported this pattern
+
+PROMPT_CONSOLIDATION_V1: Input is the past 14 days of daily_capture summaries. Output is a list of candidate semantic patterns with confidence (0-1) and supporting episode count. Only patterns with confidence ≥ 0.75 AND episode_count ≥ 3 are promoted to memory_items.
+
+
+12. COG-11 — Concept Drift Detector
+
+12.1 Current State & Gap
+V10.2 added a KnowledgeFileDriftDetector for SOUL.md/USER.md staleness. This covers intentional preference drift. What's missing is behavioral drift detection: the agent noticing that its predictions are systematically less accurate lately, or that the user's behavior has shifted significantly from their historical baseline. A user who just changed jobs will have entirely different priorities, tools, contacts, and time constraints — the agent's learned patterns from the previous role are now counterproductive.
+
+12.2 Improvement: Behavioral Baseline Monitor
+
+New Table: behavioral_baselines
+behavioral_baselines (
+  id                      UUIDv7 PK,
+  workspace_id            UUID NOT NULL,
+  baseline_window_start   DATE NOT NULL,
+  baseline_window_end     DATE NOT NULL,
+  topic_distribution      JSONB NOT NULL,  -- {topic: frequency}
+  skill_usage_distribution JSONB NOT NULL, -- {skill_id: count}
+  avg_message_hour        DECIMAL(4,1),   -- avg hour of day for messages
+  override_rate           DECIMAL(4,3),   -- autonomy override frequency
+  correction_rate         DECIMAL(4,3),   -- explicit correction frequency
+  is_current_baseline     BOOLEAN DEFAULT false,
+  created_at              TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (workspace_id, baseline_window_start)
+)
+
+Drift Detection Algorithm
+function detectDrift(workspace_id):
+  current = computeWindow(workspace_id, last_14_days)
+  baseline = queryCurrentBaseline(workspace_id)  // 90-day rolling average
+  // Jensen-Shannon divergence on topic distribution
+  topic_drift = JS_divergence(current.topic_dist, baseline.topic_dist)
+  skill_drift  = JS_divergence(current.skill_dist, baseline.skill_dist)
+  behavior_drift = |current.override_rate - baseline.override_rate|
+  drift_score = 0.4*topic_drift + 0.4*skill_drift + 0.2*behavior_drift
+  if drift_score > DRIFT_THRESHOLD (default 0.25):
+    emit DriftAlert(workspace_id, drift_score, dominant_shift)
+    // Agent surfaces: 'I've noticed your focus has shifted lately...'
+
+
+13. COG-12 — Dynamic Few-Shot Constructor
+
+13.1 Current State & Gap
+The PLANNER, CRITIC, REFLECTOR, and PROMPT_RESPONSE_GEN prompts use static system prompts. They have no dynamic few-shot examples. The accumulated history of successful executions — thousands of (request, plan, execution, outcome) tuples — is stored in execution logs but never used to improve the prompts that generate new plans.
+
+
+13.2 Improvement: Dynamic Example Selection
+
+Few-Shot Example Selection Algorithm
+function constructFewShot(request_embedding, prompt_type, workspace_id, K=3):
+  // Step 1: retrieve top-20 semantically similar cases
+  candidates = queryCaseLibrary(request_embedding, workspace_id, limit=20)
+  // Step 2: filter by prompt_type relevance
+  candidates = filter(candidates, lambda c: c.domain matches prompt_type)
+  // Step 3: MMR selection for diversity
+  selected = []
+  while len(selected) < K AND len(candidates) > 0:
+    if len(selected) == 0:
+      selected.append(max(candidates, key=outcome_score))
+    else:
+      scores = [(c, lambda_sim*sim(c, request) - (1-lambda_sim)*max_sim(c, selected))
+                for c in candidates]
+      selected.append(max(scores, key=score).candidate)
+    candidates.remove(selected[-1])
+  return formatAsDemonstrations(selected)
+
+New Column on case_library
+-- Tracks which prompt types this case is suitable for as few-shot
+suitable_for_prompts  VARCHAR(64)[]  -- ['PLANNER','CRITIC','RESPONSE_GEN']
+
+Token budget for few-shot examples: 15% of the total token allocation for the prompt type, sourced from the context_budget expansion reserve. MMR lambda (similarity-diversity tradeoff): 0.65 (slightly favor similarity over diversity).
+
+
+14. Implementation Priority & Assembly Order
+V10.3 modules are ordered by two dimensions: (1) foundational dependency — some modules feed others, and (2) standalone value — how much value each delivers in isolation. Implement P0 modules before any P1. P1 modules may be parallelized.
+
+
+14.1 New Tables & Columns Summary
+New tables added by V10.3 (all UUIDv7 PK, workspace-scoped RLS, forward-only migration):
+system1_heuristics — Learned INSTANT-tier patterns (COG-01)
+thought_graphs + thought_nodes — GoT reasoning artifacts (COG-02)
+domain_performance_history — Per-domain empirical success rates (COG-03)
+user_knowledge_model — User belief and knowledge gap tracking (COG-04)
+belief_distributions — Bayesian preference probability distributions (COG-05)
+prospective_memories — Forward-looking event-triggered reminders (COG-06)
+implicit_behavior_signals — Behavioral preference signal capture (COG-07)
+case_library — Problem-solution cases for analogical reasoning (COG-08)
+clarification_candidates — Optimal clarification question scoring (COG-09)
+consolidation_runs — Episodic-to-semantic consolidation audit (COG-10)
+behavioral_baselines — Behavioral drift baseline computation (COG-11)
+
+Existing tables receiving new columns:
+memory_items — source_episode_ids[], consolidation_run_id, pattern_frequency (COG-10)
+case_library — suitable_for_prompts[] (COG-12)
+
+14.2 New Workflows Summary
+HeuristicUpdateWorkflow — Daily: update system1_heuristics from recent INSTANT successes (COG-01)
+MetacognitiveRecalculationWorkflow — Weekly: recompute domain_performance_history (COG-03)
+BeliefMaintenanceWorkflow — Daily: decay low-observation beliefs toward priors (COG-05)
+MemoryConsolidationWorkflow — Nightly: episodic → semantic pattern extraction (COG-10)
+DriftDetectionWorkflow — Weekly: compute behavioral baselines + JS-divergence drift score (COG-11)
+CaseLibraryMaintenanceWorkflow — Weekly: prune low-reuse, low-score cases (COG-08)
+
+14.3 New Prompt Specifications Required
+PROMPT_CONSOLIDATION_V1 — Episodic pattern extraction from daily captures (COG-10)
+PROMPT_GOT_BRANCH_V1 — Generate 2 divergent sub-thoughts from a thought node (COG-02)
+PROMPT_GOT_MERGE_V1 — Synthesize two thought branches into a merged node (COG-02)
+PROMPT_CLARIFICATION_SCORER_V1 — Estimate information gain of a candidate question (COG-09)
+
+14.4 Closure Statement
+BREVIO V10.3 adds 12 cognitive architecture modules derived from cognitive science, neuroscience, and frontier AI research. It adds 11 new tables, extends 2 existing tables, specifies 6 new Temporal workflows, and defines 4 new prompt specifications.
+
+V10.3 is purely additive. It does not modify any prior version's tables, workflows, policies, prompts, or schemas. All prior acceptance gates remain in force.
+
+The cognitive architecture improvements in V10.3 do not improve Brevio for the first interaction. They compound: modules like COG-01, COG-05, COG-08, and COG-10 become meaningfully powerful after 30–90 days of usage. The long-term ceiling on intelligence scales with usage, not just with model improvements. This is the correct design for a personal AI that is meant to grow with its user.
+
+Any behavior not explicitly defined in V9 through V10.3 is forbidden.
+
+END OF BREVIO V10.3 ADDENDUM

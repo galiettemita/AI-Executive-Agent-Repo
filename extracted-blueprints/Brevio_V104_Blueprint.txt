@@ -1,0 +1,128 @@
+
+
+V10.4 NON-NEGOTIABLE RULES
+
+
+1. WHY OUTBOUND CALLING IS NEEDED
+Many real-world tasks cannot be completed digitally. Restaurants, salons, medical offices, and local service providers often accept reservations by phone only. Brevio must be able to place calls autonomously on behalf of users, conduct a natural conversation, and report back with the outcome — without any user involvement during the call itself.
+
+2. PROVIDER SELECTION
+VAPI.ai is the primary provider. Retell AI is the hot-swap fallback. Both are fully specified below so the Codex agent can implement either without additional research.
+
+3. ARCHITECTURE — 3-PLANE INTEGRATION
+Outbound calling is implemented in the Executor service (Hands plane) as a new package: hands/call/. Brain proposes and plans. Control approves. Executor executes. Gateway delivers results.
+
+
+3.1 Go File Structure — hands/call/ package
+
+4. CALL FLOW — DETAILED
+4.1 User Intent → Call Initiation
+
+
+4.2 Call Completion — Webhook Processing
+
+
+4.3 Google Places Phone Number Lookup
+Guardrail NNR-V104-006 requires phone numbers to be verified before dialling. This is the implementation:
+
+5. SYSTEM PROMPT TEMPLATES — ALL CALL TYPES
+Templates stored in call_assistants table (system_prompt_template column). Rendered by prompt_builder.go at call time by substituting {slot} values from call_brief JSONB. All templates include the mandatory IDENTITY and PAYMENTS clauses.
+
+
+5.1 RESERVATION — Restaurant Booking
+
+
+5.2 APPOINTMENT — Medical, Dental, Salon, Spa
+
+
+5.3 PHARMACY — Prescription Refill
+
+
+5.4 QUOTE — Contractor / Service Provider
+
+
+5.5 GENERAL — Freeform Call
+
+6. JSON SCHEMAS
+6.1 MAKE_CALL Tool Input Schema
+This is the JSON Schema for the MAKE_CALL tool as registered in the skills_registry and validated by Control before dispatch. additionalProperties: false is mandatory (NNR-V10-009).
+
+7. OUTCOME HANDLING MATRIX
+
+8. FULL DDL — MIGRATION 016
+File: migrations/016_brevio_v104_outbound.sql — runs AFTER migration 015. Forward-only per NNR-V10-008. All PKs use uuidv7_generate(). All tables have workspace_id RLS per NNR-V104-002.
+
+9. API INTEGRATION REFERENCE
+9.1 VAPI.ai — Place Outbound Call
+
+
+9.2 Retell AI — Fallback Provider (Full Spec)
+Retell AI implements the same CallProvider interface. The Executor auto-switches to Retell when VAPI error rate exceeds 5% in a 5-minute window (tracked in Redis key: calls:provider:vapi:errors:{minute_bucket}).
+
+
+9.3 Temporal Retry Workflow
+Retry scheduling uses Temporal cron-style delayed activities. The scheduler.go file implements this:
+
+
+9.4 OPA Policy — Outbound Call Authorization
+
+
+9.5 Skill Registry — Seed INSERT
+Run during application bootstrap (call_service.go: EnsureSkillsRegistered()). Not in migration — requires workspace context.
+
+10. METRICS & EVENTS
+10.1 Prometheus Metrics — Outbound Calls
+
+
+11. WHAT REAL-TIME VOICE MEANS FOR BREVIO
+Part B adds a live, bidirectional audio session between the user and Brevio. Put on a headset, open the Brevio web or mobile app, and speak naturally. Brevio listens, processes, and speaks back — sub-second, no messages needed. This is NOT Part A (which places calls to businesses). This is you talking to Brevio directly.
+
+12. PROVIDER SELECTION — LIVEKIT
+LiveKit (open-source, self-hostable) is selected for WebRTC infrastructure. The LiveKit Agents framework allows Brevio to run as an AI participant in the audio room — not a relay. Daily.co is the managed fallback.
+
+13. REAL-TIME VOICE ARCHITECTURE
+13.1 Go File Structure — voice/worker/ package
+
+
+13.2 Component Table
+
+14. SIGNAL CHAIN — SPEECH TO RESPONSE
+End-to-end latency target: <900ms from user stops speaking to Brevio begins speaking. All stages are pipelined — no stage waits for the previous to fully complete.
+
+15. LIVEKIT TOKEN SIGNING & SESSION API
+15.1 Token Claims Specification
+Tokens are signed JWT using LIVEKIT_API_KEY + LIVEKIT_API_SECRET. Separate tokens for user and worker. Both expire in 4 hours (matches VOICE_SESSION_MAX_SECONDS=14400).
+
+
+15.2 Worker Dispatch & Concurrency
+
+
+15.3 STT & TTS Failover Thresholds
+
+
+15.4 Post-Session Task Extraction
+After every voice session ends, task_extractor.go scans the transcript for actionable items and creates task_run records. This is what enables "mention it in voice, Brevio does it" behavior.
+
+16. FULL DDL — MIGRATION 017
+File: migrations/017_brevio_v104_voice.sql — runs AFTER migration 016. Additive only.
+
+17. METRICS & EVENTS — REAL-TIME VOICE
+
+
+18. ENVIRONMENT VARIABLES — ALL NEW (17 TOTAL)
+18.1 Part A — Outbound Calling (8 vars)
+
+
+18.2 Part B — Real-Time Voice (9 vars)
+
+19. GUARDRAILS & SAFETY RULES
+
+20. CODEX IMPLEMENTATION CHECKLIST
+Complete IN ORDER. Each gate must pass before the next phase begins. Gate failures block deployment.
+
+
+PHASE 1 — Part A: Outbound Calling
+
+
+PHASE 2 — Part B: Real-Time Headset Voice
+

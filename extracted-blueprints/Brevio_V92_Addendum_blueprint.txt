@@ -1,0 +1,331 @@
+
+
+BREVIO
+V9.2 Addendum
+
+Production Hardening & Intelligence Infrastructure Layer
+
+
+18 Gap Closures: Schemas, Workflows, APIs, Policies
+Context Engineering • RAG Pipeline • Multi-Turn Sessions • Temporal Reasoning Guardrails Runtime • Tool Health Scoring • Feature Flags • CRDT Resolution Streaming UX • Error Taxonomy • Admin Backend • Compliance Automation
+February 26, 2026 • Version 9.2.0
+Extends BREVIO V9 Consolidated Master Blueprint + V9.1 Addendum
+
+Executive Summary
+BREVIO V9.2 is a forward-only addendum to the V9 Consolidated Master Blueprint and V9.1 Soft Intelligence Layer. It closes 18 gaps identified through a systematic audit against production-readiness criteria and comprehensive AI executive assistant capability models. V9.2 does not modify any existing V9 or V9.1 schema, workflow, or policy. It adds new tables, new services, new workflows, new API endpoints, and new policy rules that integrate with the existing architecture.
+V9 excels at deterministic execution, security, provisioning, and observability. V9.1 adds the soft intelligence layer: goals, trust-building autonomy, learning protocols, and daily introspection. V9.2 adds the production hardening and intelligence infrastructure layer: the systems that make BREVIO fast, resilient, context-aware, and operationally manageable at scale.
+V9.2 addresses two categories of gaps: (A) 11 partially-covered items where V9/V9.1 foundations exist but lack the depth required for production deployment, and (B) 7 entirely missing capabilities that are critical for a production-grade AI executive assistant.
+
+Gap Registry
+
+
+
+Non-Negotiable Rules (Additive to V9 + V9.1)
+
+
+New Enum Types
+These enums extend the V9 + V9.1 enum sets. No existing enums are modified.
+
+
+
+New Table Definitions (DDL)
+All tables below are additive. They do not modify any V9 or V9.1 table. All are workspace-scoped with mandatory RLS (except global configuration tables noted). All IDs are UUIDv7.
+
+Context Engineering System (GAP-V92-15)
+The Context Engineering System is the highest-priority new capability. It provides a deterministic token budget allocator that decides, for every single LLM call, exactly how many tokens go to each context source. Without this, the agent will either blow budget on irrelevant context or lose critical information as conversations grow longer.
+
+context_budgets
+Defines per-tier token budget allocations for each context source. One row per model tier per workspace.
+
+
+UNIQUE constraint: (workspace_id, model_tier). Percentages must sum to exactly 100.00. Expansion budget draws from a reserve pool and triggers only when the model returns low-confidence signals or explicitly requests more context via structured output.
+
+context_budget_allocations
+Per-request allocation record showing exactly how tokens were distributed. Append-only for audit.
+
+
+context_budget_audit
+Tracks budget effectiveness over time for tuning. Aggregated daily per workspace per tier.
+
+
+UNIQUE constraint: (workspace_id, audit_date, model_tier).
+
+RAG Pipeline Framework (GAP-V92-12)
+A full Retrieval-Augmented Generation pipeline for synthesizing information from emails, documents, calendars, web content, and memory. Supports multiple chunking strategies, hybrid search (sparse BM25 + dense pgvector), cross-encoder re-ranking, and retrieval evaluation.
+
+rag_collections
+A collection groups related content for retrieval. Each connector domain maps to a collection.
+
+
+
+rag_chunks
+Individual content chunks with embeddings, BM25 tokens, and provenance metadata.
+
+Indexes: GIN index on bm25_tokens for full-text search. HNSW index on embedding for vector similarity. Composite index on (workspace_id, collection_id, content_hash) UNIQUE for dedup. Partition by workspace_id for large deployments.
+
+rag_retrievals
+Audit log for every retrieval operation. Used for RAG evaluation and quality tracking.
+
+
+rag_reranker_config
+Per-workspace re-ranker tuning configuration.
+
+
+Multi-Turn Conversation Sessions (GAP-V92-16)
+
+V9 is run-centric: each message creates a new workflow. Real executive assistant conversations are multi-turn: 'Schedule a meeting with John' followed by 'Actually make it Tuesday' followed by 'And add Sarah too'. These are semantically one task but would create separate runs. This layer tracks multi-turn context, coreference resolution, and intent continuation.
+
+conversation_sessions
+
+session_entities
+Tracks named entities resolved across turns for coreference resolution.
+
+
+
+session_intents
+Tracks intent evolution within a session. Supports intent continuation and correction.
+
+
+Temporal Reasoning Engine (GAP-V92-17)
+An executive assistant must reason deeply about time: timezone conversions, scheduling conflicts, deadline proximity, recurring events, travel time between locations, 'next Tuesday' disambiguation, and business hours vs. personal hours. This module provides the data structures and logic for all time-aware operations.
+
+temporal_reasoning_config
+
+
+
+temporal_constraints
+Stores scheduling constraints and preferences for the workspace operator.
+
+
+travel_time_cache
+Caches travel time estimates between known locations to avoid redundant API calls.
+
+UNIQUE constraint: (workspace_id, origin_location, dest_location, travel_mode).
+
+Guardrails Runtime Framework (GAP-V92-01)
+An inference-level guardrails runtime that wraps every LLM call with content safety, jailbreak detection, topic control, hallucination prevention, and sensitive data redaction. This operates at a different layer than the V9 Content Firewall (which operates at ingress) and ExecutionGate (which operates at the workflow level).
+
+guardrails_config
+
+
+
+guardrails_rule_sets
+
+guardrails_events
+Append-only log of every guardrail trigger. Used for tuning and compliance.
+
+
+
+Tool Health Scorer + Auto-Quarantine (GAP-V92-07)
+A unified real-time health scoring system for every registered tool: MCP servers, native connectors, API endpoints, and internal functions. Scores are computed continuously from error rate, latency percentiles, timeout frequency, response schema validity, and cost per call. Auto-quarantine triggers automatically when health drops below threshold.
+
+tool_health_scores
+
+
+UNIQUE constraint: (workspace_id, tool_key). Health score formula: health_score = (1 - error_rate_1h) * 0.4 + (1 - timeout_rate_1h) * 0.2 + schema_validity_rate * 0.2 + latency_score * 0.2 where latency_score = max(0, 1 - (p95_latency_ms / expected_p95_ms)).
+
+tool_quarantine_rules
+
+tool_health_events
+Append-only event log for health state transitions.
+
+
+Feature Flagging Framework (GAP-V92-13)
+
+Progressive rollout system for new connectors, model swaps, policy updates, and V9.2 capabilities. Supports targeting by user, workspace, percentage, and custom rules.
+
+feature_flags
+
+feature_flag_rules
+
+feature_flag_evaluations
+Sampled evaluation log for debugging and audit (not every evaluation; configurable sample rate).
+
+
+
+CRDT / Conflict Resolution Protocol (GAP-V92-14)
+For a multi-device agent (WhatsApp + web + mobile), memory writes can arrive out of order. This module provides vector clock tracking for memory items and a conflict resolution log with configurable strategies.
+
+memory_vector_clocks
+
+UNIQUE constraint: (workspace_id, memory_item_id).
+
+memory_conflict_log
+
+
+
+Streaming UX, Latency Budget & Error Communication (GAP-V92-05, GAP-V92-06)
+latency_budgets
+Per-stage latency budgets for the interactive turn pipeline. Enables skip/fast-path decisions.
+
+UNIQUE constraint: (workspace_id, model_tier). Default budgets: T1=2500ms, T2=6000ms, T3=20000ms.
+
+streaming_config
+
+
+
+error_taxonomy
+Defines the complete error category hierarchy with user-facing severity levels.
+
+
+error_templates
+Plain-language message templates per error code, per channel, per locale.
+
+
+Example: error_code='AUTONOMY_INSUFFICIENT' with template 'I wasn't confident enough to {{action}} automatically, so I'm asking you to review it first. {{approval_link}}'.
+
+Event Schema Registry (GAP-V92-03)
+event_schema_registry
+
+event_schema_versions
+
+UNIQUE constraint: (event_type, version). CI enforces compatibility: backward-compatible schemas must not remove fields or change types.
+
+Compliance Automation Framework (GAP-V92-04)
+
+compliance_frameworks
+
+compliance_evidence
+
+compliance_dsr_requests
+GDPR/CCPA Data Subject Request tracking with SLA enforcement.
+
+
+
+Deterministic Caching (GAP-V92-08)
+cache_policies
+
+Default TTLs: prompt_embedding = 3600s, tool_result = 300s (per tool, configurable), compiled_context = 60s. Cache key construction: prompt_embedding = hash(model_id + prompt_text), tool_result = hash(tool_key + args_canonical), compiled_context = hash(workspace_id + turn_context_hash + budget_config_version).
+
+cache_audit_log
+
+
+Sampled at configurable rate (default 10%). Used for hit/miss ratio tracking and TTL tuning.
+
+Model Tier Constraints (GAP-V92-09)
+model_tier_policies
+
+model_tier_overrides
+Audit log for any tier escalation beyond policy limits.
+
+
+
+ReAct Early Exit (GAP-V92-10)
+react_execution_policies
+
+Default max_steps: T0=1, T1=3, T2=6, T3=12, T4=20. Early exit signals: confidence_sufficient, user_interrupt, budget_exhausted, loop_detected, max_steps_reached, tool_failure_cascade.
+
+Security Hardening (GAP-V92-11)
+pii_encryption_policies
+
+
+
+mcp_sandbox_profiles
+
+
+Structured Generation (GAP-V92-02)
+Token-level constrained decoding ensures schema-compliant output at generation time, eliminating the retry class entirely. Frameworks like Instructor, Outlines, or native JSON mode guarantee valid structured output on first pass, reducing latency and cost compared to post-hoc validation with retries.
+
+constrained_decoding_config
+
+
+
+Admin Backend (GAP-V92-18)
+The Admin Backend is a production-grade management interface for BREVIO operators and system administrators. Every screen, API, and data model is defined. It exposes dashboards, configuration management, and operational tools through a web UI backed by the admin API endpoints defined in Section 5. Required capabilities:
+User Management: View, search, suspend, and delete users; inspect user sessions and agent activity; manage roles and permissions. Agent Operations Dashboard: Real-time view of active agent runs; tool invocation logs; error and exception tracking; queue depth and latency metrics. Tool Health Dashboard: Live health scores for all registered tools; quarantine status and history; recovery log; manual override controls. KPI & Reporting: DAU/MAU, task completion rates, tool error rates, average cost per user, model tier distribution, cache hit rates — all with time-series charts and CSV/JSON export. Cost Management: Real-time cost tracking per user, per tool, per model tier; budget alerting; anomaly detection for cost spikes. Security & Audit Log: Immutable log viewer; trust receipt history; failed auth attempts; high-risk action approvals. MCP Server Registry: List, add, remove, health-check, and quarantine MCP servers from the UI. System Configuration: Manage tool health thresholds, model tier caps, context budget tiers, rate limits, and feature flags — all without a code deploy. Alerting: Define alert rules and notification channels (email, Slack, PagerDuty, custom webhook) for any metric or event.
+
+admin_dashboard_config
+
+admin_saved_views
+
+
+
+admin_alert_rules
+
+admin_alert_channels
+
+
+New Temporal Workflows
+All workflows run exclusively on Temporal. All are workspace-scoped. All side effects live in activities.
+
+
+API Specification (OpenAPI 3.1 Extension)
+All endpoints extend the V9 API. Auth: UserJWT for user endpoints, AdminJWT for admin endpoints, mTLS for internal.
+
+
+
+
+New OPA Policy Rules
+These rules extend the V9 ExecutionGate PDP. All are evaluated by OPA before tool execution.
+
+
+New JSON Schemas
+All schemas are strict (additionalProperties: false). These extend the V9 + V9.1 schema registries.
+
+
+New Prompt Registry Entries
+These extend the V9 + V9.1 prompt registries. All follow V9 conventions.
+
+
+New Metrics
+Canonical prefix: BREVIO_. These extend the V9 + V9.1 metrics sets.
+
+
+
+New Canonical Events
+All follow the pattern BREVIO.<domain>.<noun>.v1.
+
+
+
+Infrastructure as Code
+New Terraform Modules
+
+
+New Helm Charts
+
+
+Dockerfile Additions
+All new services follow the V9 Dockerfile pattern: Go 1.22 builder, distroless base, non-root (65532:65532), read-only filesystem, SBOM generation, daily CVE scans. The RAG worker additionally includes a Python sidecar for embedding computation (sentence-transformers) with GPU support via CUDA base image when available.
+
+CI/CD Pipeline Extensions
+These steps extend the V9 CI/CD pipeline. All are mandatory and blocking.
+
+
+SLO Extensions
+
+
+Operational Runbooks
+
+
+Acceptance Gates
+
+
+Deterministic Assembly Order
+Build order is dependency-closed: later steps require earlier steps. Steps 26-43 extend V9 steps 1-14 and V9.1 steps 15-25.
+
+
+
+Migration
+V9.2 is a forward-only migration addendum. It applies as migration 003_BREVIO_v92_production_hardening.sql after the V9.1 migration 002_BREVIO_v91_soft_intelligence.sql. No V9 or V9.1 tables are modified. All new tables follow V9 conventions: UUIDv7 PKs, workspace-scoped RLS, pgcrypto and pgvector extensions.
+Migration file: db/migrations/003_BREVIO_v92_production_hardening.sql
+New tables: 47 (context_budgets, context_budget_allocations, context_budget_audit, rag_collections, rag_chunks, rag_retrievals, rag_reranker_config, conversation_sessions, session_entities, session_intents, temporal_reasoning_config, temporal_constraints, travel_time_cache, guardrails_config, guardrails_rule_sets, guardrails_events, tool_health_scores, tool_quarantine_rules, tool_health_events, feature_flags, feature_flag_rules, feature_flag_evaluations, memory_vector_clocks, memory_conflict_log, latency_budgets, streaming_config, error_taxonomy, error_templates, event_schema_registry, event_schema_versions, compliance_frameworks, compliance_evidence, compliance_dsr_requests, cache_policies, cache_audit_log, model_tier_policies, model_tier_overrides,	react_execution_policies,	pii_encryption_policies,	mcp_sandbox_profiles, constrained_decoding_config,		admin_dashboard_config,		admin_saved_views,		admin_alert_rules, admin_alert_channels)
+New enums: 34 (see Section 2)
+New indexes: All FK columns indexed. GIN index on rag_chunks.bm25_tokens. HNSW index on rag_chunks.embedding. Composite unique indexes on budget configs, collections, sessions, health scores, flags, schemas, and temporal configs.
+
+Updated Repository File Structure
+These files are added to the V9/V9.1 monorepo structure:
+db/migrations/003_BREVIO_v92_production_hardening.sql internal/context/ — Context budget tests internal/rag/ — RAG pipeline tests internal/rag/eval/ — RAG evaluation tests internal/sessions/ — Session management tests
+internal/temporal_reasoning/ — Temporal reasoning tests internal/guardrails/ — Guardrails runtime tests internal/tool_health/ — Tool health scoring tests internal/feature_flags/ — Feature flag tests internal/crdt/ — CRDT conflict resolution tests internal/streaming/ — Streaming SLA tests internal/errors/ — Error communication tests internal/event_schemas/ — Event schema registry tests internal/compliance/ — Compliance automation tests internal/caching/ — Cache layer tests internal/model_tiers/ — Model tier policy tests internal/admin/ — Admin backend tests
+
+internal/security/pii/ — PII encryption tests internal/security/sandbox/ — MCP sandbox tests schemas/context_budget_config.v1.json schemas/context_allocation_report.v1.json schemas/rag_collection_config.v1.json schemas/rag_search_request.v1.json schemas/rag_search_response.v1.json schemas/session_context.v1.json schemas/temporal_expression.v1.json schemas/scheduling_conflict_report.v1.json schemas/guardrail_event.v1.json schemas/tool_health_report.v1.json schemas/feature_flag_evaluation.v1.json schemas/error_message.v1.json schemas/compliance_evidence_manifest.v1.json schemas/dsr_request.v1.json schemas/admin_kpi_report.v1.json schemas/admin_alert.v1.json schemas/memory_conflict_report.v1.json schemas/model_tier_override_request.v1.json prompts/seed_prompts_v92.txt spec/traceability/compliance_matrix_v92.csv admin/ — Admin SPA source code admin/src/pages/ — Dashboard page components admin/src/api/ — Admin API client
+
+Closure Statement
+BREVIO V9.2 closes all 18 gaps identified in the production-readiness and capability audit. It adds 47 new tables, 34 new enums, 8 new Temporal workflows, 67 new API endpoints, 18 new OPA policy rules, 18 new JSON schemas, 6 new prompt registry entries, 39 new metrics, 37 new canonical events, 18 new acceptance gates, 3 new Terraform modules, 5 new Helm charts, 18 new CI/CD test steps, 18 new SLOs, 9 new operational runbooks, and 18 deterministic assembly steps.
+V9.2 is purely additive. It does not modify any V9 or V9.1 table, enum, workflow, endpoint, policy, schema, prompt, metric, or event. All V9 and V9.1 acceptance gates, non-negotiable rules, and closure checks remain in force. The new tables integrate cleanly with the existing schema through standard foreign key relationships to workspaces, ingress_turns, memory_items, users, connectors, and other existing tables.
+V9.2 transforms BREVIO from a powerful execution engine with soft intelligence into a production-hardened, context-aware, streaming-first AI executive assistant with enterprise-grade operational tooling. It closes the gap between blueprint ambition and production reality across every dimension: performance (context engineering, caching, streaming), intelligence (RAG, multi-turn sessions, temporal reasoning), reliability (tool health, guardrails, feature flags, CRDT), compliance (SOC2/GDPR/CCPA automation), security (PII encryption, MCP sandboxing), and operations (admin backend, alerting, runbooks).
+
+
+
+END OF BREVIO V9.2 ADDENDUM
+
+Any behavior not explicitly defined in V9, V9.1, or V9.2 is forbidden.

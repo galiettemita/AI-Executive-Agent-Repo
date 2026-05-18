@@ -1,10 +1,15 @@
 package feature_flags
 
 import (
+	"context"
+	"encoding/json"
+	"log"
 	"sort"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/brevio/brevio/internal/cache"
 )
 
 type Flag struct {
@@ -41,6 +46,11 @@ type Service struct {
 	evaluationCache map[string]cachedEvaluation
 	cacheTTL        time.Duration
 	now             func() time.Time
+
+	// Redis-backed source of truth. When non-nil, flag mutations are persisted
+	// to Redis and reads fall through to Redis on local cache miss.
+	redisCache *cache.RedisClient
+	redisTTL   time.Duration // TTL for Redis flag entries; defaults to 10 minutes
 }
 
 func NewService() *Service {
@@ -63,14 +73,26 @@ func (s *Service) UpsertFlag(flag Flag) {
 		flag.FlagType = "boolean"
 	}
 	s.flags[flag.Key] = flag
+	s.syncFlagToRedis(flag)
 	s.resetCacheLocked()
 }
 
 func (s *Service) GetFlag(key string) (Flag, bool) {
 	s.mu.RLock()
-	defer s.mu.RUnlock()
 	flag, ok := s.flags[key]
-	return flag, ok
+	rc := s.redisCache
+	s.mu.RUnlock()
+
+	if ok {
+		return flag, true
+	}
+	// Fall through to Redis on local miss.
+	if rc != nil {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		return s.loadFlagFromRedis(key)
+	}
+	return Flag{}, false
 }
 
 func (s *Service) ListFlags() []Flag {
@@ -95,6 +117,11 @@ func (s *Service) DeleteFlag(key string) {
 	defer s.mu.Unlock()
 	delete(s.flags, key)
 	delete(s.rules, key)
+	if s.redisCache != nil {
+		if err := s.redisCache.FeatureFlagDel(context.Background(), key); err != nil {
+			log.Printf("[feature_flags] Redis DEL for flag %q: %v", key, err)
+		}
+	}
 	s.resetCacheLocked()
 }
 
@@ -171,7 +198,11 @@ func (s *Service) evaluateNoCacheLocked(key, workspaceID string, attributes map[
 
 	flag, ok := s.flags[key]
 	if !ok {
-		return result
+		// Try Redis fallback.
+		flag, ok = s.loadFlagFromRedis(key)
+		if !ok {
+			return result
+		}
 	}
 	if !flag.Enabled {
 		result.Reason = "FEATURE_DISABLED"
@@ -223,6 +254,52 @@ func normalizeWorkspaceID(workspaceID string, attributes map[string]string) stri
 		}
 	}
 	return "default"
+}
+
+// SetRedisCache injects a Redis client for durable flag storage.
+// When set, UpsertFlag/DeleteFlag persist to Redis as the source of truth,
+// and GetFlag falls through to Redis on local miss.
+func (s *Service) SetRedisCache(rc *cache.RedisClient) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.redisCache = rc
+	if s.redisTTL <= 0 {
+		s.redisTTL = 10 * time.Minute
+	}
+}
+
+// syncFlagToRedis persists a flag to Redis. Must be called with lock held.
+func (s *Service) syncFlagToRedis(flag Flag) {
+	if s.redisCache == nil {
+		return
+	}
+	blob, err := json.Marshal(flag)
+	if err != nil {
+		log.Printf("[feature_flags] marshal flag for Redis: %v", err)
+		return
+	}
+	if err := s.redisCache.FeatureFlagSet(context.Background(), flag.Key, string(blob), s.redisTTL); err != nil {
+		log.Printf("[feature_flags] Redis SET for flag %q: %v", flag.Key, err)
+	}
+}
+
+// loadFlagFromRedis attempts to load a flag from Redis on local miss.
+func (s *Service) loadFlagFromRedis(key string) (Flag, bool) {
+	if s.redisCache == nil {
+		return Flag{}, false
+	}
+	val, ok, err := s.redisCache.FeatureFlagGet(context.Background(), key)
+	if err != nil || !ok {
+		return Flag{}, false
+	}
+	var flag Flag
+	if err := json.Unmarshal([]byte(val), &flag); err != nil {
+		log.Printf("[feature_flags] unmarshal flag from Redis: %v", err)
+		return Flag{}, false
+	}
+	// Backfill local cache.
+	s.flags[key] = flag
+	return flag, true
 }
 
 func evaluationCacheKey(key, workspaceID string, attributes map[string]string) string {

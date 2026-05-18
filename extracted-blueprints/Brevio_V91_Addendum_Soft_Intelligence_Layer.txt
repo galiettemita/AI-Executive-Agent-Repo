@@ -1,0 +1,198 @@
+
+
+
+
+
+
+BREVIO
+V9.1 Addendum
+Soft Intelligence Layer
+
+13 Gap Closures: Schemas, Workflows, APIs, Policies
+Temporal Goals • Mission Control • Trust-Building Autonomy • Learning Protocols
+Cross-Repo Intelligence • Technical Debt • Daily Introspection • Adaptive Discovery
+
+
+February 25, 2026 • Version 9.1.0
+Extends BREVIO V9 Consolidated Master Blueprint
+
+1. Executive Summary
+BREVIO V9.1 is a forward-only addendum to the V9 Consolidated Master Blueprint. It closes 13 gaps identified through a systematic feature audit against a comprehensive AI executive assistant capability model. V9.1 does not modify any existing V9 schema, workflow, or policy. It adds new tables, new workflows, new API endpoints, and new policy rules that integrate with the existing V9 architecture.
+V9 excels at the hard engineering layer: deterministic execution, security, provisioning, and observability. V9.1 adds the soft intelligence layer: the features that make BREVIO feel like it truly knows the operator, grows with them over time, and proactively works toward their goals.
+
+1.1 Gap Registry
+
+1.2 V9.1 Non-Negotiable Rules (Additive to V9)
+
+2. New Enum Types
+These enums extend the V9 enum set. No existing V9 enums are modified.
+
+
+3. New Table Definitions (DDL)
+All tables below are additive. They do not modify any V9 table. All are workspace-scoped with mandatory RLS. All IDs are UUIDv7.
+3.1 Temporal Goal System (GAP-10)
+Provides structured goal tracking across time horizons with milestones and progress logging. Fills the gap where V9 had no way to track what the operator is working toward or measure progress against their stated objectives.
+
+3.1.1 goal_items
+
+3.1.2 goal_milestones
+
+3.1.3 goal_progress_logs
+
+3.2 Mission Control (GAP-01)
+Provides a configurable dashboard surface rendered via the A2UI Canvas. The operator defines which widgets appear, their layout, and their refresh cadence. The Brain assembles widget data from existing V9 tables (workflows, approvals, memory, connectors) plus new V9.1 tables (goals, debt, learning).
+
+3.2.1 mission_control_config
+
+3.2.2 mission_control_widgets
+
+3.3 Trust-Building Autonomy (GAP-11)
+Autonomy levels in V9 are static per-domain settings. V9.1 adds a trust scoring system that tracks the AI's track record per domain and can propose autonomy promotions when confidence thresholds are met. Promotions always require operator notification (NNR-V91-007). The trust score formula is deterministic and auditable.
+
+3.3.1 autonomy_trust_scores
+UNIQUE constraint: (workspace_id, domain). Trust score formula: trust_score = (success_count_30d - 2*failure_count_30d - 3*override_count_30d) / GREATEST(success_count_30d + failure_count_30d + override_count_30d, 1). Promotion threshold: trust_score >= 0.85 AND success_count_30d >= 20 AND failure_count_30d = 0 for trailing 14 days.
+
+3.3.2 autonomy_promotions
+
+3.4 Per-User Learning Protocols (GAP-08)
+V9 has system-wide eval degradation handling (RB-009) but no mechanism for the AI to learn from individual interaction feedback. V9.1 adds configurable feedback loops where operator corrections and preferences are captured, consolidated into lessons, and applied to future behavior. Lessons require operator confirmation before becoming active rules (NNR-V91-006).
+
+3.4.1 learning_config
+
+3.4.2 interaction_feedback
+
+3.4.3 learned_lessons
+
+3.5 Daily Introspection and Log Capture (GAP-09, GAP-13)
+V9 defines the memory_type enum value 'daily_log' but has no workflow to populate it. V9.1 adds a daily capture system with configurable templates and an introspection workflow that the AI runs at the end of each session (or on a scheduled cadence). Captures include: what was accomplished, what was learned, what's pending, and what the AI would do differently.
+
+3.5.1 introspection_templates
+Default template sections: accomplishments (what was completed today), learnings (new information or patterns discovered), pending_items (what remains open and needs attention), friction_noted (what was harder than expected and why), operator_mood_signal (observed operator energy/stress level if detectable), improvement_notes (what the AI would do differently next time).
+
+3.5.2 daily_captures
+UNIQUE constraint: (workspace_id, capture_date). Each capture creates a corresponding memory_item with type='daily_log' and embeds a summary for semantic retrieval.
+
+3.6 Cross-Repo Intelligence and Technical Debt (GAP-05, GAP-06)
+
+3.6.1 repo_dependencies
+UNIQUE constraint: (workspace_id, source_repo_id, target_repo_id, dependency_type). Prevents duplicate dependency edges.
+
+3.6.2 cross_repo_patterns
+
+3.6.3 technical_debt_items
+
+3.6.4 debt_resolution_tasks
+Debt resolution tasks are generated during codebase ingestion or cross-repo analysis. They can be linked to goals and milestones so that resolving technical debt contributes to goal progress. Tasks have dependency ordering to prevent out-of-sequence remediation. The linked_milestone_id allows a debt task completion to automatically advance a goal milestone.
+
+3.7 Capability Exploration (GAP-02)
+V9's capability resolution (Package A) detects gaps reactively when the Brain encounters a missing capability. V9.1 adds a proactive exploration engine that periodically analyzes the operator's usage patterns, identifies underserved domains, and recommends new tools or models to try.
+
+3.7.1 capability_recommendations
+
+3.7.2 exploration_history
+
+3.8 Project Templates and Code Context Export (GAP-03, GAP-04)
+3.8.1 project_templates
+The components_json field contains an ordered array of reusable building blocks extracted from source repos. When a template is instantiated, each component is rendered in array order with variables substituted. This eliminates the need for a separate components table while preserving the ability to mix and match atomic pieces like CI configs, linting setups, Docker configurations, and directory scaffolds.
+
+3.8.2 code_context_exports
+The code context export assembles: repo profile, architecture patterns, coding conventions, known technical debt, dependency graph, tribal knowledge from memory, and active goals related to the repo. Output is formatted for consumption by external AI tools (GitHub Copilot, Claude Code, Cursor, etc.).
+
+3.9 Self-Modification Controls (GAP-07)
+V9 has no policy governing whether BREVIO can modify its own configuration (workspace_personas, workspace_behavior_policies, user_domain_autonomy_settings, learning_config, etc.). V9.1 adds explicit self-modification policies that default to DENY (NNR-V91-004).
+
+3.9.1 self_modification_policies
+ExecutionGate enforcement: when a tool call targets any of the above tables and the actor is the AI (not the operator directly), the gate checks self_modification_policies for that workspace. If the action is 'deny', the call is blocked with reason SELF_MODIFICATION_DENIED. If 'require_approval', an approval request is created. If 'allow_with_audit', the call proceeds but an audit_log_entry is emitted with event='BREVIO.self_modification.executed.v1'.
+
+3.10 Adaptive Discovery Follow-ups (GAP-12)
+V9 uses fixed question sets for onboarding (discovery_questions). V9.1 adds a follow-up rule engine that generates additional questions when prior answers indicate gaps, conflicts, shallow responses, or high-interest areas that warrant deeper exploration.
+
+3.10.1 discovery_followup_rules
+
+3.10.2 discovery_adaptive_questions
+
+4. New Temporal Workflows
+All workflows run exclusively on Temporal. All are workspace-scoped. All side effects live in activities.
+
+
+5. New API Endpoints
+All endpoints below are additive to the V9 API (Section 5). Auth follows V9 conventions (UserJWT for user-facing, AdminJWT for admin, mTLS for internal).
+
+
+6. New Policy Rules (OPA Additive)
+These rules extend the V9 ExecutionGate policy rule categories (Section 7.2). No existing V9 rules are modified.
+
+
+7. New JSON Schemas
+All schemas are strict (additionalProperties: false). These extend the V9 schema registry.
+
+
+8. New Prompt Registry Entries
+These prompts extend the V9 prompt registry (Section 9). All follow V9 conventions: versioned, shadow eval mandatory before promotion, rollback via parent_version_id.
+
+
+9. New Metrics
+Canonical prefix: BREVIO_. These extend the V9 metrics set (Section 11.3).
+
+
+10. New Canonical Events
+These extend the V9 canonical events (Section 19.3). All follow the pattern BREVIO.<domain>.<noun>.v1.
+
+
+11. Acceptance Gates (V9.1 Additive)
+These gates extend the V9 acceptance gates (Section 17.1). All V9 gates remain unchanged and must still pass.
+
+
+12. Deterministic Assembly Order (V9.1 Extension)
+These steps execute AFTER V9 Step 14 (observability_and_gates). They follow the same dependency-closed rule: later steps may not be implemented before prerequisites exist.
+
+
+13. Migration
+V9.1 is a forward-only migration addendum. It applies as migration 002_BREVIO_v91_soft_intelligence.sql after the V9 migration 001_BREVIO_v9_init.sql. No V9 tables are modified. All new tables follow V9 conventions: UUIDv7 PKs, workspace-scoped RLS, pgcrypto and pgvector extensions.
+
+The migration creates all new enum types first, then all new tables in dependency order, then all RLS policies, then all indexes.
+
+Migration file: db/migrations/002_BREVIO_v91_soft_intelligence.sql
+New tables: 23 (goal_items, goal_milestones, goal_progress_logs, mission_control_config, mission_control_widgets, autonomy_trust_scores, autonomy_promotions, learning_config, interaction_feedback, learned_lessons, introspection_templates, daily_captures, repo_dependencies, cross_repo_patterns, technical_debt_items, debt_resolution_tasks, capability_recommendations, exploration_history, project_templates, code_context_exports, self_modification_policies, discovery_followup_rules, discovery_adaptive_questions)
+New enums: 21 (see Section 2)
+New indexes: All FK columns indexed. Composite indexes on (workspace_id, domain) for trust_scores, (workspace_id, capture_date) unique for daily_captures, (workspace_id, horizon, status) for goal queries.
+
+13.1 Updated Repository File Structure
+These files are added to the V9 monorepo structure:
+
+BREVIO/
+  db/migrations/002_BREVIO_v91_soft_intelligence.sql
+  internal/goals/              # Goal system tests
+  internal/trust/              # Trust scoring + promotion tests
+  internal/learning/           # Learning pipeline tests
+  internal/capture/            # Daily capture tests
+  internal/codebase_intel/     # Cross-repo + debt tests
+  internal/exploration/        # Capability exploration tests
+  internal/self_modification/  # Self-modification gate tests
+  schemas/goal_item.v1.json
+  schemas/goal_progress_update.v1.json
+  schemas/mission_control_layout.v1.json
+  schemas/trust_score_report.v1.json
+  schemas/promotion_proposal.v1.json
+  schemas/feedback_submission.v1.json
+  schemas/lesson_proposal.v1.json
+  schemas/daily_capture_output.v1.json
+  schemas/capability_recommendation.v1.json
+  schemas/code_context_export_request.v1.json
+  schemas/discovery_followup.v1.json
+  schemas/morning_briefing.v1.json
+  prompts/seed_prompts_v91.txt
+  spec/traceability/compliance_matrix_v91.csv
+
+14. Closure Statement
+
+BREVIO V9.1 closes all 13 gaps identified in the feature audit. It adds 23 new tables, 21 new enums, 8 new Temporal workflows, 32 new API endpoints, 8 new OPA policy rules, 13 new JSON schemas, 8 new prompt registry entries, 25 new metrics, 31 new canonical events, and 11 new acceptance gates.
+
+V9.1 is purely additive. It does not modify any V9 table, enum, workflow, endpoint, policy, schema, prompt, metric, or event. All V9 acceptance gates, non-negotiable rules, and closure checks remain in force. The 24 new tables integrate cleanly with the existing V9 schema through standard foreign key relationships to workspaces, code_repositories, memory_items, ingress_turns, and other V9 tables.
+
+V9.1 transforms BREVIO from a powerful execution engine into an AI executive assistant that learns the operator's goals, tracks progress toward them, earns greater autonomy through demonstrated competence, captures institutional knowledge through daily reflection, detects patterns across codebases, and proactively recommends new capabilities. It bridges the gap between infrastructure excellence and personal intelligence.
+
+
+END OF BREVIO V9.1 ADDENDUM
+
+Any behavior not explicitly defined in V9 or V9.1 is forbidden.

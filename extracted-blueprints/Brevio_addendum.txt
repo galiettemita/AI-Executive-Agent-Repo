@@ -1,0 +1,195 @@
+
+BREVIO
+AI Executive Assistant Platform
+
+Complete Code Review, Gap Analysis
+
+
+
+1. Executive Summary
+This document presents a comprehensive blueprint-to-code gap analysis for the BREVIO AI Executive Assistant platform, cross-referencing all four blueprint layers (V9 Consolidated Master, V9.1 Soft Intelligence Layer, V9.2 Production Hardening, and the OpenClaw Skills Integration blueprint) against the current state of the GitHub repository. 
+
+1.1 What the Blueprints Specify
+The four blueprint layers together define one of the most comprehensive AI assistant specifications ever documented for a coding agent. The cumulative scope is:
+
+
+Cumulative schema size: 160+ tables across 3 additive migrations. Services: gateway, brain, control, executor, canvas (5 internal) + temporal, postgres, redis (3 infra). Skills: 153 (127 cloud-native, 24 local macOS via Edge Agent, 2 MCP-protocol).
+
+1.2 Overall Completeness Assessment
+
+2. Architecture Review
+2.1 Blueprint Architecture vs Repository State
+The blueprint mandates a strict 3-plane architecture within a 5-service monorepo. Every design decision in the blueprint is non-negotiable (NNR). The table below maps each major architectural element to its expected vs. observed state.
+
+
+2.2 Critical Architecture Violations
+
+
+
+3. Database & Schema Gaps
+3.1 Migration Coverage
+The blueprint specifies exactly 3 migration files. The cumulative table count is 160+. Each migration is additive — no migration may modify a prior migration's tables.
+
+
+3.2 Critical Schema Requirements Not Yet Implemented
+V9 Core Tables (Most Critical)
+workspaces — workspace-scoped RLS mandatory on ALL tables; app.workspace_id per DB session
+tool_executions — Two-phase commit log (simulate + commit rows for every tool call)
+execution_gate_decisions — Every OPA PDP decision recorded with full policy_checks_json
+trust_receipts — Cryptographic receipt for every committed tool execution
+audit_log_entries — Append-only, hash-chain HMAC. DB trigger prevents UPDATE/DELETE
+outbox_items — Transactional outbox for all event emissions (outbox pattern)
+prompt_versions — All prompts versioned; shadow eval mandatory before promotion
+key_versions — KMS key rotation tracking; dual-key read window ≥10 min
+schema_migrations — Forward-only migration tracking
+
+V9.1 Tables (Soft Intelligence — All Missing)
+goal_items / goal_milestones / goal_progress_logs — Temporal goal tracking
+autonomy_trust_scores — Deterministic trust formula; promotion threshold ≥0.85
+interaction_feedback / learned_lessons — Per-user learning with operator confirmation gate
+daily_captures — UNIQUE(workspace_id, capture_date); links to memory_items
+technical_debt_items / debt_resolution_tasks — Cross-repo debt tracking
+self_modification_policies — DENY by default for AI self-modification
+
+V9.2 Tables (Production Hardening — All Missing)
+context_budgets — Token budget allocator; UNIQUE(workspace_id, model_tier); percentages sum to 100.00
+rag_chunks — GIN on bm25_tokens + HNSW on embedding; hybrid BM25+pgvector search
+conversation_sessions / session_entities / session_intents — Multi-turn coreference
+guardrails_config / guardrails_events — Inference-level safety, separate from ExecutionGate
+tool_health_scores — Health formula: (1−error_rate)×0.4 + latency_score×0.2 + …
+feature_flags / feature_flag_rules — Progressive rollout; percentage + rule targeting
+memory_vector_clocks — CRDT conflict resolution for multi-device memory writes
+compliance_dsr_requests — GDPR/CCPA data subject requests with SLA enforcement
+admin_dashboard_config / admin_alert_rules — Admin backend configuration
+
+4. Services & API Gaps
+4.1 Internal Services
+
+4.2 API Completeness
+The blueprint defines a total of 200+ API endpoints across V9 (baseline) + V9.1 (+32) + V9.2 (+67) + admin (+25). The OpenAPI spec api/openapi/v9.yaml must exist and be validated by CI. Current state: file likely absent or stub.
+
+
+5. Temporal Workflow Gaps
+The blueprint mandates exclusive use of Temporal for all async operations. No goroutine, cron, or background thread may replace a Temporal workflow. Workflows must be deterministic and replay-safe — no nondeterministic operations (time, random, I/O) inside workflow functions.
+
+
+
+6. OPA Policy Framework Gaps
+The blueprint defines a multi-layer ExecutionGate PDP that every tool call must pass through. OPA evaluates the policy synchronously inside the control service. All decisions are persisted in execution_gate_decisions.
+
+6.1 Missing Policy Rules
+ExecutionGate core: allow/deny based on autonomy level, domain, tool risk_level, role, rate-limit state, budget, content firewall result
+Provisioning policy (Package B): denied_server_ids → allowed_server_ids → risk_level → budget → operator review threshold → OAuth owner approval
+Self-modification policy (V9.1 NNR-V91-004): AI modifying workspace_personas / behavior_policies / learning_config → DENY or require_approval
+RAG data governance (V9.2): deny access to rag_chunks with data_class above user clearance level
+Guardrails override policy (V9.2): deny LLM calls that failed guardrails without explicit admin_override
+MCP sandbox policy (V9.2): enforce mcp_sandbox_profiles per server; block filesystem writes outside allowed_paths
+Feature flag gating: deny skill execution when feature_flags.state = 'disabled' for workspace
+
+6.2 Denial Invariants (All Must Be Tested)
+No user can execute a skill with enabled=false regardless of tier
+No user can exceed monthly LLM budget without admin override
+No user can access another user's OAuth tokens
+No skill executes when circuit breaker state is OPEN
+No message bypasses Gateway normalisation and reaches Brain directly
+No external API call occurs outside a Temporal Activity
+No PII logged in plaintext after 30-day retention window
+No AI self-modification without policy allow + operator notification
+
+7. OpenClaw Skills Integration Gaps
+The OpenClaw blueprint specifies 153 skills across 3 deployment modes. The skills.registry seed data must be loaded via migration. Zero skills appear to be integrated in the current repository.
+
+
+7.1 Critical Skills Infrastructure
+skills.registry seed data: 153 rows with skill_id, plane, deployment_mode, retry_policy, min_tier, enabled=true/false, circuit_breaker config
+Circuit breaker state machine: CLOSED → OPEN (after 5 failures) → HALF_OPEN (probe) → CLOSED. Tracked in skills.circuit_breaker_state
+Skill router: Brain routes to skills based on intent + deployment_mode; cloud skills → K8s executor; local skills → edge agent WebSocket
+SkillResult contract: { skill_id, status, data, error_code, latency_ms, token_usage, tool_execution_id }. Validated against JSON schema
+Per-skill retry policies: Stored in skills.registry.retry_policy JSON. Used by Temporal activities for backoff configuration
+Budget enforcement: monthly_llm_budget_cents CHECK trigger; graceful degradation to keyword-only mode when budget exhausted
+
+7.2 LLM Prompt Registry
+6 core prompt templates must be seeded and versioned:
+PROMPT_INTENT_CLASSIFY_V1: claude-haiku-4-5, temp=0.1, max 256 tokens. Confidence threshold 0.7. Fallback to keyword classifier.
+PROMPT_RESPONSE_GEN_V1: claude-sonnet-4-5, temp=0.3, max 2048 tokens. Channel-aware, PII-safe.
+PROMPT_TASK_DECOMPOSE_V1: claude-sonnet-4-5. DAG output; max 10 tasks; max depth 5; acyclic validation.
+Brain system/planner/critic/reflector: V9 Consolidated blueprint Section 9 prompt registry entries. All 4 required.
+
+8. Infrastructure & DevOps Gaps
+8.1 Terraform Modules
+Blueprint specifies modular Terraform for all cloud resources. None present in current repo.
+
+
+8.2 Helm Charts
+One Helm chart per service. Shared chart values for cross-cutting concerns. All containers: distroless, non-root (65532:65532), read-only FS, drop ALL Linux capabilities.
+helm/brevio-gateway, brevio-brain, brevio-control, brevio-executor, brevio-canvas — all missing
+helm/temporal — Temporal server chart with Postgres persistence — missing
+helm/pgbouncer — Connection pooler sidecar — missing
+helm/otel-collector — OpenTelemetry collector, Prometheus, Grafana, Loki, Jaeger — missing
+helm/brevio-rag-worker (V9.2) — Python embedding sidecar, GPU tolerations — missing
+helm/brevio-admin (V9.2) — Admin backend React SPA + Go API — missing
+
+8.3 CI/CD Pipeline
+
+8.4 Deployment Strategy
+Blue/Green with Canary: Deploy green alongside blue. Route 10% traffic for 15 minutes. Rollback trigger: error rate >1% OR P99 latency >2× baseline OR SLO breach. Full promotion only after clean canary window. ArgoCD manages GitOps flow.
+
+9. Observability Gaps
+Blueprint requires OpenTelemetry → Prometheus/Grafana (metrics), Loki (logs), Jaeger (traces). Structured JSON logs with mandatory fields on every event. Full SLO definitions with burn-rate alerts.
+
+9.1 Structured Logging
+Every log line must include: ts, service, env, workspace_id, user_id, ingress_turn_id, trace_id, span_id, event, severity, attrs. No unstructured logs in production paths.
+
+9.2 Key Metrics (All Missing)
+brevio_turn_latency_ms — P50/P95/P99 per tier. SLO: T1 P99 < 3s, T2 < 10s, T3 < 30s
+brevio_llm_tokens_total — token usage by model, tier, workspace for cost attribution
+brevio_skill_execution_duration_ms — per skill_id, outcome (success/failure/circuit_open)
+brevio_execution_gate_decisions_total — allow/deny by policy_rule, tool_key
+brevio_rag_retrieval_latency_ms / brevio_rag_reranker_score — V9.2 RAG quality
+brevio_context_budget_efficiency_ratio — V9.2 token allocation effectiveness
+brevio_tool_health_score — per tool_key, live gauge used for auto-quarantine
+brevio_trust_score — per workspace, per domain — V9.1 autonomy tracking
+
+9.3 Dead Letter Queues
+5 DLQs required: interactive_turns_dlq, workflow_tasks_dlq, ledger_writes_dlq, trajectory_writes_dlq, rate_limit_ledger_writes_dlq. DLQ consumer runs every 5 minutes. Transient errors re-enqueued with exponential backoff (cap 1 hour). Permanent errors log + alert + manual review.
+
+9.4 Load Shedding Tiers
+D0 (nominal) → D5 (minimal read-only). Each tier progressively disables capabilities while preserving core safety and audit. Tiers D3-D5 must disable non-critical skills while maintaining messaging, auth, and audit.
+
+10. Testing & Evaluation Gaps
+Blueprint mandates a dual test system: deterministic software tests for system behaviour + eval-driven tests for model variability. Both must pass before production deploy.
+
+
+10.1 Critical Test Scenarios
+Scenario 1 — Message Processing Happy Path: WhatsApp webhook → Gateway normalize → Brain classify (confidence ≥0.7) → Brain decompose (valid DAG) → Hands execute → response within SLO.
+Scenario 2 — Parallel Skill Execution: 'Order groceries and play music' → 2 parallel tasks → total latency = max(task1, task2), NOT sum.
+Scenario 3 — Circuit Breaker: 5 consecutive failures → OPEN → immediate CIRCUIT_OPEN error → half-open probe → close after success.
+Scenario 4 — Budget Exhaustion: Budget set to $0.05 → messages until exhausted → graceful degradation to keyword-only → user notification.
+Scenario 5 — Trust Promotion: trust_score ≥ 0.85 AND success_count_30d ≥ 20 AND failure_count_30d = 0 for 14 days → promotion proposal → operator notification.
+
+11. Security & Compliance Gaps
+11.1 Cryptographic Controls
+Approval tokens: HMAC-SHA256 signed. CRITICAL TTL=30s, ELEVATED TTL=5min. Nonce-unique. key_versions table authoritative.
+OAuth token storage: AES-256-GCM envelope: {ciphertext, nonce, key_version, encrypted_at}. Key material from Secrets Manager.
+Key rotation: Dual-key read window ≥10 min. Background re-encryption job. key_versions table.
+Webhook signatures: HMAC-SHA256(app_secret, raw_body_bytes). Timing-safe compare. Replay protection: nonce cache TTL=600s.
+Audit log integrity: Hash chain HMAC. Append-only enforced by DB triggers. No UPDATE/DELETE. Separate DB role.
+Artifact verification: Ed25519 on image digests (sha256). SBOM + vulnerability scan required.
+
+11.2 V9.2 PII Encryption & MCP Sandboxing
+pii_encryption_policies: Per-field encryption config with key rotation schedule. Separate Postgres role for pii_read only.
+mcp_sandbox_profiles: Per-MCP-server filesystem access rules, network egress allow-list, syscall filter. No MCP server runs outside sandbox.
+
+11.3 GDPR / CCPA Compliance
+compliance_dsr_requests table — SLA enforcement, automated data export, right-to-erasure cascade deletes
+Data retention policies — memory_exclusion_rules, audit payload minimisation for sensitive data
+portability_requests table — structured export job, user-accessible download
+ComplianceSweepWorkflow — automated evidence collection for SOC2/GDPR/CCPA
+
+12. Severity-Ranked Finding Register
+All findings ranked by business and technical risk. CRITICAL = blocks production deployment. HIGH = blocks go-live SLAs. MEDIUM = production quality risk. LOW = improvement opportunity.
+
+
+13. Runbooks & Operational Readiness
+V9 defines 9 runbooks (RB-001 – RB-009). V9.2 adds 9 more. None are present in the repository. Production deployment requires these to exist as markdown in runbooks/ and to be referenced in CI.
+

@@ -1,0 +1,323 @@
+
+BREVIO
+V10.2 Intelligence & Performance Addendum
+Gap Analysis  •  Weakness Diagnosis  •  Improvement Specifications
+
+Version 10.2.0  |  March 2026  |  Extends V9 + V9.1 + V9.2 + V10 + V10.1
+PURELY ADDITIVE  •  ZERO-AMBIGUITY  •  IMPLEMENTATION-COMPLETE
+
+1. Executive Summary
+BREVIO V10.2 is a forward-only addendum that closes 34 intelligence and performance gaps identified through systematic audit of the V9–V10.1 stack. These are not infrastructure gaps — the infrastructure layer across V9/V9.1/V9.2/V10/V10.1 is production-grade. These are gaps in the cognitive intelligence layer: how Brevio reasons, adapts its behavior, manages memory across time, constructs context, draws inferences, and performs under latency constraints.
+
+The V9 stack is excellent at deterministic execution, safety, and observability. V9.1 adds the soft intelligence scaffolding. V9.2 adds production hardening. V10 reconciles architecture. What remains is the quality of intelligence that runs on top of that scaffolding. V10.2 fills those gaps.
+
+1.1 Gap Severity Distribution
+
+
+2. Behavior Gaps & Improvements
+Behavior governs how Brevio presents itself, adapts its responses, earns trust, and governs its own autonomy. The V9.1 Soft Intelligence Layer defines the scaffolding correctly — EQ signals, autonomy trust scores, learned lessons. The gaps are in the actualization logic: what the system actually does with those signals.
+
+GAP-B01 — EQ Response Strategy Is Unspecified [CRITICAL]
+Current State: The EQ layer (V10 Phase 5) correctly detects emotional state from signals and stores it in emotional_state_log. A CommunicationProfile exists. The gap is that nowhere in V9–V10.1 is there a defined mapping from detected emotional state to behavioral response strategy.
+Gap: The agent knows the user is stressed. It does nothing differently. Emotional state detection without response adaptation is instrumentation without intelligence.
+
+
+New Table: eq_response_strategies
+eq_response_strategy_matrix (
+  id               UUIDv7 PK,
+  detected_state   eq_state_enum NOT NULL,
+  comm_style       communication_style_enum NOT NULL,
+  time_bucket      VARCHAR(16) CHECK IN ('morning','afternoon','evening','late_night'),
+  length_modifier  DECIMAL(3,2) NOT NULL DEFAULT 1.0,  -- 0.5 = half length
+  formality_level  INTEGER NOT NULL CHECK (1-5),
+  offer_help       BOOLEAN NOT NULL DEFAULT false,
+  tone_directive   TEXT NOT NULL,  -- injected into response prompt
+  check_in_after   INTEGER,  -- N turns before proactive check-in
+  UNIQUE (detected_state, comm_style, time_bucket)
+)
+
+The PROMPT_RESPONSE_GEN prompt must be updated to load the active eq_response_strategy row and inject tone_directive and length_modifier into its system prompt before generation. This closes the loop between detection and behavior.
+
+GAP-B02 — Autonomy Demotion Is Absent [CRITICAL]
+Current State: V9.1 defines a trust-building autonomy system with a promotion threshold of trust_score ≥ 0.85 AND success_count_30d ≥ 20. Promotions require operator notification. This is correct.
+Gap: There is no autonomy demotion mechanism. An agent promoted to high autonomy after a strong 30-day run has no path back to requiring approval if its performance degrades, the operator's situation changes, or a high-stakes error occurs. Autonomous agents without demotion mechanisms accumulate unchecked authority.
+
+
+New Columns on autonomy_trust_scores
+demotion_incident_threshold   DECIMAL(3,2) DEFAULT 0.60,
+demotion_drift_days           INTEGER DEFAULT 7,
+last_demotion_at              TIMESTAMPTZ,
+demotion_reason               TEXT,
+demotion_count_90d            INTEGER DEFAULT 0
+
+GAP-B03 — Proactive Interruption Policy Is Undefined [HIGH]
+Current State: Brevio is a reactive assistant. It responds to messages. V9.1 adds scheduled workflows (daily briefings, cron triggers) but there is no policy governing when the agent should proactively interrupt the user outside of scheduled events.
+Gap: A high-value AI assistant should proactively surface information — an approaching deadline, a price drop on a watched item, a detected scheduling conflict — without being asked. No policy governs when to interrupt vs. queue for the next interaction.
+
+
+GAP-B04 — Correction-to-Rule Pipeline Lacks Consolidation Logic [HIGH]
+Current State: V9.1 defines interaction_feedback → lesson_proposal → operator_confirmation → learned_lesson. The pipeline shape is correct.
+Gap: The consolidation logic is undefined. How many corrections on the same topic before a lesson proposal is generated? How are contradictory lessons from different time periods resolved? How does a lesson expire when the underlying context changes?
+
+
+GAP-B05 — SOUL.md and USER.md Have No Refresh Cadence [HIGH]
+Current State: SOUL.md and USER.md are the core behavioral knowledge files. They are referenced throughout the reasoning loop as user context. They are created during onboarding and can be updated via PUT /v1/knowledge-files/{file_type}.
+Gap: There is no defined refresh cadence, staleness detection, or re-discovery workflow. A user's communication style, goals, and constraints evolve. A SOUL.md written at onboarding will drift from reality within weeks. Stale behavioral context is worse than no context — it causes confident wrong behavior.
+
+
+
+3. Reasoning Gaps & Improvements
+Reasoning is the quality of thought between input and action. V10 defines an excellent four-tier reasoning depth state machine. The gaps are in what happens inside those tiers: what the CRITIC criticizes, what the REFLECTOR learns, what happens when plans partially fail, and how the agent reasons about its own uncertainty.
+
+GAP-R01 — CRITIC and REFLECTOR Prompts Are Undefined Stubs [CRITICAL]
+Current State: V9 defines a four-state reasoning loop (PLANNER → EXECUTOR → CRITIC → REFLECTOR) and states all prompts are versioned in the prompt_registry. PROMPT_RESPONSE_GEN, PROMPT_INTENT_CLASSIFY, and PROMPT_TASK_DECOMPOSE are specified. CRITIC and REFLECTOR are not.
+Gap: These are the most intelligence-critical prompts in the system. The CRITIC determines whether a plan was good. The REFLECTOR determines what was learned. Deferring them as undefined stubs means the most sophisticated reasoning states — STANDARD and DEEP — produce no improvement signal. The system executes but never improves from execution.
+
+
+PROMPT_CRITIC_V1 Specification
+ID: PROMPT_CRITIC_V1
+Model: claude-sonnet-4-6 (quality required)
+Temperature: 0.0 (fully deterministic)
+Evaluation Dimensions:
+  1. GOAL_ALIGNMENT: Did execution serve the user's actual intent?
+  2. COMPLETENESS: Were all sub-tasks addressed?
+  3. ACCURACY: Are factual claims in results verifiable?
+  4. EFFICIENCY: Were unnecessary steps taken?
+  5. SAFETY: Were any trust/safety constraints approached?
+Output Schema: {
+  overall_score: 0.0-1.0,
+  dimension_scores: { goal_alignment, completeness, accuracy, efficiency, safety },
+  passed: boolean,  // false if any dimension < 0.6
+  failure_modes: string[],
+  improvement_directive: string  // injected into REFLECTOR
+}
+
+PROMPT_REFLECTOR_V1 Specification
+ID: PROMPT_REFLECTOR_V1
+Model: claude-haiku-4-5 (cost-optimized, structured output only)
+Input: critic_output + execution_trace + user_correction (if any)
+Output Schema: {
+  lesson_candidates: [{topic, observation, confidence, suggested_rule}],
+  pattern_detected: boolean,  // true if same failure seen 3+ times
+  escalate_to_feedback_pipeline: boolean
+}
+
+GAP-R02 — No Confidence Calibration Feedback Loop [CRITICAL]
+Current State: Intent classification requires confidence ≥ 0.7 to proceed, with fast-path routing at ≥ 0.92. These thresholds are hardcoded constants defined at spec time.
+Gap: Confidence thresholds are never recalibrated against actual outcomes. A classifier that claims 0.92 confidence but is wrong 30% of the time is miscalibrated. Hardcoded thresholds drift from reality as the model, user base, and skill set evolve. Miscalibration causes systematic errors that are invisible to the system.
+
+
+New Table: confidence_calibration_config
+confidence_calibration_config (
+  id                 UUIDv7 PK,
+  workspace_id       UUID NOT NULL,
+  bucket_lower       DECIMAL(3,2) NOT NULL,  -- e.g. 0.70
+  bucket_upper       DECIMAL(3,2) NOT NULL,  -- e.g. 0.80
+  platt_scale_a      DECIMAL(6,4) DEFAULT 1.0,
+  platt_scale_b      DECIMAL(6,4) DEFAULT 0.0,
+  empirical_accuracy DECIMAL(4,3),
+  sample_count       INTEGER DEFAULT 0,
+  last_calibrated_at TIMESTAMPTZ,
+  UNIQUE (workspace_id, bucket_lower, bucket_upper)
+)
+
+GAP-R03 — Partial Plan Failure Has No Defined Handling [HIGH]
+Current State: V9 defines compensation for workflow failures. V10 defines state machines for transactions (PROPOSED → FAILED → REVERSED). These handle full failure well.
+Gap: Partial success — 7 of 10 parallel tasks succeed, 3 fail — has no defined behavior. Does the agent deliver partial results? Retry the failures? Ask the user? Fail the entire request? The current spec compensates everything or continues everything. Partial outcomes are the common case in complex multi-skill execution.
+
+
+GAP-R04 — Task Decomposition Depth Is Static [HIGH]
+Current State: Task decomposition has fixed limits: max 10 tasks, max depth 5, enforced by DAG validation in PROMPT_TASK_DECOMPOSE.
+Gap: Complexity signals from the user request are not used to set dynamic limits. A simple 'book a restaurant' should not have the same depth budget as 'plan our Q3 product roadmap'. Static limits over-constrain complex requests and waste reasoning on trivial ones.
+
+
+GAP-R05 — No Counterfactual or Alternative Plan Scoring [MEDIUM]
+Gap: The PLANNER generates one plan (T1), two candidates (T2), or three (T3). But there is no mechanism for the agent to reason about alternatives after execution — 'if I had taken approach B instead, would the outcome have been better?' This forecloses a powerful class of improvement signal.
+
+
+GAP-R06 — Agent Council Has No Meta-Reasoning About When to Convene [MEDIUM]
+Gap: The agent-council skill (V10.1, agent_councils table) defines deliberation, voting, and consensus mechanisms. Missing: a policy for when to convene a council vs. handle solo. Currently the council must be explicitly requested. The agent has no way to autonomously decide 'this decision warrants a council.'
+
+
+
+4. Memory Gaps & Improvements
+Brevio's memory architecture is one of its strongest features — five distinct memory modalities across episodic, semantic, procedural, goal-oriented, and relational layers. The gaps are in memory lifecycle management: how memories age, conflict, get surfaced at the right moment, and stay coherent across sessions.
+
+GAP-M01 — No Memory Decay or Relevance-Weighted Forgetting [CRITICAL]
+Current State: Memory items are stored indefinitely. RAG retrieval returns items based on semantic similarity. Older items have equal weight to recent ones unless explicitly filtered.
+Gap: Memory without decay is not intelligence — it is a database query. Human memory is constructive and recency-weighted. A preference expressed 18 months ago may be superseded. A past goal that was abandoned carries no signal. Unbounded equal-weight memory pollutes context with stale information and degrades retrieval quality over time.
+
+
+New Columns on memory_items
+relevance_score     DECIMAL(4,3) NOT NULL DEFAULT 1.0,
+access_count        INTEGER NOT NULL DEFAULT 0,
+last_accessed_at    TIMESTAMPTZ,
+decay_enabled       BOOLEAN NOT NULL DEFAULT true,
+archive_threshold   DECIMAL(4,3) NOT NULL DEFAULT 0.20,
+archived_at         TIMESTAMPTZ  -- null = active
+
+GAP-M02 — Episodic Memory Is Write-Only in the Reasoning Loop [CRITICAL]
+Current State: V9.1 defines daily_captures (episodic memory) with introspection_templates and a DailyCaptureWorkflow. These correctly write episodic summaries to memory_items with type='daily_log'.
+Gap: There is no specification for how episodic memory is retrieved and injected into the reasoning loop. The context budget (V9.2) has allocation slots for various memory types, but episodic memory has no retrieval query, no injection trigger, and no ranking criteria. It is written but never read.
+
+
+GAP-M03 — Semantic Conflicts Between Lessons Are Unhandled [HIGH]
+Current State: V9.1 learned_lessons stores active rules derived from interaction_feedback. The learning pipeline correctly requires operator confirmation before activation.
+Gap: Two confirmed lessons can contradict each other. 'User prefers brief responses' (lesson from March) conflicts with 'User wants comprehensive analysis for financial decisions' (lesson from April). There is no conflict detection, no priority resolution, and no mechanism to surface conflicts to the operator.
+
+
+GAP-M04 — RAG Pipeline Embedding Model and Chunking Strategy Are Unspecified [HIGH]
+Current State: V9.2 defines a complete RAG pipeline with rag_collections, rag_chunks, hybrid BM25+pgvector search, and cross-encoder reranking. The infrastructure is production-grade.
+Gap: The embedding model is never specified. The chunking strategy per content type is never specified. These are the two highest-impact variables in RAG quality. A 256-token chunk of a 4000-word email loses all document-level context. A 3072-dimension embedding model chosen for quality will cost 10x a 768-dimension model. These decisions must be made explicitly.
+
+
+GAP-M05 — Cold-Start Memory Problem Has No Mitigation [HIGH]
+Gap: New users have no episodic memory, no learned lessons, no calibrated trust scores, and no precomputed fast-path answers. Every request goes through the full STANDARD reasoning path. The first 7–14 days of user experience are the worst days — exactly when impressions are formed. No cold-start mitigation exists.
+
+
+GAP-M06 — Proactive Memory Surfacing Is Absent [MEDIUM]
+Gap: The agent retrieves memory in response to requests but never proactively surfaces relevant memories. 'You mentioned last month that you wanted to negotiate a lower rate on this contract' is a high-value assistant behavior that requires proactive retrieval, not reactive.
+
+
+
+5. Context Gaps & Improvements
+V9.2's Context Engineering System is architecturally excellent: deterministic token budgets, per-source allocations, audit trails. The gaps are in the intelligence of how context is selected, ranked, compressed, and kept fresh within those budgets.
+
+GAP-C01 — Context Allocation Algorithm Is Undefined [CRITICAL]
+Current State: context_budgets defines percentage allocations per source per model tier. context_budget_allocations records how tokens were distributed. The table structure is correct.
+Gap: When a source has more content than its allocation allows, there is no defined selection algorithm. Which 500 tokens of the user's 3000-token email history go into the SOUL context slot? Ranking strategy (recency? relevance? diversity?) is completely undefined. Without it, implementations will make arbitrary choices and the budget system provides no real intelligence control.
+
+
+context_budgets.selection_config JSONB Schema
+{
+  'soul_context':     { 'strategy': 'full',          'max_tokens': 800 },
+  'user_context':     { 'strategy': 'recency',       'max_tokens': 600 },
+  'episodic_context': { 'strategy': 'relevance',     'max_tokens': 400 },
+  'rag_results':      { 'strategy': 'diversity_mmr', 'max_tokens': 1200,
+                        'mmr_lambda': 0.7 },
+  'turn_history':     { 'strategy': 'recency',       'max_tokens': 1000,
+                        'compression': 'summarize_beyond_8_turns' },
+  'tool_schemas':     { 'strategy': 'relevance',     'max_tokens': 800 }
+}
+
+GAP-C02 — Coreference Resolution Has No Defined Algorithm [HIGH]
+Current State: V9.2 defines conversation_sessions with session_entities for tracking named entities across turns. The tables are correctly structured.
+Gap: The coreference resolution algorithm is never defined. 'Schedule a meeting with John' → 'Make it Tuesday' → 'Add his assistant too' requires: (1) resolving 'it' to the meeting from turn 1, (2) resolving 'his' to John from turn 1, (3) resolving 'assistant' as an attribute lookup on John. The current spec has a data structure but no algorithm.
+
+
+GAP-C03 — Conversation Compression Has No Algorithm [HIGH]
+Current State: The context_budgets system allocates tokens for turn_history. As conversations grow past the allocation limit, older turns must be compressed or dropped.
+Gap: The compression algorithm for long conversations is undefined. Truncating from the oldest turn loses critical context (the original user request may be in turn 1). Summarizing naively loses entity references needed for coreference resolution.
+
+
+GAP-C04 — RAG Freshness Scoring Is Absent [HIGH]
+Gap: RAG retrieval ranks results by semantic similarity but has no freshness dimension. A calendar event from 8 months ago has equal retrieval weight to one from tomorrow. For a time-aware executive assistant, temporal relevance is often more important than semantic similarity.
+
+
+GAP-C05 — Fast-Path Cache Has No Warming Strategy [MEDIUM]
+Gap: The fast-path precomputed answer cache (V10 Phase 4) provides sub-500ms responses for high-confidence pattern matches. But cache warming is undefined. On cold start, first-time users get no fast-path benefit. For high-frequency patterns that are predictable (morning briefings, daily calendar checks), waiting for organic cache population is unnecessary latency.
+
+
+
+6. Intelligence & Inference Gaps & Improvements
+Intelligence and inference govern the quality of the agent's conclusions: how it handles uncertainty, combines evidence across sources, recognizes when it doesn't know something, and selects the right model for the task. These gaps are the hardest to specify precisely but have the highest impact on user trust.
+
+GAP-I01 — No Uncertainty Quantification in Responses [HIGH]
+Current State: Brevio produces responses with high confidence framing regardless of the underlying uncertainty. The CRITIC evaluates accuracy dimension but this score is internal — it never surfaces to the user.
+Gap: An executive assistant that says 'Your flight departs at 3pm' when it is 85% confident and 'I believe your flight departs at 3pm — you may want to verify' when it is 60% confident is more trustworthy, not less. Binary confident/unconfident framing leaves the user unable to calibrate their reliance on the agent.
+
+
+GAP-I02 — Multi-Intent Classification Is a Blind Spot [HIGH]
+Current State: PROMPT_INTENT_CLASSIFY_V1 outputs a single intent with a confidence score and a list of skills. The decomposition step handles multi-task execution.
+Gap: The classification step produces one intent. Compound requests — 'book a table and remind me 1 hour before AND add it to the shared family calendar' — may be classified with a single primary intent, causing skill gaps when the secondary intents don't make it to decomposition. The OR between classification and decomposition is a lossy boundary.
+
+
+Updated Classification Output Schema
+PROMPT_INTENT_CLASSIFY_V1 Output (updated):
+{
+  intents: [{
+    intent: string,
+    confidence: number,
+    skills: string[],
+    is_primary: boolean,
+    depends_on_intent_index: number | null
+  }],
+  compound_request: boolean,
+  overall_confidence: number,  // min of intent confidences
+  requires_decomposition: boolean
+}
+
+GAP-I03 — Smart Router Has No Latency-Aware Model Selection [HIGH]
+Current State: The smart-router skill (V10 addendum) performs model selection based on task complexity and cost. The goal is to route simple tasks to haiku-class models and complex ones to sonnet-class.
+Gap: Latency is not a first-class routing dimension. A user who has been waiting 4 seconds already would benefit from a slightly less accurate but faster response more than from waiting 3 more seconds for the premium model. The router has no concept of latency budget remaining.
+
+
+GAP-I04 — No World Model Updating After Tool Failures [MEDIUM]
+Gap: When a tool call fails because 'calendar is full Tuesday' or 'the contact doesn't have an email on file', the agent retries or gives up. It does not update its world model with the information revealed by the failure. On the next turn, it may attempt the same impossible action again.
+
+
+GAP-I05 — Keyword Classifier Fallback Is Undefined [MEDIUM]
+Current State: PROMPT_INTENT_CLASSIFY_V1 specifies 'if confidence < 0.7, fall back to keyword-based classifier'. The keyword classifier is never specified anywhere in V9–V10.1.
+Gap: The fallback is the reliability layer. When the LLM classifier is uncertain — which happens precisely for novel, ambiguous, or adversarial inputs — the system falls back to a system that doesn't exist. This is a silent gap that will surface as a production failure.
+
+
+
+7. Latency Gaps & Improvements
+The latency budget architecture in V9.2 is well-designed: per-tier budgets, streaming config, early-exit policies. The gaps are in execution strategies that would actually hit those targets: speculative execution, parallel warming, preemption, and query-level optimizations on the hot path.
+
+GAP-L01 — No Speculative Prefetch on the Fast-Path [CRITICAL]
+Current State: The fast-path (V10 Phase 4) checks for a precomputed answer and returns it if found. If not found, it falls through to the full reasoning loop.
+Gap: For predictable user sessions (morning briefings, recurring daily patterns), the fast-path precomputed answer could be generating in the background before the user even sends the message. No speculative prefetch exists. Every fast-path hit still requires a cache lookup round-trip.
+
+
+GAP-L02 — Parallel Skill Execution Has No Rate-Limit Coordination [HIGH]
+Current State: Brevio parallelizes independent skill executions. The gateway enforces per-user rate limits at 60 req/min. Skills also have individually tuned retry policies.
+Gap: When 8 parallel skills fire simultaneously against the same external service (e.g., 4 Google Calendar reads + 2 Gmail reads + 2 Google Contacts reads = 8 simultaneous Google API calls), they will collectively hit the per-user Google API rate limit and trigger cascading retries. The executor has no awareness of shared downstream rate limits across parallel executions.
+
+
+GAP-L03 — No Latency Budget Preemption [MEDIUM]
+Current State: V9.2 defines latency_budgets per stage with targets T1=2500ms, T2=6000ms, T3=20000ms. The ReAct early exit has explicit exit signals. SLOs are monitored.
+Gap: There is no preemption mechanism. If a T2 request (6000ms budget) has used 5200ms and is about to start a new tool call that historically takes 1500ms, nothing prevents it from blowing the budget by 700ms. Budget awareness is monitoring-only, not execution-controlling.
+
+
+GAP-L04 — Database Hot Path Has No Query Optimization Hints [MEDIUM]
+Gap: The interactive turn pipeline executes 8+ database queries on the hot path: session lookup, user profile load, SOUL.md retrieval, recent turns, skill registry, gate decisions, memory lookup, and budget check. These are sequential reads under a 2500ms budget. No materialized views, query plan hints, or read-path caching exist for these queries.
+
+
+
+8. Implementation Priority & Assembly Order
+Gaps are prioritized by impact-to-effort ratio and dependency ordering. Implement in the order below. Do not begin a step before its dependencies are verified complete.
+
+
+
+8.1 New Tables Summary
+This addendum adds the following new tables (all additive, all UUIDv7 PK, all workspace-scoped RLS):
+eq_response_strategy_matrix — EQ behavioral response policies
+confidence_calibration_config — Classifier calibration per confidence bucket
+lesson_conflict_resolutions — Semantic conflict resolution decisions
+world_model_cache — Agent world state derived from tool execution outcomes
+keyword_routing_rules — Keyword classifier fallback routing rules
+
+The following existing tables receive new columns:
+memory_items — relevance_score, access_count, last_accessed_at, decay_enabled, archive_threshold, archived_at
+autonomy_trust_scores — demotion_incident_threshold, demotion_drift_days, last_demotion_at, demotion_reason, demotion_count_90d
+context_budgets — selection_config JSONB
+rag_chunks — temporal_relevance_score, temporal_lambda
+rag_collections — temporal_config JSONB, chunking_strategy_config JSONB
+
+8.2 New Workflows Summary
+MemoryDecayWorkflow — Weekly relevance score decay across all memory_items
+LessonConsolidationWorkflow — Weekly feedback clustering + lesson proposals + conflict detection
+CalibrationWorkflow — Weekly classifier confidence calibration
+KnowledgeFileDriftDetector — Monthly SOUL.md/USER.md staleness detection
+SpeculativePrefetchWorker — 15-minute cron for predictive fast-path warming
+FastPathCacheWarmer — Nightly pattern analysis + answer pre-generation
+
+8.3 Closure Statement
+BREVIO V10.2 closes 31 implementation-prioritized gaps across 7 intelligence domains. It adds 5 new tables, extends 5 existing tables, defines 6 new Temporal workflows, specifies 2 previously undefined prompts (CRITIC + REFLECTOR), and provides complete algorithmic specifications for 9 previously undefined logic gaps.
+
+V10.2 is purely additive. It does not modify any V9/V9.1/V9.2/V10/V10.1 table, workflow, policy, or prompt. All prior acceptance gates remain in force. The intelligence layer improvements in V10.2 operate on top of the execution infrastructure defined in prior versions.
+
+Any behavior not explicitly defined in V9 through V10.2 is forbidden.
+
+END OF BREVIO V10.2 ADDENDUM

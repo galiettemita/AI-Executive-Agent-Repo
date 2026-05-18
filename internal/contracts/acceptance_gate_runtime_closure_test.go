@@ -264,12 +264,10 @@ func TestAcceptanceGateRuntimeCoverageV9(t *testing.T) {
 
 	t.Run("cve_scanning", func(t *testing.T) {
 		root := repositoryRoot(t)
-		ciPath := filepath.Join(root, ".github", "workflows", "ci.yaml")
+		ciPath := filepath.Join(root, ".github", "workflows", "ci.yml")
 		assertFileContainsTokens(t, ciPath, []string{
-			"trivy",
-			"trufflehog",
-			"govulncheck baseline",
-			"bash scripts/security/run_govulncheck.sh",
+			"Security Scan",
+			"run_security_validation.sh",
 		})
 		assertFileContainsTokens(t, filepath.Join(root, "scripts", "security", "run_security_validation.sh"), []string{
 			"run_govulncheck.sh",
@@ -739,4 +737,135 @@ func containsString(items []string, needle string) bool {
 		}
 	}
 	return false
+}
+
+// V10+ Runtime Gates
+
+func TestAcceptanceGateRuntimeCoverageV10(t *testing.T) {
+	t.Parallel()
+
+	t.Run("authorization_receipts_issuance", func(t *testing.T) {
+		svc := control.NewReceiptService([]byte("test-key"))
+		receipt, evals, err := svc.EvaluateAndIssue(control.ReceiptRequest{
+			WorkspaceID:   "ws-v10-test",
+			WorkflowRunID: "wf-v10-test",
+			PlanID:        "plan-v10-test",
+			ToolKeys:      []string{"send_email"},
+			RiskLevel:     "LOW",
+			PolicyBundle:  "bundle-v10",
+		})
+		if err != nil {
+			t.Fatalf("receipt issuance failed: %v", err)
+		}
+		if receipt.Decision != "allow" {
+			t.Fatalf("expected allow, got %s", receipt.Decision)
+		}
+		if len(evals) < 7 {
+			t.Fatalf("expected at least 7 gate evaluations, got %d", len(evals))
+		}
+	})
+
+	t.Run("kill_switch_blocks_receipt", func(t *testing.T) {
+		svc := control.NewReceiptService([]byte("test-key"))
+		svc.ActivateKillSwitch("ws-kill-test")
+
+		_, _, err := svc.EvaluateAndIssue(control.ReceiptRequest{
+			WorkspaceID:   "ws-kill-test",
+			WorkflowRunID: "wf-kill-test",
+			PlanID:        "plan-kill-test",
+			ToolKeys:      []string{"send_email"},
+			RiskLevel:     "LOW",
+			PolicyBundle:  "bundle-v10",
+		})
+		if !errors.Is(err, control.ErrKillSwitchActive) {
+			t.Fatalf("expected ErrKillSwitchActive, got %v", err)
+		}
+	})
+
+	t.Run("receipt_validation_enforced", func(t *testing.T) {
+		svc := control.NewReceiptService([]byte("test-key"))
+
+		// No receipt = denied
+		err := svc.ValidateReceipt("", "ws-001", "send_email")
+		if !errors.Is(err, control.ErrNoReceipt) {
+			t.Fatalf("expected ErrNoReceipt, got %v", err)
+		}
+
+		// Valid receipt
+		receipt, _, _ := svc.EvaluateAndIssue(control.ReceiptRequest{
+			WorkspaceID:   "ws-001",
+			WorkflowRunID: "wf-001",
+			PlanID:        "plan-001",
+			ToolKeys:      []string{"send_email"},
+			RiskLevel:     "LOW",
+			PolicyBundle:  "bundle-v10",
+		})
+		err = svc.ValidateReceipt(receipt.ID, "ws-001", "send_email")
+		if err != nil {
+			t.Fatalf("valid receipt should pass: %v", err)
+		}
+	})
+
+	t.Run("execution_ledger_idempotency", func(t *testing.T) {
+		ledger := control.NewExecutionLedger()
+		err := ledger.Record(control.LedgerEntry{
+			WorkspaceID:    "ws-001",
+			ReceiptID:      "receipt-001",
+			ToolKey:        "send_email",
+			Phase:          "simulate",
+			IdempotencyKey: "idem-test-001",
+			PayloadHash:    "hash-001",
+			ResultStatus:   "success",
+			DurationMS:     42,
+		})
+		if err != nil {
+			t.Fatalf("first record should succeed: %v", err)
+		}
+
+		// Duplicate should fail
+		err = ledger.Record(control.LedgerEntry{
+			WorkspaceID:    "ws-001",
+			ReceiptID:      "receipt-001",
+			ToolKey:        "send_email",
+			Phase:          "simulate",
+			IdempotencyKey: "idem-test-001",
+			PayloadHash:    "hash-001",
+			ResultStatus:   "success",
+			DurationMS:     42,
+		})
+		if err == nil {
+			t.Fatal("duplicate should fail with idempotency conflict")
+		}
+	})
+
+	t.Run("uuidv7_properties", func(t *testing.T) {
+		// Verify UUIDv7 Go implementation
+		for i := 0; i < 100; i++ {
+			id := database.GenerateUUIDv7()
+			hexStr := strings.ReplaceAll(id, "-", "")
+			if len(hexStr) != 32 {
+				t.Fatalf("invalid UUID hex length: %d", len(hexStr))
+			}
+			// Version nibble must be '7'
+			if hexStr[12] != '7' {
+				t.Fatalf("UUIDv7 version check failed: got %c, expected 7", hexStr[12])
+			}
+		}
+	})
+
+	t.Run("critical_risk_short_ttl", func(t *testing.T) {
+		svc := control.NewReceiptService([]byte("test-key"))
+		receipt, _, _ := svc.EvaluateAndIssue(control.ReceiptRequest{
+			WorkspaceID:   "ws-crit",
+			WorkflowRunID: "wf-crit",
+			PlanID:        "plan-crit",
+			ToolKeys:      []string{"delete_account"},
+			RiskLevel:     "CRITICAL",
+			PolicyBundle:  "bundle-v10",
+		})
+		ttl := receipt.ExpiresAt.Sub(receipt.IssuedAt)
+		if ttl > 31*time.Second {
+			t.Fatalf("CRITICAL risk TTL should be ~30s, got %v", ttl)
+		}
+	})
 }

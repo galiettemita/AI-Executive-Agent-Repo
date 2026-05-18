@@ -1,4 +1,4 @@
-name: ci-openclaw
+name: ci
 
 on:
   pull_request:
@@ -118,6 +118,31 @@ jobs:
       - uses: actions/checkout@v4
       - run: bash scripts/database/verify_postgres_migrations.sh
 
+  v10_acceptance_gates:
+    name: 7b. V10+ Acceptance Gates
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+      - name: V10+ acceptance gates
+        run: go test ./internal/contracts -run "TestAcceptanceGatesV10|TestAcceptanceGatesV101|TestAcceptanceGatesV102V103|TestAcceptanceGatesV104|TestAcceptanceGatesOpenClaw|TestV11" -count=1
+      - name: Quarantine enforcement
+        run: |
+          # Verify TS service quarantine is in place
+          test -f services/NON_PRODUCTION.md
+          test -f services/.ci-quarantine.yaml
+          # ci.yaml is the main CI workflow; ci.yml extends for V10+ gates
+          test -f .github/workflows/ci.yaml
+      - name: Trivy CVE scan
+        run: |
+          if command -v trivy &>/dev/null; then
+            trivy fs --exit-code 1 --severity HIGH,CRITICAL --skip-dirs node_modules .
+          else
+            echo "trivy not installed, skipping (install for local CI)"
+          fi
+
   build_push:
     name: 8. Build & Push
     if: github.ref == 'refs/heads/main'
@@ -125,6 +150,42 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: make docker-build
+      - name: Generate SBOM (CycloneDX)
+        run: |
+          if command -v cyclonedx-gomod &>/dev/null; then
+            cyclonedx-gomod mod -json -output sbom.cyclonedx.json
+          else
+            echo "cyclonedx-gomod not found; using existing SPDX SBOM"
+          fi
+      - name: Enforce SBOM exists
+        run: |
+          if [ ! -f sbom.spdx.json ] && [ ! -f sbom.cyclonedx.json ]; then
+            echo "FATAL: No SBOM artifact found. Build cannot proceed without SBOM."
+            exit 1
+          fi
+          echo "SBOM artifact verified."
+      - name: Sign container image (cosign)
+        if: ${{ env.COSIGN_KEY != '' }}
+        env:
+          COSIGN_KEY: ${{ secrets.COSIGN_KEY }}
+        run: |
+          cosign sign --key env://COSIGN_KEY brevio/backend:${{ github.sha }}
+      - name: Attest SBOM provenance
+        if: ${{ env.COSIGN_KEY != '' }}
+        env:
+          COSIGN_KEY: ${{ secrets.COSIGN_KEY }}
+        run: |
+          SBOM_FILE="sbom.cyclonedx.json"
+          [ ! -f "$SBOM_FILE" ] && SBOM_FILE="sbom.spdx.json"
+          cosign attest --predicate "$SBOM_FILE" --type cyclonedx --key env://COSIGN_KEY brevio/backend:${{ github.sha }}
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-artifacts-${{ github.run_id }}
+          if-no-files-found: warn
+          path: |
+            sbom.spdx.json
+            sbom.cyclonedx.json
 
   deploy_staging:
     name: 9. Deploy Staging

@@ -1,0 +1,238 @@
+
+BREVIO
+Consolidated Master Blueprint V9
+Complete End-to-End Repository Specification
+Architecture • Services/APIs • Schemas • Workflows • Policies
+Migrations • IaC • CI/CD • Observability • Tests/Evals • Runbooks
+Consolidation Sources:
+Blueprint V7 • Blueprint V8 • Auto-Provisioning Engine Deep Research Report • 10× Improvement Report
+February 25, 2026  •  Version 9.0
+
+Table of Contents
+
+1. Executive Summary
+BREVIO V9 is the single, authoritative, machine-executable master specification for the BREVIO AI Executive Assistant system. It consolidates four source documents into one deterministic, production-final blueprint that a coding agent can implement end-to-end without discretionary design decisions.
+V9 reconciles and supersedes: (1) Blueprint V7, which resolved all conflicts across v6.0–v6.7 and established the four-plane architecture, full DDL, acceptance gates, and compliance matrix; (2) Blueprint V8, which added discovery/onboarding workflows, namespace neutralization, and the Attached Requirements Set (ARS-001–ARS-004); (3) the Auto-Provisioning Engine Deep Research Upgrade Report, which defined six upgrade packages (A–F) for deterministic capability resolution, RBAC/policy/budget gates, durable provisioning super-workflows with compensation, supply-chain verification, deterministic ranking with LLM replay, and drift/health monitoring; and (4) the 10× Improvement Report, which contributed the three-plane reference architecture, OWASP LLM threat mitigations, OpenTelemetry observability patterns, evaluation frameworks, cost models, and migration phasing.
+1.1 Non-Negotiable Rules (V9-Binding)
+1.2 Infrastructure Baseline
+Cloud: AWS (EKS, RDS PostgreSQL 16+, ElastiCache Redis, SQS FIFO + Standard, S3, Secrets Manager, ACM)
+Container orchestration: Kubernetes on EKS
+Workflow orchestration: Temporal (deployed on EKS with PostgreSQL persistence)
+Database: PostgreSQL 16+ with pgcrypto, pgvector extensions; PgBouncer session-mode connection pooling
+CI/CD: GitHub Actions
+IaC: Terraform (infra) + Helm (workloads)
+Observability: OpenTelemetry → Prometheus/Grafana (metrics), Loki (logs), Jaeger (traces)
+Policy engine: OPA (Open Policy Agent) for execution gate decisions
+Language: Go 1.22 (services); Python (eval tooling, migration scripts)
+
+2. Authoritative Decision Log
+This log resolves every conflict found across all source documents. Each decision is final and V9-binding. No deprecated behavior may appear in implementation.
+
+3. System Architecture
+3.1 Component Graph
+The architecture consists of five internal services, three infrastructure services, and multiple external systems. The deterministic control-plane rule is absolute: only the Control service may authorize any side effect. Brain proposes only.
+3.1.1 Internal Services
+3.1.2 Infrastructure Services
+3.1.3 External Systems
+WhatsApp Business API (webhook + send API)
+iMessage Business Chat (webhook)
+OAuth Providers (Google, Microsoft, etc.)
+Connector APIs (40+ third-party services)
+LLM Providers (Anthropic, OpenAI, etc.)
+Git HTTPS Remotes (codebase ingestion)
+3.1.4 Service Edges and Protocols
+3.2 Deterministic Control-Plane Rule
+Only the Control service may authorize any side effect (write). Brain proposes plans but never executes. Every tool call must pass through the ExecutionGate PDP, which evaluates OPA policies, autonomy levels, rate limits, budget constraints, and approval requirements before allowing execution. This is enforced architecturally: the executor service only accepts work from Temporal activities initiated by the control plane.
+3.3 Two-Phase Commit Protocol
+Every write-capable tool must follow the simulate-then-commit protocol:
+Phase 1 – Simulate: Execute tool in dry-run mode. No side effects. Record tool_executions(phase=simulate). Validate output against schema. Run semantic verifiers.
+Phase 2 – Commit: Prerequisites: simulate_success + execution_gate_allow + approval_if_required. Execute tool for real with idempotency key. Record tool_executions(phase=commit) + trust_receipt + audit_log_entry.
+Idempotency scope: workspace_id + tool_key + logical_action_hash. TTL = 30 days. Key format: idem_<base32hex_min16>.
+3.4 Reasoning Loop State Machine
+The Brain operates a four-state reasoning loop: PLANNER → EXECUTOR → CRITIC → REFLECTOR → TERMINAL.
+Deterministic parameters: temperature=0, top_p=1, presence_penalty=0, frequency_penalty=0, max_output_tokens fixed by tier (T0=256, T1=512, T2=1024, T3=2048).
+Plan candidates max: T1=1, T2=2, T3=3 (from V7 plan scorer guidance).
+Tool schema ordering: lexical by tool_key. Context item ordering: deterministic sort keys.
+
+4. Database Specification
+4.1 Requirements
+Engine: PostgreSQL 16+
+Extensions: pgcrypto, vector (pgvector)
+Connection pooling: PgBouncer session mode
+Migrations: Forward-only. Rollback via restore-from-snapshot + forward fix. No down migrations.
+RLS: Row-level security mandatory on ALL workspace-scoped tables. app.workspace_id set on every DB session. Query without it rejected.
+IDs: UUIDv7 (time-sortable, RFC-compatible). Legacy UUID accepted on reads only.
+4.2 Complete Enum Types
+The following enums are the authoritative V9 set, consolidated from V7, V8, and Auto-Provisioning:
+4.3 Complete Table Registry
+The following table lists every table in the V9 schema, organized by domain. This is the authoritative, schema-closed set. Any table not listed here does not exist in V9.
+
+5. API Specification (OpenAPI 3.1)
+5.1 Base Configuration
+Title: BREVIO V9 API
+Version: 9.0.0
+Base URL: https://api.BREVIO.local
+Auth Schemes: UserJWT (bearer), AdminJWT (bearer)
+5.2 Complete Endpoint Registry
+Every endpoint in the V9 API, consolidated from all sources:
+
+6. Temporal Workflows
+All workflows run exclusively on Temporal. Workflow code must be deterministic and idempotent. Side effects live in activities. Replays are driven by event history.
+6.1 Required Workflows
+6.2 Provisioning Super-Workflow (Package C)
+The provisioning workflow follows this deterministic state progression:
+Preflight → CreateRequest → PolicyGate (Package B) → AllocateOrReuseServer → [AuthRequired? → AwaitOAuthCallback → ExchangeTokens] → [VerifyArtifact (Package D)] → DeployServer → FetchToolSchemas → HealthCheck → CommitRegistry → Active
+On any failure, compensation executes in exact reverse order of successful steps: disable tools → revoke tokens → deallocate server → emit compensation_completed event.
+Compensation is deterministic. Idempotency-Key is required at the API level. Each step has its own idempotency key. Unique constraints prevent duplicate step creation.
+6.3 Capability Resolution Workflow (Package A)
+Normalize query → Cache check → [cache hit? return cached] → Rule-based matching → [candidates empty AND allow_llm_fallback? → LLM extraction] → Deterministic ranking (Package E) → Cache write → Return.
+
+7. Policy Framework (OPA)
+7.1 ExecutionGate Policy Decision Point
+The ExecutionGate PDP evaluates every proposed tool call against OPA policies before allowing execution. The decision is recorded in execution_gate_decisions with full policy_checks_json.
+Policy inputs include: workspace autonomy level, domain autonomy level, tool risk_level, user role, rate-limit state, budget state, content firewall result, semantic verification result, and workspace-specific blocked_tool_keys.
+7.2 Policy Rule Categories
+7.3 Provisioning Policy (Package B)
+Deterministic decision algorithm (decide_provisioning_v1): checks denied_server_ids → allowed_server_ids → risk_level vs max_allowed → budget (calls/cost/concurrency) → operator review threshold → OAuth owner approval → MCP deploy owner approval → ALLOW.
+RBAC hierarchy: owner > admin > delegate > auditor > operator. Only owner/admin can approve OAuth and deploy MCP servers by default. Operator role for admin console review; not assignable by workspace users.
+
+8. JSON Schemas
+All schemas are strict (additionalProperties: false). Every LLM output, API request/response, and internal contract is schema-validated.
+
+9. Prompt Registry
+All prompts are versioned in the prompt_versions table. Shadow eval is mandatory before promotion. Rollback is supported via parent_version_id.
+
+10. Security and Governance
+10.1 Threat Model
+10.2 Cryptographic Controls
+Approval tokens: HMAC-SHA256 signed. CRITICAL TTL=30s, ELEVATED TTL=5min. Nonce-unique. Key version tracked.
+OAuth token storage: AES-256-GCM envelope: {ciphertext, nonce, key_version, encrypted_at}. Key material from Secrets Manager.
+Key rotation: Dual-key read window ≥ 10min. Background re-encryption job. key_versions table is authoritative.
+Webhook signatures: HMAC-SHA256(app_secret, raw_body_bytes). Timing-safe compare. Replay protection: nonce cache TTL=600s.
+Audit log integrity: Hash chain HMAC. Append-only table enforced by DB triggers (no UPDATE/DELETE). Separate DB role.
+Artifact verification: Ed25519 signature on image digests (sha256). SBOM + vulnerability scan required.
+10.3 Data Classification
+Every persisted object carries data_class, sensitivity_label, retention_policy_id, and allowed_processors[]. The Content Firewall assigns content_trust levels. The classifier determines processing restrictions.
+10.4 GDPR Compliance
+Portability export job (portability_requests table).
+Right to erasure via cascade deletes (user → workspace → all scoped data).
+Do-not-remember exclusion rules (memory_exclusion_rules).
+Audit payload minimization for sensitive data.
+
+11. Observability and Reliability
+11.1 Structured Logging Schema
+All services emit structured JSON logs with these required fields: ts (RFC3339), service (gateway|brain|control|executor|canvas), env (prod|staging|dev), workspace_id, user_id, ingress_turn_id, trace_id (OTel), span_id (OTel), event (string), severity (DEBUG|INFO|WARN|ERROR), attrs (any JSON).
+11.2 SLOs
+11.3 Metrics (Consolidated from All Sources)
+Canonical metric prefix: BREVIO_ (or agent_ in V8-neutral contexts). Key metrics:
+11.4 Dead Letter Queues
+interactive_turns_dlq
+workflow_tasks_dlq
+ledger_writes_dlq
+trajectory_writes_dlq
+rate_limit_ledger_writes_dlq
+11.5 Load Shedding Tiers
+Degradation tiers D0–D5 from V7. D0=nominal, D5=minimal read-only. Each tier disables progressively more capabilities while preserving core safety and audit.
+
+12. Infrastructure as Code
+12.1 Terraform Modules
+Terraform manages all cloud infrastructure. Module structure:
+12.2 Helm Charts
+12.3 Dockerfile Template
+All services use the same Dockerfile pattern (Go 1.22, distroless, non-root, read-only FS):
+FROM golang:1.22 AS build
+ARG SERVICE
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
+    go build -trimpath -ldflags="-s -w" -o /out/app ./cmd/${SERVICE}
+
+FROM gcr.io/distroless/static:nonroot
+WORKDIR /
+COPY --from=build /out/app /app
+USER 65532:65532
+ENTRYPOINT ["/app"]
+Container hardening: distroless base, non-root (65532:65532), read-only filesystem, drop all Linux capabilities, SBOM generation at build, daily CVE scans.
+
+13. CI/CD Pipeline
+13.1 GitHub Actions Workflow
+Triggered on push to main and all pull requests. All gates are mandatory and blocking.
+13.2 Production Deploy Gates
+
+14. Testing and Evaluation Framework
+V9 mandates a dual test system: (1) deterministic software tests for system behavior, and (2) eval-driven tests for model variability. Both must pass before production deploy.
+14.1 Deterministic Test Categories
+14.2 Eval-Driven Test Categories
+
+15. Operational Runbooks
+
+16. Deterministic Assembly Order
+The build order is dependency-closed: later components may not be implemented before their prerequisites exist. Each step must produce its outputs exactly before proceeding.
+
+17. Acceptance Gates and Closure Checks
+17.1 Machine-Verifiable Acceptance Gates
+17.2 Closure Checks
+These checks ensure the repository is internally consistent:
+Identifiers defined once: Every table, enum, event, metric, and prompt referenced anywhere is defined exactly once in the DDL, OpenAPI, schemas, or prompt registry.
+Endpoints to schema pointers: Every OpenAPI endpoint references existing schemas. /healthz/ready, /healthz/live, /v1/webhooks/whatsapp, /v1/capabilities/resolve, /v1/provision/start must exist.
+Prompts to validator pointers: brain.system.v9, brain.planner.v9, brain.critic.v9, brain.reflector.v9, plus all 4 discovery extractors and 4 provisioning prompts must exist.
+Workflows to state machines: workflow_instances.state → workflow_state enum. outbox_items.state → outbox_state enum. provisioning_requests.state → provisioning_state enum.
+Tables to migrations: schema_migrations tracks version “001”. All tables in DDL produced by v9_initial migration.
+Compliance matrix: Persisted as spec/traceability/compliance_matrix_v9.csv. CI fails if row count differs from expected.
+17.3 Repository File Structure
+The monorepo MUST contain these files. CI validates their existence:
+BREVIO/
+├── cmd/                        # Service entry points
+│   ├── gateway/main.go
+│   ├── brain/main.go
+│   ├── control/main.go
+│   ├── executor/main.go
+│   └── canvas/main.go
+├── internal/                   # Shared internal packages
+│   ├── determinism/            # Determinism test suite
+│   ├── contracts/              # Contract tests (JSON Schema + OpenAPI)
+│   ├── integration/            # Integration tests
+│   ├── security/               # Security tests (webhooks, injection, SSRF)
+│   ├── provisioning/           # Provisioning tests (compensation, budget)
+│   └── onboarding/             # Onboarding fixture tests
+├── db/
+│   └── migrations/
+│       └── 001_BREVIO_v9_init.sql
+├── api/
+│   └── openapi/v9.yaml
+├── schemas/                    # All JSON Schemas
+├── prompts/
+│   └── seed_prompts_v9.txt
+├── policies/                   # OPA policy bundles (.rego)
+├── terraform/                  # IaC modules
+├── helm/                       # Helm charts per service
+├── .github/workflows/ci.yaml
+├── spec/traceability/
+│   └── compliance_matrix_v9.csv
+├── runbooks/                   # Operational runbooks (RB-001–RB-009)
+├── evals/                      # Eval datasets and graders
+├── Dockerfile
+├── go.mod
+└── go.sum
+
+18. Compliance Matrix Summary
+The compliance matrix traces every requirement from every source document to its V9 disposition. The full matrix is maintained as a CSV artifact. Summary of dispositions:
+Key consolidated feature areas and their source tracing:
+
+19. Canonical Glossary
+19.1 Naming Rules (V9-Mandatory)
+Identifiers: All snake_case.
+Tool identifiers: connector_key.tool_key (e.g., google_calendar.create_event)
+Events: BREVIO.<domain>.<noun>.v1 (e.g., BREVIO.ingress.received.v1)
+Metrics: BREVIO_<subsystem>_<noun> (e.g., BREVIO_llm_replay_hit_total)
+IDs: UUIDv7 (time-sortable, RFC-compatible). Legacy UUID accepted on reads.
+19.2 ID Types
+All ID types are UUIDv7: user_id, account_id, workspace_id, ingress_turn_id, workflow_id, workflow_step_id, tool_execution_id, approval_id, memory_item_id, trajectory_id, trust_receipt_id, connector_id, connector_tool_id, provisioning_request_id, discovery_session_id, canvas_session_id, review_task_id.
+19.3 Canonical Events
+BREVIO.ingress.received.v1, BREVIO.ingress.duplicate_dropped.v1, BREVIO.brain.plan.proposed.v1, BREVIO.control.gate.decision.v1, BREVIO.control.consent.challenge_issued.v1, BREVIO.control.consent.approved.v1, BREVIO.workflow.created.v1, BREVIO.workflow.step.started.v1, BREVIO.workflow.step.completed.v1, BREVIO.workflow.step.failed.v1, BREVIO.hands.tool.simulated.v1, BREVIO.hands.tool.committed.v1, BREVIO.trust.receipt.created.v1, BREVIO.trust.evidence.attached.v1, BREVIO.trust.synthesis_evidence.created.v1, BREVIO.security.ssrf.blocked.v1, BREVIO.security.webhook.signature_invalid.v1, BREVIO.security.webhook.replay_blocked.v1, BREVIO.provision.request.created.v1, BREVIO.provision.server.active.v1, BREVIO.provision.server.failed.v1, BREVIO.provision.policy_decision.v1, BREVIO.provision.step_started.v1, BREVIO.provision.step_succeeded.v1, BREVIO.provision.step_failed.v1, BREVIO.provision.compensation_started.v1, BREVIO.provision.compensation_completed.v1, BREVIO.provision.server_quarantined.v1, BREVIO.mcp.drift.quarantined.v1.
+
+END OF BREVIO V9 CONSOLIDATED MASTER BLUEPRINT
+This document is the single source of truth for all BREVIO implementation.
+Any behavior not explicitly defined here is forbidden.

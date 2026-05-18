@@ -1,14 +1,18 @@
 package llm
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"log"
 	"sort"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/brevio/brevio/internal/cache"
 )
 
 type PromptVersion struct {
@@ -45,11 +49,18 @@ type Response struct {
 type Service struct {
 	mu              sync.Mutex
 	prompts         map[string][]PromptVersion
-	replay          map[string]string
+	replay          map[string]string // in-memory fallback when Redis is unavailable
 	replayHitCount  int
 	activePrompt    map[string]int
 	maxTokensByTier map[string]int
 	lastFailover    string
+
+	// Intelligence layer: real LLM client for provider-backed inference.
+	intelligence *IntelligenceService
+
+	// Redis-backed replay cache. When non-nil, takes precedence over the
+	// in-memory replay map for cross-instance idempotency.
+	redisCache *cache.RedisClient
 }
 
 type TierModelSelection struct {
@@ -246,6 +257,22 @@ func (s *Service) GenerateWithFallback(req Request, fallbackProviderID string, p
 		s.lastFailover = failoverReason
 	}
 
+	// Check replay cache: Redis first, then in-memory fallback.
+	if s.redisCache != nil {
+		if cached, ok, err := s.redisCache.ReplayGet(context.Background(), hash); err == nil && ok {
+			s.replayHitCount++
+			return Response{
+				RequestHash:    hash,
+				PlanJSON:       cached,
+				FromReplay:     true,
+				ProviderID:     providerID,
+				FailoverReason: failoverReason,
+			}
+		} else if err != nil {
+			log.Printf("[LLM] Redis replay GET failed, falling back to in-memory: %v", err)
+		}
+	}
+
 	if cached, ok := s.replay[hash]; ok {
 		s.replayHitCount++
 		return Response{
@@ -258,7 +285,15 @@ func (s *Service) GenerateWithFallback(req Request, fallbackProviderID string, p
 	}
 
 	plan := deterministicPlanJSON(hash, maxTokens, providerID)
+
+	// Store in both Redis and in-memory for durability.
+	if s.redisCache != nil {
+		if err := s.redisCache.ReplaySet(context.Background(), hash, plan); err != nil {
+			log.Printf("[LLM] Redis replay SET failed: %v", err)
+		}
+	}
 	s.replay[hash] = plan
+
 	return Response{
 		RequestHash:    hash,
 		PlanJSON:       plan,
@@ -278,4 +313,70 @@ func (s *Service) LastFailoverReason() string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.lastFailover
+}
+
+// SetRedisCache injects a Redis client for cross-instance replay caching.
+// When set, the replay cache is checked in Redis before the in-memory map.
+func (s *Service) SetRedisCache(rc *cache.RedisClient) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.redisCache = rc
+}
+
+// RedisCache returns the configured Redis client, or nil if not set.
+func (s *Service) RedisCache() *cache.RedisClient {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.redisCache
+}
+
+// SetIntelligence injects a real IntelligenceService for provider-backed inference.
+func (s *Service) SetIntelligence(intel *IntelligenceService) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.intelligence = intel
+}
+
+// Intelligence returns the configured IntelligenceService, or nil if not set.
+func (s *Service) Intelligence() *IntelligenceService {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.intelligence
+}
+
+// ClassifyIntent delegates to the real IntelligenceService for LLM-backed classification.
+// Returns an error if intelligence is not configured.
+func (s *Service) ClassifyIntent(ctx context.Context, payload, workspaceID string) (*IntentClassification, *Usage, error) {
+	intel := s.Intelligence()
+	if intel == nil {
+		return nil, nil, fmt.Errorf("llm: intelligence service not configured")
+	}
+	return intel.ClassifyIntent(ctx, payload, workspaceID)
+}
+
+// GeneratePlan delegates to the real IntelligenceService for LLM-backed plan generation.
+func (s *Service) GeneratePlan(ctx context.Context, intent string, confidence float64, payload, memoryContext, ragContext string) (*GeneratedPlan, *Usage, error) {
+	intel := s.Intelligence()
+	if intel == nil {
+		return nil, nil, fmt.Errorf("llm: intelligence service not configured")
+	}
+	return intel.GeneratePlan(ctx, intent, confidence, payload, memoryContext, ragContext)
+}
+
+// SynthesizeResponse delegates to the real IntelligenceService for LLM-backed synthesis.
+func (s *Service) SynthesizeResponse(ctx context.Context, payload, toolResults string) (*SynthesizedResponse, *Usage, error) {
+	intel := s.Intelligence()
+	if intel == nil {
+		return nil, nil, fmt.Errorf("llm: intelligence service not configured")
+	}
+	return intel.SynthesizeResponse(ctx, payload, toolResults)
+}
+
+// VerifyExecution delegates to the real IntelligenceService for LLM-backed verification.
+func (s *Service) VerifyExecution(ctx context.Context, input VerifyInput) (*VerifyResult, *Usage, error) {
+	intel := s.Intelligence()
+	if intel == nil {
+		return nil, nil, fmt.Errorf("llm: intelligence service not configured")
+	}
+	return intel.VerifyExecution(ctx, input)
 }

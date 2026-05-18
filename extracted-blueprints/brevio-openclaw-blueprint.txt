@@ -1,0 +1,603 @@
+
+BREVIO
+OpenClaw Skills Integration
+Production-Grade Monorepo Blueprint
+Version 1.0.0  |  March 2026  |  CONFIDENTIAL
+Zero-Ambiguity, Implementation-Complete System Specification
+153 OpenClaw Skills  |  3-Plane Architecture  |  40+ External Services
+AI Coding Agent Executable from Blank Repo to Production
+
+Table of Contents
+
+1. Executive Architecture Overview
+Brevio is an AI executive assistant operating through WhatsApp and iMessage, functioning as a digital chief of staff. The system integrates 153 OpenClaw community skills across a 3-plane architecture (Gateway/Brain/Hands) connecting to 40+ external services to take real-world actions on behalf of users.
+
+1.1 System Identity
+
+1.2 Three-Plane Architecture
+Every message flows through three deterministic planes in sequence. Each plane has bounded responsibilities and explicit contracts with adjacent planes.
+
+1.2.1 Gateway Plane (Message I/O Layer)
+Purpose: Ingress/egress normalization, channel-specific formatting, voice processing, rate limiting.
+Skills Count: 8 skills (asr, openai-tts, gemini-stt, sag, voice-wake-say, whatsapp-styling-guide, vocal-chat, autoresponder)
+Bounded Context: No business logic. No intent classification. Stateless except for session tracking. DOES call external APIs for voice processing (STT/TTS). See Section 15D for details.
+Receives raw message from WhatsApp/iMessage webhook
+Normalizes to internal MessageEnvelope schema
+Handles voice-to-text transcription (asr, gemini-stt)
+Formats outbound response per channel (whatsapp-styling-guide)
+Handles text-to-speech for voice responses (openai-tts, sag)
+Enforces rate limiting per user (token bucket: 60 req/min, 1000 req/hr)
+
+1.2.2 Brain Plane (Decision & Orchestration Layer)
+Purpose: Intent classification, task decomposition, skill routing, behavioral intelligence, multi-step planning.
+Skills Count: 16 skills (doing-tasks, plan-my-day, daily-rhythm, morning-manifesto, personal-shopper, clawringhouse, smart-expense-tracker, card-optimizer, refund-radar, contract-reviewer, meeting-autopilot, proactive-research, focus-mode, thinking-partner, relationship-skills, self-improvement)
+Bounded Context: Reads user context (USER.md, SOUL.md, AGENTS.md knowledge files). Decides which Hands skills to invoke. Does NOT call external APIs directly.
+Classifies intent from normalized MessageEnvelope
+Loads user behavioral profile from knowledge files
+Decomposes complex requests into parallel/sequential task graphs
+Routes each sub-task to appropriate Hands-plane skill(s)
+Aggregates results from multiple skill executions
+Generates contextual, personality-aware response
+
+1.2.3 Hands Plane (Execution Layer)
+Purpose: External service execution, API calls, real-world actions, data retrieval, state mutations.
+Skills Count: 129 skills across 16 categories
+Bounded Context: Executes exactly one skill per invocation. Returns structured SkillResult. No user-facing formatting. No intent classification.
+
+
+1.3 Data Flow Graph
+Deterministic message processing pipeline:
+
+1. INGRESS [WhatsApp/iMessage Webhook]
+   Raw message received via webhook endpoint
+2. GATEWAY.normalize() [Gateway Plane]
+   Channel-specific parsing, voice transcription, MessageEnvelope creation
+3. BRAIN.classify() [Brain Plane]
+   Intent classification, user context loading, behavioral profile merge
+4. BRAIN.decompose() [Brain Plane]
+   Task graph generation with dependency DAG, parallel/sequential routing
+5. HANDS.execute() [Hands Plane] (per-skill, parallelized where independent)
+   External API calls, data retrieval, mutations, SkillResult return
+6. BRAIN.aggregate() [Brain Plane]
+   Result merging, response generation, personality overlay
+7. GATEWAY.format() [Gateway Plane]
+   Channel-specific formatting, TTS if voice, message delivery
+8. EGRESS [WhatsApp/iMessage API]
+   Delivery confirmation, read receipt tracking, webhook acknowledgment
+
+1.4 Failure Domains
+
+2. Component-by-Component Specification: Services & APIs
+Complete OpenAPI-aligned service specifications with typed contracts, error enumerations, and idempotency guarantees.
+
+2.1 API Gateway Service
+Service: brevio-gateway
+Port: 8080 (HTTP), 8443 (HTTPS)
+Base Path: /api/v1
+Versioning: URI path versioning (/v1, /v2). Breaking changes require new major version. Additive changes (new fields) are backward compatible within version.
+
+2.1.1 Webhook Endpoints
+
+2.1.2 MessageEnvelope Schema
+The canonical internal message format. All planes operate on this schema.
+
+
+2.1.3 SkillResult Schema
+Returned by every Hands-plane skill execution.
+
+2.1.4 Error Contract (Enumerated)
+
+2.2 Internal Service Mesh
+
+3. Database DDL & Migration Order
+Complete PostgreSQL 16 schema with all tables, indexes, constraints, row-level security policies, and ordered reversible migrations.
+
+3.1 Schema Overview
+
+3.2 Core DDL
+
+3.2.1 Migration 001: Core Schema
+File: migrations/001_core_schema.up.sql
+Reversible: migrations/001_core_schema.down.sql
+
+Table: users (Primary user accounts)
+Indexes: idx_users_phone (phone_number), idx_users_email (email) WHERE email IS NOT NULL, idx_users_tier (tier)
+RLS: Users can only read/write own row. Service accounts have full access.
+
+Table: messages (All message history)
+Indexes: idx_messages_user_created (user_id, created_at DESC), idx_messages_session (session_id), idx_messages_channel_id (channel_message_id) UNIQUE, idx_messages_intent (intent) WHERE intent IS NOT NULL
+Partitioning: Range partitioned by created_at (monthly). Retention: 24 months hot, archive to S3 Glacier after.
+
+Table: sessions (Conversation sessions)
+
+3.2.2 Migration 002: Skills Schema
+File: migrations/002_skills_schema.up.sql
+
+Table: skills.registry (All registered skills)
+
+Table: skills.execution_log (Every skill invocation)
+Partitioning: Range by created_at (daily). Retention: 90 days hot, 12 months warm (columnar), archive to S3.
+
+Table: skills.circuit_breaker_state (Real-time circuit breaker tracking)
+
+3.2.3 Migration 003: Auth Schema
+File: migrations/003_auth_schema.up.sql
+
+Table: auth.oauth_tokens (Per-user, per-service OAuth tokens)
+Unique Constraint: (user_id, service) - one active token set per user per service
+Encryption: Tokens encrypted at rest using AWS KMS envelope encryption. DEK per user, KEK rotated quarterly.
+
+3.2.4 Migration 004: Billing Schema
+File: migrations/004_billing_schema.up.sql
+
+Table: billing.usage_daily (Aggregated daily usage per user)
+Primary Key: (user_id, date)
+
+3.3 Migration Order
+3.4 Schema Validation Invariants
+Every skill_id referenced in messages.skill_ids must exist in skills.registry
+Every user_id in any table must exist in public.users with deleted_at IS NULL
+auth.oauth_tokens.service must match a service referenced by at least one enabled skill
+billing.usage_daily totals must reconcile with SUM(skills.execution_log) for same user/date
+skills.circuit_breaker_state.skill_id must exist in skills.registry with enabled = true
+Monthly LLM budget: users.monthly_llm_used_cents must never exceed monthly_llm_budget_cents (enforced by CHECK trigger)
+
+4. Workflow Specifications (Temporal)
+All workflows use Temporal.io with deterministic replay safety. No nondeterministic operations inside workflow functions. All side effects wrapped in Activities.
+
+4.1 Core Workflow: MessageProcessingWorkflow
+Trigger: Every inbound message
+Task Queue: message-processing
+Execution Timeout: 120 seconds
+ID: msg-{message.id} (ensures idempotency per message)
+
+4.1.1 State Machine
+
+4.1.2 Activities
+
+4.1.3 Deterministic Jitter Formula
+All retry jitter is computed deterministically from the workflow run ID and attempt number:
+jitter_ms = (fnv1a_hash(workflow_run_id + attempt_number) % max_jitter_ms)
+This ensures replay-safe retries. No Math.random() or system clock reads inside workflow code.
+
+4.1.4 Compensation Logic
+
+4.2 Scheduled Workflow: DailyRhythmWorkflow
+Trigger: Cron: user-configured wake time (default 07:00 user local time)
+Purpose: Proactive morning briefing via daily-rhythm + plan-my-day skills
+
+4.3 Per-Skill Retry Policies
+Each skill has an individually tuned retry policy stored in skills.registry.retry_policy:
+
+5. Policy Definitions (OPA)
+Complete Open Policy Agent rule set governing access control, skill authorization, budget enforcement, and data governance.
+
+5.1 Role Definitions
+
+5.2 Access Control Matrix
+
+5.3 Policy Rules (OPA Rego)
+Package: brevio.authz
+
+allow_skill_execution: user.tier >= skill.min_tier AND skill.id IN user.enabled_skills AND skill.enabled = true
+allow_budget_spend: user.monthly_llm_used_cents + estimated_cost <= user.monthly_llm_budget_cents
+allow_rate: request_count_in_window < tier_rate_limit[user.tier]
+allow_oauth_access: token.user_id == requesting_user_id OR requesting_user.role == 'admin'
+deny_disabled_skill: skill.enabled == false => DENY regardless of user tier
+deny_circuit_open: circuit_breaker.state == 'OPEN' => DENY with CIRCUIT_OPEN error
+deny_expired_token: oauth_token.expires_at < now() AND refresh_failed => DENY with AUTH_EXPIRED
+
+5.4 Denial Invariants
+No user, regardless of tier, can execute a skill with enabled=false
+No user can exceed their monthly LLM budget without explicit admin override
+No user can access another user's OAuth tokens
+No skill execution can proceed when circuit breaker state is OPEN
+No message can bypass Gateway normalization and reach Brain directly
+No external API call can occur outside of a Temporal Activity (ensures replay safety)
+No PII can be logged in plaintext after 30-day retention window
+
+6. LLM Contracts
+Every prompt template, input/output schema, validation logic, guardrails, cost bounds, and fallback paths.
+
+6.1 LLM Provider Configuration
+
+6.2 Prompt Templates
+
+6.2.1 Intent Classification Prompt
+ID: PROMPT_INTENT_CLASSIFY_V1
+Model: claude-haiku-4-5 (cost-optimized)
+Max Output Tokens: 256
+Temperature: 0.1 (near-deterministic)
+
+System: You are Brevio's intent classifier. Given a user message and their profile context, output a JSON object with: intent (string), confidence (0.0-1.0), skills (string[]), requires_decomposition (boolean). You must select from the closed set of registered skill IDs. Never hallucinate skill IDs.
+Input Schema: { message_text: string, user_profile: { timezone, locale, enabled_skills[], recent_intents[] }, context: { time_of_day, day_of_week, active_session_minutes } }
+Output Schema: { intent: string, confidence: number (0.0-1.0), skills: string[], requires_decomposition: boolean, reasoning: string }
+Validation: confidence >= 0.7 required. All skill IDs must exist in skills.registry. Max 5 skills per classification.
+Guardrail: If confidence < 0.7, fall back to keyword-based classifier. If output fails JSON parse, retry once with stricter prompt.
+
+6.2.2 Response Generation Prompt
+ID: PROMPT_RESPONSE_GEN_V1
+Model: claude-sonnet-4-5 (quality-optimized)
+Max Output Tokens: 2048
+Temperature: 0.3
+
+System: You are Brevio, an executive AI assistant communicating via {channel}. You have the user's personality profile (SOUL.md), preferences, and context. Generate a natural, concise response incorporating skill execution results. Match the user's communication style. Use {channel_formatting} rules.
+Input: { skill_results: SkillResult[], user_profile: UserProfile, channel: string, conversation_history: Message[] }
+Output: { response_text: string, suggested_actions: string[], follow_up_scheduled: boolean }
+Guardrail: Response must not exceed 4096 chars. Must not contain PII not already known to user. Must not make financial commitments without explicit user confirmation.
+
+6.2.3 Task Decomposition Prompt
+ID: PROMPT_TASK_DECOMPOSE_V1
+Model: claude-sonnet-4-5
+Output: { tasks: [{ skill_id, input, dependencies: string[], priority }], execution_order: 'parallel' | 'sequential' | 'mixed' }
+Validation: DAG must be acyclic (topological sort must succeed). Max 10 tasks. Max depth 5. All skill_ids must be registered and enabled for user.
+
+6.3 Cost Bounds
+Monthly cost per active user (estimated): $5.90 (based on 40 messages/day average, 70% simple / 30% complex)
+
+6.4 Deterministic Fallback Paths
+
+7. Infrastructure Definitions
+Complete Terraform modules, Kubernetes manifests, secrets management, autoscaling, and networking topology.
+
+7.1 Cloud Architecture
+
+7.2 Kubernetes Namespace Layout
+
+7.3 Autoscaling Rules
+
+7.4 Environment Isolation
+
+8. CI/CD Pipelines
+
+8.1 Pipeline Stages
+
+8.2 Deployment Strategy
+Pattern: Blue/Green with Canary
+Step 1: Deploy green environment alongside blue (production)
+Step 2: Route 10% traffic to green (canary phase, 15 minutes)
+Step 3: Monitor error rate, latency P99, SLO compliance
+Step 4: If all green: route 100% to green, drain blue
+Step 5: If degradation detected: instant rollback to blue (< 30s)
+Rollback trigger: error rate > 1% OR P99 latency > 2x baseline OR any SLO breach
+
+8.3 Artifact Signing
+All container images signed with cosign (Sigstore)
+SBOM generated with syft for every image
+Helm charts signed with GPG key managed in AWS KMS
+Git commits signed with developer GPG keys (enforced via branch protection)
+
+9. Observability Specification
+
+9.1 Metrics Definitions
+
+9.2 SLO/SLA Definitions
+
+9.3 Alert Escalation
+9.4 Distributed Tracing
+Protocol: OpenTelemetry (OTLP/gRPC)
+Sampling: 100% for errors, 10% for successful requests in production, 100% in staging
+Trace ID propagation: W3C TraceContext via traceparent header across all services
+Span hierarchy: Gateway.receive -> Brain.classify -> Brain.decompose -> Hands.execute[skill_id] -> Gateway.deliver
+
+10. Testing Suite
+
+10.1 Test Matrix
+
+10.2 Critical Test Scenarios
+
+10.2.1 Message Processing Happy Path
+Send text message via WhatsApp webhook
+Verify Gateway normalizes to MessageEnvelope
+Verify Brain classifies intent with confidence >= 0.7
+Verify Brain decomposes to valid task DAG
+Verify Hands executes all skills successfully
+Verify response delivered to WhatsApp within SLO
+
+10.2.2 Multi-Skill Parallel Execution
+Test: 'Order groceries and play music on the kitchen speaker'
+Verify Brain decomposes into 2 parallel tasks
+Verify grocery-list + recipe-to-list execute concurrently with spotify-web-api + sonoscli
+Verify aggregated response includes both outcomes
+Verify total latency is max(task1, task2), not sum
+
+10.2.3 Circuit Breaker Activation
+Simulate 5 consecutive failures from external API
+Verify circuit breaker transitions to OPEN
+Verify subsequent requests get CIRCUIT_OPEN error immediately
+Verify half-open probe after configured timeout
+Verify circuit closes after successful probe
+
+10.2.4 Budget Exhaustion
+Set user budget to $0.05
+Send messages until budget exhausted
+Verify graceful degradation to keyword-only mode
+Verify user notification about budget status
+
+11. Security & Governance
+
+11.1 Threat Model
+
+11.2 Encryption Standards
+
+11.3 Trust Boundaries
+Boundary 1: Internet to Gateway (WAF, rate limiting, webhook verification)
+Boundary 2: Gateway to Brain (internal mTLS, schema validation)
+Boundary 3: Brain to Hands (internal mTLS, skill authorization via OPA)
+Boundary 4: Hands to External APIs (OAuth, API keys, encrypted at rest)
+Boundary 5: Services to Database (RLS, encrypted connections, least-privilege roles)
+Boundary 6: Services to Temporal (mTLS, namespace isolation)
+
+12. Failure & Recovery Model
+
+12.1 Failure Taxonomy
+
+12.2 Dead Letter Queue Handling
+DLQ: SQS dead-letter queue per service
+Messages enter DLQ after exhausting retry policy (max 3 retries per activity)
+DLQ consumer runs every 5 minutes, categorizes by error type
+Transient errors: re-enqueue with exponential backoff cap of 1 hour
+Permanent errors: log, alert, require manual review
+DLQ retention: 14 days, then archive to S3 with full message context
+
+12.3 Disaster Recovery
+
+13. Runbooks
+
+13.1 Deployment Runbook
+Verify all CI/CD gates pass (lint, test, security, migration safety)
+Tag release: git tag v{semver} && git push --tags
+ArgoCD detects new tag, begins blue/green deployment to staging
+Run staging smoke tests (E2E test suite, health checks)
+Manual approval gate: review deployment diff, confirm staging health
+ArgoCD deploys to production (canary 10% for 15 min)
+Monitor SLOs: availability, latency P99, error rate during canary
+If SLOs hold: promote to 100%. If breach: automatic rollback
+Post-deploy: verify health checks, run production smoke tests
+Update deployment log in Confluence/Notion with version, changes, metrics
+
+13.2 Rollback Runbook
+Detect issue: SLO breach alert OR manual report
+Confirm rollback decision with on-call lead
+Execute: argocd app rollback brevio-production --to-revision {previous}
+Verify blue environment health checks pass
+Route 100% traffic to blue (previous version)
+If DB migration was applied: run down migration (tested in CI)
+Verify SLOs recovering within 5 minutes
+Post-incident: create ticket, schedule review
+
+13.3 Incident Response Runbook
+Alert received via PagerDuty/Slack. On-call acknowledges within SLA
+Assess severity: P1-P4 based on impact matrix
+Open incident channel: #incident-{date}-{short-desc}
+Triage: Check Grafana dashboards, Tempo traces, Loki logs
+Identify affected services/skills using distributed trace
+Mitigate: Circuit breaker manual override, traffic shift, or scale up
+Resolve: Deploy fix or rollback as appropriate
+Communicate: Update status page, notify affected users via broadcast
+Post-incident review within 48 hours, blameless RCA document
+
+13.4 Key Rotation Runbook
+Schedule rotation window (low-traffic period, typically 02:00-04:00 UTC)
+Generate new key material via AWS KMS API
+Deploy new key to Secrets Manager with staged rotation
+Update all services to use new key (rolling restart)
+Re-encrypt active OAuth tokens with new DEK
+Verify all services healthy with new keys
+Disable old key after 24-hour grace period
+Archive old key material per retention policy (90 days)
+
+13.5 Scaling Runbook
+Monitor: HPA metrics approaching max replicas
+If sustained load > 80% capacity: increase max replicas in HPA
+If node resources exhausted: add nodes via Cluster Autoscaler config
+If database CPU > 70%: scale RDS instance class (requires brief downtime for non-Multi-AZ)
+If Redis memory > 80%: scale ElastiCache node type
+Update Terraform state to match manual scaling actions
+Create capacity planning ticket for next sprint
+
+14. Gap Analysis & Custom Build Requirements
+OpenClaw covers approximately 70% of Brevio's required capabilities. The remaining 30% must be built as Brevio custom skills, primarily covering real-money transactional actions that represent the strongest competitive moat.
+
+14.1 Critical Gaps (Must Build)
+
+14.2 Coverage Model
+Strategic Note: The 30% Brevio must build are real-money transactions, which are also the strongest competitive moat and highest revenue potential.
+
+15. Deployment Assembly Order
+Sequential steps for an AI coding agent to execute this blueprint from blank repository to production deployment.
+
+
+16. Appendix: Skill Registry Seed Data (153 Skills)
+Complete seed data for all evaluated OpenClaw skills, organized by category and plane. Each entry corresponds to a row in skills.registry.
+
+15A. Skill Deployment Mode Classification
+CRITICAL ARCHITECTURAL DECISION: Not all 153 skills can run in the cloud. 24 skills require local macOS execution, 2 use MCP protocol, and 127 are cloud-native API skills. The blueprint MUST account for this split or an AI agent will produce non-functional code.
+
+15A.1 Deployment Mode Taxonomy
+
+15A.2 Local macOS Skills (24) — Requires Edge Agent
+These skills CANNOT run in Kubernetes. They require a Brevio Edge Agent running on the user's Mac.
+
+15A.3 Edge Agent Architecture
+Component: brevio-edge-agent (installed on user's Mac via DMG/Homebrew)
+Runtime: Node.js 20 LTS process running as macOS Launch Agent
+Communication: Persistent WebSocket connection to brevio-hands cloud service
+Auth: mTLS with per-device client certificate issued during onboarding
+
+Flow for local skills:
+1. Brain routes task to skill with deployment_mode = 'local_mac'
+2. brevio-hands sends skill execution request over WebSocket to user's Edge Agent
+3. Edge Agent executes skill locally (AppleScript, CLI, filesystem)
+4. Edge Agent returns SkillResult over WebSocket
+5. brevio-hands aggregates with other cloud skill results
+
+Offline handling: If Edge Agent is disconnected, skill execution is queued (max 4 hours). User is notified: 'I need your Mac to be online to do that.'
+Security: Edge Agent runs sandboxed. No internet access except WebSocket to Brevio. All data encrypted in transit. No local skill can access data from another user.
+
+Edge Agent database addition: 
+Table: edge_agents (tracks per-user device registration)
+
+15A.4 MCP Skills (2)
+google-calendar and clickup-mcp use Model Context Protocol instead of direct API calls.
+
+MCP Server Configuration:
+
+ISkillAdapter extension for MCP:
+MCP skills implement ISkillAdapter but their execute() method calls the MCP client instead of a REST API. The MCP client is injected via SkillContext.mcpClient.
+interface SkillContext { ...existing fields..., mcpClient?: MCPClient; }
+MCPClient.callTool(server: string, tool: string, args: Record<string, unknown>): Promise<MCPResult>
+
+15A.5 skills.registry.deployment_mode Column Addition
+Migration 009_add_deployment_mode.up.sql:
+ALTER TABLE skills.registry ADD COLUMN deployment_mode VARCHAR(10) NOT NULL DEFAULT 'cloud' CHECK (deployment_mode IN ('cloud', 'local_mac', 'mcp'));
+UPDATE skills.registry SET deployment_mode = 'local_mac' WHERE id IN ('apple-remind-me','calctl','healthkit-sync','healthkit-sync-apple','apple-mail','apple-mail-search','apple-media','apple-music','apple-contacts','apple-photos','apple-notes','apple-notes-skill','shortcuts-generator','get-focus-mode','mole-mac-cleanup','alter-actions','spotify','things-mac','omnifocus','voice-wake-say','bear-notes','obsidian','craft','gamma');
+UPDATE skills.registry SET deployment_mode = 'mcp' WHERE id IN ('google-calendar','clickup-mcp');
+
+15B. Skill Overlap Disambiguation Rules
+CRITICAL: 11 groups of skills target the same service or intent. Without explicit routing rules, the Brain plane cannot deterministically choose which skill to invoke. These rules are MANDATORY for the intent classifier.
+
+
+Implementation: These rules are codified in the Brain plane's skill router as a deterministic lookup table. The table is loaded from a config file (skill-disambiguation.yaml) that is version-controlled and tested in CI.
+
+User profile fields needed for disambiguation:
+Migration 010_add_user_preferences.up.sql: ALTER TABLE users ADD COLUMN preferences JSONB NOT NULL DEFAULT '{}'; with the above fields.
+
+15C. Complete OAuth & API Key Service Map
+CRITICAL: An AI agent needs the exact OAuth provider configuration (client ID source, redirect URI, scopes, token endpoint) for every external service. Without this, auth.oauth_tokens cannot be populated.
+
+15C.1 OAuth2 Services (15)
+
+15C.2 API Key Services (18)
+
+15C.3 No-Auth / Local-Only Services (6)
+
+15C.4 Auth Configuration Storage
+All API keys and OAuth client secrets are stored in AWS Secrets Manager, never in code or environment variables.
+Secret naming convention: brevio/{environment}/{service}/client_id, brevio/{environment}/{service}/client_secret
+OAuth redirect URI pattern: https://auth.brevio.app/callback/{service}
+PKCE: Required for all public OAuth flows (mobile/desktop clients)
+
+15D. Gateway Plane Behavioral Corrections
+CORRECTION: Section 1.2.1 states 'Gateway: No external service calls except channel APIs.' This is WRONG for 3 gateway skills. The gateway plane DOES call external APIs for voice processing. Updated bounded context:
+
+Gateway Plane ACTUAL bounded context:
+Stateless except for session tracking (unchanged)
+No business logic (unchanged)
+No intent classification (unchanged)
+DOES call external APIs for: speech-to-text (asr, gemini-stt), text-to-speech (openai-tts, sag, voice-wake-say), and channel formatting (whatsapp-styling-guide)
+autoresponder is a HYBRID skill: gateway-plane for intercept but uses Brain-plane LLM for response generation. Implementation: autoresponder registers as gateway but delegates to Brain via internal gRPC for response content.
+
+
+16.1 Shopping (7 skills)
+
+16.2 Transportation (11 skills)
+
+16.3 Calendar (5 skills)
+
+16.4 Health (6 skills)
+
+16.5 Communication (13 skills)
+
+16.6 Smart Home (7 skills)
+
+16.7 Media (19 skills)
+
+16.8 Finance (15 skills)
+
+16.9 Productivity (13 skills)
+
+16.10 Speech (5 skills)
+
+16.11 Documents (3 skills)
+
+16.12 Search (12 skills)
+
+16.13 Apple (10 skills)
+
+16.14 Image (9 skills)
+
+16.15 Personal (7 skills)
+
+16.16 Notes (11 skills)
+
+16.17 Appendix Summary
+Total Skills: 153
+Plane Distribution: Gateway: 8, Brain: 16, Hands: 129
+Impact Distribution: HIGH: 98, MEDIUM: 53, LOW: 2
+Categories: 16 (Shopping: 7, Transportation: 11, Calendar: 5, Health: 6, Communication: 13, Smart Home: 7, Media: 19, Finance: 15, Productivity: 13, Speech: 5, Documents: 3, Search: 12, Apple: 10, Image: 9, Personal: 7, Notes: 11)
+
+
+17. Per-Skill Implementation Contracts
+Every skill must implement the ISkillAdapter interface. This section defines the external API, authentication, input/output schemas, and operational parameters for each skill to remove all implementation ambiguity.
+
+17.1 ISkillAdapter Interface (TypeScript)
+Every skill MUST implement this interface. No exceptions. No stubs.
+
+interface ISkillAdapter {
+  readonly id: string;                    // Must match skills.registry.id
+  readonly plane: 'gateway' | 'brain' | 'hands';
+  readonly requiredScopes: string[];      // OAuth scopes needed
+  readonly inputSchema: JSONSchema7;      // Validated before execute()
+  readonly outputSchema: JSONSchema7;     // Validated after execute()
+  execute(input: SkillInput, ctx: SkillContext): Promise<SkillResult>;
+  healthCheck(): Promise<boolean>;        // Called by circuit breaker probe
+  undo?(input: SkillInput): Promise<void>; // Optional compensating action
+}
+
+17.2 SkillContext (Injected at Runtime)
+interface SkillContext {
+  userId: string;                         // Authenticated user UUID
+  oauthTokens: Map<string, OAuthToken>;   // Pre-fetched, decrypted tokens
+  userProfile: UserProfile;               // From USER.md knowledge file
+  logger: StructuredLogger;               // OpenTelemetry-aware logger
+  tracer: Tracer;                         // Distributed tracing span
+  cache: CacheClient;                     // Redis client for skill-local cache
+  config: Record<string, unknown>;        // From skills.registry.config column
+}
+
+17.3 External API & Auth Requirements by Category
+
+
+CRITICAL IMPLEMENTATION RULE: For the remaining skills not individually specified above, the AI coding agent MUST:
+Read the OpenClaw skill's README.md and source code from the OpenClaw repository
+Extract the external API endpoint, authentication method, and data schemas
+Implement the ISkillAdapter interface with validated input/output schemas
+Register the skill in skills.registry with accurate retry_policy and circuit_breaker_config
+Write unit tests with mocked external API responses (MSW)
+Write integration test with sandboxed API credentials (staging only)
+
+17.4 Skill Adapter File Structure
+Every skill adapter follows this exact file structure. No deviations.
+
+services/brevio-hands/src/skills/{skill-id}/
+  index.ts                 // ISkillAdapter implementation
+  schema.ts                // Zod input + output schemas (source of truth for JSONSchema7)
+  client.ts                // External API client (axios/fetch wrapper)
+  types.ts                 // TypeScript interfaces for skill I/O
+  __tests__/
+    unit.test.ts            // Unit tests with mocked client
+    integration.test.ts     // Integration test (staging API)
+    fixtures/               // Mock API response fixtures
+  README.md                // Skill-specific notes, API docs link
+
+17.5 Skill Registration SQL Template
+For each skill, the seed migration (006_seed_skills.up.sql) inserts:
+
+INSERT INTO skills.registry (id, category, plane, impact, description, brevio_use_case, input_schema, output_schema, config, required_scopes, retry_policy, circuit_breaker_config, cost_per_invocation_cents, enabled, min_tier) VALUES (
+  '{id}',                           -- Exact ID from this appendix
+  '{category}',                     -- Category from this appendix
+  '{plane}',                        -- gateway | brain | hands
+  '{impact}',                       -- HIGH | MEDIUM | LOW
+  '{description}',                  -- Full description from JSX source
+  '{brevio_use_case}',              -- Brevio use case from JSX source
+  '{input_schema}'::jsonb,          -- From skill's schema.ts (Zod -> JSON Schema)
+  '{output_schema}'::jsonb,         -- From skill's schema.ts (Zod -> JSON Schema)
+  '{}'::jsonb,                      -- Skill-specific config (API keys reference, etc.)
+  ARRAY['{scopes}'],                -- Required OAuth scopes
+  '{"max_retries":3,"initial_interval_ms":500,"backoff_multiplier":2.0,"max_interval_ms":8000}'::jsonb,
+  '{"failure_threshold":5,"recovery_timeout_ms":60000,"half_open_max_calls":3}'::jsonb,
+  0.0000,                           -- Estimated cost (set per-skill)
+  true,
+  'free'                            -- Minimum tier: free | pro | enterprise
+);

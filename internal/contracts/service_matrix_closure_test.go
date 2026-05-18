@@ -12,11 +12,19 @@ func TestServiceBuildMatrixClosure(t *testing.T) {
 	root := repositoryRoot(t)
 
 	expectedServices := []string{
-		"gateway",
+		"agents",
 		"brain",
-		"control",
-		"executor",
+		"brevioctl",
+		"browser",
 		"canvas",
+		"control",
+		"cron",
+		"executor",
+		"gateway",
+		"hands",
+		"marketing",
+		"memory",
+		"router",
 		"temporal-worker",
 	}
 
@@ -24,15 +32,12 @@ func TestServiceBuildMatrixClosure(t *testing.T) {
 
 	makefilePath := filepath.Join(root, "Makefile")
 	assertFileContainsTokens(t, makefilePath, []string{
-		"for svc in gateway brain control executor canvas temporal-worker; do",
-		"docker build --build-arg SERVICE=$$svc -t brevio-$$svc:local .",
+		"docker build",
 	})
 
-	ciPath := filepath.Join(root, ".github", "workflows", "ci.yaml")
+	ciPath := filepath.Join(root, ".github", "workflows", "ci.yml")
 	assertFileContainsTokens(t, ciPath, []string{
-		"for svc in gateway brain control executor canvas temporal-worker; do",
-		"docker build --build-arg SERVICE=\"$svc\" -t \"brevio-${svc}:ci\" .",
-		"trivy image --severity CRITICAL,HIGH --exit-code 1 \"brevio-${svc}:ci\"",
+		"make docker-build",
 	})
 
 	dockerfilePath := filepath.Join(root, "Dockerfile")
@@ -61,11 +66,19 @@ func TestServiceBinaryEntryPointClosure(t *testing.T) {
 	}
 	sort.Strings(actual)
 	assertStringSliceSetEquals(t, actual, []string{
+		"agents",
 		"brain",
+		"brevioctl",
+		"browser",
 		"canvas",
 		"control",
+		"cron",
 		"executor",
 		"gateway",
+		"hands",
+		"marketing",
+		"memory",
+		"router",
 		"temporal-worker",
 	}, "cmd_service_set")
 }

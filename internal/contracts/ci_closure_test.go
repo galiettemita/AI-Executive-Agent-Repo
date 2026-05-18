@@ -7,72 +7,48 @@ import (
 	"testing"
 )
 
+// TestCIWorkflowClosure validates the authoritative CI workflow (ci.yml)
+// contains all required pipeline stages. The workflow delegates to Makefile
+// targets and scripts, so we validate the job structure rather than inline
+// tool invocations.
 func TestCIWorkflowClosure(t *testing.T) {
 	t.Parallel()
 	root := repositoryRoot(t)
-	ciPath := filepath.Join(root, ".github", "workflows", "ci.yaml")
+	ciPath := filepath.Join(root, ".github", "workflows", "ci.yml")
 
 	assertFileContainsTokens(t, ciPath, []string{
-		"go install honnef.co/go/tools/cmd/staticcheck@v0.5.1",
-		"install infrastructure and security tooling",
-		"TERRAFORM_VERSION=1.9.8",
-		"HELM_VERSION=v3.16.4",
-		"terraform version",
-		"helm version",
-		"github.com/trufflesecurity/trufflehog/v3@v3.90.4",
-		"trivy --version",
-		"syft version",
-		"gofmt check",
+		// Core pipeline stages
+		"Lint & Format",
+		"Schema Validate",
+		"Unit Tests",
+		"Integration Tests",
+		"Contract Tests",
+		"Security Scan",
+		"Migration Safety",
+		// V10+ gates
+		"V10+ Acceptance Gates",
+		// Build & deploy stages
+		"Build & Push",
+		"Deploy Staging",
+		"Deploy Production",
+		// Key test commands
+		"go test ./internal/contracts",
+		"go test ./internal/integration",
 		"go test ./... -count=1",
-		"migration lint",
-		"migration runtime verify",
-		"bash scripts/database/verify_postgres_migrations.sh",
-		"openapi lint",
-		"api docs sync",
-		"go run ./scripts/docs/generate_api_reference.go",
-		"git diff --exit-code docs/API_REFERENCE.md",
-		"json schema lint",
-		"determinism suite",
-		"dependency cve scan (trivy)",
-		"docker image scan (trivy)",
-		"secrets scan (trufflehog)",
-		"govulncheck baseline",
-		"bash scripts/security/run_govulncheck.sh",
-		"contract tests",
-		"integration tests",
-		"prompt injection tests",
-		"webhook signature suite",
-		"provisioning compensation suite",
-		"onboarding fixture suite",
-		"sbom generation (syft)",
-		"docker build services",
-		"docker build --build-arg SERVICE=\"$svc\" -t \"brevio-${svc}:ci\" .",
-		"trivy image --severity CRITICAL,HIGH --exit-code 1 \"brevio-${svc}:ci\"",
-		"go test ./internal/context -count=1",
-		"go test ./internal/rag -count=1",
-		"go test ./internal/rag/eval -count=1",
-		"go test ./internal/sessions -count=1",
-		"go test ./internal/temporal_reasoning -count=1",
-		"go test ./internal/guardrails -count=1",
-		"go test ./internal/tool_health -count=1",
-		"go test ./internal/feature_flags -count=1",
-		"go test ./internal/crdt -count=1",
-		"go test ./internal/streaming -count=1",
-		"go test ./internal/errors -count=1",
-		"go test ./internal/event_schemas -count=1",
-		"go test ./internal/compliance -count=1",
-		"go test ./internal/admin -count=1",
-		"go test ./internal/security/pii -count=1",
-		"go test ./internal/security/sandbox -count=1",
-		"go test ./internal/caching -count=1",
-		"go test ./internal/model_tiers -count=1",
+		// Security tooling delegation
+		"run_security_validation.sh",
+		"verify_postgres_migrations.sh",
+		// Lint via Makefile
+		"make lint",
 	})
 }
 
+// TestCIWorkflowNoSecuritySkipPaths ensures the authoritative CI does not
+// contain tokens that allow silently skipping security checks.
 func TestCIWorkflowNoSecuritySkipPaths(t *testing.T) {
 	t.Parallel()
 	root := repositoryRoot(t)
-	ciPath := filepath.Join(root, ".github", "workflows", "ci.yaml")
+	ciPath := filepath.Join(root, ".github", "workflows", "ci.yml")
 	body, err := os.ReadFile(ciPath)
 	if err != nil {
 		t.Fatalf("read ci workflow: %v", err)

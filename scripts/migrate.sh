@@ -1,15 +1,5 @@
 #!/usr/bin/env bash
+# Delegate to the canonical forward-only migration runner.
+# Per DECISIONS.md D6, only db/migrations/ is used in production.
 set -euo pipefail
-
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-cd "$ROOT_DIR"
-
-if [ -d migrations ]; then
-  echo "[migrate] OpenClaw migration directory present: migrations/"
-else
-  echo "[migrate] migrations directory missing"
-  exit 1
-fi
-
-echo "[migrate] legacy migration verification"
-bash scripts/database/verify_postgres_migrations.sh || true
+exec bash "$(dirname "${BASH_SOURCE[0]}")/database/migrate.sh" "$@"
