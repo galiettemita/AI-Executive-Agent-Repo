@@ -6,7 +6,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "dev": "node dist/index.js",
-    "lint": "eslint src --ext .ts",
+    "lint": "eslint src",
     "test": "node --experimental-strip-types --loader ./test-loader.mjs --test $(find src -name '*.test.ts')"
   }
 }
