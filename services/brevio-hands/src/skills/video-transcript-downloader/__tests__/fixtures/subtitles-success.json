@@ -1,6 +1,0 @@
-{
-  "provider": "video-transcript-downloader",
-  "action": "fetch_subtitles",
-  "segment_count": 18,
-  "has_subtitle_url": true
-}

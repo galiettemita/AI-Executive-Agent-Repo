@@ -1,7 +1,0 @@
-{
-  "provider": "voice-wake-say",
-  "voice": "Samantha",
-  "command": "say -v Samantha -r 190 \"Start focus mode for ninety minutes\"",
-  "estimated_duration_ms": 980,
-  "latency_budget_ms": 500
-}

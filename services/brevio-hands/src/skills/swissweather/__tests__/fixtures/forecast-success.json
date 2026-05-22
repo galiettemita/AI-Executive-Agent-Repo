@@ -1,5 +1,0 @@
-{
-  "provider": "swissweather",
-  "action": "forecast",
-  "forecasts_count": 2
-}

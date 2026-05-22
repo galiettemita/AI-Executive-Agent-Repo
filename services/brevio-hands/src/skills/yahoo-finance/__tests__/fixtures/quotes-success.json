@@ -1,6 +1,0 @@
-{
-  "provider": "yahoo-finance",
-  "action": "quotes",
-  "quotes_count": 2,
-  "first_symbol": "AAPL"
-}

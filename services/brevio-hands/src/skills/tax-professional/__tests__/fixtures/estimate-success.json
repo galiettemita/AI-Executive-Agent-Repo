@@ -1,6 +1,0 @@
-{
-  "provider": "tax-professional",
-  "action": "estimate_deductions",
-  "estimated_deductions_cents": 20000,
-  "checklist_count": 4
-}

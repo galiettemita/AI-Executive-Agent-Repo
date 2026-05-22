@@ -1,0 +1,68 @@
+// Audit log helper. Writes to public.audit_log via injected store; in dev mode uses
+// in-memory ring buffer so the simulator can read its own audit history without Postgres.
+
+import { redact } from './safe-logger.js';
+
+export type AuditAction =
+  | 'consent.grant'
+  | 'consent.revoke'
+  | 'consent.snooze'
+  | 'oauth.connect'
+  | 'oauth.disconnect'
+  | 'oauth.refresh'
+  | 'oauth.revoke_failed'
+  | 'token.decrypt_failure'
+  | 'session.created'
+  | 'onboarding.dismissed';
+
+export type AuditResult = 'success' | 'failure';
+
+export interface AuditEntry {
+  id?: number;
+  occurred_at: string;
+  actor_user_id: string | null;
+  actor_ip: string | null;
+  actor_user_agent: string | null;
+  action: AuditAction;
+  target: string | null;
+  result: AuditResult;
+  detail: Record<string, unknown> | null;
+}
+
+export interface AuditStore {
+  write(entry: Omit<AuditEntry, 'id' | 'occurred_at'> & { occurred_at?: string }): Promise<void>;
+  recent(userId: string, limit?: number): Promise<AuditEntry[]>;
+}
+
+export class InMemoryAuditStore implements AuditStore {
+  private entries: AuditEntry[] = [];
+  private nextId = 1;
+  private readonly capacity: number;
+
+  constructor(capacity = 5000) {
+    this.capacity = capacity;
+  }
+
+  async write(entry: Omit<AuditEntry, 'id' | 'occurred_at'> & { occurred_at?: string }): Promise<void> {
+    const detail = entry.detail ? (redact(entry.detail) as Record<string, unknown>) : null;
+    this.entries.push({
+      id: this.nextId++,
+      occurred_at: entry.occurred_at ?? new Date().toISOString(),
+      actor_user_id: entry.actor_user_id,
+      actor_ip: entry.actor_ip,
+      actor_user_agent: entry.actor_user_agent,
+      action: entry.action,
+      target: entry.target,
+      result: entry.result,
+      detail
+    });
+    if (this.entries.length > this.capacity) {
+      this.entries.splice(0, this.entries.length - this.capacity);
+    }
+  }
+
+  async recent(userId: string, limit = 100): Promise<AuditEntry[]> {
+    const filtered = this.entries.filter((e) => e.actor_user_id === userId);
+    return filtered.slice(-limit).reverse();
+  }
+}

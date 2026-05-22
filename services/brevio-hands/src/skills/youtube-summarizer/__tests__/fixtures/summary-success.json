@@ -1,6 +1,0 @@
-{
-  "provider": "youtube-summarizer",
-  "action": "summarize_video",
-  "video_id": "abc12345",
-  "key_points_count": 2
-}

@@ -1,6 +1,0 @@
-{
-  "provider": "watch-my-money",
-  "action": "analyze_statement",
-  "alerts_count": 1,
-  "spend_rate_pct_of_income": 75
-}

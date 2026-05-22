@@ -1,7 +1,0 @@
-{
-  "provider": "whatsapp-styling-guide",
-  "formatted_text": "• Finalize board deck\n• Confirm travel itinerary\n• Send investor update",
-  "applied_rules": ["bullet_list", "trim_whitespace"],
-  "char_count": 71,
-  "latency_budget_ms": 10
-}

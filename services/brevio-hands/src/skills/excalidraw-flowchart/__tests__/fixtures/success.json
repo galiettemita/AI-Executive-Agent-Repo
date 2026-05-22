@@ -1,6 +1,0 @@
-{
-  "status": "SUCCESS",
-  "provider": "excalidraw-flowchart",
-  "state": "",
-  "input": {"action":"generate_flowchart","description":"Build release process"}
-}

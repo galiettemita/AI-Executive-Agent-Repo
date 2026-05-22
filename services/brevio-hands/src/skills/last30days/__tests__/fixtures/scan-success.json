@@ -1,6 +1,0 @@
-{
-  "provider": "last30days",
-  "action": "scan_topic",
-  "highlights_count": 1,
-  "sources_count": 1
-}

@@ -1,5 +1,0 @@
-{
-  "provider": "ibkr-trading",
-  "action": "quote_symbol",
-  "status": "quoted"
-}

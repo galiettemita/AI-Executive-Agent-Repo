@@ -1,6 +1,0 @@
-{
-  "provider": "marketplace",
-  "action": "evaluate_listing",
-  "fair_price_cents": 12000,
-  "scam_risk": "low"
-}

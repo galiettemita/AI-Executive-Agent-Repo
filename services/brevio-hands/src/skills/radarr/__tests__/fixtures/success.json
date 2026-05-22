@@ -1,6 +1,0 @@
-{
-  "status": "SUCCESS",
-  "provider": "radarr",
-  "state": "",
-  "input": {"action":"list_queue"}
-}
