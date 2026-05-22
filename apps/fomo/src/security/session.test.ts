@@ -1,13 +1,13 @@
 import assert from 'node:assert/strict';
-import { afterEach, beforeEach, describe, it } from 'node:test';
+import { describe, it } from 'node:test';
 
 import {
   extractBearerToken,
   extractCookieToken,
-  loadAuthConfig,
+  loadSessionConfig,
   signSessionToken,
   verifySessionToken
-} from './auth.ts';
+} from './session.ts';
 
 const TEST_KEY = Buffer.alloc(32, 7).toString('base64');
 
@@ -28,16 +28,16 @@ function withEnv<T>(env: Record<string, string | undefined>, fn: () => T): T {
   }
 }
 
-describe('auth.loadAuthConfig', () => {
+describe('session.loadSessionConfig', () => {
   it('refuses to boot without signing key in non-dev mode', () => {
     withEnv({ BREVIO_SESSION_SIGNING_KEY: undefined, BREVIO_DEV_MODE: undefined }, () => {
-      assert.throws(() => loadAuthConfig(), /BREVIO_SESSION_SIGNING_KEY required/);
+      assert.throws(() => loadSessionConfig(), /BREVIO_SESSION_SIGNING_KEY required/);
     });
   });
 
   it('boots with no signing key when BREVIO_DEV_MODE=true', () => {
     withEnv({ BREVIO_SESSION_SIGNING_KEY: undefined, BREVIO_DEV_MODE: 'true' }, () => {
-      const config = loadAuthConfig();
+      const config = loadSessionConfig();
       assert.equal(config.devMode, true);
       assert.equal(config.signingKey, undefined);
     });
@@ -45,7 +45,7 @@ describe('auth.loadAuthConfig', () => {
 
   it('boots with valid signing key', () => {
     withEnv({ BREVIO_SESSION_SIGNING_KEY: TEST_KEY, BREVIO_DEV_MODE: undefined }, () => {
-      const config = loadAuthConfig();
+      const config = loadSessionConfig();
       assert.equal(config.devMode, false);
       assert.ok(config.signingKey);
       assert.equal(config.signingKey?.length, 32);
@@ -54,14 +54,14 @@ describe('auth.loadAuthConfig', () => {
 
   it('rejects too-short signing key', () => {
     withEnv({ BREVIO_SESSION_SIGNING_KEY: Buffer.alloc(16, 1).toString('base64'), BREVIO_DEV_MODE: undefined }, () => {
-      assert.throws(() => loadAuthConfig(), /at least 32 bytes/);
+      assert.throws(() => loadSessionConfig(), /at least 32 bytes/);
     });
   });
 });
 
-describe('auth.signSessionToken / verifySessionToken', () => {
+describe('session.signSessionToken / verifySessionToken', () => {
   it('round-trips a valid token', () => {
-    const config = withEnv({ BREVIO_SESSION_SIGNING_KEY: TEST_KEY, BREVIO_DEV_MODE: undefined }, () => loadAuthConfig());
+    const config = withEnv({ BREVIO_SESSION_SIGNING_KEY: TEST_KEY, BREVIO_DEV_MODE: undefined }, () => loadSessionConfig());
     const token = signSessionToken(config, {
       user_id: 'u1',
       session_id: 's1',
@@ -74,7 +74,7 @@ describe('auth.signSessionToken / verifySessionToken', () => {
   });
 
   it('rejects expired token', () => {
-    const config = withEnv({ BREVIO_SESSION_SIGNING_KEY: TEST_KEY, BREVIO_DEV_MODE: undefined }, () => loadAuthConfig());
+    const config = withEnv({ BREVIO_SESSION_SIGNING_KEY: TEST_KEY, BREVIO_DEV_MODE: undefined }, () => loadSessionConfig());
     const token = signSessionToken(config, {
       user_id: 'u1',
       session_id: 's1',
@@ -84,7 +84,7 @@ describe('auth.signSessionToken / verifySessionToken', () => {
   });
 
   it('rejects forged HMAC', () => {
-    const config = withEnv({ BREVIO_SESSION_SIGNING_KEY: TEST_KEY, BREVIO_DEV_MODE: undefined }, () => loadAuthConfig());
+    const config = withEnv({ BREVIO_SESSION_SIGNING_KEY: TEST_KEY, BREVIO_DEV_MODE: undefined }, () => loadSessionConfig());
     const token = signSessionToken(config, {
       user_id: 'u1',
       session_id: 's1',
@@ -95,7 +95,7 @@ describe('auth.signSessionToken / verifySessionToken', () => {
   });
 
   it('rejects tampered payload', () => {
-    const config = withEnv({ BREVIO_SESSION_SIGNING_KEY: TEST_KEY, BREVIO_DEV_MODE: undefined }, () => loadAuthConfig());
+    const config = withEnv({ BREVIO_SESSION_SIGNING_KEY: TEST_KEY, BREVIO_DEV_MODE: undefined }, () => loadSessionConfig());
     const token = signSessionToken(config, {
       user_id: 'u1',
       session_id: 's1',
@@ -107,7 +107,7 @@ describe('auth.signSessionToken / verifySessionToken', () => {
   });
 
   it('rejects empty/missing token', () => {
-    const config = withEnv({ BREVIO_SESSION_SIGNING_KEY: TEST_KEY, BREVIO_DEV_MODE: undefined }, () => loadAuthConfig());
+    const config = withEnv({ BREVIO_SESSION_SIGNING_KEY: TEST_KEY, BREVIO_DEV_MODE: undefined }, () => loadSessionConfig());
     assert.equal(verifySessionToken(config, undefined), null);
     assert.equal(verifySessionToken(config, ''), null);
     assert.equal(verifySessionToken(config, 'no-dot'), null);

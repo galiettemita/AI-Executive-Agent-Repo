@@ -1,13 +1,13 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 
 // Minimum-viable signed-session layer. NOT a full identity system — it only protects
-// the new /api/v1/me/* and /api/v1/oauth/* endpoints for THIS feature.
+// the future founder/admin endpoints once they go live (Phase 2B+).
 //
 // Token format: base64url(payloadJson) "." base64url(hmac)
 //   payloadJson = { user_id, session_id, expires_at }
 //
 // Production refuses to boot without BREVIO_SESSION_SIGNING_KEY. Dev mode escape
-// hatch: when BREVIO_DEV_MODE=true the auth-middleware accepts a plain x-user-id
+// hatch: when BREVIO_DEV_MODE=true the session middleware accepts a plain x-user-id
 // header instead of a signed token.
 
 export interface SessionTokenPayload {
@@ -16,12 +16,12 @@ export interface SessionTokenPayload {
   expires_at: number;
 }
 
-export interface AuthRuntimeConfig {
+export interface SessionRuntimeConfig {
   signingKey: Buffer | undefined;
   devMode: boolean;
 }
 
-export function loadAuthConfig(): AuthRuntimeConfig {
+export function loadSessionConfig(): SessionRuntimeConfig {
   const key = process.env.BREVIO_SESSION_SIGNING_KEY?.trim();
   const devMode = process.env.BREVIO_DEV_MODE === 'true';
   if (!key) {
@@ -52,7 +52,7 @@ function computeHmac(signingKey: Buffer, payload: string): Buffer {
   return createHmac('sha256', signingKey).update(payload).digest();
 }
 
-export function signSessionToken(config: AuthRuntimeConfig, payload: SessionTokenPayload): string {
+export function signSessionToken(config: SessionRuntimeConfig, payload: SessionTokenPayload): string {
   if (!config.signingKey) {
     throw new Error('cannot sign session token without signing key');
   }
@@ -62,7 +62,7 @@ export function signSessionToken(config: AuthRuntimeConfig, payload: SessionToke
   return `${payloadEncoded}.${sig}`;
 }
 
-export function verifySessionToken(config: AuthRuntimeConfig, token: string | undefined): SessionTokenPayload | null {
+export function verifySessionToken(config: SessionRuntimeConfig, token: string | undefined): SessionTokenPayload | null {
   if (!token) return null;
   if (!config.signingKey) return null;
   const dot = token.indexOf('.');

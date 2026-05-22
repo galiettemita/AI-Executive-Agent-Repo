@@ -1,12 +1,12 @@
 import type http from 'node:http';
 
 import {
-  type AuthRuntimeConfig,
+  type SessionRuntimeConfig,
   type SessionTokenPayload,
   extractBearerToken,
   extractCookieToken,
   verifySessionToken
-} from './auth.js';
+} from './session.js';
 
 export interface AuthenticatedContext {
   user_id: string;
@@ -27,7 +27,7 @@ function getHeader(req: http.IncomingMessage, name: string): string | undefined 
   return undefined;
 }
 
-export function authenticate(req: http.IncomingMessage, config: AuthRuntimeConfig): AuthenticatedContext | AuthFailure {
+export function authenticate(req: http.IncomingMessage, config: SessionRuntimeConfig): AuthenticatedContext | AuthFailure {
   const bearer = extractBearerToken(getHeader(req, 'authorization'));
   const cookie = extractCookieToken(getHeader(req, 'cookie'));
   const token = bearer ?? cookie;

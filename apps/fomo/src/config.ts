@@ -1,4 +1,4 @@
-import type { GatewayConfig } from './types.js';
+import type { FomoConfig } from './types.js';
 
 function parsePositiveInt(raw: string | undefined, fallback: number, field: string): number {
   if (!raw || raw.trim() === '') {
@@ -11,16 +11,16 @@ function parsePositiveInt(raw: string | undefined, fallback: number, field: stri
   return value;
 }
 
-export function loadGatewayConfig(): GatewayConfig {
+export function loadFomoConfig(): FomoConfig {
   return {
-    serviceName: 'brevio-gateway',
-    version: process.env.SERVICE_VERSION ?? '0.1.0',
+    serviceName: 'fomo',
+    version: process.env.SERVICE_VERSION ?? process.env.npm_package_version ?? '0.1.0',
     environment: process.env.NODE_ENV ?? 'development',
     port: parsePositiveInt(process.env.PORT, 8080, 'PORT'),
     shutdownTimeoutMs: parsePositiveInt(
-      process.env.BREVIO_GATEWAY_SHUTDOWN_TIMEOUT_MS,
+      process.env.FOMO_SHUTDOWN_TIMEOUT_MS,
       30000,
-      'BREVIO_GATEWAY_SHUTDOWN_TIMEOUT_MS'
+      'FOMO_SHUTDOWN_TIMEOUT_MS'
     )
   };
 }

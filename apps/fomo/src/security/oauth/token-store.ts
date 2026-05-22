@@ -1,4 +1,4 @@
-import { type CryptoConfig, decryptToken, encryptToken } from './crypto.js';
+import { type CryptoConfig, decryptToken, encryptToken } from '../token-crypto.js';
 
 export interface StoredTokenInput {
   user_id: string;
