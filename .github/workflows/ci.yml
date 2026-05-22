@@ -22,7 +22,9 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          # Node 22+ for stable --experimental-strip-types (the test scripts
+          # in services/* run .ts tests directly via node, no pre-compile).
+          node-version: '22'
           cache: pnpm
 
       - name: Install dependencies
