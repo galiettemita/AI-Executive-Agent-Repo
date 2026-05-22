@@ -1,6 +1,0 @@
-{
-  "provider": "spotify-history",
-  "action": "listening_summary",
-  "top_tracks_count": 2,
-  "total_listening_minutes": 1340
-}

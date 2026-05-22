@@ -1,6 +1,0 @@
-{
-  "status": "SUCCESS",
-  "provider": "healthkit-sync",
-  "state": "",
-  "input": {"action":"sync_sleep","days":3}
-}

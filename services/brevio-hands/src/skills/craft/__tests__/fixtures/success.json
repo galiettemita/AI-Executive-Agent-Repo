@@ -1,6 +1,0 @@
-{
-  "status": "SUCCESS",
-  "provider": "craft",
-  "state": "",
-  "input": {"action":"create_doc","doc_title":"Weekly Notes"}
-}

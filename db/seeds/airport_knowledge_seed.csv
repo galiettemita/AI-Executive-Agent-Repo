@@ -1,6 +1,0 @@
-iata_code,icao_code,name,city,country,timezone,latitude,longitude,terminals,transit_info
-JFK,KJFK,John F Kennedy International Airport,New York,US,America/New_York,40.6413,-73.7781,"[""1"",""4"",""5"",""7"",""8""]","subway,airtrain,bus"
-LAX,KLAX,Los Angeles International Airport,Los Angeles,US,America/Los_Angeles,33.9416,-118.4085,"[""T1"",""T2"",""T3"",""T4""]","bus,rideshare,rental_car"
-SFO,KSFO,San Francisco International Airport,San Francisco,US,America/Los_Angeles,37.6213,-122.3790,"[""1"",""2"",""3"",""International""]","bart,bus,rideshare"
-ORD,KORD,O'Hare International Airport,Chicago,US,America/Chicago,41.9742,-87.9073,"[""1"",""2"",""3"",""5""]","train,bus,rideshare"
-ATL,KATL,Hartsfield-Jackson Atlanta International Airport,Atlanta,US,America/New_York,33.6407,-84.4277,"[""T"",""A"",""B"",""C"",""D"",""E"",""F""]","marta,bus,rideshare"

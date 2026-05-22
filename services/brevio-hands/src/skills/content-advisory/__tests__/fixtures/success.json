@@ -1,6 +1,0 @@
-{
-  "status": "SUCCESS",
-  "provider": "content-advisory",
-  "state": "",
-  "input": {"action":"evaluate_title","title":"Example Film"}
-}

@@ -1,7 +1,0 @@
-{
-  "transcript": "Please summarize my 10am leadership meeting and capture action items.",
-  "language": "en-US",
-  "confidence": 0.91,
-  "segment_count": 2,
-  "latency_budget_ms": 3000
-}

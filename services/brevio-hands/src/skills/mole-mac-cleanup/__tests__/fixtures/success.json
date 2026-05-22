@@ -1,6 +1,0 @@
-{
-  "status": "SUCCESS",
-  "provider": "mole-mac-cleanup",
-  "state": "",
-  "input": {"action":"scan_cleanup","mode":"quick"}
-}

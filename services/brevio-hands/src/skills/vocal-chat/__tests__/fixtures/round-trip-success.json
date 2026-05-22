@@ -1,9 +1,0 @@
-{
-  "provider": "vocal-chat",
-  "transcript": "Move my strategy sync to tomorrow at 11 and notify the team.",
-  "reply_text": "Understood. I will reschedule the strategy sync for tomorrow at 11 and prepare the team update draft.",
-  "reply_audio_url": "https://cdn.brevio.local/voice/vocal-chat/understood-i-will-reschedule-the-strat.alloy.mp3",
-  "stt_provider": "asr",
-  "tts_provider": "openai-tts",
-  "latency_budget_ms": 5000
-}

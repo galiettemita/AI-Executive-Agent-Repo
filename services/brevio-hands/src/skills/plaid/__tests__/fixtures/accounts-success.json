@@ -1,5 +1,0 @@
-{
-  "provider": "plaid",
-  "action": "accounts",
-  "accounts_count": 2
-}

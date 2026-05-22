@@ -1,6 +1,0 @@
-{
-  "status": "SUCCESS",
-  "provider": "coloring-page",
-  "state": "",
-  "input": {"action":"generate_from_prompt","prompt":"A happy dragon"}
-}

@@ -1,6 +1,0 @@
-{
-  "status": "SUCCESS",
-  "provider": "figma",
-  "state": "",
-  "input": {"action":"analyze_file","file_key":"abc123"}
-}

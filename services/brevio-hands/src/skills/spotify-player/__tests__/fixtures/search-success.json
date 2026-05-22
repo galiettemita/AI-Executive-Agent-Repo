@@ -1,6 +1,0 @@
-{
-  "provider": "spotify-player",
-  "action": "search_tracks",
-  "tracks_count": 1,
-  "queue_length": 4
-}

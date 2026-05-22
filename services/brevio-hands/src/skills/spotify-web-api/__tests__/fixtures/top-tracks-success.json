@@ -1,6 +1,0 @@
-{
-  "provider": "spotify-web-api",
-  "action": "top_tracks",
-  "results_count": 3,
-  "top_name": "Deep Work Pulse"
-}

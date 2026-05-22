@@ -1,6 +1,0 @@
-{
-  "status": "SUCCESS",
-  "provider": "sonoscli",
-  "state": "",
-  "input": {"action":"discover"}
-}

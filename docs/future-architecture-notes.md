@@ -21,16 +21,16 @@ Companion to:
 **Recovery commands** (every archived file is retrievable):
 ```bash
 # See the file as it was when archived:
-git show <archive-commit-sha>:<original-path>
+git show a288f3ed:<original-path>
 
 # Restore the file to the working tree (do not commit unless intentional):
-git checkout <archive-commit-sha> -- <original-path>
+git checkout a288f3ed -- <original-path>
 
 # Find when a file was last in HEAD:
 git log --all --diff-filter=D --summary -- <original-path>
 ```
 
-The `archive-commit-sha` for the initial FOMO cleanup is the SHA of commit 4 in [FOMO_PLAN.md](../FOMO_PLAN.md) §RC3 (filled in when that commit lands).
+The initial FOMO cleanup baseline is **`a288f3ed`** — *"baseline: bring openclaw-phase0 salvage candidates into the tree"* (2026-05-22). Every recovery command in this file references that SHA. See also [SALVAGE_DECISIONS.md](../SALVAGE_DECISIONS.md) for the per-file verdicts.
 
 ---
 
@@ -70,7 +70,7 @@ When L6 starts (the first MCP tool integration beyond FOMO), do not restore this
 4. **Fanout / parallel execution is premature.** Don't build it until you have a real flow that benefits (e.g., L6 "compare flights" where 3 providers return in parallel). Even then, `Promise.all` is sufficient until you outgrow it.
 
 ### Recovery
-`git show <archive-commit-sha>:services/brevio-brain/src/planner.ts`
+`git show a288f3ed:services/brevio-brain/src/planner.ts`
 
 ---
 
@@ -108,8 +108,8 @@ When that bar is hit, evaluate:
 The choreography concepts (state transitions, idempotency, retry, deterministic step IDs) survive every choice.
 
 ### Recovery
-- `git show <archive-commit-sha>:services/brevio-brain/src/workflow-runtime.ts`
-- `git show <archive-commit-sha>:services/brevio-gateway/src/workflow-runtime.ts`
+- `git show a288f3ed:services/brevio-brain/src/workflow-runtime.ts`
+- `git show a288f3ed:services/brevio-gateway/src/workflow-runtime.ts`
 
 ---
 
@@ -148,7 +148,7 @@ For the future agent, do decomposition with an LLM that returns a JSON DAG:
 Then run the regex-based decomposition as a **validation step**: parse the user's text deterministically, compare the count and parallelism cues against the LLM's DAG, flag mismatches for review. The deterministic cues survive as a sanity check on the LLM.
 
 ### Recovery
-`git show <archive-commit-sha>:services/brevio-brain/src/decompose.ts`
+`git show a288f3ed:services/brevio-brain/src/decompose.ts`
 
 ---
 
@@ -178,7 +178,7 @@ When you have multi-tool flows (L6+), this layer is necessary. Build it as:
 Keep the "single user-facing response from N internal results" pattern. Drop the channel-aware formatting.
 
 ### Recovery
-`git show <archive-commit-sha>:services/brevio-brain/src/aggregate.ts`
+`git show a288f3ed:services/brevio-brain/src/aggregate.ts`
 
 ---
 
@@ -212,7 +212,7 @@ For L2+, replace rule-based routing with **LLM-native tool-calling**:
 Code excerpt worth remembering: the safety-wrapper shape (decide → check → execute or reject) is what makes the Policy/Safety Engine and Tool Router separable.
 
 ### Recovery
-`git show <archive-commit-sha>:services/brevio-brain/src/disambiguate.ts`
+`git show a288f3ed:services/brevio-brain/src/disambiguate.ts`
 
 ---
 
@@ -246,7 +246,7 @@ For L2+, do not restore the keyword router. Replace with:
 The 216 lines of keyword patterns are landfill. The catalog and tier overlay are gold.
 
 ### Recovery
-`git show <archive-commit-sha>:services/brevio-brain/src/classify.ts`
+`git show a288f3ed:services/brevio-brain/src/classify.ts`
 
 ---
 
@@ -277,7 +277,7 @@ When L6 starts (≥10 tools), build:
 3. **Bind to the catalog from §Intent Classification** — capability_inventory rows reference catalog entries, don't duplicate metadata.
 
 ### Recovery
-`git show <archive-commit-sha>:packages/shared/src/capability-inventory.ts`
+`git show a288f3ed:packages/shared/src/capability-inventory.ts`
 
 ---
 
@@ -312,7 +312,7 @@ Don't build until you have a concrete multi-agent use case. Examples that would 
 For any of those: borrow the AgentCard shape. Drop the AgentTask state machine if you're using a real workflow runtime.
 
 ### Recovery
-`git show <archive-commit-sha>:packages/shared/src/schemas/a2a-runtime.ts`
+`git show a288f3ed:packages/shared/src/schemas/a2a-runtime.ts`
 
 ---
 
@@ -351,7 +351,7 @@ When L4 starts (sending), bring tier infrastructure back. Recommended shape:
 3. **The User Approval Engine and Policy/Safety Engine separate concerns:** Policy decides "this action requires approval"; Approval routes the request through the right UX. They share the tier as their interface.
 
 ### Recovery
-`git show <archive-commit-sha>:packages/shared/src/skill-tiers.ts`
+`git show a288f3ed:packages/shared/src/skill-tiers.ts`
 
 ---
 
@@ -384,7 +384,7 @@ For any future tool that requires OAuth-during-conversation (Calendar OAuth at L
 The state machine: `pending → oauth_started → oauth_completed → resumed → completed`. Or `pending → expired → audit_log`.
 
 ### Recovery
-`git show <archive-commit-sha>:services/brevio-gateway/src/pending-message-store.ts`
+`git show a288f3ed:services/brevio-gateway/src/pending-message-store.ts`
 
 ---
 
@@ -427,7 +427,7 @@ For L4 (sending), the per-action approval flow looks like:
 **Build fresh**: multi-action plan loop, brand-specific copy, the per-provider explanations.
 
 ### Recovery
-`git show <archive-commit-sha>:services/brevio-brain/src/gating.ts`
+`git show a288f3ed:services/brevio-brain/src/gating.ts`
 
 ---
 
@@ -459,8 +459,8 @@ When you do split, draw boundaries around **concerns** (auth, ingestion, ranking
 The Go binaries had no salvageable concepts that aren't already represented in the TS code. The decision to consolidate on TS holds.
 
 ### Recovery
-- Service inventory: `git show <archive-commit-sha>:services/` (will list the 11 service directories)
-- Go source: `git show <archive-commit-sha>:cmd/` and `git show <archive-commit-sha>:internal/`
+- Service inventory: `git show a288f3ed:services/` (will list the 11 service directories)
+- Go source: `git show a288f3ed:cmd/` and `git show a288f3ed:internal/`
 
 ---
 
@@ -606,15 +606,15 @@ When L6 starts (first MCP tool integration beyond FOMO), build the router as:
 
 ### Recovery
 
-- `git show <archive-commit-sha>:internal/llm/providers.go`
-- `git show <archive-commit-sha>:internal/llm/service.go`
-- `git show <archive-commit-sha>:internal/llm/providers_test.go`
-- `git show <archive-commit-sha>:internal/llm/service_test.go`
-- `git show <archive-commit-sha>:services/brevio-brain/src/types.ts` (for `PlannerProvider`; `ExternalModelEgress` is live at `apps/fomo/src/core/egress-policy.ts`)
-- `git show <archive-commit-sha>:services/brevio-brain/src/config.ts`
-- `git show <archive-commit-sha>:config/prompt-templates/intent-classify-v1.yaml`
-- `git show <archive-commit-sha>:config/prompt-templates/response-gen-v1.yaml`
-- `git show <archive-commit-sha>:config/prompt-templates/task-decompose-v1.yaml`
+- `git show a288f3ed:internal/llm/providers.go`
+- `git show a288f3ed:internal/llm/service.go`
+- `git show a288f3ed:internal/llm/providers_test.go`
+- `git show a288f3ed:internal/llm/service_test.go`
+- `git show a288f3ed:services/brevio-brain/src/types.ts` (for `PlannerProvider`; `ExternalModelEgress` is live at `apps/fomo/src/core/egress-policy.ts`)
+- `git show a288f3ed:services/brevio-brain/src/config.ts`
+- `git show a288f3ed:config/prompt-templates/intent-classify-v1.yaml`
+- `git show a288f3ed:config/prompt-templates/response-gen-v1.yaml`
+- `git show a288f3ed:config/prompt-templates/task-decompose-v1.yaml`
 
 ---
 
@@ -669,13 +669,61 @@ When archiving a new module, append a section using this template:
 <when this concept becomes load-bearing, what to keep, what to redo, what trigger justifies bringing it back>
 
 ### Recovery
-`git show <archive-commit-sha>:<path>`
+`git show a288f3ed:<path>`
 ```
 
 Then add a row in the §Index by Layer.
 
+## Phase 1 deeper archive (2026-05-22)
+
+The original plan archived planner, decompose, aggregate, disambiguate, classify, workflow-runtime, capability-inventory, a2a-runtime, skill-tiers, and pending-message-store. Phase 1 execution found that several other brain and gateway modules were so tightly coupled to those archived types that "salvage" would have meant a rewrite. Per the SALVAGE_MAP 48-hour gate's escape hatch, they were archived too. They all live at baseline `a288f3ed`.
+
+### Additional brain archives
+
+- **`services/brevio-brain/src/catalog.ts`** (217 lines) — 50-skill tool catalog (`TOOL_CATALOG`, `getToolDescriptor`, `getCategoryForSkill`, `getSkillsByTier`, …). The v9-era assistant fanned across 12+ skill groups; FOMO v0.1 has 6 active tools. The catalog concept survives in §Intent Classification ("Keep the catalog hierarchy"); the specific 50-skill table is landfill. **When the second v0.1 tool ships:** start a fresh `TOOL_REGISTRY` in `apps/fomo/src/core/tool-registry.ts` with only registered tools. Recovery: `git show a288f3ed:services/brevio-brain/src/catalog.ts`.
+
+- **`services/brevio-brain/src/policy.ts`** (313 lines) — built `ActionPolicyMetadata` + `PlanPolicySummary` from planned actions; included PII regex helpers (`emailPattern`, `phonePattern`, `ssnPattern`, `cardPattern`, `credentialPattern`, `financialPattern`, `healthPattern`, `communicationPattern`) and `redactSensitiveText`. **Keep the PII regex set** — it's directly useful for Phase 3 egress redaction (sender/subject/snippet sanitization before the model sees them). The privacy-mode / consent / external-egress decision tree was wrapped around `NormalizedReasoningRequest` and dies with it; rebuild it small for v0.1 in `apps/fomo/src/core/egress-policy.ts` to enforce the `redacted_only` default for friend beta. Recovery: `git show a288f3ed:services/brevio-brain/src/policy.ts`.
+
+- **`services/brevio-brain/src/verify.ts`** (163 lines) — pre-action verifier that operated on `PlannerProposal`. The CONCEPT — *"before this action commits, check it against the policy summary and emit issues/warnings"* — is exactly what Phase 3 needs for the "should we send this iMessage?" check. The structured output shape `{ valid: boolean, issues: string[], warnings: string[] }` is durable and worth restoring verbatim. The plan-specific validations (`requires_approval_mismatch`, `weak_idempotency_key_for_*`, `unplanned_skill_result:*`) are landfill. Recovery: `git show a288f3ed:services/brevio-brain/src/verify.ts`.
+
+- **`services/brevio-brain/src/normalize.ts`** (59 lines) — normalized `IntentClassificationInput`/`ProcessRequest` into a canonical `NormalizedReasoningRequest`. The merge-preferences-with-profile helper is reusable but trivial. Recovery: `git show a288f3ed:services/brevio-brain/src/normalize.ts`.
+
+- **`services/brevio-brain/src/gating.ts`** (165 lines) — consent / credential / bundle-suggestion gate over a `PlannerProposal`. Concept already documented in §Approval Gating; the file deepens that section's evidence: notice how `evaluateGating` cleanly separates "category consent missing" from "OAuth provider not connected" from "bundle upsell available" — that three-way split is the right user-facing UX shape (consent prompt, OAuth link, upsell card). Recovery: `git show a288f3ed:services/brevio-brain/src/gating.ts`.
+
+### Additional gateway archives
+
+- **`services/brevio-gateway/src/consent-routes.ts`** (328 lines) and **`consent-store.ts`** (113 lines) — chat-UI consent flow with skill-tier category overlay (email / money / health). The `granted | revoked | snoozed | never_asked` state machine is gold (already noted in §Capability Discovery), as is the per-action audit-log write-then-respond pattern in the HTTP handlers. The cascade-revoke logic (`revokeCategory` → `tokenStore.delete` for each provider in `providers_to_disconnect`) is the right shape for the eventual Approval Engine's "user disabled X" flow. v0.1 builds a minimal `gmail_read` consent toggle in Phase 3 — no category overlay, just `granted | revoked`. Recovery: `git show a288f3ed:services/brevio-gateway/src/consent-routes.ts`, `git show a288f3ed:services/brevio-gateway/src/consent-store.ts`.
+
+- **`services/brevio-gateway/src/oauth-routes.ts`** (279 lines) — multi-skill OAuth route handler (`handleOAuthStart`, `handleOAuthCallback`) that picked provider + scopes from a skill catalog. The handler shape — *start → state HMAC + PKCE + nonce → redirect to provider; callback → verify state → exchange code → store token → write audit → redirect* — is durable. **Keep the audit-on-every-transition pattern** (`oauth.connect` / `oauth.disconnect` / `oauth.refresh` / `oauth.revoke_failed` actions in audit.ts); when Phase 3 rebuilds the v0.1 single-provider OAuth flow it should write the same audit actions. Recovery: `git show a288f3ed:services/brevio-gateway/src/oauth-routes.ts`.
+
+- **`services/brevio-gateway/src/format.ts`** (31 lines) — channel-aware outbound text formatter (WhatsApp 4096-char limit, iMessage newline normalization). The `trimToMax` + ellipsis pattern is reusable but trivial. SendBlue handles iMessage in v0.1; the channel-aware abstraction returns at L6+. Recovery: `git show a288f3ed:services/brevio-gateway/src/format.ts`.
+
+- **`services/brevio-gateway/src/normalize.ts`** (200 lines) — webhook envelope normalizer for WhatsApp/iMessage inbound. Imported the archived `capability-inventory` from `@brevio/shared`. The merge-explicit-with-inventory pattern for `enabled_skills` is the same pattern reborn in §Capability Discovery. Recovery: `git show a288f3ed:services/brevio-gateway/src/normalize.ts`.
+
+- **`services/brevio-gateway/src/rate-limit.ts`** (72 lines) — token-bucket rate limiter per `(endpoint, user_id)`. Generic enough that Phase 3 can restore it verbatim if the FOMO inbound webhook needs throttling. Recovery: `git show a288f3ed:services/brevio-gateway/src/rate-limit.ts`.
+
+- **`services/brevio-gateway/src/security.ts`** (36 lines) — WhatsApp HMAC + API key verification. The HMAC verify shape (constant-time comparison, header parsing) is reusable for the eventual SendBlue inbound webhook signature in Phase 5. Recovery: `git show a288f3ed:services/brevio-gateway/src/security.ts`.
+
+- **`services/brevio-gateway/src/state.ts`** (150 lines) — in-memory `GatewayState` with session windows, rate-limit windows, dedup cache. The minute/hour rolling-window approach is correct for rate limits. Recovery: `git show a288f3ed:services/brevio-gateway/src/state.ts`.
+
+### Additional shared archive
+
+- **`packages/shared/src/schemas/message-envelope.ts`** (93 lines) — Zod + JSONSchema validators for the multi-process `MessageEnvelope` (gateway → brain → hands). v0.1 collapses to a single deployable so there's no inter-process envelope to validate. If a future split reintroduces the boundary (per §Multi-Process Service Boundaries), this file is the reference shape. Recovery: `git show a288f3ed:packages/shared/src/schemas/message-envelope.ts`.
+
+### Index by Layer — additions
+
+| Layer | Concept | Added section |
+|---|---|---|
+| Cross-cutting | PII redaction regex set | §Additional brain archives → policy.ts |
+| L3 (Drafting) / L4 (Sending) | "Should I send this?" pre-action verifier | §Additional brain archives → verify.ts |
+| L3-L6 | Audit-on-every-OAuth-transition pattern | §Additional gateway archives → oauth-routes.ts |
+| Phase 5+ | HMAC verify shape for SendBlue inbound | §Additional gateway archives → security.ts |
+| Cross-cutting | Token-bucket per (endpoint, user_id) rate limit | §Additional gateway archives → rate-limit.ts |
+
+---
+
 ## Maintenance
 
 - This doc is updated on every cleanup PR that archives a new module.
-- The `<archive-commit-sha>` placeholder in each Recovery line is replaced with the actual commit hash when the deletion lands. Until then, the file is still in the working tree and accessible at HEAD.
+- The `a288f3ed` baseline SHA is fixed; if a later cleanup commit archives more modules, append a new "Phase N deeper archive (date)" section with its own SHA.
 - Stale entries (e.g., a future-implementation guidance line that turns out to be wrong after the concept is re-implemented) are not removed — they are amended with a `### Update YYYY-MM-DD` block recording what changed and why. Institutional memory means recording corrections too.

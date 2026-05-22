@@ -1,6 +1,0 @@
-{
-  "status": "SUCCESS",
-  "provider": "",
-  "state": "on",
-  "input": {"entity_id":"lock.front_door","action":"unlock","two_factor_code":"123456"}
-}
