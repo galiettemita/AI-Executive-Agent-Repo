@@ -1,7 +1,9 @@
-// Per-provider OAuth configuration. Defines authorize/token/revoke URLs,
-// client ID/secret env vars, and supported providers list.
+// Per-provider OAuth configuration. v0.1 supports Google only per
+// FOMO_PLAN §9.2 ("v0.1 provider: Google Gmail read-only"). The token
+// store and crypto primitives accept arbitrary provider strings for
+// abstraction; this registry is the gateway to live OAuth flows.
 
-export type OAuthProviderId = 'google' | 'microsoft' | 'apple' | 'spotify' | 'github' | 'notion';
+export type OAuthProviderId = 'google';
 
 export interface ProviderConfig {
   id: OAuthProviderId;
@@ -14,7 +16,7 @@ export interface ProviderConfig {
   extraAuthorizeParams?: Record<string, string>;
 }
 
-export const SUPPORTED_PROVIDERS: OAuthProviderId[] = ['google', 'microsoft', 'apple', 'spotify', 'github', 'notion'];
+export const SUPPORTED_PROVIDERS: OAuthProviderId[] = ['google'];
 
 export function isSupportedProvider(value: unknown): value is OAuthProviderId {
   return typeof value === 'string' && (SUPPORTED_PROVIDERS as readonly string[]).includes(value);
@@ -39,41 +41,6 @@ const PROVIDER_SPECS: Record<OAuthProviderId, ProviderEnvSpec> = {
     clientSecretEnv: 'GOOGLE_CLIENT_SECRET',
     redirectUriEnv: 'BREVIO_OAUTH_REDIRECT_URI_GOOGLE',
     extraAuthorizeParams: { access_type: 'offline', prompt: 'consent' }
-  },
-  microsoft: {
-    authorizeUrl: 'https://login.microsoftonline.com/common/oauth2/v2.0/authorize',
-    tokenUrl: 'https://login.microsoftonline.com/common/oauth2/v2.0/token',
-    clientIdEnv: 'MICROSOFT_CLIENT_ID',
-    clientSecretEnv: 'MICROSOFT_CLIENT_SECRET',
-    redirectUriEnv: 'BREVIO_OAUTH_REDIRECT_URI_MICROSOFT'
-  },
-  apple: {
-    authorizeUrl: 'https://appleid.apple.com/auth/authorize',
-    tokenUrl: 'https://appleid.apple.com/auth/token',
-    clientIdEnv: 'APPLE_CLIENT_ID',
-    clientSecretEnv: 'APPLE_CLIENT_SECRET',
-    redirectUriEnv: 'BREVIO_OAUTH_REDIRECT_URI_APPLE'
-  },
-  spotify: {
-    authorizeUrl: 'https://accounts.spotify.com/authorize',
-    tokenUrl: 'https://accounts.spotify.com/api/token',
-    clientIdEnv: 'SPOTIFY_CLIENT_ID',
-    clientSecretEnv: 'SPOTIFY_CLIENT_SECRET',
-    redirectUriEnv: 'BREVIO_OAUTH_REDIRECT_URI_SPOTIFY'
-  },
-  github: {
-    authorizeUrl: 'https://github.com/login/oauth/authorize',
-    tokenUrl: 'https://github.com/login/oauth/access_token',
-    clientIdEnv: 'GITHUB_CLIENT_ID',
-    clientSecretEnv: 'GITHUB_CLIENT_SECRET',
-    redirectUriEnv: 'BREVIO_OAUTH_REDIRECT_URI_GITHUB'
-  },
-  notion: {
-    authorizeUrl: 'https://api.notion.com/v1/oauth/authorize',
-    tokenUrl: 'https://api.notion.com/v1/oauth/token',
-    clientIdEnv: 'NOTION_CLIENT_ID',
-    clientSecretEnv: 'NOTION_CLIENT_SECRET',
-    redirectUriEnv: 'BREVIO_OAUTH_REDIRECT_URI_NOTION'
   }
 };
 
