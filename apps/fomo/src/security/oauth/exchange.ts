@@ -1,7 +1,7 @@
-// OAuth code exchange + refresh + revoke. Uses fetch (Node 24 has it global).
+// OAuth code exchange + refresh + revoke. Uses fetch (Node 22+ has it global).
 // Pure functions; tests inject a mock fetch.
 
-import type { ProviderConfig } from './oauth-providers/index.js';
+import type { ProviderConfig } from './providers/index.js';
 
 export type FetchLike = typeof fetch;
 

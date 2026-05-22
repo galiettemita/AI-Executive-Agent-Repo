@@ -1,4 +1,4 @@
-export interface GatewayConfig {
+export interface FomoConfig {
   serviceName: string;
   version: string;
   environment: string;

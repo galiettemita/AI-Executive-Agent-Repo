@@ -2,11 +2,12 @@ import { randomUUID } from 'node:crypto';
 import http from 'node:http';
 import { pathToFileURL } from 'node:url';
 
-import { loadGatewayConfig } from './config.js';
-import type { GatewayConfig, RequestContext } from './types.js';
+import { loadFomoConfig } from './config.js';
+import { handleHealth } from './routes/health.js';
+import type { FomoConfig, RequestContext } from './types.js';
 
-interface GatewayRuntime {
-  config: GatewayConfig;
+interface FomoRuntime {
+  config: FomoConfig;
   server: http.Server;
   startedAtMs: number;
   close(): Promise<void>;
@@ -33,7 +34,7 @@ function requestContext(req: http.IncomingMessage): RequestContext {
 }
 
 function logEvent(
-  config: GatewayConfig,
+  config: FomoConfig,
   ctx: RequestContext | undefined,
   event: string,
   severity: 'INFO' | 'WARN' | 'ERROR',
@@ -60,7 +61,7 @@ function sendJSON(res: http.ServerResponse, statusCode: number, payload: Record<
   res.end(JSON.stringify(payload));
 }
 
-export function createGatewayRuntime(config: GatewayConfig = loadGatewayConfig()): GatewayRuntime {
+export function createFomoRuntime(config: FomoConfig = loadFomoConfig()): FomoRuntime {
   const startedAtMs = Date.now();
 
   const server = http.createServer((req, res) => {
@@ -69,19 +70,14 @@ export function createGatewayRuntime(config: GatewayConfig = loadGatewayConfig()
     const path = (req.url ?? '/').split('?')[0] ?? '/';
 
     if (method === 'GET' && path === '/health') {
-      sendJSON(res, 200, {
-        status: 'ok',
-        service: config.serviceName,
-        version: config.version,
-        uptime_ms: Date.now() - startedAtMs
-      });
+      handleHealth(res, config, startedAtMs);
       return;
     }
 
     sendJSON(res, 404, { error: 'not_found', request_id: ctx.requestId });
   });
 
-  const runtime: GatewayRuntime = {
+  const runtime: FomoRuntime = {
     config,
     server,
     startedAtMs,
@@ -93,22 +89,22 @@ export function createGatewayRuntime(config: GatewayConfig = loadGatewayConfig()
   };
 
   server.on('listening', () => {
-    logEvent(config, undefined, 'gateway.server.listening', 'INFO', { port: config.port });
+    logEvent(config, undefined, 'fomo.server.listening', 'INFO', { port: config.port });
   });
 
   return runtime;
 }
 
 export async function main(): Promise<void> {
-  const runtime = createGatewayRuntime();
+  const runtime = createFomoRuntime();
   runtime.server.listen(runtime.config.port);
 
   const shutdown = async (signal: string): Promise<void> => {
-    logEvent(runtime.config, undefined, 'gateway.server.shutting_down', 'INFO', { signal });
+    logEvent(runtime.config, undefined, 'fomo.server.shutting_down', 'INFO', { signal });
     try {
       await runtime.close();
     } catch (err) {
-      logEvent(runtime.config, undefined, 'gateway.server.shutdown_error', 'ERROR', {
+      logEvent(runtime.config, undefined, 'fomo.server.shutdown_error', 'ERROR', {
         error: err instanceof Error ? err.message : String(err)
       });
       process.exitCode = 1;

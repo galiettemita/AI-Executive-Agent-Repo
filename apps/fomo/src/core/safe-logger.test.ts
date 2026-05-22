@@ -57,7 +57,7 @@ describe('safeLog', () => {
     let captured = '';
     safeLog(
       {
-        service: 'gateway',
+        service: 'fomo',
         environment: 'test',
         event: 'consent.write',
         severity: 'INFO',
@@ -67,7 +67,7 @@ describe('safeLog', () => {
         captured = line;
       }
     );
-    assert.match(captured, /"service":"gateway"/);
+    assert.match(captured, /"service":"fomo"/);
     assert.match(captured, /"event":"consent\.write"/);
     assert.match(captured, /"access_token":"<redacted>"/);
     assert.match(captured, /"user_id":"u1"/);

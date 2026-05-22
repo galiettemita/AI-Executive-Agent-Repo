@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { loadCryptoConfig } from './crypto.ts';
+import { loadCryptoConfig } from '../token-crypto.ts';
 import { InMemoryTokenStore } from './token-store.ts';
 
 const TEST_KEK = Buffer.alloc(32, 5).toString('base64');

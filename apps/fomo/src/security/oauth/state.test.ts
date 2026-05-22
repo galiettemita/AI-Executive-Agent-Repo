@@ -10,7 +10,7 @@ import {
   generatePKCEVerifier,
   loadOAuthStateConfig,
   verifyState
-} from './oauth-state.ts';
+} from './state.ts';
 
 const TEST_KEY = Buffer.alloc(32, 3).toString('base64');
 

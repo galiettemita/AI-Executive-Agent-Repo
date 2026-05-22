@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { OAuthError, exchangeCodeForToken, refreshAccessToken, revokeAtProvider } from './oauth-exchange.ts';
-import type { ProviderConfig } from './oauth-providers/index.ts';
+import { OAuthError, exchangeCodeForToken, refreshAccessToken, revokeAtProvider } from './exchange.ts';
+import type { ProviderConfig } from './providers/index.ts';
 
 const config: ProviderConfig = {
   id: 'google',

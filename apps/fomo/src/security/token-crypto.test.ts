@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { CRYPTO_KEY_VERSION, decryptToken, encryptToken, loadCryptoConfig } from './crypto.ts';
+import { CRYPTO_KEY_VERSION, decryptToken, encryptToken, loadCryptoConfig } from './token-crypto.ts';
 
 const TEST_KEK = Buffer.alloc(32, 9).toString('base64');
 
@@ -22,7 +22,7 @@ function withEnv<T>(env: Record<string, string | undefined>, fn: () => T): T {
   }
 }
 
-describe('crypto.loadCryptoConfig', () => {
+describe('token-crypto.loadCryptoConfig', () => {
   it('refuses to boot without KEK in non-dev mode', () => {
     withEnv({ BREVIO_TOKEN_KEK: undefined, BREVIO_DEV_MODE: undefined }, () => {
       assert.throws(() => loadCryptoConfig(), /BREVIO_TOKEN_KEK required/);
@@ -44,7 +44,7 @@ describe('crypto.loadCryptoConfig', () => {
   });
 });
 
-describe('crypto.encryptToken / decryptToken', () => {
+describe('token-crypto.encryptToken / decryptToken', () => {
   const config = withEnv({ BREVIO_TOKEN_KEK: TEST_KEK, BREVIO_DEV_MODE: undefined }, () => loadCryptoConfig());
 
   it('round-trips plaintext', () => {
