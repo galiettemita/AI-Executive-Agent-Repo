@@ -1,3 +1,4 @@
+import { getDefaultEnabledSkills, getSkillsByTier } from './catalog.js';
 import type {
   IntentClassificationInput,
   NormalizedReasoningRequest,
@@ -21,12 +22,24 @@ function mergePreferences(profile: UserProfile | undefined, topLevel: UserPrefer
   };
 }
 
+function computeDefaultEnabledSkills(grantedCategories: Array<'email' | 'money' | 'health'> | undefined): string[] {
+  const skills = [...getDefaultEnabledSkills()];
+  if (grantedCategories?.includes('email')) skills.push(...getSkillsByTier('email'));
+  if (grantedCategories?.includes('money')) skills.push(...getSkillsByTier('money'));
+  if (grantedCategories?.includes('health')) skills.push(...getSkillsByTier('health'));
+  return [...new Set(skills)];
+}
+
 export function normalizeReasoningInput<T extends IntentClassificationInput | ProcessRequest>(input: T): NormalizedReasoningRequest {
   const userProfile: UserProfile = {
     ...(input.user_profile ?? {})
   };
 
   const preferences = mergePreferences(userProfile, input.user_preferences);
+
+  const explicitEnabled = dedupeStrings(userProfile.enabled_skills);
+  const grantedCategories = userProfile.granted_categories ?? [];
+  const enabled_skills = explicitEnabled ?? computeDefaultEnabledSkills(grantedCategories);
 
   return {
     ...input,
@@ -35,8 +48,10 @@ export function normalizeReasoningInput<T extends IntentClassificationInput | Pr
     channel: input.channel,
     user_profile: {
       ...userProfile,
-      enabled_skills: dedupeStrings(userProfile.enabled_skills),
+      enabled_skills,
       recent_intents: dedupeStrings(userProfile.recent_intents),
+      granted_categories: grantedCategories,
+      connected_providers: userProfile.connected_providers ?? [],
       preferences
     },
     user_preferences: preferences

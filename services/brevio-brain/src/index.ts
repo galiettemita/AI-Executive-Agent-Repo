@@ -7,6 +7,7 @@ import { classifyIntent } from './classify.js';
 import { loadBrainConfig, loadDisambiguationRules } from './config.js';
 import { decomposeTask } from './decompose.js';
 import { disambiguateSkills } from './disambiguate.js';
+import { evaluateBundleSuggestion, evaluateGating } from './gating.js';
 import { normalizeReasoningInput } from './normalize.js';
 import { buildPlannerProposal } from './planner.js';
 import type {
@@ -463,6 +464,8 @@ function buildRuntime(config?: BrainConfig): BrainRuntime {
 
         const classification = classifyIntent(request);
         const { decomposition, disambiguation, plan } = await buildPlannerProposal(request, runtime.disambiguationRules, runtime.config);
+        const gating = evaluateGating(plan, request);
+        const bundleSuggestion = gating.outcome === 'pass' ? evaluateBundleSuggestion(plan, request) : undefined;
         const verification = verifyPlan(plan, request.skill_results, request);
         const aggregation = request.skill_results && request.skill_results.length > 0
           ? aggregateResults({
@@ -474,13 +477,17 @@ function buildRuntime(config?: BrainConfig): BrainRuntime {
             })
           : undefined;
 
-        const executionStatus = !verification.valid
-          ? 'verification_failed'
-          : plan.requires_clarification
+        const executionStatus = gating.outcome === 'requires_consent'
+          ? 'clarification_required'
+          : gating.outcome === 'requires_credentials'
             ? 'clarification_required'
-            : aggregation
-              ? 'completed'
-              : 'dispatch_ready';
+            : !verification.valid
+              ? 'verification_failed'
+              : plan.requires_clarification
+                ? 'clarification_required'
+                : aggregation
+                  ? 'completed'
+                  : 'dispatch_ready';
 
         const planRegistration = verification.valid
           ? await registerExecutionPlan(plan.run_id, plan, runtime.config)
@@ -510,7 +517,7 @@ function buildRuntime(config?: BrainConfig): BrainRuntime {
           });
         }
 
-        sendJSON(res, 200, {
+        const responsePayload: Record<string, unknown> = {
           run_id: plan.run_id,
           thread_id: plan.thread_id,
           classification,
@@ -520,7 +527,11 @@ function buildRuntime(config?: BrainConfig): BrainRuntime {
           verification,
           aggregation,
           execution_status: executionStatus
-        });
+        };
+        if (gating.requires_consent) responsePayload.requires_consent = gating.requires_consent;
+        if (gating.requires_credentials_for) responsePayload.requires_credentials_for = gating.requires_credentials_for;
+        if (bundleSuggestion) responsePayload.bundle_suggestion = bundleSuggestion;
+        sendJSON(res, 200, responsePayload);
 
         logEvent(runtime, ctx, 'brain.process.complete', 'INFO', {
           intent: classification.intent,

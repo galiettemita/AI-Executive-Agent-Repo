@@ -85,7 +85,8 @@ describe('brevio-brain runtime', () => {
         body: JSON.stringify({
           message_text: 'play music',
           user_profile: {
-            enabled_skills: ['spotify-web-api']
+            enabled_skills: ['spotify-web-api'],
+            connected_providers: ['spotify']
           },
           user_preferences: { music_provider: 'spotify' }
         })
@@ -122,7 +123,8 @@ describe('brevio-brain runtime', () => {
           run_id: 'run-server-123',
           thread_id: 'thread-server-123',
           user_profile: {
-            enabled_skills: ['spotify-web-api']
+            enabled_skills: ['spotify-web-api'],
+            connected_providers: ['spotify']
           },
           user_preferences: { music_provider: 'spotify' },
           skill_results: [

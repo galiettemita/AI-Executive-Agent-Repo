@@ -108,6 +108,9 @@ export interface UserProfile {
   recent_intents?: string[];
   preferences?: UserPreferences;
   communication_style?: 'concise' | 'balanced' | 'detailed';
+  granted_categories?: Array<'email' | 'money' | 'health'>;
+  connected_providers?: string[];
+  has_seen_onboarding_card?: boolean;
 }
 
 export interface ReasoningContext {
@@ -292,6 +295,7 @@ export interface VerificationResult {
 export interface ProcessRequest extends IntentClassificationInput {
   run_id?: string;
   thread_id?: string;
+  session_id?: string;
   skill_results?: SkillResult[];
 }
 
@@ -305,6 +309,34 @@ export interface ProcessResponse {
   verification: VerificationResult;
   aggregation?: AggregationResponse;
   execution_status: ExecutionStatus;
+  requires_consent?: ConsentRequirementResponse;
+  requires_credentials_for?: CredentialRequirementResponse;
+  bundle_suggestion?: BundleSuggestion;
+}
+
+export interface ConsentRequirementResponse {
+  category: 'email' | 'money' | 'health';
+  skill_id: string;
+  prompt_copy: string;
+  accept_action: { method: 'POST'; path: string; body: Record<string, unknown> };
+  decline_action: { method: 'POST'; path: string; body: Record<string, unknown> };
+  pending_message_id: string;
+}
+
+export interface CredentialRequirementResponse {
+  skill_id: string;
+  provider: string;
+  scopes: string[];
+  explanation_copy: string;
+  connect_url: string;
+  pending_message_id: string;
+}
+
+export interface BundleSuggestion {
+  provider: string;
+  skill_id: string;
+  copy: string;
+  accept_url: string;
 }
 
 export interface NormalizedReasoningRequest extends ProcessRequest {

@@ -1,3 +1,6 @@
+import type { ConsentCategory } from './skill-tiers.js';
+import { getDefaultEnabledSkillIds, getSkillsByTier } from './skill-tiers.js';
+
 export interface CapabilityInventoryRecord {
   tenant_id?: string;
   workspace_id?: string;
@@ -113,4 +116,99 @@ export function resolveCapabilityInventory(
     deniedSkills,
     source: 'merged'
   };
+}
+
+export type ConsentState = 'granted' | 'revoked' | 'snoozed';
+
+export interface ConsentMap {
+  email?: { state: ConsentState; session_id?: string };
+  money?: { state: ConsentState; session_id?: string };
+  health?: { state: ConsentState; session_id?: string };
+}
+
+export interface ResolveEnabledSkillsOptions {
+  consent: ConsentMap | undefined;
+  currentSessionId?: string;
+  inventoryOverride?: string[];
+}
+
+export interface UserEnabledSkillsResolution {
+  enabledSkills: string[];
+  byCategory: {
+    email: { state: ConsentState | 'none'; included: boolean };
+    money: { state: ConsentState | 'none'; included: boolean };
+    health: { state: ConsentState | 'none'; included: boolean };
+  };
+  source: 'inventory' | 'computed';
+}
+
+function isCategoryGrantedForSession(
+  entry: { state: ConsentState; session_id?: string } | undefined,
+  currentSessionId: string | undefined
+): boolean {
+  if (!entry) {
+    return false;
+  }
+  if (entry.state === 'granted') {
+    return true;
+  }
+  if (entry.state === 'snoozed' && entry.session_id && currentSessionId && entry.session_id === currentSessionId) {
+    return false;
+  }
+  if (entry.state === 'snoozed') {
+    return false;
+  }
+  return false;
+}
+
+export function resolveEnabledSkillsForUser(options: ResolveEnabledSkillsOptions): UserEnabledSkillsResolution {
+  if (options.inventoryOverride && options.inventoryOverride.length > 0) {
+    return {
+      enabledSkills: unique(options.inventoryOverride),
+      byCategory: {
+        email: { state: options.consent?.email?.state ?? 'none', included: true },
+        money: { state: options.consent?.money?.state ?? 'none', included: true },
+        health: { state: options.consent?.health?.state ?? 'none', included: true }
+      },
+      source: 'inventory'
+    };
+  }
+
+  const defaults = getDefaultEnabledSkillIds();
+  const byCategory: UserEnabledSkillsResolution['byCategory'] = {
+    email: { state: options.consent?.email?.state ?? 'none', included: false },
+    money: { state: options.consent?.money?.state ?? 'none', included: false },
+    health: { state: options.consent?.health?.state ?? 'none', included: false }
+  };
+
+  const tierSkills: string[] = [];
+  if (isCategoryGrantedForSession(options.consent?.email, options.currentSessionId)) {
+    tierSkills.push(...getSkillsByTier('email'));
+    byCategory.email.included = true;
+  }
+  if (isCategoryGrantedForSession(options.consent?.money, options.currentSessionId)) {
+    tierSkills.push(...getSkillsByTier('money'));
+    byCategory.money.included = true;
+  }
+  if (isCategoryGrantedForSession(options.consent?.health, options.currentSessionId)) {
+    tierSkills.push(...getSkillsByTier('health'));
+    byCategory.health.included = true;
+  }
+
+  return {
+    enabledSkills: unique([...defaults, ...tierSkills]),
+    byCategory,
+    source: 'computed'
+  };
+}
+
+export function getCategoriesGranted(consent: ConsentMap | undefined, currentSessionId?: string): ConsentCategory[] {
+  if (!consent) {
+    return [];
+  }
+  const out: ConsentCategory[] = [];
+  if (isCategoryGrantedForSession(consent.email, currentSessionId)) out.push('email');
+  if (isCategoryGrantedForSession(consent.money, currentSessionId)) out.push('money');
+  if (isCategoryGrantedForSession(consent.health, currentSessionId)) out.push('health');
+  return out;
 }

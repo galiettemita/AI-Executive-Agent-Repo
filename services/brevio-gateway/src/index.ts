@@ -2,11 +2,37 @@ import { randomUUID } from 'node:crypto';
 import http from 'node:http';
 import { pathToFileURL } from 'node:url';
 
+import { type AuthRuntimeConfig, loadAuthConfig, signSessionToken } from './auth.js';
+import { type AuthenticatedContext, authenticate, isAuthFailure } from './auth-middleware.js';
+import { type AuditStore, InMemoryAuditStore } from './audit.js';
 import { loadGatewayConfig } from './config.js';
+import { type ConsentStore, createConsentStore } from './consent-store.js';
+import {
+  type ConsentRouteDeps,
+  handleConsumePendingMessage,
+  handleDismissOnboarding,
+  handleGetAudit,
+  handleGetConsent,
+  handleGetEnabledSkills,
+  handleGetOnboarding,
+  handleGetPendingMessage,
+  handlePostConsent,
+  handlePostConsentRevoke
+} from './consent-routes.js';
+import { loadCryptoConfig } from './crypto.js';
 import { formatOutboundText } from './format.js';
 import { normalizeWebhook } from './normalize.js';
+import {
+  type OAuthRouteDeps,
+  handleOAuthCallback,
+  handleOAuthStart
+} from './oauth-routes.js';
+import { InMemoryNonceStore, type NonceStore, type OAuthStateConfig, loadOAuthStateConfig } from './oauth-state.js';
+import { InMemoryPendingMessageStore, type PendingMessageStore } from './pending-message-store.js';
+import { RateLimiter, configureDefaults } from './rate-limit.js';
 import { verifyAPIKey, verifyWhatsAppSignature } from './security.js';
 import { GatewayState } from './state.js';
+import { InMemoryTokenStore, type TokenStore } from './token-store.js';
 import type { Channel, GatewayConfig, RequestContext, UserTier } from './types.js';
 import { startMessageWorkflow } from './workflow-runtime.js';
 
@@ -15,6 +41,14 @@ interface GatewayRuntime {
   state: GatewayState;
   startedAtMs: number;
   server: http.Server;
+  authConfig: AuthRuntimeConfig;
+  consentStore: ConsentStore;
+  auditStore: AuditStore;
+  rateLimiter: RateLimiter;
+  tokenStore: TokenStore;
+  nonceStore: NonceStore;
+  oauthStateConfig: OAuthStateConfig;
+  pendingMessageStore: PendingMessageStore;
   close(): Promise<void>;
 }
 
@@ -376,7 +410,20 @@ function createGatewayRuntime(config?: GatewayConfig): GatewayRuntime {
   const resolvedConfig = config ?? loadGatewayConfig();
   const state = new GatewayState();
   const startedAtMs = Date.now();
+  const authConfig = loadAuthConfig();
+  const cryptoConfig = loadCryptoConfig();
+  const oauthStateConfig = loadOAuthStateConfig();
+  const consentStore = createConsentStore();
+  const auditStore = new InMemoryAuditStore();
+  const rateLimiter = new RateLimiter();
+  configureDefaults(rateLimiter);
+  const tokenStore = new InMemoryTokenStore(cryptoConfig);
+  const nonceStore = new InMemoryNonceStore();
+  const pendingMessageStore = new InMemoryPendingMessageStore();
   let runtimeRef: GatewayRuntime | undefined;
+
+  const consentDeps: ConsentRouteDeps = { consentStore, auditStore, rateLimiter, tokenStore, pendingMessageStore };
+  const oauthDeps: OAuthRouteDeps = { consentStore, tokenStore, auditStore, nonceStore, stateConfig: oauthStateConfig };
 
   const server = http.createServer((req, res) => {
     const ctx = requestContext(req);
@@ -489,6 +536,177 @@ function createGatewayRuntime(config?: GatewayConfig): GatewayRuntime {
       return;
     }
 
+    // ---- /api/v1/me/pending/:id — resume-on-auth (peek + consume) ----
+    {
+      const pendingMatch = /^\/api\/v1\/me\/pending\/([0-9a-fA-F-]{36})(\/consume)?$/.exec(pathname);
+      if (pendingMatch) {
+        const auth = authenticate(req, authConfig);
+        if (isAuthFailure(auth)) {
+          sendJSON(res, auth.status, { error: { code: auth.code, message: auth.message, request_id: ctx.requestId } });
+          return;
+        }
+        const pendingId = pendingMatch[1];
+        const isConsume = pendingMatch[2] === '/consume';
+        const routeCtx = {
+          auth,
+          ip: getHeader(req, 'x-forwarded-for') ?? null,
+          userAgent: getHeader(req, 'user-agent') ?? null,
+          requestId: ctx.requestId,
+          method, path: pathname
+        };
+        const handler = isConsume
+          ? () => handleConsumePendingMessage(req, res, routeCtx, consentDeps, pendingId)
+          : () => handleGetPendingMessage(req, res, routeCtx, consentDeps, pendingId);
+        if ((isConsume && method !== 'POST') || (!isConsume && method !== 'GET')) {
+          onError(405, 'method_not_allowed');
+          return;
+        }
+        void handler().catch((err) => {
+          onError(500, 'pending_route_failed');
+          logEvent(resolvedConfig, ctx, 'gateway.pending.exception', 'ERROR', {
+            message: err instanceof Error ? err.message : String(err)
+          });
+        });
+        return;
+      }
+    }
+
+    // ---- /api/v1/me/* — skill consent + onboarding ----
+    if (
+      pathname === '/api/v1/me/onboarding' ||
+      pathname === '/api/v1/me/onboarding/dismiss' ||
+      pathname === '/api/v1/me/consent' ||
+      pathname === '/api/v1/me/consent/revoke' ||
+      pathname === '/api/v1/me/skills/enabled' ||
+      pathname === '/api/v1/me/audit'
+    ) {
+      const auth = authenticate(req, authConfig);
+      if (isAuthFailure(auth)) {
+        sendJSON(res, auth.status, { error: { code: auth.code, message: auth.message, request_id: ctx.requestId } });
+        logEvent(resolvedConfig, ctx, 'gateway.auth.rejected', 'WARN', {
+          method, path: pathname, code: auth.code
+        });
+        return;
+      }
+      const routeCtx = {
+        auth,
+        ip: getHeader(req, 'x-forwarded-for') ?? null,
+        userAgent: getHeader(req, 'user-agent') ?? null,
+        requestId: ctx.requestId,
+        method, path: pathname
+      };
+      const dispatch = (fn: typeof handleGetOnboarding): void => {
+        void fn(req, res, routeCtx, consentDeps).catch((err) => {
+          onError(500, 'route_failed');
+          logEvent(resolvedConfig, ctx, 'gateway.me.exception', 'ERROR', {
+            method, path: pathname, message: err instanceof Error ? err.message : String(err)
+          });
+        });
+      };
+      if (method === 'GET' && pathname === '/api/v1/me/onboarding') return dispatch(handleGetOnboarding);
+      if (method === 'POST' && pathname === '/api/v1/me/onboarding/dismiss') return dispatch(handleDismissOnboarding);
+      if (method === 'GET' && pathname === '/api/v1/me/consent') return dispatch(handleGetConsent);
+      if (method === 'POST' && pathname === '/api/v1/me/consent') return dispatch(handlePostConsent);
+      if (method === 'POST' && pathname === '/api/v1/me/consent/revoke') return dispatch(handlePostConsentRevoke);
+      if (method === 'GET' && pathname === '/api/v1/me/skills/enabled') return dispatch(handleGetEnabledSkills);
+      if (method === 'GET' && pathname === '/api/v1/me/audit') return dispatch(handleGetAudit);
+      onError(405, 'method_not_allowed');
+      return;
+    }
+
+    // ---- /api/v1/oauth/start, /api/v1/oauth/callback ----
+    if (pathname === '/api/v1/oauth/start' || pathname === '/api/v1/oauth/callback') {
+      const auth = authenticate(req, authConfig);
+      if (isAuthFailure(auth)) {
+        sendJSON(res, auth.status, { error: { code: auth.code, message: auth.message, request_id: ctx.requestId } });
+        return;
+      }
+      const rl = pathname === '/api/v1/oauth/start'
+        ? rateLimiter.consume('GET /api/v1/oauth/start', auth.user_id)
+        : rateLimiter.consume('GET /api/v1/oauth/callback', auth.user_id);
+      if (!rl.allowed) {
+        res.setHeader('Retry-After', Math.ceil(rl.retryAfterMs / 1000).toString());
+        sendJSON(res, 429, { error: { code: 'rate_limited', message: 'slow down', request_id: ctx.requestId } });
+        return;
+      }
+      const oauthCtx = {
+        auth,
+        ip: getHeader(req, 'x-forwarded-for') ?? null,
+        userAgent: getHeader(req, 'user-agent') ?? null,
+        requestId: ctx.requestId,
+        url
+      };
+      if (method === 'GET' && pathname === '/api/v1/oauth/start') {
+        void handleOAuthStart(req, res, oauthCtx, oauthDeps).catch((err) => {
+          onError(500, 'oauth_start_failed');
+          logEvent(resolvedConfig, ctx, 'gateway.oauth.start.exception', 'ERROR', {
+            message: err instanceof Error ? err.message : String(err)
+          });
+        });
+        return;
+      }
+      if (method === 'GET' && pathname === '/api/v1/oauth/callback') {
+        void handleOAuthCallback(req, res, oauthCtx, oauthDeps).catch((err) => {
+          onError(500, 'oauth_callback_failed');
+          logEvent(resolvedConfig, ctx, 'gateway.oauth.callback.exception', 'ERROR', {
+            message: err instanceof Error ? err.message : String(err)
+          });
+        });
+        return;
+      }
+      onError(405, 'method_not_allowed');
+      return;
+    }
+
+    // ---- /api/v1/dev/sessions — dev-only, mints a signed session token ----
+    if (method === 'POST' && pathname === '/api/v1/dev/sessions') {
+      if (!authConfig.devMode) {
+        onError(404, 'not_found');
+        return;
+      }
+      void (async () => {
+        const chunks: Buffer[] = [];
+        for await (const chunk of req) chunks.push(chunk as Buffer);
+        let body: Record<string, unknown> = {};
+        if (chunks.length > 0) {
+          try {
+            body = JSON.parse(Buffer.concat(chunks).toString('utf8')) as Record<string, unknown>;
+          } catch {
+            onError(400, 'invalid_json');
+            return;
+          }
+        }
+        const userId = typeof body.user_id === 'string' && body.user_id.trim().length > 0
+          ? body.user_id.trim()
+          : `dev-user-${randomUUID().slice(0, 8)}`;
+        const sessionId = typeof body.session_id === 'string' && body.session_id.trim().length > 0
+          ? body.session_id.trim()
+          : randomUUID();
+        const expiresAt = Math.floor(Date.now() / 1000) + 24 * 60 * 60;
+
+        let token: string | undefined;
+        if (authConfig.signingKey) {
+          token = signSessionToken(authConfig, { user_id: userId, session_id: sessionId, expires_at: expiresAt });
+        }
+        await auditStore.write({
+          actor_user_id: userId,
+          actor_ip: getHeader(req, 'x-forwarded-for') ?? null,
+          actor_user_agent: getHeader(req, 'user-agent') ?? null,
+          action: 'session.created',
+          target: null,
+          result: 'success',
+          detail: { source: 'dev_endpoint' }
+        });
+        sendJSON(res, 200, { user_id: userId, session_id: sessionId, expires_at: expiresAt, token });
+      })().catch((err) => {
+        onError(500, 'dev_session_failed');
+        logEvent(resolvedConfig, ctx, 'gateway.dev_session.exception', 'ERROR', {
+          message: err instanceof Error ? err.message : String(err)
+        });
+      });
+      return;
+    }
+
     onError(404, 'not_found');
   });
 
@@ -497,6 +715,14 @@ function createGatewayRuntime(config?: GatewayConfig): GatewayRuntime {
     state,
     startedAtMs,
     server,
+    authConfig,
+    consentStore,
+    auditStore,
+    rateLimiter,
+    tokenStore,
+    nonceStore,
+    oauthStateConfig,
+    pendingMessageStore,
     async close(): Promise<void> {
       await new Promise<void>((resolve, reject) => {
         server.close((err) => {
