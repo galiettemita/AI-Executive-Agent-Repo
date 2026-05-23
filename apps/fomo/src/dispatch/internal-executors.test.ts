@@ -2,10 +2,15 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import { InMemoryAuditStore } from '../core/audit.ts';
+import { type PolicyDecision } from '../core/policy-gate.ts';
 import { InMemoryFeedbackStore } from '../memory/feedback-events.ts';
 import { InMemoryMemorySignalStore } from '../memory/memory-signals.ts';
 
-import { createDispatchTable, type DispatchContext } from './dispatcher.ts';
+import {
+  AuthorizedToolCall,
+  createDispatchTable,
+  type DispatchContext
+} from './dispatcher.ts';
 import {
   auditWriteExecutor,
   feedbackWriteExecutor,
@@ -15,6 +20,25 @@ import {
 
 const CONTEXT: DispatchContext = Object.freeze({ user_id: 'u-exec', invocation_id: 'inv-1' });
 
+// Test helper: synthesize an allowed PolicyDecision and turn it into an
+// AuthorizedToolCall. Phase 3A.1 makes this the only way to call
+// dispatch.execute. Real callers go through decidePolicy() — these tests
+// short-circuit because they're exercising the executor, not the gate.
+function authorize(tool_id: string): AuthorizedToolCall {
+  const decision: PolicyDecision = Object.freeze({
+    allowed: true,
+    code: 'allowed',
+    reason: `test allowed ${tool_id}`,
+    tool_id,
+    user_id: CONTEXT.user_id
+  });
+  const auth = AuthorizedToolCall.fromDecision(decision);
+  if (!auth) {
+    throw new Error(`test setup: could not authorize ${tool_id}`);
+  }
+  return auth;
+}
+
 describe('auditWriteExecutor', () => {
   it('writes to the audit store with context.user_id as actor by default', async () => {
     const store = new InMemoryAuditStore();
@@ -22,7 +46,7 @@ describe('auditWriteExecutor', () => {
     table.register('audit.write', auditWriteExecutor(store));
 
     const result = await table.execute(
-      'audit.write',
+      authorize('audit.write'),
       { action: 'session.created', target: 'session:1', detail: { source: 'test' } },
       CONTEXT
     );
@@ -41,13 +65,10 @@ describe('auditWriteExecutor', () => {
     table.register('audit.write', auditWriteExecutor(store));
 
     await table.execute(
-      'audit.write',
+      authorize('audit.write'),
       { action: 'session.created', actor_user_id: null },
       CONTEXT
     );
-    // recent() filters by user_id, so null-actor entries are not returned
-    // for any user — verify via the alternate path: ask for entries for
-    // a known non-null actor and confirm the null one is not there.
     assert.equal((await store.recent(CONTEXT.user_id)).length, 0);
   });
 
@@ -55,7 +76,7 @@ describe('auditWriteExecutor', () => {
     const store = new InMemoryAuditStore();
     const table = createDispatchTable();
     table.register('audit.write', auditWriteExecutor(store));
-    await table.execute('audit.write', { action: 'session.created' }, CONTEXT);
+    await table.execute(authorize('audit.write'), { action: 'session.created' }, CONTEXT);
     const [entry] = await store.recent(CONTEXT.user_id);
     assert.equal(entry?.result, 'success');
   });
@@ -68,7 +89,7 @@ describe('feedbackWriteExecutor', () => {
     table.register('feedback.write', feedbackWriteExecutor(store));
 
     const result = await table.execute(
-      'feedback.write',
+      authorize('feedback.write'),
       {
         alert_id: 'a-1',
         sender_email: 's@x',
@@ -93,7 +114,7 @@ describe('feedbackWriteExecutor', () => {
     // Caller tries to spoof user_id via args; the executor reads from
     // context only, so the spoof has no effect.
     await table.execute(
-      'feedback.write',
+      authorize('feedback.write'),
       {
         user_id: 'u-spoof',
         alert_id: 'a-1',
@@ -114,7 +135,7 @@ describe('memorySignalUpsertExecutor', () => {
     table.register('memory_signal.write', memorySignalUpsertExecutor(store));
 
     const result = await table.execute(
-      'memory_signal.write',
+      authorize('memory_signal.write'),
       {
         kind: 'sender_importance',
         scope_key: 's@x',
@@ -136,7 +157,7 @@ describe('memorySignalUpsertExecutor', () => {
     table.register('memory_signal.write', memorySignalUpsertExecutor(store));
 
     await table.execute(
-      'memory_signal.write',
+      authorize('memory_signal.write'),
       {
         kind: 'sender_importance',
         scope_key: 's@x',
@@ -146,7 +167,7 @@ describe('memorySignalUpsertExecutor', () => {
       CONTEXT
     );
     await table.execute(
-      'memory_signal.write',
+      authorize('memory_signal.write'),
       {
         kind: 'sender_importance',
         scope_key: 's@x',
@@ -185,14 +206,18 @@ describe('wireInternalExecutors', () => {
       memory: memoryStore
     });
 
-    await table.execute('audit.write', { action: 'session.created', target: 'session:test' }, CONTEXT);
     await table.execute(
-      'feedback.write',
+      authorize('audit.write'),
+      { action: 'session.created', target: 'session:test' },
+      CONTEXT
+    );
+    await table.execute(
+      authorize('feedback.write'),
       { alert_id: 'a-1', sender_email: null, kind: 'founder_approved' },
       CONTEXT
     );
     await table.execute(
-      'memory_signal.write',
+      authorize('memory_signal.write'),
       { kind: 'quietness_preference', scope_key: null, detail: { max_per_day: 5 }, source: 'user_confirmed' },
       CONTEXT
     );
@@ -202,15 +227,19 @@ describe('wireInternalExecutors', () => {
     assert.ok(await memoryStore.get(CONTEXT.user_id, 'quietness_preference'));
   });
 
-  it('non-wired tools (gmail.read, sendblue, slack) still return no_executor_for_tool', async () => {
+  it('non-wired tools (gmail.read, sendblue, slack) return no_executor_for_tool', async () => {
     const table = createDispatchTable();
     wireInternalExecutors(table, {
       audit: new InMemoryAuditStore(),
       feedback: new InMemoryFeedbackStore(),
       memory: new InMemoryMemorySignalStore()
     });
+    // These three tools are still 'declared' in Phase 3A so the gate
+    // would deny in practice. For the executor-test perspective we
+    // synthesize an authorized call to prove that even with valid
+    // authorization, dispatch still refuses when no executor is bound.
     for (const externalTool of ['gmail.read', 'sendblue.send_user_message', 'slack.founder_review']) {
-      const result = await table.execute(externalTool, {}, CONTEXT);
+      const result = await table.execute(authorize(externalTool), {}, CONTEXT);
       assert.equal(result.ok, false);
       if (!result.ok) {
         assert.equal(result.code, 'no_executor_for_tool');

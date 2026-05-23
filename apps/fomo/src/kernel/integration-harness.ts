@@ -39,7 +39,7 @@ import { createToolRegistry, type ToolDescriptor, type ToolId, type ToolRegistry
 import { MockModelBackend } from '../core/model-backends/mock.js';
 import { type ModelBackend, type ModelOutputValidator, createModelRouter } from '../core/model-router.js';
 import { type ToolInvocationStatus } from '../core/tool-invocations.js';
-import { createDispatchTable } from '../dispatch/dispatcher.js';
+import { AuthorizedToolCall, createDispatchTable } from '../dispatch/dispatcher.js';
 import { wireInternalExecutors } from '../dispatch/internal-executors.js';
 import { type SubstrateStoresHandle, createStores } from '../db/store-factory.js';
 
@@ -436,9 +436,13 @@ export async function runKernelIntegrationScenario(
     let dispatchStatus: ToolInvocationStatus = decision.allowed ? 'success' : 'denied';
     let dispatchLatency = 0;
 
-    if (decision.allowed) {
-      // Phase 3A integrated path: gate allowed → dispatch executes.
-      const result = await dispatch.execute(tool_id, args, {
+    // Phase 3A.1 integrated path: gate decided → mint an
+    // AuthorizedToolCall (returns null unless allowed) → dispatch executes.
+    // dispatch.execute() refuses anything that isn't an AuthorizedToolCall
+    // — there is no structural way to bypass the gate.
+    const authorized = AuthorizedToolCall.fromDecision(decision);
+    if (authorized !== null) {
+      const result = await dispatch.execute(authorized, args, {
         user_id: SYNTHETIC_USER_ID,
         invocation_id
       });

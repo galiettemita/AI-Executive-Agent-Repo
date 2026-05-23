@@ -42,7 +42,7 @@ workflow) may begin. Not before.
 - [x] Three external tools (`gmail.read`, `sendblue.send_user_message`, `slack.founder_review`) remain `'declared'` until their adapters land (Phase 3B / 3E / 3D respectively per the revised Phase 3 map)
 - [x] No HTTP route was added beyond `GET /health`
 - [x] No Gmail / SendBlue / Slack / real-model adapter exists yet (Phase 3B–3F)
-- [x] **Dispatch table never bypasses the Permission Gate** — callers wire `gate → if allowed → dispatch.execute`
+- [x] **Dispatch table cannot bypass the Permission Gate — structural guarantee** (Phase 3A.1). `dispatch.execute()` signature requires an `AuthorizedToolCall`, not a raw `tool_id`. The class has a private constructor; the only factory is `AuthorizedToolCall.fromDecision(decision)` which returns `null` unless `decision.allowed === true && decision.code === 'allowed' && isToolId(decision.tool_id)`. Runtime `instanceof` check in `execute()` rejects forged objects with code `'unauthorized'`
 - [x] **`audit.write` dispatch never creates recursive audit logging** — executor calls `store.audit.write` directly; harness's `policy.decided` / `tool.invoked` audits go direct to store, not through dispatch
 
 ### Integration
@@ -51,7 +51,7 @@ workflow) may begin. Not before.
 - [x] `KernelScenarioReport` is deeply frozen — callers cannot mutate it
 - [x] Two scenario runs are independent — each constructs its own in-memory stores
 - [x] **Audit log participates in the integrated path** (Phase 2F.1) — harness writes a sanitized audit entry at every kernel touch. Gate test asserts entries > 0, per-action breakdown, and forbidden-content leak canary (no raw email body / headers / attachment filenames / prompt text / reply text in any audit entry).
-- [x] **Dispatch table participates in the integrated path** (Phase 3A) — harness wires `wireInternalExecutors`, then routes the 5 internal invocations as `gate → if allowed → dispatch.execute → store write`. The 4 declared-external + unknown probes still deny at the gate without firing dispatch.
+- [x] **Dispatch table participates in the integrated path** (Phase 3A) — harness wires `wireInternalExecutors`, then routes the 5 internal invocations as `gate → AuthorizedToolCall.fromDecision → dispatch.execute → store write`. The 4 declared-external + unknown probes return `null` from the factory, so dispatch is structurally unreachable. The runtime `unauthorized` deny path is covered by dedicated tests in [`dispatch/dispatcher.test.ts`](src/dispatch/dispatcher.test.ts).
 
 ### CI + safety
 - [x] `pnpm build` green
@@ -87,7 +87,7 @@ and what Phase 3 must wire to use it.
 | Eval Harness | [src/eval/harness.ts](src/eval/harness.ts) | [eval/harness.test.ts](src/eval/harness.test.ts) | ~11 | (developer tool) | Bake-off against real fixtures in Phase 3 |
 | Tool Invocations | [src/core/tool-invocations.ts](src/core/tool-invocations.ts) | [tool-invocations.test.ts](src/core/tool-invocations.test.ts) | ~17 | Integration Harness | Dispatch layer writes per-call after gate decision |
 | Audit Log | [src/core/audit.ts](src/core/audit.ts) | [audit.test.ts](src/core/audit.test.ts) | ~4 | Integration Harness — writes 30 audit entries per scenario (Phase 3A added the audit.write executor + 'session.created' entry); dispatched via internal executor for `audit.write` tool | Phase 3 lifecycle callers (consent grants, OAuth connects, session events) write through `dispatch.execute('audit.write', ...)` |
-| **Dispatch Table** (NEW Phase 3A) | [src/dispatch/dispatcher.ts](src/dispatch/dispatcher.ts) | [dispatcher.test.ts](src/dispatch/dispatcher.test.ts) | ~12 | Integration Harness; internal executor wireup | Phase 3B/3D/3E register external executors here; flip those tools to 'implemented' as their adapters land |
+| **Dispatch Table** (NEW Phase 3A, hardened 3A.1) | [src/dispatch/dispatcher.ts](src/dispatch/dispatcher.ts) | [dispatcher.test.ts](src/dispatch/dispatcher.test.ts) | ~22 | Integration Harness; internal executor wireup. `execute()` accepts only `AuthorizedToolCall` (class with private constructor, minted only by `fromDecision(allowedDecision)`). Runtime `instanceof` guard catches forged objects | Phase 3B/3D/3E register external executors here; flip those tools to 'implemented' as their adapters land |
 | **Internal Executors** (NEW Phase 3A) | [src/dispatch/internal-executors.ts](src/dispatch/internal-executors.ts) | [internal-executors.test.ts](src/dispatch/internal-executors.test.ts) | ~10 | `wireInternalExecutors` registers all three at dispatch construction | Phase 3 callers (Gmail polling, ranker, Slack review, reply parser) invoke audit/feedback/memory via dispatch |
 | Safe Logger | [src/core/safe-logger.ts](src/core/safe-logger.ts) | [safe-logger.test.ts](src/core/safe-logger.test.ts) | ~6 | Audit, Feedback, Memory, Tool Invocations, Postgres stores | All log lines + redacted store details |
 | Token Crypto | [src/security/token-crypto.ts](src/security/token-crypto.ts) | [token-crypto.test.ts](src/security/token-crypto.test.ts) | ~9 | Token Store | OAuth token at-rest encryption |
@@ -198,8 +198,9 @@ subphases so founder review is proven before any live text goes out.
   dispatch
 - Take a runtime dep on a service the Phase 2 map deferred (pgvector, Redis,
   R2) without an active caller
-- Bypass the Permission Gate from within dispatch executors
+- Bypass the Permission Gate from within dispatch executors (executors receive args + context, never an AuthorizedToolCall or the dispatch table itself)
 - Cause recursive audit logging from inside an executor
+- Mint an `AuthorizedToolCall` by any path other than `AuthorizedToolCall.fromDecision(decision)` — the private constructor is the structural lock; bypassing it via type-cast triggers the runtime `unauthorized` deny
 
 ---
 
