@@ -29,6 +29,11 @@ export interface GmailCursorStore {
   // Returns true when a cursor existed and was removed; false otherwise.
   // Used by /me/disconnect flows in later phases.
   delete(userId: string): Promise<boolean>;
+  // All user_ids with a stored Gmail cursor. The Phase 3B.2 polling
+  // worker iterates this set: a cursor row is always created at OAuth
+  // connect time, so cursor presence is the canonical signal of "user
+  // has an active Gmail connection." Order is unspecified.
+  listUserIds(): Promise<readonly string[]>;
 }
 
 export class InMemoryGmailCursorStore implements GmailCursorStore {
@@ -51,5 +56,9 @@ export class InMemoryGmailCursorStore implements GmailCursorStore {
 
   async delete(userId: string): Promise<boolean> {
     return this.cursors.delete(userId);
+  }
+
+  async listUserIds(): Promise<readonly string[]> {
+    return Object.freeze([...this.cursors.keys()]);
   }
 }

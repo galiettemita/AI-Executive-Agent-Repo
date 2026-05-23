@@ -9,7 +9,9 @@ describe('loadKillSwitches — safe defaults', () => {
     assert.equal(s.send_enabled, false);
     assert.equal(s.auto_send_enabled, false);
     assert.equal(s.friend_beta_enabled, false);
+    assert.equal(s.polling_enabled, false);
     assert.equal(s.max_users, 1);
+    assert.equal(s.polling_interval_ms, 60_000);
   });
 
   it('SAFE_DEFAULT_KILL_SWITCHES matches the empty-env result', () => {
@@ -37,11 +39,42 @@ describe('loadKillSwitches — boolean parsing is strict opt-in', () => {
     const s = loadKillSwitches({
       FOMO_SEND_ENABLED: 'true',
       FOMO_AUTO_SEND_ENABLED: 'false',
-      FOMO_FRIEND_BETA_ENABLED: '1'
+      FOMO_FRIEND_BETA_ENABLED: '1',
+      FOMO_GMAIL_POLLING_ENABLED: 'true'
     });
     assert.equal(s.send_enabled, true);
     assert.equal(s.auto_send_enabled, false);
     assert.equal(s.friend_beta_enabled, true);
+    assert.equal(s.polling_enabled, true);
+  });
+
+  it('FOMO_GMAIL_POLLING_ENABLED is strict opt-in', () => {
+    assert.equal(loadKillSwitches({}).polling_enabled, false);
+    assert.equal(loadKillSwitches({ FOMO_GMAIL_POLLING_ENABLED: '1' }).polling_enabled, true);
+    assert.equal(loadKillSwitches({ FOMO_GMAIL_POLLING_ENABLED: 'TRUE' }).polling_enabled, true);
+    assert.equal(loadKillSwitches({ FOMO_GMAIL_POLLING_ENABLED: 'yes' }).polling_enabled, false);
+    assert.equal(loadKillSwitches({ FOMO_GMAIL_POLLING_ENABLED: '' }).polling_enabled, false);
+  });
+});
+
+describe('loadKillSwitches — FOMO_GMAIL_POLLING_INTERVAL_MS', () => {
+  it('accepts positive integers', () => {
+    assert.equal(
+      loadKillSwitches({ FOMO_GMAIL_POLLING_INTERVAL_MS: '30000' }).polling_interval_ms,
+      30_000
+    );
+    assert.equal(
+      loadKillSwitches({ FOMO_GMAIL_POLLING_INTERVAL_MS: '  120000  ' }).polling_interval_ms,
+      120_000
+    );
+  });
+
+  it('falls back to default 60_000 on invalid values', () => {
+    assert.equal(loadKillSwitches({ FOMO_GMAIL_POLLING_INTERVAL_MS: '' }).polling_interval_ms, 60_000);
+    assert.equal(loadKillSwitches({ FOMO_GMAIL_POLLING_INTERVAL_MS: 'abc' }).polling_interval_ms, 60_000);
+    assert.equal(loadKillSwitches({ FOMO_GMAIL_POLLING_INTERVAL_MS: '0' }).polling_interval_ms, 60_000);
+    assert.equal(loadKillSwitches({ FOMO_GMAIL_POLLING_INTERVAL_MS: '-5' }).polling_interval_ms, 60_000);
+    assert.equal(loadKillSwitches({ FOMO_GMAIL_POLLING_INTERVAL_MS: '3.7' }).polling_interval_ms, 60_000);
   });
 });
 

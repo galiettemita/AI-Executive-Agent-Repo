@@ -27,7 +27,12 @@ export type AuditAction =
   | 'state.transitioned'
   | 'feedback.written'
   | 'memory.upserted'
-  | 'model.routed';
+  | 'model.routed'
+  // Workflow events (Phase 3B.2) — one entry per polling worker cycle.
+  // Per-message reads continue to surface as policy.decided + tool.invoked
+  // for tool_id='gmail.read'; this aggregate cycle entry exists so ops
+  // can answer "is polling alive?" without correlating dispatch events.
+  | 'gmail.poll.cycle';
 
 export type AuditResult = 'success' | 'failure';
 

@@ -1,36 +1,42 @@
-// Kernel Integration Harness — Phase 2F's gate.
+// Kernel Integration Harness — Phase 2F's gate, extended for 3A and 3B.2.
 //
 // One in-process function that exercises every kernel piece Phase 2A
-// through 2E shipped, captures the substrate's observable behavior in a
-// KernelScenarioReport, and lets the gate test assert end-to-end that
+// through 3B.2 shipped, captures the substrate's observable behavior in
+// a KernelScenarioReport, and lets the gate test assert end-to-end that
 // the substrate cooperates as designed.
 //
-// No HTTP route, no real Gmail / SendBlue / Slack / model calls. Mock
-// backends and in-memory stores only. No executor_status flips.
+// No real Gmail / SendBlue / Slack / model calls. Mock backends and
+// in-memory stores only. The Gmail HTTP layer is exercised through an
+// injected mock fetch so the Phase 3B.2 polling worker can drive a real
+// gmail.read dispatch end-to-end without hitting the network.
 //
 // Honest-semantics invariant (FOMO_PLAN §9.3 + Phase 2C.1 amendment):
-//   every tool in the v0.1 registry is executor_status='declared', so
-//   every gate decision in this default scenario denies — either
-//   'not_implemented' for the 6 known tools, or 'unknown_tool' for the
-//   one off-registry probe. Phase 3 wires real dispatch and the
-//   gate-only tests in integration-harness.test.ts cover what happens
-//   once tools flip to 'implemented'.
+//   Phase 3A flipped audit.write / feedback.write / memory_signal.write
+//   to 'implemented'. Phase 3B.2 flipped gmail.read to 'implemented'.
+//   sendblue.send_user_message and slack.founder_review remain
+//   'declared' and the gate denies them with 'not_implemented' in this
+//   scenario. The gate-only tests in integration-harness.test.ts cover
+//   what happens once those tools flip to 'implemented'.
 //
-// Audit invariant (Phase 2F.1):
+// Audit invariant (Phase 2F.1 + 3B.2):
 //   The harness writes an audit entry at every meaningful kernel touch
 //   (gate decision, tool invocation, state transition, feedback write,
-//   memory upsert, model route). Every audit detail is SANITIZED —
-//   only operational identifiers (tool_id, model_name, prompt_version,
-//   alert_id, from/to_state, kind) appear. Raw email body, raw headers,
-//   attachment filenames, prompt text, and full reply text are never
-//   passed into audit. The test asserts this end-to-end by serializing
-//   every audit entry and looking for known leak canaries.
+//   memory upsert, model route). The polling worker writes its own
+//   per-message policy.decided + tool.invoked entries plus one
+//   aggregate gmail.poll.cycle entry per cycle. Every audit detail is
+//   SANITIZED — only operational identifiers (tool_id, model_name,
+//   prompt_version, alert_id, from/to_state, kind, history_id) appear.
+//   Raw email body, raw headers, attachment filenames, prompt text, and
+//   full reply text are never passed into audit. The test asserts this
+//   end-to-end by serializing every audit entry — including the
+//   polling cycle's — and looking for known leak canaries.
 
 import {
   type AlertState,
   INITIAL_STATE,
   transition
 } from '../core/state-machine.js';
+import { GMAIL_READONLY_SCOPE, GmailClient } from '../adapters/gmail/client.js';
 import { type AuditAction, type AuditStore } from '../core/audit.js';
 import { applyEgressForRanker, applyEgressForReplyParser, applyEgressForSlackCard, type RawEmailContext } from '../core/egress-policy.js';
 import { type KillSwitches, loadKillSwitches } from '../core/kill-switches.js';
@@ -41,7 +47,9 @@ import { type ModelBackend, type ModelOutputValidator, createModelRouter } from 
 import { type ToolInvocationStatus } from '../core/tool-invocations.js';
 import { AuthorizedToolCall, createDispatchTable } from '../dispatch/dispatcher.js';
 import { wireInternalExecutors } from '../dispatch/internal-executors.js';
+import { wireExternalExecutors } from '../dispatch/external-executors.js';
 import { type SubstrateStoresHandle, createStores } from '../db/store-factory.js';
+import { runOnce as runPollOnce, type GmailPollCycleReport } from '../workers/gmail-poll.js';
 
 /* ---------------------------------------------------------------------- */
 /* Inputs and outputs                                                     */
@@ -105,6 +113,19 @@ export interface KernelScenarioReport {
   };
   readonly tool_invocations: {
     readonly entries_written: number;
+  };
+  // Phase 3B.2: the polling worker runs one cycle for the synthetic user.
+  // Captures the worker's report so the gate test can prove the
+  // gmail.read dispatch path is reachable end-to-end (gate → AuthorizedToolCall
+  // → dispatch → executor → GmailClient → cursor advance).
+  readonly polling: {
+    readonly users_total: number;
+    readonly users_polled: number;
+    readonly messages_observed: number;
+    readonly messages_dispatched: number;
+    readonly messages_failed: number;
+    readonly cursor_before: string;
+    readonly cursor_after: string;
   };
   readonly audit: {
     // Total entries the harness wrote. > 0 in Phase 2F.1 — every
@@ -294,28 +315,119 @@ export async function runKernelIntegrationScenario(
   const switches = loadKillSwitches({});
 
   /* --------------------------------------------------------------------
-   * 2.5. Dispatch table (Phase 3A)
-   *    Wires the three internal-capability executors. The dispatch table
-   *    is independent of the Permission Gate — the gate decides ALLOW
-   *    or DENY, and only when allowed does the harness call dispatch.
-   *    No recursive audit: the harness's policy.decided / tool.invoked
-   *    writes go DIRECTLY to stores.audit, NOT through dispatch.
+   * 2.5. Dispatch table (Phase 3A + 3B.2)
+   *    Wires the three internal-capability executors AND the gmail.read
+   *    executor. The dispatch table is independent of the Permission
+   *    Gate — the gate decides ALLOW or DENY, and only when allowed
+   *    does the harness call dispatch. No recursive audit: the harness's
+   *    policy.decided / tool.invoked writes go DIRECTLY to stores.audit,
+   *    NOT through dispatch.
+   *
+   *    The Gmail HTTP layer is exercised via an injected mock fetch.
+   *    The mock handles /users/me/history (returns one new message id)
+   *    and /users/me/messages/{id} (returns a synthetic message body
+   *    carrying the same forbidden-leak canaries as SYNTHETIC_RAW_EMAIL
+   *    so the audit-leak test surfaces any worker-side regression).
    * ------------------------------------------------------------------ */
+  const HARNESS_POLL_HISTORY_START = 'h-harness-1';
+  const HARNESS_POLL_HISTORY_END = 'h-harness-2';
+  const HARNESS_POLL_MESSAGE_ID = 'msg-harness-poll-1';
+  const HARNESS_GMAIL_ACCESS_TOKEN = 'gmail-harness-token';
+
+  // Synthetic Gmail messages.get response. Carries the same leak canaries
+  // as SYNTHETIC_RAW_EMAIL so any worker-side leak surfaces in audit.
+  const SYNTHETIC_GMAIL_MESSAGE_JSON = Object.freeze({
+    id: HARNESS_POLL_MESSAGE_ID,
+    threadId: 'thr_harness_poll',
+    internalDate: '1748000000000',
+    payload: {
+      headers: [
+        { name: 'From', value: 'Sarah Johnson <sarah.j@school.edu>' },
+        { name: 'Subject', value: 'Interview form due tonight' },
+        { name: 'X-Harness-Tag', value: 'kernel-harness-leak-canary-9f7c2a' },
+        { name: 'Authentication-Results', value: 'spf=pass' },
+        { name: 'Received', value: 'from school.edu by gmail.com' }
+      ],
+      mimeType: 'text/plain',
+      // base64url('Hi Albert, please submit the interview form by 9pm. — Sarah')
+      body: { data: 'SGkgQWxiZXJ0LCBwbGVhc2Ugc3VibWl0IHRoZSBpbnRlcnZpZXcgZm9ybSBieSA5cG0uIOKAlCBTYXJhaA' }
+    }
+  });
+
+  const harnessFetchImpl: typeof fetch = (async (input: string | URL | Request) => {
+    const url = typeof input === 'string' ? input : input.toString();
+    if (url.includes('/users/me/history')) {
+      return new Response(
+        JSON.stringify({
+          history: [
+            {
+              id: HARNESS_POLL_HISTORY_END,
+              messagesAdded: [
+                {
+                  message: {
+                    id: HARNESS_POLL_MESSAGE_ID,
+                    threadId: 'thr_harness_poll'
+                  }
+                }
+              ]
+            }
+          ],
+          historyId: HARNESS_POLL_HISTORY_END
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } }
+      );
+    }
+    if (url.includes(`/users/me/messages/${HARNESS_POLL_MESSAGE_ID}`)) {
+      return new Response(JSON.stringify(SYNTHETIC_GMAIL_MESSAGE_JSON), {
+        status: 200,
+        headers: { 'content-type': 'application/json' }
+      });
+    }
+    // Defensive — anything else is unexpected in the harness scenario.
+    return new Response(JSON.stringify({}), {
+      status: 404,
+      headers: { 'content-type': 'application/json' }
+    });
+  }) as typeof fetch;
+
+  const gmailClient = new GmailClient({ fetchImpl: harnessFetchImpl });
+
   const dispatch = createDispatchTable();
   wireInternalExecutors(dispatch, {
     audit: stores.audit,
     feedback: stores.feedback,
     memory: stores.memory
   });
+  wireExternalExecutors(dispatch, {
+    gmailClient,
+    tokenStore: stores.tokens
+  });
+
+  // Seed the harness user's OAuth token + Gmail cursor so the Phase 3B.2
+  // polling worker has the substrate it expects after a real OAuth
+  // connect would have run.
+  await stores.tokens.save({
+    user_id: SYNTHETIC_USER_ID,
+    provider: 'google',
+    scopes: [GMAIL_READONLY_SCOPE],
+    access_token: HARNESS_GMAIL_ACCESS_TOKEN
+  });
+  await stores.gmailCursors.upsert({
+    user_id: SYNTHETIC_USER_ID,
+    history_id: HARNESS_POLL_HISTORY_START
+  });
 
   /* --------------------------------------------------------------------
-   * 3. Permission Gate → Dispatch → Store (Phase 3A integrated path)
+   * 3. Permission Gate → Dispatch → Store (Phase 3A + 3B.2 integrated path)
    *
-   *    Section A (4 invocations) — denied at the gate, no dispatch fires:
-   *      gmail.read                  → not_implemented (external+declared)
+   *    Section A (3 invocations) — denied at the gate, no dispatch fires:
    *      sendblue.send_user_message  → not_implemented (external+declared)
-   *      slack.founder_review        → not_implemented (external+declared)
+   *      slack.founder_review        → not_implemented (internal+declared)
    *      booking.flights             → unknown_tool
+   *
+   *      gmail.read used to live here as a 'declared' denial. Phase 3B.2
+   *      flipped it to 'implemented' and the polling worker (section 3.5
+   *      below) drives the green path.
    *
    *    Section B (5 invocations) — allowed at the gate, dispatch fires:
    *      audit.write                 → executor writes 'session.created' audit
@@ -337,7 +449,6 @@ export async function runKernelIntegrationScenario(
 
   const invocations: readonly Invocation[] = [
     // Section A — denials
-    { tool_id: 'gmail.read', args: null },
     { tool_id: 'sendblue.send_user_message', args: null },
     { tool_id: 'slack.founder_review', args: null },
     { tool_id: 'booking.flights', args: null },
@@ -480,6 +591,28 @@ export async function runKernelIntegrationScenario(
       allowed: decision.allowed
     });
   }
+
+  /* --------------------------------------------------------------------
+   * 3.5. Gmail polling worker — runOnce (Phase 3B.2)
+   *    One cycle, one user, one new message. The worker calls
+   *    GmailClient.listHistorySince → dispatches gmail.read once →
+   *    advances the cursor. Writes its own policy.decided + tool.invoked
+   *    audits (under SYNTHETIC_USER_ID) plus one aggregate
+   *    gmail.poll.cycle audit (system actor, actor_user_id=null).
+   * ------------------------------------------------------------------ */
+  let pollInvId = 0;
+  const pollReport: GmailPollCycleReport = await runPollOnce({
+    gmailClient,
+    tokenStore: stores.tokens,
+    cursorStore: stores.gmailCursors,
+    dispatch,
+    auditStore: stores.audit,
+    toolInvocationStore: stores.toolInvocations,
+    gateDeps,
+    newInvocationId: () => `harness-poll-inv-${++pollInvId}`
+  });
+  const pollCursorAfter = (await stores.gmailCursors.get(SYNTHETIC_USER_ID))?.history_id
+    ?? HARNESS_POLL_HISTORY_START;
 
   /* --------------------------------------------------------------------
    * 4. Egress Policy (Phase 2C) — 3 views over a synthetic email
@@ -647,6 +780,15 @@ export async function runKernelIntegrationScenario(
     }),
     tool_invocations: Object.freeze({
       entries_written: toolInvocationEntries.length
+    }),
+    polling: Object.freeze({
+      users_total: pollReport.users_total,
+      users_polled: pollReport.users_polled,
+      messages_observed: pollReport.messages_observed,
+      messages_dispatched: pollReport.messages_dispatched,
+      messages_failed: pollReport.messages_failed,
+      cursor_before: HARNESS_POLL_HISTORY_START,
+      cursor_after: pollCursorAfter
     }),
     audit: Object.freeze({
       entries_written: audit_entries_written,

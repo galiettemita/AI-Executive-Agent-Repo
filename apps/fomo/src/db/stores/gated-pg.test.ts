@@ -467,5 +467,19 @@ describe('Phase 2E gated Postgres verification', { skip: !RUN_PG ? 'BREVIO_RUN_P
       assert.equal(await store.delete('u-cur-del'), false);
       assert.equal(await store.get('u-cur-del'), null);
     });
+
+    it('listUserIds returns each currently-connected user (Phase 3B.2)', async () => {
+      assert.ok(db);
+      const store = new PostgresGmailCursorStore(db);
+      await store.upsert({ user_id: 'u-cur-list-a', history_id: 'h-a' });
+      await store.upsert({ user_id: 'u-cur-list-b', history_id: 'h-b' });
+      const ids = new Set(await store.listUserIds());
+      assert.ok(ids.has('u-cur-list-a'));
+      assert.ok(ids.has('u-cur-list-b'));
+      await store.delete('u-cur-list-a');
+      const after = new Set(await store.listUserIds());
+      assert.ok(!after.has('u-cur-list-a'));
+      assert.ok(after.has('u-cur-list-b'));
+    });
   });
 });

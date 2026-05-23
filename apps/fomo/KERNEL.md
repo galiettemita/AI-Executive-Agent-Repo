@@ -29,8 +29,10 @@ workflow) may begin. Not before.
 - [x] **Dispatch Table** (Phase 3A) — typed registry binding tool ids to executors, fail-closed on unknown tool / no executor / executor throw
 - [x] **Internal Executors** (Phase 3A) — `auditWriteExecutor`, `feedbackWriteExecutor`, `memorySignalUpsertExecutor` wired via `wireInternalExecutors()`
 - [x] **Gmail HTTP client** (Phase 3B.1) — read-only scope, injectable FetchLike, 401 → `GmailUnauthorizedError`, retryable 5xx/429 classification, base64url-aware message projection to `RawEmailContext`
-- [x] **Gmail cursor store** (Phase 3B.1) — per-user Gmail history_id; in-memory + Postgres; new `gmail_cursors` Drizzle table (migration `0001_gmail_cursors.sql`)
+- [x] **Gmail cursor store** (Phase 3B.1) — per-user Gmail history_id; in-memory + Postgres; new `gmail_cursors` Drizzle table (migration `0001_gmail_cursors.sql`); `listUserIds()` added in 3B.2 as canonical "Gmail-connected users" source for the polling worker
 - [x] **OAuth go-live routes** (Phase 3B.1) — `POST /oauth/google/start` (session-authenticated) + `GET /oauth/google/callback` (state-authenticated). PKCE + nonce single-use replay protection; state HMAC binds user_id; defense-in-depth nonce-row vs state user_id check
+- [x] **gmail.read executor** (Phase 3B.2) — `gmailReadExecutor` shim over `GmailClient.getMessage` keyed by `{ message_id }`; loads access token via `TokenStore.loadAccessToken`; on 401 marks `needs_reauth` and re-throws; wired through `wireExternalExecutors`
+- [x] **Gmail polling worker** (Phase 3B.2) — `runOnce(deps)` cycle: per user, calls `listHistorySince`, dispatches `gmail.read` for each new message id, advances cursor, writes per-message audit + aggregate `gmail.poll.cycle` entry; `startPolling(deps, opts)` interval wrapper; founder-gated via `FOMO_GMAIL_POLLING_ENABLED` (default false)
 - [x] Safe Logger — sensitive-key redaction + token-shape regex
 - [x] OAuth substrate — token-crypto (AES-256-GCM at-rest), oauth-state (HMAC+PKCE), exchange, token-store, provider registry (Google only)
 - [x] Session HMAC — signed-session tokens + session-middleware
@@ -42,9 +44,11 @@ workflow) may begin. Not before.
 ### Honest semantics
 - [x] Permission Gate denies `not_implemented` for ALL declared tools regardless of surface (Phase 2C.1 amendment)
 - [x] Phase 3A flipped the three internal capabilities to `'implemented'` alongside their dispatch wiring in [`src/dispatch/internal-executors.ts`](src/dispatch/internal-executors.ts)
-- [x] Three external tools (`gmail.read`, `sendblue.send_user_message`, `slack.founder_review`) remain `'declared'` until their adapters land (Phase 3B / 3E / 3D respectively per the revised Phase 3 map)
+- [x] **Phase 3B.2 flipped `gmail.read` to `'implemented'`** alongside `gmailReadExecutor` wireup in [`src/dispatch/external-executors.ts`](src/dispatch/external-executors.ts). The gate still requires consent (`requires_consent: true`) and a non-needs-reauth Google OAuth token (`requires_oauth_provider: 'google'`) before a dispatch is authorized
+- [x] Two external tools (`sendblue.send_user_message`, `slack.founder_review`) remain `'declared'` until their adapters land (Phase 3E / 3D respectively per the revised Phase 3 map)
 - [x] Phase 3B.1 adds two HTTP routes: `POST /oauth/google/start` (session-authenticated) and `GET /oauth/google/callback` (state-HMAC-authenticated). The Phase 2F invariant "no HTTP route beyond `GET /health`" was scoped to Phase 2; Phase 3 explicitly authorizes workflow HTTP surface per the revised map
-- [x] Gmail read-only adapter exists (Phase 3B.1) but `gmail.read` tool stays `'declared'` — no executor wired until Phase 3B.2. The adapter is exercised once by the OAuth callback (to seed the gmail_cursors history_id) and is otherwise dormant
+- [x] **Polling kill-switch** (Phase 3B.2): `FOMO_GMAIL_POLLING_ENABLED` defaults to `false`. The polling worker bootstrap in `apps/fomo/src/index.ts` reads this once at boot — when `false`, no interval is installed and no autonomous Gmail reads happen. `FOMO_GMAIL_POLLING_INTERVAL_MS` (default 60_000) tunes the cycle cadence when enabled. The gate does NOT consult the polling switch — ad-hoc `gmail.read` dispatches (admin endpoint, harness) remain possible when polling is off
+- [x] **No OAuth refresh-token flow in 3B.2.** On 401 the worker marks `needs_reauth` and skips that user. The next OAuth-connect through `/oauth/google/start` re-mints fresh tokens. A dedicated refresh path can land later (3B.3 or folded into 3C) without changing the worker's API
 - [x] No SendBlue / Slack / real-model adapter exists yet (Phase 3D / 3E / 3C)
 - [x] **Dispatch table cannot bypass the Permission Gate — structural guarantee** (Phase 3A.1). `dispatch.execute()` signature requires an `AuthorizedToolCall`, not a raw `tool_id`. The class has a private constructor; the only factory is `AuthorizedToolCall.fromDecision(decision)` which returns `null` unless `decision.allowed === true && decision.code === 'allowed' && isToolId(decision.tool_id)`. Runtime `instanceof` check in `execute()` rejects forged objects with code `'unauthorized'`
 - [x] **`audit.write` dispatch never creates recursive audit logging** — executor calls `store.audit.write` directly; harness's `policy.decided` / `tool.invoked` audits go direct to store, not through dispatch
@@ -55,7 +59,8 @@ workflow) may begin. Not before.
 - [x] `KernelScenarioReport` is deeply frozen — callers cannot mutate it
 - [x] Two scenario runs are independent — each constructs its own in-memory stores
 - [x] **Audit log participates in the integrated path** (Phase 2F.1) — harness writes a sanitized audit entry at every kernel touch. Gate test asserts entries > 0, per-action breakdown, and forbidden-content leak canary (no raw email body / headers / attachment filenames / prompt text / reply text in any audit entry).
-- [x] **Dispatch table participates in the integrated path** (Phase 3A) — harness wires `wireInternalExecutors`, then routes the 5 internal invocations as `gate → AuthorizedToolCall.fromDecision → dispatch.execute → store write`. The 4 declared-external + unknown probes return `null` from the factory, so dispatch is structurally unreachable. The runtime `unauthorized` deny path is covered by dedicated tests in [`dispatch/dispatcher.test.ts`](src/dispatch/dispatcher.test.ts).
+- [x] **Dispatch table participates in the integrated path** (Phase 3A + 3B.2) — harness wires `wireInternalExecutors` + `wireExternalExecutors`, then routes 5 explicit internal invocations as `gate → AuthorizedToolCall.fromDecision → dispatch.execute → store write`. The 3 explicit declared/unknown probes return `null` from the factory. The runtime `unauthorized` deny path is covered by dedicated tests in [`dispatch/dispatcher.test.ts`](src/dispatch/dispatcher.test.ts).
+- [x] **Polling worker participates in the integrated path** (Phase 3B.2) — harness seeds a token + cursor for the synthetic user, injects a mock `GmailClient` (with leak-canary headers/body) that returns one new message, then runs `gmail-poll.runOnce` once. The worker dispatches `gmail.read` end-to-end, advances the cursor, and writes its own per-message audit. The audit-leak canary test runs over the worker's audit entries too, proving the dispatch path emits no raw email content.
 
 ### CI + safety
 - [x] `pnpm build` green
@@ -105,20 +110,25 @@ and what Phase 3 must wire to use it.
 | Drizzle client | [src/db/client.ts](src/db/client.ts) | [db/client.test.ts](src/db/client.test.ts) | ~12 | Store factory | `DATABASE_URL` env var |
 | Store factory | [src/db/store-factory.ts](src/db/store-factory.ts) | [db/store-factory.test.ts](src/db/store-factory.test.ts) | ~7 | Integration Harness | Phase 3 callers receive `SubstrateStores` from here |
 | Postgres stores | [src/db/stores/*-postgres.ts](src/db/stores/) | [stores/gated-pg.test.ts](src/db/stores/gated-pg.test.ts) | ~22 (gated, including gmail_cursors in 3B.1) | Store factory (when `DATABASE_URL` set) | Real Neon deploy uses these |
-| **Gmail HTTP client** (NEW Phase 3B.1) | [src/adapters/gmail/client.ts](src/adapters/gmail/client.ts) | [adapters/gmail/client.test.ts](src/adapters/gmail/client.test.ts) | ~15 | OAuth callback (seeds cursor); Phase 3B.2 polling worker | `gmail.read` executor (Phase 3B.2) |
-| **Gmail cursor store** (NEW Phase 3B.1) | [src/memory/gmail-cursors.ts](src/memory/gmail-cursors.ts) | [memory/gmail-cursors.test.ts](src/memory/gmail-cursors.test.ts) | ~9 (in-memory) + ~3 (gated PG) | OAuth callback (initializes); Phase 3B.2 polling worker (advances) | Phase 3B.2 reads + advances |
-| **OAuth Google routes** (NEW Phase 3B.1) | [src/routes/oauth-google.ts](src/routes/oauth-google.ts) | [routes/oauth-google.test.ts](src/routes/oauth-google.test.ts) | ~10 | `apps/fomo/src/index.ts` (wired when GOOGLE_CLIENT_ID/SECRET/REDIRECT env set) | Phase 3B.2 polling worker reads tokens via TokenStore |
+| **Gmail HTTP client** (Phase 3B.1) | [src/adapters/gmail/client.ts](src/adapters/gmail/client.ts) | [adapters/gmail/client.test.ts](src/adapters/gmail/client.test.ts) | ~15 | OAuth callback (seeds cursor); polling worker (every cycle); gmail.read executor (per message) | — |
+| **Gmail cursor store** (Phase 3B.1) | [src/memory/gmail-cursors.ts](src/memory/gmail-cursors.ts) | [memory/gmail-cursors.test.ts](src/memory/gmail-cursors.test.ts) | ~13 (in-memory) + ~4 (gated PG) | OAuth callback (initializes); polling worker (advances + `listUserIds`) | — |
+| **OAuth Google routes** (Phase 3B.1) | [src/routes/oauth-google.ts](src/routes/oauth-google.ts) | [routes/oauth-google.test.ts](src/routes/oauth-google.test.ts) | ~10 | `apps/fomo/src/index.ts` (wired when GOOGLE_CLIENT_ID/SECRET/REDIRECT env set) | — |
+| **External Executors** (NEW Phase 3B.2) | [src/dispatch/external-executors.ts](src/dispatch/external-executors.ts) | [dispatch/external-executors.test.ts](src/dispatch/external-executors.test.ts) | ~9 | `wireExternalExecutors` registers `gmail.read` at dispatch construction; called by index.ts + integration harness | Phase 3D / 3E add slack / sendblue executors alongside |
+| **Gmail Polling Worker** (NEW Phase 3B.2) | [src/workers/gmail-poll.ts](src/workers/gmail-poll.ts) | [workers/gmail-poll.test.ts](src/workers/gmail-poll.test.ts) | ~14 | `apps/fomo/src/index.ts` (when `FOMO_GMAIL_POLLING_ENABLED=true`); integration harness (runs one cycle) | Phase 3C plugs the ranker as the downstream consumer of dispatched message bodies |
 
 ---
 
-## Audit participation matrix (Phase 2F.1 + 3A)
+## Audit participation matrix (Phase 2F.1 + 3A + 3B.2)
 
 The integration harness writes a sanitized audit entry at every kernel
 touch. The gate test asserts both the count and that no payload content
-leaks into any entry. Phase 3A added 5 entries: the dispatched internal
-invocations produce additional `policy.decided` + `tool.invoked` entries
-(now 9 each instead of 7), plus one `session.created` entry written by
-the dispatched `audit.write` executor itself.
+leaks into any entry. Phase 3B.2 changed the breakdown without changing
+the total: removed the `gmail.read` denial entry pair (2 entries) and
+added the polling worker's `gmail.read` dispatch entry pair (2 entries).
+The polling worker also writes one `gmail.poll.cycle` entry per cycle
+with `actor_user_id=null` (system actor) — that entry does NOT count
+toward `audit.entries_written` (which reads `recent(SYNTHETIC_USER_ID)`)
+but is asserted in the worker's own unit tests.
 
 | Kernel touch | Audit action | Entries per scenario | Sanitized detail (no payload) |
 |---|---|---|---|
@@ -129,7 +139,8 @@ the dispatched `audit.write` executor itself.
 | Feedback write | `feedback.written` | 2 | `kind`, `alert_id`, `sender_present` (boolean, not the email) |
 | Memory upsert | `memory.upserted` | 2 | `kind`, `scope_present` (boolean, not the scope_key), `source` |
 | Model route | `model.routed` | 1 | `capability`, `model_name`, `prompt_version`, `schema_valid` (NOT prompt text or output text) |
-| **Total** | — | **30** | |
+| **Total** (user-scoped) | — | **30** | |
+| Polling cycle (system actor) | `gmail.poll.cycle` | 1 (not user-scoped) | `users_total`, `users_polled`, `users_skipped`, `users_unauthorized`, `users_api_error`, `messages_observed`, `messages_dispatched`, `messages_failed` |
 
 **No-recursive-audit invariant (Phase 3A guardrail):** the dispatched
 `audit.write` executor calls `store.audit.write` DIRECTLY. The harness's
@@ -150,29 +161,30 @@ the prompt, reply text, and email body so any leak surfaces here):
 - full user reply text
 - known leak canary strings injected by the harness for the test
 
-The new audit action types (`policy.decided`, `tool.invoked`,
+The audit action types (`policy.decided`, `tool.invoked`,
 `state.transitioned`, `feedback.written`, `memory.upserted`,
-`model.routed`) are legitimate Phase 3 audit categories. Phase 3 callers
-should continue writing them when the real dispatch wiring lands.
+`model.routed`, `gmail.poll.cycle`) are legitimate Phase 3 audit
+categories. Phase 3 callers should continue writing them when the real
+dispatch wiring lands.
 
-## v0.1 Tool Registry status (Phase 3A)
+## v0.1 Tool Registry status (Phase 3A + 3B.2)
 
-Three internal capabilities flipped to `'implemented'` in Phase 3A. The
-three external tools remain `'declared'` and the Permission Gate continues
-to deny them with `not_implemented`.
+Four tools are `'implemented'`: the three internal writers (Phase 3A)
+and `gmail.read` (Phase 3B.2). Two tools remain `'declared'` and the
+Permission Gate continues to deny them with `not_implemented`.
 
 | Tool ID | Surface | Risk tier | Executor status | Wired in | Remaining Phase 3 wiring |
 |---|---|---|---|---|---|
-| `gmail.read` | external | read | **declared** | — | Adapter + OAuth + cursor store landed in 3B.1; executor wiring + flip lands in **Phase 3B.2** |
+| `gmail.read` | external | read | **implemented** | Phase 3B.2 | `gmailReadExecutor` shim over `GmailClient.getMessage`; gate still enforces consent + OAuth |
 | `sendblue.send_user_message` | external | send | **declared** | — | **Phase 3E** SendBlue HTTP adapter + send path |
 | `slack.founder_review` | internal | send | **declared** | — | **Phase 3D** Slack Block-Kit card poster |
 | `audit.write` | internal | internal | **implemented** | Phase 3A | `auditWriteExecutor` writes to AuditStore |
 | `feedback.write` | internal | internal | **implemented** | Phase 3A | `feedbackWriteExecutor` writes to FeedbackStore |
 | `memory_signal.write` | internal | internal | **implemented** | Phase 3A | `memorySignalUpsertExecutor` upserts MemorySignalStore |
 
-For the three implemented tools, the gate consults policy normally (kill
+For the four implemented tools, the gate consults policy normally (kill
 switches, consent, OAuth) and on allow, dispatch routes to the executor.
-For the three still-declared tools, the gate denies `not_implemented`
+For the two still-declared tools, the gate denies `not_implemented`
 before any dispatch is attempted. This is the honest invariant the
 integration harness asserts.
 
@@ -184,8 +196,8 @@ integration harness asserts.
 |---|---|
 | **3A** | Internal Dispatch — dispatch table + 3 internal executors + flip those 3 tools to `implemented`. **(done)** |
 | **3B.1** | Gmail HTTP client + OAuth go-live routes + `gmail_cursors` table + cursor store (in-memory + Postgres). `gmail.read` stays declared. **(done)** |
-| 3B.2 | Gmail polling worker + `gmail.read` executor wiring + flip `gmail.read` to `implemented`. Polling kill-switch `FOMO_GMAIL_POLLING_ENABLED` default false |
-| 3C | Ranker + Real Model Backends — OpenAI/Anthropic via existing router + ranker prompt + real fixtures |
+| **3B.2** | Gmail polling worker + `gmail.read` executor wiring + flip `gmail.read` to `implemented`. Polling kill-switch `FOMO_GMAIL_POLLING_ENABLED` default false. **(done)** |
+| 3C | Ranker + Real Model Backends — OpenAI/Anthropic via existing router + ranker prompt + real fixtures. Worker output (RawEmailContext) becomes ranker input |
 | 3D | Slack Founder Review Only — Slack adapter + founder-review path; flip `slack.founder_review` to `implemented`. **No live user-facing texts yet.** |
 | 3E | SendBlue Founder-Only Outbound — SendBlue HTTP client + first live send (founder-only); flip `sendblue.send_user_message` to `implemented` |
 | 3F | SendBlue Inbound Reply Parser — webhook + reply classification + snooze scheduler + memory/feedback updates from replies |

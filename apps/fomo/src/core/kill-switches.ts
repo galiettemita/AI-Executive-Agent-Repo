@@ -1,27 +1,38 @@
 // Kill Switches — env-driven boolean/numeric flags that gate dangerous
 // behavior. Per FOMO_PLAN §16.5: "Defaults must be safe."
 //
-// All four defaults bias toward "no effect on the world":
+// All boolean defaults bias toward "no effect on the world":
 //   send_enabled        false  → no outbound iMessage even after approval
 //   auto_send_enabled   false  → no auto-send; founder review required
 //   friend_beta_enabled false  → friend onboarding blocked
+//   polling_enabled     false  → Gmail polling worker is dormant
 //   max_users           1      → only the founder may exist
+//   polling_interval_ms 60_000 → 60s; only relevant when polling_enabled
 //
-// The Permission Gate consults these before allowing send-tier tools.
+// The Permission Gate consults the send/auto-send switches before
+// allowing send-tier tools. The polling switch is consulted only by the
+// Gmail polling worker bootstrap in index.ts — the gate does NOT block
+// gmail.read when polling is off; ad-hoc gmail.read invocations
+// (e.g. from a future admin endpoint) remain possible.
+//
 // env is injectable so tests don't have to mutate process.env.
 
 export interface KillSwitches {
   readonly send_enabled: boolean;
   readonly auto_send_enabled: boolean;
   readonly friend_beta_enabled: boolean;
+  readonly polling_enabled: boolean;
   readonly max_users: number;
+  readonly polling_interval_ms: number;
 }
 
 const DEFAULTS = {
   send_enabled: false,
   auto_send_enabled: false,
   friend_beta_enabled: false,
-  max_users: 1
+  polling_enabled: false,
+  max_users: 1,
+  polling_interval_ms: 60_000
 } as const satisfies KillSwitches;
 
 // Strict opt-in parse: only the literal strings 'true' or '1' (case-insensitive,
@@ -53,7 +64,12 @@ export function loadKillSwitches(env: NodeJS.ProcessEnv = process.env): KillSwit
     send_enabled: parseBool(env.FOMO_SEND_ENABLED),
     auto_send_enabled: parseBool(env.FOMO_AUTO_SEND_ENABLED),
     friend_beta_enabled: parseBool(env.FOMO_FRIEND_BETA_ENABLED),
-    max_users: parsePositiveIntSafe(env.FOMO_MAX_USERS, DEFAULTS.max_users)
+    polling_enabled: parseBool(env.FOMO_GMAIL_POLLING_ENABLED),
+    max_users: parsePositiveIntSafe(env.FOMO_MAX_USERS, DEFAULTS.max_users),
+    polling_interval_ms: parsePositiveIntSafe(
+      env.FOMO_GMAIL_POLLING_INTERVAL_MS,
+      DEFAULTS.polling_interval_ms
+    )
   });
 }
 

@@ -7,6 +7,13 @@ import { handleHealth } from './routes/health.js';
 import { tryHandleOAuthGoogleRequest, type OAuthGoogleRouteDeps } from './routes/oauth-google.js';
 import { GmailClient } from './adapters/gmail/client.js';
 import { createStores, type SubstrateStoresHandle } from './db/store-factory.js';
+import { loadKillSwitches, type KillSwitches } from './core/kill-switches.js';
+import { createToolRegistry } from './core/tool-registry.js';
+import { type PolicyGateDeps } from './core/policy-gate.js';
+import { createDispatchTable, type DispatchTable } from './dispatch/dispatcher.js';
+import { wireInternalExecutors } from './dispatch/internal-executors.js';
+import { wireExternalExecutors } from './dispatch/external-executors.js';
+import { runOnce as runPollOnce } from './workers/gmail-poll.js';
 import { loadCryptoConfig } from './security/token-crypto.js';
 import { loadSessionConfig } from './security/session.js';
 import { InMemoryNonceStore, loadOAuthStateConfig } from './security/oauth/state.js';
@@ -19,6 +26,10 @@ interface FomoRuntime {
   startedAtMs: number;
   storesHandle: SubstrateStoresHandle;
   close(): Promise<void>;
+}
+
+interface PollingHandle {
+  stop(): Promise<void>;
 }
 
 function getHeader(req: http.IncomingMessage, name: string): string | undefined {
@@ -75,7 +86,8 @@ function sendJSON(res: http.ServerResponse, statusCode: number, payload: Record<
 // just don't exist. Production deploys should have all three set.
 function buildOAuthGoogleDeps(
   storesHandle: SubstrateStoresHandle,
-  config: FomoConfig
+  config: FomoConfig,
+  gmailClient: GmailClient
 ): OAuthGoogleRouteDeps | null {
   const providerConfig = loadProviderConfig('google');
   if (!providerConfig) {
@@ -90,8 +102,117 @@ function buildOAuthGoogleDeps(
     nonceStore: new InMemoryNonceStore(),
     tokenStore: storesHandle.stores.tokens,
     gmailCursorStore: storesHandle.stores.gmailCursors,
-    gmailClient: new GmailClient(),
+    gmailClient,
     sessionConfig: loadSessionConfig()
+  };
+}
+
+/* ---------------------------------------------------------------------- */
+/* Polling bootstrap (Phase 3B.2)                                         */
+/* ---------------------------------------------------------------------- */
+
+// hasConsent / hasOAuth are sync callbacks per the Permission Gate API.
+// The polling worker iterates users per cycle, but the gate evaluations
+// happen synchronously inside runOnce. We refresh a token-state snapshot
+// once at the top of each cycle and the callbacks read from it.
+//
+// Identity: for v0.1, completing OAuth IS consent for gmail.read — the
+// founder explicitly granted by walking through /oauth/google/start.
+// Future phases that introduce a separate consent surface (e.g., per-tool
+// consent toggles, friend-beta gating) will plug a real ConsentStore in
+// here without changing the worker's API.
+interface CycleTokenSnapshot {
+  readonly has: boolean;
+  readonly needsReauth: boolean;
+}
+
+function buildLiveGateDeps(
+  killSwitches: KillSwitches,
+  snapshot: Map<string, CycleTokenSnapshot>
+): PolicyGateDeps {
+  return {
+    registry: createToolRegistry(),
+    switches: killSwitches,
+    hasConsent: (userId: string): boolean => snapshot.get(userId)?.has ?? false,
+    hasOAuth: (userId: string, provider: string): boolean => {
+      if (provider !== 'google') return false;
+      const s = snapshot.get(userId);
+      return !!s && s.has && !s.needsReauth;
+    }
+  };
+}
+
+function startGmailPolling(
+  storesHandle: SubstrateStoresHandle,
+  gmailClient: GmailClient,
+  dispatch: DispatchTable,
+  killSwitches: KillSwitches,
+  config: FomoConfig
+): PollingHandle {
+  const stores = storesHandle.stores;
+  let stopped = false;
+  let inflight: Promise<void> = Promise.resolve();
+  let timer: ReturnType<typeof setTimeout> | null = null;
+
+  const tick = (): void => {
+    if (stopped) return;
+    inflight = (async () => {
+      try {
+        const userIds = await stores.gmailCursors.listUserIds();
+        const snapshot = new Map<string, CycleTokenSnapshot>();
+        for (const uid of userIds) {
+          const tokens = await stores.tokens.list(uid);
+          const google = tokens.find((t) => t.provider === 'google');
+          snapshot.set(uid, {
+            has: !!google,
+            needsReauth: google?.needs_reauth ?? false
+          });
+        }
+        const gateDeps = buildLiveGateDeps(killSwitches, snapshot);
+        const report = await runPollOnce({
+          gmailClient,
+          tokenStore: stores.tokens,
+          cursorStore: stores.gmailCursors,
+          dispatch,
+          auditStore: stores.audit,
+          toolInvocationStore: stores.toolInvocations,
+          gateDeps
+        });
+        if (stopped) return;
+        logEvent(config, undefined, 'fomo.poll.cycle', 'INFO', {
+          users_total: report.users_total,
+          users_polled: report.users_polled,
+          users_skipped: report.users_skipped,
+          users_unauthorized: report.users_unauthorized,
+          users_api_error: report.users_api_error,
+          messages_observed: report.messages_observed,
+          messages_dispatched: report.messages_dispatched,
+          messages_failed: report.messages_failed
+        });
+      } catch (err) {
+        if (stopped) return;
+        logEvent(config, undefined, 'fomo.poll.error', 'ERROR', {
+          error: err instanceof Error ? err.message : String(err)
+        });
+      }
+    })();
+    void inflight.finally(() => {
+      if (stopped) return;
+      timer = setTimeout(tick, killSwitches.polling_interval_ms);
+    });
+  };
+
+  tick();
+
+  return {
+    async stop() {
+      stopped = true;
+      if (timer !== null) {
+        clearTimeout(timer);
+        timer = null;
+      }
+      await inflight.catch(() => undefined);
+    }
   };
 }
 
@@ -104,8 +225,47 @@ export function createFomoRuntime(config: FomoConfig = loadFomoConfig()): FomoRu
   const cryptoConfig = loadCryptoConfig();
   const storesHandle = createStores({ env: process.env, crypto: cryptoConfig });
 
+  // Kill switches — read once at boot. Per FOMO_PLAN §16.5, defaults are
+  // safe (everything off). FOMO_GMAIL_POLLING_ENABLED controls whether
+  // the polling worker installs its interval.
+  const killSwitches = loadKillSwitches(process.env);
+
+  // Shared GmailClient — used by both the OAuth callback (to seed the
+  // cursor at connect time) and the polling worker (to drive
+  // listHistorySince + getMessage every cycle).
+  const gmailClient = new GmailClient();
+
+  // Dispatch table + executor wireup. Always wired regardless of polling
+  // flag: an admin endpoint or ad-hoc caller could still invoke
+  // gmail.read via dispatch when polling is off. The gate still gates
+  // on consent + OAuth.
+  const dispatch = createDispatchTable();
+  wireInternalExecutors(dispatch, {
+    audit: storesHandle.stores.audit,
+    feedback: storesHandle.stores.feedback,
+    memory: storesHandle.stores.memory
+  });
+  wireExternalExecutors(dispatch, {
+    gmailClient,
+    tokenStore: storesHandle.stores.tokens
+  });
+
   // OAuth routes — graceful skip when not configured.
-  const oauthGoogleDeps = buildOAuthGoogleDeps(storesHandle, config);
+  const oauthGoogleDeps = buildOAuthGoogleDeps(storesHandle, config, gmailClient);
+
+  // Polling worker — bootstrapped only when FOMO_GMAIL_POLLING_ENABLED=true.
+  // Safe default: off (no autonomous Gmail reads until founder opts in).
+  let pollingHandle: PollingHandle | null = null;
+  if (killSwitches.polling_enabled) {
+    pollingHandle = startGmailPolling(storesHandle, gmailClient, dispatch, killSwitches, config);
+    logEvent(config, undefined, 'fomo.poll.enabled', 'INFO', {
+      interval_ms: killSwitches.polling_interval_ms
+    });
+  } else {
+    logEvent(config, undefined, 'fomo.poll.disabled', 'INFO', {
+      detail: 'FOMO_GMAIL_POLLING_ENABLED is not "true"; polling worker dormant'
+    });
+  }
 
   const server = http.createServer((req, res) => {
     const ctx = requestContext(req);
@@ -148,6 +308,9 @@ export function createFomoRuntime(config: FomoConfig = loadFomoConfig()): FomoRu
     startedAtMs,
     storesHandle,
     close: async () => {
+      if (pollingHandle) {
+        await pollingHandle.stop();
+      }
       await new Promise<void>((resolve, reject) => {
         server.close((err) => (err ? reject(err) : resolve()));
       });
@@ -161,7 +324,8 @@ export function createFomoRuntime(config: FomoConfig = loadFomoConfig()): FomoRu
     logEvent(config, undefined, 'fomo.server.listening', 'INFO', {
       port: config.port,
       store_backend: storesHandle.backend,
-      oauth_google_wired: oauthGoogleDeps !== null
+      oauth_google_wired: oauthGoogleDeps !== null,
+      polling_enabled: killSwitches.polling_enabled
     });
   });
 
