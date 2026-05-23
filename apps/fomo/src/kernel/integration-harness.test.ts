@@ -29,10 +29,20 @@ describe('Kernel Integration Gate — full scenario report', () => {
       [...report.registry.internal_tool_ids].sort(),
       ['audit.write', 'feedback.write', 'memory_signal.write', 'slack.founder_review']
     );
-    // Phase 2 invariant: every tool ships 'declared'. Phase 3 flips
-    // executor_status as dispatch wiring lands.
-    assert.equal(report.registry.declared_tool_ids.length, 6);
-    assert.equal(report.registry.implemented_tool_ids.length, 0);
+    // Phase 3A invariant: the three internal capabilities flipped to
+    // 'implemented' (their dispatch wiring lives in
+    // apps/fomo/src/dispatch/internal-executors.ts). The three external
+    // tools remain 'declared' until their real adapters land (3B/3D/3E).
+    assert.equal(report.registry.declared_tool_ids.length, 3);
+    assert.equal(report.registry.implemented_tool_ids.length, 3);
+    assert.deepEqual(
+      [...report.registry.implemented_tool_ids].sort(),
+      ['audit.write', 'feedback.write', 'memory_signal.write']
+    );
+    assert.deepEqual(
+      [...report.registry.declared_tool_ids].sort(),
+      ['gmail.read', 'sendblue.send_user_message', 'slack.founder_review']
+    );
 
     // ---- Kill Switches (Phase 2B) — safe defaults all-disabled ----
     assert.equal(report.kill_switches.send_enabled, false);
@@ -40,21 +50,39 @@ describe('Kernel Integration Gate — full scenario report', () => {
     assert.equal(report.kill_switches.friend_beta_enabled, false);
     assert.equal(report.kill_switches.max_users, 1);
 
-    // ---- Permission Gate (Phase 2B + 2B.1 + 2C.1) ----
-    // 7 decisions: 6 known tools (all deny not_implemented) + 1 off-registry
-    // probe (denies unknown_tool). None allowed in Phase 2 substrate state.
-    assert.equal(report.policy_decisions.length, 7);
-    for (const d of report.policy_decisions) {
-      assert.equal(d.allowed, false, `${d.tool_id} should be denied — got code=${d.code}`);
+    // ---- Permission Gate → Dispatch (Phase 2B + 2B.1 + 2C.1 + 3A) ----
+    // 9 invocations:
+    //   Section A — 4 denials at the gate (no dispatch):
+    //     gmail.read                  → not_implemented (external+declared)
+    //     sendblue.send_user_message  → not_implemented (external+declared)
+    //     slack.founder_review        → not_implemented (external+declared)
+    //     booking.flights             → unknown_tool
+    //   Section B — 5 allows + dispatch executes:
+    //     audit.write                 → executor writes 'session.created' audit
+    //     feedback.write × 2          → executor writes feedback events
+    //     memory_signal.write × 2     → executor upserts memory signals
+    assert.equal(report.policy_decisions.length, 9);
+    const decisions = report.policy_decisions;
+    // 4 denied + 5 allowed.
+    assert.equal(decisions.filter((d) => !d.allowed).length, 4);
+    assert.equal(decisions.filter((d) => d.allowed).length, 5);
+    // Each denied tool with the expected code.
+    const deniedByTool = new Map(
+      decisions.filter((d) => !d.allowed).map((d) => [d.tool_id, d.code])
+    );
+    assert.equal(deniedByTool.get('gmail.read'), 'not_implemented');
+    assert.equal(deniedByTool.get('sendblue.send_user_message'), 'not_implemented');
+    assert.equal(deniedByTool.get('slack.founder_review'), 'not_implemented');
+    assert.equal(deniedByTool.get('booking.flights'), 'unknown_tool');
+    // Allowed tool decisions all carry code='allowed'.
+    for (const d of decisions.filter((d) => d.allowed)) {
+      assert.equal(d.code, 'allowed', `${d.tool_id} allowed but code=${d.code}`);
     }
-    const byId = new Map(report.policy_decisions.map((d) => [d.tool_id, d.code]));
-    assert.equal(byId.get('gmail.read'), 'not_implemented');
-    assert.equal(byId.get('sendblue.send_user_message'), 'not_implemented');
-    assert.equal(byId.get('slack.founder_review'), 'not_implemented');
-    assert.equal(byId.get('audit.write'), 'not_implemented');
-    assert.equal(byId.get('feedback.write'), 'not_implemented');
-    assert.equal(byId.get('memory_signal.write'), 'not_implemented');
-    assert.equal(byId.get('booking.flights'), 'unknown_tool');
+    // Each implemented internal tool appears at least once in the allowed set.
+    const allowedTools = new Set(decisions.filter((d) => d.allowed).map((d) => d.tool_id));
+    assert.ok(allowedTools.has('audit.write'));
+    assert.ok(allowedTools.has('feedback.write'));
+    assert.ok(allowedTools.has('memory_signal.write'));
 
     // ---- Egress Policy (Phase 2C) ----
     // No body_html, headers, attachment filenames, or harness leak canary
@@ -105,23 +133,27 @@ describe('Kernel Integration Gate — full scenario report', () => {
     assert.equal(report.cost.records_written, 1);
     assert.ok(report.cost.total_usd > 0, `expected non-zero cost, got ${report.cost.total_usd}`);
 
-    // ---- Tool Invocations (Phase 2E) ----
-    // One invocation per gate decision = 7.
-    assert.equal(report.tool_invocations.entries_written, 7);
+    // ---- Tool Invocations (Phase 2E + 3A) ----
+    // One invocation per gate decision = 9 (4 denials + 5 dispatched).
+    assert.equal(report.tool_invocations.entries_written, 9);
 
-    // ---- Audit Log (Phase 2A + Phase 2F.1) ----
+    // ---- Audit Log (Phase 2A + Phase 2F.1 + Phase 3A) ----
     // The harness writes an audit entry at every meaningful kernel touch.
     // Required-count breakdown (must hold for the Kernel Integration Gate):
-    //   policy.decided      7  (one per gate decision)
-    //   tool.invoked        7  (one per tool_invocations write)
+    //   policy.decided      9  (one per gate decision — 4 denied + 5 allowed)
+    //   tool.invoked        9  (one per tool_invocations write)
+    //   session.created     1  (from the dispatched audit.write executor —
+    //                            this IS the domain audit; no extra audit
+    //                            wrapper around it, which is the
+    //                            "no-recursive-audit" invariant)
     //   state.transitioned  6  (one per state machine transition)
     //   feedback.written    2  (founder_approved + user_snoozed)
     //   memory.upserted     2  (sender_importance + quietness_preference)
     //   model.routed        1  (single classification call)
     //                      —
-    //                      25  total
+    //                      30  total
     assert.ok(report.audit.entries_written > 0, 'audit log must participate in the kernel path');
-    assert.equal(report.audit.entries_written, 25);
+    assert.equal(report.audit.entries_written, 30);
     // Each required audit category must be exercised at least once.
     for (const requiredAction of [
       'policy.decided',
@@ -136,8 +168,9 @@ describe('Kernel Integration Gate — full scenario report', () => {
         `audit log missing required action: ${requiredAction}`
       );
     }
-    assert.equal(report.audit.by_action['policy.decided'], 7);
-    assert.equal(report.audit.by_action['tool.invoked'], 7);
+    assert.equal(report.audit.by_action['policy.decided'], 9);
+    assert.equal(report.audit.by_action['tool.invoked'], 9);
+    assert.equal(report.audit.by_action['session.created'], 1);
     assert.equal(report.audit.by_action['state.transitioned'], 6);
     assert.equal(report.audit.by_action['feedback.written'], 2);
     assert.equal(report.audit.by_action['memory.upserted'], 2);
@@ -174,10 +207,10 @@ describe('Kernel Integration Gate — full scenario report', () => {
     // Both runs report the same counts; neither sees the other's writes.
     assert.equal(a.feedback.events_written, 2);
     assert.equal(b.feedback.events_written, 2);
-    assert.equal(a.tool_invocations.entries_written, 7);
-    assert.equal(b.tool_invocations.entries_written, 7);
-    assert.equal(a.audit.entries_written, 25);
-    assert.equal(b.audit.entries_written, 25);
+    assert.equal(a.tool_invocations.entries_written, 9);
+    assert.equal(b.tool_invocations.entries_written, 9);
+    assert.equal(a.audit.entries_written, 30);
+    assert.equal(b.audit.entries_written, 30);
   });
 });
 
@@ -224,9 +257,14 @@ describe('Kernel Integration Gate — Permission Gate honest semantics', () => {
     assert.equal(d.code, 'not_implemented');
   });
 
-  it('declared internal capability (audit.write) denies not_implemented (no surface bypass)', () => {
+  it('declared external tool (slack.founder_review) denies not_implemented (Phase 3D wires the adapter)', () => {
+    // The "internal+declared denies" test from Phase 2F.1 is no longer
+    // valid in Phase 3A — audit.write / feedback.write / memory_signal.write
+    // are now executor_status='implemented' (real dispatch wired). The
+    // surface-independence of the gate's not_implemented rule is still
+    // exercised by the three external tools that remain declared.
     const d = decidePolicy(
-      { tool_id: 'audit.write', user_id: 'u1' },
+      { tool_id: 'slack.founder_review', user_id: 'u1' },
       {
         registry: createToolRegistry(),
         switches: SAFE_DEFAULT_KILL_SWITCHES,
