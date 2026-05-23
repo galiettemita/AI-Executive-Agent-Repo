@@ -13,7 +13,8 @@
       "dependsOn": ["^lint"]
     },
     "test": {
-      "dependsOn": ["^test"]
+      "dependsOn": ["^test"],
+      "env": ["BREVIO_RUN_PG_TESTS", "BREVIO_TEST_DATABASE_URL"]
     }
   }
 }
