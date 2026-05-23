@@ -7,11 +7,19 @@ This repository is mid-cleanup. The Phase 1 salvage left a minimal kernel that c
 ## Layout
 
 ```
+apps/fomo/                modular monolith — the v0.1 deployable
+  src/index.ts            /health server (only active HTTP surface in Phase 2)
+  src/core/               tool registry, kill switches, permission gate,
+                          egress policy, state machine, model router,
+                          cost tracking, audit log, safe logger,
+                          tool invocations, alert state transitions
+  src/memory/             feedback events, memory signals
+  src/security/           token crypto, session HMAC, OAuth (Google only in v0.1)
+  src/db/                 Drizzle schema + migrations + Postgres-backed stores
+  src/eval/               eval harness for model bake-offs (no real fixtures yet)
 packages/shared/          shared types, schemas, errors, utilities
-services/brevio-brain/    /health server today; ranking + reply parser in Phase 3
-services/brevio-gateway/  /health server + OAuth/audit/crypto primitives; routes wired in Phase 2-3
-migrations/               only 012_consent_audit_oauth survives Phase 1
 docs/                     future-architecture-notes (Phase 1 archive ledger)
+drizzle.config.ts         drizzle-kit config (schema at apps/fomo/src/db/schema.ts)
 ```
 
 ## Develop
@@ -20,14 +28,20 @@ docs/                     future-architecture-notes (Phase 1 archive ledger)
 pnpm install
 pnpm build
 pnpm test
+pnpm lint
 ```
 
-Each service runs its own `tsc` build into `dist/`. Tests run via `node --experimental-strip-types`.
+The `apps/fomo` workspace runs its own `tsc` build into `dist/`. Tests run via `node --experimental-strip-types`.
 
 ## Status
 
 Phase 1 ✅ — salvage cleanup, build green, tests green.
-Phase 2 — minimal MCP OS kernel (tool registry, OAuth manager, permission gate, audit log, etc.).
+Phase 2A ✅ — apps/fomo shell + migrated proven primitives.
+Phase 2B ✅ — tool registry, kill switches, permission gate (+ 2B.1 explicit executor_status).
+Phase 2C ✅ — egress policy, state machine, feedback + memory substrate (+ 2C.1 honest declared semantics).
+Phase 2D ✅ — model router, cost tracking, eval harness substrate (mock backend only).
+Phase 2E ✅ — Drizzle/Neon persistence skeleton (9 substrate tables + 7 Postgres-backed stores).
+Phase 2F — Kernel Integration Gate (proves the substrate is complete before Phase 3).
 Phase 3 — FOMO workflow (Gmail poll, ranker, Slack review, SendBlue alert, reply parser).
 Phase 4 — founder demo.
 

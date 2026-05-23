@@ -71,26 +71,45 @@ no foreign keys — see schema.ts header for the FK rationale).
 
 ## Tests
 
-CI runs against in-memory stores only — no live DB required.
-[`store-factory.test.ts`](store-factory.test.ts) verifies the Postgres
-construction path returns Postgres instances (no actual query is issued
-during construction; `pg.Pool` is lazy).
+Default `pnpm test` runs against in-memory stores only — no live DB
+required. [`store-factory.test.ts`](store-factory.test.ts) verifies the
+Postgres construction path returns Postgres instances (no actual query
+is issued during construction; `pg.Pool` is lazy).
 
-**Gated Postgres tests** (write-then-read against a real DB) are deferred
-to Phase 3 when there is a real caller exercising the stores. To add them
-later, follow this pattern:
+**Gated Postgres tests** live in
+[`stores/gated-pg.test.ts`](stores/gated-pg.test.ts) and run end-to-end
+against PGlite — PostgreSQL's C code compiled to WASM, same parser /
+planner / executor as a server-based Postgres but running in-process.
+Skipped by default; opt in via env:
 
-```typescript
-const RUN_PG = process.env.BREVIO_RUN_PG_TESTS === 'true';
-const PG_URL = process.env.BREVIO_TEST_DATABASE_URL;
-const skip = !RUN_PG ? 'BREVIO_RUN_PG_TESTS not set' :
-             !PG_URL ? 'BREVIO_TEST_DATABASE_URL not set' :
-             false;
-
-describe('PostgresAuditStore — integration', { skip }, () => { ... });
+```bash
+BREVIO_RUN_PG_TESTS=true pnpm test
 ```
 
-Local-dev setup for those tests would be:
+What gets verified end-to-end:
+
+- The Drizzle migration `0000_init.sql` applies cleanly and creates all 9 tables
+- `PostgresAuditStore` write + read + redact
+- `PostgresFeedbackStore` write, countByKind, countBySender, redact
+- `PostgresMemorySignalStore` upsert (ON CONFLICT replaces), null scope_key
+  handling, delete, list scoping
+- `PostgresCostStore` sumByModel + sumByPeriod aggregations
+- `PostgresAlertStateTransitionStore` ordered transitions, currentState,
+  state validation
+- `PostgresToolInvocationStore` write/read, counts, unique invocation_id
+  constraint, and the **privacy invariant** asserted twice: (a) metadata
+  redacted on write, (b) the `tool_invocations` table has zero
+  payload-shaped columns (`body_plain`, `body_html`, `reply_text`,
+  `prompt`, `email_body`)
+- `PostgresTokenStore` encrypted round-trip, upsert at (user, provider),
+  markNeedsReauth
+
+To run against a real server-based Postgres instead of PGlite (e.g. local
+Docker, Neon test branch), the same `BREVIO_RUN_PG_TESTS=true` flag
+works — extend `setup()` in `gated-pg.test.ts` to point at
+`BREVIO_TEST_DATABASE_URL` instead of constructing a `new PGlite()`.
+
+Local server-based Postgres setup:
 
 1. `docker run --rm -e POSTGRES_PASSWORD=test -p 5432:5432 -d postgres:16`
 2. `DATABASE_URL=postgres://postgres:test@localhost:5432/postgres pnpm exec drizzle-kit migrate`
