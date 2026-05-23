@@ -4,6 +4,7 @@
 import { redact } from './safe-logger.js';
 
 export type AuditAction =
+  // Lifecycle (Phase 2A)
   | 'consent.grant'
   | 'consent.revoke'
   | 'consent.snooze'
@@ -13,7 +14,20 @@ export type AuditAction =
   | 'oauth.revoke_failed'
   | 'token.decrypt_failure'
   | 'session.created'
-  | 'onboarding.dismissed';
+  | 'onboarding.dismissed'
+  // Kernel-touch events (Phase 2F.1) — written by the integrated kernel
+  // path so the audit log participates in every meaningful substrate
+  // operation, not just lifecycle events. Callers MUST pass sanitized
+  // detail only: no raw email body, no headers, no attachment filenames,
+  // no prompt text, no full reply text. Operational identifiers
+  // (tool_id, model_name, prompt_version, alert_id, from/to_state) are
+  // OK; user-payload content is not.
+  | 'policy.decided'
+  | 'tool.invoked'
+  | 'state.transitioned'
+  | 'feedback.written'
+  | 'memory.upserted'
+  | 'model.routed';
 
 export type AuditResult = 'success' | 'failure';
 
