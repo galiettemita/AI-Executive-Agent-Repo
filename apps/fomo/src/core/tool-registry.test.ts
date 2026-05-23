@@ -50,7 +50,7 @@ describe('createToolRegistry', () => {
     assert.ok(gmail);
     assert.equal(gmail?.id, 'gmail.read');
     assert.equal(gmail?.surface, 'external');
-    assert.equal(gmail?.executor_status, 'declared');
+    assert.equal(gmail?.executor_status, 'implemented');
     assert.equal(gmail?.category, 'context');
     assert.equal(gmail?.risk_tier, 'read');
     assert.equal(gmail?.requires_consent, true);
@@ -133,59 +133,43 @@ describe('createToolRegistry — external vs internal surface separation', () =>
   });
 });
 
-describe('createToolRegistry — executor_status honesty (Phase 3A)', () => {
+describe('createToolRegistry — executor_status honesty (Phase 3A + 3B.2)', () => {
   // Phase 3A wired dispatch executors for the three internal capabilities.
-  // External tools remain declared until their real adapters land
-  // (gmail.read in 3B, slack.founder_review in 3D, sendblue.send_user_message in 3E).
+  // Phase 3B.2 flipped gmail.read to 'implemented' alongside the
+  // gmailReadExecutor wireup. sendblue.send_user_message + slack.founder_review
+  // remain declared until their adapters land in Phase 3E / 3D.
 
-  it('the three internal capabilities are implemented', () => {
-    const registry = createToolRegistry();
-    const implementedInternals = registry
-      .getInternalCapabilities()
-      .filter((t) => t.executor_status === 'implemented')
-      .map((t) => t.id);
-    assert.deepEqual(
-      [...implementedInternals].sort(),
-      ['audit.write', 'feedback.write', 'memory_signal.write']
-    );
-  });
-
-  it('no external tool is currently implemented', () => {
-    const registry = createToolRegistry();
-    const implementedExternals = registry
-      .getExternalTools()
-      .filter((t) => t.executor_status === 'implemented')
-      .map((t) => t.id);
-    assert.deepEqual(
-      implementedExternals,
-      [],
-      `external tools claim implementation but no real adapter exists: ${implementedExternals.join(', ')}`
-    );
-  });
-
-  it('all external tools are still declared (Phase 3B/3D/3E land their adapters)', () => {
-    const registry = createToolRegistry();
-    for (const t of registry.getExternalTools()) {
-      assert.equal(
-        t.executor_status,
-        'declared',
-        `external tool ${t.id} should remain declared until its real adapter lands`
-      );
-    }
-  });
-
-  it('every implemented tool today is internal (no external implemented in Phase 3A)', () => {
+  it('the three internal capabilities + gmail.read are implemented', () => {
     const registry = createToolRegistry();
     const implemented = registry
       .getActiveTools()
-      .filter((t) => t.executor_status === 'implemented');
-    for (const t of implemented) {
-      assert.equal(
-        t.surface,
-        'internal',
-        `tool ${t.id} is implemented + ${t.surface} — Phase 3A only implements internal capabilities`
-      );
-    }
+      .filter((t) => t.executor_status === 'implemented')
+      .map((t) => t.id);
+    assert.deepEqual(
+      [...implemented].sort(),
+      ['audit.write', 'feedback.write', 'gmail.read', 'memory_signal.write']
+    );
+  });
+
+  it('sendblue.send_user_message + slack.founder_review remain declared', () => {
+    const registry = createToolRegistry();
+    const declared = registry
+      .getActiveTools()
+      .filter((t) => t.executor_status === 'declared')
+      .map((t) => t.id);
+    assert.deepEqual(
+      [...declared].sort(),
+      ['sendblue.send_user_message', 'slack.founder_review']
+    );
+  });
+
+  it('gmail.read is the only implemented external tool (others land in 3D/3E)', () => {
+    const registry = createToolRegistry();
+    const externalImpl = registry
+      .getExternalTools()
+      .filter((t) => t.executor_status === 'implemented')
+      .map((t) => t.id);
+    assert.deepEqual(externalImpl, ['gmail.read']);
   });
 });
 

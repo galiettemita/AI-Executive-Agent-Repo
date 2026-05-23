@@ -60,4 +60,11 @@ export class PostgresGmailCursorStore implements GmailCursorStore {
       .returning({ id: gmail_cursors.user_id });
     return result.length > 0;
   }
+
+  async listUserIds(): Promise<readonly string[]> {
+    const rows = await this.db
+      .select({ user_id: gmail_cursors.user_id })
+      .from(gmail_cursors);
+    return Object.freeze(rows.map((r) => r.user_id));
+  }
 }

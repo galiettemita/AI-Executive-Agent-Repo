@@ -80,7 +80,11 @@ const ACTIVE_TOOLS: readonly ToolDescriptor[] = Object.freeze([
   Object.freeze({
     id: 'gmail.read',
     surface: 'external',
-    executor_status: 'declared',
+    // Phase 3B.2: dispatch wired to GmailClient.getMessage via
+    // apps/fomo/src/dispatch/external-executors.ts#gmailReadExecutor.
+    // The gate still requires consent + a non-needs-reauth Google
+    // OAuth token before allowing a dispatch.
+    executor_status: 'implemented',
     category: 'context',
     risk_tier: 'read',
     description: 'Read-only access to a user\'s Gmail inbox for FOMO ranking.',

@@ -77,3 +77,36 @@ describe('InMemoryGmailCursorStore — delete', () => {
     assert.equal(await store.delete('u-1'), false);
   });
 });
+
+describe('InMemoryGmailCursorStore — listUserIds (Phase 3B.2)', () => {
+  it('returns empty list when no cursors stored', async () => {
+    const store = new InMemoryGmailCursorStore();
+    assert.deepEqual([...(await store.listUserIds())], []);
+  });
+
+  it('returns each user_id with a stored cursor', async () => {
+    const store = new InMemoryGmailCursorStore();
+    await store.upsert({ user_id: 'u-1', history_id: '100' });
+    await store.upsert({ user_id: 'u-2', history_id: '200' });
+    await store.upsert({ user_id: 'u-3', history_id: '300' });
+    const ids = [...(await store.listUserIds())].sort();
+    assert.deepEqual(ids, ['u-1', 'u-2', 'u-3']);
+  });
+
+  it('deleted user does not appear', async () => {
+    const store = new InMemoryGmailCursorStore();
+    await store.upsert({ user_id: 'u-1', history_id: '100' });
+    await store.upsert({ user_id: 'u-2', history_id: '200' });
+    await store.delete('u-1');
+    assert.deepEqual([...(await store.listUserIds())], ['u-2']);
+  });
+
+  it('returned list is frozen', async () => {
+    const store = new InMemoryGmailCursorStore();
+    await store.upsert({ user_id: 'u-1', history_id: '100' });
+    const ids = await store.listUserIds();
+    assert.throws(() => {
+      (ids as unknown as string[]).push('mutated');
+    });
+  });
+});

@@ -58,29 +58,16 @@ describe('decidePolicy — unknown tool', () => {
 describe('decidePolicy — not_implemented (any declared tool, regardless of surface)', () => {
   // Phase 2C.1 honest semantics: a tool with executor_status='declared'
   // denies not_implemented at the gate. Surface (external vs internal)
-  // does not bypass this. The Gmail/SendBlue adapters do not exist; neither
-  // does a dispatch table from internal tool ids to substrate stores.
-
-  it('denies gmail.read (external+declared)', () => {
-    const d = decidePolicy({ tool_id: 'gmail.read', user_id: 'u1' }, makeDeps());
-    assert.equal(d.allowed, false);
-    assert.equal(d.code, 'not_implemented');
-    assert.match(d.reason, /tool gmail\.read is declared.*no executor is wired/);
-  });
+  // does not bypass this. After Phase 3B.2 the only declared tools in
+  // the registry are sendblue.send_user_message and slack.founder_review;
+  // gmail.read is now implemented (executor wired in Phase 3B.2).
 
   it('denies sendblue.send_user_message (external+declared)', () => {
     const d = decidePolicy({ tool_id: 'sendblue.send_user_message', user_id: 'u1' }, makeDeps());
     assert.equal(d.allowed, false);
     assert.equal(d.code, 'not_implemented');
+    assert.match(d.reason, /tool sendblue\.send_user_message is declared.*no executor is wired/);
   });
-
-  // Phase 3A note: audit.write / feedback.write / memory_signal.write are
-  // now executor_status='implemented' (dispatch wired in
-  // apps/fomo/src/dispatch/internal-executors.ts). They no longer deny
-  // not_implemented — they ALLOW under default switches. The "implemented
-  // tools allow when policy passes" suite below covers their new allow
-  // path; the gate's not_implemented rule is now exercised only by the
-  // three still-declared external tools and the unknown_tool case.
 
   it('denies slack.founder_review (internal+declared+send-tier) with not_implemented, NOT send_disabled', () => {
     // not_implemented is checked before risk-tier. Without an adapter, the
@@ -94,26 +81,6 @@ describe('decidePolicy — not_implemented (any declared tool, regardless of sur
     const switches = loadKillSwitches({ FOMO_SEND_ENABLED: 'true', FOMO_AUTO_SEND_ENABLED: 'true' });
     const d = decidePolicy({ tool_id: 'slack.founder_review', user_id: 'u1' }, makeDeps({ switches }));
     assert.equal(d.code, 'not_implemented');
-  });
-
-  it('not_implemented short-circuits before consent / oauth checks', () => {
-    let consentCalls = 0;
-    let oauthCalls = 0;
-    decidePolicy(
-      { tool_id: 'gmail.read', user_id: 'u1' },
-      makeDeps({
-        hasConsent: () => {
-          consentCalls++;
-          return false;
-        },
-        hasOAuth: () => {
-          oauthCalls++;
-          return false;
-        }
-      })
-    );
-    assert.equal(consentCalls, 0, 'hasConsent should not run before not_implemented');
-    assert.equal(oauthCalls, 0, 'hasOAuth should not run before not_implemented');
   });
 
   it('not_implemented short-circuits before kill-switch evaluation (external send-tier)', () => {
