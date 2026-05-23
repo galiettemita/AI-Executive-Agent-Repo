@@ -55,17 +55,54 @@ describe('decidePolicy — unknown tool', () => {
   });
 });
 
-describe('decidePolicy — not_implemented (external + declared)', () => {
-  it('denies gmail.read because no executor is wired in Phase 2B', () => {
+describe('decidePolicy — not_implemented (any declared tool, regardless of surface)', () => {
+  // Phase 2C.1 honest semantics: a tool with executor_status='declared'
+  // denies not_implemented at the gate. Surface (external vs internal)
+  // does not bypass this. The Gmail/SendBlue adapters do not exist; neither
+  // does a dispatch table from internal tool ids to substrate stores.
+
+  it('denies gmail.read (external+declared)', () => {
     const d = decidePolicy({ tool_id: 'gmail.read', user_id: 'u1' }, makeDeps());
     assert.equal(d.allowed, false);
     assert.equal(d.code, 'not_implemented');
-    assert.match(d.reason, /external tool gmail\.read is declared.*no executor is wired/);
+    assert.match(d.reason, /tool gmail\.read is declared.*no executor is wired/);
   });
 
-  it('denies sendblue.send_user_message because no executor is wired in Phase 2B', () => {
+  it('denies sendblue.send_user_message (external+declared)', () => {
     const d = decidePolicy({ tool_id: 'sendblue.send_user_message', user_id: 'u1' }, makeDeps());
     assert.equal(d.allowed, false);
+    assert.equal(d.code, 'not_implemented');
+  });
+
+  it('denies audit.write (internal+declared) — substrate exists but no dispatch wiring', () => {
+    const d = decidePolicy({ tool_id: 'audit.write', user_id: 'u1' }, makeDeps());
+    assert.equal(d.allowed, false);
+    assert.equal(d.code, 'not_implemented');
+  });
+
+  it('denies feedback.write (internal+declared)', () => {
+    const d = decidePolicy({ tool_id: 'feedback.write', user_id: 'u1' }, makeDeps());
+    assert.equal(d.allowed, false);
+    assert.equal(d.code, 'not_implemented');
+  });
+
+  it('denies memory_signal.write (internal+declared)', () => {
+    const d = decidePolicy({ tool_id: 'memory_signal.write', user_id: 'u1' }, makeDeps());
+    assert.equal(d.allowed, false);
+    assert.equal(d.code, 'not_implemented');
+  });
+
+  it('denies slack.founder_review (internal+declared+send-tier) with not_implemented, NOT send_disabled', () => {
+    // not_implemented is checked before risk-tier. Without an adapter, the
+    // tool is unreachable regardless of FOMO_SEND_ENABLED state.
+    const d = decidePolicy({ tool_id: 'slack.founder_review', user_id: 'u1' }, makeDeps());
+    assert.equal(d.allowed, false);
+    assert.equal(d.code, 'not_implemented');
+  });
+
+  it('denies slack.founder_review with not_implemented even when send-tier kill switches are flipped on', () => {
+    const switches = loadKillSwitches({ FOMO_SEND_ENABLED: 'true', FOMO_AUTO_SEND_ENABLED: 'true' });
+    const d = decidePolicy({ tool_id: 'slack.founder_review', user_id: 'u1' }, makeDeps({ switches }));
     assert.equal(d.code, 'not_implemented');
   });
 
@@ -89,10 +126,7 @@ describe('decidePolicy — not_implemented (external + declared)', () => {
     assert.equal(oauthCalls, 0, 'hasOAuth should not run before not_implemented');
   });
 
-  it('not_implemented short-circuits before kill-switch evaluation', () => {
-    // sendblue is send-tier; FOMO_SEND_ENABLED=true would otherwise allow it.
-    // Because sendblue is declared (no executor), the gate must still deny —
-    // and with code not_implemented, not send_disabled.
+  it('not_implemented short-circuits before kill-switch evaluation (external send-tier)', () => {
     const switches = loadKillSwitches({ FOMO_SEND_ENABLED: 'true' });
     const d = decidePolicy(
       { tool_id: 'sendblue.send_user_message', user_id: 'u1' },
@@ -102,30 +136,55 @@ describe('decidePolicy — not_implemented (external + declared)', () => {
   });
 });
 
-describe('decidePolicy — internal capabilities can be declared without implementations', () => {
-  // Per the design: internal/control capabilities are substrate the system
-  // uses on its own behalf, not user-invokable. They're allowed to be
-  // declared in the registry before their backing implementation lands.
-  it('allows audit.write (internal+declared) under default kill switches', () => {
-    const d = decidePolicy({ tool_id: 'audit.write', user_id: 'u1' }, makeDeps());
+describe('decidePolicy — implemented tools allow when policy passes', () => {
+  // Proves the gate's allow path is reachable for both external and internal
+  // tools once their executor is wired. The 'implemented:' registry mock
+  // simulates the Phase 3 dispatch-flip without actually wiring dispatch.
+
+  it('allows audit.write when executor_status is implemented (no consent/OAuth/send checks fire)', () => {
+    const d = decidePolicy(
+      { tool_id: 'audit.write', user_id: 'u1' },
+      makeDeps({ implemented: ['audit.write'] })
+    );
     assert.equal(d.allowed, true);
     assert.equal(d.code, 'allowed');
   });
 
-  it('allows feedback.write (internal+declared)', () => {
-    assert.equal(decidePolicy({ tool_id: 'feedback.write', user_id: 'u1' }, makeDeps()).allowed, true);
+  it('allows feedback.write when implemented', () => {
+    const d = decidePolicy(
+      { tool_id: 'feedback.write', user_id: 'u1' },
+      makeDeps({ implemented: ['feedback.write'] })
+    );
+    assert.equal(d.allowed, true);
   });
 
-  it('allows memory_signal.write (internal+declared)', () => {
-    assert.equal(decidePolicy({ tool_id: 'memory_signal.write', user_id: 'u1' }, makeDeps()).allowed, true);
+  it('allows memory_signal.write when implemented', () => {
+    const d = decidePolicy(
+      { tool_id: 'memory_signal.write', user_id: 'u1' },
+      makeDeps({ implemented: ['memory_signal.write'] })
+    );
+    assert.equal(d.allowed, true);
   });
 
-  it('denies slack.founder_review (internal+declared+send-tier) under default kill switches via send_disabled, NOT not_implemented', () => {
-    // slack is internal so not_implemented does not apply, but it is send-tier
-    // and FOMO_SEND_ENABLED defaults to false → the kill switch denies.
-    const d = decidePolicy({ tool_id: 'slack.founder_review', user_id: 'u1' }, makeDeps());
+  it('implemented slack.founder_review is still subject to send-tier kill switch (default denies send_disabled)', () => {
+    // Once Phase 3 wires a Slack adapter and flips slack to 'implemented',
+    // the send-tier gate fires normally. This proves not_implemented and the
+    // kill-switch gate are independent.
+    const d = decidePolicy(
+      { tool_id: 'slack.founder_review', user_id: 'u1' },
+      makeDeps({ implemented: ['slack.founder_review'] })
+    );
     assert.equal(d.allowed, false);
     assert.equal(d.code, 'send_disabled');
+  });
+
+  it('implemented slack.founder_review allows when FOMO_SEND_ENABLED is on', () => {
+    const switches = loadKillSwitches({ FOMO_SEND_ENABLED: 'true' });
+    const d = decidePolicy(
+      { tool_id: 'slack.founder_review', user_id: 'u1' },
+      makeDeps({ implemented: ['slack.founder_review'], switches })
+    );
+    assert.equal(d.allowed, true);
   });
 });
 
@@ -189,11 +248,15 @@ describe('decidePolicy — consent (tested on implemented external tool)', () =>
     assert.match(d.reason, /has not consented/);
   });
 
-  it('does not require consent for tools that do not need it', () => {
+  it('does not require consent for tools that do not need it (tested on implemented internal tool)', () => {
+    // audit.write must be 'implemented' here to exercise the consent
+    // short-circuit — otherwise the gate denies not_implemented before
+    // reaching the consent check.
     let consentCalls = 0;
     const d = decidePolicy(
       { tool_id: 'audit.write', user_id: 'u1' },
       makeDeps({
+        implemented: ['audit.write'],
         hasConsent: () => {
           consentCalls++;
           return false;
@@ -225,11 +288,14 @@ describe('decidePolicy — OAuth (tested on implemented external tool)', () => {
     assert.equal(d.code, 'allowed');
   });
 
-  it('does not check OAuth for tools that do not require it', () => {
+  it('does not check OAuth for tools that do not require it (tested on implemented internal tool)', () => {
+    // audit.write must be 'implemented' to exercise the OAuth short-circuit;
+    // otherwise the gate denies not_implemented before reaching OAuth.
     let oauthCalls = 0;
     const d = decidePolicy(
       { tool_id: 'audit.write', user_id: 'u1' },
       makeDeps({
+        implemented: ['audit.write'],
         hasOAuth: () => {
           oauthCalls++;
           return false;
@@ -296,11 +362,19 @@ describe('decidePolicy — check ordering and short-circuit', () => {
     assert.equal(oauthCalls, 0);
   });
 
-  it('reports not_implemented before send_disabled for declared external send-tier tools', () => {
+  it('reports not_implemented before send_disabled for any declared send-tier tool (external)', () => {
     // sendblue is external+declared+send. Under default kill switches BOTH
-    // not_implemented and send_disabled would apply; the gate must report
-    // not_implemented because it's the more fundamental defect.
+    // not_implemented and send_disabled would apply; the gate reports
+    // not_implemented because it is the more fundamental defect.
     const d = decidePolicy({ tool_id: 'sendblue.send_user_message', user_id: 'u1' }, makeDeps());
+    assert.equal(d.code, 'not_implemented');
+  });
+
+  it('reports not_implemented before send_disabled for any declared send-tier tool (internal)', () => {
+    // slack.founder_review is internal+declared+send. Same precedence:
+    // not_implemented short-circuits before the send-tier check, so a
+    // declared internal send tool never reaches the send_disabled deny.
+    const d = decidePolicy({ tool_id: 'slack.founder_review', user_id: 'u1' }, makeDeps());
     assert.equal(d.code, 'not_implemented');
   });
 

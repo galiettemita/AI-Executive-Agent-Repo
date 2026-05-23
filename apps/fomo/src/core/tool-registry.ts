@@ -23,16 +23,22 @@
 //
 // Executor status:
 //
-//   declared     — the v0.1 plan lists this tool but no executor is wired yet.
-//                  Permission Gate denies external+declared tools with
-//                  'not_implemented' so a half-wired user-invokable surface
-//                  cannot accidentally reach a non-existent handler.
-//                  Internal+declared is fine — it's substrate, not user-facing.
-//   implemented  — a real handler is wired. The gate evaluates normal
-//                  consent / OAuth / kill-switch rules.
+//   declared     — the v0.1 plan lists this tool but no executor is wired
+//                  yet (no Gmail/SendBlue/Slack adapter for external tools,
+//                  no dispatch table mapping the tool id to its substrate
+//                  store for internal capabilities). Permission Gate denies
+//                  ALL declared tools with 'not_implemented' regardless of
+//                  surface — declared = recognized but not executable.
+//                  Substrate primitives like InMemoryAuditStore still exist
+//                  and can be called DIRECTLY by the system; they are not
+//                  invoked through the tool-dispatch path the gate fronts.
+//   implemented  — a real handler is wired and the registry flips. The gate
+//                  evaluates normal consent / OAuth / kill-switch rules.
 //
-// Phase 2B ships every tool as 'declared'. Implementations land in later
-// phases and flip the field to 'implemented' as their handlers arrive.
+// Phase 2 ships every tool as 'declared'. Phase 3 wires dispatch and flips
+// each tool to 'implemented' as its handler arrives. The Permission Gate's
+// honest invariant: a tool the user (or system) can ASK to run via tool
+// dispatch must have a real implementation.
 
 export type ToolSurface = 'external' | 'internal';
 
