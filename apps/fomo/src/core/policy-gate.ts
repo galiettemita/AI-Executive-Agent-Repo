@@ -92,15 +92,23 @@ export function decidePolicy(req: PolicyRequest, deps: PolicyGateDeps): PolicyDe
     return deny('unknown_tool', `tool ${tool_id} is not in the v0.1 registry`, tool_id, user_id);
   }
 
-  // 2. External tools must be implemented. A user-invokable surface that maps
-  // to a declared-but-not-wired handler is exactly the "fake/stub tool on a
-  // user-reachable path" failure mode FOMO_DESIGN §9 prohibits. Deny early.
-  // Internal capabilities with executor_status='declared' are fine — they are
-  // substrate, not user-facing, and have no path to reach a missing executor.
-  if (tool.surface === 'external' && tool.executor_status === 'declared') {
+  // 2. Any declared tool denies. 'declared' means the v0.1 plan lists this
+  // tool but no executor is wired — neither external (Gmail/SendBlue/Slack
+  // adapter missing) nor internal (no dispatch table mapping the tool id to
+  // its substrate store). The gate refuses to allow execution of anything
+  // that has no real handler, regardless of surface. Surface remains
+  // meaningful for caller-design discipline (which UI surfaces enumerate
+  // which tools), but it does not affect the gate's allow/deny here.
+  //
+  // Substrate primitives (InMemoryAuditStore, InMemoryFeedbackStore, etc.)
+  // exist and can be called DIRECTLY by the system. They are not invoked
+  // through the tool-dispatch path the gate fronts. A tool is only executable
+  // when its dispatch is wired and the registry flips it to 'implemented'.
+  // This is "Real or absent. Never half-wired." applied at the gate.
+  if (tool.executor_status === 'declared') {
     return deny(
       'not_implemented',
-      `external tool ${tool.id} is declared in the v0.1 registry but no executor is wired yet`,
+      `tool ${tool.id} is declared in the v0.1 registry but no executor is wired yet`,
       tool_id,
       user_id
     );
