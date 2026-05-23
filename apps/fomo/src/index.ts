@@ -153,6 +153,8 @@ function startGmailPolling(
   let stopped = false;
   let inflight: Promise<void> = Promise.resolve();
   let timer: ReturnType<typeof setTimeout> | null = null;
+  let cyclesRun = 0;
+  const cap = killSwitches.polling_max_cycles; // null = unbounded
 
   const tick = (): void => {
     if (stopped) return;
@@ -178,8 +180,11 @@ function startGmailPolling(
           toolInvocationStore: stores.toolInvocations,
           gateDeps
         });
+        cyclesRun++;
         if (stopped) return;
         logEvent(config, undefined, 'fomo.poll.cycle', 'INFO', {
+          cycle_number: cyclesRun,
+          cycle_cap: cap,
           users_total: report.users_total,
           users_polled: report.users_polled,
           users_skipped: report.users_skipped,
@@ -198,6 +203,17 @@ function startGmailPolling(
     })();
     void inflight.finally(() => {
       if (stopped) return;
+      // Phase 3B.3: bounded smoke test. When FOMO_GMAIL_POLLING_MAX_CYCLES
+      // is set, auto-stop after that many cycles and emit one terminal
+      // log event so ops can confirm the cap fired.
+      if (cap !== null && cyclesRun >= cap) {
+        stopped = true;
+        logEvent(config, undefined, 'fomo.poll.cycle_cap_reached', 'INFO', {
+          cycles_run: cyclesRun,
+          cycle_cap: cap
+        });
+        return;
+      }
       timer = setTimeout(tick, killSwitches.polling_interval_ms);
     });
   };
@@ -259,7 +275,8 @@ export function createFomoRuntime(config: FomoConfig = loadFomoConfig()): FomoRu
   if (killSwitches.polling_enabled) {
     pollingHandle = startGmailPolling(storesHandle, gmailClient, dispatch, killSwitches, config);
     logEvent(config, undefined, 'fomo.poll.enabled', 'INFO', {
-      interval_ms: killSwitches.polling_interval_ms
+      interval_ms: killSwitches.polling_interval_ms,
+      cycle_cap: killSwitches.polling_max_cycles
     });
   } else {
     logEvent(config, undefined, 'fomo.poll.disabled', 'INFO', {

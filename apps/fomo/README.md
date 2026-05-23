@@ -58,5 +58,7 @@ Phase 2A reads only the variables consumed by the primitives. Dev mode (`BREVIO_
 
 - `pnpm build` — `tsc -p tsconfig.json`
 - `pnpm test` — `node --experimental-strip-types --loader ./test-loader.mjs --test src/**/*.test.ts` (Node 22+)
-- `pnpm dev` — runs the compiled `dist/index.js`
+- `pnpm dev` — runs the compiled `dist/src/index.js`
+- `pnpm smoke:preflight` — Phase 3B.3 env-var sanity check (no DB / network)
+- `pnpm smoke:evidence` — Phase 3B.3 evidence dump from Neon Postgres after a smoke run
 - `pnpm lint` — ESLint on `src`

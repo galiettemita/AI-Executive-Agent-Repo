@@ -48,6 +48,7 @@ workflow) may begin. Not before.
 - [x] Two external tools (`sendblue.send_user_message`, `slack.founder_review`) remain `'declared'` until their adapters land (Phase 3E / 3D respectively per the revised Phase 3 map)
 - [x] Phase 3B.1 adds two HTTP routes: `POST /oauth/google/start` (session-authenticated) and `GET /oauth/google/callback` (state-HMAC-authenticated). The Phase 2F invariant "no HTTP route beyond `GET /health`" was scoped to Phase 2; Phase 3 explicitly authorizes workflow HTTP surface per the revised map
 - [x] **Polling kill-switch** (Phase 3B.2): `FOMO_GMAIL_POLLING_ENABLED` defaults to `false`. The polling worker bootstrap in `apps/fomo/src/index.ts` reads this once at boot — when `false`, no interval is installed and no autonomous Gmail reads happen. `FOMO_GMAIL_POLLING_INTERVAL_MS` (default 60_000) tunes the cycle cadence when enabled. The gate does NOT consult the polling switch — ad-hoc `gmail.read` dispatches (admin endpoint, harness) remain possible when polling is off
+- [x] **Bounded polling window** (Phase 3B.3): `FOMO_GMAIL_POLLING_MAX_CYCLES` defaults to unset (unbounded). When set to a positive integer N, the polling loop auto-stops after N cycles and emits `fomo.poll.cycle_cap_reached`. The 3B.3 founder smoke test sets this to a small N so the worker cannot accidentally keep polling against the live founder inbox
 - [x] **No OAuth refresh-token flow in 3B.2.** On 401 the worker marks `needs_reauth` and skips that user. The next OAuth-connect through `/oauth/google/start` re-mints fresh tokens. A dedicated refresh path can land later (3B.3 or folded into 3C) without changing the worker's API
 - [x] No SendBlue / Slack / real-model adapter exists yet (Phase 3D / 3E / 3C)
 - [x] **Dispatch table cannot bypass the Permission Gate — structural guarantee** (Phase 3A.1). `dispatch.execute()` signature requires an `AuthorizedToolCall`, not a raw `tool_id`. The class has a private constructor; the only factory is `AuthorizedToolCall.fromDecision(decision)` which returns `null` unless `decision.allowed === true && decision.code === 'allowed' && isToolId(decision.tool_id)`. Runtime `instanceof` check in `execute()` rejects forged objects with code `'unauthorized'`
@@ -72,6 +73,14 @@ workflow) may begin. Not before.
 
 ### Founder sign-off
 - [ ] Founder has reviewed this file and confirmed Phase 3 may begin
+
+### Phase 3B.3 — Founder Real Gmail smoke test (separate gate before Phase 3C)
+- [x] `FOMO_GMAIL_POLLING_MAX_CYCLES` env var added with auto-stop + `fomo.poll.cycle_cap_reached` log event
+- [x] Preflight script ([scripts/preflight-3b3.ts](scripts/preflight-3b3.ts)) — verifies every required env var BEFORE the founder boots the server, fails loud on missing/invalid values, forbids `FOMO_SEND_ENABLED` / `FOMO_AUTO_SEND_ENABLED` / `FOMO_FRIEND_BETA_ENABLED` flips during the smoke window
+- [x] Evidence script ([scripts/smoke-evidence-3b3.ts](scripts/smoke-evidence-3b3.ts)) — reads live Neon Postgres, asserts: gmail.readonly scope only, cursor advanced, polling cycle audit written, gmail.read dispatch audits + tool_invocations rows, leak-canary scan over 500 most recent audit + tool_invocations records
+- [x] Runbook ([docs/smoke-test-3b3-gmail.md](../../docs/smoke-test-3b3-gmail.md)) — Google Cloud setup, redirect URI, env vars, OAuth handshake, polling observation, 401 path, stop, evidence
+- [x] Report template ([docs/SMOKE_REPORT_TEMPLATE_3B3.md](../../docs/SMOKE_REPORT_TEMPLATE_3B3.md)) — founder fills in and commits as `docs/SMOKE_REPORT_3B3.md`
+- [ ] **Founder has executed the smoke test on one real Gmail account and committed `docs/SMOKE_REPORT_3B3.md` with `VERDICT: PASS`** (this is the load-bearing checkbox — Phase 3C may NOT begin until checked)
 
 ---
 
@@ -197,7 +206,8 @@ integration harness asserts.
 | **3A** | Internal Dispatch — dispatch table + 3 internal executors + flip those 3 tools to `implemented`. **(done)** |
 | **3B.1** | Gmail HTTP client + OAuth go-live routes + `gmail_cursors` table + cursor store (in-memory + Postgres). `gmail.read` stays declared. **(done)** |
 | **3B.2** | Gmail polling worker + `gmail.read` executor wiring + flip `gmail.read` to `implemented`. Polling kill-switch `FOMO_GMAIL_POLLING_ENABLED` default false. **(done)** |
-| 3C | Ranker + Real Model Backends — OpenAI/Anthropic via existing router + ranker prompt + real fixtures. Worker output (RawEmailContext) becomes ranker input |
+| **3B.3** | Founder Real Gmail Smoke Test — prove the full OAuth + polling path against one real founder Gmail account with readonly scope only, persisted to real Neon Postgres. Adds `FOMO_GMAIL_POLLING_MAX_CYCLES` bounded-window cap, preflight + evidence scripts, runbook + report template. **No new ranker/model/Slack/SendBlue scope.** Scaffolding shipped; **founder run still required** (sign-off via `docs/SMOKE_REPORT_3B3.md`) before Phase 3C |
+| 3C | Ranker + Real Model Backends — OpenAI/Anthropic via existing router + ranker prompt + real fixtures. Worker output (RawEmailContext) becomes ranker input. **Blocked until 3B.3 sign-off** |
 | 3D | Slack Founder Review Only — Slack adapter + founder-review path; flip `slack.founder_review` to `implemented`. **No live user-facing texts yet.** |
 | 3E | SendBlue Founder-Only Outbound — SendBlue HTTP client + first live send (founder-only); flip `sendblue.send_user_message` to `implemented` |
 | 3F | SendBlue Inbound Reply Parser — webhook + reply classification + snooze scheduler + memory/feedback updates from replies |
