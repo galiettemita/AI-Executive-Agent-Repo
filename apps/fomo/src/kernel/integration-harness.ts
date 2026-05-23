@@ -38,6 +38,9 @@ import { type PolicyDecision, decidePolicy } from '../core/policy-gate.js';
 import { createToolRegistry, type ToolDescriptor, type ToolId, type ToolRegistry } from '../core/tool-registry.js';
 import { MockModelBackend } from '../core/model-backends/mock.js';
 import { type ModelBackend, type ModelOutputValidator, createModelRouter } from '../core/model-router.js';
+import { type ToolInvocationStatus } from '../core/tool-invocations.js';
+import { createDispatchTable } from '../dispatch/dispatcher.js';
+import { wireInternalExecutors } from '../dispatch/internal-executors.js';
 import { type SubstrateStoresHandle, createStores } from '../db/store-factory.js';
 
 /* ---------------------------------------------------------------------- */
@@ -291,52 +294,182 @@ export async function runKernelIntegrationScenario(
   const switches = loadKillSwitches({});
 
   /* --------------------------------------------------------------------
-   * 3. Permission Gate — 6 known tools + 1 unknown (Phase 2B + 2C.1)
-   *    All known tools deny 'not_implemented' under default state.
-   *    Each decision is also recorded in tool_invocations.
+   * 2.5. Dispatch table (Phase 3A)
+   *    Wires the three internal-capability executors. The dispatch table
+   *    is independent of the Permission Gate — the gate decides ALLOW
+   *    or DENY, and only when allowed does the harness call dispatch.
+   *    No recursive audit: the harness's policy.decided / tool.invoked
+   *    writes go DIRECTLY to stores.audit, NOT through dispatch.
    * ------------------------------------------------------------------ */
-  const toolProbes: readonly string[] = [
-    ...all.map((t) => t.id),
-    'booking.flights' // off-registry probe → unknown_tool
-  ];
-  const policyDecisions: { tool_id: string; code: PolicyDecision['code']; allowed: boolean }[] = [];
-  for (let idx = 0; idx < toolProbes.length; idx++) {
-    const tool_id = toolProbes[idx]!;
-    const decision = decidePolicy(
-      { tool_id, user_id: SYNTHETIC_USER_ID },
-      {
-        registry,
-        switches,
-        hasConsent: () => true,
-        hasOAuth: () => true
+  const dispatch = createDispatchTable();
+  wireInternalExecutors(dispatch, {
+    audit: stores.audit,
+    feedback: stores.feedback,
+    memory: stores.memory
+  });
+
+  /* --------------------------------------------------------------------
+   * 3. Permission Gate → Dispatch → Store (Phase 3A integrated path)
+   *
+   *    Section A (4 invocations) — denied at the gate, no dispatch fires:
+   *      gmail.read                  → not_implemented (external+declared)
+   *      sendblue.send_user_message  → not_implemented (external+declared)
+   *      slack.founder_review        → not_implemented (external+declared)
+   *      booking.flights             → unknown_tool
+   *
+   *    Section B (5 invocations) — allowed at the gate, dispatch fires:
+   *      audit.write                 → executor writes 'session.created' audit
+   *      feedback.write × 2          → executor writes feedback events
+   *      memory_signal.write × 2     → executor upserts memory signals
+   * ------------------------------------------------------------------ */
+  const gateDeps = {
+    registry,
+    switches,
+    hasConsent: () => true,
+    hasOAuth: () => true
+  };
+
+  interface Invocation {
+    readonly tool_id: string;
+    readonly args: unknown;
+    readonly domain_audit?: () => Promise<void>;
+  }
+
+  const invocations: readonly Invocation[] = [
+    // Section A — denials
+    { tool_id: 'gmail.read', args: null },
+    { tool_id: 'sendblue.send_user_message', args: null },
+    { tool_id: 'slack.founder_review', args: null },
+    { tool_id: 'booking.flights', args: null },
+    // Section B — internal dispatches.
+    // audit.write does NOT produce a separate domain audit — its
+    // executor IS the audit write (action='session.created' below).
+    {
+      tool_id: 'audit.write',
+      args: {
+        action: 'session.created' as AuditAction,
+        target: 'session:kernel-harness',
+        detail: { source: 'kernel-harness' }
       }
-    );
-    // Audit the gate decision itself — sanitized to (tool_id, code,
-    // allowed). The deny reason includes a tool id but not user payload.
+    },
+    // feedback.write × 2 — first founder_approved, then user_snoozed.
+    // The user_snoozed detail intentionally carries HARNESS_REPLY_TEXT so
+    // the audit-leak test can verify it never reaches an audit entry
+    // (the full reply text belongs in feedback_events, NOT in audit).
+    {
+      tool_id: 'feedback.write',
+      args: {
+        alert_id: SYNTHETIC_ALERT_ID,
+        sender_email: SYNTHETIC_RAW_EMAIL.sender_email,
+        kind: 'founder_approved' as const,
+        detail: { score: 0.91 }
+      },
+      domain_audit: async () =>
+        logKernelAudit(stores.audit, 'feedback.written', `alert:${SYNTHETIC_ALERT_ID}`, {
+          kind: 'founder_approved',
+          alert_id: SYNTHETIC_ALERT_ID,
+          sender_present: true
+        })
+    },
+    {
+      tool_id: 'feedback.write',
+      args: {
+        alert_id: SYNTHETIC_ALERT_ID,
+        sender_email: SYNTHETIC_RAW_EMAIL.sender_email,
+        kind: 'user_snoozed' as const,
+        detail: { reply_text: HARNESS_REPLY_TEXT, until: '2026-05-22T22:00:00.000Z' }
+      },
+      domain_audit: async () =>
+        logKernelAudit(stores.audit, 'feedback.written', `alert:${SYNTHETIC_ALERT_ID}`, {
+          kind: 'user_snoozed',
+          alert_id: SYNTHETIC_ALERT_ID,
+          sender_present: true
+        })
+    },
+    {
+      tool_id: 'memory_signal.write',
+      args: {
+        kind: 'sender_importance' as const,
+        scope_key: SYNTHETIC_RAW_EMAIL.sender_email,
+        detail: { importance: 'high' },
+        source: 'user_confirmed' as const
+      },
+      domain_audit: async () =>
+        logKernelAudit(stores.audit, 'memory.upserted', `signal:sender_importance`, {
+          kind: 'sender_importance',
+          scope_present: true,
+          source: 'user_confirmed'
+        })
+    },
+    {
+      tool_id: 'memory_signal.write',
+      args: {
+        kind: 'quietness_preference' as const,
+        scope_key: null,
+        detail: { max_per_day: 5 },
+        source: 'user_confirmed' as const
+      },
+      domain_audit: async () =>
+        logKernelAudit(stores.audit, 'memory.upserted', `signal:quietness_preference`, {
+          kind: 'quietness_preference',
+          scope_present: false,
+          source: 'user_confirmed'
+        })
+    }
+  ];
+
+  const policyDecisions: { tool_id: string; code: PolicyDecision['code']; allowed: boolean }[] = [];
+  for (let idx = 0; idx < invocations.length; idx++) {
+    const { tool_id, args, domain_audit } = invocations[idx]!;
+    const decision = decidePolicy({ tool_id, user_id: SYNTHETIC_USER_ID }, gateDeps);
+
+    // Audit the gate decision FIRST. Direct stores.audit.write call (NOT
+    // through dispatch) — preserves the no-recursive-audit invariant when
+    // tool_id happens to be 'audit.write'.
     await logKernelAudit(stores.audit, 'policy.decided', `tool:${tool_id}`, {
       tool_id,
       code: decision.code,
       allowed: decision.allowed
     });
+
     const invocation_id = `harness-inv-${idx}`;
+    let dispatchStatus: ToolInvocationStatus = decision.allowed ? 'success' : 'denied';
+    let dispatchLatency = 0;
+
+    if (decision.allowed) {
+      // Phase 3A integrated path: gate allowed → dispatch executes.
+      const result = await dispatch.execute(tool_id, args, {
+        user_id: SYNTHETIC_USER_ID,
+        invocation_id
+      });
+      dispatchStatus = result.ok ? 'success' : 'failure';
+      dispatchLatency = result.latency_ms;
+    }
+
     await stores.toolInvocations.write({
       user_id: SYNTHETIC_USER_ID,
       tool_id,
       invocation_id,
       policy_decision: decision.code,
-      status: decision.allowed ? 'success' : 'denied',
-      latency_ms: 0
+      status: dispatchStatus,
+      latency_ms: dispatchLatency
     });
-    // Audit the tool invocation write — distinct event from the gate
-    // decision (Phase 2 map lists "tool invocation record" as a separate
-    // required audit category). Detail carries operational identifiers
-    // only; no metadata.* payload content.
+
     await logKernelAudit(stores.audit, 'tool.invoked', `tool:${tool_id}`, {
       tool_id,
       invocation_id,
       policy_decision: decision.code,
-      status: decision.allowed ? 'success' : 'denied'
+      status: dispatchStatus
     });
+
+    // Domain-specific post-dispatch audit (feedback.written /
+    // memory.upserted). audit.write does not need one because its
+    // executor IS the domain audit write — adding another here would
+    // be the "recursive audit logging" the founder explicitly forbade.
+    if (decision.allowed && dispatchStatus === 'success' && domain_audit) {
+      await domain_audit();
+    }
+
     policyDecisions.push({
       tool_id,
       code: decision.code,
@@ -393,72 +526,14 @@ export async function runKernelIntegrationScenario(
   const terminal_state = (await stores.transitions.currentState(SYNTHETIC_ALERT_ID)) ?? INITIAL_STATE;
 
   /* --------------------------------------------------------------------
-   * 6. Feedback Events (Phase 2C) — founder_approved + user_snoozed
+   * 6. Feedback Events + Memory Signals (Phase 2C + 3A)
+   *    Both stores were written via dispatch in section 3 above. Here we
+   *    just read back the counts and signal values for the report.
    * ------------------------------------------------------------------ */
-  await stores.feedback.write({
-    user_id: SYNTHETIC_USER_ID,
-    alert_id: SYNTHETIC_ALERT_ID,
-    sender_email: SYNTHETIC_RAW_EMAIL.sender_email,
-    kind: 'founder_approved',
-    detail: { score: 0.91 }
-  });
-  // Audit the feedback write — sanitized: kind + alert_id +
-  // sender_present (boolean). NOT the sender email itself, NOT the
-  // detail.score in this audit (the detail lives in feedback_events).
-  await logKernelAudit(stores.audit, 'feedback.written', `alert:${SYNTHETIC_ALERT_ID}`, {
-    kind: 'founder_approved',
-    alert_id: SYNTHETIC_ALERT_ID,
-    sender_present: true
-  });
-  await stores.feedback.write({
-    user_id: SYNTHETIC_USER_ID,
-    alert_id: SYNTHETIC_ALERT_ID,
-    sender_email: SYNTHETIC_RAW_EMAIL.sender_email,
-    kind: 'user_snoozed',
-    // Note: harness assigns a known-recognizable reply text to the
-    // feedback detail so the audit-leak test can verify it never reaches
-    // an audit entry. The full reply text DOES belong in feedback_events
-    // (the learning store), NOT in audit.
-    detail: { reply_text: HARNESS_REPLY_TEXT, until: '2026-05-22T22:00:00.000Z' }
-  });
-  await logKernelAudit(stores.audit, 'feedback.written', `alert:${SYNTHETIC_ALERT_ID}`, {
-    kind: 'user_snoozed',
-    alert_id: SYNTHETIC_ALERT_ID,
-    sender_present: true
-  });
   const approved_count = await stores.feedback.countByKind(SYNTHETIC_USER_ID, 'founder_approved');
   const snoozed_count = await stores.feedback.countByKind(SYNTHETIC_USER_ID, 'user_snoozed');
   const events_written = (await stores.feedback.recent(SYNTHETIC_USER_ID)).length;
 
-  /* --------------------------------------------------------------------
-   * 7. Memory Signals (Phase 2C) — sender_importance + quietness_preference
-   * ------------------------------------------------------------------ */
-  await stores.memory.upsert({
-    user_id: SYNTHETIC_USER_ID,
-    kind: 'sender_importance',
-    scope_key: SYNTHETIC_RAW_EMAIL.sender_email,
-    detail: { importance: 'high' },
-    source: 'user_confirmed'
-  });
-  // Audit the memory upsert — sanitized: kind + scope_present + source.
-  // NOT the scope_key (which IS a sender email), NOT the detail.
-  await logKernelAudit(stores.audit, 'memory.upserted', `signal:sender_importance`, {
-    kind: 'sender_importance',
-    scope_present: true,
-    source: 'user_confirmed'
-  });
-  await stores.memory.upsert({
-    user_id: SYNTHETIC_USER_ID,
-    kind: 'quietness_preference',
-    scope_key: null,
-    detail: { max_per_day: 5 },
-    source: 'user_confirmed'
-  });
-  await logKernelAudit(stores.audit, 'memory.upserted', `signal:quietness_preference`, {
-    kind: 'quietness_preference',
-    scope_present: false,
-    source: 'user_confirmed'
-  });
   const senderSignal = await stores.memory.get(
     SYNTHETIC_USER_ID,
     'sender_importance',
@@ -515,7 +590,7 @@ export async function runKernelIntegrationScenario(
   /* --------------------------------------------------------------------
    * 11. Tool Invocations (Phase 2E) — one per gate decision above
    * ------------------------------------------------------------------ */
-  const invocations = await stores.toolInvocations.recent(SYNTHETIC_USER_ID);
+  const toolInvocationEntries = await stores.toolInvocations.recent(SYNTHETIC_USER_ID);
 
   return Object.freeze({
     registry: Object.freeze({
@@ -567,7 +642,7 @@ export async function runKernelIntegrationScenario(
       total_usd: cost_total_usd
     }),
     tool_invocations: Object.freeze({
-      entries_written: invocations.length
+      entries_written: toolInvocationEntries.length
     }),
     audit: Object.freeze({
       entries_written: audit_entries_written,

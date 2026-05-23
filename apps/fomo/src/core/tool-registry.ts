@@ -35,10 +35,15 @@
 //   implemented  — a real handler is wired and the registry flips. The gate
 //                  evaluates normal consent / OAuth / kill-switch rules.
 //
-// Phase 2 ships every tool as 'declared'. Phase 3 wires dispatch and flips
-// each tool to 'implemented' as its handler arrives. The Permission Gate's
-// honest invariant: a tool the user (or system) can ASK to run via tool
-// dispatch must have a real implementation.
+// Phase 2 shipped every tool as 'declared'. Phase 3A flips the three
+// internal capabilities (audit.write, feedback.write, memory_signal.write)
+// to 'implemented' alongside the dispatch wiring in
+// apps/fomo/src/dispatch/internal-executors.ts. External tools
+// (gmail.read, sendblue.send_user_message, slack.founder_review) stay
+// 'declared' through the rest of Phase 3 until their real adapters land
+// (3B, 3D, 3E respectively). The Permission Gate's honest invariant:
+// a tool the user (or system) can ASK to run via tool dispatch must
+// have a real implementation.
 
 export type ToolSurface = 'external' | 'internal';
 
@@ -105,7 +110,9 @@ const ACTIVE_TOOLS: readonly ToolDescriptor[] = Object.freeze([
   Object.freeze({
     id: 'audit.write',
     surface: 'internal',
-    executor_status: 'declared',
+    // Phase 3A: dispatch wired to InMemoryAuditStore / PostgresAuditStore
+    // via apps/fomo/src/dispatch/internal-executors.ts#auditWriteExecutor.
+    executor_status: 'implemented',
     category: 'control',
     risk_tier: 'internal',
     description: 'Append an entry to the audit log.',
@@ -115,7 +122,9 @@ const ACTIVE_TOOLS: readonly ToolDescriptor[] = Object.freeze([
   Object.freeze({
     id: 'feedback.write',
     surface: 'internal',
-    executor_status: 'declared',
+    // Phase 3A: dispatch wired to InMemoryFeedbackStore / PostgresFeedbackStore
+    // via apps/fomo/src/dispatch/internal-executors.ts#feedbackWriteExecutor.
+    executor_status: 'implemented',
     category: 'control',
     risk_tier: 'internal',
     description: 'Record a feedback event from founder review or user reply.',
@@ -125,7 +134,10 @@ const ACTIVE_TOOLS: readonly ToolDescriptor[] = Object.freeze([
   Object.freeze({
     id: 'memory_signal.write',
     surface: 'internal',
-    executor_status: 'declared',
+    // Phase 3A: dispatch wired to InMemoryMemorySignalStore /
+    // PostgresMemorySignalStore via
+    // apps/fomo/src/dispatch/internal-executors.ts#memorySignalUpsertExecutor.
+    executor_status: 'implemented',
     category: 'control',
     risk_tier: 'internal',
     description: 'Write or update a learned memory signal for the user.',
@@ -145,7 +157,7 @@ export interface ToolRegistry {
   isActiveTool(id: string): boolean;
 }
 
-function isToolId(id: string): id is ToolId {
+export function isToolId(id: string): id is ToolId {
   return ACTIVE_TOOLS.some((t) => t.id === id);
 }
 

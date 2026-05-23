@@ -74,23 +74,13 @@ describe('decidePolicy — not_implemented (any declared tool, regardless of sur
     assert.equal(d.code, 'not_implemented');
   });
 
-  it('denies audit.write (internal+declared) — substrate exists but no dispatch wiring', () => {
-    const d = decidePolicy({ tool_id: 'audit.write', user_id: 'u1' }, makeDeps());
-    assert.equal(d.allowed, false);
-    assert.equal(d.code, 'not_implemented');
-  });
-
-  it('denies feedback.write (internal+declared)', () => {
-    const d = decidePolicy({ tool_id: 'feedback.write', user_id: 'u1' }, makeDeps());
-    assert.equal(d.allowed, false);
-    assert.equal(d.code, 'not_implemented');
-  });
-
-  it('denies memory_signal.write (internal+declared)', () => {
-    const d = decidePolicy({ tool_id: 'memory_signal.write', user_id: 'u1' }, makeDeps());
-    assert.equal(d.allowed, false);
-    assert.equal(d.code, 'not_implemented');
-  });
+  // Phase 3A note: audit.write / feedback.write / memory_signal.write are
+  // now executor_status='implemented' (dispatch wired in
+  // apps/fomo/src/dispatch/internal-executors.ts). They no longer deny
+  // not_implemented — they ALLOW under default switches. The "implemented
+  // tools allow when policy passes" suite below covers their new allow
+  // path; the gate's not_implemented rule is now exercised only by the
+  // three still-declared external tools and the unknown_tool case.
 
   it('denies slack.founder_review (internal+declared+send-tier) with not_implemented, NOT send_disabled', () => {
     // not_implemented is checked before risk-tier. Without an adapter, the

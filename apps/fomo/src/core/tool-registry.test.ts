@@ -133,16 +133,21 @@ describe('createToolRegistry — external vs internal surface separation', () =>
   });
 });
 
-describe('createToolRegistry — executor_status honesty', () => {
-  it('all six v0.1 tools are currently declared (no executors wired)', () => {
+describe('createToolRegistry — executor_status honesty (Phase 3A)', () => {
+  // Phase 3A wired dispatch executors for the three internal capabilities.
+  // External tools remain declared until their real adapters land
+  // (gmail.read in 3B, slack.founder_review in 3D, sendblue.send_user_message in 3E).
+
+  it('the three internal capabilities are implemented', () => {
     const registry = createToolRegistry();
-    for (const tool of registry.getActiveTools()) {
-      assert.equal(
-        tool.executor_status,
-        'declared',
-        `tool ${tool.id} claims executor_status=${tool.executor_status} but Phase 2B/2B.1 wires no executors`
-      );
-    }
+    const implementedInternals = registry
+      .getInternalCapabilities()
+      .filter((t) => t.executor_status === 'implemented')
+      .map((t) => t.id);
+    assert.deepEqual(
+      [...implementedInternals].sort(),
+      ['audit.write', 'feedback.write', 'memory_signal.write']
+    );
   });
 
   it('no external tool is currently implemented', () => {
@@ -154,8 +159,33 @@ describe('createToolRegistry — executor_status honesty', () => {
     assert.deepEqual(
       implementedExternals,
       [],
-      `external tools claim implementation: ${implementedExternals.join(', ')}`
+      `external tools claim implementation but no real adapter exists: ${implementedExternals.join(', ')}`
     );
+  });
+
+  it('all external tools are still declared (Phase 3B/3D/3E land their adapters)', () => {
+    const registry = createToolRegistry();
+    for (const t of registry.getExternalTools()) {
+      assert.equal(
+        t.executor_status,
+        'declared',
+        `external tool ${t.id} should remain declared until its real adapter lands`
+      );
+    }
+  });
+
+  it('every implemented tool today is internal (no external implemented in Phase 3A)', () => {
+    const registry = createToolRegistry();
+    const implemented = registry
+      .getActiveTools()
+      .filter((t) => t.executor_status === 'implemented');
+    for (const t of implemented) {
+      assert.equal(
+        t.surface,
+        'internal',
+        `tool ${t.id} is implemented + ${t.surface} — Phase 3A only implements internal capabilities`
+      );
+    }
   });
 });
 
