@@ -32,6 +32,7 @@ export interface PolicyRequest {
 export type PolicyDecisionCode =
   | 'allowed'
   | 'unknown_tool'
+  | 'not_implemented'
   | 'unknown_tier'
   | 'send_disabled'
   | 'auto_send_disabled'
@@ -91,7 +92,21 @@ export function decidePolicy(req: PolicyRequest, deps: PolicyGateDeps): PolicyDe
     return deny('unknown_tool', `tool ${tool_id} is not in the v0.1 registry`, tool_id, user_id);
   }
 
-  // 2. Risk-tier handling. Exhaustive switch so an unknown tier — should one
+  // 2. External tools must be implemented. A user-invokable surface that maps
+  // to a declared-but-not-wired handler is exactly the "fake/stub tool on a
+  // user-reachable path" failure mode FOMO_DESIGN §9 prohibits. Deny early.
+  // Internal capabilities with executor_status='declared' are fine — they are
+  // substrate, not user-facing, and have no path to reach a missing executor.
+  if (tool.surface === 'external' && tool.executor_status === 'declared') {
+    return deny(
+      'not_implemented',
+      `external tool ${tool.id} is declared in the v0.1 registry but no executor is wired yet`,
+      tool_id,
+      user_id
+    );
+  }
+
+  // 3. Risk-tier handling. Exhaustive switch so an unknown tier — should one
   // ever be added to the registry without updating the gate — fail-closes
   // here rather than silently passing.
   switch (tool.risk_tier) {
@@ -128,7 +143,7 @@ export function decidePolicy(req: PolicyRequest, deps: PolicyGateDeps): PolicyDe
     }
   }
 
-  // 3. Consent (currently only gmail.read).
+  // 4. Consent (currently only gmail.read).
   if (tool.requires_consent) {
     let consented: boolean;
     try {
@@ -146,7 +161,7 @@ export function decidePolicy(req: PolicyRequest, deps: PolicyGateDeps): PolicyDe
     }
   }
 
-  // 4. OAuth (currently only gmail.read → google).
+  // 5. OAuth (currently only gmail.read → google).
   if (tool.requires_oauth_provider !== null) {
     const provider = tool.requires_oauth_provider;
     let connected: boolean;

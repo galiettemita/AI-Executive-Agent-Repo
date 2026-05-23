@@ -32,6 +32,7 @@ describe('createToolRegistry', () => {
     for (const tool of registry.getActiveTools()) {
       assert.ok(tool.id.length > 0, `tool ${tool.id} has empty id`);
       assert.match(tool.surface, /^(external|internal)$/, `tool ${tool.id} bad surface ${tool.surface}`);
+      assert.match(tool.executor_status, /^(declared|implemented)$/, `tool ${tool.id} bad executor_status ${tool.executor_status}`);
       assert.match(tool.category, /^(context|action|control)$/, `tool ${tool.id} bad category ${tool.category}`);
       assert.match(tool.risk_tier, /^(read|send|internal)$/, `tool ${tool.id} bad risk_tier ${tool.risk_tier}`);
       assert.ok(tool.description.length > 0, `tool ${tool.id} has empty description`);
@@ -49,6 +50,7 @@ describe('createToolRegistry', () => {
     assert.ok(gmail);
     assert.equal(gmail?.id, 'gmail.read');
     assert.equal(gmail?.surface, 'external');
+    assert.equal(gmail?.executor_status, 'declared');
     assert.equal(gmail?.category, 'context');
     assert.equal(gmail?.risk_tier, 'read');
     assert.equal(gmail?.requires_consent, true);
@@ -128,6 +130,32 @@ describe('createToolRegistry — external vs internal surface separation', () =>
     const registry = createToolRegistry();
     const slack = registry.getTool('slack.founder_review');
     assert.equal(slack?.surface, 'internal');
+  });
+});
+
+describe('createToolRegistry — executor_status honesty', () => {
+  it('all six v0.1 tools are currently declared (no executors wired)', () => {
+    const registry = createToolRegistry();
+    for (const tool of registry.getActiveTools()) {
+      assert.equal(
+        tool.executor_status,
+        'declared',
+        `tool ${tool.id} claims executor_status=${tool.executor_status} but Phase 2B/2B.1 wires no executors`
+      );
+    }
+  });
+
+  it('no external tool is currently implemented', () => {
+    const registry = createToolRegistry();
+    const implementedExternals = registry
+      .getExternalTools()
+      .filter((t) => t.executor_status === 'implemented')
+      .map((t) => t.id);
+    assert.deepEqual(
+      implementedExternals,
+      [],
+      `external tools claim implementation: ${implementedExternals.join(', ')}`
+    );
   });
 });
 

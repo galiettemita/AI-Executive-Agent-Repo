@@ -20,8 +20,23 @@
 // Keeping these two surfaces visibly separate prevents a future caller from
 // accidentally surfacing an internal capability (e.g. memory_signal.write) as
 // if it were a user-invokable tool.
+//
+// Executor status:
+//
+//   declared     — the v0.1 plan lists this tool but no executor is wired yet.
+//                  Permission Gate denies external+declared tools with
+//                  'not_implemented' so a half-wired user-invokable surface
+//                  cannot accidentally reach a non-existent handler.
+//                  Internal+declared is fine — it's substrate, not user-facing.
+//   implemented  — a real handler is wired. The gate evaluates normal
+//                  consent / OAuth / kill-switch rules.
+//
+// Phase 2B ships every tool as 'declared'. Implementations land in later
+// phases and flip the field to 'implemented' as their handlers arrive.
 
 export type ToolSurface = 'external' | 'internal';
+
+export type ToolExecutorStatus = 'declared' | 'implemented';
 
 export type ToolCategory = 'context' | 'action' | 'control';
 
@@ -42,6 +57,7 @@ export type ToolId =
 export interface ToolDescriptor {
   readonly id: ToolId;
   readonly surface: ToolSurface;
+  readonly executor_status: ToolExecutorStatus;
   readonly category: ToolCategory;
   readonly risk_tier: ToolRiskTier;
   readonly description: string;
@@ -53,6 +69,7 @@ const ACTIVE_TOOLS: readonly ToolDescriptor[] = Object.freeze([
   Object.freeze({
     id: 'gmail.read',
     surface: 'external',
+    executor_status: 'declared',
     category: 'context',
     risk_tier: 'read',
     description: 'Read-only access to a user\'s Gmail inbox for FOMO ranking.',
@@ -62,6 +79,7 @@ const ACTIVE_TOOLS: readonly ToolDescriptor[] = Object.freeze([
   Object.freeze({
     id: 'sendblue.send_user_message',
     surface: 'external',
+    executor_status: 'declared',
     category: 'action',
     risk_tier: 'send',
     description: 'Send an iMessage/SMS to the user via SendBlue after approval.',
@@ -71,6 +89,7 @@ const ACTIVE_TOOLS: readonly ToolDescriptor[] = Object.freeze([
   Object.freeze({
     id: 'slack.founder_review',
     surface: 'internal',
+    executor_status: 'declared',
     category: 'control',
     risk_tier: 'send',
     description: 'Post a candidate alert to the founder Slack channel for approval.',
@@ -80,6 +99,7 @@ const ACTIVE_TOOLS: readonly ToolDescriptor[] = Object.freeze([
   Object.freeze({
     id: 'audit.write',
     surface: 'internal',
+    executor_status: 'declared',
     category: 'control',
     risk_tier: 'internal',
     description: 'Append an entry to the audit log.',
@@ -89,6 +109,7 @@ const ACTIVE_TOOLS: readonly ToolDescriptor[] = Object.freeze([
   Object.freeze({
     id: 'feedback.write',
     surface: 'internal',
+    executor_status: 'declared',
     category: 'control',
     risk_tier: 'internal',
     description: 'Record a feedback event from founder review or user reply.',
@@ -98,6 +119,7 @@ const ACTIVE_TOOLS: readonly ToolDescriptor[] = Object.freeze([
   Object.freeze({
     id: 'memory_signal.write',
     surface: 'internal',
+    executor_status: 'declared',
     category: 'control',
     risk_tier: 'internal',
     description: 'Write or update a learned memory signal for the user.',
