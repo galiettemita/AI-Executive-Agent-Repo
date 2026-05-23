@@ -16,17 +16,22 @@
 //   gate-only tests in integration-harness.test.ts cover what happens
 //   once tools flip to 'implemented'.
 //
-// The harness DOES NOT write to the audit log. Per FOMO_PLAN §9.10 the
-// audit log is for high-level lifecycle events (consent.grant,
-// oauth.connect, session.created); none of those happen here, so its
-// entry count stays 0 and the test asserts it. The per-dispatch detail
-// goes to tool_invocations instead, which is exactly what it's for.
+// Audit invariant (Phase 2F.1):
+//   The harness writes an audit entry at every meaningful kernel touch
+//   (gate decision, tool invocation, state transition, feedback write,
+//   memory upsert, model route). Every audit detail is SANITIZED —
+//   only operational identifiers (tool_id, model_name, prompt_version,
+//   alert_id, from/to_state, kind) appear. Raw email body, raw headers,
+//   attachment filenames, prompt text, and full reply text are never
+//   passed into audit. The test asserts this end-to-end by serializing
+//   every audit entry and looking for known leak canaries.
 
 import {
   type AlertState,
   INITIAL_STATE,
   transition
 } from '../core/state-machine.js';
+import { type AuditAction, type AuditStore } from '../core/audit.js';
 import { applyEgressForRanker, applyEgressForReplyParser, applyEgressForSlackCard, type RawEmailContext } from '../core/egress-policy.js';
 import { type KillSwitches, loadKillSwitches } from '../core/kill-switches.js';
 import { type PolicyDecision, decidePolicy } from '../core/policy-gate.js';
@@ -99,10 +104,17 @@ export interface KernelScenarioReport {
     readonly entries_written: number;
   };
   readonly audit: {
-    // Always 0 in v0.1's substrate scenario — nothing audit-worthy happens
-    // (no consent grant, no oauth connect, no session create). Phase 3
-    // flows that DO trigger those events will see this count rise.
+    // Total entries the harness wrote. > 0 in Phase 2F.1 — every
+    // meaningful kernel touch is audited.
     readonly entries_written: number;
+    // Count per AuditAction so the test verifies each required category
+    // (policy.decided, tool.invoked, state.transitioned, feedback.written,
+    // memory.upserted, model.routed) is exercised at least once.
+    readonly by_action: Readonly<Record<string, number>>;
+    // Strings that MUST NOT appear in any audit entry's serialized form.
+    // Empty when audit-write discipline held; populated with leaked
+    // strings otherwise. Mirrors the egress forbidden_leaks check.
+    readonly forbidden_leaks: readonly string[];
   };
   readonly store_backend: 'in_memory' | 'postgres';
 }
@@ -157,12 +169,53 @@ const FORBIDDEN_STRINGS: readonly string[] = Object.freeze([
   'interview-form.pdf'
 ]);
 
+// Additional strings the AUDIT log specifically must not contain. The
+// harness passes a known-recognizable prompt and reply text so the test
+// can verify these never reach an audit detail.
+const HARNESS_REPLY_TEXT = 'kernel-harness reply canary — remind me later tonight';
+const AUDIT_FORBIDDEN_STRINGS: readonly string[] = Object.freeze([
+  ...FORBIDDEN_STRINGS,
+  // Prompt text passed to the model router. audit 'model.routed' must
+  // record prompt_version (a stable ID), never the prompt itself.
+  'classify: Interview form due tonight',
+  // Reply parser user text. audit 'feedback.written' for user_snoozed
+  // must record kind + alert_id, never the user's reply text.
+  HARNESS_REPLY_TEXT,
+  // Synthetic body (also covered by FORBIDDEN_STRINGS via 'Sarah' for
+  // most cases, but explicit here for clarity).
+  'please submit the interview form by 9pm'
+]);
+
 function summarizeTool(t: ToolDescriptor): ToolId {
   return t.id;
 }
 
 function detectForbiddenLeaks(serialized: string): readonly string[] {
   return FORBIDDEN_STRINGS.filter((s) => serialized.includes(s));
+}
+
+function detectAuditForbiddenLeaks(serialized: string): readonly string[] {
+  return AUDIT_FORBIDDEN_STRINGS.filter((s) => serialized.includes(s));
+}
+
+// Inline helper: write a sanitized audit entry. Centralized so every
+// kernel-touch audit goes through one call site and the harness is
+// auditable itself.
+async function logKernelAudit(
+  audit: AuditStore,
+  action: AuditAction,
+  target: string,
+  detail: Record<string, unknown>
+): Promise<void> {
+  await audit.write({
+    actor_user_id: SYNTHETIC_USER_ID,
+    actor_ip: null,
+    actor_user_agent: null,
+    action,
+    target,
+    result: 'success',
+    detail
+  });
 }
 
 function defaultKek(): Buffer {
@@ -246,32 +299,50 @@ export async function runKernelIntegrationScenario(
     ...all.map((t) => t.id),
     'booking.flights' // off-registry probe → unknown_tool
   ];
-  const policyDecisions = await Promise.all(
-    toolProbes.map(async (tool_id, idx) => {
-      const decision = decidePolicy(
-        { tool_id, user_id: SYNTHETIC_USER_ID },
-        {
-          registry,
-          switches,
-          hasConsent: () => true,
-          hasOAuth: () => true
-        }
-      );
-      await stores.toolInvocations.write({
-        user_id: SYNTHETIC_USER_ID,
-        tool_id,
-        invocation_id: `harness-inv-${idx}`,
-        policy_decision: decision.code,
-        status: decision.allowed ? 'success' : 'denied',
-        latency_ms: 0
-      });
-      return {
-        tool_id,
-        code: decision.code,
-        allowed: decision.allowed
-      };
-    })
-  );
+  const policyDecisions: { tool_id: string; code: PolicyDecision['code']; allowed: boolean }[] = [];
+  for (let idx = 0; idx < toolProbes.length; idx++) {
+    const tool_id = toolProbes[idx]!;
+    const decision = decidePolicy(
+      { tool_id, user_id: SYNTHETIC_USER_ID },
+      {
+        registry,
+        switches,
+        hasConsent: () => true,
+        hasOAuth: () => true
+      }
+    );
+    // Audit the gate decision itself — sanitized to (tool_id, code,
+    // allowed). The deny reason includes a tool id but not user payload.
+    await logKernelAudit(stores.audit, 'policy.decided', `tool:${tool_id}`, {
+      tool_id,
+      code: decision.code,
+      allowed: decision.allowed
+    });
+    const invocation_id = `harness-inv-${idx}`;
+    await stores.toolInvocations.write({
+      user_id: SYNTHETIC_USER_ID,
+      tool_id,
+      invocation_id,
+      policy_decision: decision.code,
+      status: decision.allowed ? 'success' : 'denied',
+      latency_ms: 0
+    });
+    // Audit the tool invocation write — distinct event from the gate
+    // decision (Phase 2 map lists "tool invocation record" as a separate
+    // required audit category). Detail carries operational identifiers
+    // only; no metadata.* payload content.
+    await logKernelAudit(stores.audit, 'tool.invoked', `tool:${tool_id}`, {
+      tool_id,
+      invocation_id,
+      policy_decision: decision.code,
+      status: decision.allowed ? 'success' : 'denied'
+    });
+    policyDecisions.push({
+      tool_id,
+      code: decision.code,
+      allowed: decision.allowed
+    });
+  }
 
   /* --------------------------------------------------------------------
    * 4. Egress Policy (Phase 2C) — 3 views over a synthetic email
@@ -310,6 +381,13 @@ export async function runKernelIntegrationScenario(
       to_state: to,
       reason: result.reason
     });
+    // Audit the transition. Sanitized: alert_id + from/to_state only.
+    // result.reason is operator-authored harness text (no user payload).
+    await logKernelAudit(stores.audit, 'state.transitioned', `alert:${SYNTHETIC_ALERT_ID}`, {
+      alert_id: SYNTHETIC_ALERT_ID,
+      from_state: from,
+      to_state: to
+    });
     transition_records_written++;
   }
   const terminal_state = (await stores.transitions.currentState(SYNTHETIC_ALERT_ID)) ?? INITIAL_STATE;
@@ -324,12 +402,29 @@ export async function runKernelIntegrationScenario(
     kind: 'founder_approved',
     detail: { score: 0.91 }
   });
+  // Audit the feedback write — sanitized: kind + alert_id +
+  // sender_present (boolean). NOT the sender email itself, NOT the
+  // detail.score in this audit (the detail lives in feedback_events).
+  await logKernelAudit(stores.audit, 'feedback.written', `alert:${SYNTHETIC_ALERT_ID}`, {
+    kind: 'founder_approved',
+    alert_id: SYNTHETIC_ALERT_ID,
+    sender_present: true
+  });
   await stores.feedback.write({
     user_id: SYNTHETIC_USER_ID,
     alert_id: SYNTHETIC_ALERT_ID,
     sender_email: SYNTHETIC_RAW_EMAIL.sender_email,
     kind: 'user_snoozed',
-    detail: { until: '2026-05-22T22:00:00.000Z' }
+    // Note: harness assigns a known-recognizable reply text to the
+    // feedback detail so the audit-leak test can verify it never reaches
+    // an audit entry. The full reply text DOES belong in feedback_events
+    // (the learning store), NOT in audit.
+    detail: { reply_text: HARNESS_REPLY_TEXT, until: '2026-05-22T22:00:00.000Z' }
+  });
+  await logKernelAudit(stores.audit, 'feedback.written', `alert:${SYNTHETIC_ALERT_ID}`, {
+    kind: 'user_snoozed',
+    alert_id: SYNTHETIC_ALERT_ID,
+    sender_present: true
   });
   const approved_count = await stores.feedback.countByKind(SYNTHETIC_USER_ID, 'founder_approved');
   const snoozed_count = await stores.feedback.countByKind(SYNTHETIC_USER_ID, 'user_snoozed');
@@ -345,11 +440,23 @@ export async function runKernelIntegrationScenario(
     detail: { importance: 'high' },
     source: 'user_confirmed'
   });
+  // Audit the memory upsert — sanitized: kind + scope_present + source.
+  // NOT the scope_key (which IS a sender email), NOT the detail.
+  await logKernelAudit(stores.audit, 'memory.upserted', `signal:sender_importance`, {
+    kind: 'sender_importance',
+    scope_present: true,
+    source: 'user_confirmed'
+  });
   await stores.memory.upsert({
     user_id: SYNTHETIC_USER_ID,
     kind: 'quietness_preference',
     scope_key: null,
     detail: { max_per_day: 5 },
+    source: 'user_confirmed'
+  });
+  await logKernelAudit(stores.audit, 'memory.upserted', `signal:quietness_preference`, {
+    kind: 'quietness_preference',
+    scope_present: false,
     source: 'user_confirmed'
   });
   const senderSignal = await stores.memory.get(
@@ -375,6 +482,16 @@ export async function runKernelIntegrationScenario(
   const modelOutputLabel = routeResult.ok ? routeResult.output.label : null;
   const modelSchemaValid = routeResult.ok;
   const modelName = routeResult.model_name ?? 'mock-classifier-tiny';
+  // Audit the model call — sanitized: capability + model_name +
+  // prompt_version + schema_valid. NOT the prompt text, NOT the model
+  // output text. Cost lives in cost_records; this audit confirms the
+  // call happened.
+  await logKernelAudit(stores.audit, 'model.routed', `capability:classification`, {
+    capability: 'classification',
+    model_name: modelName,
+    prompt_version: 'kernel-harness-v1',
+    schema_valid: modelSchemaValid
+  });
 
   /* --------------------------------------------------------------------
    * 9. Cost Tracking (Phase 2D)
@@ -383,10 +500,17 @@ export async function runKernelIntegrationScenario(
   const cost_total_usd = await stores.cost.sumByModel(SYNTHETIC_USER_ID, modelName);
 
   /* --------------------------------------------------------------------
-   * 10. Audit Log (Phase 2A) — 0 entries because the harness does NOT
-   *     perform any audit-worthy lifecycle action. Asserted in the test.
+   * 10. Audit Log (Phase 2A + 2F.1) — every kernel touch above wrote an
+   *     audit entry. Count, classify, and run the leak-canary check.
    * ------------------------------------------------------------------ */
-  const audit_entries_written = (await stores.audit.recent(SYNTHETIC_USER_ID)).length;
+  const auditEntries = await stores.audit.recent(SYNTHETIC_USER_ID, 1000);
+  const audit_entries_written = auditEntries.length;
+  const audit_by_action: Record<string, number> = {};
+  for (const e of auditEntries) {
+    audit_by_action[e.action] = (audit_by_action[e.action] ?? 0) + 1;
+  }
+  const auditSerialized = JSON.stringify(auditEntries);
+  const audit_forbidden_leaks = detectAuditForbiddenLeaks(auditSerialized);
 
   /* --------------------------------------------------------------------
    * 11. Tool Invocations (Phase 2E) — one per gate decision above
@@ -446,7 +570,9 @@ export async function runKernelIntegrationScenario(
       entries_written: invocations.length
     }),
     audit: Object.freeze({
-      entries_written: audit_entries_written
+      entries_written: audit_entries_written,
+      by_action: Object.freeze({ ...audit_by_action }),
+      forbidden_leaks: Object.freeze(audit_forbidden_leaks)
     }),
     store_backend: handle.backend
   });

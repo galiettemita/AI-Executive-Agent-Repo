@@ -109,10 +109,49 @@ describe('Kernel Integration Gate — full scenario report', () => {
     // One invocation per gate decision = 7.
     assert.equal(report.tool_invocations.entries_written, 7);
 
-    // ---- Audit Log (Phase 2A) ----
-    // The harness performs zero audit-worthy lifecycle actions.
-    // Phase 3 flows (consent grants, OAuth connects) will move this above 0.
-    assert.equal(report.audit.entries_written, 0);
+    // ---- Audit Log (Phase 2A + Phase 2F.1) ----
+    // The harness writes an audit entry at every meaningful kernel touch.
+    // Required-count breakdown (must hold for the Kernel Integration Gate):
+    //   policy.decided      7  (one per gate decision)
+    //   tool.invoked        7  (one per tool_invocations write)
+    //   state.transitioned  6  (one per state machine transition)
+    //   feedback.written    2  (founder_approved + user_snoozed)
+    //   memory.upserted     2  (sender_importance + quietness_preference)
+    //   model.routed        1  (single classification call)
+    //                      —
+    //                      25  total
+    assert.ok(report.audit.entries_written > 0, 'audit log must participate in the kernel path');
+    assert.equal(report.audit.entries_written, 25);
+    // Each required audit category must be exercised at least once.
+    for (const requiredAction of [
+      'policy.decided',
+      'tool.invoked',
+      'state.transitioned',
+      'feedback.written',
+      'memory.upserted',
+      'model.routed'
+    ]) {
+      assert.ok(
+        (report.audit.by_action[requiredAction] ?? 0) > 0,
+        `audit log missing required action: ${requiredAction}`
+      );
+    }
+    assert.equal(report.audit.by_action['policy.decided'], 7);
+    assert.equal(report.audit.by_action['tool.invoked'], 7);
+    assert.equal(report.audit.by_action['state.transitioned'], 6);
+    assert.equal(report.audit.by_action['feedback.written'], 2);
+    assert.equal(report.audit.by_action['memory.upserted'], 2);
+    assert.equal(report.audit.by_action['model.routed'], 1);
+    // PRIVACY: audit entries must not carry raw email body, raw headers,
+    // attachment filenames, prompt text, or full user reply text. The
+    // harness intentionally passes a known-recognizable reply text and
+    // prompt through the substrate so any leak into audit would surface
+    // as a canary string here.
+    assert.deepEqual(
+      [...report.audit.forbidden_leaks],
+      [],
+      `audit log leaked forbidden content: ${report.audit.forbidden_leaks.join(', ')}`
+    );
 
     // ---- Store factory (Phase 2E) ----
     // CI has no DATABASE_URL → in-memory selection.
@@ -137,6 +176,8 @@ describe('Kernel Integration Gate — full scenario report', () => {
     assert.equal(b.feedback.events_written, 2);
     assert.equal(a.tool_invocations.entries_written, 7);
     assert.equal(b.tool_invocations.entries_written, 7);
+    assert.equal(a.audit.entries_written, 25);
+    assert.equal(b.audit.entries_written, 25);
   });
 });
 

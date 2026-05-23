@@ -25,7 +25,7 @@ workflow) may begin. Not before.
 - [x] Cost Tracking — per-call records (model, prompt_version, tokens, latency, USD, schema_valid)
 - [x] Mock Model Backend — deterministic prompt→response map, no network (asserted by tripwire test)
 - [x] Eval Harness — pure-function binary precision/recall (no real fixtures yet)
-- [x] Audit Log — high-level lifecycle event log, detail redacted
+- [x] Audit Log — high-level lifecycle event log + kernel-touch events (Phase 2F.1); detail redacted via safe-logger; **exercised end-to-end by the integration harness** (25 entries per scenario run, asserted)
 - [x] Safe Logger — sensitive-key redaction + token-shape regex
 - [x] OAuth substrate — token-crypto (AES-256-GCM at-rest), oauth-state (HMAC+PKCE), exchange, token-store, provider registry (Google only)
 - [x] Session HMAC — signed-session tokens + session-middleware
@@ -46,6 +46,7 @@ workflow) may begin. Not before.
 - [x] [`apps/fomo/src/kernel/integration-harness.test.ts`](src/kernel/integration-harness.test.ts) asserts the substrate cooperates — fails loudly on any regression
 - [x] `KernelScenarioReport` is deeply frozen — callers cannot mutate it
 - [x] Two scenario runs are independent — each constructs its own in-memory stores
+- [x] **Audit log participates in the integrated path** (Phase 2F.1) — harness writes a sanitized audit entry at every kernel touch: gate decisions, tool invocations, state transitions, feedback writes, memory upserts, and model routes. Gate test asserts entries > 0, per-action breakdown, and forbidden-content leak canary (no raw email body / headers / attachment filenames / prompt text / reply text in any audit entry).
 
 ### CI + safety
 - [x] `pnpm build` green
@@ -80,7 +81,7 @@ and what Phase 3 must wire to use it.
 | Mock Model Backend | [src/core/model-backends/mock.ts](src/core/model-backends/mock.ts) | [model-backends/mock.test.ts](src/core/model-backends/mock.test.ts) | ~10 | Integration Harness, Eval Harness | Tests + dev. Real OpenAI / Anthropic backends are Phase 3 deps |
 | Eval Harness | [src/eval/harness.ts](src/eval/harness.ts) | [eval/harness.test.ts](src/eval/harness.test.ts) | ~11 | (developer tool) | Bake-off against real fixtures in Phase 3 |
 | Tool Invocations | [src/core/tool-invocations.ts](src/core/tool-invocations.ts) | [tool-invocations.test.ts](src/core/tool-invocations.test.ts) | ~17 | Integration Harness | Dispatch layer writes per-call after gate decision |
-| Audit Log | [src/core/audit.ts](src/core/audit.ts) | [audit.test.ts](src/core/audit.test.ts) | ~4 | (no v0.1 caller yet) | Consent grants, OAuth connects, session events |
+| Audit Log | [src/core/audit.ts](src/core/audit.ts) | [audit.test.ts](src/core/audit.test.ts) | ~4 | Integration Harness (Phase 2F.1) — writes 25 audit entries per scenario | Phase 3 lifecycle callers (consent grants, OAuth connects, session events) layer on top of the kernel-touch events already wired |
 | Safe Logger | [src/core/safe-logger.ts](src/core/safe-logger.ts) | [safe-logger.test.ts](src/core/safe-logger.test.ts) | ~6 | Audit, Feedback, Memory, Tool Invocations, Postgres stores | All log lines + redacted store details |
 | Token Crypto | [src/security/token-crypto.ts](src/security/token-crypto.ts) | [token-crypto.test.ts](src/security/token-crypto.test.ts) | ~9 | Token Store | OAuth token at-rest encryption |
 | Session HMAC | [src/security/session.ts](src/security/session.ts) | [session.test.ts](src/security/session.test.ts) | ~13 | (no v0.1 caller yet) | Founder/admin session auth in Phase 3 |
@@ -95,6 +96,39 @@ and what Phase 3 must wire to use it.
 | Postgres stores | [src/db/stores/*-postgres.ts](src/db/stores/) | [stores/gated-pg.test.ts](src/db/stores/gated-pg.test.ts) | ~19 (gated) | Store factory (when `DATABASE_URL` set) | Real Neon deploy uses these |
 
 ---
+
+## Audit participation matrix (Phase 2F.1)
+
+The integration harness writes a sanitized audit entry at every kernel
+touch. The gate test asserts both the count and that no payload content
+leaks into any entry.
+
+| Kernel touch | Audit action | Entries per scenario | Sanitized detail (no payload) |
+|---|---|---|---|
+| Gate decision | `policy.decided` | 7 | `tool_id`, `code`, `allowed` |
+| Tool invocation write | `tool.invoked` | 7 | `tool_id`, `invocation_id`, `policy_decision`, `status` |
+| Alert state transition | `state.transitioned` | 6 | `alert_id`, `from_state`, `to_state` |
+| Feedback write | `feedback.written` | 2 | `kind`, `alert_id`, `sender_present` (boolean, not the email) |
+| Memory upsert | `memory.upserted` | 2 | `kind`, `scope_present` (boolean, not the scope_key), `source` |
+| Model route | `model.routed` | 1 | `capability`, `model_name`, `prompt_version`, `schema_valid` (NOT prompt text or output text) |
+| **Total** | — | **25** | |
+
+Forbidden in any audit entry — asserted by the harness's leak-canary
+test (the harness intentionally passes recognizable canary strings as
+the prompt, reply text, and email body so any leak surfaces here):
+
+- raw email body (`body_plain`)
+- HTML email body (`body_html`)
+- raw headers (any header name or value)
+- attachment filenames
+- prompt text passed to the model router
+- full user reply text
+- known leak canary strings injected by the harness for the test
+
+The new audit action types (`policy.decided`, `tool.invoked`,
+`state.transitioned`, `feedback.written`, `memory.upserted`,
+`model.routed`) are legitimate Phase 3 audit categories. Phase 3 callers
+should continue writing them when the real dispatch wiring lands.
 
 ## v0.1 Tool Registry status
 
