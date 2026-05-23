@@ -8,5 +8,12 @@
     "dev": "node dist/index.js",
     "lint": "eslint src",
     "test": "node --experimental-strip-types --loader ./test-loader.mjs --test $(find src -name '*.test.ts')"
+  },
+  "dependencies": {
+    "drizzle-orm": "0.45.2",
+    "pg": "8.21.0"
+  },
+  "devDependencies": {
+    "@types/pg": "8.20.0"
   }
 }
