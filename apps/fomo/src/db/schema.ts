@@ -240,3 +240,18 @@ export const tool_invocations = pgTable(
     index('tool_invocations_status_idx').on(table.user_id, table.status)
   ]
 );
+
+/* ---------------------------------------------------------------------- */
+/* gmail_cursors — new in Phase 3B.1                                      */
+/* ---------------------------------------------------------------------- */
+//
+// Per-user Gmail history_id cursor for incremental polling. Identity is
+// user_id (one cursor per user — Phase 3B.2's polling worker reads and
+// advances it). history_id is Gmail's opaque uint64; stored as text to
+// avoid JS number precision pitfalls.
+
+export const gmail_cursors = pgTable('gmail_cursors', {
+  user_id: text('user_id').primaryKey(),
+  history_id: text('history_id').notNull(),
+  updated_at: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
+});

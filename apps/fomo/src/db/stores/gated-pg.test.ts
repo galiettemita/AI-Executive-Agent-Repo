@@ -15,7 +15,7 @@
 // it at a real Postgres bypasses PGlite).
 
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import { readFile, readdir } from 'node:fs/promises';
 import path from 'node:path';
 import { after, before, describe, it } from 'node:test';
 import { fileURLToPath } from 'node:url';
@@ -29,6 +29,7 @@ import { PostgresAuditStore } from './audit-postgres.js';
 import { PostgresAlertStateTransitionStore } from './transitions-postgres.js';
 import { PostgresCostStore } from './cost-postgres.js';
 import { PostgresFeedbackStore } from './feedback-postgres.js';
+import { PostgresGmailCursorStore } from './gmail-cursors-postgres.js';
 import { PostgresMemorySignalStore } from './memory-postgres.js';
 import { PostgresTokenStore } from './token-postgres.js';
 import { PostgresToolInvocationStore } from './tool-invocations-postgres.js';
@@ -46,13 +47,17 @@ async function setup(): Promise<{ pglite: PGlite; db: DrizzleClient }> {
   // raw SQL is more direct and exercises the same migration file
   // production will use.
   const here = path.dirname(fileURLToPath(import.meta.url));
-  const migrationPath = path.resolve(here, '../migrations/0000_init.sql');
-  const migrationSql = await readFile(migrationPath, 'utf8');
+  const migrationsDir = path.resolve(here, '../migrations');
+  const entries = await readdir(migrationsDir);
+  const sqlFiles = entries.filter((f) => f.endsWith('.sql')).sort();
   // Drizzle separates statements with the `--> statement-breakpoint` marker.
-  for (const stmt of migrationSql.split('--> statement-breakpoint')) {
-    const trimmed = stmt.trim();
-    if (trimmed.length === 0) continue;
-    await instance.exec(trimmed);
+  for (const file of sqlFiles) {
+    const migrationSql = await readFile(path.join(migrationsDir, file), 'utf8');
+    for (const stmt of migrationSql.split('--> statement-breakpoint')) {
+      const trimmed = stmt.trim();
+      if (trimmed.length === 0) continue;
+      await instance.exec(trimmed);
+    }
   }
   const wrapped = drizzle(instance, { schema }) as unknown as DrizzleClient;
   return { pglite: instance, db: wrapped };
@@ -83,6 +88,7 @@ describe('Phase 2E gated Postgres verification', { skip: !RUN_PG ? 'BREVIO_RUN_P
       'consent',
       'cost_records',
       'feedback_events',
+      'gmail_cursors',
       'memory_signals',
       'oauth_tokens',
       'tool_invocations',
@@ -428,6 +434,38 @@ describe('Phase 2E gated Postgres verification', { skip: !RUN_PG ? 'BREVIO_RUN_P
       // is bound (the actual decrypt path is exercised by the round-trip
       // tests above and the dedicated token-crypto.test.ts suite).
       assert.equal(await storeOne.loadAccessToken('u-different-user', 'google'), null);
+    });
+  });
+
+  describe('PostgresGmailCursorStore (Phase 3B.1)', () => {
+    it('upsert + get round-trip, replace on second upsert', async () => {
+      assert.ok(db);
+      const store = new PostgresGmailCursorStore(db);
+      await store.upsert({ user_id: 'u-cur-1', history_id: 'h-100' });
+      let c = await store.get('u-cur-1');
+      assert.ok(c);
+      assert.equal(c?.history_id, 'h-100');
+      await store.upsert({ user_id: 'u-cur-1', history_id: 'h-200' });
+      c = await store.get('u-cur-1');
+      assert.equal(c?.history_id, 'h-200');
+    });
+
+    it('per-user isolation', async () => {
+      assert.ok(db);
+      const store = new PostgresGmailCursorStore(db);
+      await store.upsert({ user_id: 'u-cur-iso-a', history_id: 'h-1' });
+      await store.upsert({ user_id: 'u-cur-iso-b', history_id: 'h-2' });
+      assert.equal((await store.get('u-cur-iso-a'))?.history_id, 'h-1');
+      assert.equal((await store.get('u-cur-iso-b'))?.history_id, 'h-2');
+    });
+
+    it('delete returns true when removing and false when nothing to remove', async () => {
+      assert.ok(db);
+      const store = new PostgresGmailCursorStore(db);
+      await store.upsert({ user_id: 'u-cur-del', history_id: 'h-1' });
+      assert.equal(await store.delete('u-cur-del'), true);
+      assert.equal(await store.delete('u-cur-del'), false);
+      assert.equal(await store.get('u-cur-del'), null);
     });
   });
 });

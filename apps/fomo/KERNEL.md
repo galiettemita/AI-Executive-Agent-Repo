@@ -28,6 +28,9 @@ workflow) may begin. Not before.
 - [x] Audit Log — high-level lifecycle event log + kernel-touch events (Phase 2F.1); detail redacted via safe-logger; **exercised end-to-end by the integration harness** (30 entries per scenario run after Phase 3A; previously 25)
 - [x] **Dispatch Table** (Phase 3A) — typed registry binding tool ids to executors, fail-closed on unknown tool / no executor / executor throw
 - [x] **Internal Executors** (Phase 3A) — `auditWriteExecutor`, `feedbackWriteExecutor`, `memorySignalUpsertExecutor` wired via `wireInternalExecutors()`
+- [x] **Gmail HTTP client** (Phase 3B.1) — read-only scope, injectable FetchLike, 401 → `GmailUnauthorizedError`, retryable 5xx/429 classification, base64url-aware message projection to `RawEmailContext`
+- [x] **Gmail cursor store** (Phase 3B.1) — per-user Gmail history_id; in-memory + Postgres; new `gmail_cursors` Drizzle table (migration `0001_gmail_cursors.sql`)
+- [x] **OAuth go-live routes** (Phase 3B.1) — `POST /oauth/google/start` (session-authenticated) + `GET /oauth/google/callback` (state-authenticated). PKCE + nonce single-use replay protection; state HMAC binds user_id; defense-in-depth nonce-row vs state user_id check
 - [x] Safe Logger — sensitive-key redaction + token-shape regex
 - [x] OAuth substrate — token-crypto (AES-256-GCM at-rest), oauth-state (HMAC+PKCE), exchange, token-store, provider registry (Google only)
 - [x] Session HMAC — signed-session tokens + session-middleware
@@ -40,8 +43,9 @@ workflow) may begin. Not before.
 - [x] Permission Gate denies `not_implemented` for ALL declared tools regardless of surface (Phase 2C.1 amendment)
 - [x] Phase 3A flipped the three internal capabilities to `'implemented'` alongside their dispatch wiring in [`src/dispatch/internal-executors.ts`](src/dispatch/internal-executors.ts)
 - [x] Three external tools (`gmail.read`, `sendblue.send_user_message`, `slack.founder_review`) remain `'declared'` until their adapters land (Phase 3B / 3E / 3D respectively per the revised Phase 3 map)
-- [x] No HTTP route was added beyond `GET /health`
-- [x] No Gmail / SendBlue / Slack / real-model adapter exists yet (Phase 3B–3F)
+- [x] Phase 3B.1 adds two HTTP routes: `POST /oauth/google/start` (session-authenticated) and `GET /oauth/google/callback` (state-HMAC-authenticated). The Phase 2F invariant "no HTTP route beyond `GET /health`" was scoped to Phase 2; Phase 3 explicitly authorizes workflow HTTP surface per the revised map
+- [x] Gmail read-only adapter exists (Phase 3B.1) but `gmail.read` tool stays `'declared'` — no executor wired until Phase 3B.2. The adapter is exercised once by the OAuth callback (to seed the gmail_cursors history_id) and is otherwise dormant
+- [x] No SendBlue / Slack / real-model adapter exists yet (Phase 3D / 3E / 3C)
 - [x] **Dispatch table cannot bypass the Permission Gate — structural guarantee** (Phase 3A.1). `dispatch.execute()` signature requires an `AuthorizedToolCall`, not a raw `tool_id`. The class has a private constructor; the only factory is `AuthorizedToolCall.fromDecision(decision)` which returns `null` unless `decision.allowed === true && decision.code === 'allowed' && isToolId(decision.tool_id)`. Runtime `instanceof` check in `execute()` rejects forged objects with code `'unauthorized'`
 - [x] **`audit.write` dispatch never creates recursive audit logging** — executor calls `store.audit.write` directly; harness's `policy.decided` / `tool.invoked` audits go direct to store, not through dispatch
 
@@ -100,7 +104,10 @@ and what Phase 3 must wire to use it.
 | Drizzle schema | [src/db/schema.ts](src/db/schema.ts) | (covered by gated PG tests) | — | All Postgres stores | Schema migrations applied to Neon in Phase 3 deploy |
 | Drizzle client | [src/db/client.ts](src/db/client.ts) | [db/client.test.ts](src/db/client.test.ts) | ~12 | Store factory | `DATABASE_URL` env var |
 | Store factory | [src/db/store-factory.ts](src/db/store-factory.ts) | [db/store-factory.test.ts](src/db/store-factory.test.ts) | ~7 | Integration Harness | Phase 3 callers receive `SubstrateStores` from here |
-| Postgres stores | [src/db/stores/*-postgres.ts](src/db/stores/) | [stores/gated-pg.test.ts](src/db/stores/gated-pg.test.ts) | ~19 (gated) | Store factory (when `DATABASE_URL` set) | Real Neon deploy uses these |
+| Postgres stores | [src/db/stores/*-postgres.ts](src/db/stores/) | [stores/gated-pg.test.ts](src/db/stores/gated-pg.test.ts) | ~22 (gated, including gmail_cursors in 3B.1) | Store factory (when `DATABASE_URL` set) | Real Neon deploy uses these |
+| **Gmail HTTP client** (NEW Phase 3B.1) | [src/adapters/gmail/client.ts](src/adapters/gmail/client.ts) | [adapters/gmail/client.test.ts](src/adapters/gmail/client.test.ts) | ~15 | OAuth callback (seeds cursor); Phase 3B.2 polling worker | `gmail.read` executor (Phase 3B.2) |
+| **Gmail cursor store** (NEW Phase 3B.1) | [src/memory/gmail-cursors.ts](src/memory/gmail-cursors.ts) | [memory/gmail-cursors.test.ts](src/memory/gmail-cursors.test.ts) | ~9 (in-memory) + ~3 (gated PG) | OAuth callback (initializes); Phase 3B.2 polling worker (advances) | Phase 3B.2 reads + advances |
+| **OAuth Google routes** (NEW Phase 3B.1) | [src/routes/oauth-google.ts](src/routes/oauth-google.ts) | [routes/oauth-google.test.ts](src/routes/oauth-google.test.ts) | ~10 | `apps/fomo/src/index.ts` (wired when GOOGLE_CLIENT_ID/SECRET/REDIRECT env set) | Phase 3B.2 polling worker reads tokens via TokenStore |
 
 ---
 
@@ -156,7 +163,7 @@ to deny them with `not_implemented`.
 
 | Tool ID | Surface | Risk tier | Executor status | Wired in | Remaining Phase 3 wiring |
 |---|---|---|---|---|---|
-| `gmail.read` | external | read | **declared** | — | **Phase 3B** Gmail watch worker reads via this dispatch |
+| `gmail.read` | external | read | **declared** | — | Adapter + OAuth + cursor store landed in 3B.1; executor wiring + flip lands in **Phase 3B.2** |
 | `sendblue.send_user_message` | external | send | **declared** | — | **Phase 3E** SendBlue HTTP adapter + send path |
 | `slack.founder_review` | internal | send | **declared** | — | **Phase 3D** Slack Block-Kit card poster |
 | `audit.write` | internal | internal | **implemented** | Phase 3A | `auditWriteExecutor` writes to AuditStore |
@@ -176,7 +183,8 @@ integration harness asserts.
 | Subphase | Scope |
 |---|---|
 | **3A** | Internal Dispatch — dispatch table + 3 internal executors + flip those 3 tools to `implemented`. **(done)** |
-| 3B | Gmail Read-Only Context Provider — OAuth go-live + Gmail polling worker; flip `gmail.read` to `implemented` |
+| **3B.1** | Gmail HTTP client + OAuth go-live routes + `gmail_cursors` table + cursor store (in-memory + Postgres). `gmail.read` stays declared. **(done)** |
+| 3B.2 | Gmail polling worker + `gmail.read` executor wiring + flip `gmail.read` to `implemented`. Polling kill-switch `FOMO_GMAIL_POLLING_ENABLED` default false |
 | 3C | Ranker + Real Model Backends — OpenAI/Anthropic via existing router + ranker prompt + real fixtures |
 | 3D | Slack Founder Review Only — Slack adapter + founder-review path; flip `slack.founder_review` to `implemented`. **No live user-facing texts yet.** |
 | 3E | SendBlue Founder-Only Outbound — SendBlue HTTP client + first live send (founder-only); flip `sendblue.send_user_message` to `implemented` |
