@@ -8,6 +8,9 @@
 //   polling_enabled     false  → Gmail polling worker is dormant
 //   max_users           1      → only the founder may exist
 //   polling_interval_ms 60_000 → 60s; only relevant when polling_enabled
+//   polling_max_cycles  null   → unbounded; Phase 3B.3 smoke test sets
+//                                this to 1 or 3 so the worker auto-stops
+//                                after a controlled window
 //
 // The Permission Gate consults the send/auto-send switches before
 // allowing send-tier tools. The polling switch is consulted only by the
@@ -24,6 +27,11 @@ export interface KillSwitches {
   readonly polling_enabled: boolean;
   readonly max_users: number;
   readonly polling_interval_ms: number;
+  // null means unbounded. A positive integer caps the number of cycles
+  // the polling loop runs before auto-stopping. Phase 3B.3 founder smoke
+  // test sets this to a small N so the worker cannot accidentally keep
+  // polling. Normal production runs leave it unset.
+  readonly polling_max_cycles: number | null;
 }
 
 const DEFAULTS = {
@@ -32,7 +40,8 @@ const DEFAULTS = {
   friend_beta_enabled: false,
   polling_enabled: false,
   max_users: 1,
-  polling_interval_ms: 60_000
+  polling_interval_ms: 60_000,
+  polling_max_cycles: null
 } as const satisfies KillSwitches;
 
 // Strict opt-in parse: only the literal strings 'true' or '1' (case-insensitive,
@@ -59,6 +68,18 @@ function parsePositiveIntSafe(raw: string | undefined, fallback: number): number
   return n;
 }
 
+// Optional positive integer; unset / invalid → null (unbounded).
+// Distinct from parsePositiveIntSafe which returns a numeric fallback.
+function parsePositiveIntOrNull(raw: string | undefined): number | null {
+  if (raw === undefined) return null;
+  const trimmed = raw.trim();
+  if (trimmed.length === 0) return null;
+  if (!/^\d+$/.test(trimmed)) return null;
+  const n = Number(trimmed);
+  if (!Number.isInteger(n) || n <= 0) return null;
+  return n;
+}
+
 export function loadKillSwitches(env: NodeJS.ProcessEnv = process.env): KillSwitches {
   return Object.freeze({
     send_enabled: parseBool(env.FOMO_SEND_ENABLED),
@@ -69,7 +90,8 @@ export function loadKillSwitches(env: NodeJS.ProcessEnv = process.env): KillSwit
     polling_interval_ms: parsePositiveIntSafe(
       env.FOMO_GMAIL_POLLING_INTERVAL_MS,
       DEFAULTS.polling_interval_ms
-    )
+    ),
+    polling_max_cycles: parsePositiveIntOrNull(env.FOMO_GMAIL_POLLING_MAX_CYCLES)
   });
 }
 

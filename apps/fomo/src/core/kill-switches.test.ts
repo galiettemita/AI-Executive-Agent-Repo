@@ -12,6 +12,7 @@ describe('loadKillSwitches — safe defaults', () => {
     assert.equal(s.polling_enabled, false);
     assert.equal(s.max_users, 1);
     assert.equal(s.polling_interval_ms, 60_000);
+    assert.equal(s.polling_max_cycles, null);
   });
 
   it('SAFE_DEFAULT_KILL_SWITCHES matches the empty-env result', () => {
@@ -54,6 +55,39 @@ describe('loadKillSwitches — boolean parsing is strict opt-in', () => {
     assert.equal(loadKillSwitches({ FOMO_GMAIL_POLLING_ENABLED: 'TRUE' }).polling_enabled, true);
     assert.equal(loadKillSwitches({ FOMO_GMAIL_POLLING_ENABLED: 'yes' }).polling_enabled, false);
     assert.equal(loadKillSwitches({ FOMO_GMAIL_POLLING_ENABLED: '' }).polling_enabled, false);
+  });
+});
+
+describe('loadKillSwitches — FOMO_GMAIL_POLLING_MAX_CYCLES (Phase 3B.3)', () => {
+  it('returns null when unset (unbounded)', () => {
+    assert.equal(loadKillSwitches({}).polling_max_cycles, null);
+  });
+
+  it('accepts positive integers', () => {
+    assert.equal(loadKillSwitches({ FOMO_GMAIL_POLLING_MAX_CYCLES: '1' }).polling_max_cycles, 1);
+    assert.equal(loadKillSwitches({ FOMO_GMAIL_POLLING_MAX_CYCLES: '3' }).polling_max_cycles, 3);
+    assert.equal(
+      loadKillSwitches({ FOMO_GMAIL_POLLING_MAX_CYCLES: '  10  ' }).polling_max_cycles,
+      10
+    );
+  });
+
+  it('returns null on invalid values (does not throw, does not fall back to a number)', () => {
+    assert.equal(loadKillSwitches({ FOMO_GMAIL_POLLING_MAX_CYCLES: '' }).polling_max_cycles, null);
+    assert.equal(
+      loadKillSwitches({ FOMO_GMAIL_POLLING_MAX_CYCLES: 'abc' }).polling_max_cycles,
+      null
+    );
+    assert.equal(loadKillSwitches({ FOMO_GMAIL_POLLING_MAX_CYCLES: '0' }).polling_max_cycles, null);
+    assert.equal(loadKillSwitches({ FOMO_GMAIL_POLLING_MAX_CYCLES: '-5' }).polling_max_cycles, null);
+    assert.equal(
+      loadKillSwitches({ FOMO_GMAIL_POLLING_MAX_CYCLES: '3.7' }).polling_max_cycles,
+      null
+    );
+    assert.equal(
+      loadKillSwitches({ FOMO_GMAIL_POLLING_MAX_CYCLES: '1e3' }).polling_max_cycles,
+      null
+    );
   });
 });
 
