@@ -81,7 +81,7 @@ workflow) may begin. Not before.
 - [x] Preflight script ([scripts/preflight-3c2.ts](scripts/preflight-3c2.ts)) — validates `ANTHROPIC_API_KEY`; prints cost estimate; no DB / no network
 - [x] Bake-off script ([scripts/bakeoff-3c2.ts](scripts/bakeoff-3c2.ts)) — runs `claude-haiku-4-5-20251001` + `claude-sonnet-4-6` on the 20 synthetic fixtures, applies the Conservative pick rule (`precision ≥ 0.85`, `recall ≥ 0.85`, `json_valid ≥ 0.95`; cheapest passing = primary; other = failover iff `json_valid ≥ 0.95`), writes `docs/bakeoff-3c2-results.json` artifact, exits 1 when `manual_review_required`
 - [x] Runbook ([docs/bakeoff-3c2-runbook.md](../../docs/bakeoff-3c2-runbook.md)) and report template ([docs/BAKEOFF_REPORT_TEMPLATE_3C2.md](../../docs/BAKEOFF_REPORT_TEMPLATE_3C2.md))
-- [ ] **Founder has executed the bake-off and committed `docs/BAKEOFF_REPORT_3C2.md` with primary + failover picked (or with `manual_review_required` + a documented plan)** (load-bearing — Phase 3C.3 may NOT begin until checked)
+- [ ] **Founder has executed the bake-off and committed `docs/BAKEOFF_REPORT_3C2.md` + `docs/bakeoff-3c2-results.json` to the SAME PR branch (`phase3c2-ranker-bakeoff`), then merged. Verdict must pick primary + failover OR mark `INVESTIGATE` with a documented plan.** (load-bearing — Phase 3C.3 may NOT begin until checked. The PR stays open through the founder's bake-off; "scaffolding committed" is not "phase complete.")
 
 ### Phase 3B.3 — Founder Real Gmail smoke test (separate gate before Phase 3C)
 - [x] `FOMO_GMAIL_POLLING_MAX_CYCLES` env var added with auto-stop + `fomo.poll.cycle_cap_reached` log event

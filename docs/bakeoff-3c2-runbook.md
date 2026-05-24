@@ -189,7 +189,14 @@ preserved alongside the interpretive report.
 
 ---
 
-## 7. Commit + merge
+## 7. Commit the report to the SAME PR branch — then merge
+
+**Important.** PR #23 for `phase3c2-ranker-bakeoff` was opened when the
+scaffolding was first pushed. It stays OPEN through the bake-off. The
+bake-off result + report commit lands on the same branch and shows up
+in the same PR. **Only merge the PR after the report commit is in the
+branch.** Phase 3C.2 is "complete" only when the decision is
+documented, not when the scripts exist.
 
 ```bash
 git add docs/BAKEOFF_REPORT_3C2.md docs/bakeoff-3c2-results.json
@@ -197,7 +204,15 @@ git commit -m "phase 3C.2: bake-off complete — primary <model>, failover <mode
 git push origin phase3c2-ranker-bakeoff
 ```
 
-Open the PR, review, merge.
+That push updates the existing PR. Review the diff (now includes
+scaffolding + decision), then merge.
+
+If the verdict is `manual_review_required`:
+- Either bump `PROMPT_VERSION`, re-run the bake-off, and commit a new
+  report iteration on the same branch.
+- Or commit the report with verdict `INVESTIGATE` + a written plan,
+  push, and merge — the report explicitly marks 3C.3 as blocked until
+  a follow-up bake-off picks models.
 
 ## After merge: 3C.3 unblocked
 
