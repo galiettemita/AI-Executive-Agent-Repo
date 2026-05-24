@@ -118,10 +118,22 @@ export class InMemoryCostStore implements CostStore {
 // in Phase 3+ should compute cost from the provider's actual pricing and
 // pass estimated_cost_usd directly to the cost store; this table is only a
 // fallback / mock helper.
+// Per-1M-token USD pricing. Mock entries seed the Phase 2D tests; the
+// Anthropic entries land in Phase 3C.1 alongside the AnthropicBackend.
+//
+// Anthropic pricing (Phase 3C.1, list price as of model release). These
+// are approximate and SHOULD be re-verified before any production
+// billing rollout — Anthropic publishes the authoritative numbers at
+// https://www.anthropic.com/pricing. The Phase 3C.2 bake-off uses these
+// to compute cost-per-1k-emails for the founder demo.
 export const MODEL_PRICING: Readonly<Record<string, { readonly input_per_1m_usd: number; readonly output_per_1m_usd: number }>> =
   Object.freeze({
     'mock-classifier-tiny': Object.freeze({ input_per_1m_usd: 0.10, output_per_1m_usd: 0.40 }),
-    'mock-classifier-small': Object.freeze({ input_per_1m_usd: 0.30, output_per_1m_usd: 1.20 })
+    'mock-classifier-small': Object.freeze({ input_per_1m_usd: 0.30, output_per_1m_usd: 1.20 }),
+    // Anthropic Haiku 4.5 — small/fast tier.
+    'claude-haiku-4-5-20251001': Object.freeze({ input_per_1m_usd: 1.00, output_per_1m_usd: 5.00 }),
+    // Anthropic Sonnet 4.6 — frontier tier.
+    'claude-sonnet-4-6': Object.freeze({ input_per_1m_usd: 3.00, output_per_1m_usd: 15.00 })
   });
 
 export function computeEstimatedCost(modelName: string, inputTokens: number, outputTokens: number): number {
