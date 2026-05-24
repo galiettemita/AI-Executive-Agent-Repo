@@ -117,37 +117,41 @@ Run the command three times to get three distinct values for:
 
 ## 4. Set the smoke-test env
 
-Create `apps/fomo/.env.3b3` (gitignored) or set in your shell:
+There is a template file at `apps/fomo/.env.3b3.example`. Copy it to
+`apps/fomo/.env.3b3.local` (the `.local` suffix is already in
+`.gitignore`, so your real secrets won't be committed) and fill in the
+`REPLACE_ME` placeholders with the values you generated in §2 and §3:
 
 ```bash
-# Persistence
-export DATABASE_URL='postgres://...?sslmode=require'
+cp apps/fomo/.env.3b3.example apps/fomo/.env.3b3.local
 
-# Crypto
-export BREVIO_TOKEN_KEK='...base64-32-bytes...'
-export BREVIO_OAUTH_STATE_KEY='...base64-32-bytes...'
-export BREVIO_SESSION_SIGNING_KEY='...base64-32-bytes...'
+# Edit the .local file in your editor of choice and replace every
+# REPLACE_ME placeholder.
 
-# Google OAuth
-export GOOGLE_CLIENT_ID='...apps.googleusercontent.com'
-export GOOGLE_CLIENT_SECRET='...'
-export BREVIO_OAUTH_REDIRECT_URI_GOOGLE='http://localhost:8080/oauth/google/callback'
-
-# Phase 3B.3: polling explicitly enabled, bounded to N cycles
-export FOMO_GMAIL_POLLING_ENABLED='true'
-export FOMO_GMAIL_POLLING_MAX_CYCLES='3'
-
-# Optional: tighter interval for the smoke test so 3 cycles take 30s
-# instead of 3 minutes. Default is 60_000.
-export FOMO_GMAIL_POLLING_INTERVAL_MS='10000'
-
-# Leave BREVIO_DEV_MODE UNSET so the production fail-closed checks fire.
-unset BREVIO_DEV_MODE
+# Verify it will not be committed:
+git check-ignore apps/fomo/.env.3b3.local   # should print the path and exit 0
 ```
+
+Then source it into the shell you'll run the server from:
+
+```bash
+# bash / zsh:
+set -a; source apps/fomo/.env.3b3.local; set +a
+
+# Verify a couple of vars are visible to the shell:
+echo "DATABASE_URL=${DATABASE_URL:0:24}..."   # should print the first chars
+echo "FOMO_GMAIL_POLLING_MAX_CYCLES=$FOMO_GMAIL_POLLING_MAX_CYCLES"
+```
+
+The template covers every required var (DATABASE_URL, three crypto
+keys, Google OAuth triplet, polling enabled + cap + interval) and
+includes comments on which vars are forbidden during the smoke test.
 
 > **Forbidden during the smoke test.** `FOMO_SEND_ENABLED`,
 > `FOMO_AUTO_SEND_ENABLED`, `FOMO_FRIEND_BETA_ENABLED` must all be unset
-> or `false`. The preflight script fails if any is on.
+> or `false`. `BREVIO_DEV_MODE` must be UNSET so the production
+> fail-closed checks actually fire. The preflight script in the next
+> step fails loudly if any of these are wrong.
 
 ---
 
@@ -187,19 +191,35 @@ OAuth token yet, the cycle reports `users_total: 0`.
 `/oauth/google/start` is **session-authenticated**. For the smoke test
 we don't have a session UI yet. The simplest path:
 
-1. **Mint a founder session token** using a small helper. From a Node
-   REPL in `apps/fomo/`:
+1. **Mint a founder session token** using a small helper. **Must be run
+   from `apps/fomo/`** so the relative paths to `./test-loader.mjs` and
+   `./src/security/session.ts` resolve. The payload **must include
+   `session_id` and `expires_at`** — the verifier rejects tokens
+   missing either field with `session_invalid`.
 
    ```bash
+   cd apps/fomo
+   # (re-source ./.env.3b3.local in this shell if BREVIO_SESSION_SIGNING_KEY
+   # isn't already exported)
+
    node --experimental-strip-types --loader ./test-loader.mjs --input-type=module -e "
    import { signSessionToken, loadSessionConfig } from './src/security/session.ts';
+   import { randomUUID } from 'node:crypto';
    const cfg = loadSessionConfig();
-   const token = signSessionToken(cfg, { user_id: 'founder', role: 'founder' });
+   const token = signSessionToken(cfg, {
+     user_id: 'founder',
+     session_id: randomUUID(),
+     expires_at: Math.floor(Date.now() / 1000) + 3600  // 1 hour from now
+   });
    console.log(token);
    "
    ```
 
-   Copy the resulting JWT-like token.
+   Copy the resulting token (starts with `eyJ1c2V...`, contains one `.`,
+   length ~200+ chars). The server only accepts tokens signed with the
+   exact same `BREVIO_SESSION_SIGNING_KEY` it booted with — if you get
+   `session_invalid`, confirm both shells have the same key (`echo -n
+   "$BREVIO_SESSION_SIGNING_KEY" | shasum` in both).
 
 2. **POST to `/oauth/google/start` with the session token as a cookie or
    Bearer header.** Example:
