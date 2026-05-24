@@ -77,6 +77,12 @@ workflow) may begin. Not before.
 ### Founder sign-off
 - [ ] Founder has reviewed this file and confirmed Phase 3 may begin
 
+### Phase 3C.2 — Anthropic ranker bake-off (separate gate before Phase 3C.3)
+- [x] Preflight script ([scripts/preflight-3c2.ts](scripts/preflight-3c2.ts)) — validates `ANTHROPIC_API_KEY`; prints cost estimate; no DB / no network
+- [x] Bake-off script ([scripts/bakeoff-3c2.ts](scripts/bakeoff-3c2.ts)) — runs `claude-haiku-4-5-20251001` + `claude-sonnet-4-6` on the 20 synthetic fixtures, applies the Conservative pick rule (`precision ≥ 0.85`, `recall ≥ 0.85`, `json_valid ≥ 0.95`; cheapest passing = primary; other = failover iff `json_valid ≥ 0.95`), writes `docs/bakeoff-3c2-results.json` artifact, exits 1 when `manual_review_required`
+- [x] Runbook ([docs/bakeoff-3c2-runbook.md](../../docs/bakeoff-3c2-runbook.md)) and report template ([docs/BAKEOFF_REPORT_TEMPLATE_3C2.md](../../docs/BAKEOFF_REPORT_TEMPLATE_3C2.md))
+- [ ] **Founder has executed the bake-off and committed `docs/BAKEOFF_REPORT_3C2.md` with primary + failover picked (or with `manual_review_required` + a documented plan)** (load-bearing — Phase 3C.3 may NOT begin until checked)
+
 ### Phase 3B.3 — Founder Real Gmail smoke test (separate gate before Phase 3C)
 - [x] `FOMO_GMAIL_POLLING_MAX_CYCLES` env var added with auto-stop + `fomo.poll.cycle_cap_reached` log event
 - [x] Preflight script ([scripts/preflight-3b3.ts](scripts/preflight-3b3.ts)) — verifies every required env var BEFORE the founder boots the server, fails loud on missing/invalid values, forbids `FOMO_SEND_ENABLED` / `FOMO_AUTO_SEND_ENABLED` / `FOMO_FRIEND_BETA_ENABLED` flips during the smoke window
@@ -214,8 +220,9 @@ integration harness asserts.
 | **3B.2** | Gmail polling worker + `gmail.read` executor wiring + flip `gmail.read` to `implemented`. Polling kill-switch `FOMO_GMAIL_POLLING_ENABLED` default false. **(done)** |
 | **3B.3** | Founder Real Gmail Smoke Test — prove the full OAuth + polling path against one real founder Gmail account with readonly scope only, persisted to real Neon Postgres. Adds `FOMO_GMAIL_POLLING_MAX_CYCLES` bounded-window cap, preflight + evidence scripts, runbook + report template. **Founder smoke run completed: `docs/SMOKE_REPORT_3B3.md` VERDICT=PASS (2026-05-23).** |
 | **3C.1** | Ranker substrate — AnthropicBackend (Haiku 4.5 + Sonnet 4.6), versioned ranker prompt + JSON validator (`{ label, score, reason }`), pure `rankEmail()` function (egress-enforced), 20 synthetic anonymized fixtures, `runRankerEval(backend)` wiring. No worker integration, no kill switch, no real model call in CI. **(done)** |
-| 3C.2 | Wire ranker into the polling worker + add `FOMO_RANKER_ENABLED` kill switch (default false) + run real bake-off (Haiku vs Sonnet) on the fixture set, pick winner, record cost-per-1k-emails |
-| 3C.3 | Founder real-Gmail smoke test with ranker active — same shape as 3B.3 but with real model calls on real founder inbox |
+| **3C.2** | **Bake-off only.** Run real Anthropic API on the 20 synthetic fixtures (Haiku vs Sonnet). Measure precision, recall, FP, FN, JSON validity, latency, cost. Recommend primary + failover via Conservative pick rule. **No Gmail-worker integration in this PR.** Scaffolding shipped (preflight + bake-off scripts + runbook + report template); **founder run still required** (sign-off via `docs/BAKEOFF_REPORT_3C2.md`) before Phase 3C.3 |
+| 3C.3 | Wire ranker into the polling worker behind `FOMO_RANKER_ENABLED` kill switch (default false). Use the primary picked in 3C.2 as the default model; failover when primary errors. No real-Gmail smoke yet |
+| 3C.4 | Founder real-Gmail smoke test with ranker active — same shape as 3B.3 but with real model calls on real founder inbox |
 | 3D | Slack Founder Review Only — Slack adapter + founder-review path; flip `slack.founder_review` to `implemented`. **No live user-facing texts yet.** |
 | 3E | SendBlue Founder-Only Outbound — SendBlue HTTP client + first live send (founder-only); flip `sendblue.send_user_message` to `implemented` |
 | 3F | SendBlue Inbound Reply Parser — webhook + reply classification + snooze scheduler + memory/feedback updates from replies |
