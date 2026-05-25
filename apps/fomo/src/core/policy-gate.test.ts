@@ -120,31 +120,69 @@ describe('decidePolicy — implemented tools allow when policy passes', () => {
     assert.equal(d.allowed, true);
   });
 
-  it('implemented slack.founder_review allows under safe defaults (Phase 3D.1: internal-tier, NOT send-tier)', () => {
-    // Phase 3D.1 demoted slack.founder_review's risk_tier from 'send'
-    // to 'internal' because posting to the founder's own channel for
-    // review is internal observability, not a user-facing send. The
-    // bootstrap-level FOMO_SLACK_REVIEW_ENABLED switch (not the
-    // policy gate) is what controls whether Slack posts happen at all.
+  it('implemented slack.founder_review DENIES under safe defaults (Phase 3D.1: FOMO_SLACK_REVIEW_ENABLED=false)', () => {
+    // Phase 3D.1 enforces the slack-review kill switch at TWO layers:
+    // (1) bootstrap (build-time), and (2) the policy gate (action time).
+    // Safe-default switches have slack_review_enabled=false, so the gate
+    // must deny with 'slack_review_disabled' regardless of whether the
+    // executor is wired. Defense-in-depth — no admin route / CLI /
+    // future caller can bypass the kill switch by going through dispatch.
     const d = decidePolicy(
       { tool_id: 'slack.founder_review', user_id: 'u1' },
       makeDeps({ implemented: ['slack.founder_review'] })
+    );
+    assert.equal(d.allowed, false);
+    assert.equal(d.code, 'slack_review_disabled');
+    assert.match(d.reason, /FOMO_SLACK_REVIEW_ENABLED is false/);
+  });
+
+  it('implemented slack.founder_review ALLOWS when FOMO_SLACK_REVIEW_ENABLED=true', () => {
+    const switches = loadKillSwitches({ FOMO_SLACK_REVIEW_ENABLED: 'true' });
+    const d = decidePolicy(
+      { tool_id: 'slack.founder_review', user_id: 'u1' },
+      makeDeps({ implemented: ['slack.founder_review'], switches })
     );
     assert.equal(d.allowed, true);
     assert.equal(d.code, 'allowed');
   });
 
-  it('implemented slack.founder_review allows regardless of FOMO_SEND_ENABLED state', () => {
-    // Decoupling proof: flipping FOMO_SEND_ENABLED does NOT change
-    // slack's gate outcome (because slack is no longer send-tier).
-    for (const sendFlag of [undefined, 'false', 'true']) {
-      const switches = loadKillSwitches(sendFlag ? { FOMO_SEND_ENABLED: sendFlag } : {});
-      const d = decidePolicy(
-        { tool_id: 'slack.founder_review', user_id: 'u1' },
-        makeDeps({ implemented: ['slack.founder_review'], switches })
-      );
-      assert.equal(d.allowed, true, `expected allowed when FOMO_SEND_ENABLED=${sendFlag ?? '<unset>'}`);
-    }
+  it('slack.founder_review denies BEFORE risk-tier and consent/oauth checks short-circuit (check ordering proof)', () => {
+    // Even with FOMO_SEND_ENABLED=true, the slack_review_disabled check
+    // fires first because it is more specific (tool-id-targeted) than
+    // generic risk-tier. Proves the kill switch can't be bypassed by
+    // flipping unrelated switches.
+    const switches = loadKillSwitches({
+      FOMO_SEND_ENABLED: 'true',
+      FOMO_AUTO_SEND_ENABLED: 'true'
+      // FOMO_SLACK_REVIEW_ENABLED unset (false)
+    });
+    const d = decidePolicy(
+      { tool_id: 'slack.founder_review', user_id: 'u1' },
+      makeDeps({ implemented: ['slack.founder_review'], switches })
+    );
+    assert.equal(d.code, 'slack_review_disabled');
+  });
+
+  it('non-slack tools are unaffected by FOMO_SLACK_REVIEW_ENABLED (no spillover)', () => {
+    // Negative test: setting slack_review_enabled does NOT affect any
+    // other tool's gate outcome. The check is narrow to tool_id ===
+    // 'slack.founder_review'.
+    const switches = loadKillSwitches({
+      FOMO_SLACK_REVIEW_ENABLED: 'true',
+      FOMO_SEND_ENABLED: 'true'
+    });
+    const sendblue = decidePolicy(
+      { tool_id: 'sendblue.send_user_message', user_id: 'u1' },
+      makeDeps({ implemented: ['sendblue.send_user_message'], switches })
+    );
+    assert.equal(sendblue.allowed, true);
+    // And flipping slack_review_enabled OFF does not change sendblue:
+    const switchesOff = loadKillSwitches({ FOMO_SEND_ENABLED: 'true' });
+    const sendblueOff = decidePolicy(
+      { tool_id: 'sendblue.send_user_message', user_id: 'u1' },
+      makeDeps({ implemented: ['sendblue.send_user_message'], switches: switchesOff })
+    );
+    assert.equal(sendblueOff.allowed, true);
   });
 });
 

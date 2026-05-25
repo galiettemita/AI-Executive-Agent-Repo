@@ -321,18 +321,29 @@ describe('Kernel Integration Gate — Permission Gate honest semantics', () => {
     assert.equal(d.code, 'not_implemented');
   });
 
-  it('implemented internal-tier tool (slack.founder_review) ALLOWS under safe-defaults (Phase 3D.1)', () => {
-    // Phase 3D.1: slack.founder_review is implemented + internal-tier.
-    // The Slack post is internal observability for the founder, not a
-    // user-facing send, so it does NOT gate on FOMO_SEND_ENABLED. The
-    // gate that actually controls whether Slack posts happen at all is
-    // FOMO_SLACK_REVIEW_ENABLED, enforced at bootstrap (the worker
-    // doesn't even get a slackReview dep when the switch is off).
+  it('implemented internal-tier tool (slack.founder_review) DENIES slack_review_disabled under safe-defaults (Phase 3D.1)', () => {
+    // Phase 3D.1: the slack-review kill switch is enforced at the
+    // policy gate too (defense-in-depth, not only at bootstrap).
+    // Safe-defaults have slack_review_enabled=false → deny.
     const d = decidePolicy(
       { tool_id: 'slack.founder_review', user_id: 'u1' },
       {
         registry: createToolRegistry(),
         switches: SAFE_DEFAULT_KILL_SWITCHES,
+        hasConsent: () => true,
+        hasOAuth: () => true
+      }
+    );
+    assert.equal(d.allowed, false);
+    assert.equal(d.code, 'slack_review_disabled');
+  });
+
+  it('implemented internal-tier tool (slack.founder_review) ALLOWS when FOMO_SLACK_REVIEW_ENABLED=true (Phase 3D.1)', () => {
+    const d = decidePolicy(
+      { tool_id: 'slack.founder_review', user_id: 'u1' },
+      {
+        registry: createToolRegistry(),
+        switches: Object.freeze({ ...SAFE_DEFAULT_KILL_SWITCHES, slack_review_enabled: true }),
         hasConsent: () => true,
         hasOAuth: () => true
       }

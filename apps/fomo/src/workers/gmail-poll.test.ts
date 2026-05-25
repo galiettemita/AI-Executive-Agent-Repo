@@ -774,6 +774,22 @@ async function setupSlackReviewHarness(opts: {
     return slackStub.client.postFounderReviewCard(typed as Parameters<typeof slackStub.client.postFounderReviewCard>[0]);
   });
 
+  // Phase 3D.1: the slack-review kill switch is enforced at the policy
+  // gate too. Tests that exercise the Slack flow need slack_review_enabled=true
+  // in the gate switches; otherwise the gate denies with 'slack_review_disabled'
+  // and the test never reaches dispatch. We override the gateDeps.switches
+  // in-place (it's a frozen object; we replace it).
+  ranker.harness.deps = {
+    ...ranker.harness.deps,
+    gateDeps: {
+      ...ranker.harness.deps.gateDeps,
+      switches: Object.freeze({
+        ...ranker.harness.deps.gateDeps.switches,
+        slack_review_enabled: true
+      })
+    }
+  };
+
   // Deterministic alert_id so assertions are stable.
   let aId = 0;
   ranker.harness.deps = {
@@ -1004,6 +1020,115 @@ describe('runOnce — Slack review aggregate cycle audit (Phase 3D.1)', () => {
     assert.equal(detail.slack_posts, 2);
     assert.equal(detail.slack_posts_already, 0);
     assert.equal(detail.slack_posts_failed, 0);
+  });
+});
+
+/* ====================================================================== */
+/* Defense-in-depth: gate-level kill switch (Phase 3D.1 founder directive) */
+/* ====================================================================== */
+
+describe('runOnce — FOMO_SLACK_REVIEW_ENABLED=false BLOCKS Slack post even with SlackClient wired', () => {
+  it('LOAD-BEARING: gate denies slack.founder_review with slack_review_disabled; ZERO Slack API calls happen', async () => {
+    // Build a slackReview-wired harness exactly as the happy-path test
+    // does, but DO NOT flip slack_review_enabled in the gate switches.
+    // This simulates a misconfigured / malicious caller: bootstrap
+    // mistakenly wired the dep + adapter, but the policy gate must
+    // still refuse to dispatch.
+    const ranker = await setupRankerHarness({
+      rank: async () => rankerSuccess({ decision: { label: 'important', score: 0.85, reason: 'urgent' } })
+    });
+    const alertStore = new InMemoryAlertStore();
+    const transitions = new InMemoryAlertStateTransitionStore();
+    const slackStub = stubSlackClient({});
+
+    // Real-shaped slack executor wired to the stub.
+    ranker.harness.deps.dispatch.register('slack.founder_review', async (args: unknown) => {
+      const typed = args as Parameters<typeof slackStub.client.postFounderReviewCard>[0];
+      return slackStub.client.postFounderReviewCard(typed);
+    });
+
+    // Attach slackReview dep WITHOUT flipping the gate switch. The
+    // bootstrap is bypassed; defense-in-depth at the gate must catch it.
+    let aId = 0;
+    ranker.harness.deps = {
+      ...ranker.harness.deps,
+      slackReview: { alertStore, transitions },
+      newAlertId: () => `alert-test-${++aId}`
+      // gateDeps.switches.slack_review_enabled is still false (SAFE_DEFAULT_KILL_SWITCHES)
+    };
+
+    const r = await runOnce(ranker.harness.deps);
+
+    // Ranker fires normally (slack-review gate is independent of ranker).
+    assert.equal(r.messages_ranked, 2);
+    // Alerts ARE created (the worker creates the alert row before the
+    // gate decision — necessary for 3D.2 to backfill later — but the
+    // gate prevents the actual Slack call). State machine walks ranked
+    // → failed for both alerts.
+    assert.equal(r.alerts_created, 2);
+    assert.equal(r.slack_posts, 0);             // no successful post
+    assert.equal(r.slack_posts_already, 0);
+    assert.equal(r.slack_posts_failed, 2);      // both gate-denied → failed
+    // CRITICAL: zero Slack API calls ever happened.
+    assert.equal(slackStub.calls.length, 0, 'NO Slack API call may happen when the kill switch is off');
+
+    // Audit shows policy.decided with slack_review_disabled code for each attempt.
+    const audit = await ranker.harness.auditStore.recent('u-rank');
+    const slackPolicyDecisions = audit.filter(
+      (e) => e.action === 'policy.decided' && (e.detail as Record<string, unknown>)?.tool_id === 'slack.founder_review'
+    );
+    assert.equal(slackPolicyDecisions.length, 2);
+    for (const d of slackPolicyDecisions) {
+      const detail = d.detail as Record<string, unknown>;
+      assert.equal(detail.decision_code, 'slack_review_disabled');
+      assert.equal(detail.allowed, false);
+    }
+    // And fomo.slack.failed entries surface the gate denial via error_code='gate_denied' + decision_code='slack_review_disabled'.
+    const failedAudits = audit.filter((e) => e.action === 'fomo.slack.failed');
+    assert.equal(failedAudits.length, 2);
+    for (const a of failedAudits) {
+      const detail = a.detail as Record<string, unknown>;
+      assert.equal(detail.error_code, 'gate_denied');
+      assert.equal(detail.decision_code, 'slack_review_disabled');
+    }
+  });
+
+  it('LOAD-BEARING: gate denial holds even if FOMO_SEND_ENABLED flips on (slack switch is INDEPENDENT of send switch)', async () => {
+    // Adversarial test: someone enabled FOMO_SEND_ENABLED hoping that
+    // flips slack too. It does NOT — slack_review_disabled is its own
+    // check, narrower than the send-tier check.
+    const ranker = await setupRankerHarness({
+      rank: async () => rankerSuccess({ decision: { label: 'important', score: 0.85, reason: 'urgent' } })
+    });
+    const alertStore = new InMemoryAlertStore();
+    const transitions = new InMemoryAlertStateTransitionStore();
+    const slackStub = stubSlackClient({});
+    ranker.harness.deps.dispatch.register('slack.founder_review', async (args: unknown) => {
+      const typed = args as Parameters<typeof slackStub.client.postFounderReviewCard>[0];
+      return slackStub.client.postFounderReviewCard(typed);
+    });
+
+    let aId = 0;
+    ranker.harness.deps = {
+      ...ranker.harness.deps,
+      gateDeps: {
+        ...ranker.harness.deps.gateDeps,
+        // FOMO_SEND_ENABLED=true. FOMO_SLACK_REVIEW_ENABLED stays false.
+        switches: Object.freeze({
+          ...ranker.harness.deps.gateDeps.switches,
+          send_enabled: true
+          // slack_review_enabled: false  ← still off
+        })
+      },
+      slackReview: { alertStore, transitions },
+      newAlertId: () => `alert-test-${++aId}`
+    };
+
+    const r = await runOnce(ranker.harness.deps);
+    assert.equal(r.slack_posts, 0);
+    assert.equal(r.slack_posts_failed, 2);
+    // Zero Slack API calls.
+    assert.equal(slackStub.calls.length, 0);
   });
 });
 

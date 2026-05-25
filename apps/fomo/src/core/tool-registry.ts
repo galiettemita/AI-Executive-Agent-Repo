@@ -112,10 +112,16 @@ const ACTIVE_TOOLS: readonly ToolDescriptor[] = Object.freeze([
     // Phase 3D.1: risk_tier='internal' (NOT 'send'). Posting to the
     // founder's own Slack channel for review is internal observability,
     // not a user-facing send. FOMO_SEND_ENABLED gates user-facing
-    // SendBlue sends; FOMO_SLACK_REVIEW_ENABLED (enforced at bootstrap)
-    // gates whether the worker wires the Slack adapter and dep at all.
-    // Decoupling the tiers lets 3D.1 ship Slack review WITHOUT first
-    // unlocking SendBlue sends — exactly the founder's intent.
+    // SendBlue sends; FOMO_SLACK_REVIEW_ENABLED gates Slack review and
+    // is enforced at TWO layers for defense-in-depth:
+    //   1. bootstrap (apps/fomo/src/index.ts#buildSlackReviewWiring) —
+    //      throws when the switch is on but creds are missing; returns
+    //      null deps when the switch is off (worker skips the flow)
+    //   2. policy gate (apps/fomo/src/core/policy-gate.ts#decidePolicy) —
+    //      denies dispatch with 'slack_review_disabled' when the switch
+    //      is false, regardless of how the executor was wired
+    // The 'internal' risk_tier is therefore NOT a bypass — the kill
+    // switch still blocks at the action boundary.
     risk_tier: 'internal',
     description: 'Post a candidate alert to the founder Slack channel for review.',
     requires_consent: false,
