@@ -1103,6 +1103,131 @@ Pass criteria:
 
 ---
 
+## Smoke Test Gates
+
+> **Rule (founder directive 2026-05-24):** every real external
+> integration must have a founder-only smoke test before the next
+> dependent phase begins. Born from the 3B.3 Gmail and 3C.2 OpenAI
+> experiences — code shipping is not the same as substrate working
+> against a real provider. Smoke tests close that gap.
+
+### Inventory
+
+The v0.1 milestone has six smoke-test gates. Each one is a hard
+prerequisite for the next dependent phase.
+
+| Gate     | What it proves                                      | Unblocks |
+| -------- | --------------------------------------------------- | -------- |
+| **3B.3** | Founder Real Gmail Smoke Test                       | 3C.x     |
+| **3C.2** | OpenAI Ranker Smoke Eval                            | 3C.3     |
+| **3D.x** | Slack Founder Review Smoke Test                     | 3E       |
+| **3E.x** | SendBlue Outbound Founder-Only Smoke Test           | 3F       |
+| **3F.x** | SendBlue Inbound Reply Smoke Test                   | 3G       |
+| **3G**   | Full Founder Demo Smoke Test (end-to-end v0.1)      | v0.3     |
+
+Numbering convention: a `.x` suffix denotes the specific smoke-test
+sub-phase that lands at the end of the named subphase. For example,
+3D's Slack adapter PR is `3D` and its smoke test is `3D.x` (concrete
+number assigned when scheduled).
+
+### Required deliverables per smoke gate
+
+Every smoke test in the inventory MUST ship the following before its
+PASS report is committable:
+
+1. **Runbook** — step-by-step founder procedure under `docs/`. Covers
+   external-provider setup (Google Cloud, OpenAI, Slack workspace,
+   SendBlue account), env vars, commands, verification, stop.
+2. **Preflight script where possible** — pure config inspection under
+   `apps/fomo/scripts/preflight-<gate>.ts`. No network, no DB.
+   Validates every required env var; warns on forbidden flags. Exit 1
+   on any missing/invalid input.
+3. **Evidence script where possible** — read-only post-run query script
+   under `apps/fomo/scripts/<smoke>-evidence-<gate>.ts` OR the smoke
+   script itself writes a structured artifact to `docs/<gate>-results.json`.
+   Captures the gate-specific PASS/INVESTIGATE evidence.
+4. **Smoke report template** — `docs/<GATE>_REPORT_TEMPLATE.md` under
+   `docs/`. Founder copies to `docs/<GATE>_REPORT.md` (drop `_TEMPLATE`)
+   and fills in.
+5. **Committed PASS report before the next phase begins** — the report
+   commits to the SAME PR branch as the smoke scaffolding (mirrors
+   3B.3 and 3C.2 patterns). Only then does the PR merge, and only then
+   does the next dependent subphase get branched.
+
+### Rules
+
+- **Smoke tests are founder-only.** No friend, no beta user, no
+  delegated runner. The founder is the only person who knows whether
+  Brevio actually feels right against their own data.
+- **No friend beta smoke test until founder smoke tests pass.** v0.5
+  cannot start until 3G is green.
+- **No secrets committed.** Use gitignored `.env.*.local` files for
+  real keys; commit only `.env.*.example` templates with placeholders.
+- **No raw Gmail bodies committed.** Synthetic or anonymized only,
+  per §14.3. Fixtures must round-trip through `applyEgressForRanker`
+  in tests to prove no leak.
+- **No raw private data in logs/audit.** Evidence scripts MUST scan
+  recent audit + tool_invocations records for forbidden keys
+  (`body_plain`, `body_html`, `attachments`, header dumps, long
+  base64 blobs) and fail the gate on hits.
+- **Kill switches must be tested.** Every gate proves the relevant
+  switch defaults to "no effect on the world" and that flipping it
+  off actually halts the substrate.
+- **Idempotency must be tested for messaging.** 3E and 3F gates must
+  prove that duplicate send/receive events do not double-fire.
+- **Webhook auth must be tested for inbound providers.** 3F's gate
+  proves SendBlue inbound webhooks reject unsigned / mis-signed
+  payloads.
+- **External API failures must fail closed.** Every gate exercises
+  at least one upstream failure path (401, 429 quota, 5xx) and
+  proves the substrate aborts cleanly without partial-state
+  corruption.
+
+### Why this rule exists (lessons from 3B.3 and 3C.2)
+
+The first two smoke gates surfaced bugs that no amount of unit testing
+caught:
+
+- **3B.3** revealed that the runbook's session-mint one-liner was
+  missing required token fields (`session_id`, `expires_at`); valid
+  HMAC, invalid payload. Only a live OAuth handshake against real
+  Google could find this.
+- **3C.2** revealed that gpt-5 reasoning models reject any explicit
+  `temperature` value (400 unsupported_value); only a live call to
+  real OpenAI surfaced it. Same run also surfaced that
+  `insufficient_quota` is a 429 that retries cannot fix — required a
+  one-line backend amendment to fail fast.
+
+Unit tests caught zero of these. The smoke-test gate caught all of
+them before they could damage a downstream phase. The pattern is
+formalized here so 3D / 3E / 3F / 3G each get the same protection.
+
+### Phase-map dependency (informal; tracked formally in `apps/fomo/KERNEL.md`)
+
+```
+3B.1 → 3B.2 → 3B.3 ──gate──┐
+                            ↓
+                          3C.1 → 3C.2 ──gate──┐
+                                              ↓
+                                            3C.3 → 3C.4 ──gate──┐
+                                                                 ↓
+                                                                3D ──gate──┐
+                                                                            ↓
+                                                                          3E ──gate──┐
+                                                                                      ↓
+                                                                                    3F ──gate──┐
+                                                                                                ↓
+                                                                                              3G ──gate──→ v0.1 done
+```
+
+Each `──gate──` arrow represents a committed PASS report. The
+prerequisite arrow may not be crossed without it. Subphases that do
+NOT involve a real external integration (3C.1 substrate, 3C.3 worker
+wiring) do not require a smoke gate but still require the standard
+build/test/lint CI pass.
+
+---
+
 ## 20. Testing Plan
 
 Required tests:
