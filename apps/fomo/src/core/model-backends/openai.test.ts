@@ -219,6 +219,28 @@ describe('OpenAIBackend.call — fail-closed paths', () => {
     );
   });
 
+  it('429 insufficient_quota → retryable=false (permanent until billing changes)', async () => {
+    const fetchImpl = mockFetch(async () => ({
+      status: 429,
+      body: {
+        error: {
+          type: 'insufficient_quota',
+          code: 'insufficient_quota',
+          message: 'You exceeded your current quota, please check your plan and billing details.'
+        }
+      }
+    }));
+    const backend = new OpenAIBackend({ apiKey: 'k', model: 'gpt-5-mini', fetchImpl });
+    await assert.rejects(
+      backend.call({ prompt: 'x', timeout_ms: 5_000 }),
+      (err: unknown) =>
+        err instanceof OpenAIApiError &&
+        err.httpStatus === 429 &&
+        err.providerCode === 'insufficient_quota' &&
+        err.retryable === false
+    );
+  });
+
   it('throws OpenAIApiError(retryable=true) on 5xx', async () => {
     for (const status of [500, 502, 503]) {
       const fetchImpl = mockFetch(async () => ({

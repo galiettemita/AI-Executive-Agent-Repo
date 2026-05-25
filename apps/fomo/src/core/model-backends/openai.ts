@@ -36,6 +36,13 @@ export class OpenAIAuthError extends Error {
   }
 }
 
+// Provider codes that are nominally on a retryable status (429) but
+// are PERMANENT until operator action — retrying just burns calls.
+// 'insufficient_quota' = workspace has no credit/billing configured.
+const PERMANENT_RETRYABLE_LOOKING_CODES: ReadonlySet<string> = new Set([
+  'insufficient_quota'
+]);
+
 export class OpenAIApiError extends Error {
   readonly httpStatus: number;
   readonly providerCode: string | undefined;
@@ -46,7 +53,12 @@ export class OpenAIApiError extends Error {
     this.httpStatus = httpStatus;
     this.providerCode = providerCode;
     // 5xx and 429 are retryable. 408 (request timeout) also retryable.
-    this.retryable = httpStatus >= 500 || httpStatus === 429 || httpStatus === 408;
+    // BUT some 429s carry permanent-state codes that retrying won't fix
+    // — insufficient_quota is the classic one; the founder must add
+    // billing before any future call succeeds.
+    const transientStatus = httpStatus >= 500 || httpStatus === 429 || httpStatus === 408;
+    const permanentCode = providerCode !== undefined && PERMANENT_RETRYABLE_LOOKING_CODES.has(providerCode);
+    this.retryable = transientStatus && !permanentCode;
   }
 }
 
