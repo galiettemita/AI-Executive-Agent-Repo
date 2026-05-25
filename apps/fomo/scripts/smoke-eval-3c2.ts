@@ -34,10 +34,10 @@ import { computeEstimatedCost } from '../src/core/cost-tracking.js';
 import {
   OpenAIAuthError,
   OpenAIApiError,
-  OpenAIBackend,
-  type OpenAIResponseFormat
+  OpenAIBackend
 } from '../src/core/model-backends/openai.js';
 import { buildRankerEvalFixtures } from '../src/eval/ranker-eval.js';
+import { RANKER_OPENAI_RESPONSE_FORMAT } from '../src/ranker/openai-response-format.js';
 import { PROMPT_VERSION } from '../src/ranker/prompt.js';
 import { type RankLabel, validateRankerOutput } from '../src/ranker/validator.js';
 
@@ -55,25 +55,11 @@ const PASS_GATE = Object.freeze({
 /* Structured-output schema sent to OpenAI                                */
 /* ---------------------------------------------------------------------- */
 
-const RANKER_RESPONSE_FORMAT: OpenAIResponseFormat = Object.freeze({
-  type: 'json_schema',
-  json_schema: {
-    name: 'ranker_decision',
-    strict: true,
-    schema: Object.freeze({
-      type: 'object',
-      properties: {
-        label: { type: 'string', enum: ['important', 'not_important'] },
-        // OpenAI strict mode doesn't accept minimum/maximum. The
-        // validator (validateRankerOutput) enforces 0..1 client-side.
-        score: { type: 'number' },
-        reason: { type: 'string' }
-      },
-      required: ['label', 'score', 'reason'],
-      additionalProperties: false
-    })
-  }
-});
+// 3C.3 extracted this constant to src/ranker/openai-response-format.ts so
+// the polling-worker bootstrap and this smoke eval send OpenAI the EXACT
+// same contract. The PASS verdict here is meaningful only if production
+// uses the same format.
+const RANKER_RESPONSE_FORMAT = RANKER_OPENAI_RESPONSE_FORMAT;
 
 /* ---------------------------------------------------------------------- */
 /* Per-call + aggregate types                                             */

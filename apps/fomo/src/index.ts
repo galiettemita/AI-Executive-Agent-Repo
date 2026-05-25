@@ -13,7 +13,11 @@ import { type PolicyGateDeps } from './core/policy-gate.js';
 import { createDispatchTable, type DispatchTable } from './dispatch/dispatcher.js';
 import { wireInternalExecutors } from './dispatch/internal-executors.js';
 import { wireExternalExecutors } from './dispatch/external-executors.js';
-import { runOnce as runPollOnce } from './workers/gmail-poll.js';
+import { runOnce as runPollOnce, type GmailPollRankerDep } from './workers/gmail-poll.js';
+import { OpenAIBackend } from './core/model-backends/openai.js';
+import { createModelRouter } from './core/model-router.js';
+import { rankEmail } from './ranker/index.js';
+import { RANKER_OPENAI_RESPONSE_FORMAT } from './ranker/openai-response-format.js';
 import { loadCryptoConfig } from './security/token-crypto.js';
 import { loadSessionConfig } from './security/session.js';
 import { InMemoryNonceStore, loadOAuthStateConfig } from './security/oauth/state.js';
@@ -142,12 +146,53 @@ function buildLiveGateDeps(
   };
 }
 
+/* ---------------------------------------------------------------------- */
+/* Ranker bootstrap (Phase 3C.3)                                          */
+/* ---------------------------------------------------------------------- */
+
+// Build the ranker dep that the polling worker uses. Returns null when
+// the kill switch is off (the safe default). THROWS when the kill
+// switch is on but the OpenAI config is incomplete — "real or absent,
+// never half-wired": if FOMO_RANKER_ENABLED=true we either deliver a
+// working ranker or refuse to boot. Misconfig must surface at startup,
+// not silently degrade to a no-op polling loop.
+function buildRankerDep(
+  storesHandle: SubstrateStoresHandle,
+  killSwitches: KillSwitches,
+  env: NodeJS.ProcessEnv = process.env
+): GmailPollRankerDep | null {
+  if (!killSwitches.ranker_enabled) return null;
+
+  const apiKey = env.OPENAI_API_KEY;
+  if (!apiKey || apiKey.length === 0) {
+    throw new Error(
+      'FOMO_RANKER_ENABLED=true but OPENAI_API_KEY is missing. ' +
+        'Set the key or set FOMO_RANKER_ENABLED=false. Refusing to boot a half-wired ranker.'
+    );
+  }
+
+  const model = env.FOMO_OPENAI_MODEL?.trim() || 'gpt-5-mini';
+  const backend = new OpenAIBackend({
+    apiKey,
+    model,
+    responseFormat: RANKER_OPENAI_RESPONSE_FORMAT
+  });
+  const router = createModelRouter({ costStore: storesHandle.stores.cost });
+  router.registerBackend('classification', backend);
+
+  return Object.freeze({
+    rank: (req: Parameters<GmailPollRankerDep['rank']>[0]) => rankEmail(req, { router }),
+    store: storesHandle.stores.rankResults
+  });
+}
+
 function startGmailPolling(
   storesHandle: SubstrateStoresHandle,
   gmailClient: GmailClient,
   dispatch: DispatchTable,
   killSwitches: KillSwitches,
-  config: FomoConfig
+  config: FomoConfig,
+  ranker: GmailPollRankerDep | null
 ): PollingHandle {
   const stores = storesHandle.stores;
   let stopped = false;
@@ -178,7 +223,8 @@ function startGmailPolling(
           dispatch,
           auditStore: stores.audit,
           toolInvocationStore: stores.toolInvocations,
-          gateDeps
+          gateDeps,
+          ranker: ranker ?? undefined
         });
         cyclesRun++;
         if (stopped) return;
@@ -192,7 +238,14 @@ function startGmailPolling(
           users_api_error: report.users_api_error,
           messages_observed: report.messages_observed,
           messages_dispatched: report.messages_dispatched,
-          messages_failed: report.messages_failed
+          messages_failed: report.messages_failed,
+          // Phase 3C.3: only meaningful when ranker dep was built; zero
+          // when ranker_enabled=false. Visible in the same log line so
+          // ops can confirm the ranker is firing without correlating
+          // audit rows.
+          messages_ranked: report.messages_ranked,
+          messages_rank_already: report.messages_rank_already,
+          messages_rank_failed: report.messages_rank_failed
         });
       } catch (err) {
         if (stopped) return;
@@ -269,14 +322,31 @@ export function createFomoRuntime(config: FomoConfig = loadFomoConfig()): FomoRu
   // OAuth routes — graceful skip when not configured.
   const oauthGoogleDeps = buildOAuthGoogleDeps(storesHandle, config, gmailClient);
 
+  // Ranker — bootstrapped only when FOMO_RANKER_ENABLED=true. THROWS at
+  // boot if the kill switch is on but OpenAI config is incomplete; safe
+  // default (kill switch off) returns null and the polling worker
+  // behaves exactly as in 3B.2/3B.3.
+  const ranker = buildRankerDep(storesHandle, killSwitches);
+  if (ranker) {
+    logEvent(config, undefined, 'fomo.ranker.enabled', 'INFO', {
+      model: process.env.FOMO_OPENAI_MODEL?.trim() || 'gpt-5-mini',
+      prompt_version_loaded: true
+    });
+  } else {
+    logEvent(config, undefined, 'fomo.ranker.disabled', 'INFO', {
+      detail: 'FOMO_RANKER_ENABLED is not "true"; ranker dormant (rank_results stays empty)'
+    });
+  }
+
   // Polling worker — bootstrapped only when FOMO_GMAIL_POLLING_ENABLED=true.
   // Safe default: off (no autonomous Gmail reads until founder opts in).
   let pollingHandle: PollingHandle | null = null;
   if (killSwitches.polling_enabled) {
-    pollingHandle = startGmailPolling(storesHandle, gmailClient, dispatch, killSwitches, config);
+    pollingHandle = startGmailPolling(storesHandle, gmailClient, dispatch, killSwitches, config, ranker);
     logEvent(config, undefined, 'fomo.poll.enabled', 'INFO', {
       interval_ms: killSwitches.polling_interval_ms,
-      cycle_cap: killSwitches.polling_max_cycles
+      cycle_cap: killSwitches.polling_max_cycles,
+      ranker_enabled: ranker !== null
     });
   } else {
     logEvent(config, undefined, 'fomo.poll.disabled', 'INFO', {
@@ -342,7 +412,8 @@ export function createFomoRuntime(config: FomoConfig = loadFomoConfig()): FomoRu
       port: config.port,
       store_backend: storesHandle.backend,
       oauth_google_wired: oauthGoogleDeps !== null,
-      polling_enabled: killSwitches.polling_enabled
+      polling_enabled: killSwitches.polling_enabled,
+      ranker_enabled: ranker !== null
     });
   });
 

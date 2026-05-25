@@ -1,4 +1,4 @@
-// Gmail Polling Worker — Phase 3B.2.
+// Gmail Polling Worker — Phase 3B.2, extended in Phase 3C.3.
 //
 // One cycle = one runOnce() call. For each user with a stored Gmail
 // cursor:
@@ -14,33 +14,58 @@
 //      needs_reauth, surface in the cycle report, and continue to the
 //      next user.
 //   4. For each new message_id, decide policy + mint AuthorizedToolCall
-//      + dispatch.execute('gmail.read', { message_id }). Each dispatch
-//      writes audit (policy.decided + tool.invoked) and tool_invocations
-//      via injected helpers. The returned RawEmailContext is DISCARDED
-//      in 3B.2 (no ranker yet); Phase 3C adds the ranker consumer.
-//   5. Persist the advanced cursor (cursorStore.upsert with the new
+//      + dispatch.execute<RawEmailContext>('gmail.read', { message_id }).
+//      Each dispatch writes audit (policy.decided + tool.invoked) and
+//      tool_invocations via injected helpers.
+//   5. Phase 3C.3: when the optional `ranker` dep is present AND
+//      dispatch succeeded, hand the RawEmailContext to ranker.rank().
+//      RankerSuccess → one row in rank_results (ON CONFLICT DO NOTHING)
+//      plus an audit event 'fomo.rank.completed' (or
+//      'fomo.rank.already_ranked' when the row was a duplicate).
+//      RankerFailure → audit event 'fomo.rank.failed' only; no
+//      rank_results row. Failures NEVER abort the cycle.
+//      When the ranker dep is absent, the RawEmailContext is discarded
+//      (matches 3B.2 behavior exactly so existing integrations are
+//      backward-compatible).
+//   6. Persist the advanced cursor (cursorStore.upsert with the new
 //      latest_history_id).
-//   6. Write one aggregate 'gmail.poll.cycle' audit entry summarizing
+//   7. Write one aggregate 'gmail.poll.cycle' audit entry summarizing
 //      the cycle.
 //
 // Audit footprint per cycle:
 //   - 1 'gmail.poll.cycle' entry, always
 //   - 2 entries per new message ('policy.decided' + 'tool.invoked')
+//   - +1 entry per dispatched message when ranker is enabled:
+//     'fomo.rank.completed' | 'fomo.rank.already_ranked' | 'fomo.rank.failed'
 //   - 0 per-user audit; per-user outcomes summarized in the cycle entry
 //
 // Kill-switch coupling: the worker itself does NOT consult
-// switches.polling_enabled — the bootstrap in apps/fomo/src/index.ts is
-// the only place that reads the flag (gating whether the interval is
-// installed). runOnce() can still be called by tests / admin endpoints
-// when the flag is off.
+// switches.polling_enabled or switches.ranker_enabled — the bootstrap
+// in apps/fomo/src/index.ts is the only place that reads the flags
+// (gating whether the interval is installed and whether the ranker dep
+// is constructed). runOnce() can still be called by tests / admin
+// endpoints when either flag is off.
 
 import { GmailClient, GmailUnauthorizedError, GmailApiError } from '../adapters/gmail/client.js';
 import { type AuditStore } from '../core/audit.js';
+import { type RawEmailContext } from '../core/egress-policy.js';
 import { decidePolicy, type PolicyGateDeps } from '../core/policy-gate.js';
 import { type ToolInvocationStore } from '../core/tool-invocations.js';
 import { AuthorizedToolCall, type DispatchTable } from '../dispatch/dispatcher.js';
 import { type GmailCursorStore } from '../memory/gmail-cursors.js';
+import { type RankResultStore } from '../memory/rank-results.js';
+import { type RankerResult } from '../ranker/index.js';
 import { type TokenStore } from '../security/oauth/token-store.js';
+
+// Phase 3C.3: optional ranker dep. When present, every dispatched
+// gmail.read result is handed to .rank() and the outcome is persisted
+// via .store. When absent, the worker behaves exactly as in 3B.2 (raw
+// context discarded). Bundled together because rank+store always move
+// as a pair; passing only one is meaningless.
+export interface GmailPollRankerDep {
+  readonly rank: (req: { raw: RawEmailContext; user_id: string }) => Promise<RankerResult>;
+  readonly store: RankResultStore;
+}
 
 export interface GmailPollDeps {
   readonly gmailClient: GmailClient;
@@ -50,6 +75,8 @@ export interface GmailPollDeps {
   readonly auditStore: AuditStore;
   readonly toolInvocationStore: ToolInvocationStore;
   readonly gateDeps: PolicyGateDeps;
+  // Phase 3C.3: optional. Absent → no ranking happens.
+  readonly ranker?: GmailPollRankerDep;
   // ID generator for invocation_id. Defaults to a counter-prefixed
   // string; tests inject a deterministic one.
   readonly newInvocationId?: () => string;
@@ -79,6 +106,10 @@ export type GmailPollUserOutcome =
       readonly messages_observed: number;
       readonly messages_dispatched: number;
       readonly messages_failed: number;
+      // Phase 3C.3 counters. All zero when ranker dep is absent.
+      readonly messages_ranked: number;
+      readonly messages_rank_already: number;
+      readonly messages_rank_failed: number;
     };
 
 export interface GmailPollCycleReport {
@@ -92,6 +123,10 @@ export interface GmailPollCycleReport {
   readonly messages_observed: number;
   readonly messages_dispatched: number;
   readonly messages_failed: number;
+  // Phase 3C.3 aggregates. All zero when ranker dep is absent.
+  readonly messages_ranked: number;
+  readonly messages_rank_already: number;
+  readonly messages_rank_failed: number;
   readonly outcomes: readonly GmailPollUserOutcome[];
 }
 
@@ -115,6 +150,9 @@ export async function runOnce(deps: GmailPollDeps): Promise<GmailPollCycleReport
   let messages_observed = 0;
   let messages_dispatched = 0;
   let messages_failed = 0;
+  let messages_ranked = 0;
+  let messages_rank_already = 0;
+  let messages_rank_failed = 0;
 
   const userIds = await deps.cursorStore.listUserIds();
 
@@ -195,6 +233,9 @@ export async function runOnce(deps: GmailPollDeps): Promise<GmailPollCycleReport
 
     let dispatched = 0;
     let failed = 0;
+    let ranked = 0;
+    let rank_already = 0;
+    let rank_failed = 0;
     for (const message_id of newIds) {
       const decision = decidePolicy(
         { tool_id: 'gmail.read', user_id, intent: 'read' },
@@ -249,7 +290,7 @@ export async function runOnce(deps: GmailPollDeps): Promise<GmailPollCycleReport
         continue;
       }
 
-      const result = await deps.dispatch.execute(
+      const result = await deps.dispatch.execute<RawEmailContext>(
         authorized,
         { message_id },
         { user_id, invocation_id }
@@ -281,10 +322,116 @@ export async function runOnce(deps: GmailPollDeps): Promise<GmailPollCycleReport
         }
       });
 
-      if (result.ok) {
-        dispatched++;
-      } else {
+      if (!result.ok) {
         failed++;
+        continue;
+      }
+      dispatched++;
+
+      // Phase 3C.3: hand the RawEmailContext to the ranker if wired.
+      // The ranker dep is OPTIONAL — when absent, behavior matches 3B.2
+      // (RawEmailContext discarded). Ranker failures NEVER abort the
+      // cycle; they are audited and counted, then the loop continues.
+      if (deps.ranker) {
+        let rankerResult: RankerResult;
+        try {
+          rankerResult = await deps.ranker.rank({ raw: result.output, user_id });
+        } catch (err) {
+          // Defense-in-depth: ranker contract promises a Result, never
+          // throws. If it does, treat as backend_error and continue.
+          rank_failed++;
+          await deps.auditStore.write({
+            actor_user_id: user_id,
+            actor_ip: null,
+            actor_user_agent: null,
+            action: 'fomo.rank.failed',
+            target: 'tool:gmail.read',
+            result: 'failure',
+            detail: {
+              invocation_id,
+              message_id,
+              // `error_code` (not `code`) so the safe-logger redactor does
+              // not strip it as an OAuth callback `code` field.
+              error_code: 'backend_error',
+              reason: err instanceof Error ? err.message : String(err)
+            }
+          });
+          continue;
+        }
+
+        if (rankerResult.ok) {
+          const writeOutcome = await deps.ranker.store.write({
+            user_id,
+            message_id,
+            invocation_id,
+            model_name: rankerResult.model_name,
+            prompt_version: rankerResult.prompt_version,
+            label: rankerResult.decision.label,
+            score: rankerResult.decision.score,
+            reason: rankerResult.decision.reason,
+            latency_ms: rankerResult.latency_ms,
+            input_tokens: rankerResult.input_tokens,
+            output_tokens: rankerResult.output_tokens,
+            estimated_cost_usd: rankerResult.estimated_cost_usd
+          });
+          if (writeOutcome.inserted) {
+            ranked++;
+            await deps.auditStore.write({
+              actor_user_id: user_id,
+              actor_ip: null,
+              actor_user_agent: null,
+              action: 'fomo.rank.completed',
+              target: 'tool:gmail.read',
+              result: 'success',
+              detail: {
+                invocation_id,
+                message_id,
+                model_name: rankerResult.model_name,
+                prompt_version: rankerResult.prompt_version,
+                label: rankerResult.decision.label,
+                score: rankerResult.decision.score,
+                latency_ms: rankerResult.latency_ms,
+                input_tokens: rankerResult.input_tokens,
+                output_tokens: rankerResult.output_tokens,
+                estimated_cost_usd: rankerResult.estimated_cost_usd
+              }
+            });
+          } else {
+            rank_already++;
+            await deps.auditStore.write({
+              actor_user_id: user_id,
+              actor_ip: null,
+              actor_user_agent: null,
+              action: 'fomo.rank.already_ranked',
+              target: 'tool:gmail.read',
+              result: 'success',
+              detail: {
+                invocation_id,
+                message_id
+              }
+            });
+          }
+        } else {
+          rank_failed++;
+          await deps.auditStore.write({
+            actor_user_id: user_id,
+            actor_ip: null,
+            actor_user_agent: null,
+            action: 'fomo.rank.failed',
+            target: 'tool:gmail.read',
+            result: 'failure',
+            detail: {
+              invocation_id,
+              message_id,
+              // `error_code` (not `code`) so the safe-logger redactor does
+              // not strip it as an OAuth callback `code` field.
+              error_code: rankerResult.code,
+              reason: rankerResult.reason,
+              model_name: rankerResult.model_name,
+              prompt_version: rankerResult.prompt_version
+            }
+          });
+        }
       }
     }
 
@@ -304,11 +451,17 @@ export async function runOnce(deps: GmailPollDeps): Promise<GmailPollCycleReport
       new_history_id: history.latest_history_id,
       messages_observed: newIds.length,
       messages_dispatched: dispatched,
-      messages_failed: failed
+      messages_failed: failed,
+      messages_ranked: ranked,
+      messages_rank_already: rank_already,
+      messages_rank_failed: rank_failed
     });
     users_polled++;
     messages_dispatched += dispatched;
     messages_failed += failed;
+    messages_ranked += ranked;
+    messages_rank_already += rank_already;
+    messages_rank_failed += rank_failed;
   }
 
   const finished_at = new Date(now()).toISOString();
@@ -324,6 +477,9 @@ export async function runOnce(deps: GmailPollDeps): Promise<GmailPollCycleReport
     messages_observed,
     messages_dispatched,
     messages_failed,
+    messages_ranked,
+    messages_rank_already,
+    messages_rank_failed,
     outcomes: Object.freeze(outcomes.map((o) => Object.freeze(o)))
   });
 
@@ -347,7 +503,10 @@ export async function runOnce(deps: GmailPollDeps): Promise<GmailPollCycleReport
       users_api_error: report.users_api_error,
       messages_observed: report.messages_observed,
       messages_dispatched: report.messages_dispatched,
-      messages_failed: report.messages_failed
+      messages_failed: report.messages_failed,
+      messages_ranked: report.messages_ranked,
+      messages_rank_already: report.messages_rank_already,
+      messages_rank_failed: report.messages_rank_failed
     }
   });
 

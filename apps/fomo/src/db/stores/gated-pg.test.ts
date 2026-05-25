@@ -31,6 +31,7 @@ import { PostgresCostStore } from './cost-postgres.js';
 import { PostgresFeedbackStore } from './feedback-postgres.js';
 import { PostgresGmailCursorStore } from './gmail-cursors-postgres.js';
 import { PostgresMemorySignalStore } from './memory-postgres.js';
+import { PostgresRankResultStore } from './rank-results-postgres.js';
 import { PostgresTokenStore } from './token-postgres.js';
 import { PostgresToolInvocationStore } from './tool-invocations-postgres.js';
 
@@ -76,7 +77,7 @@ describe('Phase 2E gated Postgres verification', { skip: !RUN_PG ? 'BREVIO_RUN_P
     db = null;
   });
 
-  it('Drizzle migration applied cleanly (all 9 tables exist)', async () => {
+  it('Drizzle migrations applied cleanly (all expected tables exist)', async () => {
     assert.ok(pglite);
     const result = await pglite.query<{ tablename: string }>(
       `SELECT tablename FROM pg_tables WHERE schemaname = 'public' ORDER BY tablename`
@@ -91,6 +92,7 @@ describe('Phase 2E gated Postgres verification', { skip: !RUN_PG ? 'BREVIO_RUN_P
       'gmail_cursors',
       'memory_signals',
       'oauth_tokens',
+      'rank_results',
       'tool_invocations',
       'users'
     ]);
@@ -480,6 +482,106 @@ describe('Phase 2E gated Postgres verification', { skip: !RUN_PG ? 'BREVIO_RUN_P
       const after = new Set(await store.listUserIds());
       assert.ok(!after.has('u-cur-list-a'));
       assert.ok(after.has('u-cur-list-b'));
+    });
+  });
+
+  describe('PostgresRankResultStore (Phase 3C.3)', () => {
+    const fixture = (over: Partial<Parameters<PostgresRankResultStore['write']>[0]> = {}) => ({
+      user_id: 'u-rank-1',
+      message_id: 'msg-rank-100',
+      invocation_id: 'inv-rank-1',
+      model_name: 'gpt-5-mini',
+      prompt_version: 'fomo-ranker-v1',
+      label: 'important' as const,
+      score: 0.82,
+      reason: 'Mentions deadline today.',
+      latency_ms: 412,
+      input_tokens: 380,
+      output_tokens: 24,
+      estimated_cost_usd: 0.0009,
+      ...over
+    });
+
+    it('write + get round-trip preserves every field', async () => {
+      assert.ok(db);
+      const store = new PostgresRankResultStore(db);
+      const outcome = await store.write(fixture());
+      assert.equal(outcome.inserted, true);
+      const row = await store.get('u-rank-1', 'msg-rank-100');
+      assert.ok(row);
+      assert.equal(row?.user_id, 'u-rank-1');
+      assert.equal(row?.message_id, 'msg-rank-100');
+      assert.equal(row?.invocation_id, 'inv-rank-1');
+      assert.equal(row?.model_name, 'gpt-5-mini');
+      assert.equal(row?.prompt_version, 'fomo-ranker-v1');
+      assert.equal(row?.label, 'important');
+      assert.equal(row?.score, 0.82);
+      assert.equal(row?.reason, 'Mentions deadline today.');
+      assert.equal(row?.latency_ms, 412);
+      assert.equal(row?.input_tokens, 380);
+      assert.equal(row?.output_tokens, 24);
+      assert.equal(row?.estimated_cost_usd, 0.0009);
+      assert.ok(row?.created_at);
+    });
+
+    it('unique on (user_id, message_id) — second write reports inserted=false', async () => {
+      assert.ok(db);
+      const store = new PostgresRankResultStore(db);
+      const first = await store.write(
+        fixture({ user_id: 'u-rank-idem', message_id: 'msg-idem', label: 'important', score: 0.9 })
+      );
+      assert.equal(first.inserted, true);
+      const second = await store.write(
+        fixture({ user_id: 'u-rank-idem', message_id: 'msg-idem', label: 'not_important', score: 0.1 })
+      );
+      assert.equal(second.inserted, false);
+      // Existing row unchanged.
+      const row = await store.get('u-rank-idem', 'msg-idem');
+      assert.equal(row?.label, 'important');
+      assert.equal(row?.score, 0.9);
+    });
+
+    it('count by user and by label', async () => {
+      assert.ok(db);
+      const store = new PostgresRankResultStore(db);
+      await store.write(fixture({ user_id: 'u-rank-cnt', message_id: 'm-1', label: 'important' }));
+      await store.write(fixture({ user_id: 'u-rank-cnt', message_id: 'm-2', label: 'not_important' }));
+      await store.write(fixture({ user_id: 'u-rank-cnt', message_id: 'm-3', label: 'important' }));
+      assert.equal(await store.count('u-rank-cnt'), 3);
+      assert.equal(await store.count('u-rank-cnt', 'important'), 2);
+      assert.equal(await store.count('u-rank-cnt', 'not_important'), 1);
+    });
+
+    it('recent returns newest-first up to limit, per-user scoped', async () => {
+      assert.ok(db);
+      const store = new PostgresRankResultStore(db);
+      await store.write(fixture({ user_id: 'u-rank-rec', message_id: 'm-1' }));
+      await store.write(fixture({ user_id: 'u-rank-rec', message_id: 'm-2' }));
+      await store.write(fixture({ user_id: 'u-rank-rec', message_id: 'm-3' }));
+      await store.write(fixture({ user_id: 'u-rank-other', message_id: 'm-other' }));
+      const rows = await store.recent('u-rank-rec', 2);
+      assert.equal(rows.length, 2);
+      assert.equal(rows[0]?.message_id, 'm-3');
+      assert.equal(rows[1]?.message_id, 'm-2');
+      // Per-user isolation
+      const other = await store.recent('u-rank-other', 10);
+      assert.equal(other.length, 1);
+      assert.equal(other[0]?.user_id, 'u-rank-other');
+    });
+
+    it('privacy invariant: rank_results has zero payload-shaped columns', async () => {
+      // Body / header / attachment columns must NEVER appear in this table.
+      // Asserts the schema enforces "decision-only", not "prompt-content".
+      assert.ok(pglite);
+      const result = await pglite.query<{ column_name: string }>(
+        `SELECT column_name FROM information_schema.columns
+         WHERE table_schema = 'public' AND table_name = 'rank_results'`
+      );
+      const cols = new Set(result.rows.map((r) => r.column_name));
+      const forbidden = ['body_plain', 'body_html', 'headers', 'attachments', 'prompt', 'email_body'];
+      for (const f of forbidden) {
+        assert.ok(!cols.has(f), `rank_results must not have column '${f}'`);
+      }
     });
   });
 });

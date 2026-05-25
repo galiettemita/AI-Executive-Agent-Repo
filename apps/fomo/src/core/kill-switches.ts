@@ -11,6 +11,11 @@
 //   polling_max_cycles  null   → unbounded; Phase 3B.3 smoke test sets
 //                                this to 1 or 3 so the worker auto-stops
 //                                after a controlled window
+//   ranker_enabled      false  → polling worker reads Gmail but does not
+//                                call the ranker. Default-off so merging
+//                                Phase 3C.3 cannot accidentally start
+//                                spending OpenAI credits on a founder
+//                                inbox until the 3C.4 smoke run flips it.
 //
 // The Permission Gate consults the send/auto-send switches before
 // allowing send-tier tools. The polling switch is consulted only by the
@@ -32,6 +37,11 @@ export interface KillSwitches {
   // test sets this to a small N so the worker cannot accidentally keep
   // polling. Normal production runs leave it unset.
   readonly polling_max_cycles: number | null;
+  // Phase 3C.3. When false (default), the polling worker reads Gmail
+  // but does not invoke the ranker; rank_results stays empty. Flipping
+  // to true requires (a) a model backend wired in bootstrap and (b) the
+  // 3C.4 founder smoke gate to PASS before any friend onboarding.
+  readonly ranker_enabled: boolean;
 }
 
 const DEFAULTS = {
@@ -41,7 +51,8 @@ const DEFAULTS = {
   polling_enabled: false,
   max_users: 1,
   polling_interval_ms: 60_000,
-  polling_max_cycles: null
+  polling_max_cycles: null,
+  ranker_enabled: false
 } as const satisfies KillSwitches;
 
 // Strict opt-in parse: only the literal strings 'true' or '1' (case-insensitive,
@@ -91,7 +102,8 @@ export function loadKillSwitches(env: NodeJS.ProcessEnv = process.env): KillSwit
       env.FOMO_GMAIL_POLLING_INTERVAL_MS,
       DEFAULTS.polling_interval_ms
     ),
-    polling_max_cycles: parsePositiveIntOrNull(env.FOMO_GMAIL_POLLING_MAX_CYCLES)
+    polling_max_cycles: parsePositiveIntOrNull(env.FOMO_GMAIL_POLLING_MAX_CYCLES),
+    ranker_enabled: parseBool(env.FOMO_RANKER_ENABLED)
   });
 }
 
