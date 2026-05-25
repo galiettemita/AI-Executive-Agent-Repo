@@ -81,10 +81,19 @@ describe('createToolRegistry', () => {
     assert.equal(consentTools[0]?.id, 'gmail.read');
   });
 
-  it('SendBlue + Slack are the only send-tier tools in v0.1', () => {
+  it('SendBlue is the only send-tier tool in v0.1 (Phase 3D.1: slack.founder_review is internal-tier)', () => {
     const registry = createToolRegistry();
     const sendTools = registry.getActiveTools().filter((t) => t.risk_tier === 'send').map((t) => t.id).sort();
-    assert.deepEqual(sendTools, ['sendblue.send_user_message', 'slack.founder_review']);
+    assert.deepEqual(sendTools, ['sendblue.send_user_message']);
+  });
+
+  it('slack.founder_review is internal-tier, not send-tier (Phase 3D.1)', () => {
+    const registry = createToolRegistry();
+    const slack = registry.getTool('slack.founder_review');
+    assert.ok(slack);
+    assert.equal(slack?.risk_tier, 'internal');
+    assert.equal(slack?.category, 'control');
+    assert.equal(slack?.surface, 'internal');
   });
 });
 
@@ -136,10 +145,11 @@ describe('createToolRegistry — external vs internal surface separation', () =>
 describe('createToolRegistry — executor_status honesty (Phase 3A + 3B.2)', () => {
   // Phase 3A wired dispatch executors for the three internal capabilities.
   // Phase 3B.2 flipped gmail.read to 'implemented' alongside the
-  // gmailReadExecutor wireup. sendblue.send_user_message + slack.founder_review
-  // remain declared until their adapters land in Phase 3E / 3D.
+  // gmailReadExecutor wireup. Phase 3D.1 flipped slack.founder_review to
+  // 'implemented' alongside the slackFounderReviewExecutor + SlackClient
+  // adapter wireup. sendblue.send_user_message remains declared until 3E.
 
-  it('the three internal capabilities + gmail.read are implemented', () => {
+  it('all internal capabilities, gmail.read, and slack.founder_review are implemented', () => {
     const registry = createToolRegistry();
     const implemented = registry
       .getActiveTools()
@@ -147,23 +157,20 @@ describe('createToolRegistry — executor_status honesty (Phase 3A + 3B.2)', () 
       .map((t) => t.id);
     assert.deepEqual(
       [...implemented].sort(),
-      ['audit.write', 'feedback.write', 'gmail.read', 'memory_signal.write']
+      ['audit.write', 'feedback.write', 'gmail.read', 'memory_signal.write', 'slack.founder_review']
     );
   });
 
-  it('sendblue.send_user_message + slack.founder_review remain declared', () => {
+  it('only sendblue.send_user_message remains declared (3E will flip it)', () => {
     const registry = createToolRegistry();
     const declared = registry
       .getActiveTools()
       .filter((t) => t.executor_status === 'declared')
       .map((t) => t.id);
-    assert.deepEqual(
-      [...declared].sort(),
-      ['sendblue.send_user_message', 'slack.founder_review']
-    );
+    assert.deepEqual([...declared].sort(), ['sendblue.send_user_message']);
   });
 
-  it('gmail.read is the only implemented external tool (others land in 3D/3E)', () => {
+  it('gmail.read is the only implemented EXTERNAL tool (slack.founder_review is internal; sendblue still declared)', () => {
     const registry = createToolRegistry();
     const externalImpl = registry
       .getExternalTools()

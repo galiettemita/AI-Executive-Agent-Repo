@@ -1,8 +1,9 @@
-// External-capability executors — Phase 3B.2 wiring for gmail.read.
+// External-capability executors — Phase 3B.2 wiring for gmail.read,
+// Phase 3D.1 adds slack.founder_review.
 //
 // Where internal-executors.ts wraps in-process substrate stores,
 // external-executors.ts wraps real external adapters (Gmail HTTP API in
-// Phase 3B.2; SendBlue HTTP / Slack in later phases).
+// Phase 3B.2; Slack chat.postMessage in 3D.1; SendBlue HTTP in 3E).
 //
 // gmail.read shape: { message_id } → RawEmailContext for that one
 // message. Per-message granularity gives every read its own gate
@@ -19,6 +20,13 @@
 // cycle. No refresh-token flow in 3B.2 — fail-closed skip.
 
 import { GmailClient, GmailUnauthorizedError } from '../adapters/gmail/client.js';
+import {
+  SlackApiError,
+  SlackAuthError,
+  type SlackClient,
+  type SlackPostInput,
+  type SlackPostResult
+} from '../adapters/slack/client.js';
 import { type RawEmailContext } from '../core/egress-policy.js';
 import { type TokenStore } from '../security/oauth/token-store.js';
 
@@ -79,22 +87,89 @@ export function gmailReadExecutor(deps: GmailReadExecutorDeps): Executor<GmailRe
 }
 
 /* ---------------------------------------------------------------------- */
+/* slack.founder_review                                                   */
+/* ---------------------------------------------------------------------- */
+
+// Args mirror SlackPostInput but the executor accepts unknown via the
+// dispatch boundary and validates at the executor entry point.
+export type SlackFounderReviewArgs = SlackPostInput;
+
+// Re-export for callers that want to type-check args before dispatch.
+export type SlackFounderReviewOutput = SlackPostResult;
+
+export interface SlackFounderReviewExecutorDeps {
+  // Optional: when undefined, the executor is registered but every
+  // dispatch returns executor_error('slack adapter not wired'). This
+  // gives the polling worker a uniform code path even when the kill
+  // switch is off — the worker should still skip rather than dispatch
+  // when FOMO_SLACK_REVIEW_ENABLED=false, but defense-in-depth.
+  readonly client?: SlackClient;
+}
+
+export function slackFounderReviewExecutor(
+  deps: SlackFounderReviewExecutorDeps
+): Executor<SlackFounderReviewArgs, SlackFounderReviewOutput> {
+  return async (args /* , context */) => {
+    if (!deps.client) {
+      throw new Error(
+        'slack.founder_review: SlackClient not wired (FOMO_SLACK_REVIEW_ENABLED=true requires SLACK_BOT_TOKEN + SLACK_FOUNDER_CHANNEL_ID)'
+      );
+    }
+    if (!args || typeof args !== 'object') {
+      throw new Error('slack.founder_review: args must be a SlackPostInput object');
+    }
+    if (typeof args.alert_id !== 'string' || args.alert_id.length === 0) {
+      throw new Error('slack.founder_review: args.alert_id is required (non-empty string)');
+    }
+    if (!args.view || typeof args.view !== 'object') {
+      throw new Error('slack.founder_review: args.view is required (egress-redacted SlackEgressView)');
+    }
+    if (!args.rank || typeof args.rank !== 'object') {
+      throw new Error('slack.founder_review: args.rank is required (label/score/reason/model_name/prompt_version)');
+    }
+    try {
+      return await deps.client.postFounderReviewCard(args);
+    } catch (err) {
+      // Both auth and api errors bubble as executor_error via dispatch.
+      // The polling worker reads them off the cycle outcome and decides
+      // whether to retry / fail / pause. We preserve the original Error
+      // shape so the worker can inspect (err instanceof SlackAuthError)
+      // or err.retryable.
+      if (err instanceof SlackAuthError || err instanceof SlackApiError) {
+        throw err;
+      }
+      throw err;
+    }
+  };
+}
+
+/* ---------------------------------------------------------------------- */
 /* Wireup helper                                                          */
 /* ---------------------------------------------------------------------- */
 
 export interface ExternalExecutorDeps {
   readonly gmailClient: GmailClient;
   readonly tokenStore: TokenStore;
+  // Phase 3D.1 — optional. When undefined, slack.founder_review is
+  // STILL registered (so dispatch returns executor_error instead of
+  // no_executor_for_tool), but every call surfaces "adapter not wired".
+  // The polling worker's slackReviewDep guards the call site so this
+  // path only fires as defense-in-depth.
+  readonly slackClient?: SlackClient;
 }
 
 // Single entry point. Registers all external executors that have
 // landed. Callers that flipped a tool's executor_status to 'implemented'
 // in the tool registry MUST call this before any gate decision goes
 // through dispatch — otherwise the gate allows but dispatch returns
-// no_executor_for_tool. Phase 3B.2 registers gmail.read only.
+// no_executor_for_tool. Phase 3B.2 registers gmail.read; 3D.1 adds
+// slack.founder_review.
 export function wireExternalExecutors(table: DispatchTable, deps: ExternalExecutorDeps): void {
   table.register('gmail.read', gmailReadExecutor({
     client: deps.gmailClient,
     tokenStore: deps.tokenStore
+  }));
+  table.register('slack.founder_review', slackFounderReviewExecutor({
+    client: deps.slackClient
   }));
 }

@@ -13,11 +13,16 @@ import { type PolicyGateDeps } from './core/policy-gate.js';
 import { createDispatchTable, type DispatchTable } from './dispatch/dispatcher.js';
 import { wireInternalExecutors } from './dispatch/internal-executors.js';
 import { wireExternalExecutors } from './dispatch/external-executors.js';
-import { runOnce as runPollOnce, type GmailPollRankerDep } from './workers/gmail-poll.js';
+import {
+  runOnce as runPollOnce,
+  type GmailPollRankerDep,
+  type GmailPollSlackReviewDep
+} from './workers/gmail-poll.js';
 import { OpenAIBackend } from './core/model-backends/openai.js';
 import { createModelRouter } from './core/model-router.js';
 import { rankEmail } from './ranker/index.js';
 import { RANKER_OPENAI_RESPONSE_FORMAT } from './ranker/openai-response-format.js';
+import { SlackClient } from './adapters/slack/client.js';
 import { loadCryptoConfig } from './security/token-crypto.js';
 import { loadSessionConfig } from './security/session.js';
 import { InMemoryNonceStore, loadOAuthStateConfig } from './security/oauth/state.js';
@@ -186,13 +191,67 @@ function buildRankerDep(
   });
 }
 
+/* ---------------------------------------------------------------------- */
+/* Slack candidate-review bootstrap (Phase 3D.1)                          */
+/* ---------------------------------------------------------------------- */
+
+// Builds the slackReview dep + the SlackClient that the
+// slack.founder_review executor will use. Returns { dep, client: null }
+// when FOMO_SLACK_REVIEW_ENABLED is off (the safe default) — the
+// polling worker then skips the Slack flow entirely. THROWS at boot
+// when the switch is on but SLACK_BOT_TOKEN or SLACK_FOUNDER_CHANNEL_ID
+// is missing — "real or absent, never half-wired": if review is on,
+// we either deliver a real adapter or refuse to start.
+//
+// 3D.1 reminder: this only ships the POSTING half. Approval capture
+// (Slack interactive components or events API webhook) is 3D.2; until
+// it lands, alerts created here stay at queued_for_review forever.
+function buildSlackReviewWiring(
+  storesHandle: SubstrateStoresHandle,
+  killSwitches: KillSwitches,
+  env: NodeJS.ProcessEnv = process.env
+): { dep: GmailPollSlackReviewDep | null; client: SlackClient | null } {
+  if (!killSwitches.slack_review_enabled) {
+    return { dep: null, client: null };
+  }
+
+  const botToken = env.SLACK_BOT_TOKEN;
+  const channelId = env.SLACK_FOUNDER_CHANNEL_ID;
+  if (!botToken || botToken.length === 0) {
+    throw new Error(
+      'FOMO_SLACK_REVIEW_ENABLED=true but SLACK_BOT_TOKEN is missing. ' +
+        'Set the bot token (xoxb-...) or set FOMO_SLACK_REVIEW_ENABLED=false. ' +
+        'Refusing to boot a half-wired Slack review path.'
+    );
+  }
+  if (!channelId || channelId.length === 0) {
+    throw new Error(
+      'FOMO_SLACK_REVIEW_ENABLED=true but SLACK_FOUNDER_CHANNEL_ID is missing. ' +
+        'Set the channel id (e.g. C0123...) or set FOMO_SLACK_REVIEW_ENABLED=false.'
+    );
+  }
+
+  // SlackClient constructor throws synchronously on bad token/channel
+  // shape — surfaced here at boot rather than at first dispatch.
+  const client = new SlackClient({ botToken, channelId });
+
+  return {
+    dep: Object.freeze({
+      alertStore: storesHandle.stores.alerts,
+      transitions: storesHandle.stores.transitions
+    }),
+    client
+  };
+}
+
 function startGmailPolling(
   storesHandle: SubstrateStoresHandle,
   gmailClient: GmailClient,
   dispatch: DispatchTable,
   killSwitches: KillSwitches,
   config: FomoConfig,
-  ranker: GmailPollRankerDep | null
+  ranker: GmailPollRankerDep | null,
+  slackReview: GmailPollSlackReviewDep | null
 ): PollingHandle {
   const stores = storesHandle.stores;
   let stopped = false;
@@ -224,7 +283,8 @@ function startGmailPolling(
           auditStore: stores.audit,
           toolInvocationStore: stores.toolInvocations,
           gateDeps,
-          ranker: ranker ?? undefined
+          ranker: ranker ?? undefined,
+          slackReview: slackReview ?? undefined
         });
         cyclesRun++;
         if (stopped) return;
@@ -245,7 +305,13 @@ function startGmailPolling(
           // audit rows.
           messages_ranked: report.messages_ranked,
           messages_rank_already: report.messages_rank_already,
-          messages_rank_failed: report.messages_rank_failed
+          messages_rank_failed: report.messages_rank_failed,
+          // Phase 3D.1: only meaningful when slackReview dep was built;
+          // zero when slack_review_enabled=false.
+          alerts_created: report.alerts_created,
+          slack_posts: report.slack_posts,
+          slack_posts_already: report.slack_posts_already,
+          slack_posts_failed: report.slack_posts_failed
         });
       } catch (err) {
         if (stopped) return;
@@ -314,13 +380,6 @@ export function createFomoRuntime(config: FomoConfig = loadFomoConfig()): FomoRu
     feedback: storesHandle.stores.feedback,
     memory: storesHandle.stores.memory
   });
-  wireExternalExecutors(dispatch, {
-    gmailClient,
-    tokenStore: storesHandle.stores.tokens
-  });
-
-  // OAuth routes — graceful skip when not configured.
-  const oauthGoogleDeps = buildOAuthGoogleDeps(storesHandle, config, gmailClient);
 
   // Ranker — bootstrapped only when FOMO_RANKER_ENABLED=true. THROWS at
   // boot if the kill switch is on but OpenAI config is incomplete; safe
@@ -338,15 +397,53 @@ export function createFomoRuntime(config: FomoConfig = loadFomoConfig()): FomoRu
     });
   }
 
+  // Slack candidate review — bootstrapped only when FOMO_SLACK_REVIEW_ENABLED=true.
+  // THROWS at boot if the switch is on but SLACK_BOT_TOKEN or
+  // SLACK_FOUNDER_CHANNEL_ID is missing. Safe default (switch off)
+  // returns { dep: null, client: null } and the polling worker behaves
+  // exactly as in 3C.3 (no alerts, no Slack calls).
+  //
+  // The SlackClient is wired through dispatch (slack.founder_review
+  // executor uses it); the slackReview dep holds the alert persistence
+  // + state transitions.
+  const slackWiring = buildSlackReviewWiring(storesHandle, killSwitches);
+  if (slackWiring.dep) {
+    logEvent(config, undefined, 'fomo.slack.review.enabled', 'INFO', {
+      channel_id: process.env.SLACK_FOUNDER_CHANNEL_ID
+    });
+  } else {
+    logEvent(config, undefined, 'fomo.slack.review.disabled', 'INFO', {
+      detail: 'FOMO_SLACK_REVIEW_ENABLED is not "true"; Slack candidate-review path dormant (alerts table stays empty)'
+    });
+  }
+
+  wireExternalExecutors(dispatch, {
+    gmailClient,
+    tokenStore: storesHandle.stores.tokens,
+    slackClient: slackWiring.client ?? undefined
+  });
+
+  // OAuth routes — graceful skip when not configured.
+  const oauthGoogleDeps = buildOAuthGoogleDeps(storesHandle, config, gmailClient);
+
   // Polling worker — bootstrapped only when FOMO_GMAIL_POLLING_ENABLED=true.
   // Safe default: off (no autonomous Gmail reads until founder opts in).
   let pollingHandle: PollingHandle | null = null;
   if (killSwitches.polling_enabled) {
-    pollingHandle = startGmailPolling(storesHandle, gmailClient, dispatch, killSwitches, config, ranker);
+    pollingHandle = startGmailPolling(
+      storesHandle,
+      gmailClient,
+      dispatch,
+      killSwitches,
+      config,
+      ranker,
+      slackWiring.dep
+    );
     logEvent(config, undefined, 'fomo.poll.enabled', 'INFO', {
       interval_ms: killSwitches.polling_interval_ms,
       cycle_cap: killSwitches.polling_max_cycles,
-      ranker_enabled: ranker !== null
+      ranker_enabled: ranker !== null,
+      slack_review_enabled: slackWiring.dep !== null
     });
   } else {
     logEvent(config, undefined, 'fomo.poll.disabled', 'INFO', {
@@ -413,7 +510,8 @@ export function createFomoRuntime(config: FomoConfig = loadFomoConfig()): FomoRu
       store_backend: storesHandle.backend,
       oauth_google_wired: oauthGoogleDeps !== null,
       polling_enabled: killSwitches.polling_enabled,
-      ranker_enabled: ranker !== null
+      ranker_enabled: ranker !== null,
+      slack_review_enabled: slackWiring.dep !== null
     });
   });
 

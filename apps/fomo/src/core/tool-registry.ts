@@ -104,10 +104,20 @@ const ACTIVE_TOOLS: readonly ToolDescriptor[] = Object.freeze([
   Object.freeze({
     id: 'slack.founder_review',
     surface: 'internal',
-    executor_status: 'declared',
+    // Phase 3D.1: dispatch wired to SlackClient via
+    // apps/fomo/src/dispatch/external-executors.ts#slackFounderReviewExecutor.
+    // Posting-only in 3D.1 (no inbound approval capture yet — that's 3D.2).
+    executor_status: 'implemented',
     category: 'control',
-    risk_tier: 'send',
-    description: 'Post a candidate alert to the founder Slack channel for approval.',
+    // Phase 3D.1: risk_tier='internal' (NOT 'send'). Posting to the
+    // founder's own Slack channel for review is internal observability,
+    // not a user-facing send. FOMO_SEND_ENABLED gates user-facing
+    // SendBlue sends; FOMO_SLACK_REVIEW_ENABLED (enforced at bootstrap)
+    // gates whether the worker wires the Slack adapter and dep at all.
+    // Decoupling the tiers lets 3D.1 ship Slack review WITHOUT first
+    // unlocking SendBlue sends — exactly the founder's intent.
+    risk_tier: 'internal',
+    description: 'Post a candidate alert to the founder Slack channel for review.',
     requires_consent: false,
     requires_oauth_provider: null
   }),

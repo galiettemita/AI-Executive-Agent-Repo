@@ -14,6 +14,7 @@ describe('loadKillSwitches — safe defaults', () => {
     assert.equal(s.polling_interval_ms, 60_000);
     assert.equal(s.polling_max_cycles, null);
     assert.equal(s.ranker_enabled, false);
+    assert.equal(s.slack_review_enabled, false);
   });
 
   it('SAFE_DEFAULT_KILL_SWITCHES matches the empty-env result', () => {
@@ -129,6 +130,33 @@ describe('loadKillSwitches — FOMO_RANKER_ENABLED (Phase 3C.3)', () => {
     assert.equal(loadKillSwitches({ FOMO_RANKER_ENABLED: 'on' }).ranker_enabled, false);
     assert.equal(loadKillSwitches({ FOMO_RANKER_ENABLED: '' }).ranker_enabled, false);
     assert.equal(loadKillSwitches({ FOMO_RANKER_ENABLED: '2' }).ranker_enabled, false);
+  });
+});
+
+describe('loadKillSwitches — FOMO_SLACK_REVIEW_ENABLED (Phase 3D.1)', () => {
+  it('returns false when unset (safe default)', () => {
+    assert.equal(loadKillSwitches({}).slack_review_enabled, false);
+  });
+
+  it('accepts strict opt-in values', () => {
+    assert.equal(loadKillSwitches({ FOMO_SLACK_REVIEW_ENABLED: 'true' }).slack_review_enabled, true);
+    assert.equal(loadKillSwitches({ FOMO_SLACK_REVIEW_ENABLED: '1' }).slack_review_enabled, true);
+    assert.equal(loadKillSwitches({ FOMO_SLACK_REVIEW_ENABLED: 'TRUE' }).slack_review_enabled, true);
+  });
+
+  it('rejects loose-truthy values', () => {
+    assert.equal(loadKillSwitches({ FOMO_SLACK_REVIEW_ENABLED: 'yes' }).slack_review_enabled, false);
+    assert.equal(loadKillSwitches({ FOMO_SLACK_REVIEW_ENABLED: 'on' }).slack_review_enabled, false);
+    assert.equal(loadKillSwitches({ FOMO_SLACK_REVIEW_ENABLED: '' }).slack_review_enabled, false);
+  });
+
+  it('independent of FOMO_RANKER_ENABLED — both can be flipped separately', () => {
+    const a = loadKillSwitches({ FOMO_RANKER_ENABLED: 'true', FOMO_SLACK_REVIEW_ENABLED: 'false' });
+    assert.equal(a.ranker_enabled, true);
+    assert.equal(a.slack_review_enabled, false);
+    const b = loadKillSwitches({ FOMO_RANKER_ENABLED: 'false', FOMO_SLACK_REVIEW_ENABLED: 'true' });
+    assert.equal(b.ranker_enabled, false);
+    assert.equal(b.slack_review_enabled, true);
   });
 });
 

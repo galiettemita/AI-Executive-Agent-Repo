@@ -16,6 +16,11 @@
 //                                Phase 3C.3 cannot accidentally start
 //                                spending OpenAI credits on a founder
 //                                inbox until the 3C.4 smoke run flips it.
+//   slack_review_enabled false → polling worker may rank but does not
+//                                post candidate cards to Slack. Default-off
+//                                so merging Phase 3D.1 cannot start
+//                                pinging the founder Slack channel until
+//                                the 3D.2 smoke gate flips it.
 //
 // The Permission Gate consults the send/auto-send switches before
 // allowing send-tier tools. The polling switch is consulted only by the
@@ -42,6 +47,14 @@ export interface KillSwitches {
   // to true requires (a) a model backend wired in bootstrap and (b) the
   // 3C.4 founder smoke gate to PASS before any friend onboarding.
   readonly ranker_enabled: boolean;
+  // Phase 3D.1. When false (default), even if the ranker labels a
+  // message 'important' the polling worker does NOT create an alert or
+  // POST a Slack card. Flipping to true requires (a) the Slack adapter
+  // wired in bootstrap (bot token + channel id) and (b) the 3D.2 smoke
+  // gate to PASS. 3D.1 alerts created here sit in `queued_for_review`
+  // indefinitely until 3D.2 adds approval capture; never reaches 3E
+  // SendBlue paths.
+  readonly slack_review_enabled: boolean;
 }
 
 const DEFAULTS = {
@@ -52,7 +65,8 @@ const DEFAULTS = {
   max_users: 1,
   polling_interval_ms: 60_000,
   polling_max_cycles: null,
-  ranker_enabled: false
+  ranker_enabled: false,
+  slack_review_enabled: false
 } as const satisfies KillSwitches;
 
 // Strict opt-in parse: only the literal strings 'true' or '1' (case-insensitive,
@@ -103,7 +117,8 @@ export function loadKillSwitches(env: NodeJS.ProcessEnv = process.env): KillSwit
       DEFAULTS.polling_interval_ms
     ),
     polling_max_cycles: parsePositiveIntOrNull(env.FOMO_GMAIL_POLLING_MAX_CYCLES),
-    ranker_enabled: parseBool(env.FOMO_RANKER_ENABLED)
+    ranker_enabled: parseBool(env.FOMO_RANKER_ENABLED),
+    slack_review_enabled: parseBool(env.FOMO_SLACK_REVIEW_ENABLED)
   });
 }
 
