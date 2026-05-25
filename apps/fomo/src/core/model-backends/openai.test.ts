@@ -111,8 +111,12 @@ describe('OpenAIBackend.call — happy path', () => {
     assert.equal(receivedHeaders['content-type'], 'application/json');
 
     assert.equal(receivedBody.model, 'gpt-5-mini');
-    assert.equal(receivedBody.temperature, 0);
-    assert.equal(receivedBody.max_completion_tokens, 1024);
+    // temperature is NOT sent by default — the gpt-5 reasoning-model
+    // family rejects any explicit temperature with 400. Callers that
+    // need deterministic sampling on older models (gpt-4o*) must set
+    // it explicitly.
+    assert.equal(receivedBody.temperature, undefined);
+    assert.equal(receivedBody.max_completion_tokens, 2048);
     const messages = receivedBody.messages as Array<{ role: string; content: string }>;
     assert.equal(messages.length, 1);
     assert.equal(messages[0]?.role, 'user');

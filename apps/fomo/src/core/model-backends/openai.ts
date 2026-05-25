@@ -83,10 +83,17 @@ export interface OpenAIBackendConfig {
   // primary. The backend does not validate the id; if OpenAI doesn't
   // recognize it, the call surfaces as OpenAIApiError(400, model_not_found).
   readonly model: string;
-  // Sent as max_completion_tokens (newer field). Defaults to 1024 — enough
-  // for the ranker JSON; raise for capabilities with longer outputs.
+  // Sent as max_completion_tokens (newer field). Defaults to 2048 —
+  // enough for the ranker JSON output AND for the reasoning-token
+  // overhead that gpt-5 family models consume internally within the
+  // same budget. Raise for capabilities with longer outputs.
   readonly maxCompletionTokens?: number;
-  // 0 for classifier-style use (deterministic).
+  // Sampling temperature. Default is OMITTED — the request body sends
+  // no temperature field unless the caller explicitly sets one. The
+  // gpt-5 reasoning-model family ONLY accepts the default value (1)
+  // and 400s on any explicit value; older chat models (gpt-4o*) accept
+  // 0..2. Leaving this unset lets the same backend work for both
+  // families without per-model branching.
   readonly temperature?: number;
   // Optional structured-output enforcement. The ranker smoke eval passes
   // {type:'json_schema', json_schema:{name,strict:true,schema}}. When
@@ -124,7 +131,7 @@ export class OpenAIBackend implements ModelBackend {
   private readonly apiKey: string;
   private readonly model: string;
   private readonly maxCompletionTokens: number;
-  private readonly temperature: number;
+  private readonly temperature: number | undefined;
   private readonly responseFormat: OpenAIResponseFormat | undefined;
   private readonly organizationId: string | undefined;
   private readonly fetchImpl: FetchLike;
@@ -138,8 +145,8 @@ export class OpenAIBackend implements ModelBackend {
     }
     this.apiKey = config.apiKey;
     this.model = config.model;
-    this.maxCompletionTokens = config.maxCompletionTokens ?? 1024;
-    this.temperature = config.temperature ?? 0;
+    this.maxCompletionTokens = config.maxCompletionTokens ?? 2048;
+    this.temperature = config.temperature;
     this.responseFormat = config.responseFormat;
     this.organizationId = config.organizationId;
     this.fetchImpl = config.fetchImpl ?? fetch;
@@ -156,9 +163,11 @@ export class OpenAIBackend implements ModelBackend {
     const body: Record<string, unknown> = {
       model: this.model,
       messages: [{ role: 'user', content: request.prompt }],
-      temperature: this.temperature,
       max_completion_tokens: this.maxCompletionTokens
     };
+    if (this.temperature !== undefined) {
+      body.temperature = this.temperature;
+    }
     if (this.responseFormat) {
       body.response_format = this.responseFormat;
     }
