@@ -57,7 +57,21 @@ export type AuditAction =
   | 'alert.created'
   | 'fomo.slack.posted'
   | 'fomo.slack.already_alerted'
-  | 'fomo.slack.failed';
+  | 'fomo.slack.failed'
+  // Slack approval-capture inbound events (Phase 3D.2) — fire on the
+  // /slack/interactivity HTTP route. Sanitized detail only: route
+  // identifiers (action_id, alert_id, decision, target_state) and a
+  // user_slug / channel_slug suffix for traceability. NEVER the raw
+  // Slack payload, NEVER the full Slack user_id (only the suffix), and
+  // NEVER message text. The 'interaction_received' row fires BEFORE
+  // signature verification so a flood of unsigned requests is still
+  // visible in the audit log.
+  | 'fomo.slack.interaction_received'
+  | 'fomo.slack.signature_invalid'
+  | 'fomo.slack.payload_invalid'
+  | 'fomo.slack.approval_unauthorized'
+  | 'fomo.slack.approval_captured'
+  | 'fomo.slack.approval_duplicate';
 
 export type AuditResult = 'success' | 'failure';
 

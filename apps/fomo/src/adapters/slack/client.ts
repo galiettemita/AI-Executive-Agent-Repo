@@ -29,6 +29,7 @@ import { type RankLabel } from '../../memory/rank-results.js';
 export type FetchLike = typeof fetch;
 
 const SLACK_POSTMESSAGE_URL = 'https://slack.com/api/chat.postMessage';
+const SLACK_UPDATE_URL = 'https://slack.com/api/chat.update';
 
 export class SlackAuthError extends Error {
   readonly httpStatus: 401 | 403;
@@ -171,6 +172,53 @@ export class SlackClient {
     }
     return Object.freeze({ ts, channel });
   }
+
+  // Phase 3D.2: chat.update the original candidate-review card after
+  // the founder clicks Approve or Reject. Same error semantics as
+  // postFounderReviewCard (auth + api). Failures here are non-fatal
+  // for the approval-capture caller — the alert state has already
+  // transitioned by the time we call this; the update is purely
+  // visual feedback in the channel.
+  async updateFounderReviewCard(input: SlackUpdateInput): Promise<SlackPostResult> {
+    const body = buildFounderReviewResolutionBlocks(input);
+    let response: Response;
+    try {
+      response = await this.fetchImpl(SLACK_UPDATE_URL, {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${this.botToken}`,
+          'content-type': 'application/json; charset=utf-8'
+        },
+        body: JSON.stringify(body)
+      });
+    } catch (err) {
+      throw new SlackApiError(0, undefined, err instanceof Error ? err.message : String(err));
+    }
+    const httpStatus = response.status;
+    let parsed: unknown;
+    try {
+      parsed = await response.json();
+    } catch {
+      throw new SlackApiError(httpStatus, undefined, 'response was not valid JSON');
+    }
+    if (httpStatus === 401 || httpStatus === 403) {
+      const code = providerCode(parsed);
+      throw new SlackAuthError(httpStatus, code, code ?? `HTTP ${httpStatus}`);
+    }
+    if (httpStatus < 200 || httpStatus >= 300) {
+      throw new SlackApiError(httpStatus, providerCode(parsed), `HTTP ${httpStatus}`);
+    }
+    if (!isOkResponse(parsed)) {
+      const code = providerCode(parsed);
+      if (code === 'invalid_auth' || code === 'token_revoked' || code === 'not_authed') {
+        throw new SlackAuthError(401, code, code);
+      }
+      throw new SlackApiError(200, code, code ?? 'Slack returned ok=false with no error code');
+    }
+    const ts = stringField(parsed, 'ts') ?? input.ts;
+    const channel = stringField(parsed, 'channel') ?? input.channel;
+    return Object.freeze({ ts, channel });
+  }
 }
 
 function providerCode(body: unknown): string | undefined {
@@ -245,12 +293,29 @@ export function buildFounderReviewBlocks(
       type: 'section',
       text: { type: 'mrkdwn', text: `*Why*\n${rank.reason}` }
     },
+    // Phase 3D.2: Approve / Reject interactive buttons. block_id carries
+    // alert_id for routing — block_id is preserved verbatim in Slack's
+    // interactivity payload, which lets the receiving route handler
+    // recover alert_id without trusting the action.value field (which
+    // could be tampered with by a misbuilt re-post). action_id encodes
+    // the decision; the route handler validates both.
     {
-      type: 'context',
+      type: 'actions',
+      block_id: `fomo_alert:${alert_id}`,
       elements: [
         {
-          type: 'mrkdwn',
-          text: `alert_id: \`${alert_id}\` • user: \`${user_id}\` • received: ${view.received_at} • message_id: \`${view.message_id}\``
+          type: 'button',
+          action_id: 'fomo.approve',
+          text: { type: 'plain_text', text: '✅ Approve' },
+          style: 'primary',
+          value: alert_id
+        },
+        {
+          type: 'button',
+          action_id: 'fomo.reject',
+          text: { type: 'plain_text', text: '❌ Reject' },
+          style: 'danger',
+          value: alert_id
         }
       ]
     },
@@ -259,7 +324,7 @@ export function buildFounderReviewBlocks(
       elements: [
         {
           type: 'mrkdwn',
-          text: '_Phase 3D.1 — posting only. Approve / reject capture lands in 3D.2. Alert remains in `queued_for_review` until then._'
+          text: `alert_id: \`${alert_id}\` • user: \`${user_id}\` • received: ${view.received_at} • message_id: \`${view.message_id}\``
         }
       ]
     }
@@ -270,4 +335,168 @@ export function buildFounderReviewBlocks(
     text: fallback,
     blocks: Object.freeze(blocks)
   });
+}
+
+/* ====================================================================== */
+/* updateFounderReviewCard — chat.update after approve/reject capture     */
+/* ====================================================================== */
+
+// Phase 3D.2: after the /slack/interactivity route captures a decision
+// and transitions the alert, we edit the original card via chat.update
+// so anyone in the channel sees the resolution. The new blocks REPLACE
+// the actions block with a resolution context, but keep the original
+// alert/rank/snippet content. Failures during update are non-fatal —
+// the state transition has already landed, the chat.update is purely
+// visual feedback.
+
+export interface SlackUpdateInput {
+  // Slack message ts returned from the original chat.postMessage call.
+  // Stored in fomo.slack.posted audit detail; recovered by the route
+  // handler before calling this method.
+  readonly ts: string;
+  // Channel id the message lives in.
+  readonly channel: string;
+  readonly alert_id: string;
+  readonly user_id: string;
+  readonly view: SlackEgressView;
+  readonly rank: {
+    readonly label: RankLabel;
+    readonly score: number;
+    readonly reason: string;
+    readonly model_name: string;
+    readonly prompt_version: string;
+  };
+  readonly decision: {
+    // 'approved' | 'rejected'
+    readonly kind: 'approved' | 'rejected';
+    // ISO-8601 timestamp the decision was captured.
+    readonly at: string;
+    // Slack user-id of the founder/admin who clicked. Surfaced in the
+    // card so anyone in the channel can see who decided.
+    readonly actor: string;
+  };
+}
+
+export function buildFounderReviewResolutionBlocks(
+  input: SlackUpdateInput
+): { readonly channel: string; readonly ts: string; readonly text: string; readonly blocks: readonly unknown[] } {
+  const { ts, channel, alert_id, user_id, view, rank, decision } = input;
+  const verb = decision.kind === 'approved' ? '✅ Approved' : '❌ Rejected';
+  const fallback = `[FOMO] Alert ${alert_id} — ${verb} by ${decision.actor}`;
+
+  const senderLine = view.sender_name
+    ? `${view.sender_name} <${view.sender_email_masked}>`
+    : view.sender_email_masked;
+
+  const blocks: unknown[] = [
+    {
+      type: 'header',
+      text: { type: 'plain_text', text: `FOMO — Alert ${verb.toLowerCase()}` }
+    },
+    {
+      type: 'section',
+      fields: [
+        { type: 'mrkdwn', text: `*Sender*\n${senderLine}` },
+        { type: 'mrkdwn', text: `*Subject*\n${view.subject}` }
+      ]
+    },
+    {
+      type: 'section',
+      text: { type: 'mrkdwn', text: `*Snippet*\n${view.body_snippet}` }
+    },
+    {
+      type: 'section',
+      fields: [
+        { type: 'mrkdwn', text: `*Ranker label*\n${rank.label}` },
+        { type: 'mrkdwn', text: `*Score*\n${rank.score}` },
+        { type: 'mrkdwn', text: `*Model*\n${rank.model_name}` },
+        { type: 'mrkdwn', text: `*Prompt*\n${rank.prompt_version}` }
+      ]
+    },
+    {
+      type: 'section',
+      text: { type: 'mrkdwn', text: `*Why (ranker)*\n${rank.reason}` }
+    },
+    {
+      type: 'section',
+      text: {
+        type: 'mrkdwn',
+        text: `*${verb}* by <@${decision.actor}> at \`${decision.at}\`.`
+      }
+    },
+    {
+      type: 'context',
+      elements: [
+        {
+          type: 'mrkdwn',
+          text: `alert_id: \`${alert_id}\` • user: \`${user_id}\` • received: ${view.received_at} • message_id: \`${view.message_id}\``
+        }
+      ]
+    }
+  ];
+
+  return Object.freeze({ channel, ts, text: fallback, blocks: Object.freeze(blocks) });
+}
+
+/* ====================================================================== */
+/* Slack signing-secret verification (Phase 3D.2)                         */
+/* ====================================================================== */
+
+import { createHmac, timingSafeEqual } from 'node:crypto';
+
+export interface VerifySignatureInput {
+  // The signing secret from your Slack app's Basic Information panel.
+  // NOT the bot token. Different secret, different rotation lifecycle.
+  readonly signingSecret: string;
+  // X-Slack-Request-Timestamp header (unix seconds, as a string).
+  readonly timestamp: string;
+  // X-Slack-Signature header. Format: 'v0=<hex>'.
+  readonly signature: string;
+  // Raw request body (NOT JSON-parsed; the original bytes).
+  readonly body: string;
+  // Optional override for the "now" clock — tests inject a fixed time.
+  readonly now?: () => number;
+  // Optional override for the freshness window in seconds. Slack
+  // recommends 300 (5 min); we honor that as default. Tests can shorten.
+  readonly maxAgeSeconds?: number;
+}
+
+export type SignatureVerificationResult =
+  | { readonly ok: true }
+  | { readonly ok: false; readonly reason: 'malformed_timestamp' | 'malformed_signature' | 'stale_timestamp' | 'signature_mismatch' };
+
+// Verify an inbound Slack request per
+// https://api.slack.com/authentication/verifying-requests-from-slack
+//
+// Format: v0=hex(hmac_sha256(signingSecret, `v0:${timestamp}:${body}`)).
+// Timing-safe compare. Reject if timestamp is older than maxAgeSeconds
+// (default 300s) to thwart replay attacks. Caller is responsible for
+// reading the RAW body before JSON parsing; Node's req.body parsing
+// would lose the original bytes the HMAC was computed over.
+export function verifySlackSignature(input: VerifySignatureInput): SignatureVerificationResult {
+  const now = input.now ?? (() => Math.floor(Date.now() / 1000));
+  const maxAge = input.maxAgeSeconds ?? 300;
+
+  if (!/^\d{8,12}$/.test(input.timestamp)) {
+    return Object.freeze({ ok: false as const, reason: 'malformed_timestamp' as const });
+  }
+  if (!/^v0=[a-f0-9]{64}$/.test(input.signature)) {
+    return Object.freeze({ ok: false as const, reason: 'malformed_signature' as const });
+  }
+  const ts = Number(input.timestamp);
+  if (Math.abs(now() - ts) > maxAge) {
+    return Object.freeze({ ok: false as const, reason: 'stale_timestamp' as const });
+  }
+
+  const basestring = `v0:${input.timestamp}:${input.body}`;
+  const expectedHex = createHmac('sha256', input.signingSecret).update(basestring).digest('hex');
+  const expected = Buffer.from(`v0=${expectedHex}`, 'utf8');
+  const provided = Buffer.from(input.signature, 'utf8');
+  if (expected.length !== provided.length) {
+    return Object.freeze({ ok: false as const, reason: 'signature_mismatch' as const });
+  }
+  if (!timingSafeEqual(expected, provided)) {
+    return Object.freeze({ ok: false as const, reason: 'signature_mismatch' as const });
+  }
+  return Object.freeze({ ok: true as const });
 }

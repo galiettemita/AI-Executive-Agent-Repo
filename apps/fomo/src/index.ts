@@ -23,6 +23,11 @@ import { createModelRouter } from './core/model-router.js';
 import { rankEmail } from './ranker/index.js';
 import { RANKER_OPENAI_RESPONSE_FORMAT } from './ranker/openai-response-format.js';
 import { SlackClient } from './adapters/slack/client.js';
+import {
+  tryHandleSlackInteractivityRequest,
+  type SlackInteractivityRouteDeps
+} from './routes/slack-interactivity.js';
+import { type RawEmailContext } from './core/egress-policy.js';
 import { loadCryptoConfig } from './security/token-crypto.js';
 import { loadSessionConfig } from './security/session.js';
 import { InMemoryNonceStore, loadOAuthStateConfig } from './security/oauth/state.js';
@@ -196,27 +201,41 @@ function buildRankerDep(
 /* ---------------------------------------------------------------------- */
 
 // Builds the slackReview dep + the SlackClient that the
-// slack.founder_review executor will use. Returns { dep, client: null }
-// when FOMO_SLACK_REVIEW_ENABLED is off (the safe default) — the
-// polling worker then skips the Slack flow entirely. THROWS at boot
-// when the switch is on but SLACK_BOT_TOKEN or SLACK_FOUNDER_CHANNEL_ID
-// is missing — "real or absent, never half-wired": if review is on,
-// we either deliver a real adapter or refuse to start.
+// slack.founder_review executor will use, AND the slack-interactivity
+// route deps for the Phase 3D.2 approval-capture inbound webhook.
 //
-// 3D.1 reminder: this only ships the POSTING half. Approval capture
-// (Slack interactive components or events API webhook) is 3D.2; until
-// it lands, alerts created here stay at queued_for_review forever.
+// Returns null fields when FOMO_SLACK_REVIEW_ENABLED is off (the safe
+// default) — the polling worker skips the Slack flow entirely AND the
+// /slack/interactivity route is NOT mounted on the HTTP server.
+//
+// THROWS at boot when the switch is on but any required Slack env var
+// is missing — "real or absent, never half-wired":
+//   * SLACK_BOT_TOKEN (xoxb-...) for outbound chat.postMessage + chat.update
+//   * SLACK_FOUNDER_CHANNEL_ID (C0123...) — the channel cards land in,
+//     AND the only channel approve/reject is accepted from
+//   * SLACK_SIGNING_SECRET — the app's signing secret used to verify
+//     inbound /slack/interactivity requests (Phase 3D.2)
+//   * SLACK_FOUNDER_USER_ID (U0123...) is OPTIONAL but recommended;
+//     when set, only that user's clicks are accepted (the route logs a
+//     'best-effort' note when unset).
 function buildSlackReviewWiring(
   storesHandle: SubstrateStoresHandle,
   killSwitches: KillSwitches,
   env: NodeJS.ProcessEnv = process.env
-): { dep: GmailPollSlackReviewDep | null; client: SlackClient | null } {
+): {
+  dep: GmailPollSlackReviewDep | null;
+  client: SlackClient | null;
+  routeDeps: SlackInteractivityRouteDeps | null;
+} {
   if (!killSwitches.slack_review_enabled) {
-    return { dep: null, client: null };
+    return { dep: null, client: null, routeDeps: null };
   }
 
   const botToken = env.SLACK_BOT_TOKEN;
   const channelId = env.SLACK_FOUNDER_CHANNEL_ID;
+  const signingSecret = env.SLACK_SIGNING_SECRET;
+  const founderUserId = env.SLACK_FOUNDER_USER_ID?.trim() || undefined;
+
   if (!botToken || botToken.length === 0) {
     throw new Error(
       'FOMO_SLACK_REVIEW_ENABLED=true but SLACK_BOT_TOKEN is missing. ' +
@@ -230,17 +249,60 @@ function buildSlackReviewWiring(
         'Set the channel id (e.g. C0123...) or set FOMO_SLACK_REVIEW_ENABLED=false.'
     );
   }
+  // Phase 3D.2: signing secret is REQUIRED to verify inbound
+  // interactivity requests. We refuse to boot with the switch on but
+  // no signing secret — the route would accept anything otherwise.
+  if (!signingSecret || signingSecret.length === 0) {
+    throw new Error(
+      'FOMO_SLACK_REVIEW_ENABLED=true but SLACK_SIGNING_SECRET is missing. ' +
+        "Set the app's signing secret (from Slack app Basic Information panel) " +
+        'or set FOMO_SLACK_REVIEW_ENABLED=false. Refusing to boot an unsigned ' +
+        'inbound Slack interactivity endpoint.'
+    );
+  }
 
   // SlackClient constructor throws synchronously on bad token/channel
   // shape — surfaced here at boot rather than at first dispatch.
   const client = new SlackClient({ botToken, channelId });
+
+  // Phase 3D.2: the approval-capture route needs to recover the raw
+  // email view to rebuild the resolution card. Since gmail.read goes
+  // through dispatch with a session/user context, and the inbound
+  // route has no such context, we cannot re-call gmail.read here.
+  //
+  // For 3D.2, resolveEmailContext is undefined — the route will skip
+  // chat.update and just transition state + audit. Visual feedback
+  // requires a later phase that re-fetches the redacted view from
+  // some persisted source. The state transition is the load-bearing
+  // outcome; the card update is purely cosmetic.
+  //
+  // A future enhancement: persist the egress-redacted SlackEgressView
+  // on the alerts row at post time, then resolve from there. Not in
+  // 3D.2 scope.
+  const resolveEmailContext: ((u: string, m: string) => Promise<RawEmailContext | null>) | undefined =
+    undefined;
+
+  const routeDeps: SlackInteractivityRouteDeps = Object.freeze({
+    signingSecret,
+    founderChannelId: channelId,
+    founderUserId,
+    killSwitches,
+    alertStore: storesHandle.stores.alerts,
+    rankResultStore: storesHandle.stores.rankResults,
+    transitions: storesHandle.stores.transitions,
+    feedbackStore: storesHandle.stores.feedback,
+    auditStore: storesHandle.stores.audit,
+    slackClient: client,
+    resolveEmailContext
+  });
 
   return {
     dep: Object.freeze({
       alertStore: storesHandle.stores.alerts,
       transitions: storesHandle.stores.transitions
     }),
-    client
+    client,
+    routeDeps
   };
 }
 
@@ -409,11 +471,19 @@ export function createFomoRuntime(config: FomoConfig = loadFomoConfig()): FomoRu
   const slackWiring = buildSlackReviewWiring(storesHandle, killSwitches);
   if (slackWiring.dep) {
     logEvent(config, undefined, 'fomo.slack.review.enabled', 'INFO', {
-      channel_id: process.env.SLACK_FOUNDER_CHANNEL_ID
+      channel_id: process.env.SLACK_FOUNDER_CHANNEL_ID,
+      // Phase 3D.2: surface that the inbound route is mounted AND
+      // whether the founder-user restriction is active. If
+      // SLACK_FOUNDER_USER_ID is unset, the route accepts any user's
+      // clicks from the founder channel (best-effort; runbook warns).
+      interactivity_route_mounted: slackWiring.routeDeps !== null,
+      founder_user_restricted: !!slackWiring.routeDeps?.founderUserId
     });
   } else {
     logEvent(config, undefined, 'fomo.slack.review.disabled', 'INFO', {
-      detail: 'FOMO_SLACK_REVIEW_ENABLED is not "true"; Slack candidate-review path dormant (alerts table stays empty)'
+      detail:
+        'FOMO_SLACK_REVIEW_ENABLED is not "true"; Slack candidate-review path dormant ' +
+        '(alerts table stays empty; /slack/interactivity route NOT mounted)'
     });
   }
 
@@ -461,29 +531,41 @@ export function createFomoRuntime(config: FomoConfig = loadFomoConfig()): FomoRu
       return;
     }
 
-    // OAuth routes (only when wired).
-    if (oauthGoogleDeps) {
-      void tryHandleOAuthGoogleRequest(req, oauthGoogleDeps)
-        .then((response) => {
-          if (response) {
-            res.writeHead(response.status, response.headers);
-            res.end(response.body);
+    // Each route handler returns null when the request does not match
+    // its routes. We try them in order; the FIRST handler that returns
+    // a non-null response handles the request.
+    void (async () => {
+      try {
+        // Slack interactivity (Phase 3D.2) — only when wired.
+        if (slackWiring.routeDeps) {
+          const slackResp = await tryHandleSlackInteractivityRequest(req, slackWiring.routeDeps);
+          if (slackResp) {
+            res.writeHead(slackResp.status, slackResp.headers);
+            res.end(slackResp.body);
             return;
           }
-          sendJSON(res, 404, { error: 'not_found', request_id: ctx.requestId });
-        })
-        .catch((err: unknown) => {
-          logEvent(config, ctx, 'fomo.oauth.google.unhandled', 'ERROR', {
-            error: err instanceof Error ? err.message : String(err)
-          });
-          if (!res.headersSent) {
-            sendJSON(res, 500, { error: 'internal', request_id: ctx.requestId });
-          }
-        });
-      return;
-    }
+        }
 
-    sendJSON(res, 404, { error: 'not_found', request_id: ctx.requestId });
+        // OAuth routes — only when wired.
+        if (oauthGoogleDeps) {
+          const oauthResp = await tryHandleOAuthGoogleRequest(req, oauthGoogleDeps);
+          if (oauthResp) {
+            res.writeHead(oauthResp.status, oauthResp.headers);
+            res.end(oauthResp.body);
+            return;
+          }
+        }
+
+        sendJSON(res, 404, { error: 'not_found', request_id: ctx.requestId });
+      } catch (err) {
+        logEvent(config, ctx, 'fomo.http.unhandled', 'ERROR', {
+          error: err instanceof Error ? err.message : String(err)
+        });
+        if (!res.headersSent) {
+          sendJSON(res, 500, { error: 'internal', request_id: ctx.requestId });
+        }
+      }
+    })();
   });
 
   const runtime: FomoRuntime = {
@@ -511,7 +593,8 @@ export function createFomoRuntime(config: FomoConfig = loadFomoConfig()): FomoRu
       oauth_google_wired: oauthGoogleDeps !== null,
       polling_enabled: killSwitches.polling_enabled,
       ranker_enabled: ranker !== null,
-      slack_review_enabled: slackWiring.dep !== null
+      slack_review_enabled: slackWiring.dep !== null,
+      slack_interactivity_route_mounted: slackWiring.routeDeps !== null
     });
   });
 
