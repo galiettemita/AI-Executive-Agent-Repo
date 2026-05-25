@@ -133,7 +133,19 @@ export const MODEL_PRICING: Readonly<Record<string, { readonly input_per_1m_usd:
     // Anthropic Haiku 4.5 — small/fast tier.
     'claude-haiku-4-5-20251001': Object.freeze({ input_per_1m_usd: 1.00, output_per_1m_usd: 5.00 }),
     // Anthropic Sonnet 4.6 — frontier tier.
-    'claude-sonnet-4-6': Object.freeze({ input_per_1m_usd: 3.00, output_per_1m_usd: 15.00 })
+    'claude-sonnet-4-6': Object.freeze({ input_per_1m_usd: 3.00, output_per_1m_usd: 15.00 }),
+    // OpenAI GPT-5 family — list-price approximations as of model
+    // release. Founder picked gpt-5-mini as the initial Brevio ranker
+    // in Phase 3C.2; nano + frontier rows are included so a future
+    // model swap via FOMO_OPENAI_MODEL doesn't return 0 cost. Re-verify
+    // at https://openai.com/api/pricing/ before any production billing
+    // rollout.
+    'gpt-5-mini': Object.freeze({ input_per_1m_usd: 0.25, output_per_1m_usd: 2.00 }),
+    'gpt-5-nano': Object.freeze({ input_per_1m_usd: 0.05, output_per_1m_usd: 0.40 }),
+    'gpt-5': Object.freeze({ input_per_1m_usd: 1.25, output_per_1m_usd: 10.00 }),
+    // OpenAI prior-gen mini, kept as a safe fallback if gpt-5-mini is
+    // not yet available on the founder's account.
+    'gpt-4o-mini': Object.freeze({ input_per_1m_usd: 0.15, output_per_1m_usd: 0.60 })
   });
 
 export function computeEstimatedCost(modelName: string, inputTokens: number, outputTokens: number): number {

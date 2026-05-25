@@ -1,0 +1,267 @@
+{
+  "phase": "3C.2",
+  "started_at": "2026-05-25T02:24:09.031Z",
+  "finished_at": "2026-05-25T02:25:31.171Z",
+  "prompt_version": "ranker-v0.1.0",
+  "pass_gate": {
+    "min_precision": 0.85,
+    "min_recall": 0.85,
+    "min_json_valid_rate": 0.95
+  },
+  "model_id": "gpt-5-mini",
+  "result": {
+    "model_id": "gpt-5-mini",
+    "prompt_version": "ranker-v0.1.0",
+    "total_fixtures": 20,
+    "json_valid": 20,
+    "json_valid_rate": 1,
+    "actually_positive": 10,
+    "predicted_positive": 10,
+    "tp": 10,
+    "fp": 0,
+    "tn": 10,
+    "fn": 0,
+    "precision": 1,
+    "recall": 1,
+    "f1": 1,
+    "mean_latency_ms": 4107,
+    "p95_latency_ms": 7107,
+    "total_input_tokens": 8100,
+    "total_output_tokens": 4917,
+    "total_cost_usd": 0.011858999999999998,
+    "cost_per_1k_emails_usd": 0.5929499999999999,
+    "per_fixture": [
+      {
+        "fixture_id": "fx-001-counselor-form-tonight",
+        "expected_label": "important",
+        "predicted_label": "important",
+        "json_valid": true,
+        "latency_ms": 3756,
+        "input_tokens": 408,
+        "output_tokens": 238,
+        "estimated_cost_usd": 0.0005780000000000001,
+        "error": null
+      },
+      {
+        "fixture_id": "fx-002-doctor-test-results",
+        "expected_label": "important",
+        "predicted_label": "important",
+        "json_valid": true,
+        "latency_ms": 7107,
+        "input_tokens": 409,
+        "output_tokens": 235,
+        "estimated_cost_usd": 0.00057225,
+        "error": null
+      },
+      {
+        "fixture_id": "fx-003-mom-needs-call-back",
+        "expected_label": "important",
+        "predicted_label": "important",
+        "json_valid": true,
+        "latency_ms": 4907,
+        "input_tokens": 398,
+        "output_tokens": 358,
+        "estimated_cost_usd": 0.0008154999999999999,
+        "error": null
+      },
+      {
+        "fixture_id": "fx-004-interview-confirmation",
+        "expected_label": "important",
+        "predicted_label": "important",
+        "json_valid": true,
+        "latency_ms": 4409,
+        "input_tokens": 414,
+        "output_tokens": 232,
+        "estimated_cost_usd": 0.0005675,
+        "error": null
+      },
+      {
+        "fixture_id": "fx-005-rent-due-tomorrow",
+        "expected_label": "important",
+        "predicted_label": "important",
+        "json_valid": true,
+        "latency_ms": 4813,
+        "input_tokens": 407,
+        "output_tokens": 301,
+        "estimated_cost_usd": 0.00070375,
+        "error": null
+      },
+      {
+        "fixture_id": "fx-006-bank-fraud-alert",
+        "expected_label": "important",
+        "predicted_label": "important",
+        "json_valid": true,
+        "latency_ms": 3396,
+        "input_tokens": 405,
+        "output_tokens": 238,
+        "estimated_cost_usd": 0.0005772500000000001,
+        "error": null
+      },
+      {
+        "fixture_id": "fx-007-professor-deadline",
+        "expected_label": "important",
+        "predicted_label": "important",
+        "json_valid": true,
+        "latency_ms": 4078,
+        "input_tokens": 414,
+        "output_tokens": 234,
+        "estimated_cost_usd": 0.0005715,
+        "error": null
+      },
+      {
+        "fixture_id": "fx-008-close-friend-event-tonight",
+        "expected_label": "important",
+        "predicted_label": "important",
+        "json_valid": true,
+        "latency_ms": 4305,
+        "input_tokens": 402,
+        "output_tokens": 296,
+        "estimated_cost_usd": 0.0006925,
+        "error": null
+      },
+      {
+        "fixture_id": "fx-009-flight-cancelled",
+        "expected_label": "important",
+        "predicted_label": "important",
+        "json_valid": true,
+        "latency_ms": 4094,
+        "input_tokens": 410,
+        "output_tokens": 298,
+        "estimated_cost_usd": 0.0006984999999999999,
+        "error": null
+      },
+      {
+        "fixture_id": "fx-010-school-emergency",
+        "expected_label": "important",
+        "predicted_label": "important",
+        "json_valid": true,
+        "latency_ms": 3379,
+        "input_tokens": 405,
+        "output_tokens": 296,
+        "estimated_cost_usd": 0.00069325,
+        "error": null
+      },
+      {
+        "fixture_id": "fx-011-linkedin-weekly-digest",
+        "expected_label": "not_important",
+        "predicted_label": "not_important",
+        "json_valid": true,
+        "latency_ms": 3101,
+        "input_tokens": 408,
+        "output_tokens": 174,
+        "estimated_cost_usd": 0.00045,
+        "error": null
+      },
+      {
+        "fixture_id": "fx-012-promo-50-off",
+        "expected_label": "not_important",
+        "predicted_label": "not_important",
+        "json_valid": true,
+        "latency_ms": 3049,
+        "input_tokens": 408,
+        "output_tokens": 240,
+        "estimated_cost_usd": 0.000582,
+        "error": null
+      },
+      {
+        "fixture_id": "fx-013-newsletter-tech-weekly",
+        "expected_label": "not_important",
+        "predicted_label": "not_important",
+        "json_valid": true,
+        "latency_ms": 2965,
+        "input_tokens": 408,
+        "output_tokens": 172,
+        "estimated_cost_usd": 0.000446,
+        "error": null
+      },
+      {
+        "fixture_id": "fx-014-package-shipped",
+        "expected_label": "not_important",
+        "predicted_label": "not_important",
+        "json_valid": true,
+        "latency_ms": 3465,
+        "input_tokens": 401,
+        "output_tokens": 175,
+        "estimated_cost_usd": 0.00045025,
+        "error": null
+      },
+      {
+        "fixture_id": "fx-015-twitter-notification",
+        "expected_label": "not_important",
+        "predicted_label": "not_important",
+        "json_valid": true,
+        "latency_ms": 4045,
+        "input_tokens": 395,
+        "output_tokens": 176,
+        "estimated_cost_usd": 0.00045075,
+        "error": null
+      },
+      {
+        "fixture_id": "fx-016-receipt-coffee",
+        "expected_label": "not_important",
+        "predicted_label": "not_important",
+        "json_valid": true,
+        "latency_ms": 2630,
+        "input_tokens": 403,
+        "output_tokens": 171,
+        "estimated_cost_usd": 0.00044275,
+        "error": null
+      },
+      {
+        "fixture_id": "fx-017-saas-feature-announcement",
+        "expected_label": "not_important",
+        "predicted_label": "not_important",
+        "json_valid": true,
+        "latency_ms": 2458,
+        "input_tokens": 402,
+        "output_tokens": 174,
+        "estimated_cost_usd": 0.0004485,
+        "error": null
+      },
+      {
+        "fixture_id": "fx-018-survey-request",
+        "expected_label": "not_important",
+        "predicted_label": "not_important",
+        "json_valid": true,
+        "latency_ms": 5962,
+        "input_tokens": 399,
+        "output_tokens": 431,
+        "estimated_cost_usd": 0.00096175,
+        "error": null
+      },
+      {
+        "fixture_id": "fx-019-podcast-new-episode",
+        "expected_label": "not_important",
+        "predicted_label": "not_important",
+        "json_valid": true,
+        "latency_ms": 4889,
+        "input_tokens": 399,
+        "output_tokens": 239,
+        "estimated_cost_usd": 0.00057775,
+        "error": null
+      },
+      {
+        "fixture_id": "fx-020-calendar-invite-bulk",
+        "expected_label": "not_important",
+        "predicted_label": "not_important",
+        "json_valid": true,
+        "latency_ms": 5325,
+        "input_tokens": 405,
+        "output_tokens": 239,
+        "estimated_cost_usd": 0.00057925,
+        "error": null
+      }
+    ],
+    "errors": []
+  },
+  "verdict": {
+    "status": "PASS",
+    "reason": "gpt-5-mini cleared all three gates (precision≥0.85, recall≥0.85, json_valid≥0.95).",
+    "gate": {
+      "min_precision": 0.85,
+      "min_recall": 0.85,
+      "min_json_valid_rate": 0.95
+    },
+    "allows_3c3": true
+  }
+}
