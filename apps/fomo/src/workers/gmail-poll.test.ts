@@ -10,6 +10,8 @@ import { createToolRegistry } from '../core/tool-registry.ts';
 import { createDispatchTable } from '../dispatch/dispatcher.ts';
 import { wireExternalExecutors } from '../dispatch/external-executors.ts';
 import { InMemoryGmailCursorStore } from '../memory/gmail-cursors.ts';
+import { InMemoryRankResultStore } from '../memory/rank-results.ts';
+import { type RankerResult } from '../ranker/index.ts';
 import { loadCryptoConfig } from '../security/token-crypto.ts';
 import { InMemoryTokenStore } from '../security/oauth/token-store.ts';
 
@@ -464,5 +466,245 @@ describe('startPolling', () => {
     await new Promise((resolve) => setTimeout(resolve, 10));
     await handle.stop();
     assert.ok(errors >= 1, `expected at least one onError, got ${errors}`);
+  });
+});
+
+/* ====================================================================== */
+/* runOnce — ranker integration (Phase 3C.3)                              */
+/* ====================================================================== */
+
+// Helper: seed two new messages and a user, returning the harness +
+// rankResultStore + a ranker.rank stub that the test can program.
+async function setupRankerHarness(opts: {
+  rank: (req: { raw: unknown; user_id: string }) => Promise<RankerResult>;
+}): Promise<{
+  harness: Harness;
+  rankResultStore: InMemoryRankResultStore;
+  rankCalls: Array<{ raw: unknown; user_id: string }>;
+}> {
+  const historyMap = new Map<string, { status: number; body: unknown }>();
+  historyMap.set('h-100', {
+    status: 200,
+    body: {
+      history: [
+        { id: 'h-101', messagesAdded: [{ message: { id: 'm-1', threadId: 't-1' } }] },
+        { id: 'h-102', messagesAdded: [{ message: { id: 'm-2', threadId: 't-2' } }] }
+      ],
+      historyId: 'h-200'
+    }
+  });
+  const harness = makeHarness({ behavior: { history: historyMap } });
+  await seedUser(harness, 'u-rank', 'h-100');
+
+  const rankResultStore = new InMemoryRankResultStore();
+  const rankCalls: Array<{ raw: unknown; user_id: string }> = [];
+  const ranker = {
+    rank: async (req: { raw: unknown; user_id: string }): Promise<RankerResult> => {
+      rankCalls.push(req);
+      return opts.rank(req);
+    },
+    store: rankResultStore
+  };
+
+  // Build new deps that include the ranker.
+  harness.deps = {
+    ...harness.deps,
+    ranker: ranker as Parameters<typeof runOnce>[0]['ranker']
+  };
+
+  return { harness, rankResultStore, rankCalls };
+}
+
+const rankerSuccess = (over: Partial<Extract<RankerResult, { ok: true }>> = {}): RankerResult =>
+  Object.freeze({
+    ok: true as const,
+    decision: { label: 'important' as const, score: 0.85, reason: 'Deadline today.' },
+    model_name: 'gpt-5-mini',
+    prompt_version: 'fomo-ranker-v1',
+    latency_ms: 400,
+    input_tokens: 350,
+    output_tokens: 22,
+    estimated_cost_usd: 0.0008,
+    ...over
+  });
+
+describe('runOnce — ranker absent (3B.2 backward-compat)', () => {
+  it('matches 3B.2 behavior: no ranker call, all ranker counters are 0', async () => {
+    const historyMap = new Map<string, { status: number; body: unknown }>();
+    historyMap.set('h-100', {
+      status: 200,
+      body: {
+        history: [{ id: 'h-101', messagesAdded: [{ message: { id: 'm-1', threadId: 't-1' } }] }],
+        historyId: 'h-101'
+      }
+    });
+    const h = makeHarness({ behavior: { history: historyMap } });
+    await seedUser(h, 'u-no-rank', 'h-100');
+    const r = await runOnce(h.deps);
+    assert.equal(r.messages_dispatched, 1);
+    assert.equal(r.messages_ranked, 0);
+    assert.equal(r.messages_rank_already, 0);
+    assert.equal(r.messages_rank_failed, 0);
+    const audit = await h.auditStore.recent('u-no-rank');
+    assert.equal(audit.filter((e) => e.action.startsWith('fomo.rank.')).length, 0);
+  });
+});
+
+describe('runOnce — ranker success path', () => {
+  it('writes rank_results row, audits fomo.rank.completed, increments counter', async () => {
+    const { harness, rankResultStore, rankCalls } = await setupRankerHarness({
+      rank: async () => rankerSuccess()
+    });
+    const r = await runOnce(harness.deps);
+    assert.equal(r.messages_dispatched, 2);
+    assert.equal(r.messages_ranked, 2);
+    assert.equal(r.messages_rank_already, 0);
+    assert.equal(r.messages_rank_failed, 0);
+    assert.equal(rankCalls.length, 2);
+
+    // rank_results store has both rows.
+    const m1 = await rankResultStore.get('u-rank', 'm-1');
+    const m2 = await rankResultStore.get('u-rank', 'm-2');
+    assert.ok(m1);
+    assert.ok(m2);
+    assert.equal(m1?.label, 'important');
+    assert.equal(m1?.score, 0.85);
+    assert.equal(m1?.model_name, 'gpt-5-mini');
+    assert.equal(m1?.prompt_version, 'fomo-ranker-v1');
+
+    // Audit: 2 fomo.rank.completed for u-rank, 0 already / 0 failed.
+    const userAudit = await harness.auditStore.recent('u-rank');
+    assert.equal(userAudit.filter((e) => e.action === 'fomo.rank.completed').length, 2);
+    assert.equal(userAudit.filter((e) => e.action === 'fomo.rank.already_ranked').length, 0);
+    assert.equal(userAudit.filter((e) => e.action === 'fomo.rank.failed').length, 0);
+  });
+
+  it('fomo.rank.completed audit detail surfaces metadata, no body content', async () => {
+    const { harness } = await setupRankerHarness({
+      rank: async () => rankerSuccess({ decision: { label: 'not_important', score: 0.12, reason: 'Marketing.' } })
+    });
+    await runOnce(harness.deps);
+    const completed = (await harness.auditStore.recent('u-rank')).filter(
+      (e) => e.action === 'fomo.rank.completed'
+    );
+    assert.ok(completed.length > 0);
+    const detail = completed[0]?.detail as Record<string, unknown>;
+    // Surfaces operational fields only.
+    assert.equal(detail.model_name, 'gpt-5-mini');
+    assert.equal(detail.prompt_version, 'fomo-ranker-v1');
+    assert.equal(detail.label, 'not_important');
+    assert.equal(detail.score, 0.12);
+    // Must NOT carry any body/header/attachment payload.
+    const json = JSON.stringify(detail);
+    for (const forbidden of ['body_plain', 'body_html', 'headers', 'attachments']) {
+      assert.ok(!json.includes(forbidden), `audit detail must not contain '${forbidden}'`);
+    }
+  });
+});
+
+describe('runOnce — ranker idempotency on rerun (already_ranked)', () => {
+  it('second cycle over a pre-populated rank_results row audits already_ranked', async () => {
+    const { harness, rankResultStore } = await setupRankerHarness({
+      rank: async () => rankerSuccess()
+    });
+    // Pre-populate the rank_results store for m-1 only; m-2 is fresh.
+    await rankResultStore.write({
+      user_id: 'u-rank',
+      message_id: 'm-1',
+      invocation_id: 'inv-pre',
+      model_name: 'gpt-5-mini',
+      prompt_version: 'fomo-ranker-v1',
+      label: 'important',
+      score: 0.7,
+      reason: 'Pre-existing.',
+      latency_ms: 100,
+      input_tokens: 100,
+      output_tokens: 10,
+      estimated_cost_usd: 0.0001
+    });
+    const r = await runOnce(harness.deps);
+    assert.equal(r.messages_dispatched, 2);
+    assert.equal(r.messages_ranked, 1);          // m-2 newly inserted
+    assert.equal(r.messages_rank_already, 1);    // m-1 was duplicate
+    assert.equal(r.messages_rank_failed, 0);
+
+    const audit = await harness.auditStore.recent('u-rank');
+    assert.equal(audit.filter((e) => e.action === 'fomo.rank.completed').length, 1);
+    assert.equal(audit.filter((e) => e.action === 'fomo.rank.already_ranked').length, 1);
+
+    // The pre-existing m-1 row is unchanged.
+    const m1 = await rankResultStore.get('u-rank', 'm-1');
+    assert.equal(m1?.reason, 'Pre-existing.');
+    assert.equal(m1?.score, 0.7);
+  });
+});
+
+describe('runOnce — ranker failure path', () => {
+  it('ranker returns RankerFailure: audits fomo.rank.failed, increments counter, no rank_results row', async () => {
+    const { harness, rankResultStore } = await setupRankerHarness({
+      rank: async () =>
+        Object.freeze({
+          ok: false as const,
+          code: 'schema_invalid' as const,
+          reason: 'output failed validator: missing "label"',
+          model_name: 'gpt-5-mini',
+          prompt_version: 'fomo-ranker-v1'
+        })
+    });
+    const r = await runOnce(harness.deps);
+    assert.equal(r.messages_dispatched, 2);
+    assert.equal(r.messages_ranked, 0);
+    assert.equal(r.messages_rank_already, 0);
+    assert.equal(r.messages_rank_failed, 2);
+
+    // No rank_results rows persisted.
+    assert.equal(await rankResultStore.count('u-rank'), 0);
+
+    const audit = await harness.auditStore.recent('u-rank');
+    const failed = audit.filter((e) => e.action === 'fomo.rank.failed');
+    assert.equal(failed.length, 2);
+    const detail = failed[0]?.detail as Record<string, unknown>;
+    assert.equal(detail.error_code, 'schema_invalid');
+    assert.equal(detail.model_name, 'gpt-5-mini');
+  });
+
+  it('ranker throws unexpectedly: cycle continues, all messages audited as failed', async () => {
+    const { harness, rankResultStore } = await setupRankerHarness({
+      rank: async () => {
+        throw new Error('network down');
+      }
+    });
+    const r = await runOnce(harness.deps);
+    assert.equal(r.messages_dispatched, 2);
+    assert.equal(r.messages_ranked, 0);
+    assert.equal(r.messages_rank_failed, 2);
+    assert.equal(await rankResultStore.count('u-rank'), 0);
+    const failed = (await harness.auditStore.recent('u-rank')).filter(
+      (e) => e.action === 'fomo.rank.failed'
+    );
+    assert.equal(failed.length, 2);
+    const detail = failed[0]?.detail as Record<string, unknown>;
+    assert.equal(detail.error_code, 'backend_error');
+    assert.match(String(detail.reason), /network down/);
+  });
+});
+
+describe('runOnce — ranker aggregate cycle audit (Phase 3C.3)', () => {
+  it('gmail.poll.cycle detail includes ranker counters', async () => {
+    const { harness } = await setupRankerHarness({
+      rank: async () => rankerSuccess()
+    });
+    await runOnce(harness.deps);
+    // The cycle audit is actor_user_id=null. InMemoryAuditStore.recent() is
+    // user-scoped; access the private entries field via type assertion to
+    // pick up null-actor entries (same pattern other tests in this file
+    // use for store internals).
+    const all = (harness.auditStore as unknown as { entries: Array<{ action: string; detail: unknown }> }).entries;
+    const cycle = all.find((e) => e.action === 'gmail.poll.cycle');
+    assert.ok(cycle, 'expected one gmail.poll.cycle audit entry');
+    const detail = cycle.detail as Record<string, unknown>;
+    assert.equal(detail.messages_ranked, 2);
+    assert.equal(detail.messages_rank_already, 0);
+    assert.equal(detail.messages_rank_failed, 0);
   });
 });

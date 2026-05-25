@@ -28,6 +28,7 @@ import {
 import { type FeedbackStore, InMemoryFeedbackStore } from '../memory/feedback-events.js';
 import { type GmailCursorStore, InMemoryGmailCursorStore } from '../memory/gmail-cursors.js';
 import { type MemorySignalStore, InMemoryMemorySignalStore } from '../memory/memory-signals.js';
+import { type RankResultStore, InMemoryRankResultStore } from '../memory/rank-results.js';
 import { type CryptoConfig, loadCryptoConfig } from '../security/token-crypto.js';
 import { InMemoryTokenStore, type TokenStore } from '../security/oauth/token-store.js';
 
@@ -38,6 +39,7 @@ import { PostgresCostStore } from './stores/cost-postgres.js';
 import { PostgresFeedbackStore } from './stores/feedback-postgres.js';
 import { PostgresGmailCursorStore } from './stores/gmail-cursors-postgres.js';
 import { PostgresMemorySignalStore } from './stores/memory-postgres.js';
+import { PostgresRankResultStore } from './stores/rank-results-postgres.js';
 import { PostgresTokenStore } from './stores/token-postgres.js';
 import { PostgresToolInvocationStore } from './stores/tool-invocations-postgres.js';
 
@@ -50,6 +52,7 @@ export interface SubstrateStores {
   readonly toolInvocations: ToolInvocationStore;
   readonly tokens: TokenStore;
   readonly gmailCursors: GmailCursorStore;
+  readonly rankResults: RankResultStore;
 }
 
 export type StoreBackend = 'in_memory' | 'postgres';
@@ -85,7 +88,8 @@ export function createStores(opts: CreateStoresOptions = {}): SubstrateStoresHan
         transitions: new PostgresAlertStateTransitionStore(dbResult.client),
         toolInvocations: new PostgresToolInvocationStore(dbResult.client),
         tokens: new PostgresTokenStore(dbResult.client, crypto),
-        gmailCursors: new PostgresGmailCursorStore(dbResult.client)
+        gmailCursors: new PostgresGmailCursorStore(dbResult.client),
+        rankResults: new PostgresRankResultStore(dbResult.client)
       }),
       db: dbResult
     });
@@ -101,7 +105,8 @@ export function createStores(opts: CreateStoresOptions = {}): SubstrateStoresHan
       transitions: new InMemoryAlertStateTransitionStore(),
       toolInvocations: new InMemoryToolInvocationStore(),
       tokens: new InMemoryTokenStore(crypto),
-      gmailCursors: new InMemoryGmailCursorStore()
+      gmailCursors: new InMemoryGmailCursorStore(),
+      rankResults: new InMemoryRankResultStore()
     }),
     db: null
   });

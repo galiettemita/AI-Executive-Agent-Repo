@@ -32,7 +32,17 @@ export type AuditAction =
   // Per-message reads continue to surface as policy.decided + tool.invoked
   // for tool_id='gmail.read'; this aggregate cycle entry exists so ops
   // can answer "is polling alive?" without correlating dispatch events.
-  | 'gmail.poll.cycle';
+  | 'gmail.poll.cycle'
+  // Ranker events (Phase 3C.3) — one entry per dispatched gmail.read
+  // result when the polling worker has a ranker wired. Sanitized detail
+  // only: model_name + prompt_version + label + score + token counts +
+  // latency + cost. NEVER body content; the ranker's input is already
+  // egress-redacted but this audit row does not include input either.
+  // already_ranked surfaces idempotency hits (rank_results unique
+  // constraint matched); failed surfaces ranker timeouts/schema errors.
+  | 'fomo.rank.completed'
+  | 'fomo.rank.already_ranked'
+  | 'fomo.rank.failed';
 
 export type AuditResult = 'success' | 'failure';
 

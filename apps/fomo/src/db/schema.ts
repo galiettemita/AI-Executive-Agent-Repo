@@ -1,11 +1,12 @@
 // Drizzle schema for the v0.1 persistence substrate.
 //
-// Phase 2E ships only the SUBSTRATE tables — the ones that mirror the
-// in-memory stores already shipped in Phases 2A/2C/2D plus tool_invocations
-// per FOMO_PLAN §9.10. Workflow tables (alerts, message_events,
-// rank_results, gmail_cursors, replies, sender_importance, suppressions,
-// user_preferences) are explicitly deferred to Phase 3 when their callers
-// land. No fake/empty tables here.
+// Phase 2E shipped the SUBSTRATE tables. Workflow tables land in Phase 3
+// as their callers do. Current state:
+//   * gmail_cursors    — Phase 3B.1 (caller: Gmail polling worker)
+//   * rank_results     — Phase 3C.3 (caller: Gmail polling worker → ranker)
+//   * alerts / message_events / replies / sender_importance / suppressions /
+//     user_preferences — still deferred; land with their callers.
+// No fake/empty tables here.
 //
 // Design choices:
 //   * No foreign keys — keeps Phase 2E tests free of insertion-order
@@ -255,3 +256,53 @@ export const gmail_cursors = pgTable('gmail_cursors', {
   history_id: text('history_id').notNull(),
   updated_at: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
 });
+
+/* ---------------------------------------------------------------------- */
+/* rank_results — new in Phase 3C.3                                       */
+/* ---------------------------------------------------------------------- */
+//
+// One row per successful ranker invocation. The polling worker reads a
+// Gmail message via gmail.read (audit + tool_invocations capture the
+// read), then hands the RawEmailContext to the ranker. On RankerSuccess
+// a row lands here; on RankerFailure only an audit event is written
+// (this table is "successful ranks only" — easier to query for the 3D
+// Slack founder review cards and for the 3C.4 evidence script).
+//
+// Privacy invariants:
+//   * NO body content. The ranker prompt sees only the egress-redacted
+//     view (sender, subject, ≤240-char snippet, attachment counts) and
+//     this table stores the model's DECISION, not its prompt input.
+//   * `reason` is the model-authored RankDecision.reason field, bounded
+//     to MAX_REASON_LEN (240) by the validator. It is summary text,
+//     not body text — the leak-canary scan still treats long strings
+//     as suspicious.
+//
+// Idempotency: unique on (user_id, message_id). The store's write path
+// uses ON CONFLICT DO NOTHING and reports `inserted: false` so the
+// worker can audit `fomo.rank.already_ranked` instead of double-charging
+// model credits when Gmail history replays a message_id.
+
+export const rank_results = pgTable(
+  'rank_results',
+  {
+    id: bigserial('id', { mode: 'number' }).primaryKey(),
+    user_id: text('user_id').notNull(),
+    message_id: text('message_id').notNull(),
+    invocation_id: text('invocation_id').notNull(),
+    model_name: text('model_name').notNull(),
+    prompt_version: text('prompt_version').notNull(),
+    label: text('label').notNull(),
+    score: doublePrecision('score').notNull(),
+    reason: text('reason').notNull(),
+    latency_ms: integer('latency_ms').notNull(),
+    input_tokens: integer('input_tokens').notNull(),
+    output_tokens: integer('output_tokens').notNull(),
+    estimated_cost_usd: doublePrecision('estimated_cost_usd').notNull(),
+    created_at: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => [
+    uniqueIndex('rank_results_user_message_uq').on(table.user_id, table.message_id),
+    index('rank_results_user_created_idx').on(table.user_id, table.created_at),
+    index('rank_results_label_idx').on(table.user_id, table.label)
+  ]
+);

@@ -15,6 +15,13 @@
       "when": 1779542338324,
       "tag": "0001_gmail_cursors",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1779677785205,
+      "tag": "0002_rank_results",
+      "breakpoints": true
     }
   ]
 }

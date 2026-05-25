@@ -13,6 +13,7 @@ describe('loadKillSwitches — safe defaults', () => {
     assert.equal(s.max_users, 1);
     assert.equal(s.polling_interval_ms, 60_000);
     assert.equal(s.polling_max_cycles, null);
+    assert.equal(s.ranker_enabled, false);
   });
 
   it('SAFE_DEFAULT_KILL_SWITCHES matches the empty-env result', () => {
@@ -109,6 +110,25 @@ describe('loadKillSwitches — FOMO_GMAIL_POLLING_INTERVAL_MS', () => {
     assert.equal(loadKillSwitches({ FOMO_GMAIL_POLLING_INTERVAL_MS: '0' }).polling_interval_ms, 60_000);
     assert.equal(loadKillSwitches({ FOMO_GMAIL_POLLING_INTERVAL_MS: '-5' }).polling_interval_ms, 60_000);
     assert.equal(loadKillSwitches({ FOMO_GMAIL_POLLING_INTERVAL_MS: '3.7' }).polling_interval_ms, 60_000);
+  });
+});
+
+describe('loadKillSwitches — FOMO_RANKER_ENABLED (Phase 3C.3)', () => {
+  it('returns false when unset (safe default)', () => {
+    assert.equal(loadKillSwitches({}).ranker_enabled, false);
+  });
+
+  it('accepts strict opt-in values', () => {
+    assert.equal(loadKillSwitches({ FOMO_RANKER_ENABLED: 'true' }).ranker_enabled, true);
+    assert.equal(loadKillSwitches({ FOMO_RANKER_ENABLED: '1' }).ranker_enabled, true);
+    assert.equal(loadKillSwitches({ FOMO_RANKER_ENABLED: 'TRUE' }).ranker_enabled, true);
+  });
+
+  it('rejects loose-truthy values', () => {
+    assert.equal(loadKillSwitches({ FOMO_RANKER_ENABLED: 'yes' }).ranker_enabled, false);
+    assert.equal(loadKillSwitches({ FOMO_RANKER_ENABLED: 'on' }).ranker_enabled, false);
+    assert.equal(loadKillSwitches({ FOMO_RANKER_ENABLED: '' }).ranker_enabled, false);
+    assert.equal(loadKillSwitches({ FOMO_RANKER_ENABLED: '2' }).ranker_enabled, false);
   });
 });
 
