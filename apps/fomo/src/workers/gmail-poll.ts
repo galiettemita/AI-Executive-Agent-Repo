@@ -1,4 +1,4 @@
-// Gmail Polling Worker — Phase 3B.2, extended in Phase 3C.3.
+// Gmail Polling Worker — Phase 3B.2, extended in Phase 3C.3 and 3D.1.
 //
 // One cycle = one runOnce() call. For each user with a stored Gmail
 // cursor:
@@ -46,12 +46,18 @@
 // is constructed). runOnce() can still be called by tests / admin
 // endpoints when either flag is off.
 
+import { randomUUID } from 'node:crypto';
+
 import { GmailClient, GmailUnauthorizedError, GmailApiError } from '../adapters/gmail/client.js';
+import { type SlackPostResult } from '../adapters/slack/client.js';
+import { type AlertStateTransitionStore } from '../core/alert-state-transitions.js';
 import { type AuditStore } from '../core/audit.js';
-import { type RawEmailContext } from '../core/egress-policy.js';
+import { applyEgressForSlackCard, type RawEmailContext } from '../core/egress-policy.js';
 import { decidePolicy, type PolicyGateDeps } from '../core/policy-gate.js';
+import { transition } from '../core/state-machine.js';
 import { type ToolInvocationStore } from '../core/tool-invocations.js';
 import { AuthorizedToolCall, type DispatchTable } from '../dispatch/dispatcher.js';
+import { type AlertStore } from '../memory/alerts.js';
 import { type GmailCursorStore } from '../memory/gmail-cursors.js';
 import { type RankResultStore } from '../memory/rank-results.js';
 import { type RankerResult } from '../ranker/index.js';
@@ -67,6 +73,28 @@ export interface GmailPollRankerDep {
   readonly store: RankResultStore;
 }
 
+// Phase 3D.1: optional Slack candidate-review dep. When present, every
+// NEW RankerSuccess with label='important' creates an alert and posts a
+// candidate-review card to the founder Slack channel. When absent the
+// worker behaves exactly as in 3C.3 (no alerts, no Slack calls).
+//
+// Idempotency at the alerts table (UNIQUE on rank_result_id) protects
+// the founder channel from re-spam on cursor rewinds / restarts: a
+// re-rank that hits the rank_results idempotency path (inserted=false)
+// never enters this flow; a fresh rank whose alerts.create returns
+// inserted=false audits 'fomo.slack.already_alerted' and skips the
+// Slack call.
+//
+// The Slack POST itself goes through dispatch.execute('slack.founder_review',
+// args) so it inherits the same gate + tool_invocations + audit
+// substrate as every other tool call. The dep here holds ONLY the
+// alert persistence + state transitions; the Slack adapter is wired
+// at dispatch construction time.
+export interface GmailPollSlackReviewDep {
+  readonly alertStore: AlertStore;
+  readonly transitions: AlertStateTransitionStore;
+}
+
 export interface GmailPollDeps {
   readonly gmailClient: GmailClient;
   readonly tokenStore: TokenStore;
@@ -77,9 +105,17 @@ export interface GmailPollDeps {
   readonly gateDeps: PolicyGateDeps;
   // Phase 3C.3: optional. Absent → no ranking happens.
   readonly ranker?: GmailPollRankerDep;
+  // Phase 3D.1: optional. Absent → no Slack candidate-review posts;
+  // alerts table stays empty. Requires `ranker` to also be present;
+  // when ranker is absent the slackReview dep has nothing to consume.
+  readonly slackReview?: GmailPollSlackReviewDep;
   // ID generator for invocation_id. Defaults to a counter-prefixed
   // string; tests inject a deterministic one.
   readonly newInvocationId?: () => string;
+  // Phase 3D.1: generator for alert_id. Defaults to randomUUID();
+  // tests inject a deterministic one so audit + alert rows are
+  // assertion-friendly.
+  readonly newAlertId?: () => string;
   // Optional clock; defaults to Date.now.
   readonly now?: () => number;
   // Max history items fetched per user per cycle. Forwarded to
@@ -110,6 +146,11 @@ export type GmailPollUserOutcome =
       readonly messages_ranked: number;
       readonly messages_rank_already: number;
       readonly messages_rank_failed: number;
+      // Phase 3D.1 counters. All zero when slackReview dep is absent.
+      readonly alerts_created: number;
+      readonly slack_posts: number;
+      readonly slack_posts_already: number;
+      readonly slack_posts_failed: number;
     };
 
 export interface GmailPollCycleReport {
@@ -127,6 +168,11 @@ export interface GmailPollCycleReport {
   readonly messages_ranked: number;
   readonly messages_rank_already: number;
   readonly messages_rank_failed: number;
+  // Phase 3D.1 aggregates. All zero when slackReview dep is absent.
+  readonly alerts_created: number;
+  readonly slack_posts: number;
+  readonly slack_posts_already: number;
+  readonly slack_posts_failed: number;
   readonly outcomes: readonly GmailPollUserOutcome[];
 }
 
@@ -153,6 +199,10 @@ export async function runOnce(deps: GmailPollDeps): Promise<GmailPollCycleReport
   let messages_ranked = 0;
   let messages_rank_already = 0;
   let messages_rank_failed = 0;
+  let alerts_created = 0;
+  let slack_posts = 0;
+  let slack_posts_already = 0;
+  let slack_posts_failed = 0;
 
   const userIds = await deps.cursorStore.listUserIds();
 
@@ -236,6 +286,10 @@ export async function runOnce(deps: GmailPollDeps): Promise<GmailPollCycleReport
     let ranked = 0;
     let rank_already = 0;
     let rank_failed = 0;
+    let user_alerts_created = 0;
+    let user_slack_posts = 0;
+    let user_slack_posts_already = 0;
+    let user_slack_posts_failed = 0;
     for (const message_id of newIds) {
       const decision = decidePolicy(
         { tool_id: 'gmail.read', user_id, intent: 'read' },
@@ -386,6 +440,7 @@ export async function runOnce(deps: GmailPollDeps): Promise<GmailPollCycleReport
               detail: {
                 invocation_id,
                 message_id,
+                rank_result_id: writeOutcome.rank_result_id,
                 model_name: rankerResult.model_name,
                 prompt_version: rankerResult.prompt_version,
                 label: rankerResult.decision.label,
@@ -396,6 +451,32 @@ export async function runOnce(deps: GmailPollDeps): Promise<GmailPollCycleReport
                 estimated_cost_usd: rankerResult.estimated_cost_usd
               }
             });
+
+            // Phase 3D.1: Slack candidate review posting. Fires ONLY
+            // when label='important' AND the slackReview dep is wired.
+            // Skips silently otherwise (the un-posted rank is still in
+            // rank_results for future inspection / 3D.2 backfill).
+            if (deps.slackReview && rankerResult.decision.label === 'important') {
+              const slackOutcome = await postSlackCandidateReview({
+                user_id,
+                invocation_id,
+                message_id,
+                rank_result_id: writeOutcome.rank_result_id,
+                rawEmail: result.output,
+                rankerResult,
+                deps,
+                slackReview: deps.slackReview
+              });
+              if (slackOutcome === 'posted') user_slack_posts++;
+              else if (slackOutcome === 'already_alerted') user_slack_posts_already++;
+              else if (slackOutcome === 'failed') user_slack_posts_failed++;
+              // When a NEW alert row was inserted, count it (regardless
+              // of whether the subsequent Slack post succeeded — the
+              // alert exists either way and 3D.2 may surface it).
+              if (slackOutcome === 'posted' || slackOutcome === 'failed') {
+                user_alerts_created++;
+              }
+            }
           } else {
             rank_already++;
             await deps.auditStore.write({
@@ -410,6 +491,11 @@ export async function runOnce(deps: GmailPollDeps): Promise<GmailPollCycleReport
                 message_id
               }
             });
+            // When a rank is a duplicate, the Slack review flow does
+            // NOT fire — the prior cycle already created the alert (if
+            // applicable) and posted Slack (or recorded the failure).
+            // This is the load-bearing idempotency invariant: re-rank
+            // never re-posts.
           }
         } else {
           rank_failed++;
@@ -454,7 +540,11 @@ export async function runOnce(deps: GmailPollDeps): Promise<GmailPollCycleReport
       messages_failed: failed,
       messages_ranked: ranked,
       messages_rank_already: rank_already,
-      messages_rank_failed: rank_failed
+      messages_rank_failed: rank_failed,
+      alerts_created: user_alerts_created,
+      slack_posts: user_slack_posts,
+      slack_posts_already: user_slack_posts_already,
+      slack_posts_failed: user_slack_posts_failed
     });
     users_polled++;
     messages_dispatched += dispatched;
@@ -462,6 +552,10 @@ export async function runOnce(deps: GmailPollDeps): Promise<GmailPollCycleReport
     messages_ranked += ranked;
     messages_rank_already += rank_already;
     messages_rank_failed += rank_failed;
+    alerts_created += user_alerts_created;
+    slack_posts += user_slack_posts;
+    slack_posts_already += user_slack_posts_already;
+    slack_posts_failed += user_slack_posts_failed;
   }
 
   const finished_at = new Date(now()).toISOString();
@@ -480,6 +574,10 @@ export async function runOnce(deps: GmailPollDeps): Promise<GmailPollCycleReport
     messages_ranked,
     messages_rank_already,
     messages_rank_failed,
+    alerts_created,
+    slack_posts,
+    slack_posts_already,
+    slack_posts_failed,
     outcomes: Object.freeze(outcomes.map((o) => Object.freeze(o)))
   });
 
@@ -506,7 +604,11 @@ export async function runOnce(deps: GmailPollDeps): Promise<GmailPollCycleReport
       messages_failed: report.messages_failed,
       messages_ranked: report.messages_ranked,
       messages_rank_already: report.messages_rank_already,
-      messages_rank_failed: report.messages_rank_failed
+      messages_rank_failed: report.messages_rank_failed,
+      alerts_created: report.alerts_created,
+      slack_posts: report.slack_posts,
+      slack_posts_already: report.slack_posts_already,
+      slack_posts_failed: report.slack_posts_failed
     }
   });
 
@@ -571,4 +673,291 @@ export function startPolling(deps: GmailPollDeps, opts: StartPollingOptions): Po
       await inflight.catch(() => undefined);
     }
   };
+}
+
+/* ====================================================================== */
+/* Phase 3D.1 — Slack candidate review posting helper                     */
+/* ====================================================================== */
+
+type SlackPostOutcome = 'posted' | 'already_alerted' | 'failed';
+
+interface PostSlackArgs {
+  readonly user_id: string;
+  readonly invocation_id: string;
+  readonly message_id: string;
+  readonly rank_result_id: number;
+  readonly rawEmail: RawEmailContext;
+  readonly rankerResult: Extract<RankerResult, { ok: true }>;
+  readonly deps: GmailPollDeps;
+  readonly slackReview: GmailPollSlackReviewDep;
+}
+
+// Encapsulates the "create alert + walk state machine + dispatch
+// slack.founder_review" flow. Extracted from runOnce() for readability.
+//
+// Returns one of:
+//   - 'posted'          → new alert created + Slack POST succeeded
+//   - 'already_alerted' → alerts UNIQUE constraint hit; no Slack call
+//   - 'failed'          → alert created but Slack POST failed (auth /
+//                          channel_not_found / 5xx / network). Alert
+//                          state machine transitions to `failed`.
+//
+// NEVER throws to the caller — every error path is captured as an
+// audit row, and the cycle moves on.
+async function postSlackCandidateReview(args: PostSlackArgs): Promise<SlackPostOutcome> {
+  const { user_id, invocation_id, message_id, rank_result_id, rawEmail, rankerResult, deps, slackReview } = args;
+  const newAlertId = deps.newAlertId ?? randomUUID;
+
+  const alertOutcome = await slackReview.alertStore.create({
+    alert_id: newAlertId(),
+    user_id,
+    message_id,
+    rank_result_id,
+    label: rankerResult.decision.label,
+    score: rankerResult.decision.score
+  });
+
+  if (!alertOutcome.inserted) {
+    // Idempotency: a prior cycle (or race) already created this alert.
+    // Skip the Slack call — duplicate posts would re-spam the founder
+    // channel. Surface the existing alert_id in the audit row so ops
+    // can trace back.
+    await deps.auditStore.write({
+      actor_user_id: user_id,
+      actor_ip: null,
+      actor_user_agent: null,
+      action: 'fomo.slack.already_alerted',
+      target: 'tool:slack.founder_review',
+      result: 'success',
+      detail: {
+        alert_id: alertOutcome.alert.alert_id,
+        rank_result_id,
+        message_id,
+        invocation_id
+      }
+    });
+    return 'already_alerted';
+  }
+
+  const alert_id = alertOutcome.alert.alert_id;
+
+  // State machine: detected → ranked. The alert just landed; we walk
+  // the machine from its INITIAL_STATE for traceability.
+  await writeTransition(slackReview.transitions, deps.auditStore, {
+    alert_id,
+    user_id,
+    from_state: 'detected',
+    to_state: 'ranked',
+    reason: `ranker labeled message_id=${message_id} as ${rankerResult.decision.label} (score ${rankerResult.decision.score})`
+  });
+
+  await deps.auditStore.write({
+    actor_user_id: user_id,
+    actor_ip: null,
+    actor_user_agent: null,
+    action: 'alert.created',
+    target: 'tool:slack.founder_review',
+    result: 'success',
+    detail: {
+      alert_id,
+      rank_result_id,
+      message_id,
+      invocation_id,
+      label: rankerResult.decision.label,
+      score: rankerResult.decision.score
+    }
+  });
+
+  // Dispatch slack.founder_review. Goes through the gate + dispatch +
+  // tool_invocations substrate, so the post inherits the same audit
+  // trail as every other tool call.
+  const view = applyEgressForSlackCard(rawEmail);
+  const decision = decidePolicy(
+    { tool_id: 'slack.founder_review', user_id, intent: 'control' },
+    deps.gateDeps
+  );
+
+  // Audit the gate decision regardless of allow/deny.
+  await deps.auditStore.write({
+    actor_user_id: user_id,
+    actor_ip: null,
+    actor_user_agent: null,
+    action: 'policy.decided',
+    target: 'tool:slack.founder_review',
+    result: 'success',
+    detail: {
+      tool_id: 'slack.founder_review',
+      decision_code: decision.code,
+      allowed: decision.allowed,
+      alert_id
+    }
+  });
+
+  const authorized = AuthorizedToolCall.fromDecision(decision);
+  if (!authorized) {
+    // Gate denied. Treat as Slack failure — alert state walks ranked → failed.
+    await writeTransition(slackReview.transitions, deps.auditStore, {
+      alert_id,
+      user_id,
+      from_state: 'ranked',
+      to_state: 'failed',
+      reason: `slack.founder_review gate denied: ${decision.code}`
+    });
+    await deps.auditStore.write({
+      actor_user_id: user_id,
+      actor_ip: null,
+      actor_user_agent: null,
+      action: 'fomo.slack.failed',
+      target: 'tool:slack.founder_review',
+      result: 'failure',
+      detail: {
+        alert_id,
+        rank_result_id,
+        message_id,
+        error_code: 'gate_denied',
+        decision_code: decision.code
+      }
+    });
+    return 'failed';
+  }
+
+  const slackInvocationId = `slack-post-${alert_id}`;
+  const result = await deps.dispatch.execute<SlackPostResult>(
+    authorized,
+    {
+      alert_id,
+      user_id,
+      view,
+      rank: {
+        label: rankerResult.decision.label,
+        score: rankerResult.decision.score,
+        reason: rankerResult.decision.reason,
+        model_name: rankerResult.model_name,
+        prompt_version: rankerResult.prompt_version
+      }
+    },
+    { user_id, invocation_id: slackInvocationId }
+  );
+
+  await deps.toolInvocationStore.write({
+    user_id,
+    tool_id: 'slack.founder_review',
+    invocation_id: slackInvocationId,
+    policy_decision: decision.code,
+    status: result.ok ? 'success' : 'failure',
+    latency_ms: result.latency_ms,
+    error_code: result.ok ? null : result.code,
+    error_reason: result.ok ? null : result.reason
+  });
+
+  if (result.ok) {
+    await writeTransition(slackReview.transitions, deps.auditStore, {
+      alert_id,
+      user_id,
+      from_state: 'ranked',
+      to_state: 'queued_for_review',
+      reason: `slack.founder_review posted; slack_ts=${result.output.ts}`
+    });
+    await deps.auditStore.write({
+      actor_user_id: user_id,
+      actor_ip: null,
+      actor_user_agent: null,
+      action: 'fomo.slack.posted',
+      target: 'tool:slack.founder_review',
+      result: 'success',
+      detail: {
+        alert_id,
+        rank_result_id,
+        message_id,
+        slack_ts: result.output.ts,
+        slack_channel: result.output.channel,
+        label: rankerResult.decision.label,
+        score: rankerResult.decision.score,
+        model_name: rankerResult.model_name
+      }
+    });
+    return 'posted';
+  }
+
+  // Dispatch failure (executor_error, unauthorized, etc.).
+  await writeTransition(slackReview.transitions, deps.auditStore, {
+    alert_id,
+    user_id,
+    from_state: 'ranked',
+    to_state: 'failed',
+    reason: `slack post failed: ${result.code} ${result.reason}`
+  });
+  await deps.auditStore.write({
+    actor_user_id: user_id,
+    actor_ip: null,
+    actor_user_agent: null,
+    action: 'fomo.slack.failed',
+    target: 'tool:slack.founder_review',
+    result: 'failure',
+    detail: {
+      alert_id,
+      rank_result_id,
+      message_id,
+      error_code: result.code,
+      reason: result.reason
+    }
+  });
+  return 'failed';
+}
+
+// Validates the transition via the pure state-machine function before
+// writing. If the transition is invalid (programming error — we always
+// drive from a known prior state), audit state.transitioned with
+// result=failure but do NOT throw — the cycle should continue and the
+// downstream call sites can decide what to do.
+async function writeTransition(
+  transitions: AlertStateTransitionStore,
+  auditStore: AuditStore,
+  input: {
+    alert_id: string;
+    user_id: string;
+    from_state: Parameters<typeof transition>[0];
+    to_state: Parameters<typeof transition>[1];
+    reason: string;
+  }
+): Promise<void> {
+  const validated = transition(input.from_state, input.to_state, input.reason);
+  if ('error' in validated) {
+    await auditStore.write({
+      actor_user_id: input.user_id,
+      actor_ip: null,
+      actor_user_agent: null,
+      action: 'state.transitioned',
+      target: `alert:${input.alert_id}`,
+      result: 'failure',
+      detail: {
+        alert_id: input.alert_id,
+        from_state: input.from_state,
+        to_state: input.to_state,
+        error_code: 'invalid_transition',
+        reason: validated.reason
+      }
+    });
+    return;
+  }
+  await transitions.write({
+    alert_id: input.alert_id,
+    user_id: input.user_id,
+    from_state: input.from_state,
+    to_state: input.to_state,
+    reason: input.reason
+  });
+  await auditStore.write({
+    actor_user_id: input.user_id,
+    actor_ip: null,
+    actor_user_agent: null,
+    action: 'state.transitioned',
+    target: `alert:${input.alert_id}`,
+    result: 'success',
+    detail: {
+      alert_id: input.alert_id,
+      from_state: input.from_state,
+      to_state: input.to_state
+    }
+  });
 }

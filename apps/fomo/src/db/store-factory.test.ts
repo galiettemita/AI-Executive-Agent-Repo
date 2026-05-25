@@ -8,6 +8,7 @@ import { InMemoryToolInvocationStore } from '../core/tool-invocations.ts';
 import { InMemoryFeedbackStore } from '../memory/feedback-events.ts';
 import { InMemoryGmailCursorStore } from '../memory/gmail-cursors.ts';
 import { InMemoryRankResultStore } from '../memory/rank-results.ts';
+import { InMemoryAlertStore } from '../memory/alerts.ts';
 import { InMemoryMemorySignalStore } from '../memory/memory-signals.ts';
 import { InMemoryTokenStore } from '../security/oauth/token-store.ts';
 import { closeDbClient } from './client.ts';
@@ -30,6 +31,7 @@ describe('createStores — in-memory selection (default, no DATABASE_URL)', () =
     assert.ok(handle.stores.tokens instanceof InMemoryTokenStore);
     assert.ok(handle.stores.gmailCursors instanceof InMemoryGmailCursorStore);
     assert.ok(handle.stores.rankResults instanceof InMemoryRankResultStore);
+    assert.ok(handle.stores.alerts instanceof InMemoryAlertStore);
   });
 
   it('returns in-memory bundle when BREVIO_DEV_MODE=true (regardless of NODE_ENV)', () => {
@@ -60,6 +62,7 @@ describe('createStores — Postgres selection when DATABASE_URL is set', () => {
     assert.equal(handle.stores.tokens instanceof InMemoryTokenStore, false);
     assert.equal(handle.stores.gmailCursors instanceof InMemoryGmailCursorStore, false);
     assert.equal(handle.stores.rankResults instanceof InMemoryRankResultStore, false);
+    assert.equal(handle.stores.alerts instanceof InMemoryAlertStore, false);
     // Close the pool so the test process does not hang on the open socket.
     if (handle.db) await closeDbClient(handle.db);
   });

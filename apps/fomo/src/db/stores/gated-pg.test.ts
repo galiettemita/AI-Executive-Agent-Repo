@@ -32,6 +32,7 @@ import { PostgresFeedbackStore } from './feedback-postgres.js';
 import { PostgresGmailCursorStore } from './gmail-cursors-postgres.js';
 import { PostgresMemorySignalStore } from './memory-postgres.js';
 import { PostgresRankResultStore } from './rank-results-postgres.js';
+import { PostgresAlertStore } from './alerts-postgres.js';
 import { PostgresTokenStore } from './token-postgres.js';
 import { PostgresToolInvocationStore } from './tool-invocations-postgres.js';
 
@@ -85,6 +86,7 @@ describe('Phase 2E gated Postgres verification', { skip: !RUN_PG ? 'BREVIO_RUN_P
     const tables = result.rows.map((r) => r.tablename);
     assert.deepEqual(tables, [
       'alert_state_transitions',
+      'alerts',
       'audit_log',
       'consent',
       'cost_records',
@@ -581,6 +583,96 @@ describe('Phase 2E gated Postgres verification', { skip: !RUN_PG ? 'BREVIO_RUN_P
       const forbidden = ['body_plain', 'body_html', 'headers', 'attachments', 'prompt', 'email_body'];
       for (const f of forbidden) {
         assert.ok(!cols.has(f), `rank_results must not have column '${f}'`);
+      }
+    });
+  });
+
+  describe('PostgresAlertStore (Phase 3D.1)', () => {
+    const alertFixture = (
+      over: Partial<Parameters<PostgresAlertStore['create']>[0]> = {}
+    ) => ({
+      alert_id: 'alert-pg-1',
+      user_id: 'u-alert-1',
+      message_id: 'msg-alert-1',
+      rank_result_id: 100,
+      label: 'important' as const,
+      score: 0.85,
+      ...over
+    });
+
+    it('create + get round-trip preserves every field', async () => {
+      assert.ok(db);
+      const store = new PostgresAlertStore(db);
+      const outcome = await store.create(alertFixture());
+      assert.equal(outcome.inserted, true);
+      assert.equal(outcome.alert.alert_id, 'alert-pg-1');
+      const row = await store.get('alert-pg-1');
+      assert.ok(row);
+      assert.equal(row?.user_id, 'u-alert-1');
+      assert.equal(row?.message_id, 'msg-alert-1');
+      assert.equal(row?.rank_result_id, 100);
+      assert.equal(row?.label, 'important');
+      assert.equal(row?.score, 0.85);
+      assert.ok(row?.created_at);
+    });
+
+    it('UNIQUE on rank_result_id: second create reports inserted=false, returns existing row', async () => {
+      assert.ok(db);
+      const store = new PostgresAlertStore(db);
+      const first = await store.create(alertFixture({ alert_id: 'alert-orig', rank_result_id: 200 }));
+      assert.equal(first.inserted, true);
+      // Attempt a duplicate write with a DIFFERENT alert_id but the SAME rank_result_id:
+      const second = await store.create(
+        alertFixture({ alert_id: 'alert-attempted', rank_result_id: 200, score: 0.1 })
+      );
+      assert.equal(second.inserted, false);
+      // Returns the ORIGINAL alert, not the attempted one:
+      assert.equal(second.alert.alert_id, 'alert-orig');
+      assert.equal(second.alert.score, 0.85);
+      // Attempted alert_id was never persisted:
+      assert.equal(await store.get('alert-attempted'), null);
+    });
+
+    it('getByRankResult finds the alert', async () => {
+      assert.ok(db);
+      const store = new PostgresAlertStore(db);
+      await store.create(alertFixture({ alert_id: 'alert-byrank', rank_result_id: 300 }));
+      const row = await store.getByRankResult(300);
+      assert.equal(row?.alert_id, 'alert-byrank');
+    });
+
+    it('count + recent are per-user scoped', async () => {
+      assert.ok(db);
+      const store = new PostgresAlertStore(db);
+      await store.create(alertFixture({ alert_id: 'a-cnt-1', rank_result_id: 401, user_id: 'u-cnt' }));
+      await store.create(alertFixture({ alert_id: 'a-cnt-2', rank_result_id: 402, user_id: 'u-cnt' }));
+      await store.create(alertFixture({ alert_id: 'a-cnt-3', rank_result_id: 403, user_id: 'u-other' }));
+      assert.equal(await store.count('u-cnt'), 2);
+      assert.equal(await store.count('u-other'), 1);
+      const recent = await store.recent('u-cnt', 5);
+      assert.equal(recent.length, 2);
+      for (const r of recent) assert.equal(r.user_id, 'u-cnt');
+    });
+
+    it('privacy invariant: alerts has zero payload-shaped columns', async () => {
+      assert.ok(pglite);
+      const result = await pglite.query<{ column_name: string }>(
+        `SELECT column_name FROM information_schema.columns
+         WHERE table_schema = 'public' AND table_name = 'alerts'`
+      );
+      const cols = new Set(result.rows.map((r) => r.column_name));
+      const forbidden = [
+        'body_plain',
+        'body_html',
+        'headers',
+        'attachments',
+        'subject',
+        'sender_email',
+        'snippet',
+        'card_payload'
+      ];
+      for (const f of forbidden) {
+        assert.ok(!cols.has(f), `alerts must not have column '${f}'`);
       }
     });
   });

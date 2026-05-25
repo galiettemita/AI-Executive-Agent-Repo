@@ -57,6 +57,10 @@ export interface RankResultWriteOutcome {
   // True when the row was newly inserted. False when (user_id, message_id)
   // already had a row — the existing row is unchanged.
   readonly inserted: boolean;
+  // ID of the row — either the newly-inserted id or the existing one.
+  // Always populated so Phase 3D.1 callers can use it as the alert
+  // foreign key (alerts.rank_result_id) without a second query.
+  readonly rank_result_id: number;
 }
 
 export interface RankResultStore {
@@ -81,11 +85,12 @@ export class InMemoryRankResultStore implements RankResultStore {
       (r) => r.user_id === input.user_id && r.message_id === input.message_id
     );
     if (existing) {
-      return Object.freeze({ inserted: false });
+      return Object.freeze({ inserted: false, rank_result_id: existing.id });
     }
+    const id = this.nextId++;
     this.rows.push(
       Object.freeze({
-        id: this.nextId++,
+        id,
         user_id: input.user_id,
         message_id: input.message_id,
         invocation_id: input.invocation_id,
@@ -101,7 +106,7 @@ export class InMemoryRankResultStore implements RankResultStore {
         created_at: new Date().toISOString()
       })
     );
-    return Object.freeze({ inserted: true });
+    return Object.freeze({ inserted: true, rank_result_id: id });
   }
 
   async get(userId: string, messageId: string): Promise<RankResult | null> {

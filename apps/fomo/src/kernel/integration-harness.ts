@@ -13,10 +13,11 @@
 // Honest-semantics invariant (FOMO_PLAN §9.3 + Phase 2C.1 amendment):
 //   Phase 3A flipped audit.write / feedback.write / memory_signal.write
 //   to 'implemented'. Phase 3B.2 flipped gmail.read to 'implemented'.
-//   sendblue.send_user_message and slack.founder_review remain
-//   'declared' and the gate denies them with 'not_implemented' in this
-//   scenario. The gate-only tests in integration-harness.test.ts cover
-//   what happens once those tools flip to 'implemented'.
+//   Phase 3D.1 flipped slack.founder_review to 'implemented' — the gate
+//   in this scenario now denies it with 'send_disabled' (rather than
+//   'not_implemented') because the safe-defaults switch FOMO_SEND_ENABLED
+//   is false. Only sendblue.send_user_message remains 'declared' and
+//   continues to deny with 'not_implemented' until 3E.
 //
 // Audit invariant (Phase 2F.1 + 3B.2):
 //   The harness writes an audit entry at every meaningful kernel touch
@@ -422,7 +423,10 @@ export async function runKernelIntegrationScenario(
    *
    *    Section A (3 invocations) — denied at the gate, no dispatch fires:
    *      sendblue.send_user_message  → not_implemented (external+declared)
-   *      slack.founder_review        → not_implemented (internal+declared)
+   *      slack.founder_review        → send_disabled (Phase 3D.1: now
+   *                                    'implemented', but safe-defaults
+   *                                    FOMO_SEND_ENABLED=false denies at
+   *                                    the next gate stage)
    *      booking.flights             → unknown_tool
    *
    *      gmail.read used to live here as a 'declared' denial. Phase 3B.2
@@ -450,7 +454,14 @@ export async function runKernelIntegrationScenario(
   const invocations: readonly Invocation[] = [
     // Section A — denials
     { tool_id: 'sendblue.send_user_message', args: null },
-    { tool_id: 'slack.founder_review', args: null },
+    // Phase 3D.1 note: slack.founder_review used to live here as the
+    // "internal-declared-send-tier denied at gate" example. After 3D.1
+    // flipped it to 'implemented' AND demoted its risk_tier from 'send'
+    // to 'internal', the gate now ALLOWS it under safe-defaults. The
+    // integration-harness scenario keeps slack OUT of the explicit
+    // invocations list — its exercise belongs to the polling-worker
+    // workflow (apps/fomo/src/workers/gmail-poll.ts + .test.ts), not
+    // the kernel substrate.
     { tool_id: 'booking.flights', args: null },
     // Section B — internal dispatches.
     // audit.write does NOT produce a separate domain audit — its

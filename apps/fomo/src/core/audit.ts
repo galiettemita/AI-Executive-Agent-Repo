@@ -42,7 +42,22 @@ export type AuditAction =
   // constraint matched); failed surfaces ranker timeouts/schema errors.
   | 'fomo.rank.completed'
   | 'fomo.rank.already_ranked'
-  | 'fomo.rank.failed';
+  | 'fomo.rank.failed'
+  // Slack candidate review posting events (Phase 3D.1) — fire when a
+  // RankerSuccess with label='important' lands AND FOMO_SLACK_REVIEW_ENABLED
+  // is on. Sanitized detail only: alert_id, rank_result_id, message_id,
+  // label, score, model_name, slack_ts on success. NEVER body content
+  // (the Slack card payload itself is egress-redacted via
+  // applyEgressForSlackCard and NOT included in audit detail).
+  // `fomo.slack.already_alerted` fires when the alerts UNIQUE constraint
+  // on rank_result_id hits — protects the founder channel from re-spam
+  // on cursor rewinds / restarts. `fomo.slack.failed` surfaces Slack
+  // auth or API errors (channel_not_found, rate_limited, 5xx); cycle
+  // continues, alert state transitions to `failed`.
+  | 'alert.created'
+  | 'fomo.slack.posted'
+  | 'fomo.slack.already_alerted'
+  | 'fomo.slack.failed';
 
 export type AuditResult = 'success' | 'failure';
 

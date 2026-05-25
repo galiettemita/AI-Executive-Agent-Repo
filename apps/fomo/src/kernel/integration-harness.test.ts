@@ -29,18 +29,18 @@ describe('Kernel Integration Gate — full scenario report', () => {
       [...report.registry.internal_tool_ids].sort(),
       ['audit.write', 'feedback.write', 'memory_signal.write', 'slack.founder_review']
     );
-    // Phase 3A + 3B.2 invariant: gmail.read + the three internal
-    // capabilities are 'implemented'. sendblue + slack remain 'declared'
-    // until 3E / 3D wire their adapters.
-    assert.equal(report.registry.declared_tool_ids.length, 2);
-    assert.equal(report.registry.implemented_tool_ids.length, 4);
+    // Phase 3A + 3B.2 + 3D.1 invariant: the three internal capabilities,
+    // gmail.read, and slack.founder_review are 'implemented'. Only
+    // sendblue.send_user_message remains 'declared' until 3E.
+    assert.equal(report.registry.declared_tool_ids.length, 1);
+    assert.equal(report.registry.implemented_tool_ids.length, 5);
     assert.deepEqual(
       [...report.registry.implemented_tool_ids].sort(),
-      ['audit.write', 'feedback.write', 'gmail.read', 'memory_signal.write']
+      ['audit.write', 'feedback.write', 'gmail.read', 'memory_signal.write', 'slack.founder_review']
     );
     assert.deepEqual(
       [...report.registry.declared_tool_ids].sort(),
-      ['sendblue.send_user_message', 'slack.founder_review']
+      ['sendblue.send_user_message']
     );
 
     // ---- Kill Switches (Phase 2B + 3B.2) — safe defaults all-disabled ----
@@ -51,33 +51,40 @@ describe('Kernel Integration Gate — full scenario report', () => {
     assert.equal(report.kill_switches.max_users, 1);
     assert.equal(report.kill_switches.polling_interval_ms, 60_000);
 
-    // ---- Permission Gate → Dispatch (Phase 2B + 2B.1 + 2C.1 + 3A + 3B.2) ----
-    // 8 explicit invocations through the loop:
-    //   Section A — 3 denials at the gate (no dispatch):
+    // ---- Permission Gate → Dispatch (Phase 2B + 2B.1 + 2C.1 + 3A + 3B.2 + 3D.1) ----
+    // 7 explicit invocations through the loop:
+    //   Section A — 2 denials at the gate (no dispatch):
     //     sendblue.send_user_message  → not_implemented (external+declared)
-    //     slack.founder_review        → not_implemented (internal+declared)
     //     booking.flights             → unknown_tool
     //   Section B — 5 allows + dispatch executes:
     //     audit.write                 → executor writes 'session.created' audit
     //     feedback.write × 2          → executor writes feedback events
     //     memory_signal.write × 2     → executor upserts memory signals
     //
+    // Phase 3D.1 note: slack.founder_review used to be in Section A as
+    // a denied example ('declared' + send-tier). Post-3D.1 it is
+    // 'implemented' and demoted to internal-tier, so the gate would
+    // allow it. The harness deliberately keeps slack OUT of the
+    // explicit loop — its exercise belongs to the polling-worker
+    // workflow tests (workers/gmail-poll.test.ts), not the kernel.
+    //
     // Plus 1 additional dispatch through the Phase 3B.2 polling worker
     // (section 3.5 of the harness): gmail.read on one new message. The
     // worker writes its own policy.decided + tool.invoked audit pair
     // under SYNTHETIC_USER_ID, plus a system-actor gmail.poll.cycle entry.
-    assert.equal(report.policy_decisions.length, 8);
+    assert.equal(report.policy_decisions.length, 7);
     const decisions = report.policy_decisions;
-    // 3 denied + 5 allowed (explicit loop only).
-    assert.equal(decisions.filter((d) => !d.allowed).length, 3);
+    // 2 denied + 5 allowed (explicit loop only).
+    assert.equal(decisions.filter((d) => !d.allowed).length, 2);
     assert.equal(decisions.filter((d) => d.allowed).length, 5);
     // Each denied tool with the expected code.
     const deniedByTool = new Map(
       decisions.filter((d) => !d.allowed).map((d) => [d.tool_id, d.code])
     );
     assert.equal(deniedByTool.get('sendblue.send_user_message'), 'not_implemented');
-    assert.equal(deniedByTool.get('slack.founder_review'), 'not_implemented');
     assert.equal(deniedByTool.get('booking.flights'), 'unknown_tool');
+    // slack.founder_review removed from the explicit loop in Phase 3D.1.
+    assert.equal(deniedByTool.has('slack.founder_review'), false);
     // gmail.read is no longer in the explicit loop (the polling worker
     // drives it in section 3.5).
     assert.equal(deniedByTool.has('gmail.read'), false);
@@ -140,10 +147,11 @@ describe('Kernel Integration Gate — full scenario report', () => {
     assert.equal(report.cost.records_written, 1);
     assert.ok(report.cost.total_usd > 0, `expected non-zero cost, got ${report.cost.total_usd}`);
 
-    // ---- Tool Invocations (Phase 2E + 3A + 3B.2) ----
-    // 8 from the explicit loop (3 denials + 5 dispatched) + 1 from the
-    // polling worker (gmail.read on one new message) = 9.
-    assert.equal(report.tool_invocations.entries_written, 9);
+    // ---- Tool Invocations (Phase 2E + 3A + 3B.2 + 3D.1) ----
+    // 7 from the explicit loop (2 denials + 5 dispatched; Phase 3D.1
+    // removed slack.founder_review from this list) + 1 from the polling
+    // worker (gmail.read on one new message) = 8.
+    assert.equal(report.tool_invocations.entries_written, 8);
 
     // ---- Gmail polling worker (Phase 3B.2) ----
     // One cycle. One user (SYNTHETIC_USER_ID) has a seeded token + cursor.
@@ -180,7 +188,10 @@ describe('Kernel Integration Gate — full scenario report', () => {
     // user-scoped so that entry does NOT count toward entries_written
     // below. The worker's own unit tests assert the cycle entry's shape.
     assert.ok(report.audit.entries_written > 0, 'audit log must participate in the kernel path');
-    assert.equal(report.audit.entries_written, 30);
+    // Phase 3D.1: removing slack from the explicit invocations list
+    // dropped 2 audit entries (one policy.decided + one tool.invoked),
+    // bringing the total from 30 to 28.
+    assert.equal(report.audit.entries_written, 28);
     // Each required audit category must be exercised at least once.
     for (const requiredAction of [
       'policy.decided',
@@ -195,8 +206,10 @@ describe('Kernel Integration Gate — full scenario report', () => {
         `audit log missing required action: ${requiredAction}`
       );
     }
-    assert.equal(report.audit.by_action['policy.decided'], 9);
-    assert.equal(report.audit.by_action['tool.invoked'], 9);
+    // Phase 3D.1 dropped slack from the explicit invocations list,
+    // so policy.decided + tool.invoked each lost one entry (9 → 8).
+    assert.equal(report.audit.by_action['policy.decided'], 8);
+    assert.equal(report.audit.by_action['tool.invoked'], 8);
     assert.equal(report.audit.by_action['session.created'], 1);
     assert.equal(report.audit.by_action['state.transitioned'], 6);
     assert.equal(report.audit.by_action['feedback.written'], 2);
@@ -234,10 +247,10 @@ describe('Kernel Integration Gate — full scenario report', () => {
     // Both runs report the same counts; neither sees the other's writes.
     assert.equal(a.feedback.events_written, 2);
     assert.equal(b.feedback.events_written, 2);
-    assert.equal(a.tool_invocations.entries_written, 9);
-    assert.equal(b.tool_invocations.entries_written, 9);
-    assert.equal(a.audit.entries_written, 30);
-    assert.equal(b.audit.entries_written, 30);
+    assert.equal(a.tool_invocations.entries_written, 8);
+    assert.equal(b.tool_invocations.entries_written, 8);
+    assert.equal(a.audit.entries_written, 28);
+    assert.equal(b.audit.entries_written, 28);
     // Polling cursor advance is independent per run.
     assert.equal(a.polling.cursor_after, 'h-harness-2');
     assert.equal(b.polling.cursor_after, 'h-harness-2');
@@ -308,7 +321,10 @@ describe('Kernel Integration Gate — Permission Gate honest semantics', () => {
     assert.equal(d.code, 'not_implemented');
   });
 
-  it('declared internal tool (slack.founder_review) denies not_implemented (Phase 3D wires the adapter)', () => {
+  it('implemented internal-tier tool (slack.founder_review) DENIES slack_review_disabled under safe-defaults (Phase 3D.1)', () => {
+    // Phase 3D.1: the slack-review kill switch is enforced at the
+    // policy gate too (defense-in-depth, not only at bootstrap).
+    // Safe-defaults have slack_review_enabled=false → deny.
     const d = decidePolicy(
       { tool_id: 'slack.founder_review', user_id: 'u1' },
       {
@@ -318,7 +334,22 @@ describe('Kernel Integration Gate — Permission Gate honest semantics', () => {
         hasOAuth: () => true
       }
     );
-    assert.equal(d.code, 'not_implemented');
+    assert.equal(d.allowed, false);
+    assert.equal(d.code, 'slack_review_disabled');
+  });
+
+  it('implemented internal-tier tool (slack.founder_review) ALLOWS when FOMO_SLACK_REVIEW_ENABLED=true (Phase 3D.1)', () => {
+    const d = decidePolicy(
+      { tool_id: 'slack.founder_review', user_id: 'u1' },
+      {
+        registry: createToolRegistry(),
+        switches: Object.freeze({ ...SAFE_DEFAULT_KILL_SWITCHES, slack_review_enabled: true }),
+        hasConsent: () => true,
+        hasOAuth: () => true
+      }
+    );
+    assert.equal(d.allowed, true);
+    assert.equal(d.code, 'allowed');
   });
 
   it('implemented internal capability (audit.write) → allow when policy passes', () => {

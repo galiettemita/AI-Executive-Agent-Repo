@@ -36,6 +36,7 @@ export type PolicyDecisionCode =
   | 'unknown_tier'
   | 'send_disabled'
   | 'auto_send_disabled'
+  | 'slack_review_disabled'
   | 'consent_missing'
   | 'oauth_not_connected'
   | 'policy_check_error';
@@ -109,6 +110,27 @@ export function decidePolicy(req: PolicyRequest, deps: PolicyGateDeps): PolicyDe
     return deny(
       'not_implemented',
       `tool ${tool.id} is declared in the v0.1 registry but no executor is wired yet`,
+      tool_id,
+      user_id
+    );
+  }
+
+  // 2a. Tool-specific kill switches. Phase 3D.1 added FOMO_SLACK_REVIEW_ENABLED
+  // and demoted slack.founder_review's risk_tier from 'send' to 'internal'.
+  // The kill switch must enforce at the action boundary too, not only at
+  // bootstrap — otherwise an admin route / CLI / future caller invoking
+  // dispatch.execute('slack.founder_review', ...) directly bypasses the
+  // bootstrap gate entirely. Defense-in-depth: the gate denies regardless of
+  // who wired the SlackClient.
+  //
+  // This is the ONE tool-id-specific check in the gate. If more tools acquire
+  // their own kill switches we should generalize (e.g. add a
+  // 'requires_kill_switch?: keyof KillSwitches' field to ToolDescriptor and
+  // check it generically). Keep this branch narrow until then.
+  if (tool.id === 'slack.founder_review' && !deps.switches.slack_review_enabled) {
+    return deny(
+      'slack_review_disabled',
+      `FOMO_SLACK_REVIEW_ENABLED is false; slack.founder_review blocked at the policy gate`,
       tool_id,
       user_id
     );

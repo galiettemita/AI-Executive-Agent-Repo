@@ -4,7 +4,8 @@
 // as their callers do. Current state:
 //   * gmail_cursors    — Phase 3B.1 (caller: Gmail polling worker)
 //   * rank_results     — Phase 3C.3 (caller: Gmail polling worker → ranker)
-//   * alerts / message_events / replies / sender_importance / suppressions /
+//   * alerts           — Phase 3D.1 (caller: Slack candidate review posting)
+//   * message_events / replies / sender_importance / suppressions /
 //     user_preferences — still deferred; land with their callers.
 // No fake/empty tables here.
 //
@@ -22,6 +23,7 @@
 //     upserts use ON CONFLICT.
 
 import {
+  bigint,
   bigserial,
   boolean,
   doublePrecision,
@@ -304,5 +306,55 @@ export const rank_results = pgTable(
     uniqueIndex('rank_results_user_message_uq').on(table.user_id, table.message_id),
     index('rank_results_user_created_idx').on(table.user_id, table.created_at),
     index('rank_results_label_idx').on(table.user_id, table.label)
+  ]
+);
+
+/* ---------------------------------------------------------------------- */
+/* alerts — new in Phase 3D.1                                             */
+/* ---------------------------------------------------------------------- */
+//
+// One row per candidate alert posted (or to be posted) to the founder
+// Slack channel for review. Created when:
+//   1. ranker returned a RankerSuccess and wrote a rank_results row, AND
+//   2. that rank_results row has label='important', AND
+//   3. FOMO_SLACK_REVIEW_ENABLED is on
+//
+// State lives in alert_state_transitions (transition: ranked →
+// queued_for_review on Slack post success; ranked → failed on post
+// failure). 3D.1 does NOT add the approval-receiving path; alerts sit
+// at queued_for_review indefinitely until Phase 3D.2 wires the
+// inbound Slack callback that transitions queued_for_review →
+// approved | rejected.
+//
+// Idempotency: UNIQUE on rank_result_id. A given rank can produce AT
+// MOST one alert. When the polling worker re-observes a message that
+// is already ranked (fomo.rank.already_ranked path), the alert
+// creation MUST find the existing row instead of inserting — the
+// store returns { inserted: false } and the worker audits
+// `fomo.slack.already_alerted` instead of posting a second Slack card.
+// This protects the founder's Slack channel from re-spamming on
+// cursor rewinds, Gmail history replays, or worker restarts.
+//
+// Privacy: alerts table holds ONLY operational identifiers (alert_id,
+// user_id, message_id, rank_result_id, label, score, created_at).
+// NO body content. NO subject line. NO sender_email. The Slack card
+// itself goes through applyEgressForSlackCard before posting; the
+// payload sent to Slack is never persisted here.
+
+export const alerts = pgTable(
+  'alerts',
+  {
+    alert_id: text('alert_id').primaryKey(),
+    user_id: text('user_id').notNull(),
+    message_id: text('message_id').notNull(),
+    rank_result_id: bigint('rank_result_id', { mode: 'number' }).notNull(),
+    label: text('label').notNull(),
+    score: doublePrecision('score').notNull(),
+    created_at: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => [
+    uniqueIndex('alerts_rank_result_uq').on(table.rank_result_id),
+    index('alerts_user_created_idx').on(table.user_id, table.created_at),
+    index('alerts_user_message_idx').on(table.user_id, table.message_id)
   ]
 );

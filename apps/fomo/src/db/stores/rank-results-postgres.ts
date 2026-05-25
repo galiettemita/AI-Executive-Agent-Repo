@@ -39,7 +39,19 @@ export class PostgresRankResultStore implements RankResultStore {
       })
       .onConflictDoNothing({ target: [rank_results.user_id, rank_results.message_id] })
       .returning({ id: rank_results.id });
-    return Object.freeze({ inserted: returned.length > 0 });
+    if (returned.length > 0) {
+      return Object.freeze({ inserted: true, rank_result_id: returned[0]!.id });
+    }
+    // Conflict path: fetch the existing row's id so the Phase 3D.1
+    // caller can use it as a foreign-key (alerts.rank_result_id)
+    // without a second round-trip from the caller side.
+    const existing = await this.get(input.user_id, input.message_id);
+    if (!existing) {
+      throw new Error(
+        `PostgresRankResultStore.write: ON CONFLICT fired for (${input.user_id}, ${input.message_id}) but the existing row could not be re-fetched`
+      );
+    }
+    return Object.freeze({ inserted: false, rank_result_id: existing.id });
   }
 
   async get(userId: string, messageId: string): Promise<RankResult | null> {

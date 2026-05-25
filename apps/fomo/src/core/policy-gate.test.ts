@@ -58,9 +58,9 @@ describe('decidePolicy — unknown tool', () => {
 describe('decidePolicy — not_implemented (any declared tool, regardless of surface)', () => {
   // Phase 2C.1 honest semantics: a tool with executor_status='declared'
   // denies not_implemented at the gate. Surface (external vs internal)
-  // does not bypass this. After Phase 3B.2 the only declared tools in
-  // the registry are sendblue.send_user_message and slack.founder_review;
-  // gmail.read is now implemented (executor wired in Phase 3B.2).
+  // does not bypass this. After Phase 3D.1 the only declared tool in
+  // the registry is sendblue.send_user_message (3E will flip it);
+  // gmail.read (3B.2) and slack.founder_review (3D.1) are now implemented.
 
   it('denies sendblue.send_user_message (external+declared)', () => {
     const d = decidePolicy({ tool_id: 'sendblue.send_user_message', user_id: 'u1' }, makeDeps());
@@ -69,17 +69,14 @@ describe('decidePolicy — not_implemented (any declared tool, regardless of sur
     assert.match(d.reason, /tool sendblue\.send_user_message is declared.*no executor is wired/);
   });
 
-  it('denies slack.founder_review (internal+declared+send-tier) with not_implemented, NOT send_disabled', () => {
-    // not_implemented is checked before risk-tier. Without an adapter, the
+  it('denies sendblue.send_user_message with not_implemented even when send-tier kill switches are flipped on', () => {
+    // not_implemented is checked before risk-tier. Without an adapter the
     // tool is unreachable regardless of FOMO_SEND_ENABLED state.
-    const d = decidePolicy({ tool_id: 'slack.founder_review', user_id: 'u1' }, makeDeps());
-    assert.equal(d.allowed, false);
-    assert.equal(d.code, 'not_implemented');
-  });
-
-  it('denies slack.founder_review with not_implemented even when send-tier kill switches are flipped on', () => {
     const switches = loadKillSwitches({ FOMO_SEND_ENABLED: 'true', FOMO_AUTO_SEND_ENABLED: 'true' });
-    const d = decidePolicy({ tool_id: 'slack.founder_review', user_id: 'u1' }, makeDeps({ switches }));
+    const d = decidePolicy(
+      { tool_id: 'sendblue.send_user_message', user_id: 'u1' },
+      makeDeps({ switches })
+    );
     assert.equal(d.code, 'not_implemented');
   });
 
@@ -123,25 +120,69 @@ describe('decidePolicy — implemented tools allow when policy passes', () => {
     assert.equal(d.allowed, true);
   });
 
-  it('implemented slack.founder_review is still subject to send-tier kill switch (default denies send_disabled)', () => {
-    // Once Phase 3 wires a Slack adapter and flips slack to 'implemented',
-    // the send-tier gate fires normally. This proves not_implemented and the
-    // kill-switch gate are independent.
+  it('implemented slack.founder_review DENIES under safe defaults (Phase 3D.1: FOMO_SLACK_REVIEW_ENABLED=false)', () => {
+    // Phase 3D.1 enforces the slack-review kill switch at TWO layers:
+    // (1) bootstrap (build-time), and (2) the policy gate (action time).
+    // Safe-default switches have slack_review_enabled=false, so the gate
+    // must deny with 'slack_review_disabled' regardless of whether the
+    // executor is wired. Defense-in-depth — no admin route / CLI /
+    // future caller can bypass the kill switch by going through dispatch.
     const d = decidePolicy(
       { tool_id: 'slack.founder_review', user_id: 'u1' },
       makeDeps({ implemented: ['slack.founder_review'] })
     );
     assert.equal(d.allowed, false);
-    assert.equal(d.code, 'send_disabled');
+    assert.equal(d.code, 'slack_review_disabled');
+    assert.match(d.reason, /FOMO_SLACK_REVIEW_ENABLED is false/);
   });
 
-  it('implemented slack.founder_review allows when FOMO_SEND_ENABLED is on', () => {
-    const switches = loadKillSwitches({ FOMO_SEND_ENABLED: 'true' });
+  it('implemented slack.founder_review ALLOWS when FOMO_SLACK_REVIEW_ENABLED=true', () => {
+    const switches = loadKillSwitches({ FOMO_SLACK_REVIEW_ENABLED: 'true' });
     const d = decidePolicy(
       { tool_id: 'slack.founder_review', user_id: 'u1' },
       makeDeps({ implemented: ['slack.founder_review'], switches })
     );
     assert.equal(d.allowed, true);
+    assert.equal(d.code, 'allowed');
+  });
+
+  it('slack.founder_review denies BEFORE risk-tier and consent/oauth checks short-circuit (check ordering proof)', () => {
+    // Even with FOMO_SEND_ENABLED=true, the slack_review_disabled check
+    // fires first because it is more specific (tool-id-targeted) than
+    // generic risk-tier. Proves the kill switch can't be bypassed by
+    // flipping unrelated switches.
+    const switches = loadKillSwitches({
+      FOMO_SEND_ENABLED: 'true',
+      FOMO_AUTO_SEND_ENABLED: 'true'
+      // FOMO_SLACK_REVIEW_ENABLED unset (false)
+    });
+    const d = decidePolicy(
+      { tool_id: 'slack.founder_review', user_id: 'u1' },
+      makeDeps({ implemented: ['slack.founder_review'], switches })
+    );
+    assert.equal(d.code, 'slack_review_disabled');
+  });
+
+  it('non-slack tools are unaffected by FOMO_SLACK_REVIEW_ENABLED (no spillover)', () => {
+    // Negative test: setting slack_review_enabled does NOT affect any
+    // other tool's gate outcome. The check is narrow to tool_id ===
+    // 'slack.founder_review'.
+    const switches = loadKillSwitches({
+      FOMO_SLACK_REVIEW_ENABLED: 'true',
+      FOMO_SEND_ENABLED: 'true'
+    });
+    const sendblue = decidePolicy(
+      { tool_id: 'sendblue.send_user_message', user_id: 'u1' },
+      makeDeps({ implemented: ['sendblue.send_user_message'], switches })
+    );
+    assert.equal(sendblue.allowed, true);
+    // And flipping slack_review_enabled OFF does not change sendblue:
+    const switchesOff = loadKillSwitches({ FOMO_SEND_ENABLED: 'true' });
+    const sendblueOff = decidePolicy(
+      { tool_id: 'sendblue.send_user_message', user_id: 'u1' },
+      makeDeps({ implemented: ['sendblue.send_user_message'], switches: switchesOff })
+    );
+    assert.equal(sendblueOff.allowed, true);
   });
 });
 
@@ -323,15 +364,10 @@ describe('decidePolicy — check ordering and short-circuit', () => {
     // sendblue is external+declared+send. Under default kill switches BOTH
     // not_implemented and send_disabled would apply; the gate reports
     // not_implemented because it is the more fundamental defect.
+    // (After Phase 3D.1 flipped slack.founder_review to 'implemented',
+    // sendblue is the only remaining declared send-tier tool — so this
+    // single test covers the precedence rule for both surfaces.)
     const d = decidePolicy({ tool_id: 'sendblue.send_user_message', user_id: 'u1' }, makeDeps());
-    assert.equal(d.code, 'not_implemented');
-  });
-
-  it('reports not_implemented before send_disabled for any declared send-tier tool (internal)', () => {
-    // slack.founder_review is internal+declared+send. Same precedence:
-    // not_implemented short-circuits before the send-tier check, so a
-    // declared internal send tool never reaches the send_disabled deny.
-    const d = decidePolicy({ tool_id: 'slack.founder_review', user_id: 'u1' }, makeDeps());
     assert.equal(d.code, 'not_implemented');
   });
 

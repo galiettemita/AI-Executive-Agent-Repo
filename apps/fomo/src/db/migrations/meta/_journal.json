@@ -22,6 +22,13 @@
       "when": 1779677785205,
       "tag": "0002_rank_results",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1779732603610,
+      "tag": "0003_alerts",
+      "breakpoints": true
     }
   ]
 }
