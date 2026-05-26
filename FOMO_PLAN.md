@@ -148,9 +148,9 @@ Not safe to build now:
 
 ---
 
-## 4. The Seven MCP OS Architecture Laws
+## 4. The Eight MCP OS Architecture Laws
 
-These laws must shape implementation decisions. They are not all features to build in v0.1.
+These laws must shape implementation decisions. Laws §4.1–§4.7 describe the *structure* of the agent OS. Law §4.8 — **API-first, browser-fallback, approval-required** — is the *execution policy* every other law operates inside. It is a permanent companion rule, not a temporary note. The laws are not all features to build in v0.1.
 
 ### 4.1 Tool Lean-in
 
@@ -291,6 +291,68 @@ Future examples:
 * Safety Agent.
 
 Rule: no sub-agent exists until it has isolated tools, isolated context, tests, and audit logs.
+
+### 4.8 API-first, Browser-fallback, Approval-required (High-Risk Tool Execution Rule)
+
+**This is a permanent Brevio architecture law, on the same level of importance as §4.1–§4.7.** It is the execution policy on top of all seven structural rules — never a separable note, never a temporary implementation comment. Every layer that goes beyond Gmail-read in v0.1 (calendar, drafting, sending, MCP tools, payments, bookings, purchases, browser/computer-use, delegated agents) must satisfy this rule before it ships.
+
+Long-term Brevio must choose how to act in this order:
+
+1. **Prefer an official API, MCP server, or trusted adapter** whenever one exists. The structured, documented, permissioned path is always the first choice.
+2. **If no official API or MCP tool exists, browser automation may be considered — but only through a sandboxed executor.** Browser automation is a fallback, never a default.
+3. **Browser automation must go through Tool Registry, Permission Gate, audit logging, egress policy, kill switches, state tracking, and human approval.** Browser tools are not exempt from any of §4.1–§4.7.
+4. **For high-risk actions — payments, purchases, bookings, legal, healthcare, financial actions, account changes, destructive actions, permission expansion, or anything irreversible — Brevio must require explicit user approval before the final action.**
+5. **For some high-risk actions, Brevio may prepare the action but require the user to complete the final confirmation manually.** Preparing is not committing.
+6. **The system must never silently connect accounts, silently expand permissions, silently use browser automation, silently complete payments, silently purchase items, or silently submit bookings.** Silence at the moment of consequence is forbidden.
+7. **Every new browser-automation capability needs its own founder-only smoke test before production use.** Mock tests prove code. Smoke tests prove reality.
+8. **Every high-risk workflow must have a clear rollback / cancel / manual-review story where possible.** "What does the user do if this goes wrong?" must have an answer before the workflow ships.
+9. **If the risk is too high or the system cannot verify the action safely, Brevio must guide the user instead of executing.** The right response to uncertainty is help, not autonomy.
+
+Required wording (so the rule survives rewording over time):
+
+> Brevio may decide that a missing tool is needed, but it may not silently obtain access, silently use browser automation, or silently complete high-risk actions. The AI may propose; the system gates; the user approves.
+>
+> API first. Browser fallback only when sandboxed. User approval before final commitment.
+>
+> Mock tests prove code. Smoke tests prove reality. Every real-world capability needs a founder-only smoke test before it is trusted.
+
+How §4.8 composes with §4.1–§4.7 (this rule does not replace any of them; it constrains how they are used at the moment of real-world consequence):
+
+* **§4.1 Tool Lean-in:** API / MCP / browser executor are each a tool capability. Each enters the registry, schema, permission, audit, risk-tier model. Browser automation does not bypass that.
+* **§4.2 Context Providers:** Brevio uses structured user/account context (preferences, prior approvals, suppressions) to *decide* what's needed before it asks. Context informs the question; context never replaces approval.
+* **§4.3 Gateway Connectors:** All auth, OAuth, consent, permissions, routing, rate limits, egress, logging, observability, audit pass through the gateway. No high-risk tool has a back door.
+* **§4.4 Stateful Session Managers:** High-risk workflows need explicit workflow state — what was proposed, what was approved, what was sent, what can still be rolled back. No "did we ship this yet?" ambiguity.
+* **§4.5 Sandboxed Executors:** Browser automation MUST be isolated. The sandbox is the technical enforcement layer for clauses 2 and 3 above.
+* **§4.6 Workflow Packagers:** Payments, bookings, purchases, account changes — each becomes its own explicit workflow package with named states, approval gates, and rollback affordances.
+* **§4.7 Delegated Reasoners:** Future specialized agents (inbox, calendar, travel, shopping) must remain permissioned and audited. A sub-agent does not get to silently do what the kernel forbids. The kill switches apply to the agent, not just the user.
+
+Worked example — payments. If a user asks:
+
+> "Pay John $25 on Venmo."
+
+Brevio must reason:
+
+1. This is a *payment*, so it is *high-risk*.
+2. First check whether there is an official Venmo API, MCP server, or trusted adapter.
+3. If no safe API exists, browser automation may be considered only as a sandboxed fallback.
+4. Brevio must not silently connect Venmo.
+5. Brevio must not silently submit payment.
+6. Brevio must ask for exact confirmation: recipient, amount, note, funding source (if visible / required), final submit action.
+7. If the browser automation risk is too high, Brevio should guide the user to complete the final payment manually.
+8. Every step (proposal, approval, attempt, outcome) must be audited.
+9. A founder-only smoke test is required before any such capability is trusted in production.
+
+Correct behavior:
+
+> "I can help prepare this, but I need your approval before anything is sent. Confirm: send $25 to John Smith on Venmo with note 'lunch'?"
+
+Incorrect behavior:
+
+> Brevio opens Venmo and sends money without exact user confirmation.
+
+The same shape applies to: connecting a new account, expanding OAuth scopes, booking flights / hotels / restaurants, making purchases, signing legal forms, submitting healthcare data, changing account settings, deleting anything.
+
+**v0.1 implementation status of §4.8:** the rule is in force as *design discipline*. It is enforced by the same substrate that gates Gmail and SendBlue in v0.1 — Permission Gate, Egress Policy, kill switches (`FOMO_SEND_ENABLED`, `FOMO_AUTO_SEND_ENABLED`, `FOMO_FRIEND_BETA_ENABLED`, `FOMO_SLACK_REVIEW_ENABLED`), audit log, founder-only smoke tests. The substrate already enforces "no silent send": `FOMO_SEND_ENABLED=false` by default, `FOMO_AUTO_SEND_ENABLED=false` always in v0.1, Slack founder review required before SendBlue fires. v0.1 does not add browser automation, payments, purchases, bookings, Venmo, or any other high-risk tool — those are explicitly forbidden by §5 below. §4.8 ensures that when they eventually arrive, they arrive through the same gate the existing v0.1 tools pass through, plus the explicit-approval clauses above.
 
 ---
 

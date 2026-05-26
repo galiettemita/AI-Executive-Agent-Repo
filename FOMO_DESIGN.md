@@ -258,7 +258,13 @@ Brevio should evolve toward an MCP-style operating system for personal AI agents
 
 MCP is not just “tool calling.” It is a way to build modular, governed, observable, production-ready agent infrastructure.
 
-The seven architecture laws below must shape Brevio long-term. In v0.1, only the smallest real slice is implemented.
+The eight architecture laws below must shape Brevio long-term. The first seven describe the *structure* of the agent OS (what kinds of components exist and how they relate). The eighth — **API-first, browser-fallback, approval-required** — is the *execution policy* that gates how high-risk actions are chosen and carried out across every one of the first seven. It is not optional and not separable; it is a permanent companion rule to the others. In v0.1, only the smallest real slice of any of them is implemented.
+
+> **API first. Browser fallback only when sandboxed. User approval before final commitment.**
+>
+> Brevio may decide that a missing tool is needed, but it may not silently obtain access, silently use browser automation, or silently complete high-risk actions. The AI may propose; the system gates; the user approves.
+>
+> Mock tests prove code. Smoke tests prove reality. Every real-world capability needs a founder-only smoke test before it is trusted.
 
 ### 1. Tool Lean-in
 
@@ -367,6 +373,75 @@ Each sub-agent must have isolated tools, isolated context, tests, and audit logs
 
 **v0.1:** no delegated reasoners. The FOMO workflow is the only active workflow.
 
+### 8. API-first, Browser-fallback, Approval-required (High-Risk Tool Execution Rule)
+
+**This is a permanent Brevio architecture law, on the same level of importance as the first seven rules.** It is the execution policy that sits on top of Tool Lean-in, Context Providers, Gateway Connectors, Stateful Session Managers, Sandboxed Executors, Workflow Packagers, and Delegated Reasoners — it does not replace them, it constrains how they may be used when real-world consequences are at stake.
+
+Long-term Brevio must choose how to act in this order:
+
+1. **Prefer an official API, MCP server, or trusted adapter** whenever one exists. The structured, documented, permissioned path is always the first choice.
+2. **If no official API or MCP tool exists, browser automation may be considered — but only through a sandboxed executor.** Browser automation is a fallback, never a default.
+3. **Browser automation must go through the full gateway: Tool Registry, Permission Gate, audit logging, egress policy, kill switches, state tracking, and human approval.** Browser tools are not exempt from any of the first seven rules.
+4. **For high-risk actions — payments, purchases, bookings, legal, healthcare, financial actions, account changes, destructive actions, permission expansion, or anything irreversible — Brevio must require explicit user approval before the final action.**
+5. **For some high-risk actions, Brevio may prepare the action but require the user to complete the final confirmation manually.** Preparing is not committing.
+6. **The system must never silently connect accounts, silently expand permissions, silently use browser automation, silently complete payments, silently purchase items, or silently submit bookings.** Silence at the moment of consequence is forbidden.
+7. **Every new browser-automation capability needs its own founder-only smoke test before production use.** Mock tests prove code. Smoke tests prove reality.
+8. **Every high-risk workflow must have a clear rollback / cancel / manual-review story where possible.** "What does the user do if this goes wrong?" must have an answer before the workflow ships.
+9. **If the risk is too high or the system cannot verify the action safely, Brevio must guide the user instead of executing.** The right response to uncertainty is help, not autonomy.
+
+#### Required wording (so the rule survives rewording over time)
+
+> Brevio may decide that a missing tool is needed, but it may not silently obtain access, silently use browser automation, or silently complete high-risk actions. The AI may propose; the system gates; the user approves.
+>
+> API first. Browser fallback only when sandboxed. User approval before final commitment.
+
+#### How this composes with the first seven rules
+
+This rule is not separate from rules 1–7. It is an execution policy built on top of them:
+
+* **Tool Lean-in (#1):** API / MCP / browser executor are each a *tool capability*; each enters the registry, schema, permission, audit, and risk-tier model. Browser automation does not bypass that.
+* **Context Providers (#2):** Brevio uses structured user/account context (preferences, prior approvals, suppression lists) to *decide* what is needed before it asks. Context informs the question; context never replaces approval.
+* **Gateway Connectors (#3):** All auth, OAuth, consent, permissions, routing, rate limits, egress policy, logging, observability, and audit pass through the gateway pattern. No high-risk tool has a back door.
+* **Stateful Session Managers (#4):** High-risk workflows need *explicit* workflow state — what was proposed, what was approved, what was sent, what can still be rolled back. No "did we ship this yet?" ambiguity.
+* **Sandboxed Executors (#5):** Browser automation must be isolated. The sandbox is the technical enforcement layer for rule #2 above.
+* **Workflow Packagers (#6):** Payments, bookings, purchases, account changes — each becomes its own explicit workflow package with named states, approval gates, and rollback affordances.
+* **Delegated Reasoners (#7):** Future specialized agents (inbox, calendar, travel, shopping) must remain permissioned and audited. A sub-agent does not get to silently do what the kernel forbids. The kill switches apply to the agent, not just the user.
+
+#### Worked example — payments
+
+If a user asks:
+
+> "Pay John $25 on Venmo."
+
+Brevio must reason in this order:
+
+1. This is a *payment*, so it is *high-risk*.
+2. First check whether there is an official Venmo API, MCP server, or trusted adapter.
+3. If no safe API exists, browser automation may be considered only as a sandboxed fallback.
+4. Brevio must not silently connect Venmo.
+5. Brevio must not silently submit payment.
+6. Brevio must ask for exact confirmation:
+   * recipient,
+   * amount,
+   * note,
+   * funding source, if visible / required,
+   * final submit action.
+7. If the browser automation risk is too high, Brevio should guide the user to complete the final payment manually rather than execute it.
+8. Every step (proposal, approval, attempt, outcome) must be audited.
+9. A founder-only smoke test is required before any such capability is trusted in production.
+
+**Correct behavior:**
+
+> "I can help prepare this, but I need your approval before anything is sent. Confirm: send $25 to John Smith on Venmo with note 'lunch'?"
+
+**Incorrect behavior:**
+
+> Brevio opens Venmo and sends money without exact user confirmation.
+
+The same shape applies to: connecting a new account, expanding OAuth scopes, booking flights / hotels / restaurants, making purchases, signing legal forms, submitting healthcare data, changing account settings, deleting anything.
+
+**v0.1:** the rule is in force as design discipline. The Permission Gate, Egress Policy, kill switches, audit log, and founder-only smoke tests are the v0.1 *implementations* of this rule for Gmail (read-only) and SendBlue (founder-only outbound after Slack approval). The substrate already enforces "no silent send" — `FOMO_SEND_ENABLED=false` by default, `FOMO_AUTO_SEND_ENABLED=false` always in v0.1, founder review in Slack required before SendBlue fires. As Brevio grows beyond FOMO into calendar, drafting, payments, bookings, browser/computer-use, MCP tools, and delegated agents, the same shape extends: the AI may propose; the system gates; the user approves.
+
 ### Practical interpretation
 
 Brevio should feel like one friendly assistant to the user.
@@ -380,7 +455,8 @@ Internally, it should behave like a safe operating system:
 * workflows are processes,
 * audit logs are observability,
 * sandboxes isolate dangerous execution,
-* delegated reasoners are future workers.
+* delegated reasoners are future workers,
+* **the API-first / browser-fallback / approval-required rule is the kernel's execution policy** — every irreversible action passes through it.
 
 ---
 

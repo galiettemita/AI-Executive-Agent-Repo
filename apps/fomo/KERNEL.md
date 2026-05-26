@@ -342,6 +342,29 @@ subphases so founder review is proven before any live text goes out.
 - Cause recursive audit logging from inside an executor
 - Mint an `AuthorizedToolCall` by any path other than `AuthorizedToolCall.fromDecision(decision)` — the private constructor is the structural lock; bypassing it via type-cast triggers the runtime `unauthorized` deny
 
+## Architecture Rule §4.8 — API-first, Browser-fallback, Approval-required
+
+> Permanent Brevio architecture law (founder directive 2026-05-25). Companion to the seven MCP/agent rules — not separable, not optional, not a temporary note. Lives in [`FOMO_DESIGN.md §6 Rule 8`](../../FOMO_DESIGN.md) and [`FOMO_PLAN.md §4.8`](../../FOMO_PLAN.md). Every future Brevio capability beyond Gmail-read must satisfy it before it ships.
+
+> **API first. Browser fallback only when sandboxed. User approval before final commitment.**
+>
+> Brevio may decide that a missing tool is needed, but it may not silently obtain access, silently use browser automation, or silently complete high-risk actions. The AI may propose; the system gates; the user approves.
+>
+> Mock tests prove code. Smoke tests prove reality. Every real-world capability needs a founder-only smoke test before it is trusted.
+
+The kernel-level implementations of §4.8 in v0.1:
+
+- Tool Registry + Permission Gate + risk_tier classification (`read` / `send` / `internal`)
+- Kill switches default-off, strict opt-in: `FOMO_SEND_ENABLED`, `FOMO_AUTO_SEND_ENABLED`, `FOMO_FRIEND_BETA_ENABLED`, `FOMO_SLACK_REVIEW_ENABLED`, `FOMO_GMAIL_POLLING_ENABLED`
+- Egress Policy (no raw body / headers / attachment filenames leave Brevio)
+- Audit Log (sanitized detail; no payload-content columns)
+- Slack founder-review checkpoint between rank and send (3D.1 + 3D.2)
+- Founder-phone allowlist on outbound (3E.1) — `destinationFor(user_id)` returns the founder phone ONLY for `FOMO_FOUNDER_USER_ID`
+- Founder-only smoke gates per real external integration (3B.3, 3C.2, 3C.4, 3D.2, 3E.2, 3F.x, 3G — see [`FOMO_PLAN.md §19 Smoke Test Gates`](../../FOMO_PLAN.md))
+- No browser automation, no payments, no purchases, no bookings, no MCP plugin platform in v0.1 (forbidden by [`FOMO_PLAN.md §5`](../../FOMO_PLAN.md))
+
+When Phase 4+ adds calendar / drafting / sending / payments / bookings / MCP tools / browser-fallback / delegated agents, the kernel-completeness gate must verify §4.8 still holds for every new capability *in the same PR* — no separate compliance phase, no "we'll wire approval later." API first; browser fallback only when sandboxed; user approval before final commitment.
+
 ---
 
 ## Run the gate
