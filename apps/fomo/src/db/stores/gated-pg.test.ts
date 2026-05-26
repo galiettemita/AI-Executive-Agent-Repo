@@ -287,6 +287,34 @@ describe('Phase 2E gated Postgres verification', { skip: !RUN_PG ? 'BREVIO_RUN_P
         /unknown from_state/
       );
     });
+
+    it('findAlertIdsInState returns only alerts whose latest transition matches the state', async () => {
+      assert.ok(db);
+      const store = new PostgresAlertStateTransitionStore(db);
+      // alert-pg-1 is already approved from the prior test. Add:
+      //   alert-pg-2: queued_for_review (latest)
+      //   alert-pg-3: queued → approved → sent (latest: sent)
+      await store.write({ alert_id: 'alert-pg-2', user_id: 'u-st', from_state: 'detected', to_state: 'ranked', reason: 'x' });
+      await store.write({ alert_id: 'alert-pg-2', user_id: 'u-st', from_state: 'ranked', to_state: 'queued_for_review', reason: 'x' });
+
+      await store.write({ alert_id: 'alert-pg-3', user_id: 'u-st', from_state: 'detected', to_state: 'ranked', reason: 'x' });
+      await store.write({ alert_id: 'alert-pg-3', user_id: 'u-st', from_state: 'ranked', to_state: 'queued_for_review', reason: 'x' });
+      await store.write({ alert_id: 'alert-pg-3', user_id: 'u-st', from_state: 'queued_for_review', to_state: 'approved', reason: 'x' });
+      await store.write({ alert_id: 'alert-pg-3', user_id: 'u-st', from_state: 'approved', to_state: 'sent', reason: 'sendblue 2xx' });
+
+      const approved = await store.findAlertIdsInState('u-st', 'approved', 10);
+      assert.deepEqual([...approved], ['alert-pg-1']);
+      const queued = await store.findAlertIdsInState('u-st', 'queued_for_review', 10);
+      assert.deepEqual([...queued], ['alert-pg-2']);
+      const sent = await store.findAlertIdsInState('u-st', 'sent', 10);
+      assert.deepEqual([...sent], ['alert-pg-3']);
+
+      // user isolation
+      assert.deepEqual([...(await store.findAlertIdsInState('different-user', 'approved', 10))], []);
+
+      // non-positive limit
+      assert.deepEqual([...(await store.findAlertIdsInState('u-st', 'approved', 0))], []);
+    });
   });
 
   describe('PostgresToolInvocationStore', () => {

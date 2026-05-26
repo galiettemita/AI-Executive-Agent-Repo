@@ -71,7 +71,44 @@ export type AuditAction =
   | 'fomo.slack.payload_invalid'
   | 'fomo.slack.approval_unauthorized'
   | 'fomo.slack.approval_captured'
-  | 'fomo.slack.approval_duplicate';
+  | 'fomo.slack.approval_duplicate'
+  // SendBlue outbound send events (Phase 3E.1) — fire from the outbound
+  // sender worker when an alert in state 'approved' is picked up and
+  // dispatched through sendblue.send_user_message. Sanitized detail
+  // only: alert_id, message_id, rank_result_id, destination_slug
+  // (last 4 chars of the phone number), template_version, provider_status,
+  // provider_message_handle on success. NEVER the rendered message text,
+  // NEVER the full phone number, NEVER the SendBlue API key.
+  //
+  // Three-outcome semantics per founder directive 2026-05-25:
+  //   - `fomo.send.succeeded`    → provider returned a clear success
+  //     code; alert transitions approved → sent
+  //   - `fomo.send.failed`       → provider returned a clear failure
+  //     (4xx other than auth; explicit error code); alert transitions
+  //     approved → failed. Auth errors also surface here.
+  //   - `fomo.send.status_unknown` → ambiguous outcome (network
+  //     timeout, 5xx, malformed response, or non-terminal provider
+  //     status). Alert transitions approved → send_status_unknown.
+  //     The worker DOES NOT auto-retry this state — duplicate sends
+  //     could deliver real texts twice. Operator must inspect.
+  //
+  // Defense-in-depth at the worker boundary (in addition to gate):
+  //   - `fomo.send.unauthorized_destination` fires when the resolved
+  //     destination phone number does not match FOMO_FOUNDER_PHONE_NUMBER.
+  //     No SendBlue call is made; alert transitions approved → failed.
+  //   - `fomo.send.kill_switch_off` fires when the worker is asked to
+  //     send while FOMO_SEND_ENABLED=false. No SendBlue call; no state
+  //     transition. Visible in audit so operators can see attempted
+  //     activity even with the switch off.
+  //   - `fomo.send.attempted` fires BEFORE the SendBlue API call so a
+  //     flood of failed attempts is still visible in the audit log
+  //     even if every subsequent call errors before writing its result.
+  | 'fomo.send.attempted'
+  | 'fomo.send.succeeded'
+  | 'fomo.send.failed'
+  | 'fomo.send.status_unknown'
+  | 'fomo.send.unauthorized_destination'
+  | 'fomo.send.kill_switch_off';
 
 export type AuditResult = 'success' | 'failure';
 

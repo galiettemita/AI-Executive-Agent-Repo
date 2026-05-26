@@ -148,7 +148,34 @@ workflow) may begin. Not before.
   1. Bootstrap — route NOT mounted when switch is off; throws when switch is on but creds missing
   2. Route handler — re-checks kill switch at request time; rejects with `kill_switch_off` audit
   3. Signature verification — every inbound request HMAC-verified; stale-timestamp protection
-- [ ] **Founder has executed the smoke test against a real Slack workspace with a real button click and committed `docs/SMOKE_REPORT_3D2.md` with `VERDICT: PASS`** (load-bearing — Phase 3E may NOT begin until checked)
+- [x] **Founder has executed the smoke test against a real Slack workspace with a real button click and committed `docs/SMOKE_REPORT_3D2.md` with `VERDICT: PASS`** (PR #29 merged onto `main` 2026-05-25; Phase 3E.1 unblocked)
+
+### Phase 3E.1 — SendBlue Outbound Substrate (substrate; smoke gate is 3E.2)
+*Founder directive 2026-05-25 (tightened): 3E split into **3E.1 (substrate)** and **3E.2 (real-send founder smoke)**. 3E.1 wires the SendBlue HTTP adapter, the `sendblue.send_user_message` executor, the deterministic founder-text template, and the outbound-sender worker that picks up alerts in state `approved` and walks them to `sent | send_status_unknown | failed`. **NO live SendBlue calls happen in 3E.1** — the substrate ships mock-tested only (founder did not yet have a SendBlue account at PR time). 3E.2 unblocks once the founder provisions the account; 3F SendBlue inbound NOT begun until 3E.2 PASS.*
+- [x] **Kill switches verified strict-opt-in**: `FOMO_SEND_ENABLED` (default false) gates send-tier dispatch at the policy gate (`risk_tier='send' → deny('send_disabled')`); `FOMO_AUTO_SEND_ENABLED` (default false) gates `intent='auto_send'` dispatches (3E.1 only sends `intent='manual_send'`, so auto-send stays off through v0.1). The outbound-sender worker also fail-closes at boot when `FOMO_SEND_ENABLED=true` but `SENDBLUE_API_KEY_ID` / `SENDBLUE_API_SECRET_KEY` / `FOMO_FOUNDER_PHONE_NUMBER` (E.164) / `FOMO_FOUNDER_USER_ID` is missing — "real or absent, never half-wired"
+- [x] **`SendBlueClient`** ([src/adapters/sendblue/client.ts](src/adapters/sendblue/client.ts)): direct `POST /api/send-message` HTTP client, injectable `FetchLike`, configurable timeout (default 10s). **Three-outcome semantics** (founder directive — never auto-retry ambiguous):
+  - `sent` → HTTP 2xx + provider status `QUEUED`/`SENT`/`DELIVERED`
+  - `failed` → HTTP 2xx + provider status `FAILED`/`ERROR`; HTTP 4xx (incl. 401/403 auth); argument errors
+  - `send_status_unknown` → network failure, timeout, HTTP 5xx, HTTP 429, HTTP 2xx with unrecognized status, malformed JSON. Caller MUST NOT auto-retry — duplicate sends could deliver real iMessages twice
+- [x] **Deterministic founder-text template** ([src/core/founder-text-template.ts](src/core/founder-text-template.ts)) — **no LLM voice generation** per founder correction 2026-05-25. Renders ≤280 chars from egress-redacted safe fields only: `FOMO · <LABEL> (score) / <masked sender> / <subject ≤80> / <snippet ≤120>`. Drops snippet → subject in overflow order; header + sender are mandatory. `FOUNDER_TEXT_TEMPLATE_VERSION` stamped into audit detail for traceability. Test coverage proves the template NEVER unmasks sender, NEVER includes message_id / received_at, ALWAYS bounds total length to 280 chars
+- [x] **`sendblue.send_user_message` executor** wired in [src/dispatch/external-executors.ts](src/dispatch/external-executors.ts). Tool registry flipped `sendblue.send_user_message` from `declared → implemented`. Risk tier remains `send` so `FOMO_SEND_ENABLED=false` denies at the gate's `send_disabled` branch — defense-in-depth complements the bootstrap fail-closed
+- [x] **Outbound-sender worker** ([src/workers/outbound-sender.ts](src/workers/outbound-sender.ts)): `runOutboundOnce(deps)` cycle iterates users via `gmailCursors.listUserIds()`, finds alerts whose latest transition is `approved` via the new `AlertStateTransitionStore.findAlertIdsInState(userId, 'approved', limit)`, re-reads Gmail via existing `gmail.read` dispatch to recover the `SlackEgressView`, renders the deterministic template, dispatches `sendblue.send_user_message`, and transitions the alert per the three-outcome rule. **Idempotency via the state machine itself** — `findAlertIdsInState('approved', ...)` does not return alerts already in `sent`/`failed`/`send_status_unknown`, so the next cycle never re-fires
+- [x] **Founder-phone allowlist (defense-in-depth)**: `destinationFor(user_id)` returns `FOMO_FOUNDER_PHONE_NUMBER` ONLY for `FOMO_FOUNDER_USER_ID`, null for everyone else. Worker audits `fomo.send.unauthorized_destination` and transitions `approved → failed` WITHOUT calling SendBlue when destination is null
+- [x] **`findAlertIdsInState` query** added to `AlertStateTransitionStore` (in-memory + Postgres). Postgres uses `SELECT DISTINCT ON (alert_id) ORDER BY alert_id, id DESC` to pick the latest transition per alert, then filters by `to_state`. Test coverage in [src/core/alert-state-transitions.test.ts](src/core/alert-state-transitions.test.ts) and [src/db/stores/gated-pg.test.ts](src/db/stores/gated-pg.test.ts)
+- [x] **Audit actions** added (6): `fomo.send.attempted` (BEFORE the SendBlue call so a flood of crashed attempts is still visible), `fomo.send.succeeded`, `fomo.send.failed`, `fomo.send.status_unknown`, `fomo.send.unauthorized_destination`, `fomo.send.kill_switch_off`. Detail surfaces only operational fields: `alert_id`, `message_id`, `rank_result_id`, `destination_slug` (4-char suffix of the phone — NEVER the full number), `template_version`, `provider_status`, `provider_message_handle`. NEVER the rendered message text, NEVER the full phone, NEVER the SendBlue API key
+- [x] **Bootstrap** ([src/index.ts](src/index.ts)): `buildSendWiring()` constructs `SendBlueClient` + the outbound-sender deps factory, throws at boot on missing creds, returns null fields when `FOMO_SEND_ENABLED=false`. `startOutboundSenderInterval()` runs the worker on the same `FOMO_GMAIL_POLLING_INTERVAL_MS` cadence as the Gmail polling worker (one rhythm to reason about). Boot logs surface `fomo.send.enabled` / `fomo.send.disabled`, `fomo.outbound.enabled` / `fomo.outbound.disabled`, and `fomo.server.listening` includes `send_enabled` + `outbound_worker_started`
+- [x] **Integration harness updated**: `sendblue.send_user_message` no longer denies `not_implemented`. Under safe defaults it denies `send_disabled` (the kill-switch action-boundary branch). All six v0.1 tools are now `implemented`; no tool remains `declared`. Audit-entry counts unchanged (28 per scenario run); test now asserts `send_disabled` for the explicit sendblue invocation
+- [x] **Unit-test coverage** (53 new tests across founder-text-template / SendBlueClient / outbound-sender / executor / transitions / harness updates): happy-path sent, idempotency (sent / failed / status_unknown do NOT re-fire), all three terminal outcomes, defense-in-depth founder-phone allowlist, kill-switch denial at gate, Gmail re-read failure → status_unknown, audit privacy invariant (no rendered text, no full phone), bounded message length, no LLM voice generation
+- [x] **Substrate wiring only — no founder smoke run required for 3E.1.** The next gate is **3E.2 — SendBlue Outbound Founder-Only Smoke Test**: founder provisions a SendBlue account, sets `FOMO_SEND_ENABLED=true` + `FOMO_FOUNDER_PHONE_NUMBER`, walks a real important email through Gmail → ranker → Slack approval → outbound-sender → real iMessage to the founder's own phone, commits `docs/SMOKE_REPORT_3E2.md` with `VERDICT: PASS`
+
+### Phase 3E.2 — SendBlue Outbound Founder-Only Smoke Test (gate before 3F)
+*Scaffolding for runbook + preflight + evidence + report template will be authored in a follow-up PR alongside the founder's SendBlue-account provisioning. Phase 3F SendBlue inbound NOT begun until this gate's PASS report lands on `main`.*
+- [ ] Preflight script (`scripts/preflight-3e2.ts`) — validates `FOMO_SEND_ENABLED=true`, `SENDBLUE_API_KEY_ID`, `SENDBLUE_API_SECRET_KEY`, `FOMO_FOUNDER_PHONE_NUMBER` (E.164), `FOMO_FOUNDER_USER_ID` shape; warns on `FOMO_AUTO_SEND_ENABLED=true` (manual-only for 3E.2); refuses `FOMO_FRIEND_BETA_ENABLED=true`
+- [ ] Evidence script (`scripts/smoke-evidence-3e2.ts`) — queries Neon for: at least one `alert_state_transitions` row `approved → sent` (LOAD-BEARING), `feedback_events` row(s), `fomo.send.attempted` ≥ 1 / `fomo.send.succeeded` ≥ 1 audit entries, leak-canary scan extends to confirm no full phone number / SendBlue API key / rendered text leaks across audit + tool_invocations + feedback_events
+- [ ] Runbook (`docs/smoke-test-3e2-sendblue-outbound.md`) — SendBlue account setup (sandbox vs production), env additions, the cycle that produces the alert, the founder approval click in Slack, the founder receives ONE real iMessage on their own phone, idempotency exercise (second cycle does NOT re-send), kill-switch flip-off
+- [ ] Report template (`docs/SMOKE_REPORT_TEMPLATE_3E2.md`)
+- [ ] pnpm scripts: `preflight:3e2` + `smoke-evidence:3e2`
+- [ ] **Founder has executed the smoke test against a real SendBlue account with a real iMessage to the founder's own phone and committed `docs/SMOKE_REPORT_3E2.md` with `VERDICT: PASS`** (load-bearing — Phase 3F may NOT begin until checked)
 
 ---
 
@@ -251,26 +278,29 @@ The audit action types (`policy.decided`, `tool.invoked`,
 categories. Phase 3 callers should continue writing them when the real
 dispatch wiring lands.
 
-## v0.1 Tool Registry status (Phase 3A + 3B.2)
+## v0.1 Tool Registry status (Phase 3A + 3B.2 + 3D.1 + 3E.1)
 
-Four tools are `'implemented'`: the three internal writers (Phase 3A)
-and `gmail.read` (Phase 3B.2). Two tools remain `'declared'` and the
-Permission Gate continues to deny them with `not_implemented`.
+All six v0.1 tools are now `'implemented'`. No tool remains
+`'declared'` after Phase 3E.1 flipped `sendblue.send_user_message`
+alongside the `SendBlueClient` adapter wireup. The gate enforces
+per-tool policy (kill switches, consent, OAuth, tool-specific
+defense-in-depth) before any dispatch is attempted.
 
-| Tool ID | Surface | Risk tier | Executor status | Wired in | Remaining Phase 3 wiring |
+| Tool ID | Surface | Risk tier | Executor status | Wired in | Gate-level guard |
 |---|---|---|---|---|---|
-| `gmail.read` | external | read | **implemented** | Phase 3B.2 | `gmailReadExecutor` shim over `GmailClient.getMessage`; gate still enforces consent + OAuth |
-| `sendblue.send_user_message` | external | send | **declared** | — | **Phase 3E** SendBlue HTTP adapter + send path |
-| `slack.founder_review` | internal | send | **declared** | — | **Phase 3D** Slack Block-Kit card poster |
-| `audit.write` | internal | internal | **implemented** | Phase 3A | `auditWriteExecutor` writes to AuditStore |
-| `feedback.write` | internal | internal | **implemented** | Phase 3A | `feedbackWriteExecutor` writes to FeedbackStore |
-| `memory_signal.write` | internal | internal | **implemented** | Phase 3A | `memorySignalUpsertExecutor` upserts MemorySignalStore |
+| `gmail.read` | external | read | **implemented** | Phase 3B.2 | `requires_consent: true`, `requires_oauth_provider: 'google'` |
+| `sendblue.send_user_message` | external | send | **implemented** | **Phase 3E.1** | `risk_tier='send'` denies `send_disabled` under `FOMO_SEND_ENABLED=false`; `intent='auto_send'` denies `auto_send_disabled` under `FOMO_AUTO_SEND_ENABLED=false` |
+| `slack.founder_review` | internal | internal | **implemented** | Phase 3D.1 | tool-id-specific check: denies `slack_review_disabled` under `FOMO_SLACK_REVIEW_ENABLED=false` |
+| `audit.write` | internal | internal | **implemented** | Phase 3A | — |
+| `feedback.write` | internal | internal | **implemented** | Phase 3A | — |
+| `memory_signal.write` | internal | internal | **implemented** | Phase 3A | — |
 
-For the four implemented tools, the gate consults policy normally (kill
-switches, consent, OAuth) and on allow, dispatch routes to the executor.
-For the two still-declared tools, the gate denies `not_implemented`
-before any dispatch is attempted. This is the honest invariant the
-integration harness asserts.
+For every implemented tool, the gate consults policy (kill switches,
+consent, OAuth, tool-id-specific defense-in-depth) and on allow,
+dispatch routes to the executor. The integration harness asserts
+this honest invariant — under safe-defaults `sendblue.send_user_message`
+denies `send_disabled` and `slack.founder_review` denies
+`slack_review_disabled`, both at the action boundary.
 
 ---
 
@@ -287,8 +317,9 @@ integration harness asserts.
 | 3C.3 | **DONE.** OpenAI ranker wired into the polling worker behind `FOMO_RANKER_ENABLED` (default false). `rank_results` table + store added; per-cycle counters + audit events surface ranker outcomes. Substrate wiring only — no smoke gate. |
 | **3C.4** | **Founder real Gmail + real ranker smoke gate.** Scaffolding committed (preflight + evidence + runbook + report template + pnpm scripts). **Founder run still required** — sign-off via `docs/SMOKE_REPORT_3C4.md` PASS before Phase 3D begins. PASS gate is seam-works only (label correctness is a later, separate concern). |
 | **3D.1** | **DONE.** Slack Candidate Review Posting — `SlackClient` + `slack.founder_review` executor + `alerts` table + worker integration behind `FOMO_SLACK_REVIEW_ENABLED` (default false). Outbound only; alerts sit at `queued_for_review`. risk_tier on `slack.founder_review` demoted `send → internal` to decouple from `FOMO_SEND_ENABLED`. Substrate wiring only — no smoke gate. |
-| **3D.2** | **Slack Approval Capture + Slack Smoke Test.** Inbound `/slack/interactivity` route with HMAC signature verification + timestamp freshness check, captures Approve/Reject button clicks, transitions alert `queued_for_review → approved | rejected`, writes feedback events, edits the Slack card via `chat.update`. First-wins idempotency at the state-machine layer. Scaffolding committed (route + tests + preflight + evidence + runbook + report template + pnpm scripts); **founder run still required** — sign-off via `docs/SMOKE_REPORT_3D2.md` PASS before Phase 3E begins. PASS gate is seam-works only (real Slack workspace, real button click, real Neon persistence; no SendBlue). |
-| 3E | SendBlue Founder-Only Outbound — SendBlue HTTP client + first live send (founder-only); flip `sendblue.send_user_message` to `implemented`. **Blocked until 3D.2 PASS report is on `main`.** |
+| **3D.2** | **DONE.** Slack Approval Capture + Slack Smoke Test. Inbound `/slack/interactivity` route with HMAC signature verification + timestamp freshness check, captures Approve/Reject button clicks, transitions alert `queued_for_review → approved | rejected`, writes feedback events, edits the Slack card via `chat.update`. First-wins idempotency at the state-machine layer. Founder ran the smoke test on 2026-05-25 and committed `docs/SMOKE_REPORT_3D2.md` with `VERDICT: PASS` (PR #29 merged onto `main`). |
+| **3E.1** | **DONE.** SendBlue Outbound Substrate — `SendBlueClient` + `sendblue.send_user_message` executor + deterministic founder-text template + outbound-sender worker + founder-phone allowlist + three-outcome semantics (sent / send_status_unknown / failed; never auto-retry ambiguous). Flipped `sendblue.send_user_message` to `implemented`. Substrate wiring only — **no live SendBlue call in 3E.1**. |
+| **3E.2** | **SendBlue Outbound Founder-Only Smoke Test.** Founder provisions a SendBlue account, sets `FOMO_SEND_ENABLED=true` + `FOMO_FOUNDER_PHONE_NUMBER`, walks a real important email all the way to a real iMessage on the founder's own phone, commits `docs/SMOKE_REPORT_3E2.md` PASS. **Blocked until founder has a SendBlue account; Phase 3F blocked until 3E.2 PASS is on `main`.** |
 | 3F | SendBlue Inbound Reply Parser — webhook + reply classification + snooze scheduler + memory/feedback updates from replies |
 | 3G | Full Founder Demo Gate — end-to-end scenario proven; demo ready |
 

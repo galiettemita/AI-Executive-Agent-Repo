@@ -1,0 +1,498 @@
+import assert from 'node:assert/strict';
+import { describe, it } from 'node:test';
+
+import { SendBlueClient } from '../adapters/sendblue/client.ts';
+import {
+  InMemoryAlertStateTransitionStore
+} from '../core/alert-state-transitions.ts';
+import { InMemoryAuditStore } from '../core/audit.ts';
+import { SAFE_DEFAULT_KILL_SWITCHES, loadKillSwitches } from '../core/kill-switches.ts';
+import { type PolicyGateDeps } from '../core/policy-gate.ts';
+import { createToolRegistry, type ToolId, type ToolRegistry } from '../core/tool-registry.ts';
+import { InMemoryToolInvocationStore } from '../core/tool-invocations.ts';
+import { createDispatchTable } from '../dispatch/dispatcher.ts';
+import { wireExternalExecutors } from '../dispatch/external-executors.ts';
+import { GmailClient, GMAIL_READONLY_SCOPE } from '../adapters/gmail/client.ts';
+import { loadCryptoConfig } from '../security/token-crypto.ts';
+import { InMemoryTokenStore } from '../security/oauth/token-store.ts';
+import { InMemoryAlertStore } from '../memory/alerts.ts';
+import { InMemoryGmailCursorStore } from '../memory/gmail-cursors.ts';
+import { InMemoryRankResultStore } from '../memory/rank-results.ts';
+import { runOutboundOnce } from './outbound-sender.ts';
+
+const TEST_KEK = Buffer.alloc(32, 9).toString('base64');
+const FOUNDER_USER = 'founder-1';
+const FOUNDER_PHONE = '+14155551234';
+const FOUNDER_PHONE_SLUG = '1234';
+const ALERT_ID = 'alert-1';
+const MESSAGE_ID = 'msg-abc';
+
+function withEnv<T>(env: Record<string, string | undefined>, fn: () => T): T {
+  const previous: Record<string, string | undefined> = {};
+  for (const [k, v] of Object.entries(env)) {
+    previous[k] = process.env[k];
+    if (v === undefined) delete process.env[k];
+    else process.env[k] = v;
+  }
+  try {
+    return fn();
+  } finally {
+    for (const [k, v] of Object.entries(previous)) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
+  }
+}
+
+const cryptoConfig = withEnv(
+  { BREVIO_TOKEN_KEK: TEST_KEK, BREVIO_DEV_MODE: undefined },
+  () => loadCryptoConfig()
+);
+
+// Helper: builds a registry where the specified tools are forced to
+// 'implemented' for the purposes of the gate (we still want real
+// dispatch wiring, but the gate must allow).
+function makeRegistry(implementedOverrides: readonly ToolId[] = []): ToolRegistry {
+  const base = createToolRegistry();
+  if (implementedOverrides.length === 0) return base;
+  const set = new Set<ToolId>(implementedOverrides);
+  return {
+    ...base,
+    getTool(id: string) {
+      const t = base.getTool(id);
+      if (!t) return null;
+      if (set.has(t.id)) {
+        return Object.freeze({ ...t, executor_status: 'implemented' as const });
+      }
+      return t;
+    }
+  };
+}
+
+interface HarnessOptions {
+  // When false, the test omits the founder phone from destinationFor
+  // to exercise the unauthorized-destination path.
+  readonly destinationConfigured?: boolean;
+  // Inject the SendBlue fetch mock.
+  readonly sendBlueFetch: typeof fetch;
+  // Inject the Gmail fetch mock.
+  readonly gmailFetch: typeof fetch;
+  // Kill switches (defaults: ranker off, send on, slack off, polling off).
+  readonly switches?: ReturnType<typeof loadKillSwitches>;
+}
+
+async function buildHarness(opts: HarnessOptions) {
+  const auditStore = new InMemoryAuditStore();
+  const toolInvocationStore = new InMemoryToolInvocationStore();
+  const transitions = new InMemoryAlertStateTransitionStore();
+  const alertStore = new InMemoryAlertStore();
+  const rankResultStore = new InMemoryRankResultStore();
+  const cursorStore = new InMemoryGmailCursorStore();
+  const tokenStore = new InMemoryTokenStore(cryptoConfig);
+
+  // Seed the founder's google token + cursor so listUserIds returns them.
+  await tokenStore.save({
+    user_id: FOUNDER_USER,
+    provider: 'google',
+    scopes: [GMAIL_READONLY_SCOPE],
+    access_token: 'real-token'
+  });
+  await cursorStore.upsert({ user_id: FOUNDER_USER, history_id: 'h1' });
+
+  // Seed the rank_results row.
+  const writeOutcome = await rankResultStore.write({
+    user_id: FOUNDER_USER,
+    message_id: MESSAGE_ID,
+    invocation_id: 'rank-inv-1',
+    model_name: 'gpt-5-mini',
+    prompt_version: 'ranker-v0.1.0',
+    label: 'important',
+    score: 0.92,
+    reason: 'deposit due tonight',
+    latency_ms: 100,
+    input_tokens: 50,
+    output_tokens: 20,
+    estimated_cost_usd: 0.0001
+  });
+  const rankResultId = writeOutcome.rank_result_id;
+
+  // Seed the alert + walk it to 'approved'.
+  await alertStore.create({
+    alert_id: ALERT_ID,
+    user_id: FOUNDER_USER,
+    message_id: MESSAGE_ID,
+    rank_result_id: rankResultId,
+    label: 'important',
+    score: 0.92
+  });
+  for (const [from, to] of [
+    ['detected', 'ranked'],
+    ['ranked', 'queued_for_review'],
+    ['queued_for_review', 'approved']
+  ] as const) {
+    await transitions.write({
+      alert_id: ALERT_ID,
+      user_id: FOUNDER_USER,
+      from_state: from,
+      to_state: to,
+      reason: 'test-setup'
+    });
+  }
+
+  const gmailClient = new GmailClient({ fetchImpl: opts.gmailFetch });
+  const sendBlueClient = new SendBlueClient({
+    apiKeyId: 'k',
+    apiSecretKey: 's',
+    fetchImpl: opts.sendBlueFetch
+  });
+  const dispatch = createDispatchTable();
+  wireExternalExecutors(dispatch, { gmailClient, tokenStore, sendBlueClient });
+
+  // Force gate to ALLOW gmail.read (override hasConsent + hasOAuth) AND
+  // sendblue (FOMO_SEND_ENABLED=true).
+  const switches =
+    opts.switches ??
+    loadKillSwitches({ FOMO_SEND_ENABLED: 'true' });
+  const gateDeps: PolicyGateDeps = {
+    registry: makeRegistry(),
+    switches,
+    hasConsent: () => true,
+    hasOAuth: () => true
+  };
+
+  return {
+    auditStore,
+    toolInvocationStore,
+    transitions,
+    alertStore,
+    rankResultStore,
+    cursorStore,
+    tokenStore,
+    rankResultId,
+    deps: {
+      dispatch,
+      auditStore,
+      toolInvocationStore,
+      gateDeps,
+      cursorStore,
+      alertStore,
+      rankResultStore,
+      transitions,
+      destinationFor: (uid: string): string | null => {
+        if (opts.destinationConfigured === false) return null;
+        return uid === FOUNDER_USER ? FOUNDER_PHONE : null;
+      }
+    }
+  };
+}
+
+// Minimal Gmail messages.get JSON; base64url-decodes to 'Hi Sarah'.
+const FAKE_GMAIL_MSG = {
+  id: MESSAGE_ID,
+  threadId: 'thr-1',
+  internalDate: '1700000000000',
+  payload: {
+    headers: [
+      { name: 'From', value: 'Sarah <sarah@example.com>' },
+      { name: 'Subject', value: 'lunch?' }
+    ],
+    mimeType: 'text/plain',
+    body: { data: 'SGkgU2FyYWg' }
+  }
+};
+
+function mockFetch(
+  handler: (url: string, init: RequestInit) => Promise<{ status: number; body: unknown }>
+): typeof fetch {
+  return (async (input: string | URL | Request, init?: RequestInit) => {
+    const url = typeof input === 'string' ? input : input.toString();
+    const result = await handler(url, init ?? {});
+    return new Response(JSON.stringify(result.body), {
+      status: result.status,
+      headers: { 'content-type': 'application/json' }
+    });
+  }) as typeof fetch;
+}
+
+describe('runOutboundOnce — happy path (sent)', () => {
+  it('finds approved alert, dispatches sendblue, transitions to sent', async () => {
+    const sendBlueFetch = mockFetch(async () => ({
+      status: 200,
+      body: { status: 'QUEUED', message_handle: 'mh-1' }
+    }));
+    const gmailFetch = mockFetch(async () => ({ status: 200, body: FAKE_GMAIL_MSG }));
+    const h = await buildHarness({ sendBlueFetch, gmailFetch });
+
+    const report = await runOutboundOnce(h.deps);
+
+    assert.equal(report.alerts_considered, 1);
+    assert.equal(report.alerts_sent, 1);
+    assert.equal(report.alerts_failed, 0);
+    assert.equal(report.alerts_status_unknown, 0);
+    assert.equal(report.alerts_unauthorized, 0);
+
+    // State machine reached 'sent'.
+    assert.equal(await h.transitions.currentState(ALERT_ID), 'sent');
+
+    // Audit footprint includes fomo.send.succeeded with the destination_slug
+    // (not the full phone) and template_version.
+    const events = await h.auditStore.recent(FOUNDER_USER, 500);
+    const succeeded = events.find((e) => e.action === 'fomo.send.succeeded');
+    assert.ok(succeeded);
+    assert.equal((succeeded?.detail as { destination_slug: string }).destination_slug, FOUNDER_PHONE_SLUG);
+    assert.match(
+      (succeeded?.detail as { template_version: string }).template_version,
+      /^founder-text-v/
+    );
+
+    // fomo.send.attempted fired BEFORE the send.
+    const attemptedIndex = events.findIndex((e) => e.action === 'fomo.send.attempted');
+    const succeededIndex = events.findIndex((e) => e.action === 'fomo.send.succeeded');
+    assert.ok(attemptedIndex >= 0 && succeededIndex >= 0);
+    // recent() returns newest-first, so attempted (earlier) has the LARGER index.
+    assert.ok(attemptedIndex > succeededIndex);
+  });
+
+  it('does NOT leak the full destination phone number in audit detail', async () => {
+    const sendBlueFetch = mockFetch(async () => ({
+      status: 200,
+      body: { status: 'SENT', message_handle: 'mh-2' }
+    }));
+    const gmailFetch = mockFetch(async () => ({ status: 200, body: FAKE_GMAIL_MSG }));
+    const h = await buildHarness({ sendBlueFetch, gmailFetch });
+    await runOutboundOnce(h.deps);
+
+    const events = await h.auditStore.recent(FOUNDER_USER, 500);
+    for (const e of events) {
+      const detailStr = JSON.stringify(e.detail);
+      assert.ok(
+        !detailStr.includes(FOUNDER_PHONE),
+        `audit leaked the full founder phone: ${detailStr}`
+      );
+    }
+  });
+});
+
+describe('runOutboundOnce — idempotency (load-bearing)', () => {
+  it('second cycle does NOT re-send a successfully sent alert', async () => {
+    const sendBlueFetch = mockFetch(async () => ({
+      status: 200,
+      body: { status: 'QUEUED', message_handle: 'mh-1' }
+    }));
+    const gmailFetch = mockFetch(async () => ({ status: 200, body: FAKE_GMAIL_MSG }));
+    const h = await buildHarness({ sendBlueFetch, gmailFetch });
+
+    const r1 = await runOutboundOnce(h.deps);
+    assert.equal(r1.alerts_sent, 1);
+
+    const r2 = await runOutboundOnce(h.deps);
+    assert.equal(r2.alerts_considered, 0, 'second cycle must not find the same alert');
+    assert.equal(r2.alerts_sent, 0);
+  });
+
+  it('does NOT re-send an alert in send_status_unknown (never auto-retry)', async () => {
+    // First call returns ambiguous (HTTP 500); second call would return
+    // success if the worker auto-retried. Confirm it does NOT.
+    let callCount = 0;
+    const sendBlueFetch = mockFetch(async () => {
+      callCount++;
+      if (callCount === 1) return { status: 500, body: { error: 'internal' } };
+      return { status: 200, body: { status: 'QUEUED', message_handle: 'mh-1' } };
+    });
+    const gmailFetch = mockFetch(async () => ({ status: 200, body: FAKE_GMAIL_MSG }));
+    const h = await buildHarness({ sendBlueFetch, gmailFetch });
+
+    const r1 = await runOutboundOnce(h.deps);
+    assert.equal(r1.alerts_status_unknown, 1);
+    assert.equal(await h.transitions.currentState(ALERT_ID), 'send_status_unknown');
+
+    const r2 = await runOutboundOnce(h.deps);
+    assert.equal(r2.alerts_considered, 0, 'send_status_unknown alert must NOT be re-found');
+    assert.equal(callCount, 1, 'SendBlue must not have been called a second time');
+  });
+
+  it('does NOT re-send an alert in failed state', async () => {
+    const sendBlueFetch = mockFetch(async () => ({
+      status: 200,
+      body: { status: 'FAILED', error: 'invalid_number' }
+    }));
+    const gmailFetch = mockFetch(async () => ({ status: 200, body: FAKE_GMAIL_MSG }));
+    const h = await buildHarness({ sendBlueFetch, gmailFetch });
+
+    const r1 = await runOutboundOnce(h.deps);
+    assert.equal(r1.alerts_failed, 1);
+    assert.equal(await h.transitions.currentState(ALERT_ID), 'failed');
+
+    const r2 = await runOutboundOnce(h.deps);
+    assert.equal(r2.alerts_considered, 0);
+  });
+});
+
+describe('runOutboundOnce — three-outcome state-machine transitions', () => {
+  it('clear failure → approved → failed', async () => {
+    const sendBlueFetch = mockFetch(async () => ({
+      status: 200,
+      body: { status: 'FAILED', error: 'spam_filter' }
+    }));
+    const gmailFetch = mockFetch(async () => ({ status: 200, body: FAKE_GMAIL_MSG }));
+    const h = await buildHarness({ sendBlueFetch, gmailFetch });
+
+    const report = await runOutboundOnce(h.deps);
+    assert.equal(report.alerts_failed, 1);
+    assert.equal(await h.transitions.currentState(ALERT_ID), 'failed');
+
+    const events = await h.auditStore.recent(FOUNDER_USER, 500);
+    assert.ok(events.find((e) => e.action === 'fomo.send.failed'));
+  });
+
+  it('5xx → approved → send_status_unknown', async () => {
+    const sendBlueFetch = mockFetch(async () => ({ status: 503, body: { error: 'unavailable' } }));
+    const gmailFetch = mockFetch(async () => ({ status: 200, body: FAKE_GMAIL_MSG }));
+    const h = await buildHarness({ sendBlueFetch, gmailFetch });
+
+    const report = await runOutboundOnce(h.deps);
+    assert.equal(report.alerts_status_unknown, 1);
+    assert.equal(await h.transitions.currentState(ALERT_ID), 'send_status_unknown');
+
+    const events = await h.auditStore.recent(FOUNDER_USER, 500);
+    assert.ok(events.find((e) => e.action === 'fomo.send.status_unknown'));
+  });
+
+  it('rate-limited 429 → send_status_unknown (never auto-retry)', async () => {
+    const sendBlueFetch = mockFetch(async () => ({ status: 429, body: { error: 'rate_limited' } }));
+    const gmailFetch = mockFetch(async () => ({ status: 200, body: FAKE_GMAIL_MSG }));
+    const h = await buildHarness({ sendBlueFetch, gmailFetch });
+
+    const report = await runOutboundOnce(h.deps);
+    assert.equal(report.alerts_status_unknown, 1);
+    assert.equal(await h.transitions.currentState(ALERT_ID), 'send_status_unknown');
+  });
+
+  it('HTTP 401 (auth) → failed (operator must rotate; never auto-retry)', async () => {
+    const sendBlueFetch = mockFetch(async () => ({ status: 401, body: { error: 'invalid_api_key' } }));
+    const gmailFetch = mockFetch(async () => ({ status: 200, body: FAKE_GMAIL_MSG }));
+    const h = await buildHarness({ sendBlueFetch, gmailFetch });
+
+    const report = await runOutboundOnce(h.deps);
+    assert.equal(report.alerts_failed, 1);
+    assert.equal(await h.transitions.currentState(ALERT_ID), 'failed');
+  });
+});
+
+describe('runOutboundOnce — defense-in-depth founder-phone allowlist', () => {
+  it('refuses to dispatch when destinationFor returns null', async () => {
+    let sendBlueCalls = 0;
+    const sendBlueFetch = mockFetch(async () => {
+      sendBlueCalls++;
+      return { status: 200, body: { status: 'QUEUED' } };
+    });
+    const gmailFetch = mockFetch(async () => ({ status: 200, body: FAKE_GMAIL_MSG }));
+    const h = await buildHarness({
+      sendBlueFetch,
+      gmailFetch,
+      destinationConfigured: false
+    });
+
+    const report = await runOutboundOnce(h.deps);
+    assert.equal(report.alerts_unauthorized, 1);
+    assert.equal(report.alerts_sent, 0);
+    assert.equal(sendBlueCalls, 0, 'SendBlue must NOT be called when destination is null');
+    assert.equal(await h.transitions.currentState(ALERT_ID), 'failed');
+
+    const events = await h.auditStore.recent(FOUNDER_USER, 500);
+    assert.ok(events.find((e) => e.action === 'fomo.send.unauthorized_destination'));
+  });
+});
+
+describe('runOutboundOnce — kill-switch defense at the gate', () => {
+  it('FOMO_SEND_ENABLED=false denies at the gate (sendblue never called)', async () => {
+    let sendBlueCalls = 0;
+    const sendBlueFetch = mockFetch(async () => {
+      sendBlueCalls++;
+      return { status: 200, body: { status: 'QUEUED' } };
+    });
+    const gmailFetch = mockFetch(async () => ({ status: 200, body: FAKE_GMAIL_MSG }));
+    const h = await buildHarness({
+      sendBlueFetch,
+      gmailFetch,
+      switches: SAFE_DEFAULT_KILL_SWITCHES // send_enabled=false
+    });
+
+    const report = await runOutboundOnce(h.deps);
+    assert.equal(report.alerts_failed, 1);
+    assert.equal(sendBlueCalls, 0, 'SendBlue must NOT be called when gate denies');
+    assert.equal(await h.transitions.currentState(ALERT_ID), 'failed');
+
+    const events = await h.auditStore.recent(FOUNDER_USER, 500);
+    const failed = events.find((e) => e.action === 'fomo.send.failed');
+    assert.ok(failed);
+    assert.equal((failed?.detail as { decision_code: string }).decision_code, 'send_disabled');
+  });
+});
+
+describe('runOutboundOnce — gmail.read recovery failure → status_unknown', () => {
+  it('gmail.read failing → approved → send_status_unknown (do not assume sent or failed)', async () => {
+    let sendBlueCalls = 0;
+    const sendBlueFetch = mockFetch(async () => {
+      sendBlueCalls++;
+      return { status: 200, body: { status: 'QUEUED' } };
+    });
+    const gmailFetch = mockFetch(async () => ({
+      status: 404,
+      body: { error: { code: 404, message: 'message not found' } }
+    }));
+    const h = await buildHarness({ sendBlueFetch, gmailFetch });
+
+    const report = await runOutboundOnce(h.deps);
+    assert.equal(report.alerts_status_unknown, 1);
+    assert.equal(sendBlueCalls, 0, 'SendBlue must NOT be called when gmail re-read fails');
+    assert.equal(await h.transitions.currentState(ALERT_ID), 'send_status_unknown');
+  });
+});
+
+describe('runOutboundOnce — no approved alerts → no-op cycle', () => {
+  it('returns empty cycle when no alert is in approved state', async () => {
+    const sendBlueFetch = mockFetch(async () => ({ status: 200, body: { status: 'QUEUED' } }));
+    const gmailFetch = mockFetch(async () => ({ status: 200, body: FAKE_GMAIL_MSG }));
+    const h = await buildHarness({ sendBlueFetch, gmailFetch });
+
+    // Knock the alert out of approved → rejected.
+    await h.transitions.write({
+      alert_id: ALERT_ID,
+      user_id: FOUNDER_USER,
+      from_state: 'approved',
+      to_state: 'rejected',
+      reason: 'test'
+    });
+
+    const report = await runOutboundOnce(h.deps);
+    assert.equal(report.alerts_considered, 0);
+    assert.equal(report.alerts_sent, 0);
+    assert.equal(report.users_total, 1);
+    assert.equal(report.users_with_approved_alerts, 0);
+  });
+});
+
+describe('runOutboundOnce — audit privacy invariant', () => {
+  it('audit detail never carries the rendered message text or rank reason verbatim', async () => {
+    const sendBlueFetch = mockFetch(async () => ({
+      status: 200,
+      body: { status: 'QUEUED', message_handle: 'mh-1' }
+    }));
+    const gmailFetch = mockFetch(async () => ({ status: 200, body: FAKE_GMAIL_MSG }));
+    const h = await buildHarness({ sendBlueFetch, gmailFetch });
+    await runOutboundOnce(h.deps);
+
+    const events = await h.auditStore.recent(FOUNDER_USER, 500);
+    for (const e of events) {
+      const detailStr = JSON.stringify(e.detail);
+      // The rendered template would include the subject 'lunch?' from the
+      // Gmail mock. Audit detail must not include the rendered text.
+      assert.ok(!detailStr.includes('lunch?'), `audit leaked subject: ${detailStr}`);
+      assert.ok(
+        !detailStr.includes('Hi Sarah'),
+        `audit leaked body snippet: ${detailStr}`
+      );
+    }
+  });
+});

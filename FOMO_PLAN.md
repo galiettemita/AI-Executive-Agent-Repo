@@ -1116,27 +1116,36 @@ Pass criteria:
 The v0.1 milestone has six smoke-test gates. Each one is a hard
 prerequisite for the next dependent phase.
 
-| Gate     | What it proves                                                                                       | Unblocks |
-| -------- | ---------------------------------------------------------------------------------------------------- | -------- |
-| **3B.3** | Founder Real Gmail Smoke Test                                                                        | 3C.x     |
-| **3C.2** | OpenAI Ranker Smoke Eval                                                                             | 3C.3     |
-| **3C.4** | Real Gmail + Real Ranker Rank-on-Poll Smoke Test                                                     | 3D.1     |
-| **3D.2** | Slack Approval Capture + Slack Smoke Test (proves inbound webhook + queued_for_review → approved/rejected) | 3E       |
-| **3E.x** | SendBlue Outbound Founder-Only Smoke Test                                                            | 3F       |
-| **3F.x** | SendBlue Inbound Reply Smoke Test                                                                    | 3G       |
-| **3G**   | Full Founder Demo Smoke Test (end-to-end v0.1)                                                       | v0.3     |
+| Gate     | What it proves                                                                                                                          | Unblocks |
+| -------- | --------------------------------------------------------------------------------------------------------------------------------------- | -------- |
+| **3B.3** | Founder Real Gmail Smoke Test                                                                                                            | 3C.x     |
+| **3C.2** | OpenAI Ranker Smoke Eval                                                                                                                 | 3C.3     |
+| **3C.4** | Real Gmail + Real Ranker Rank-on-Poll Smoke Test                                                                                         | 3D.1     |
+| **3D.2** | Slack Approval Capture + Slack Smoke Test (proves inbound webhook + queued_for_review → approved/rejected)                              | 3E.1     |
+| **3E.2** | SendBlue Outbound Founder-Only Smoke Test (proves real iMessage delivery to founder's own phone + idempotency + three-outcome handling) | 3F       |
+| **3F.x** | SendBlue Inbound Reply Smoke Test                                                                                                        | 3G       |
+| **3G**   | Full Founder Demo Smoke Test (end-to-end v0.1)                                                                                           | v0.3     |
 
 Numbering convention: a `.x` suffix denotes the specific smoke-test
 sub-phase that lands at the end of the named subphase. For example,
-SendBlue's outbound adapter PR is `3E` and its smoke test is `3E.x`
+SendBlue's inbound reply parser PR is `3F` and its smoke test is `3F.x`
 (concrete number assigned when scheduled).
 
 **3D split note (founder directive 2026-05-25):** what was previously
 `3D + 3D.x` is now `3D.1 (substrate: Slack Candidate Review Posting)
 + 3D.2 (smoke: Slack Approval Capture)`. 3D.1 is substrate-only and
 does not require a smoke gate of its own — alerts created in 3D.1
-sit at `queued_for_review` until 3D.2 wires inbound approval. 3E
-SendBlue cannot begin until 3D.2 PASS is on `main`.
+sit at `queued_for_review` until 3D.2 wires inbound approval.
+
+**3E split note (founder directive 2026-05-25):** what was previously
+`3E + 3E.x` is now `3E.1 (substrate: SendBlue Outbound Substrate) +
+3E.2 (smoke: real SendBlue iMessage to founder phone)`. 3E.1 is
+substrate-only — it ships `SendBlueClient`, the deterministic
+founder-text template (no LLM voice), the outbound-sender worker, and
+the founder-phone allowlist. **No live SendBlue call happens in
+3E.1**; the substrate is fully mock-tested and waits on the founder
+to provision a SendBlue account. 3F SendBlue inbound cannot begin
+until 3E.2 PASS is on `main`.
 
 ### Required deliverables per smoke gate
 
@@ -1221,11 +1230,11 @@ formalized here so 3D / 3E / 3F / 3G each get the same protection.
                                                                  ↓
                                                               3D.1 → 3D.2 ──gate──┐
                                                                                    ↓
-                                                                                 3E ──gate──┐
-                                                                                             ↓
-                                                                                           3F ──gate──┐
-                                                                                                       ↓
-                                                                                                     3G ──gate──→ v0.1 done
+                                                                                 3E.1 → 3E.2 ──gate──┐
+                                                                                                      ↓
+                                                                                                    3F ──gate──┐
+                                                                                                                ↓
+                                                                                                              3G ──gate──→ v0.1 done
 ```
 
 Each `──gate──` arrow represents a committed PASS report. The

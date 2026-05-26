@@ -89,4 +89,37 @@ export class PostgresAlertStateTransitionStore implements AlertStateTransitionSt
     if (!r) return null;
     return r.to_state as AlertState;
   }
+
+  async findAlertIdsInState(
+    userId: string,
+    state: AlertState,
+    limit: number
+  ): Promise<readonly string[]> {
+    if (!Number.isInteger(limit) || limit <= 0) return Object.freeze([]);
+    // DISTINCT ON (alert_id) ORDER BY alert_id, id DESC picks the most
+    // recent transition per alert. We then filter by to_state in an
+    // outer query and order oldest-first by the inner row's id so the
+    // worker dispatches in queue order.
+    const sub = this.db
+      .selectDistinctOn([alert_state_transitions.alert_id], {
+        alert_id: alert_state_transitions.alert_id,
+        to_state: alert_state_transitions.to_state,
+        id: alert_state_transitions.id,
+        at: alert_state_transitions.at
+      })
+      .from(alert_state_transitions)
+      .where(eq(alert_state_transitions.user_id, userId))
+      .orderBy(
+        asc(alert_state_transitions.alert_id),
+        desc(alert_state_transitions.id)
+      )
+      .as('latest');
+    const rows = await this.db
+      .select({ alert_id: sub.alert_id })
+      .from(sub)
+      .where(eq(sub.to_state, state))
+      .orderBy(asc(sub.id))
+      .limit(limit);
+    return Object.freeze(rows.map((r) => r.alert_id));
+  }
 }

@@ -29,19 +29,24 @@ describe('Kernel Integration Gate — full scenario report', () => {
       [...report.registry.internal_tool_ids].sort(),
       ['audit.write', 'feedback.write', 'memory_signal.write', 'slack.founder_review']
     );
-    // Phase 3A + 3B.2 + 3D.1 invariant: the three internal capabilities,
-    // gmail.read, and slack.founder_review are 'implemented'. Only
-    // sendblue.send_user_message remains 'declared' until 3E.
-    assert.equal(report.registry.declared_tool_ids.length, 1);
-    assert.equal(report.registry.implemented_tool_ids.length, 5);
+    // Phase 3A + 3B.2 + 3D.1 + 3E.1 invariant: all six v0.1 tools are
+    // 'implemented'. No tool remains 'declared' after Phase 3E.1
+    // flipped sendblue.send_user_message alongside the SendBlueClient
+    // adapter wireup.
+    assert.equal(report.registry.declared_tool_ids.length, 0);
+    assert.equal(report.registry.implemented_tool_ids.length, 6);
     assert.deepEqual(
       [...report.registry.implemented_tool_ids].sort(),
-      ['audit.write', 'feedback.write', 'gmail.read', 'memory_signal.write', 'slack.founder_review']
+      [
+        'audit.write',
+        'feedback.write',
+        'gmail.read',
+        'memory_signal.write',
+        'sendblue.send_user_message',
+        'slack.founder_review'
+      ]
     );
-    assert.deepEqual(
-      [...report.registry.declared_tool_ids].sort(),
-      ['sendblue.send_user_message']
-    );
+    assert.deepEqual([...report.registry.declared_tool_ids].sort(), []);
 
     // ---- Kill Switches (Phase 2B + 3B.2) — safe defaults all-disabled ----
     assert.equal(report.kill_switches.send_enabled, false);
@@ -51,10 +56,14 @@ describe('Kernel Integration Gate — full scenario report', () => {
     assert.equal(report.kill_switches.max_users, 1);
     assert.equal(report.kill_switches.polling_interval_ms, 60_000);
 
-    // ---- Permission Gate → Dispatch (Phase 2B + 2B.1 + 2C.1 + 3A + 3B.2 + 3D.1) ----
+    // ---- Permission Gate → Dispatch (Phase 2B + 2B.1 + 2C.1 + 3A + 3B.2 + 3D.1 + 3E.1) ----
     // 7 explicit invocations through the loop:
     //   Section A — 2 denials at the gate (no dispatch):
-    //     sendblue.send_user_message  → not_implemented (external+declared)
+    //     sendblue.send_user_message  → send_disabled (Phase 3E.1:
+    //                                    now 'implemented' but the
+    //                                    safe-defaults FOMO_SEND_ENABLED
+    //                                    is false → the gate's
+    //                                    risk_tier='send' branch denies)
     //     booking.flights             → unknown_tool
     //   Section B — 5 allows + dispatch executes:
     //     audit.write                 → executor writes 'session.created' audit
@@ -81,7 +90,7 @@ describe('Kernel Integration Gate — full scenario report', () => {
     const deniedByTool = new Map(
       decisions.filter((d) => !d.allowed).map((d) => [d.tool_id, d.code])
     );
-    assert.equal(deniedByTool.get('sendblue.send_user_message'), 'not_implemented');
+    assert.equal(deniedByTool.get('sendblue.send_user_message'), 'send_disabled');
     assert.equal(deniedByTool.get('booking.flights'), 'unknown_tool');
     // slack.founder_review removed from the explicit loop in Phase 3D.1.
     assert.equal(deniedByTool.has('slack.founder_review'), false);
@@ -307,8 +316,12 @@ describe('Kernel Integration Gate — Permission Gate honest semantics', () => {
     assert.equal(d.code, 'allowed');
   });
 
-  it('declared external tool (sendblue.send_user_message) denies not_implemented', () => {
-    // sendblue remains 'declared' until Phase 3E wires its HTTP adapter.
+  it('implemented external send tool (sendblue.send_user_message) denies send_disabled under safe defaults (Phase 3E.1)', () => {
+    // Phase 3E.1 flipped sendblue to 'implemented'. Under safe defaults
+    // (FOMO_SEND_ENABLED=false) the gate denies at the risk_tier='send'
+    // branch — not at not_implemented. This is the action-boundary
+    // kill-switch enforcement; bootstrap fail-closed is the matching
+    // build-time layer.
     const d = decidePolicy(
       { tool_id: 'sendblue.send_user_message', user_id: 'u1' },
       {
@@ -318,7 +331,8 @@ describe('Kernel Integration Gate — Permission Gate honest semantics', () => {
         hasOAuth: () => true
       }
     );
-    assert.equal(d.code, 'not_implemented');
+    assert.equal(d.allowed, false);
+    assert.equal(d.code, 'send_disabled');
   });
 
   it('implemented internal-tier tool (slack.founder_review) DENIES slack_review_disabled under safe-defaults (Phase 3D.1)', () => {

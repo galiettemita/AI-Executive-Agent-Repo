@@ -23,11 +23,17 @@ import { createModelRouter } from './core/model-router.js';
 import { rankEmail } from './ranker/index.js';
 import { RANKER_OPENAI_RESPONSE_FORMAT } from './ranker/openai-response-format.js';
 import { SlackClient } from './adapters/slack/client.js';
+import { SendBlueClient } from './adapters/sendblue/client.js';
 import {
   tryHandleSlackInteractivityRequest,
   type SlackInteractivityRouteDeps
 } from './routes/slack-interactivity.js';
 import { type RawEmailContext } from './core/egress-policy.js';
+import {
+  runOutboundOnce,
+  type OutboundPollingHandle,
+  type OutboundSenderDeps
+} from './workers/outbound-sender.js';
 import { loadCryptoConfig } from './security/token-crypto.js';
 import { loadSessionConfig } from './security/session.js';
 import { InMemoryNonceStore, loadOAuthStateConfig } from './security/oauth/state.js';
@@ -306,6 +312,106 @@ function buildSlackReviewWiring(
   };
 }
 
+/* ---------------------------------------------------------------------- */
+/* SendBlue outbound-sender bootstrap (Phase 3E.1)                        */
+/* ---------------------------------------------------------------------- */
+
+// Builds the SendBlueClient + the outbound-sender dep factory. Returns
+// `{ client: null, runDeps: null }` when FOMO_SEND_ENABLED is off (the
+// safe default) — the outbound worker is never started AND the
+// sendblue.send_user_message executor's dispatched calls return
+// executor_error('SendBlue adapter not wired') as defense-in-depth.
+//
+// THROWS at boot when FOMO_SEND_ENABLED=true but any required env var
+// is missing — "real or absent, never half-wired":
+//   * SENDBLUE_API_KEY_ID
+//   * SENDBLUE_API_SECRET_KEY
+//   * FOMO_FOUNDER_PHONE_NUMBER (E.164 format)
+//   * FOMO_FOUNDER_USER_ID — the user_id whose alerts the worker is
+//     allowed to text. Defense-in-depth allowlist: destinationFor
+//     returns FOMO_FOUNDER_PHONE_NUMBER ONLY for this user_id and
+//     null for anyone else, so a future multi-user environment cannot
+//     accidentally text strangers.
+//
+// The returned `runDeps(gateDeps)` factory accepts a fresh gateDeps
+// per cycle (mirroring the gmail-poll snapshot pattern) so token
+// state stays current.
+function buildSendWiring(
+  storesHandle: SubstrateStoresHandle,
+  killSwitches: KillSwitches,
+  dispatch: DispatchTable,
+  env: NodeJS.ProcessEnv = process.env
+): {
+  client: SendBlueClient | null;
+  runDeps: ((gateDeps: PolicyGateDeps) => OutboundSenderDeps) | null;
+  founderUserId: string | null;
+} {
+  if (!killSwitches.send_enabled) {
+    return { client: null, runDeps: null, founderUserId: null };
+  }
+
+  const apiKeyId = env.SENDBLUE_API_KEY_ID;
+  const apiSecretKey = env.SENDBLUE_API_SECRET_KEY;
+  const founderPhone = env.FOMO_FOUNDER_PHONE_NUMBER?.trim();
+  const founderUserId = env.FOMO_FOUNDER_USER_ID?.trim();
+
+  if (!apiKeyId || apiKeyId.length === 0) {
+    throw new Error(
+      'FOMO_SEND_ENABLED=true but SENDBLUE_API_KEY_ID is missing. ' +
+        'Set the SendBlue API key id (from your SendBlue dashboard) or set ' +
+        'FOMO_SEND_ENABLED=false. Refusing to boot a half-wired send path.'
+    );
+  }
+  if (!apiSecretKey || apiSecretKey.length === 0) {
+    throw new Error(
+      'FOMO_SEND_ENABLED=true but SENDBLUE_API_SECRET_KEY is missing. ' +
+        'Set the SendBlue API secret key or set FOMO_SEND_ENABLED=false.'
+    );
+  }
+  if (!founderPhone || founderPhone.length === 0) {
+    throw new Error(
+      'FOMO_SEND_ENABLED=true but FOMO_FOUNDER_PHONE_NUMBER is missing. ' +
+        'Set the founder phone number (E.164, e.g. +14155551234) or set ' +
+        'FOMO_SEND_ENABLED=false. The outbound-sender worker refuses to ' +
+        'dispatch without a founder-allowlisted destination.'
+    );
+  }
+  // Soft validation: E.164 numbers start with + and contain only digits.
+  if (!/^\+\d{7,15}$/.test(founderPhone)) {
+    throw new Error(
+      `FOMO_SEND_ENABLED=true but FOMO_FOUNDER_PHONE_NUMBER is not in E.164 format ` +
+        `(got '${founderPhone.slice(0, 4)}...'). Expected '+' followed by 7-15 digits, ` +
+        `e.g. '+14155551234'. Refusing to boot.`
+    );
+  }
+  if (!founderUserId || founderUserId.length === 0) {
+    throw new Error(
+      'FOMO_SEND_ENABLED=true but FOMO_FOUNDER_USER_ID is missing. ' +
+        'The outbound-sender worker uses this id to enforce the ' +
+        'founder-phone allowlist (destinationFor returns the founder ' +
+        'phone ONLY for this user_id). Set it or set FOMO_SEND_ENABLED=false.'
+    );
+  }
+
+  const client = new SendBlueClient({ apiKeyId, apiSecretKey });
+
+  const runDeps = (gateDeps: PolicyGateDeps): OutboundSenderDeps =>
+    Object.freeze({
+      dispatch,
+      auditStore: storesHandle.stores.audit,
+      toolInvocationStore: storesHandle.stores.toolInvocations,
+      gateDeps,
+      cursorStore: storesHandle.stores.gmailCursors,
+      alertStore: storesHandle.stores.alerts,
+      rankResultStore: storesHandle.stores.rankResults,
+      transitions: storesHandle.stores.transitions,
+      destinationFor: (uid: string): string | null =>
+        uid === founderUserId ? founderPhone : null
+    });
+
+  return { client, runDeps, founderUserId };
+}
+
 function startGmailPolling(
   storesHandle: SubstrateStoresHandle,
   gmailClient: GmailClient,
@@ -413,6 +519,77 @@ function startGmailPolling(
   };
 }
 
+// Mirrors startGmailPolling for the outbound-sender worker: each tick
+// refreshes the per-user token snapshot, builds a fresh gateDeps off
+// of it, and calls runOutboundOnce(deps). The interval is the same
+// FOMO_GMAIL_POLLING_INTERVAL_MS used by the polling worker (we don't
+// add a second knob for v0.1 — one worker rhythm to reason about).
+function startOutboundSenderInterval(
+  storesHandle: SubstrateStoresHandle,
+  killSwitches: KillSwitches,
+  config: FomoConfig,
+  runDepsBuilder: (gateDeps: PolicyGateDeps) => OutboundSenderDeps
+): OutboundPollingHandle {
+  const stores = storesHandle.stores;
+  let stopped = false;
+  let inflight: Promise<void> = Promise.resolve();
+  let timer: ReturnType<typeof setTimeout> | null = null;
+
+  const tick = (): void => {
+    if (stopped) return;
+    inflight = (async () => {
+      try {
+        const userIds = await stores.gmailCursors.listUserIds();
+        const snapshot = new Map<string, CycleTokenSnapshot>();
+        for (const uid of userIds) {
+          const tokens = await stores.tokens.list(uid);
+          const google = tokens.find((t) => t.provider === 'google');
+          snapshot.set(uid, {
+            has: !!google,
+            needsReauth: google?.needs_reauth ?? false
+          });
+        }
+        const gateDeps = buildLiveGateDeps(killSwitches, snapshot);
+        const deps = runDepsBuilder(gateDeps);
+        const report = await runOutboundOnce(deps);
+        if (stopped) return;
+        logEvent(config, undefined, 'fomo.outbound.cycle', 'INFO', {
+          users_total: report.users_total,
+          users_with_approved_alerts: report.users_with_approved_alerts,
+          alerts_considered: report.alerts_considered,
+          alerts_sent: report.alerts_sent,
+          alerts_failed: report.alerts_failed,
+          alerts_status_unknown: report.alerts_status_unknown,
+          alerts_unauthorized: report.alerts_unauthorized,
+          alerts_preflight_skipped: report.alerts_preflight_skipped
+        });
+      } catch (err) {
+        if (stopped) return;
+        logEvent(config, undefined, 'fomo.outbound.error', 'ERROR', {
+          error: err instanceof Error ? err.message : String(err)
+        });
+      }
+    })();
+    void inflight.finally(() => {
+      if (stopped) return;
+      timer = setTimeout(tick, killSwitches.polling_interval_ms);
+    });
+  };
+
+  tick();
+
+  return {
+    async stop() {
+      stopped = true;
+      if (timer !== null) {
+        clearTimeout(timer);
+        timer = null;
+      }
+      await inflight.catch(() => undefined);
+    }
+  };
+}
+
 export function createFomoRuntime(config: FomoConfig = loadFomoConfig()): FomoRuntime {
   const startedAtMs = Date.now();
 
@@ -487,10 +664,34 @@ export function createFomoRuntime(config: FomoConfig = loadFomoConfig()): FomoRu
     });
   }
 
+  // SendBlue outbound send — bootstrapped only when FOMO_SEND_ENABLED=true.
+  // THROWS at boot if the switch is on but creds / founder phone /
+  // founder user id are missing. Safe default (switch off) returns
+  // null fields and the outbound worker is never started; the
+  // sendblue.send_user_message executor is still registered (so the
+  // gate's send_disabled denial path is exercisable) but every call
+  // surfaces executor_error('SendBlue adapter not wired').
+  const sendWiring = buildSendWiring(storesHandle, killSwitches, dispatch);
+  if (sendWiring.client && sendWiring.runDeps) {
+    logEvent(config, undefined, 'fomo.send.enabled', 'INFO', {
+      founder_user_id: sendWiring.founderUserId,
+      // Never log the full phone — only that it is configured.
+      founder_phone_configured: true,
+      auto_send_enabled: killSwitches.auto_send_enabled
+    });
+  } else {
+    logEvent(config, undefined, 'fomo.send.disabled', 'INFO', {
+      detail:
+        'FOMO_SEND_ENABLED is not "true"; outbound sender worker dormant ' +
+        '(no SendBlue calls, no approved → sent transitions)'
+    });
+  }
+
   wireExternalExecutors(dispatch, {
     gmailClient,
     tokenStore: storesHandle.stores.tokens,
-    slackClient: slackWiring.client ?? undefined
+    slackClient: slackWiring.client ?? undefined,
+    sendBlueClient: sendWiring.client ?? undefined
   });
 
   // OAuth routes — graceful skip when not configured.
@@ -518,6 +719,31 @@ export function createFomoRuntime(config: FomoConfig = loadFomoConfig()): FomoRu
   } else {
     logEvent(config, undefined, 'fomo.poll.disabled', 'INFO', {
       detail: 'FOMO_GMAIL_POLLING_ENABLED is not "true"; polling worker dormant'
+    });
+  }
+
+  // Outbound-sender worker (Phase 3E.1) — runs independently of the
+  // Gmail polling worker. It uses the same per-cycle token snapshot
+  // pattern to keep gateDeps current, but iterates the alerts table
+  // (not Gmail history) and dispatches sendblue.send_user_message for
+  // any alert whose latest state is 'approved'. Safe default: off.
+  let outboundHandle: OutboundPollingHandle | null = null;
+  if (killSwitches.send_enabled && sendWiring.runDeps) {
+    outboundHandle = startOutboundSenderInterval(
+      storesHandle,
+      killSwitches,
+      config,
+      sendWiring.runDeps
+    );
+    logEvent(config, undefined, 'fomo.outbound.enabled', 'INFO', {
+      interval_ms: killSwitches.polling_interval_ms,
+      auto_send_enabled: killSwitches.auto_send_enabled
+    });
+  } else {
+    logEvent(config, undefined, 'fomo.outbound.disabled', 'INFO', {
+      detail:
+        'FOMO_SEND_ENABLED is not "true"; outbound-sender worker dormant ' +
+        '(approved alerts will not become sent)'
     });
   }
 
@@ -577,6 +803,9 @@ export function createFomoRuntime(config: FomoConfig = loadFomoConfig()): FomoRu
       if (pollingHandle) {
         await pollingHandle.stop();
       }
+      if (outboundHandle) {
+        await outboundHandle.stop();
+      }
       await new Promise<void>((resolve, reject) => {
         server.close((err) => (err ? reject(err) : resolve()));
       });
@@ -594,7 +823,9 @@ export function createFomoRuntime(config: FomoConfig = loadFomoConfig()): FomoRu
       polling_enabled: killSwitches.polling_enabled,
       ranker_enabled: ranker !== null,
       slack_review_enabled: slackWiring.dep !== null,
-      slack_interactivity_route_mounted: slackWiring.routeDeps !== null
+      slack_interactivity_route_mounted: slackWiring.routeDeps !== null,
+      send_enabled: sendWiring.runDeps !== null,
+      outbound_worker_started: outboundHandle !== null
     });
   });
 

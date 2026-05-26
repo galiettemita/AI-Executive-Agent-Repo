@@ -42,6 +42,23 @@ export interface AlertStateTransitionStore {
   // Returns the most recent to_state for this alert, or null if no
   // transitions have been recorded for it.
   currentState(alertId: string): Promise<AlertState | null>;
+  // Phase 3E.1: returns the alert_ids whose MOST RECENT transition
+  // (highest id) for this user landed them in `state`. Used by the
+  // outbound sender worker to find alerts in state 'approved' that
+  // are ready to be dispatched to SendBlue. Ordered oldest-first by
+  // the transition that moved them into `state` so the worker sends
+  // in queue order.
+  //
+  // Semantics: an alert whose history is queued_for_review → approved
+  // → sent is NOT returned for state='approved' — its CURRENT state is
+  // 'sent'. Only alerts whose latest transition is into `state` are
+  // returned. This is the idempotency guard against the worker
+  // re-sending an alert that has already been processed.
+  findAlertIdsInState(
+    userId: string,
+    state: AlertState,
+    limit: number
+  ): Promise<readonly string[]>;
 }
 
 export class InMemoryAlertStateTransitionStore implements AlertStateTransitionStore {
@@ -91,5 +108,30 @@ export class InMemoryAlertStateTransitionStore implements AlertStateTransitionSt
     const transitions = this.records.filter((r) => r.alert_id === alertId);
     if (transitions.length === 0) return null;
     return transitions[transitions.length - 1]!.to_state;
+  }
+
+  async findAlertIdsInState(
+    userId: string,
+    state: AlertState,
+    limit: number
+  ): Promise<readonly string[]> {
+    if (!Number.isInteger(limit) || limit <= 0) return Object.freeze([]);
+    // Latest transition per alert for this user. We use insertion order
+    // (the records[] order matches monotonic id since we append).
+    const latestByAlert = new Map<
+      string,
+      { record: AlertStateTransitionRecord; index: number }
+    >();
+    for (let i = 0; i < this.records.length; i++) {
+      const r = this.records[i]!;
+      if (r.user_id !== userId) continue;
+      latestByAlert.set(r.alert_id, { record: r, index: i });
+    }
+    const matching = Array.from(latestByAlert.values()).filter(
+      (v) => v.record.to_state === state
+    );
+    // Oldest-first by the transition that moved them into `state`.
+    matching.sort((a, b) => a.index - b.index);
+    return Object.freeze(matching.slice(0, limit).map((v) => v.record.alert_id));
   }
 }

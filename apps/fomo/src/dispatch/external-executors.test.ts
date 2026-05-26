@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import { GmailClient, GMAIL_READONLY_SCOPE } from '../adapters/gmail/client.ts';
+import { SendBlueClient } from '../adapters/sendblue/client.ts';
 import { loadCryptoConfig } from '../security/token-crypto.ts';
 import { InMemoryTokenStore } from '../security/oauth/token-store.ts';
 import {
@@ -9,7 +10,8 @@ import {
 } from './dispatcher.ts';
 import {
   GmailReadTokenMissingError,
-  gmailReadExecutor
+  gmailReadExecutor,
+  sendBlueSendExecutor
 } from './external-executors.ts';
 
 const TEST_KEK = Buffer.alloc(32, 7).toString('base64');
@@ -205,5 +207,67 @@ describe('gmailReadExecutor — per-user token isolation', () => {
 
     await exec({ message_id: 'msg-abc' }, { user_id: 'u-2', invocation_id: 'inv-2' });
     assert.equal(lastAuth, 'Bearer token-u2');
+  });
+});
+
+/* ---------------------------------------------------------------------- */
+/* sendblue.send_user_message (Phase 3E.1)                                */
+/* ---------------------------------------------------------------------- */
+
+describe('sendBlueSendExecutor — happy path', () => {
+  it('forwards to SendBlueClient.send and returns the outcome', async () => {
+    const fetchImpl = mockFetch(async () => ({
+      status: 200,
+      body: { status: 'QUEUED', message_handle: 'h-1' }
+    }));
+    const client = new SendBlueClient({
+      apiKeyId: 'k', apiSecretKey: 's', fetchImpl
+    });
+    const exec = sendBlueSendExecutor({ client });
+    const out = await exec({ to: '+15555550100', content: 'hi' }, CTX);
+    assert.equal(out.kind, 'sent');
+    assert.equal(out.providerMessageHandle, 'h-1');
+  });
+});
+
+describe('sendBlueSendExecutor — fail-closed when adapter not wired', () => {
+  it('throws when client is undefined (defense-in-depth)', async () => {
+    const exec = sendBlueSendExecutor({ client: undefined });
+    await assert.rejects(
+      () => exec({ to: '+15555550100', content: 'hi' }, CTX),
+      /SendBlueClient not wired/
+    );
+  });
+});
+
+describe('sendBlueSendExecutor — input validation', () => {
+  it('throws when args is missing', async () => {
+    const fetchImpl = mockFetch(async () => ({ status: 200, body: { status: 'QUEUED' } }));
+    const client = new SendBlueClient({ apiKeyId: 'k', apiSecretKey: 's', fetchImpl });
+    const exec = sendBlueSendExecutor({ client });
+    await assert.rejects(
+      () => exec(undefined as unknown as { to: string; content: string }, CTX),
+      /args must be a SendInput/
+    );
+  });
+
+  it('throws when args.to is missing or empty', async () => {
+    const fetchImpl = mockFetch(async () => ({ status: 200, body: { status: 'QUEUED' } }));
+    const client = new SendBlueClient({ apiKeyId: 'k', apiSecretKey: 's', fetchImpl });
+    const exec = sendBlueSendExecutor({ client });
+    await assert.rejects(
+      () => exec({ to: '', content: 'hi' }, CTX),
+      /args\.to is required/
+    );
+  });
+
+  it('throws when args.content is missing or empty', async () => {
+    const fetchImpl = mockFetch(async () => ({ status: 200, body: { status: 'QUEUED' } }));
+    const client = new SendBlueClient({ apiKeyId: 'k', apiSecretKey: 's', fetchImpl });
+    const exec = sendBlueSendExecutor({ client });
+    await assert.rejects(
+      () => exec({ to: '+15555550100', content: '' }, CTX),
+      /args\.content is required/
+    );
   });
 });

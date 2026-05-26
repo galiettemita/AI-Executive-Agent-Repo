@@ -421,17 +421,23 @@ export async function runKernelIntegrationScenario(
   /* --------------------------------------------------------------------
    * 3. Permission Gate → Dispatch → Store (Phase 3A + 3B.2 integrated path)
    *
-   *    Section A (3 invocations) — denied at the gate, no dispatch fires:
-   *      sendblue.send_user_message  → not_implemented (external+declared)
-   *      slack.founder_review        → send_disabled (Phase 3D.1: now
+   *    Section A (2 invocations) — denied at the gate, no dispatch fires:
+   *      sendblue.send_user_message  → send_disabled (Phase 3E.1: now
    *                                    'implemented', but safe-defaults
    *                                    FOMO_SEND_ENABLED=false denies at
-   *                                    the next gate stage)
+   *                                    the risk_tier='send' gate stage)
    *      booking.flights             → unknown_tool
    *
    *      gmail.read used to live here as a 'declared' denial. Phase 3B.2
    *      flipped it to 'implemented' and the polling worker (section 3.5
    *      below) drives the green path.
+   *
+   *      slack.founder_review used to live here as a 'declared'
+   *      denial. Phase 3D.1 flipped it to 'implemented' + demoted its
+   *      risk_tier to 'internal'; under safe-defaults it now denies
+   *      'slack_review_disabled', but the harness removed it from the
+   *      explicit loop. Its exercise belongs to the polling-worker
+   *      workflow tests.
    *
    *    Section B (5 invocations) — allowed at the gate, dispatch fires:
    *      audit.write                 → executor writes 'session.created' audit
