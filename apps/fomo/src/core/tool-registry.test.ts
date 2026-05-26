@@ -142,14 +142,16 @@ describe('createToolRegistry — external vs internal surface separation', () =>
   });
 });
 
-describe('createToolRegistry — executor_status honesty (Phase 3A + 3B.2)', () => {
+describe('createToolRegistry — executor_status honesty (Phase 3A + 3B.2 + 3D.1 + 3E.1)', () => {
   // Phase 3A wired dispatch executors for the three internal capabilities.
   // Phase 3B.2 flipped gmail.read to 'implemented' alongside the
   // gmailReadExecutor wireup. Phase 3D.1 flipped slack.founder_review to
   // 'implemented' alongside the slackFounderReviewExecutor + SlackClient
-  // adapter wireup. sendblue.send_user_message remains declared until 3E.
+  // adapter wireup. Phase 3E.1 flipped sendblue.send_user_message to
+  // 'implemented' alongside the sendBlueSendExecutor + SendBlueClient
+  // adapter wireup. No tool now remains in 'declared' state for v0.1.
 
-  it('all internal capabilities, gmail.read, and slack.founder_review are implemented', () => {
+  it('all six v0.1 tools are implemented (no remaining declared placeholders)', () => {
     const registry = createToolRegistry();
     const implemented = registry
       .getActiveTools()
@@ -157,26 +159,33 @@ describe('createToolRegistry — executor_status honesty (Phase 3A + 3B.2)', () 
       .map((t) => t.id);
     assert.deepEqual(
       [...implemented].sort(),
-      ['audit.write', 'feedback.write', 'gmail.read', 'memory_signal.write', 'slack.founder_review']
+      [
+        'audit.write',
+        'feedback.write',
+        'gmail.read',
+        'memory_signal.write',
+        'sendblue.send_user_message',
+        'slack.founder_review'
+      ]
     );
   });
 
-  it('only sendblue.send_user_message remains declared (3E will flip it)', () => {
+  it('no tools remain declared after 3E.1', () => {
     const registry = createToolRegistry();
     const declared = registry
       .getActiveTools()
       .filter((t) => t.executor_status === 'declared')
       .map((t) => t.id);
-    assert.deepEqual([...declared].sort(), ['sendblue.send_user_message']);
+    assert.deepEqual([...declared].sort(), []);
   });
 
-  it('gmail.read is the only implemented EXTERNAL tool (slack.founder_review is internal; sendblue still declared)', () => {
+  it('gmail.read and sendblue.send_user_message are the implemented EXTERNAL tools', () => {
     const registry = createToolRegistry();
     const externalImpl = registry
       .getExternalTools()
       .filter((t) => t.executor_status === 'implemented')
       .map((t) => t.id);
-    assert.deepEqual(externalImpl, ['gmail.read']);
+    assert.deepEqual([...externalImpl].sort(), ['gmail.read', 'sendblue.send_user_message']);
   });
 });
 

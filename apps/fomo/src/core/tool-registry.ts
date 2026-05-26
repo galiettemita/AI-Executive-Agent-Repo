@@ -94,7 +94,16 @@ const ACTIVE_TOOLS: readonly ToolDescriptor[] = Object.freeze([
   Object.freeze({
     id: 'sendblue.send_user_message',
     surface: 'external',
-    executor_status: 'declared',
+    // Phase 3E.1: dispatch wired to SendBlueClient via
+    // apps/fomo/src/dispatch/external-executors.ts#sendBlueSendExecutor.
+    // The Permission Gate still fail-closes via risk_tier='send':
+    //   - FOMO_SEND_ENABLED=false → deny('send_disabled')
+    //   - intent='auto_send' + FOMO_AUTO_SEND_ENABLED=false → deny('auto_send_disabled')
+    // 3E.1 only sends MANUAL (founder-approved) intents; auto-send
+    // stays off through v0.1. Defense-in-depth at the outbound-sender
+    // worker boundary additionally enforces the founder-phone
+    // allowlist (FOMO_FOUNDER_PHONE_NUMBER) before any dispatch.
+    executor_status: 'implemented',
     category: 'action',
     risk_tier: 'send',
     description: 'Send an iMessage/SMS to the user via SendBlue after approval.',

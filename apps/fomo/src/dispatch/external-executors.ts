@@ -21,6 +21,11 @@
 
 import { GmailClient, GmailUnauthorizedError } from '../adapters/gmail/client.js';
 import {
+  type SendBlueClient,
+  type SendInput,
+  type SendOutcome
+} from '../adapters/sendblue/client.js';
+import {
   SlackApiError,
   SlackAuthError,
   type SlackClient,
@@ -144,6 +149,47 @@ export function slackFounderReviewExecutor(
 }
 
 /* ---------------------------------------------------------------------- */
+/* sendblue.send_user_message                                             */
+/* ---------------------------------------------------------------------- */
+
+// Args mirror SendBlueClient.send's input shape (caller is responsible
+// for resolving the founder-allowlisted phone and rendering the
+// deterministic template before invoking).
+export type SendBlueSendArgs = SendInput;
+export type SendBlueSendOutput = SendOutcome;
+
+export interface SendBlueExecutorDeps {
+  // Optional: when undefined, the executor is registered but every
+  // dispatch returns executor_error('SendBlue adapter not wired').
+  // Matches the slack.founder_review pattern — gives the outbound
+  // worker a uniform code path even when the kill switch is off, and
+  // keeps "real or absent, never half-wired" honest.
+  readonly client?: SendBlueClient;
+}
+
+export function sendBlueSendExecutor(
+  deps: SendBlueExecutorDeps
+): Executor<SendBlueSendArgs, SendBlueSendOutput> {
+  return async (args /* , context */) => {
+    if (!deps.client) {
+      throw new Error(
+        'sendblue.send_user_message: SendBlueClient not wired (FOMO_SEND_ENABLED=true requires SENDBLUE_API_KEY_ID + SENDBLUE_API_SECRET_KEY + FOMO_FOUNDER_PHONE_NUMBER)'
+      );
+    }
+    if (!args || typeof args !== 'object') {
+      throw new Error('sendblue.send_user_message: args must be a SendInput object');
+    }
+    if (typeof args.to !== 'string' || args.to.length === 0) {
+      throw new Error('sendblue.send_user_message: args.to is required (E.164-formatted phone)');
+    }
+    if (typeof args.content !== 'string' || args.content.length === 0) {
+      throw new Error('sendblue.send_user_message: args.content is required (deterministic template-rendered text)');
+    }
+    return deps.client.send(args);
+  };
+}
+
+/* ---------------------------------------------------------------------- */
 /* Wireup helper                                                          */
 /* ---------------------------------------------------------------------- */
 
@@ -156,6 +202,13 @@ export interface ExternalExecutorDeps {
   // The polling worker's slackReviewDep guards the call site so this
   // path only fires as defense-in-depth.
   readonly slackClient?: SlackClient;
+  // Phase 3E.1 — optional. Same shape rationale as slackClient. When
+  // undefined, sendblue.send_user_message is registered but every call
+  // surfaces "adapter not wired". The outbound-sender worker's send
+  // wiring guards the call site so this path only fires as
+  // defense-in-depth (e.g. an admin invocation while
+  // FOMO_SEND_ENABLED=false — the gate will deny first).
+  readonly sendBlueClient?: SendBlueClient;
 }
 
 // Single entry point. Registers all external executors that have
@@ -163,7 +216,7 @@ export interface ExternalExecutorDeps {
 // in the tool registry MUST call this before any gate decision goes
 // through dispatch — otherwise the gate allows but dispatch returns
 // no_executor_for_tool. Phase 3B.2 registers gmail.read; 3D.1 adds
-// slack.founder_review.
+// slack.founder_review; 3E.1 adds sendblue.send_user_message.
 export function wireExternalExecutors(table: DispatchTable, deps: ExternalExecutorDeps): void {
   table.register('gmail.read', gmailReadExecutor({
     client: deps.gmailClient,
@@ -171,5 +224,8 @@ export function wireExternalExecutors(table: DispatchTable, deps: ExternalExecut
   }));
   table.register('slack.founder_review', slackFounderReviewExecutor({
     client: deps.slackClient
+  }));
+  table.register('sendblue.send_user_message', sendBlueSendExecutor({
+    client: deps.sendBlueClient
   }));
 }

@@ -55,36 +55,46 @@ describe('decidePolicy — unknown tool', () => {
   });
 });
 
-describe('decidePolicy — not_implemented (any declared tool, regardless of surface)', () => {
+describe('decidePolicy — not_implemented (declared-tool short-circuit)', () => {
   // Phase 2C.1 honest semantics: a tool with executor_status='declared'
-  // denies not_implemented at the gate. Surface (external vs internal)
-  // does not bypass this. After Phase 3D.1 the only declared tool in
-  // the registry is sendblue.send_user_message (3E will flip it);
-  // gmail.read (3B.2) and slack.founder_review (3D.1) are now implemented.
+  // denies not_implemented at the gate. Phase 3E.1 flipped the last
+  // remaining declared tool (sendblue.send_user_message) to
+  // 'implemented', so the live v0.1 registry no longer has any declared
+  // tools. To exercise the gate's not_implemented branch we build a
+  // synthetic registry that forces gmail.read back to 'declared'.
 
-  it('denies sendblue.send_user_message (external+declared)', () => {
-    const d = decidePolicy({ tool_id: 'sendblue.send_user_message', user_id: 'u1' }, makeDeps());
+  function makeRegistryWithDeclared(toolId: ToolId): ToolRegistry {
+    const base = createToolRegistry();
+    return {
+      ...base,
+      getTool(id: string) {
+        const t = base.getTool(id);
+        if (!t) return null;
+        if (t.id === toolId) {
+          return Object.freeze({ ...t, executor_status: 'declared' as const });
+        }
+        return t;
+      }
+    };
+  }
+
+  it('denies a declared tool with not_implemented', () => {
+    const registry = makeRegistryWithDeclared('gmail.read');
+    const d = decidePolicy(
+      { tool_id: 'gmail.read', user_id: 'u1' },
+      makeDeps({ registry })
+    );
     assert.equal(d.allowed, false);
     assert.equal(d.code, 'not_implemented');
-    assert.match(d.reason, /tool sendblue\.send_user_message is declared.*no executor is wired/);
+    assert.match(d.reason, /no executor is wired/);
   });
 
-  it('denies sendblue.send_user_message with not_implemented even when send-tier kill switches are flipped on', () => {
-    // not_implemented is checked before risk-tier. Without an adapter the
-    // tool is unreachable regardless of FOMO_SEND_ENABLED state.
+  it('not_implemented short-circuits before risk-tier evaluation', () => {
     const switches = loadKillSwitches({ FOMO_SEND_ENABLED: 'true', FOMO_AUTO_SEND_ENABLED: 'true' });
+    const registry = makeRegistryWithDeclared('sendblue.send_user_message');
     const d = decidePolicy(
       { tool_id: 'sendblue.send_user_message', user_id: 'u1' },
-      makeDeps({ switches })
-    );
-    assert.equal(d.code, 'not_implemented');
-  });
-
-  it('not_implemented short-circuits before kill-switch evaluation (external send-tier)', () => {
-    const switches = loadKillSwitches({ FOMO_SEND_ENABLED: 'true' });
-    const d = decidePolicy(
-      { tool_id: 'sendblue.send_user_message', user_id: 'u1' },
-      makeDeps({ switches })
+      makeDeps({ switches, registry })
     );
     assert.equal(d.code, 'not_implemented');
   });
@@ -360,14 +370,28 @@ describe('decidePolicy — check ordering and short-circuit', () => {
     assert.equal(oauthCalls, 0);
   });
 
-  it('reports not_implemented before send_disabled for any declared send-tier tool (external)', () => {
-    // sendblue is external+declared+send. Under default kill switches BOTH
-    // not_implemented and send_disabled would apply; the gate reports
-    // not_implemented because it is the more fundamental defect.
-    // (After Phase 3D.1 flipped slack.founder_review to 'implemented',
-    // sendblue is the only remaining declared send-tier tool — so this
-    // single test covers the precedence rule for both surfaces.)
-    const d = decidePolicy({ tool_id: 'sendblue.send_user_message', user_id: 'u1' }, makeDeps());
+  it('reports not_implemented before send_disabled for a declared send-tier tool', () => {
+    // After Phase 3E.1 flipped sendblue.send_user_message to
+    // 'implemented', no live v0.1 send-tier tool is declared. We build
+    // a synthetic registry that forces sendblue back to 'declared' to
+    // exercise the precedence rule: not_implemented denies BEFORE the
+    // risk-tier branch fires (otherwise send_disabled would also apply).
+    const base = createToolRegistry();
+    const registry: ToolRegistry = {
+      ...base,
+      getTool(id: string) {
+        const t = base.getTool(id);
+        if (!t) return null;
+        if (t.id === 'sendblue.send_user_message') {
+          return Object.freeze({ ...t, executor_status: 'declared' as const });
+        }
+        return t;
+      }
+    };
+    const d = decidePolicy(
+      { tool_id: 'sendblue.send_user_message', user_id: 'u1' },
+      makeDeps({ registry })
+    );
     assert.equal(d.code, 'not_implemented');
   });
 
