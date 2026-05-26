@@ -7,6 +7,30 @@ Companion to:
 - [FOMO_PLAN.md](../FOMO_PLAN.md) — implementation plan with "Long-Term Assistant Preservation Rule"
 - [SALVAGE_MAP.md](../SALVAGE_MAP.md) — original module inventory
 
+## Permanent execution-policy rule for every future layer
+
+**Architecture Rule §4.8 — API-first, Browser-fallback, Approval-required (founder directive 2026-05-25).** This is a permanent Brevio architecture law on the same level of importance as the seven MCP/agent architecture rules. Lives in [FOMO_DESIGN.md §6 Rule 8](../FOMO_DESIGN.md) and [FOMO_PLAN.md §4.8](../FOMO_PLAN.md). When you re-introduce ANY archived module below — Agent Orchestration (L6/L7), Browser / Computer-use, MCP tool servers (L6), Calendar create (L5), Email Drafting / Sending (L3/L4), Payment / Booking / Purchase tools, Delegated Reasoners (L7), Autonomous follow-through (L7), Memory write-back (L8) — you MUST satisfy this rule before the layer ships:
+
+> **API first. Browser fallback only when sandboxed. User approval before final commitment.**
+>
+> Brevio may decide that a missing tool is needed, but it may not silently obtain access, silently use browser automation, or silently complete high-risk actions. The AI may propose; the system gates; the user approves.
+>
+> Mock tests prove code. Smoke tests prove reality. Every real-world capability needs a founder-only smoke test before it is trusted.
+
+The nine clauses (the canonical numbered text lives in `FOMO_DESIGN.md §6 Rule 8` and `FOMO_PLAN.md §4.8`):
+
+1. Prefer official API / MCP server / trusted adapter when available.
+2. If no official API or MCP tool exists, consider browser automation only through a sandboxed executor.
+3. Browser automation must go through Tool Registry, Permission Gate, audit, egress, kill switches, state, and approval.
+4. High-risk actions (payments, purchases, bookings, legal, healthcare, financial, account changes, destructive, permission expansion, irreversible) require explicit user approval before the final action.
+5. Some high-risk actions: Brevio may prepare; user completes the final confirmation manually.
+6. The system must never silently connect accounts, expand permissions, use browser automation, complete payments, purchase items, or submit bookings.
+7. Every new browser-automation capability needs its own founder-only smoke test before production use.
+8. Every high-risk workflow must have a clear rollback / cancel / manual-review story where possible.
+9. If the risk is too high or the system cannot verify the action safely, Brevio must guide the user instead of executing.
+
+**Practical effect on this doc:** every L4+ section below ("when to recover this code") inherits an implicit prerequisite — when you re-introduce that capability, also wire the §4.8 enforcement points (registry entry with explicit risk_tier, gate consultation, kill switch, audit, egress, approval prompt, founder-only smoke gate) in the same PR. No separate compliance phase, no "we'll wire approval later." The kernel-completeness gate must verify §4.8 still holds for every new capability *in the same PR* that introduces it.
+
 ## How to use this doc
 
 **When designing a new layer** (L2 Calendar → L3 Drafting → L4 Sending → L5 Calendar create → L6 MCP tools → L7 Autonomous → L8 Memory), read every section here whose "Layer" line includes that layer. Each section tells you:
