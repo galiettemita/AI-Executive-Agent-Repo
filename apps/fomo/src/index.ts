@@ -326,7 +326,12 @@ function buildSlackReviewWiring(
 // is missing — "real or absent, never half-wired":
 //   * SENDBLUE_API_KEY_ID
 //   * SENDBLUE_API_SECRET_KEY
-//   * FOMO_FOUNDER_PHONE_NUMBER (E.164 format)
+//   * SENDBLUE_FROM_NUMBER (E.164) — the SendBlue-assigned sender
+//     phone, REQUIRED in every send-message POST body. 3E.2 smoke
+//     test surfaced that SendBlue returns HTTP 400
+//     `missing required parameter: "from_number"` without it.
+//   * FOMO_FOUNDER_PHONE_NUMBER (E.164) — the destination phone
+//     allowlist (where iMessages are delivered TO).
 //   * FOMO_FOUNDER_USER_ID — the user_id whose alerts the worker is
 //     allowed to text. Defense-in-depth allowlist: destinationFor
 //     returns FOMO_FOUNDER_PHONE_NUMBER ONLY for this user_id and
@@ -352,6 +357,7 @@ function buildSendWiring(
 
   const apiKeyId = env.SENDBLUE_API_KEY_ID;
   const apiSecretKey = env.SENDBLUE_API_SECRET_KEY;
+  const fromNumber = env.SENDBLUE_FROM_NUMBER?.trim();
   const founderPhone = env.FOMO_FOUNDER_PHONE_NUMBER?.trim();
   const founderUserId = env.FOMO_FOUNDER_USER_ID?.trim();
 
@@ -366,6 +372,21 @@ function buildSendWiring(
     throw new Error(
       'FOMO_SEND_ENABLED=true but SENDBLUE_API_SECRET_KEY is missing. ' +
         'Set the SendBlue API secret key or set FOMO_SEND_ENABLED=false.'
+    );
+  }
+  if (!fromNumber || fromNumber.length === 0) {
+    throw new Error(
+      'FOMO_SEND_ENABLED=true but SENDBLUE_FROM_NUMBER is missing. ' +
+        'Set the SendBlue-assigned sender phone (E.164, e.g. +12143547196) or set ' +
+        'FOMO_SEND_ENABLED=false. SendBlue rejects /api/send-message with HTTP 400 ' +
+        '`missing required parameter: "from_number"` without this — surfaced by the ' +
+        '3E.2 smoke test.'
+    );
+  }
+  if (!/^\+\d{7,15}$/.test(fromNumber)) {
+    throw new Error(
+      `FOMO_SEND_ENABLED=true but SENDBLUE_FROM_NUMBER is not in E.164 format ` +
+        `(got '${fromNumber.slice(0, 4)}...'). Expected '+' followed by 7-15 digits.`
     );
   }
   if (!founderPhone || founderPhone.length === 0) {
@@ -393,7 +414,7 @@ function buildSendWiring(
     );
   }
 
-  const client = new SendBlueClient({ apiKeyId, apiSecretKey });
+  const client = new SendBlueClient({ apiKeyId, apiSecretKey, fromNumber });
 
   const runDeps = (gateDeps: PolicyGateDeps): OutboundSenderDeps =>
     Object.freeze({

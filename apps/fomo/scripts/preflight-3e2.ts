@@ -124,6 +124,31 @@ require_(
   'SENDBLUE_API_SECRET_KEY required (from your SendBlue account dashboard).'
 );
 
+// 3E.2 smoke-surfaced finding: SendBlue's /api/send-message requires
+// a `from_number` field in the request body. Without it the API
+// returns HTTP 400 `missing required parameter: "from_number"`. This
+// is the SendBlue-assigned sender phone (NOT the destination). Find
+// it in your SendBlue dashboard.
+const fromNumber = (process.env.SENDBLUE_FROM_NUMBER ?? '').trim();
+if (!fromNumber) {
+  issues.push({
+    name: 'SENDBLUE_FROM_NUMBER',
+    severity: 'error',
+    message:
+      'SENDBLUE_FROM_NUMBER required (E.164 format, e.g. +12143547196). ' +
+      'This is the SendBlue-assigned sender phone number — find it in your ' +
+      'SendBlue dashboard. Surfaced by the 3E.2 smoke test: SendBlue rejects ' +
+      'every send call with HTTP 400 `missing required parameter: "from_number"` ' +
+      'until this is set.'
+  });
+} else if (!/^\+\d{7,15}$/.test(fromNumber)) {
+  issues.push({
+    name: 'SENDBLUE_FROM_NUMBER',
+    severity: 'error',
+    message: `SENDBLUE_FROM_NUMBER='${fromNumber.slice(0, 4)}...' is not in E.164 format. Expected '+' followed by 7-15 digits, e.g. '+12143547196'.`
+  });
+}
+
 const founderPhone = (process.env.FOMO_FOUNDER_PHONE_NUMBER ?? '').trim();
 if (!founderPhone) {
   issues.push({

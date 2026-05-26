@@ -55,7 +55,8 @@ Confirm each was set during the run. Do NOT paste secret values.
 | `FOMO_SEND_ENABLED`                | ☐    | **`true` (3E.2 invariant)**                                        |
 | `SENDBLUE_API_KEY_ID`              | ☐    |                                                                    |
 | `SENDBLUE_API_SECRET_KEY`          | ☐    |                                                                    |
-| `FOMO_FOUNDER_PHONE_NUMBER`        | ☐    | E.164 (last 4 digits only above)                                   |
+| `SENDBLUE_FROM_NUMBER`             | ☐    | SendBlue-assigned sender phone, E.164 (last 4 digits only)         |
+| `FOMO_FOUNDER_PHONE_NUMBER`        | ☐    | YOUR destination phone, E.164 (last 4 digits only above)           |
 | `FOMO_FOUNDER_USER_ID`             | ☐    | The user_id whose alerts are allowed to text                        |
 | `FOMO_OUTBOUND_MAX_CYCLES`         | ☐    | Recommended: 1-3                                                   |
 | `BREVIO_DEV_MODE`                  | ☐    | UNSET                                                              |

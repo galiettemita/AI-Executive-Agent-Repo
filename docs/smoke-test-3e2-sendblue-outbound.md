@@ -77,14 +77,22 @@ If you already have an account, skip to step 2.
 FOMO_SEND_ENABLED=true
 SENDBLUE_API_KEY_ID=...                  # from SendBlue dashboard
 SENDBLUE_API_SECRET_KEY=...              # from SendBlue dashboard
-FOMO_FOUNDER_PHONE_NUMBER=+1XXXYYYZZZZ   # YOUR phone, E.164 format
+SENDBLUE_FROM_NUMBER=+1XXXYYYZZZZ        # SendBlue-assigned SENDER phone (NOT your phone)
+                                          # — surfaced by smoke run: SendBlue rejects
+                                          # every send with HTTP 400 without this
+FOMO_FOUNDER_PHONE_NUMBER=+1XXXYYYZZZZ   # YOUR phone, E.164 format (destination)
 FOMO_FOUNDER_USER_ID=<your user_id>      # same user_id you completed Google OAuth as
+                                          # (in 3B.3 / 3C.4 / 3D.2 runs this was the
+                                          # string "founder")
 
-# Bounded smoke window — 1-3 is recommended so the outbound-sender
-# auto-stops after a controlled number of cycles even if something
-# goes wrong. The worker emits `fomo.outbound.cycle_cap_reached`
-# when this fires.
-FOMO_OUTBOUND_MAX_CYCLES=2
+# Bounded smoke window — recommended for the smoke run so the
+# outbound-sender auto-stops after a controlled number of cycles even
+# if something goes wrong. The worker emits
+# `fomo.outbound.cycle_cap_reached` when this fires. The smoke run
+# benefits from a higher cap (~30) at a 10s polling interval so the
+# founder has ~5 minutes to send the trigger email + click Approve
+# in Slack + watch the iMessage arrive without racing the clock.
+FOMO_OUTBOUND_MAX_CYCLES=30
 
 # Hard non-goal — must stay UNSET / false:
 # FOMO_AUTO_SEND_ENABLED=  (auto-send is not in 3E.2 scope)

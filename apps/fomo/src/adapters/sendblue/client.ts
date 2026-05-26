@@ -115,16 +115,27 @@ export interface SendBlueClientConfig {
   readonly apiKeyId: string;
   // API secret key from the SendBlue dashboard.
   readonly apiSecretKey: string;
+  // SendBlue-assigned sender phone number (E.164, e.g. +12143547196).
+  // REQUIRED by SendBlue's /api/send-message endpoint — the API
+  // returns HTTP 400 `missing required parameter: "from_number"`
+  // without it. Surfaced as a 3E.2 smoke-test finding (mock tests
+  // didn't catch it because the synthetic responses ignored body
+  // shape).
+  readonly fromNumber: string;
   readonly fetchImpl?: FetchLike;
-  // Optional override for the request timeout in ms. Default 10s. On
-  // timeout the outcome is 'send_status_unknown' (per founder directive
-  // — never auto-retry ambiguous).
+  // Optional override for the request timeout in ms. Default 30s.
+  // SendBlue's free-tier endpoint can take ~13s to respond (3E.2
+  // smoke-test diagnostic); the prior 10s default timed out before
+  // the response arrived. On timeout the outcome is
+  // 'send_status_unknown' (per founder directive — never auto-retry
+  // ambiguous).
   readonly timeoutMs?: number;
 }
 
 export class SendBlueClient {
   private readonly apiKeyId: string;
   private readonly apiSecretKey: string;
+  private readonly fromNumber: string;
   private readonly fetchImpl: FetchLike;
   private readonly timeoutMs: number;
 
@@ -135,10 +146,21 @@ export class SendBlueClient {
     if (!config.apiSecretKey || config.apiSecretKey.length === 0) {
       throw new Error('SendBlueClient: apiSecretKey is required');
     }
+    if (!config.fromNumber || config.fromNumber.length === 0) {
+      throw new Error(
+        'SendBlueClient: fromNumber is required (E.164, e.g. +12143547196 — your SendBlue-assigned sender number)'
+      );
+    }
+    if (!/^\+\d{7,15}$/.test(config.fromNumber)) {
+      throw new Error(
+        `SendBlueClient: fromNumber must be E.164 format (got '${config.fromNumber.slice(0, 4)}...'). Expected '+' followed by 7-15 digits.`
+      );
+    }
     this.apiKeyId = config.apiKeyId;
     this.apiSecretKey = config.apiSecretKey;
+    this.fromNumber = config.fromNumber;
     this.fetchImpl = config.fetchImpl ?? fetch;
-    const t = config.timeoutMs ?? 10_000;
+    const t = config.timeoutMs ?? 30_000;
     if (!Number.isInteger(t) || t <= 0) {
       throw new Error(`SendBlueClient: timeoutMs must be a positive integer (got ${t})`);
     }
@@ -179,7 +201,11 @@ export class SendBlueClient {
           'sb-api-secret-key': this.apiSecretKey,
           'content-type': 'application/json'
         },
-        body: JSON.stringify({ number: input.to, content: input.content }),
+        body: JSON.stringify({
+          number: input.to,
+          content: input.content,
+          from_number: this.fromNumber
+        }),
         signal: ac.signal
       });
     } catch (err) {
