@@ -15,6 +15,7 @@ describe('loadKillSwitches — safe defaults', () => {
     assert.equal(s.polling_max_cycles, null);
     assert.equal(s.ranker_enabled, false);
     assert.equal(s.slack_review_enabled, false);
+    assert.equal(s.outbound_max_cycles, null);
   });
 
   it('SAFE_DEFAULT_KILL_SWITCHES matches the empty-env result', () => {
@@ -90,6 +91,39 @@ describe('loadKillSwitches — FOMO_GMAIL_POLLING_MAX_CYCLES (Phase 3B.3)', () =
       loadKillSwitches({ FOMO_GMAIL_POLLING_MAX_CYCLES: '1e3' }).polling_max_cycles,
       null
     );
+  });
+});
+
+describe('loadKillSwitches — FOMO_OUTBOUND_MAX_CYCLES (Phase 3E.2)', () => {
+  it('returns null when unset (unbounded)', () => {
+    assert.equal(loadKillSwitches({}).outbound_max_cycles, null);
+  });
+
+  it('accepts positive integers', () => {
+    assert.equal(loadKillSwitches({ FOMO_OUTBOUND_MAX_CYCLES: '1' }).outbound_max_cycles, 1);
+    assert.equal(loadKillSwitches({ FOMO_OUTBOUND_MAX_CYCLES: '3' }).outbound_max_cycles, 3);
+    assert.equal(
+      loadKillSwitches({ FOMO_OUTBOUND_MAX_CYCLES: '  10  ' }).outbound_max_cycles,
+      10
+    );
+  });
+
+  it('returns null on invalid values (does not throw, does not fall back to a number)', () => {
+    assert.equal(loadKillSwitches({ FOMO_OUTBOUND_MAX_CYCLES: '' }).outbound_max_cycles, null);
+    assert.equal(loadKillSwitches({ FOMO_OUTBOUND_MAX_CYCLES: 'abc' }).outbound_max_cycles, null);
+    assert.equal(loadKillSwitches({ FOMO_OUTBOUND_MAX_CYCLES: '0' }).outbound_max_cycles, null);
+    assert.equal(loadKillSwitches({ FOMO_OUTBOUND_MAX_CYCLES: '-5' }).outbound_max_cycles, null);
+    assert.equal(loadKillSwitches({ FOMO_OUTBOUND_MAX_CYCLES: '3.7' }).outbound_max_cycles, null);
+    assert.equal(loadKillSwitches({ FOMO_OUTBOUND_MAX_CYCLES: '1e3' }).outbound_max_cycles, null);
+  });
+
+  it('is independent of FOMO_GMAIL_POLLING_MAX_CYCLES', () => {
+    const s = loadKillSwitches({
+      FOMO_GMAIL_POLLING_MAX_CYCLES: '3',
+      FOMO_OUTBOUND_MAX_CYCLES: '1'
+    });
+    assert.equal(s.polling_max_cycles, 3);
+    assert.equal(s.outbound_max_cycles, 1);
   });
 });
 

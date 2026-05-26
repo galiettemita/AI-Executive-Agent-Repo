@@ -534,6 +534,8 @@ function startOutboundSenderInterval(
   let stopped = false;
   let inflight: Promise<void> = Promise.resolve();
   let timer: ReturnType<typeof setTimeout> | null = null;
+  let cyclesRun = 0;
+  const cap = killSwitches.outbound_max_cycles; // null = unbounded
 
   const tick = (): void => {
     if (stopped) return;
@@ -552,8 +554,11 @@ function startOutboundSenderInterval(
         const gateDeps = buildLiveGateDeps(killSwitches, snapshot);
         const deps = runDepsBuilder(gateDeps);
         const report = await runOutboundOnce(deps);
+        cyclesRun++;
         if (stopped) return;
         logEvent(config, undefined, 'fomo.outbound.cycle', 'INFO', {
+          cycle_number: cyclesRun,
+          cycle_cap: cap,
           users_total: report.users_total,
           users_with_approved_alerts: report.users_with_approved_alerts,
           alerts_considered: report.alerts_considered,
@@ -572,6 +577,20 @@ function startOutboundSenderInterval(
     })();
     void inflight.finally(() => {
       if (stopped) return;
+      // Phase 3E.2: bounded smoke window. When FOMO_OUTBOUND_MAX_CYCLES
+      // is set, auto-stop after that many cycles and emit one terminal
+      // log event so ops can confirm the cap fired. The 3E.2 founder
+      // smoke runbook sets this to a small N (1-3) so the worker
+      // cannot accidentally keep firing real iMessages against
+      // SendBlue during the smoke window.
+      if (cap !== null && cyclesRun >= cap) {
+        stopped = true;
+        logEvent(config, undefined, 'fomo.outbound.cycle_cap_reached', 'INFO', {
+          cycles_run: cyclesRun,
+          cycle_cap: cap
+        });
+        return;
+      }
       timer = setTimeout(tick, killSwitches.polling_interval_ms);
     });
   };
@@ -737,6 +756,7 @@ export function createFomoRuntime(config: FomoConfig = loadFomoConfig()): FomoRu
     );
     logEvent(config, undefined, 'fomo.outbound.enabled', 'INFO', {
       interval_ms: killSwitches.polling_interval_ms,
+      cycle_cap: killSwitches.outbound_max_cycles,
       auto_send_enabled: killSwitches.auto_send_enabled
     });
   } else {
