@@ -8,8 +8,12 @@ import {
   SlackAuthError,
   SlackClient,
   buildFounderReviewBlocks,
-  type SlackPostInput
+  buildFounderReviewResolutionBlocks,
+  verifySlackSignature,
+  type SlackPostInput,
+  type SlackUpdateInput
 } from './client.ts';
+import { createHmac } from 'node:crypto';
 
 const VIEW: SlackEgressView = Object.freeze({
   purpose: 'slack_founder_card',
@@ -254,10 +258,246 @@ describe('buildFounderReviewBlocks — privacy + structure', () => {
     assert.equal(body.channel, 'C-SPECIFIC');
   });
 
-  it('includes the 3D.1 status disclaimer (queued_for_review until 3D.2)', () => {
+  it('Phase 3D.2: includes Approve + Reject interactive buttons with alert_id-bearing block_id', () => {
     const body = buildFounderReviewBlocks(INPUT, 'C123');
     const serialized = JSON.stringify(body);
-    assert.match(serialized, /Phase 3D\.1/);
-    assert.match(serialized, /queued_for_review/);
+    // Each button's action_id encodes the decision; block_id carries alert_id
+    assert.match(serialized, /"action_id":"fomo\.approve"/);
+    assert.match(serialized, /"action_id":"fomo\.reject"/);
+    assert.match(serialized, /"block_id":"fomo_alert:alert-test-1"/);
+    // Phase 3D.1 status disclaimer should no longer appear — the buttons
+    // themselves are the affordance for "you can act on this now."
+    assert.ok(!serialized.includes('Phase 3D.1'), 'stale 3D.1 disclaimer should be removed once buttons land');
+    // Button text + styles
+    assert.match(serialized, /Approve/);
+    assert.match(serialized, /Reject/);
+    assert.match(serialized, /"style":"primary"/);
+    assert.match(serialized, /"style":"danger"/);
+  });
+});
+
+/* ====================================================================== */
+/* Phase 3D.2: verifySlackSignature                                       */
+/* ====================================================================== */
+
+const TEST_SIGNING_SECRET = 'test_signing_secret_aaaaaaaaaaaaaaaa';
+
+function signSlackRequest(secret: string, timestamp: string, body: string): string {
+  const base = `v0:${timestamp}:${body}`;
+  const hex = createHmac('sha256', secret).update(base).digest('hex');
+  return `v0=${hex}`;
+}
+
+describe('verifySlackSignature — happy path', () => {
+  it('accepts a fresh, correctly-signed request', () => {
+    const timestamp = '1748054400';
+    const body = 'payload=%7B%22type%22%3A%22block_actions%22%7D';
+    const signature = signSlackRequest(TEST_SIGNING_SECRET, timestamp, body);
+    const r = verifySlackSignature({
+      signingSecret: TEST_SIGNING_SECRET,
+      timestamp,
+      signature,
+      body,
+      now: () => 1748054400
+    });
+    assert.equal(r.ok, true);
+  });
+});
+
+describe('verifySlackSignature — rejection paths', () => {
+  const NOW = 1748054400;
+  const goodBody = 'payload=%7B%22ok%22%3Atrue%7D';
+  const goodTs = String(NOW);
+  const goodSig = signSlackRequest(TEST_SIGNING_SECRET, goodTs, goodBody);
+
+  it('rejects a stale timestamp (>300s old)', () => {
+    const oldTs = String(NOW - 301);
+    const sig = signSlackRequest(TEST_SIGNING_SECRET, oldTs, goodBody);
+    const r = verifySlackSignature({
+      signingSecret: TEST_SIGNING_SECRET,
+      timestamp: oldTs,
+      signature: sig,
+      body: goodBody,
+      now: () => NOW
+    });
+    assert.equal(r.ok, false);
+    if (!r.ok) assert.equal(r.reason, 'stale_timestamp');
+  });
+
+  it('rejects a future timestamp (>300s ahead)', () => {
+    const futureTs = String(NOW + 301);
+    const sig = signSlackRequest(TEST_SIGNING_SECRET, futureTs, goodBody);
+    const r = verifySlackSignature({
+      signingSecret: TEST_SIGNING_SECRET,
+      timestamp: futureTs,
+      signature: sig,
+      body: goodBody,
+      now: () => NOW
+    });
+    assert.equal(r.ok, false);
+    if (!r.ok) assert.equal(r.reason, 'stale_timestamp');
+  });
+
+  it('rejects a malformed timestamp', () => {
+    const r = verifySlackSignature({
+      signingSecret: TEST_SIGNING_SECRET,
+      timestamp: 'not-a-number',
+      signature: goodSig,
+      body: goodBody,
+      now: () => NOW
+    });
+    assert.equal(r.ok, false);
+    if (!r.ok) assert.equal(r.reason, 'malformed_timestamp');
+  });
+
+  it('rejects a malformed signature (wrong prefix)', () => {
+    const r = verifySlackSignature({
+      signingSecret: TEST_SIGNING_SECRET,
+      timestamp: goodTs,
+      signature: 'v1=abc123',
+      body: goodBody,
+      now: () => NOW
+    });
+    assert.equal(r.ok, false);
+    if (!r.ok) assert.equal(r.reason, 'malformed_signature');
+  });
+
+  it('rejects a malformed signature (wrong length)', () => {
+    const r = verifySlackSignature({
+      signingSecret: TEST_SIGNING_SECRET,
+      timestamp: goodTs,
+      signature: 'v0=deadbeef',
+      body: goodBody,
+      now: () => NOW
+    });
+    assert.equal(r.ok, false);
+    if (!r.ok) assert.equal(r.reason, 'malformed_signature');
+  });
+
+  it('rejects a signature signed with the WRONG secret', () => {
+    const wrongSig = signSlackRequest('not_the_real_secret_xxxxxxxxxxxxxxx', goodTs, goodBody);
+    const r = verifySlackSignature({
+      signingSecret: TEST_SIGNING_SECRET,
+      timestamp: goodTs,
+      signature: wrongSig,
+      body: goodBody,
+      now: () => NOW
+    });
+    assert.equal(r.ok, false);
+    if (!r.ok) assert.equal(r.reason, 'signature_mismatch');
+  });
+
+  it('rejects when the BODY has been tampered with after signing', () => {
+    // Replay attack: attacker captures a valid (ts, sig) and replaces body.
+    const tamperedBody = 'payload=%7B%22ok%22%3Afalse%7D';
+    const r = verifySlackSignature({
+      signingSecret: TEST_SIGNING_SECRET,
+      timestamp: goodTs,
+      signature: goodSig,
+      body: tamperedBody,
+      now: () => NOW
+    });
+    assert.equal(r.ok, false);
+    if (!r.ok) assert.equal(r.reason, 'signature_mismatch');
+  });
+});
+
+/* ====================================================================== */
+/* Phase 3D.2: updateFounderReviewCard (chat.update)                      */
+/* ====================================================================== */
+
+const UPDATE_INPUT: SlackUpdateInput = Object.freeze({
+  ts: '1748054400.000100',
+  channel: 'C123',
+  alert_id: 'alert-test-1',
+  user_id: 'founder',
+  view: VIEW,
+  rank: Object.freeze({
+    label: 'important',
+    score: 0.85,
+    reason: 'Time-sensitive deadline today.',
+    model_name: 'gpt-5-mini',
+    prompt_version: 'ranker-v0.1.0'
+  }),
+  decision: Object.freeze({
+    kind: 'approved' as const,
+    at: '2026-05-25T19:00:00.000Z',
+    actor: 'U_FOUNDER'
+  })
+});
+
+describe('SlackClient.updateFounderReviewCard — happy path', () => {
+  it('POSTs to chat.update with bearer auth + JSON body referencing ts + channel', async () => {
+    let captured: { url: string; init?: RequestInit } | null = null;
+    const fetchImpl = mockFetch((input, init) => {
+      captured = { url: input.toString(), init };
+      return okResponse({ ok: true, ts: '1748054400.000100', channel: 'C123' });
+    });
+    const client = new SlackClient({ botToken: 'xoxb-test', channelId: 'C123', fetchImpl });
+    const result = await client.updateFounderReviewCard(UPDATE_INPUT);
+
+    assert.equal(result.ts, '1748054400.000100');
+    assert.equal(result.channel, 'C123');
+    assert.ok(captured);
+    const cap = captured as unknown as { url: string; init: RequestInit };
+    assert.equal(cap.url, 'https://slack.com/api/chat.update');
+    assert.equal(cap.init.method, 'POST');
+    const sent = JSON.parse(cap.init.body as string);
+    assert.equal(sent.channel, 'C123');
+    assert.equal(sent.ts, '1748054400.000100');
+    // Resolution body must reference the decision
+    assert.match(sent.text, /Approved by U_FOUNDER/);
+    // Buttons (actions block) should be GONE — replaced by the resolution context
+    const serialized = JSON.stringify(sent.blocks);
+    assert.ok(!serialized.includes('"action_id":"fomo.approve"'), 'updated card must remove the approve button');
+    assert.ok(!serialized.includes('"action_id":"fomo.reject"'), 'updated card must remove the reject button');
+  });
+
+  it('throws SlackAuthError on token_revoked', async () => {
+    const fetchImpl = mockFetch(() => okResponse({ ok: false, error: 'token_revoked' }));
+    const client = new SlackClient({ botToken: 'xoxb-test', channelId: 'C123', fetchImpl });
+    await assert.rejects(() => client.updateFounderReviewCard(UPDATE_INPUT), SlackAuthError);
+  });
+
+  it('throws SlackApiError on message_not_found (non-retryable)', async () => {
+    const fetchImpl = mockFetch(() => okResponse({ ok: false, error: 'message_not_found' }));
+    const client = new SlackClient({ botToken: 'xoxb-test', channelId: 'C123', fetchImpl });
+    await assert.rejects(
+      () => client.updateFounderReviewCard(UPDATE_INPUT),
+      (err: unknown) =>
+        err instanceof SlackApiError &&
+        err.providerCode === 'message_not_found' &&
+        err.retryable === false
+    );
+  });
+});
+
+describe('buildFounderReviewResolutionBlocks — privacy + structure', () => {
+  it('header reflects the decision (approved vs rejected)', () => {
+    const approved = buildFounderReviewResolutionBlocks(UPDATE_INPUT);
+    assert.match(JSON.stringify(approved), /✅ Approved/);
+    const rejected = buildFounderReviewResolutionBlocks({
+      ...UPDATE_INPUT,
+      decision: { ...UPDATE_INPUT.decision, kind: 'rejected' }
+    });
+    assert.match(JSON.stringify(rejected), /❌ Rejected/);
+  });
+
+  it('replaces action buttons with a resolution context section', () => {
+    const body = buildFounderReviewResolutionBlocks(UPDATE_INPUT);
+    const serialized = JSON.stringify(body);
+    assert.ok(!serialized.includes('"action_id":"fomo.approve"'));
+    assert.ok(!serialized.includes('"action_id":"fomo.reject"'));
+    assert.match(serialized, /<@U_FOUNDER>/); // Slack user mention
+    assert.match(serialized, /2026-05-25T19:00:00\.000Z/);
+  });
+
+  it('still respects egress privacy (no body / headers / attachments)', () => {
+    const body = buildFounderReviewResolutionBlocks(UPDATE_INPUT);
+    const serialized = JSON.stringify(body);
+    for (const forbidden of ['body_plain', 'body_html', 'headers', 'attachments', 'attachment_count']) {
+      assert.ok(!serialized.includes(forbidden), `resolution payload must not contain "${forbidden}"`);
+    }
+    assert.match(serialized, /co\*\*\*\*@school\.edu/);
   });
 });
