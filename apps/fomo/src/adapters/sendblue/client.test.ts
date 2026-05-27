@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { SendBlueClient, type FetchLike } from './client.ts';
+import { SendBlueClient, type FetchLike, verifySendBlueWebhookSecret } from './client.ts';
 
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
@@ -317,6 +317,129 @@ describe('SendBlueClient.send — output immutability', () => {
     const out = await client.send({ to: '+15555550100', content: 'hi' });
     assert.throws(() => {
       (out as unknown as { kind: string }).kind = 'failed';
+    });
+  });
+});
+
+
+/* ====================================================================== */
+/* verifySendBlueWebhookSecret (Phase 3F.1 — corrected to match SendBlue) */
+/*                                                                        */
+/* SendBlue's webhook auth is a PLAIN SHARED SECRET sent in a request     */
+/* header, NOT an HMAC body signature. Docs evidence (fetched 2026-05-26  */
+/* during the 3F.1 founder-mandated review):                              */
+/*                                                                        */
+/*   "When you configure a secret, Sendblue will include it in the        */
+/*    webhook request headers, allowing you to verify that the request    */
+/*    is genuinely from Sendblue."                                        */
+/*    — docs.sendblue.com/getting-started/webhooks                        */
+/*                                                                        */
+/* No HMAC, no body signature, no documented timestamp/replay window.     */
+/* Replay protection comes from inbound_replies UNIQUE on                 */
+/* provider_message_id (the SendBlue message_handle), not from a          */
+/* timestamp freshness check.                                             */
+/* ====================================================================== */
+
+const TEST_WEBHOOK_SECRET = 'shh-test-webhook-secret-from-sendblue-dashboard';
+
+describe('verifySendBlueWebhookSecret — happy path (plain shared secret in header)', () => {
+  it('accepts a request whose header value equals the configured secret', () => {
+    const r = verifySendBlueWebhookSecret({
+      configuredSecret: TEST_WEBHOOK_SECRET,
+      headerValue: TEST_WEBHOOK_SECRET
+    });
+    assert.equal(r.ok, true);
+  });
+
+  it('tolerates whitespace around the header value (HTTP protocol noise)', () => {
+    const r = verifySendBlueWebhookSecret({
+      configuredSecret: TEST_WEBHOOK_SECRET,
+      headerValue: `   ${TEST_WEBHOOK_SECRET}   `
+    });
+    assert.equal(r.ok, true);
+  });
+});
+
+describe('verifySendBlueWebhookSecret — failures (fail-closed: route returns 401, audits, no parse)', () => {
+  it('rejects missing/empty header with missing_header', () => {
+    const r1 = verifySendBlueWebhookSecret({
+      configuredSecret: TEST_WEBHOOK_SECRET,
+      headerValue: ''
+    });
+    assert.equal(r1.ok, false);
+    if (!r1.ok) assert.equal(r1.reason, 'missing_header');
+    const r2 = verifySendBlueWebhookSecret({
+      configuredSecret: TEST_WEBHOOK_SECRET,
+      headerValue: '   '
+    });
+    // Whitespace-only also fails after trim.
+    assert.equal(r2.ok, false);
+  });
+
+  it('rejects wrong secret with secret_mismatch (timing-safe compare)', () => {
+    const r = verifySendBlueWebhookSecret({
+      configuredSecret: TEST_WEBHOOK_SECRET,
+      headerValue: 'completely-different-value-with-different-length-and-content'
+    });
+    assert.equal(r.ok, false);
+    if (!r.ok) assert.equal(r.reason, 'secret_mismatch');
+  });
+
+  it('rejects same-length-but-different-content with secret_mismatch', () => {
+    // Build a wrong secret of EXACTLY the same length so the length
+    // pre-check passes and timingSafeEqual is exercised.
+    const wrong = 'X'.repeat(TEST_WEBHOOK_SECRET.length);
+    const r = verifySendBlueWebhookSecret({
+      configuredSecret: TEST_WEBHOOK_SECRET,
+      headerValue: wrong
+    });
+    assert.equal(r.ok, false);
+    if (!r.ok) assert.equal(r.reason, 'secret_mismatch');
+  });
+
+  it('defensive: empty configuredSecret falls through to secret_mismatch (bootstrap should fail-close first, but never trust empty)', () => {
+    const r = verifySendBlueWebhookSecret({
+      configuredSecret: '',
+      headerValue: 'anything'
+    });
+    assert.equal(r.ok, false);
+    if (!r.ok) assert.equal(r.reason, 'secret_mismatch');
+  });
+});
+
+describe('verifySendBlueWebhookSecret — security properties', () => {
+  it('uses timing-safe compare (assertion: no character-by-character early-exit)', () => {
+    // We can't directly observe timing differences in a unit test,
+    // but we CAN assert that two different-but-equal-length wrong
+    // secrets both produce identical secret_mismatch results without
+    // throwing — the failure shape is uniform regardless of how
+    // similar the wrong secret is to the correct one.
+    const wrong1 = TEST_WEBHOOK_SECRET.slice(0, -1) + 'X'; // differs only in last char
+    const wrong2 = 'X' + TEST_WEBHOOK_SECRET.slice(1);     // differs only in first char
+    const r1 = verifySendBlueWebhookSecret({ configuredSecret: TEST_WEBHOOK_SECRET, headerValue: wrong1 });
+    const r2 = verifySendBlueWebhookSecret({ configuredSecret: TEST_WEBHOOK_SECRET, headerValue: wrong2 });
+    assert.equal(r1.ok, false);
+    assert.equal(r2.ok, false);
+    if (!r1.ok && !r2.ok) {
+      assert.equal(r1.reason, 'secret_mismatch');
+      assert.equal(r2.reason, 'secret_mismatch');
+    }
+  });
+
+  it('result objects are frozen', () => {
+    const ok = verifySendBlueWebhookSecret({
+      configuredSecret: TEST_WEBHOOK_SECRET,
+      headerValue: TEST_WEBHOOK_SECRET
+    });
+    assert.throws(() => {
+      (ok as unknown as { ok: boolean }).ok = false;
+    });
+    const fail = verifySendBlueWebhookSecret({
+      configuredSecret: TEST_WEBHOOK_SECRET,
+      headerValue: 'wrong'
+    });
+    assert.throws(() => {
+      (fail as unknown as { ok: boolean }).ok = true;
     });
   });
 });

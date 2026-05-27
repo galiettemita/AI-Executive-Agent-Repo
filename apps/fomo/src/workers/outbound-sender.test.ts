@@ -17,6 +17,7 @@ import { loadCryptoConfig } from '../security/token-crypto.ts';
 import { InMemoryTokenStore } from '../security/oauth/token-store.ts';
 import { InMemoryAlertStore } from '../memory/alerts.ts';
 import { InMemoryGmailCursorStore } from '../memory/gmail-cursors.ts';
+import { InMemoryMemorySignalStore } from '../memory/memory-signals.ts';
 import { InMemoryRankResultStore } from '../memory/rank-results.ts';
 import { runOutboundOnce } from './outbound-sender.ts';
 
@@ -88,6 +89,7 @@ async function buildHarness(opts: HarnessOptions) {
   const alertStore = new InMemoryAlertStore();
   const rankResultStore = new InMemoryRankResultStore();
   const cursorStore = new InMemoryGmailCursorStore();
+  const memoryStore = new InMemoryMemorySignalStore();
   const tokenStore = new InMemoryTokenStore(cryptoConfig);
 
   // Seed the founder's google token + cursor so listUserIds returns them.
@@ -168,6 +170,7 @@ async function buildHarness(opts: HarnessOptions) {
     alertStore,
     rankResultStore,
     cursorStore,
+    memoryStore,
     tokenStore,
     rankResultId,
     deps: {
@@ -179,6 +182,7 @@ async function buildHarness(opts: HarnessOptions) {
       alertStore,
       rankResultStore,
       transitions,
+      memoryStore,
       destinationFor: (uid: string): string | null => {
         if (opts.destinationConfigured === false) return null;
         return uid === FOUNDER_USER ? FOUNDER_PHONE : null;
@@ -493,6 +497,191 @@ describe('runOutboundOnce — audit privacy invariant', () => {
       assert.ok(
         !detailStr.includes('Hi Sarah'),
         `audit leaked body snippet: ${detailStr}`
+      );
+    }
+  });
+});
+
+/* ====================================================================== */
+/* Phase 3F.1 — STOP enforcement (LOAD-BEARING)                           */
+/* ====================================================================== */
+
+describe('runOutboundOnce — STOP enforcement (Phase 3F.1)', () => {
+  it('refuses to send when stop_active=true; audits fomo.send.stop_enforced; transitions approved→failed; NEVER calls SendBlue', async () => {
+    let sendBlueCalls = 0;
+    const sendBlueFetch = mockFetch(async () => {
+      sendBlueCalls++;
+      return { status: 200, body: { status: 'QUEUED' } };
+    });
+    const gmailFetch = mockFetch(async () => ({ status: 200, body: FAKE_GMAIL_MSG }));
+    const h = await buildHarness({ sendBlueFetch, gmailFetch });
+
+    // Pre-set stop_active=true (as the /sendblue/inbound route's
+    // deterministic STOP handler would).
+    await h.memoryStore.upsert({
+      user_id: FOUNDER_USER,
+      kind: 'stop_active',
+      scope_key: null,
+      detail: { active: true, recorded_at: new Date().toISOString() },
+      source: 'user_confirmed',
+      confidence: 1.0
+    });
+
+    const report = await runOutboundOnce(h.deps);
+
+    // The approved alert was considered, then refused.
+    assert.equal(report.alerts_considered, 1);
+    assert.equal(report.alerts_sent, 0);
+    assert.equal(report.alerts_stop_enforced, 1);
+
+    // SendBlue was NEVER called.
+    assert.equal(sendBlueCalls, 0, 'SendBlue must NOT be called when stop_active=true');
+
+    // State transitioned approved → failed with reason stop_enforced.
+    assert.equal(await h.transitions.currentState(ALERT_ID), 'failed');
+
+    // fomo.send.stop_enforced audit fired.
+    const events = await h.auditStore.recent(FOUNDER_USER, 500);
+    const stopAudit = events.find((e) => e.action === 'fomo.send.stop_enforced');
+    assert.ok(stopAudit, 'expected fomo.send.stop_enforced audit row');
+    assert.equal((stopAudit?.detail as { alert_id: string }).alert_id, ALERT_ID);
+
+    // fomo.send.attempted should NOT fire (the worker short-circuited
+    // before reaching the normal send path).
+    const attempted = events.find((e) => e.action === 'fomo.send.attempted');
+    assert.equal(attempted, undefined, 'fomo.send.attempted must NOT fire when stop_enforced');
+  });
+
+  it('does NOT enforce when stop_active=false (the memory_signal was START-cleared)', async () => {
+    const sendBlueFetch = mockFetch(async () => ({
+      status: 200,
+      body: { status: 'QUEUED', message_handle: 'mh-1' }
+    }));
+    const gmailFetch = mockFetch(async () => ({ status: 200, body: FAKE_GMAIL_MSG }));
+    const h = await buildHarness({ sendBlueFetch, gmailFetch });
+
+    // Pre-set stop_active=false (post-START state).
+    await h.memoryStore.upsert({
+      user_id: FOUNDER_USER,
+      kind: 'stop_active',
+      scope_key: null,
+      detail: { active: false, recorded_at: new Date().toISOString() },
+      source: 'user_confirmed',
+      confidence: 1.0
+    });
+
+    const report = await runOutboundOnce(h.deps);
+
+    // Normal send proceeds.
+    assert.equal(report.alerts_sent, 1);
+    assert.equal(report.alerts_stop_enforced, 0);
+    assert.equal(await h.transitions.currentState(ALERT_ID), 'sent');
+  });
+
+  it('does NOT enforce when no stop_active signal exists at all (default)', async () => {
+    const sendBlueFetch = mockFetch(async () => ({
+      status: 200,
+      body: { status: 'QUEUED', message_handle: 'mh-1' }
+    }));
+    const gmailFetch = mockFetch(async () => ({ status: 200, body: FAKE_GMAIL_MSG }));
+    const h = await buildHarness({ sendBlueFetch, gmailFetch });
+
+    // No memory signal at all.
+    const report = await runOutboundOnce(h.deps);
+
+    assert.equal(report.alerts_sent, 1);
+    assert.equal(report.alerts_stop_enforced, 0);
+  });
+
+  it('checks stop_active ONCE per user per cycle (not per alert)', async () => {
+    // If we had multiple approved alerts and stop_active=true, ALL
+    // should be stop_enforced in the same cycle. The check is per-
+    // user, not per-alert.
+    const sendBlueFetch = mockFetch(async () => ({
+      status: 200,
+      body: { status: 'QUEUED' }
+    }));
+    const gmailFetch = mockFetch(async () => ({ status: 200, body: FAKE_GMAIL_MSG }));
+    const h = await buildHarness({ sendBlueFetch, gmailFetch });
+
+    // Seed a second approved alert.
+    await h.rankResultStore.write({
+      user_id: FOUNDER_USER,
+      message_id: 'msg-second',
+      invocation_id: 'rank-inv-2',
+      model_name: 'gpt-5-mini',
+      prompt_version: 'ranker-v0.1.0',
+      label: 'important',
+      score: 0.85,
+      reason: 'second alert',
+      latency_ms: 100,
+      input_tokens: 50,
+      output_tokens: 20,
+      estimated_cost_usd: 0.0001
+    });
+    const r2 = await h.rankResultStore.get(FOUNDER_USER, 'msg-second');
+    await h.alertStore.create({
+      alert_id: 'alert-2',
+      user_id: FOUNDER_USER,
+      message_id: 'msg-second',
+      rank_result_id: r2!.id,
+      label: 'important',
+      score: 0.85
+    });
+    for (const [from, to] of [
+      ['detected', 'ranked'],
+      ['ranked', 'queued_for_review'],
+      ['queued_for_review', 'approved']
+    ] as const) {
+      await h.transitions.write({
+        alert_id: 'alert-2',
+        user_id: FOUNDER_USER,
+        from_state: from,
+        to_state: to,
+        reason: 'test-setup'
+      });
+    }
+
+    // STOP active.
+    await h.memoryStore.upsert({
+      user_id: FOUNDER_USER,
+      kind: 'stop_active',
+      scope_key: null,
+      detail: { active: true, recorded_at: new Date().toISOString() },
+      source: 'user_confirmed',
+      confidence: 1.0
+    });
+
+    const report = await runOutboundOnce(h.deps);
+
+    // Both alerts considered, both refused.
+    assert.equal(report.alerts_considered, 2);
+    assert.equal(report.alerts_sent, 0);
+    assert.equal(report.alerts_stop_enforced, 2);
+
+    // Both alerts ended in 'failed'.
+    assert.equal(await h.transitions.currentState(ALERT_ID), 'failed');
+    assert.equal(await h.transitions.currentState('alert-2'), 'failed');
+  });
+
+  it('does NOT leak the full founder phone in stop_enforced audit detail (privacy invariant)', async () => {
+    const sendBlueFetch = mockFetch(async () => ({ status: 200, body: { status: 'QUEUED' } }));
+    const gmailFetch = mockFetch(async () => ({ status: 200, body: FAKE_GMAIL_MSG }));
+    const h = await buildHarness({ sendBlueFetch, gmailFetch });
+    await h.memoryStore.upsert({
+      user_id: FOUNDER_USER,
+      kind: 'stop_active',
+      scope_key: null,
+      detail: { active: true, recorded_at: new Date().toISOString() },
+      source: 'user_confirmed',
+      confidence: 1.0
+    });
+    await runOutboundOnce(h.deps);
+    const events = await h.auditStore.recent(FOUNDER_USER, 500);
+    for (const e of events) {
+      assert.ok(
+        !JSON.stringify(e.detail).includes(FOUNDER_PHONE),
+        `audit ${e.action} leaked founder phone`
       );
     }
   });

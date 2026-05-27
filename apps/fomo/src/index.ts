@@ -28,6 +28,12 @@ import {
   tryHandleSlackInteractivityRequest,
   type SlackInteractivityRouteDeps
 } from './routes/slack-interactivity.js';
+import {
+  tryHandleSendBlueInboundRequest,
+  type SendBlueInboundRouteDeps
+} from './routes/sendblue-inbound.js';
+import { parseReply } from './reply-parser/index.js';
+import { REPLY_PARSER_OPENAI_RESPONSE_FORMAT } from './reply-parser/openai-response-format.js';
 import { type RawEmailContext } from './core/egress-policy.js';
 import {
   runOutboundOnce,
@@ -426,6 +432,9 @@ function buildSendWiring(
       alertStore: storesHandle.stores.alerts,
       rankResultStore: storesHandle.stores.rankResults,
       transitions: storesHandle.stores.transitions,
+      // Phase 3F.1 — outbound-sender consults this BEFORE every
+      // cycle's send to honor STOP. Per founder directive 2026-05-26.
+      memoryStore: storesHandle.stores.memory,
       destinationFor: (uid: string): string | null =>
         uid === founderUserId ? founderPhone : null
     });
@@ -538,6 +547,122 @@ function startGmailPolling(
       await inflight.catch(() => undefined);
     }
   };
+}
+
+/* ---------------------------------------------------------------------- */
+/* SendBlue inbound reply bootstrap (Phase 3F.1)                          */
+/* ---------------------------------------------------------------------- */
+
+// Builds the /sendblue/inbound route deps. Returns null when
+// FOMO_SENDBLUE_INBOUND_ENABLED is off (the safe default) — the route
+// is NOT mounted on the HTTP server.
+//
+// THROWS at boot when the switch is on but any required env var is
+// missing — "real or absent, never half-wired":
+//   * SENDBLUE_WEBHOOK_SECRET — the secret you configured in the
+//     SendBlue dashboard. SendBlue echoes this verbatim in a
+//     request header on every inbound webhook POST (per docs at
+//     docs.sendblue.com/getting-started/webhooks). NOT an HMAC
+//     signing key — it's a plain shared secret compared with
+//     timing-safe equality against the header value.
+//   * FOMO_FOUNDER_PHONE_NUMBER (already required by buildSendWiring
+//     when FOMO_SEND_ENABLED=true; re-validated here for the inbound
+//     from-number allowlist)
+//   * FOMO_FOUNDER_USER_ID (same as above; required for attribution)
+//   * OPENAI_API_KEY — the reply parser's classifier path uses OpenAI
+//
+// Optional env:
+//   * SENDBLUE_WEBHOOK_SECRET_HEADER — overrides the default
+//     header name `sb-signing-secret`. SendBlue's public docs don't
+//     name the header explicitly; the founder confirms / overrides
+//     during 3F.2 smoke after observing a real SendBlue request.
+//
+// The reply parser shares the same OpenAI router instance as the
+// ranker (3C.3 backend) — both are 'classification' capability. The
+// classifier response_format is reply-parser-specific (intent +
+// confidence + snooze_hint).
+function buildSendBlueInboundWiring(
+  storesHandle: SubstrateStoresHandle,
+  killSwitches: KillSwitches,
+  env: NodeJS.ProcessEnv = process.env
+): {
+  routeDeps: SendBlueInboundRouteDeps | null;
+  inboundEnabled: boolean;
+} {
+  if (!killSwitches.sendblue_inbound_enabled) {
+    return { routeDeps: null, inboundEnabled: false };
+  }
+
+  const webhookSecret = env.SENDBLUE_WEBHOOK_SECRET;
+  const webhookSecretHeader =
+    env.SENDBLUE_WEBHOOK_SECRET_HEADER?.trim().toLowerCase() || 'sb-signing-secret';
+  const founderPhone = env.FOMO_FOUNDER_PHONE_NUMBER?.trim();
+  const founderUserId = env.FOMO_FOUNDER_USER_ID?.trim();
+  const openaiKey = env.OPENAI_API_KEY;
+
+  if (!webhookSecret || webhookSecret.length === 0) {
+    throw new Error(
+      'FOMO_SENDBLUE_INBOUND_ENABLED=true but SENDBLUE_WEBHOOK_SECRET is missing. ' +
+        "Set the webhook secret (the value you configured in your SendBlue " +
+        "dashboard's webhook settings — SendBlue echoes it back in a request " +
+        'header on every inbound POST per docs.sendblue.com/getting-started/' +
+        'webhooks) or set FOMO_SENDBLUE_INBOUND_ENABLED=false. Refusing to ' +
+        'boot an unauthenticated /sendblue/inbound endpoint.'
+    );
+  }
+  if (!founderPhone || !/^\+\d{7,15}$/.test(founderPhone)) {
+    throw new Error(
+      'FOMO_SENDBLUE_INBOUND_ENABLED=true but FOMO_FOUNDER_PHONE_NUMBER is missing/malformed. ' +
+        'The inbound route allowlists this phone — without it no reply is acceptable. ' +
+        'Set the founder phone (E.164) or set FOMO_SENDBLUE_INBOUND_ENABLED=false.'
+    );
+  }
+  if (!founderUserId || founderUserId.length === 0) {
+    throw new Error(
+      'FOMO_SENDBLUE_INBOUND_ENABLED=true but FOMO_FOUNDER_USER_ID is missing. ' +
+        'Inbound replies are attributed to this user_id. ' +
+        'Set it or set FOMO_SENDBLUE_INBOUND_ENABLED=false.'
+    );
+  }
+  if (!openaiKey || openaiKey.length === 0) {
+    throw new Error(
+      'FOMO_SENDBLUE_INBOUND_ENABLED=true but OPENAI_API_KEY is missing. ' +
+        'The reply parser\'s classifier path uses OpenAI to parse soft intents. ' +
+        'Set OPENAI_API_KEY or set FOMO_SENDBLUE_INBOUND_ENABLED=false.'
+    );
+  }
+
+  // Build a dedicated reply-parser router. We could share the ranker's
+  // router, but keeping them independent makes per-capability backend
+  // swaps (e.g. trying a cheaper model for parsing) trivial without
+  // touching ranker behavior.
+  const replyBackend = new OpenAIBackend({
+    apiKey: openaiKey,
+    model: env.FOMO_OPENAI_MODEL?.trim() || 'gpt-5-mini',
+    responseFormat: REPLY_PARSER_OPENAI_RESPONSE_FORMAT
+  });
+  const replyRouter = createModelRouter({ costStore: storesHandle.stores.cost });
+  replyRouter.registerBackend('classification', replyBackend);
+
+  const routeDeps: SendBlueInboundRouteDeps = Object.freeze({
+    webhookSecret,
+    webhookSecretHeader,
+    founderPhoneNumber: founderPhone,
+    founderUserId,
+    killSwitches,
+    inboundReplyStore: storesHandle.stores.inboundReplies,
+    alertStore: storesHandle.stores.alerts,
+    rankResultStore: storesHandle.stores.rankResults,
+    transitions: storesHandle.stores.transitions,
+    feedbackStore: storesHandle.stores.feedback,
+    memoryStore: storesHandle.stores.memory,
+    auditStore: storesHandle.stores.audit,
+    replyParser: {
+      parse: (req: Parameters<typeof parseReply>[0]) => parseReply(req, { router: replyRouter })
+    }
+  });
+
+  return { routeDeps, inboundEnabled: true };
 }
 
 // Mirrors startGmailPolling for the outbound-sender worker: each tick
@@ -734,6 +859,29 @@ export function createFomoRuntime(config: FomoConfig = loadFomoConfig()): FomoRu
     sendBlueClient: sendWiring.client ?? undefined
   });
 
+  // SendBlue inbound reply route (Phase 3F.1) — mounted only when
+  // FOMO_SENDBLUE_INBOUND_ENABLED=true. THROWS at boot if the switch
+  // is on but the webhook signing secret / founder phone / founder
+  // user_id / OpenAI key are missing. Safe default: route NOT mounted,
+  // returns 404, no reply parsing happens.
+  const inboundWiring = buildSendBlueInboundWiring(storesHandle, killSwitches);
+  if (inboundWiring.routeDeps) {
+    logEvent(config, undefined, 'fomo.sendblue.inbound.enabled', 'INFO', {
+      inbound_route_mounted: true,
+      founder_user_id: process.env.FOMO_FOUNDER_USER_ID,
+      // Surface the configured header name so the founder can see
+      // exactly which header the route reads — useful during 3F.2
+      // smoke when confirming SendBlue's actual header name.
+      webhook_secret_header: inboundWiring.routeDeps.webhookSecretHeader
+    });
+  } else {
+    logEvent(config, undefined, 'fomo.sendblue.inbound.disabled', 'INFO', {
+      detail:
+        'FOMO_SENDBLUE_INBOUND_ENABLED is not "true"; /sendblue/inbound route NOT mounted ' +
+        '(no reply parsing, no STOP enforcement via inbound webhook)'
+    });
+  }
+
   // OAuth routes — graceful skip when not configured.
   const oauthGoogleDeps = buildOAuthGoogleDeps(storesHandle, config, gmailClient);
 
@@ -813,6 +961,16 @@ export function createFomoRuntime(config: FomoConfig = loadFomoConfig()): FomoRu
           }
         }
 
+        // SendBlue inbound reply (Phase 3F.1) — only when wired.
+        if (inboundWiring.routeDeps) {
+          const inboundResp = await tryHandleSendBlueInboundRequest(req, inboundWiring.routeDeps);
+          if (inboundResp) {
+            res.writeHead(inboundResp.status, inboundResp.headers);
+            res.end(inboundResp.body);
+            return;
+          }
+        }
+
         // OAuth routes — only when wired.
         if (oauthGoogleDeps) {
           const oauthResp = await tryHandleOAuthGoogleRequest(req, oauthGoogleDeps);
@@ -866,7 +1024,8 @@ export function createFomoRuntime(config: FomoConfig = loadFomoConfig()): FomoRu
       slack_review_enabled: slackWiring.dep !== null,
       slack_interactivity_route_mounted: slackWiring.routeDeps !== null,
       send_enabled: sendWiring.runDeps !== null,
-      outbound_worker_started: outboundHandle !== null
+      outbound_worker_started: outboundHandle !== null,
+      sendblue_inbound_route_mounted: inboundWiring.routeDeps !== null
     });
   });
 

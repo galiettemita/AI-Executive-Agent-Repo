@@ -59,6 +59,7 @@ import { type ToolInvocationStore } from '../core/tool-invocations.js';
 import { AuthorizedToolCall, type DispatchTable } from '../dispatch/dispatcher.js';
 import { type AlertStore } from '../memory/alerts.js';
 import { type GmailCursorStore } from '../memory/gmail-cursors.js';
+import { type MemorySignalStore } from '../memory/memory-signals.js';
 import { type RankResultStore, type RankLabel } from '../memory/rank-results.js';
 
 export interface OutboundSenderDeps {
@@ -71,6 +72,15 @@ export interface OutboundSenderDeps {
   readonly alertStore: AlertStore;
   readonly rankResultStore: RankResultStore;
   readonly transitions: AlertStateTransitionStore;
+  // Phase 3F.1 — required for STOP enforcement. The worker consults
+  // the user's `stop_active` memory signal before dispatching ANY
+  // send. When active, the worker refuses (audit
+  // `fomo.send.stop_enforced`, transition `approved → failed`) and
+  // NEVER calls SendBlue. Per founder directive 2026-05-26: STOP
+  // enforcement is deterministic, no LLM decides whether STOP means
+  // stop. The signal is flipped by the /sendblue/inbound route's
+  // deterministic pre-pass on STOP / UNSUBSCRIBE / CANCEL.
+  readonly memoryStore: MemorySignalStore;
 
   // Returns the ONE allowlisted destination phone for this user (in
   // E.164 form, e.g. '+14155551234'), or null when this user has no
@@ -94,7 +104,15 @@ export interface OutboundSenderDeps {
   readonly maxAlertsPerUser?: number;
 }
 
-export type OutboundSenderOutcome = 'sent' | 'failed' | 'status_unknown' | 'unauthorized_destination' | 'preflight_skipped';
+export type OutboundSenderOutcome =
+  | 'sent'
+  | 'failed'
+  | 'status_unknown'
+  | 'unauthorized_destination'
+  | 'preflight_skipped'
+  // Phase 3F.1 — STOP enforcement refused the send. Alert transitions
+  // approved → failed (reason: stop_enforced). NEVER calls SendBlue.
+  | 'stop_enforced';
 
 export interface OutboundSenderAlertResult {
   readonly user_id: string;
@@ -112,6 +130,10 @@ export interface OutboundSenderUserOutcome {
   readonly alerts_status_unknown: number;
   readonly alerts_unauthorized: number;
   readonly alerts_preflight_skipped: number;
+  // Phase 3F.1 — count of alerts the STOP-enforcement check refused
+  // to send. Per-user; rolls up to alerts_stop_enforced in the cycle
+  // report. Useful smoke evidence: prove STOP blocks future sends.
+  readonly alerts_stop_enforced: number;
 }
 
 export interface OutboundSenderCycleReport {
@@ -125,6 +147,8 @@ export interface OutboundSenderCycleReport {
   readonly alerts_status_unknown: number;
   readonly alerts_unauthorized: number;
   readonly alerts_preflight_skipped: number;
+  // Phase 3F.1 — alerts the STOP-enforcement check refused.
+  readonly alerts_stop_enforced: number;
   readonly results: readonly OutboundSenderAlertResult[];
   readonly user_outcomes: readonly OutboundSenderUserOutcome[];
 }
@@ -152,6 +176,7 @@ export async function runOutboundOnce(
   let alerts_status_unknown = 0;
   let alerts_unauthorized = 0;
   let alerts_preflight_skipped = 0;
+  let alerts_stop_enforced = 0;
 
   const userIds = await deps.cursorStore.listUserIds();
 
@@ -170,21 +195,39 @@ export async function runOutboundOnce(
           alerts_failed: 0,
           alerts_status_unknown: 0,
           alerts_unauthorized: 0,
-          alerts_preflight_skipped: 0
+          alerts_preflight_skipped: 0,
+          alerts_stop_enforced: 0
         })
       );
       continue;
     }
     users_with_approved_alerts++;
 
+    // Phase 3F.1 — STOP enforcement check, ONCE per user per cycle
+    // BEFORE we attempt any send. Per founder directive 2026-05-26:
+    // STOP enforcement is deterministic (no LLM). If stop_active is
+    // true, refuse every approved alert this cycle and transition
+    // each to `failed` (reason: stop_enforced). NEVER call SendBlue.
+    // Per-user check is correct: STOP is a global user-level
+    // compliance signal, not per-alert.
+    const stopActive = await isStopActive(deps, user_id);
+
     let user_sent = 0;
     let user_failed = 0;
     let user_status_unknown = 0;
     let user_unauthorized = 0;
     let user_preflight_skipped = 0;
+    let user_stop_enforced = 0;
 
     for (const alert_id of approvedIds) {
       alerts_considered++;
+      if (stopActive) {
+        const r = await processStopEnforced(deps, user_id, alert_id);
+        results.push(r);
+        user_stop_enforced++;
+        alerts_stop_enforced++;
+        continue;
+      }
       const r = await processOneAlert(deps, user_id, alert_id, newInvocationId);
       results.push(r);
       switch (r.outcome) {
@@ -193,6 +236,7 @@ export async function runOutboundOnce(
         case 'status_unknown': user_status_unknown++; alerts_status_unknown++; break;
         case 'unauthorized_destination': user_unauthorized++; alerts_unauthorized++; break;
         case 'preflight_skipped': user_preflight_skipped++; alerts_preflight_skipped++; break;
+        case 'stop_enforced': user_stop_enforced++; alerts_stop_enforced++; break;
       }
     }
 
@@ -204,7 +248,8 @@ export async function runOutboundOnce(
         alerts_failed: user_failed,
         alerts_status_unknown: user_status_unknown,
         alerts_unauthorized: user_unauthorized,
-        alerts_preflight_skipped: user_preflight_skipped
+        alerts_preflight_skipped: user_preflight_skipped,
+        alerts_stop_enforced: user_stop_enforced
       })
     );
   }
@@ -222,6 +267,7 @@ export async function runOutboundOnce(
     alerts_status_unknown,
     alerts_unauthorized,
     alerts_preflight_skipped,
+    alerts_stop_enforced,
     results: Object.freeze(results.map((r) => Object.freeze(r))),
     user_outcomes: Object.freeze(userOutcomes.map((o) => Object.freeze(o)))
   });
@@ -229,6 +275,85 @@ export async function runOutboundOnce(
 
 // Processes a single alert end-to-end. NEVER throws to the caller —
 // every failure path is captured as an audit row + state transition.
+// Phase 3F.1 — STOP enforcement helper. Returns true when the
+// user has an active `stop_active` memory signal. Per founder
+// directive 2026-05-26: deterministic, no LLM. The signal is
+// flipped by the /sendblue/inbound route's deterministic pre-pass
+// when the founder texts STOP / UNSUBSCRIBE / CANCEL. START flips
+// it back. Idempotent.
+async function isStopActive(
+  deps: OutboundSenderDeps,
+  user_id: string
+): Promise<boolean> {
+  const signal = await deps.memoryStore.get(user_id, 'stop_active', null);
+  if (!signal) return false;
+  const detail = signal.detail as { active?: unknown };
+  return detail.active === true;
+}
+
+// Process an alert that the STOP-enforcement check refused. Audits
+// fomo.send.stop_enforced + transitions approved → failed (reason:
+// stop_enforced). NEVER calls SendBlue. Sanitized audit detail.
+async function processStopEnforced(
+  deps: OutboundSenderDeps,
+  user_id: string,
+  alert_id: string
+): Promise<OutboundSenderAlertResult> {
+  const alert = await deps.alertStore.get(alert_id);
+  if (!alert) {
+    // Defensive: findAlertIdsInState returned this id, so the row
+    // should exist. If somehow it doesn't, treat as preflight skip.
+    await deps.auditStore.write({
+      actor_user_id: user_id,
+      actor_ip: null,
+      actor_user_agent: null,
+      action: 'fomo.send.stop_enforced',
+      target: `alert:${alert_id}`,
+      result: 'failure',
+      detail: { alert_id, error_code: 'unknown_alert_id' }
+    });
+    return Object.freeze({
+      user_id,
+      alert_id,
+      outcome: 'preflight_skipped' as const,
+      reason: 'unknown_alert_id (during stop_enforced check)'
+    });
+  }
+
+  await deps.auditStore.write({
+    actor_user_id: user_id,
+    actor_ip: null,
+    actor_user_agent: null,
+    action: 'fomo.send.stop_enforced',
+    target: `alert:${alert_id}`,
+    result: 'success',
+    detail: {
+      alert_id,
+      message_id: alert.message_id,
+      rank_result_id: alert.rank_result_id,
+      // NOTE: no destination_slug here — STOP enforcement runs
+      // BEFORE destinationFor is consulted. The audit captures only
+      // the alert reference + the policy outcome.
+      reason: 'stop_active memory_signal is true for this user'
+    }
+  });
+
+  await writeTransition(deps, {
+    alert_id,
+    user_id,
+    from_state: 'approved',
+    to_state: 'failed',
+    reason: 'stop_enforced: user has active STOP request (stop_active memory_signal=true)'
+  });
+
+  return Object.freeze({
+    user_id,
+    alert_id,
+    outcome: 'stop_enforced' as const,
+    reason: 'stop_active memory_signal=true; refused to send'
+  });
+}
+
 async function processOneAlert(
   deps: OutboundSenderDeps,
   user_id: string,

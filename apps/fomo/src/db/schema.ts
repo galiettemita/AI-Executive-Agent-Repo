@@ -358,3 +358,40 @@ export const alerts = pgTable(
     index('alerts_user_message_idx').on(table.user_id, table.message_id)
   ]
 );
+
+/* ---------------------------------------------------------------------- */
+/* inbound_replies — new in Phase 3F.1                                    */
+/* ---------------------------------------------------------------------- */
+//
+// One row per inbound SendBlue webhook the route accepts as authentic.
+// Identity is provider_message_id (SendBlue's unique id for the
+// inbound message). UNIQUE on provider_message_id is the LOAD-BEARING
+// idempotency gate — SendBlue retries on non-2xx, and the route MUST
+// be safe to receive the same payload N times without double-writing
+// feedback events, double-flipping memory signals, or double-firing
+// state transitions.
+//
+// Caller pattern: route handler attempts INSERT ON CONFLICT DO NOTHING.
+// On conflict (returning.length === 0), audits
+// `fomo.sendblue.reply_duplicate` and returns 200 OK immediately
+// (without re-processing). On insert, processes normally.
+//
+// Privacy: holds ONLY operational identifiers. NO raw webhook payload,
+// NO founder reply text, NO from-phone (audit detail carries only the
+// 4-char from_slug). The intent / outcome of processing lives in
+// audit_log, feedback_events, and alert_state_transitions — this
+// table is purely the dedup gate.
+
+export const inbound_replies = pgTable(
+  'inbound_replies',
+  {
+    id: bigserial('id', { mode: 'number' }).primaryKey(),
+    provider_message_id: text('provider_message_id').notNull(),
+    user_id: text('user_id').notNull(),
+    received_at: timestamp('received_at', { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => [
+    uniqueIndex('inbound_replies_provider_message_id_uq').on(table.provider_message_id),
+    index('inbound_replies_user_received_idx').on(table.user_id, table.received_at)
+  ]
+);

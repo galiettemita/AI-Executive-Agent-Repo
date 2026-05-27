@@ -108,7 +108,42 @@ export type AuditAction =
   | 'fomo.send.failed'
   | 'fomo.send.status_unknown'
   | 'fomo.send.unauthorized_destination'
-  | 'fomo.send.kill_switch_off';
+  | 'fomo.send.kill_switch_off'
+  // SendBlue outbound STOP-enforcement event (Phase 3F.1) — fires
+  // when the outbound-sender picks up an approved alert but the
+  // user has an active `stop_active` memory signal. The send is
+  // refused, the alert transitions `approved → failed` with reason
+  // 'stop_enforced', and NO SendBlue API call is made. Per the
+  // founder directive 2026-05-26, STOP enforcement is deterministic
+  // (no LLM decides whether STOP means stop). Sanitized detail only:
+  // alert_id, message_id, rank_result_id, destination_slug. NEVER
+  // the rendered message text, NEVER the full destination phone.
+  | 'fomo.send.stop_enforced'
+  // SendBlue inbound reply events (Phase 3F.1) — fire on the
+  // /sendblue/inbound HTTP route. Sanitized detail ONLY: route
+  // identifiers (provider_message_id, intent, intent_source,
+  // confidence), alert_id when matched, a from_slug suffix for
+  // traceability, snooze_until ISO when relevant. NEVER the raw
+  // webhook payload, NEVER the founder's reply text, NEVER the full
+  // from-phone (only the 4-char slug suffix), NEVER the SendBlue
+  // signing secret.
+  //
+  // The 'inbound_received' row fires BEFORE signature verification
+  // so a flood of unsigned requests is still visible in the audit
+  // log. The 'reply_duplicate' row fires when the inbound_replies
+  // UNIQUE constraint catches a SendBlue retry (idempotency proof).
+  // 'stop_recorded' and 'start_recorded' are the deterministic
+  // safety/compliance commands (NOT classifier output).
+  | 'fomo.sendblue.inbound_received'
+  | 'fomo.sendblue.signature_invalid'
+  | 'fomo.sendblue.payload_invalid'
+  | 'fomo.sendblue.reply_unauthorized'
+  | 'fomo.sendblue.reply_duplicate'
+  | 'fomo.sendblue.reply_parsed'
+  | 'fomo.sendblue.reply_unclear'
+  | 'fomo.sendblue.stop_recorded'
+  | 'fomo.sendblue.start_recorded'
+  | 'fomo.sendblue.kill_switch_off';
 
 export type AuditResult = 'success' | 'failure';
 

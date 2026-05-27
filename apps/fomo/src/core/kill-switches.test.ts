@@ -16,6 +16,7 @@ describe('loadKillSwitches — safe defaults', () => {
     assert.equal(s.ranker_enabled, false);
     assert.equal(s.slack_review_enabled, false);
     assert.equal(s.outbound_max_cycles, null);
+    assert.equal(s.sendblue_inbound_enabled, false);
   });
 
   it('SAFE_DEFAULT_KILL_SWITCHES matches the empty-env result', () => {
@@ -124,6 +125,29 @@ describe('loadKillSwitches — FOMO_OUTBOUND_MAX_CYCLES (Phase 3E.2)', () => {
     });
     assert.equal(s.polling_max_cycles, 3);
     assert.equal(s.outbound_max_cycles, 1);
+  });
+});
+
+describe('loadKillSwitches — FOMO_SENDBLUE_INBOUND_ENABLED (Phase 3F.1)', () => {
+  it('defaults to false (safe — webhook route NOT mounted)', () => {
+    assert.equal(loadKillSwitches({}).sendblue_inbound_enabled, false);
+  });
+
+  it('is strict opt-in (same parser as other boolean switches)', () => {
+    assert.equal(loadKillSwitches({ FOMO_SENDBLUE_INBOUND_ENABLED: 'true' }).sendblue_inbound_enabled, true);
+    assert.equal(loadKillSwitches({ FOMO_SENDBLUE_INBOUND_ENABLED: '1' }).sendblue_inbound_enabled, true);
+    assert.equal(loadKillSwitches({ FOMO_SENDBLUE_INBOUND_ENABLED: 'TRUE' }).sendblue_inbound_enabled, true);
+    assert.equal(loadKillSwitches({ FOMO_SENDBLUE_INBOUND_ENABLED: 'yes' }).sendblue_inbound_enabled, false);
+    assert.equal(loadKillSwitches({ FOMO_SENDBLUE_INBOUND_ENABLED: '' }).sendblue_inbound_enabled, false);
+  });
+
+  it('is independent of FOMO_SEND_ENABLED (one is outbound, the other is inbound)', () => {
+    const s = loadKillSwitches({
+      FOMO_SEND_ENABLED: 'true',
+      FOMO_SENDBLUE_INBOUND_ENABLED: 'false'
+    });
+    assert.equal(s.send_enabled, true);
+    assert.equal(s.sendblue_inbound_enabled, false);
   });
 });
 

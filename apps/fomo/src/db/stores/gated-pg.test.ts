@@ -33,6 +33,7 @@ import { PostgresGmailCursorStore } from './gmail-cursors-postgres.js';
 import { PostgresMemorySignalStore } from './memory-postgres.js';
 import { PostgresRankResultStore } from './rank-results-postgres.js';
 import { PostgresAlertStore } from './alerts-postgres.js';
+import { PostgresInboundReplyStore } from './inbound-replies-postgres.js';
 import { PostgresTokenStore } from './token-postgres.js';
 import { PostgresToolInvocationStore } from './tool-invocations-postgres.js';
 
@@ -92,6 +93,7 @@ describe('Phase 2E gated Postgres verification', { skip: !RUN_PG ? 'BREVIO_RUN_P
       'cost_records',
       'feedback_events',
       'gmail_cursors',
+      'inbound_replies',
       'memory_signals',
       'oauth_tokens',
       'rank_results',
@@ -701,6 +703,77 @@ describe('Phase 2E gated Postgres verification', { skip: !RUN_PG ? 'BREVIO_RUN_P
       ];
       for (const f of forbidden) {
         assert.ok(!cols.has(f), `alerts must not have column '${f}'`);
+      }
+    });
+  });
+
+  describe('PostgresInboundReplyStore (Phase 3F.1)', () => {
+    it('record + getByProviderMessageId round-trip preserves every field', async () => {
+      assert.ok(db);
+      const store = new PostgresInboundReplyStore(db);
+      const out = await store.record({ provider_message_id: 'sb-pg-1', user_id: 'u-inb-1' });
+      assert.equal(out.inserted, true);
+      assert.equal(out.record.provider_message_id, 'sb-pg-1');
+      assert.equal(out.record.user_id, 'u-inb-1');
+      assert.ok(out.record.received_at);
+      const fetched = await store.getByProviderMessageId('sb-pg-1');
+      assert.equal(fetched?.user_id, 'u-inb-1');
+    });
+
+    it('LOAD-BEARING: UNIQUE on provider_message_id; second record returns inserted=false + the existing row (SendBlue retry safety)', async () => {
+      assert.ok(db);
+      const store = new PostgresInboundReplyStore(db);
+      const first = await store.record({ provider_message_id: 'sb-pg-dup', user_id: 'u-inb-2' });
+      const dup = await store.record({ provider_message_id: 'sb-pg-dup', user_id: 'u-inb-3' });
+      assert.equal(first.inserted, true);
+      assert.equal(dup.inserted, false);
+      // Returns the ORIGINAL row, not the duplicate input.
+      assert.equal(dup.record.id, first.record.id);
+      assert.equal(dup.record.user_id, 'u-inb-2');
+      assert.equal(dup.record.received_at, first.record.received_at);
+    });
+
+    it('count + recent are per-user scoped', async () => {
+      assert.ok(db);
+      const store = new PostgresInboundReplyStore(db);
+      await store.record({ provider_message_id: 'sb-pg-cnt-1', user_id: 'u-inb-cnt' });
+      await store.record({ provider_message_id: 'sb-pg-cnt-2', user_id: 'u-inb-cnt' });
+      await store.record({ provider_message_id: 'sb-pg-cnt-3', user_id: 'u-inb-other' });
+      assert.equal(await store.count('u-inb-cnt'), 2);
+      assert.equal(await store.count('u-inb-other'), 1);
+      const recent = await store.recent('u-inb-cnt', 5);
+      assert.equal(recent.length, 2);
+      for (const r of recent) assert.equal(r.user_id, 'u-inb-cnt');
+    });
+
+    it('privacy invariant: inbound_replies has ONLY dedup-shaped columns (no reply text, no phone, no payload)', async () => {
+      assert.ok(pglite);
+      const result = await pglite.query<{ column_name: string }>(
+        `SELECT column_name FROM information_schema.columns
+         WHERE table_schema = 'public' AND table_name = 'inbound_replies'
+         ORDER BY column_name`
+      );
+      const cols = new Set(result.rows.map((r) => r.column_name));
+      // The exact column set: id, provider_message_id, user_id, received_at. Nothing else.
+      assert.deepEqual(
+        [...cols].sort(),
+        ['id', 'provider_message_id', 'received_at', 'user_id']
+      );
+      const forbidden = [
+        'body',
+        'content',
+        'text',
+        'reply_text',
+        'message_text',
+        'from_number',
+        'to_number',
+        'phone',
+        'payload',
+        'raw',
+        'signing_secret'
+      ];
+      for (const f of forbidden) {
+        assert.ok(!cols.has(f), `inbound_replies must not have column '${f}'`);
       }
     });
   });
