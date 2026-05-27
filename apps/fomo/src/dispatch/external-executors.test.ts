@@ -221,7 +221,7 @@ describe('sendBlueSendExecutor — happy path', () => {
       body: { status: 'QUEUED', message_handle: 'h-1' }
     }));
     const client = new SendBlueClient({
-      apiKeyId: 'k', apiSecretKey: 's', fetchImpl
+      apiKeyId: 'k', apiSecretKey: 's', fromNumber: '+15555550001', fetchImpl
     });
     const exec = sendBlueSendExecutor({ client });
     const out = await exec({ to: '+15555550100', content: 'hi' }, CTX);
@@ -243,7 +243,7 @@ describe('sendBlueSendExecutor — fail-closed when adapter not wired', () => {
 describe('sendBlueSendExecutor — input validation', () => {
   it('throws when args is missing', async () => {
     const fetchImpl = mockFetch(async () => ({ status: 200, body: { status: 'QUEUED' } }));
-    const client = new SendBlueClient({ apiKeyId: 'k', apiSecretKey: 's', fetchImpl });
+    const client = new SendBlueClient({ apiKeyId: 'k', apiSecretKey: 's', fromNumber: '+15555550001', fetchImpl });
     const exec = sendBlueSendExecutor({ client });
     await assert.rejects(
       () => exec(undefined as unknown as { to: string; content: string }, CTX),
@@ -253,7 +253,7 @@ describe('sendBlueSendExecutor — input validation', () => {
 
   it('throws when args.to is missing or empty', async () => {
     const fetchImpl = mockFetch(async () => ({ status: 200, body: { status: 'QUEUED' } }));
-    const client = new SendBlueClient({ apiKeyId: 'k', apiSecretKey: 's', fetchImpl });
+    const client = new SendBlueClient({ apiKeyId: 'k', apiSecretKey: 's', fromNumber: '+15555550001', fetchImpl });
     const exec = sendBlueSendExecutor({ client });
     await assert.rejects(
       () => exec({ to: '', content: 'hi' }, CTX),
@@ -263,7 +263,7 @@ describe('sendBlueSendExecutor — input validation', () => {
 
   it('throws when args.content is missing or empty', async () => {
     const fetchImpl = mockFetch(async () => ({ status: 200, body: { status: 'QUEUED' } }));
-    const client = new SendBlueClient({ apiKeyId: 'k', apiSecretKey: 's', fetchImpl });
+    const client = new SendBlueClient({ apiKeyId: 'k', apiSecretKey: 's', fromNumber: '+15555550001', fetchImpl });
     const exec = sendBlueSendExecutor({ client });
     await assert.rejects(
       () => exec({ to: '+15555550100', content: '' }, CTX),

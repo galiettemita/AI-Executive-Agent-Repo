@@ -55,6 +55,17 @@ export interface KillSwitches {
   // indefinitely until 3D.2 adds approval capture; never reaches 3E
   // SendBlue paths.
   readonly slack_review_enabled: boolean;
+  // Phase 3E.2. Mirrors `polling_max_cycles` but for the outbound
+  // sender worker. null = unbounded (production default). A positive
+  // integer caps the number of `runOutboundOnce` cycles the worker
+  // runs before auto-stopping and emitting
+  // `fomo.outbound.cycle_cap_reached`. The 3E.2 founder smoke test
+  // sets this to a small N (1-3) so the worker cannot accidentally
+  // keep firing real iMessages against SendBlue during the smoke
+  // window. The Permission Gate does NOT consult this — it only
+  // gates which-tools-may-run; the cap is a bootstrap-level safety
+  // belt on the worker loop itself.
+  readonly outbound_max_cycles: number | null;
 }
 
 const DEFAULTS = {
@@ -66,7 +77,8 @@ const DEFAULTS = {
   polling_interval_ms: 60_000,
   polling_max_cycles: null,
   ranker_enabled: false,
-  slack_review_enabled: false
+  slack_review_enabled: false,
+  outbound_max_cycles: null
 } as const satisfies KillSwitches;
 
 // Strict opt-in parse: only the literal strings 'true' or '1' (case-insensitive,
@@ -118,7 +130,8 @@ export function loadKillSwitches(env: NodeJS.ProcessEnv = process.env): KillSwit
     ),
     polling_max_cycles: parsePositiveIntOrNull(env.FOMO_GMAIL_POLLING_MAX_CYCLES),
     ranker_enabled: parseBool(env.FOMO_RANKER_ENABLED),
-    slack_review_enabled: parseBool(env.FOMO_SLACK_REVIEW_ENABLED)
+    slack_review_enabled: parseBool(env.FOMO_SLACK_REVIEW_ENABLED),
+    outbound_max_cycles: parsePositiveIntOrNull(env.FOMO_OUTBOUND_MAX_CYCLES)
   });
 }
 

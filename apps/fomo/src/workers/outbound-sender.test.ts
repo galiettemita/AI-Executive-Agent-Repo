@@ -143,6 +143,7 @@ async function buildHarness(opts: HarnessOptions) {
   const sendBlueClient = new SendBlueClient({
     apiKeyId: 'k',
     apiSecretKey: 's',
+    fromNumber: '+15555550001',
     fetchImpl: opts.sendBlueFetch
   });
   const dispatch = createDispatchTable();

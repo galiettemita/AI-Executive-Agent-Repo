@@ -326,7 +326,12 @@ function buildSlackReviewWiring(
 // is missing — "real or absent, never half-wired":
 //   * SENDBLUE_API_KEY_ID
 //   * SENDBLUE_API_SECRET_KEY
-//   * FOMO_FOUNDER_PHONE_NUMBER (E.164 format)
+//   * SENDBLUE_FROM_NUMBER (E.164) — the SendBlue-assigned sender
+//     phone, REQUIRED in every send-message POST body. 3E.2 smoke
+//     test surfaced that SendBlue returns HTTP 400
+//     `missing required parameter: "from_number"` without it.
+//   * FOMO_FOUNDER_PHONE_NUMBER (E.164) — the destination phone
+//     allowlist (where iMessages are delivered TO).
 //   * FOMO_FOUNDER_USER_ID — the user_id whose alerts the worker is
 //     allowed to text. Defense-in-depth allowlist: destinationFor
 //     returns FOMO_FOUNDER_PHONE_NUMBER ONLY for this user_id and
@@ -352,6 +357,7 @@ function buildSendWiring(
 
   const apiKeyId = env.SENDBLUE_API_KEY_ID;
   const apiSecretKey = env.SENDBLUE_API_SECRET_KEY;
+  const fromNumber = env.SENDBLUE_FROM_NUMBER?.trim();
   const founderPhone = env.FOMO_FOUNDER_PHONE_NUMBER?.trim();
   const founderUserId = env.FOMO_FOUNDER_USER_ID?.trim();
 
@@ -366,6 +372,21 @@ function buildSendWiring(
     throw new Error(
       'FOMO_SEND_ENABLED=true but SENDBLUE_API_SECRET_KEY is missing. ' +
         'Set the SendBlue API secret key or set FOMO_SEND_ENABLED=false.'
+    );
+  }
+  if (!fromNumber || fromNumber.length === 0) {
+    throw new Error(
+      'FOMO_SEND_ENABLED=true but SENDBLUE_FROM_NUMBER is missing. ' +
+        'Set the SendBlue-assigned sender phone (E.164, e.g. +12143547196) or set ' +
+        'FOMO_SEND_ENABLED=false. SendBlue rejects /api/send-message with HTTP 400 ' +
+        '`missing required parameter: "from_number"` without this — surfaced by the ' +
+        '3E.2 smoke test.'
+    );
+  }
+  if (!/^\+\d{7,15}$/.test(fromNumber)) {
+    throw new Error(
+      `FOMO_SEND_ENABLED=true but SENDBLUE_FROM_NUMBER is not in E.164 format ` +
+        `(got '${fromNumber.slice(0, 4)}...'). Expected '+' followed by 7-15 digits.`
     );
   }
   if (!founderPhone || founderPhone.length === 0) {
@@ -393,7 +414,7 @@ function buildSendWiring(
     );
   }
 
-  const client = new SendBlueClient({ apiKeyId, apiSecretKey });
+  const client = new SendBlueClient({ apiKeyId, apiSecretKey, fromNumber });
 
   const runDeps = (gateDeps: PolicyGateDeps): OutboundSenderDeps =>
     Object.freeze({
@@ -534,6 +555,8 @@ function startOutboundSenderInterval(
   let stopped = false;
   let inflight: Promise<void> = Promise.resolve();
   let timer: ReturnType<typeof setTimeout> | null = null;
+  let cyclesRun = 0;
+  const cap = killSwitches.outbound_max_cycles; // null = unbounded
 
   const tick = (): void => {
     if (stopped) return;
@@ -552,8 +575,11 @@ function startOutboundSenderInterval(
         const gateDeps = buildLiveGateDeps(killSwitches, snapshot);
         const deps = runDepsBuilder(gateDeps);
         const report = await runOutboundOnce(deps);
+        cyclesRun++;
         if (stopped) return;
         logEvent(config, undefined, 'fomo.outbound.cycle', 'INFO', {
+          cycle_number: cyclesRun,
+          cycle_cap: cap,
           users_total: report.users_total,
           users_with_approved_alerts: report.users_with_approved_alerts,
           alerts_considered: report.alerts_considered,
@@ -572,6 +598,20 @@ function startOutboundSenderInterval(
     })();
     void inflight.finally(() => {
       if (stopped) return;
+      // Phase 3E.2: bounded smoke window. When FOMO_OUTBOUND_MAX_CYCLES
+      // is set, auto-stop after that many cycles and emit one terminal
+      // log event so ops can confirm the cap fired. The 3E.2 founder
+      // smoke runbook sets this to a small N (1-3) so the worker
+      // cannot accidentally keep firing real iMessages against
+      // SendBlue during the smoke window.
+      if (cap !== null && cyclesRun >= cap) {
+        stopped = true;
+        logEvent(config, undefined, 'fomo.outbound.cycle_cap_reached', 'INFO', {
+          cycles_run: cyclesRun,
+          cycle_cap: cap
+        });
+        return;
+      }
       timer = setTimeout(tick, killSwitches.polling_interval_ms);
     });
   };
@@ -737,6 +777,7 @@ export function createFomoRuntime(config: FomoConfig = loadFomoConfig()): FomoRu
     );
     logEvent(config, undefined, 'fomo.outbound.enabled', 'INFO', {
       interval_ms: killSwitches.polling_interval_ms,
+      cycle_cap: killSwitches.outbound_max_cycles,
       auto_send_enabled: killSwitches.auto_send_enabled
     });
   } else {
