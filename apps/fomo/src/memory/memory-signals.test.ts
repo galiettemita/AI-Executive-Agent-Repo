@@ -11,15 +11,18 @@ import {
 } from './memory-signals.ts';
 
 describe('MEMORY_SIGNAL_KINDS', () => {
-  it('declares exactly the 6 v0.1 signal kinds per FOMO_PLAN §9.7', () => {
-    assert.equal(MEMORY_SIGNAL_KINDS.length, 6);
+  it('declares the 6 v0.1 personalization signal kinds plus the Phase 3F.1 stop_active compliance signal (7 total)', () => {
+    assert.equal(MEMORY_SIGNAL_KINDS.length, 7);
     const expected = [
       'sender_importance',
       'sender_suppressed',
       'timing_preference',
       'topic_importance',
       'alert_usefulness',
-      'quietness_preference'
+      'quietness_preference',
+      // Phase 3F.1: TCPA-style STOP enforcement signal. Outbound-sender
+      // refuses to dispatch when active=true.
+      'stop_active'
     ];
     assert.deepEqual([...MEMORY_SIGNAL_KINDS].sort(), [...expected].sort());
   });

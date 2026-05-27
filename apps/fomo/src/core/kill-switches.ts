@@ -66,6 +66,16 @@ export interface KillSwitches {
   // gates which-tools-may-run; the cap is a bootstrap-level safety
   // belt on the worker loop itself.
   readonly outbound_max_cycles: number | null;
+  // Phase 3F.1. When false (default), the /sendblue/inbound HTTP
+  // route is NOT mounted on the server — SendBlue webhook POSTs
+  // return 404, no reply parsing happens. Flipping to true requires
+  // (a) the SendBlue webhook signing secret wired in bootstrap and
+  // (b) the 3F.2 smoke gate to PASS. Defense-in-depth at three
+  // layers (mirrors 3D.1 / 3D.2 pattern): bootstrap (route not
+  // mounted when false), route handler (re-checks the switch at
+  // request time + audits `fomo.sendblue.kill_switch_off`), and
+  // signature verification (every accepted request HMAC-verified).
+  readonly sendblue_inbound_enabled: boolean;
 }
 
 const DEFAULTS = {
@@ -78,7 +88,8 @@ const DEFAULTS = {
   polling_max_cycles: null,
   ranker_enabled: false,
   slack_review_enabled: false,
-  outbound_max_cycles: null
+  outbound_max_cycles: null,
+  sendblue_inbound_enabled: false
 } as const satisfies KillSwitches;
 
 // Strict opt-in parse: only the literal strings 'true' or '1' (case-insensitive,
@@ -131,7 +142,8 @@ export function loadKillSwitches(env: NodeJS.ProcessEnv = process.env): KillSwit
     polling_max_cycles: parsePositiveIntOrNull(env.FOMO_GMAIL_POLLING_MAX_CYCLES),
     ranker_enabled: parseBool(env.FOMO_RANKER_ENABLED),
     slack_review_enabled: parseBool(env.FOMO_SLACK_REVIEW_ENABLED),
-    outbound_max_cycles: parsePositiveIntOrNull(env.FOMO_OUTBOUND_MAX_CYCLES)
+    outbound_max_cycles: parsePositiveIntOrNull(env.FOMO_OUTBOUND_MAX_CYCLES),
+    sendblue_inbound_enabled: parseBool(env.FOMO_SENDBLUE_INBOUND_ENABLED)
   });
 }
 

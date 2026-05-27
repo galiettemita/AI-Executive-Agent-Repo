@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { SendBlueClient, type FetchLike } from './client.ts';
+import { createHmac } from 'node:crypto';
+
+import { SendBlueClient, type FetchLike, verifySendBlueSignature } from './client.ts';
 
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
@@ -317,6 +319,231 @@ describe('SendBlueClient.send — output immutability', () => {
     const out = await client.send({ to: '+15555550100', content: 'hi' });
     assert.throws(() => {
       (out as unknown as { kind: string }).kind = 'failed';
+    });
+  });
+});
+
+/* ====================================================================== */
+/* verifySendBlueSignature (Phase 3F.1)                                   */
+/* ====================================================================== */
+
+const TEST_SECRET = 'test-sendblue-webhook-signing-secret';
+
+function sign(body: string, secret: string = TEST_SECRET): string {
+  return createHmac('sha256', secret).update(body).digest('hex');
+}
+
+function signTs(timestamp: string, body: string, secret: string = TEST_SECRET): string {
+  return createHmac('sha256', secret).update(`${timestamp}.${body}`).digest('hex');
+}
+
+describe('verifySendBlueSignature — happy path (body-only HMAC)', () => {
+  it('accepts a correctly signed body with bare-hex signature', () => {
+    const body = '{"message_id":"sb-1","content":"hi"}';
+    const sig = sign(body);
+    const r = verifySendBlueSignature({ signingSecret: TEST_SECRET, signature: sig, body });
+    assert.equal(r.ok, true);
+  });
+
+  it('accepts sha256=<hex> prefix', () => {
+    const body = '{"message_id":"sb-1"}';
+    const sig = `sha256=${sign(body)}`;
+    const r = verifySendBlueSignature({ signingSecret: TEST_SECRET, signature: sig, body });
+    assert.equal(r.ok, true);
+  });
+
+  it('accepts v1=<hex> prefix', () => {
+    const body = '{"message_id":"sb-1"}';
+    const sig = `v1=${sign(body)}`;
+    const r = verifySendBlueSignature({ signingSecret: TEST_SECRET, signature: sig, body });
+    assert.equal(r.ok, true);
+  });
+
+  it('prefix is case-insensitive (SHA256= and V1=)', () => {
+    const body = '{"x":1}';
+    for (const prefix of ['SHA256=', 'V1=']) {
+      const r = verifySendBlueSignature({
+        signingSecret: TEST_SECRET,
+        signature: `${prefix}${sign(body)}`,
+        body
+      });
+      assert.equal(r.ok, true, `expected ok for prefix ${prefix}`);
+    }
+  });
+});
+
+describe('verifySendBlueSignature — happy path (timestamp + body HMAC)', () => {
+  it('accepts a correctly signed timestamped body when timestamp is present', () => {
+    const body = '{"message_id":"sb-1"}';
+    const ts = '1779836881';
+    const sig = signTs(ts, body);
+    const r = verifySendBlueSignature({
+      signingSecret: TEST_SECRET,
+      signature: sig,
+      body,
+      timestamp: ts
+    });
+    assert.equal(r.ok, true);
+  });
+});
+
+describe('verifySendBlueSignature — signature failures', () => {
+  it('rejects empty signature with missing_signature', () => {
+    const r = verifySendBlueSignature({
+      signingSecret: TEST_SECRET,
+      signature: '',
+      body: '{}'
+    });
+    assert.equal(r.ok, false);
+    if (!r.ok) assert.equal(r.reason, 'missing_signature');
+  });
+
+  it('rejects malformed hex (too short)', () => {
+    const r = verifySendBlueSignature({
+      signingSecret: TEST_SECRET,
+      signature: 'abc123',
+      body: '{}'
+    });
+    assert.equal(r.ok, false);
+    if (!r.ok) assert.equal(r.reason, 'malformed_signature');
+  });
+
+  it('rejects malformed hex (non-hex chars)', () => {
+    const r = verifySendBlueSignature({
+      signingSecret: TEST_SECRET,
+      signature: 'g'.repeat(64),
+      body: '{}'
+    });
+    assert.equal(r.ok, false);
+    if (!r.ok) assert.equal(r.reason, 'malformed_signature');
+  });
+
+  it('rejects wrong secret with signature_mismatch (timing-safe compare)', () => {
+    const body = '{"x":1}';
+    const sig = sign(body, 'wrong-secret');
+    const r = verifySendBlueSignature({
+      signingSecret: TEST_SECRET,
+      signature: sig,
+      body
+    });
+    assert.equal(r.ok, false);
+    if (!r.ok) assert.equal(r.reason, 'signature_mismatch');
+  });
+
+  it('rejects tampered body (signature was computed over a different body)', () => {
+    const originalBody = '{"x":1}';
+    const sig = sign(originalBody);
+    const tamperedBody = '{"x":99}';
+    const r = verifySendBlueSignature({
+      signingSecret: TEST_SECRET,
+      signature: sig,
+      body: tamperedBody
+    });
+    assert.equal(r.ok, false);
+    if (!r.ok) assert.equal(r.reason, 'signature_mismatch');
+  });
+});
+
+describe('verifySendBlueSignature — timestamp freshness (optional)', () => {
+  it('accepts when timestamp is fresh and maxAgeSeconds is set', () => {
+    const now = 1779836881;
+    const body = '{"x":1}';
+    const ts = String(now - 60); // 60s old
+    const sig = signTs(String(now - 60), body);
+    const r = verifySendBlueSignature({
+      signingSecret: TEST_SECRET,
+      signature: sig,
+      body,
+      timestamp: ts,
+      now: () => now,
+      maxAgeSeconds: 300
+    });
+    assert.equal(r.ok, true);
+  });
+
+  it('rejects stale timestamp', () => {
+    const now = 1779836881;
+    const body = '{"x":1}';
+    const ts = String(now - 1000); // 1000s old, > 300s window
+    const sig = signTs(ts, body);
+    const r = verifySendBlueSignature({
+      signingSecret: TEST_SECRET,
+      signature: sig,
+      body,
+      timestamp: ts,
+      now: () => now,
+      maxAgeSeconds: 300
+    });
+    assert.equal(r.ok, false);
+    if (!r.ok) assert.equal(r.reason, 'stale_timestamp');
+  });
+
+  it('rejects timestamp from the far future too', () => {
+    const now = 1779836881;
+    const body = '{"x":1}';
+    const ts = String(now + 1000);
+    const sig = signTs(ts, body);
+    const r = verifySendBlueSignature({
+      signingSecret: TEST_SECRET,
+      signature: sig,
+      body,
+      timestamp: ts,
+      now: () => now,
+      maxAgeSeconds: 300
+    });
+    assert.equal(r.ok, false);
+    if (!r.ok) assert.equal(r.reason, 'stale_timestamp');
+  });
+
+  it('rejects malformed timestamp', () => {
+    const r = verifySendBlueSignature({
+      signingSecret: TEST_SECRET,
+      signature: sign('{}'),
+      body: '{}',
+      timestamp: 'not-a-timestamp',
+      maxAgeSeconds: 300
+    });
+    assert.equal(r.ok, false);
+    if (!r.ok) assert.equal(r.reason, 'malformed_timestamp');
+  });
+
+  it('does NOT enforce freshness when maxAgeSeconds is undefined (some webhooks lack timestamps)', () => {
+    const body = '{"x":1}';
+    const sig = sign(body);
+    const r = verifySendBlueSignature({
+      signingSecret: TEST_SECRET,
+      signature: sig,
+      body,
+      // timestamp undefined, maxAgeSeconds undefined
+    });
+    assert.equal(r.ok, true);
+  });
+});
+
+describe('verifySendBlueSignature — security properties', () => {
+  it('timing-safe compare: different-but-same-length wrong signatures all fail uniformly', () => {
+    // Both should produce signature_mismatch (not a partial-match leak).
+    const body = '{"x":1}';
+    const wrong1 = '0'.repeat(64);
+    const wrong2 = 'f'.repeat(64);
+    const r1 = verifySendBlueSignature({ signingSecret: TEST_SECRET, signature: wrong1, body });
+    const r2 = verifySendBlueSignature({ signingSecret: TEST_SECRET, signature: wrong2, body });
+    assert.equal(r1.ok, false);
+    assert.equal(r2.ok, false);
+    if (!r1.ok && !r2.ok) {
+      assert.equal(r1.reason, 'signature_mismatch');
+      assert.equal(r2.reason, 'signature_mismatch');
+    }
+  });
+
+  it('result objects are frozen', () => {
+    const ok = verifySendBlueSignature({
+      signingSecret: TEST_SECRET,
+      signature: sign('{}'),
+      body: '{}'
+    });
+    assert.throws(() => {
+      (ok as unknown as { ok: boolean }).ok = false;
     });
   });
 });

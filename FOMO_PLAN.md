@@ -1184,14 +1184,13 @@ prerequisite for the next dependent phase.
 | **3C.2** | OpenAI Ranker Smoke Eval                                                                                                                 | 3C.3     |
 | **3C.4** | Real Gmail + Real Ranker Rank-on-Poll Smoke Test                                                                                         | 3D.1     |
 | **3D.2** | Slack Approval Capture + Slack Smoke Test (proves inbound webhook + queued_for_review → approved/rejected)                              | 3E.1     |
-| **3E.2** | SendBlue Outbound Founder-Only Smoke Test (proves real iMessage delivery to founder's own phone + idempotency + three-outcome handling) | 3F       |
-| **3F.x** | SendBlue Inbound Reply Smoke Test                                                                                                        | 3G       |
+| **3E.2** | SendBlue Outbound Founder-Only Smoke Test (proves real iMessage delivery to founder's own phone + idempotency + three-outcome handling) | 3F.1     |
+| **3F.2** | SendBlue Inbound Reply Founder-Only Smoke Test (proves signed webhook + deterministic STOP/START + classifier soft intents + STOP enforcement + idempotency) | 3G       |
 | **3G**   | Full Founder Demo Smoke Test (end-to-end v0.1)                                                                                           | v0.3     |
 
 Numbering convention: a `.x` suffix denotes the specific smoke-test
-sub-phase that lands at the end of the named subphase. For example,
-SendBlue's inbound reply parser PR is `3F` and its smoke test is `3F.x`
-(concrete number assigned when scheduled).
+sub-phase that lands at the end of the named subphase. Concrete
+phase splits like 3F.1 / 3F.2 supersede `.x` when scheduled.
 
 **3D split note (founder directive 2026-05-25):** what was previously
 `3D + 3D.x` is now `3D.1 (substrate: Slack Candidate Review Posting)
@@ -1206,8 +1205,25 @@ substrate-only — it ships `SendBlueClient`, the deterministic
 founder-text template (no LLM voice), the outbound-sender worker, and
 the founder-phone allowlist. **No live SendBlue call happens in
 3E.1**; the substrate is fully mock-tested and waits on the founder
-to provision a SendBlue account. 3F SendBlue inbound cannot begin
-until 3E.2 PASS is on `main`.
+to provision a SendBlue account. 3F.1 SendBlue inbound substrate
+cannot begin until 3E.2 PASS is on `main`. **(3E.2 PASS landed on
+`main` 2026-05-26 via PR #32 — real iMessage delivered to founder
+phone end-to-end.)**
+
+**3F split note (founder directive 2026-05-26):** what was previously
+`3F + 3F.x` is now `3F.1 (substrate: SendBlue Inbound Reply Substrate)
++ 3F.2 (smoke: real SendBlue webhook reply against ngrok tunnel)`.
+3F.1 ships the signed `/sendblue/inbound` route, the two-pass reply
+parser (**deterministic safety pre-pass for STOP / UNSUBSCRIBE /
+CANCEL / START — NO LLM**, then OpenAI classifier for soft intents
+with low-confidence fail-safe at 0.7), `inbound_replies` dedup table,
+`stop_active` memory signal, STOP enforcement in the outbound-sender,
+and sender-suppression on `ignore_sender`. **Snooze is record-only in
+3F.1** — actual resurface (a new iMessage at snooze_until) is deferred
+to a tiny 3F.3 or 3G. **No proactive follow-up messages, no new
+outbound send behavior except STOP enforcement blocking existing
+sends, no friend beta, no auto-send, no group chats.** 3G demo gate
+cannot begin until 3F.2 PASS is on `main`.
 
 ### Required deliverables per smoke gate
 
@@ -1294,9 +1310,9 @@ formalized here so 3D / 3E / 3F / 3G each get the same protection.
                                                                                    ↓
                                                                                  3E.1 → 3E.2 ──gate──┐
                                                                                                       ↓
-                                                                                                    3F ──gate──┐
-                                                                                                                ↓
-                                                                                                              3G ──gate──→ v0.1 done
+                                                                                                    3F.1 → 3F.2 ──gate──┐
+                                                                                                                         ↓
+                                                                                                                       3G ──gate──→ v0.1 done
 ```
 
 Each `──gate──` arrow represents a committed PASS report. The

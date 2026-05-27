@@ -24,7 +24,18 @@ export const MEMORY_SIGNAL_KINDS = [
   'timing_preference',
   'topic_importance',
   'alert_usefulness',
-  'quietness_preference'
+  'quietness_preference',
+  // Phase 3F.1 — TCPA-style STOP / UNSUBSCRIBE / CANCEL compliance.
+  // Identity: (user_id, kind='stop_active', scope_key=null). The
+  // outbound-sender worker consults this signal at the top of every
+  // send cycle and refuses to dispatch when active. START flips the
+  // signal back via the same upsert path. Per founder directive
+  // 2026-05-26: STOP enforcement is deterministic — no LLM decides
+  // whether STOP means stop. Detail shape: { active: boolean,
+  // recorded_at: ISO, source_event_id?: number, source_text_slug?:
+  // string }. NEVER the founder's raw reply text, NEVER the full
+  // from-phone.
+  'stop_active'
 ] as const;
 
 export type MemorySignalKind = (typeof MEMORY_SIGNAL_KINDS)[number];

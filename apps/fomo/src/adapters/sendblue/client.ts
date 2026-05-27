@@ -372,3 +372,113 @@ function providerCode(body: unknown): string | undefined {
   }
   return undefined;
 }
+
+/* ====================================================================== */
+/* SendBlue inbound webhook signature verification (Phase 3F.1)           */
+/* ====================================================================== */
+
+import { createHmac, timingSafeEqual } from 'node:crypto';
+
+export interface VerifySendBlueSignatureInput {
+  // The webhook signing secret configured in your SendBlue account
+  // dashboard. DIFFERENT from the API key/secret used for outbound
+  // sends — webhook signing is per-webhook, rotated independently.
+  readonly signingSecret: string;
+  // Raw value of the signature header on the inbound POST. Format
+  // tolerated: either bare hex digest (`<hex>`), or prefixed
+  // (`sha256=<hex>` / `v1=<hex>`) — the verifier strips known prefixes
+  // before comparing.
+  readonly signature: string;
+  // Raw request body (NOT JSON-parsed; the original bytes).
+  readonly body: string;
+  // Optional timestamp header value (unix seconds, as a string).
+  // When provided AND maxAgeSeconds is set, the verifier checks
+  // freshness like Slack does. SendBlue's exact timestamp header
+  // and prefix scheme are TBD — surface for forward-compat.
+  readonly timestamp?: string;
+  readonly now?: () => number;
+  // Optional freshness window in seconds. Default unset = no
+  // freshness check (some webhooks don't include timestamps). When
+  // set, the timestamp must be present and within the window.
+  readonly maxAgeSeconds?: number;
+}
+
+export type SendBlueSignatureVerificationResult =
+  | { readonly ok: true }
+  | {
+      readonly ok: false;
+      readonly reason:
+        | 'malformed_signature'
+        | 'missing_signature'
+        | 'malformed_timestamp'
+        | 'stale_timestamp'
+        | 'signature_mismatch';
+    };
+
+// Verify an inbound SendBlue webhook signature.
+//
+// Scheme: HMAC-SHA256(signingSecret, body) → hex digest. When a
+// timestamp is present, the basestring becomes `${timestamp}.${body}`
+// (mirrors common webhook patterns).
+//
+// SendBlue's exact webhook signature header name + prefix scheme are
+// not documented in our repo as of 3F.1. The verifier tolerates the
+// common variants:
+//   * bare hex:        `abc123...`
+//   * sha256-prefixed: `sha256=abc123...`
+//   * v1-prefixed:     `v1=abc123...`
+// The 3F.2 founder smoke test confirms the actual format against
+// real SendBlue payloads; if the scheme differs, this function will
+// be patched then (same pattern as the 3E.1 → 3E.2 SendBlueClient fix).
+export function verifySendBlueSignature(
+  input: VerifySendBlueSignatureInput
+): SendBlueSignatureVerificationResult {
+  if (!input.signature || input.signature.length === 0) {
+    return Object.freeze({ ok: false as const, reason: 'missing_signature' as const });
+  }
+
+  // Strip known prefixes. Case-insensitive on the prefix only — the
+  // hex digest itself must be lowercase to match Node's hex output.
+  let providedHex = input.signature.trim();
+  const m =
+    /^sha256=(.+)$/i.exec(providedHex) ??
+    /^v1=(.+)$/i.exec(providedHex);
+  if (m) providedHex = m[1]!;
+  providedHex = providedHex.toLowerCase();
+
+  if (!/^[a-f0-9]{64}$/.test(providedHex)) {
+    return Object.freeze({ ok: false as const, reason: 'malformed_signature' as const });
+  }
+
+  // Optional freshness check.
+  if (input.maxAgeSeconds !== undefined) {
+    const tsRaw = input.timestamp?.trim() ?? '';
+    if (!/^\d{8,12}$/.test(tsRaw)) {
+      return Object.freeze({ ok: false as const, reason: 'malformed_timestamp' as const });
+    }
+    const ts = Number(tsRaw);
+    const now = (input.now ?? (() => Math.floor(Date.now() / 1000)))();
+    if (Math.abs(now - ts) > input.maxAgeSeconds) {
+      return Object.freeze({ ok: false as const, reason: 'stale_timestamp' as const });
+    }
+  }
+
+  // Basestring: include timestamp when present, else body alone.
+  const basestring =
+    input.timestamp !== undefined && input.timestamp.trim().length > 0
+      ? `${input.timestamp.trim()}.${input.body}`
+      : input.body;
+
+  const expectedHex = createHmac('sha256', input.signingSecret)
+    .update(basestring)
+    .digest('hex');
+  const expected = Buffer.from(expectedHex, 'utf8');
+  const provided = Buffer.from(providedHex, 'utf8');
+  if (expected.length !== provided.length) {
+    return Object.freeze({ ok: false as const, reason: 'signature_mismatch' as const });
+  }
+  if (!timingSafeEqual(expected, provided)) {
+    return Object.freeze({ ok: false as const, reason: 'signature_mismatch' as const });
+  }
+  return Object.freeze({ ok: true as const });
+}
