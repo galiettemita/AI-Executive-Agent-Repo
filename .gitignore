@@ -18,3 +18,6 @@ dist/
 .repo_locks/
 storage/
 artifacts/
+
+# *.local.bak — created by 'sed -i.bak' edits on env files; same secrets as .local, must NEVER commit
+.env.*.local.bak
