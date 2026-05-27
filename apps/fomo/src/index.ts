@@ -559,12 +559,23 @@ function startGmailPolling(
 //
 // THROWS at boot when the switch is on but any required env var is
 // missing — "real or absent, never half-wired":
-//   * SENDBLUE_WEBHOOK_SIGNING_SECRET — verifies inbound webhook HMAC
+//   * SENDBLUE_WEBHOOK_SECRET — the secret you configured in the
+//     SendBlue dashboard. SendBlue echoes this verbatim in a
+//     request header on every inbound webhook POST (per docs at
+//     docs.sendblue.com/getting-started/webhooks). NOT an HMAC
+//     signing key — it's a plain shared secret compared with
+//     timing-safe equality against the header value.
 //   * FOMO_FOUNDER_PHONE_NUMBER (already required by buildSendWiring
 //     when FOMO_SEND_ENABLED=true; re-validated here for the inbound
 //     from-number allowlist)
 //   * FOMO_FOUNDER_USER_ID (same as above; required for attribution)
 //   * OPENAI_API_KEY — the reply parser's classifier path uses OpenAI
+//
+// Optional env:
+//   * SENDBLUE_WEBHOOK_SECRET_HEADER — overrides the default
+//     header name `sb-signing-secret`. SendBlue's public docs don't
+//     name the header explicitly; the founder confirms / overrides
+//     during 3F.2 smoke after observing a real SendBlue request.
 //
 // The reply parser shares the same OpenAI router instance as the
 // ranker (3C.3 backend) — both are 'classification' capability. The
@@ -582,17 +593,21 @@ function buildSendBlueInboundWiring(
     return { routeDeps: null, inboundEnabled: false };
   }
 
-  const signingSecret = env.SENDBLUE_WEBHOOK_SIGNING_SECRET;
+  const webhookSecret = env.SENDBLUE_WEBHOOK_SECRET;
+  const webhookSecretHeader =
+    env.SENDBLUE_WEBHOOK_SECRET_HEADER?.trim().toLowerCase() || 'sb-signing-secret';
   const founderPhone = env.FOMO_FOUNDER_PHONE_NUMBER?.trim();
   const founderUserId = env.FOMO_FOUNDER_USER_ID?.trim();
   const openaiKey = env.OPENAI_API_KEY;
 
-  if (!signingSecret || signingSecret.length === 0) {
+  if (!webhookSecret || webhookSecret.length === 0) {
     throw new Error(
-      'FOMO_SENDBLUE_INBOUND_ENABLED=true but SENDBLUE_WEBHOOK_SIGNING_SECRET is missing. ' +
-        "Set the webhook signing secret (from your SendBlue account dashboard's " +
-        'webhook configuration) or set FOMO_SENDBLUE_INBOUND_ENABLED=false. ' +
-        'Refusing to boot an unsigned /sendblue/inbound endpoint.'
+      'FOMO_SENDBLUE_INBOUND_ENABLED=true but SENDBLUE_WEBHOOK_SECRET is missing. ' +
+        "Set the webhook secret (the value you configured in your SendBlue " +
+        "dashboard's webhook settings — SendBlue echoes it back in a request " +
+        'header on every inbound POST per docs.sendblue.com/getting-started/' +
+        'webhooks) or set FOMO_SENDBLUE_INBOUND_ENABLED=false. Refusing to ' +
+        'boot an unauthenticated /sendblue/inbound endpoint.'
     );
   }
   if (!founderPhone || !/^\+\d{7,15}$/.test(founderPhone)) {
@@ -630,7 +645,8 @@ function buildSendBlueInboundWiring(
   replyRouter.registerBackend('classification', replyBackend);
 
   const routeDeps: SendBlueInboundRouteDeps = Object.freeze({
-    signingSecret,
+    webhookSecret,
+    webhookSecretHeader,
     founderPhoneNumber: founderPhone,
     founderUserId,
     killSwitches,
@@ -852,7 +868,11 @@ export function createFomoRuntime(config: FomoConfig = loadFomoConfig()): FomoRu
   if (inboundWiring.routeDeps) {
     logEvent(config, undefined, 'fomo.sendblue.inbound.enabled', 'INFO', {
       inbound_route_mounted: true,
-      founder_user_id: process.env.FOMO_FOUNDER_USER_ID
+      founder_user_id: process.env.FOMO_FOUNDER_USER_ID,
+      // Surface the configured header name so the founder can see
+      // exactly which header the route reads — useful during 3F.2
+      // smoke when confirming SendBlue's actual header name.
+      webhook_secret_header: inboundWiring.routeDeps.webhookSecretHeader
     });
   } else {
     logEvent(config, undefined, 'fomo.sendblue.inbound.disabled', 'INFO', {

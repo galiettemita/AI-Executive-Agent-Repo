@@ -70,7 +70,7 @@
 import { Buffer } from 'node:buffer';
 import type http from 'node:http';
 
-import { verifySendBlueSignature } from '../adapters/sendblue/client.js';
+import { verifySendBlueWebhookSecret } from '../adapters/sendblue/client.js';
 import { type AuditStore } from '../core/audit.js';
 import { type AlertStateTransitionStore } from '../core/alert-state-transitions.js';
 import { type KillSwitches } from '../core/kill-switches.js';
@@ -96,10 +96,23 @@ import {
 /* ---------------------------------------------------------------------- */
 
 export interface SendBlueInboundRouteDeps {
-  // SendBlue webhook signing secret. Different from the API
-  // key/secret used for outbound sends — webhook signing is per-
-  // webhook, rotated independently in the SendBlue dashboard.
-  readonly signingSecret: string;
+  // The webhook secret you configured in the SendBlue dashboard.
+  // SendBlue's auth scheme (per docs.sendblue.com/getting-started/
+  // webhooks): "When you configure a secret, Sendblue will include
+  // it in the webhook request headers, allowing you to verify that
+  // the request is genuinely from Sendblue." NOT HMAC, NOT a body
+  // signature — plain header-equality with a timing-safe compare.
+  // Different from the API key/secret used for outbound sends —
+  // this is per-webhook, rotated independently in the dashboard.
+  readonly webhookSecret: string;
+  // The HTTP header name SendBlue uses to send the configured
+  // secret. SendBlue's public docs don't name it explicitly; the
+  // default `sb-signing-secret` matches their `sb-*` API-header
+  // naming pattern. The bootstrap honors a
+  // SENDBLUE_WEBHOOK_SECRET_HEADER env var so the founder can
+  // patch this during 3F.2 smoke (when we observe a real inbound
+  // request) without a code change.
+  readonly webhookSecretHeader: string;
   // The founder's destination phone (E.164). Inbound webhooks from
   // any other from-number are rejected as unauthorized. v0.1 is
   // founder-only.
@@ -213,14 +226,19 @@ interface RouteOutcome {
 /* ---------------------------------------------------------------------- */
 
 export interface HandleInboundInput {
-  // Raw request body string (NOT JSON-parsed). Required for signature
-  // verification — the HMAC is computed over the original bytes.
+  // Raw request body string (NOT JSON-parsed). Auth check does NOT
+  // depend on the body (SendBlue doesn't HMAC-sign the body —
+  // confirmed via docs 2026-05-26), but the route still wants the
+  // raw bytes for two reasons: (a) JSON.parse the body for payload
+  // extraction below, (b) avoid trusting any pre-parsed body the
+  // HTTP framework might offer (defense-in-depth against framework-
+  // level parsing surprises).
   readonly body: string;
-  // Verbatim signature header value (e.g. `sha256=<hex>` or bare hex).
-  readonly signature: string;
-  // Optional timestamp header (if SendBlue sends one and the
-  // operator configured freshness checking via SENDBLUE_WEBHOOK_MAX_AGE_SECONDS).
-  readonly timestamp?: string;
+  // Verbatim value of the secret-bearing header on the inbound POST.
+  // The route layer reads `deps.webhookSecretHeader` from the
+  // request and passes whatever raw string is there. Empty string
+  // when the header was absent.
+  readonly secretHeaderValue: string;
 }
 
 export async function handleSendBlueInbound(
@@ -229,8 +247,9 @@ export async function handleSendBlueInbound(
 ): Promise<HttpResponse> {
   const now = deps.now ?? ((): Date => new Date());
 
-  // 1. Audit inbound_received BEFORE signature verification.
-  //    Sanitized — only the body length, not the body.
+  // 1. Audit inbound_received BEFORE auth verification.
+  //    Sanitized — only the body length + whether the secret header
+  //    was present, NOT the body, NOT the header value.
   await deps.auditStore.write({
     actor_user_id: null,
     actor_ip: null,
@@ -240,7 +259,8 @@ export async function handleSendBlueInbound(
     result: 'success',
     detail: {
       body_bytes: input.body.length,
-      has_timestamp: input.timestamp !== undefined
+      secret_header_present: input.secretHeaderValue.length > 0,
+      secret_header_name: deps.webhookSecretHeader
     }
   });
 
@@ -262,24 +282,37 @@ export async function handleSendBlueInbound(
     return jsonResponse(200, {});
   }
 
-  // 3. Signature verification.
-  const verify = verifySendBlueSignature({
-    signingSecret: deps.signingSecret,
-    signature: input.signature,
-    body: input.body,
-    timestamp: input.timestamp
+  // 3. Webhook secret verification (header equality, timing-safe).
+  //    SendBlue uses a plain shared secret in a header, NOT HMAC.
+  //    See client.ts verifySendBlueWebhookSecret docs for evidence.
+  //    Fail-closed: any non-ok result → 401 + audit + early return.
+  //    The route NEVER parses the body, NEVER transitions state,
+  //    NEVER updates memory_signals when auth fails. Per founder
+  //    directive 2026-05-26.
+  const verify = verifySendBlueWebhookSecret({
+    configuredSecret: deps.webhookSecret,
+    headerValue: input.secretHeaderValue
   });
   if (!verify.ok) {
     await deps.auditStore.write({
       actor_user_id: null,
       actor_ip: null,
       actor_user_agent: null,
+      // Audit-action name is `signature_invalid` for historical
+      // consistency with the rest of the v0.1 audit vocabulary
+      // (Slack's signature audit). The `error_code` detail field
+      // carries the SendBlue-specific reason so ops can distinguish
+      // missing_header from secret_mismatch without renaming the
+      // audit action.
       action: 'fomo.sendblue.signature_invalid',
       target: 'route:sendblue.inbound',
       result: 'failure',
-      detail: { error_code: verify.reason }
+      detail: {
+        error_code: verify.reason,
+        secret_header_name: deps.webhookSecretHeader
+      }
     });
-    return jsonResponse(401, { error: 'signature_invalid' });
+    return jsonResponse(401, { error: 'webhook_unauthorized', reason: verify.reason });
   }
 
   // 4. Parse JSON payload.
@@ -1056,22 +1089,15 @@ export async function tryHandleSendBlueInboundRequest(
       message: err instanceof Error ? err.message : String(err)
     });
   }
-  // SendBlue's exact header names are TBD; we accept several common
-  // shapes. Operators configure SendBlue to send one of these.
-  const signature =
-    getHeader(req, 'x-sendblue-signature') ||
-    getHeader(req, 'sb-signature') ||
-    getHeader(req, 'x-signature');
-  const timestamp =
-    getHeader(req, 'x-sendblue-request-timestamp') ||
-    getHeader(req, 'sb-request-timestamp') ||
-    getHeader(req, 'x-request-timestamp') ||
-    undefined;
+  // SendBlue puts the configured webhook secret in a request
+  // header. Public docs don't name it; we read whatever header the
+  // operator configured via `deps.webhookSecretHeader` (default
+  // `sb-signing-secret`, overridable via env at boot time).
+  const secretHeaderValue = getHeader(req, deps.webhookSecretHeader);
   return handleSendBlueInbound(
     {
       body: bodyBuf.toString('utf8'),
-      signature,
-      timestamp: timestamp || undefined
+      secretHeaderValue
     },
     deps
   );

@@ -374,111 +374,105 @@ function providerCode(body: unknown): string | undefined {
 }
 
 /* ====================================================================== */
-/* SendBlue inbound webhook signature verification (Phase 3F.1)           */
+/* SendBlue inbound webhook secret verification (Phase 3F.1 — corrected)  */
 /* ====================================================================== */
 
-import { createHmac, timingSafeEqual } from 'node:crypto';
+import { timingSafeEqual } from 'node:crypto';
 
-export interface VerifySendBlueSignatureInput {
-  // The webhook signing secret configured in your SendBlue account
-  // dashboard. DIFFERENT from the API key/secret used for outbound
-  // sends — webhook signing is per-webhook, rotated independently.
-  readonly signingSecret: string;
-  // Raw value of the signature header on the inbound POST. Format
-  // tolerated: either bare hex digest (`<hex>`), or prefixed
-  // (`sha256=<hex>` / `v1=<hex>`) — the verifier strips known prefixes
-  // before comparing.
-  readonly signature: string;
-  // Raw request body (NOT JSON-parsed; the original bytes).
-  readonly body: string;
-  // Optional timestamp header value (unix seconds, as a string).
-  // When provided AND maxAgeSeconds is set, the verifier checks
-  // freshness like Slack does. SendBlue's exact timestamp header
-  // and prefix scheme are TBD — surface for forward-compat.
-  readonly timestamp?: string;
-  readonly now?: () => number;
-  // Optional freshness window in seconds. Default unset = no
-  // freshness check (some webhooks don't include timestamps). When
-  // set, the timestamp must be present and within the window.
-  readonly maxAgeSeconds?: number;
+// SendBlue's webhook auth method is a PLAIN SHARED SECRET sent in a
+// request header — NOT HMAC over the body.
+//
+// Documentation evidence (https://docs.sendblue.com/getting-started/webhooks/,
+// fetched 2026-05-26 during 3F.1 implementation):
+//
+//   "When you configure a secret, Sendblue will include it in the
+//    webhook request headers, allowing you to verify that the request
+//    is genuinely from Sendblue."
+//
+// Important caveats from that fetch:
+//   * SendBlue's public docs do NOT name the exact header that carries
+//     the configured secret. Founder configures the secret in the
+//     SendBlue dashboard; the dashboard then injects it into every
+//     webhook POST under a header whose name is implementation-
+//     defined.
+//   * No HMAC, no body-signature scheme is documented for inbound
+//     webhooks (HMAC exists elsewhere in some SendBlue features, but
+//     not in the documented inbound-webhook flow).
+//   * No timestamp / replay window is documented for inbound
+//     webhooks. Replay protection comes from `provider_message_id`
+//     idempotency (the `inbound_replies` UNIQUE constraint), not
+//     from a timestamp freshness check.
+//
+// Earlier 3F.1 substrate (commit `debe9c02`) implemented HMAC-SHA256
+// over the body. That was incorrect — invented from common webhook
+// patterns, not from SendBlue's docs. This module is the corrected
+// implementation: plain header-equality with a TIMING-SAFE COMPARE
+// to avoid character-by-character timing leaks (still important even
+// for plaintext-equality auth).
+//
+// Header name: the route layer reads the configured header name
+// (default `sb-signing-secret` — matches SendBlue's `sb-*` API-header
+// naming pattern). The 3F.2 founder smoke test will inspect a real
+// SendBlue webhook request and confirm/override the actual header
+// name via the `SENDBLUE_WEBHOOK_SECRET_HEADER` env var — no code
+// change needed if SendBlue uses a different header name in practice.
+
+export interface VerifySendBlueWebhookSecretInput {
+  // The webhook secret you configured in the SendBlue dashboard.
+  readonly configuredSecret: string;
+  // Raw value of the SendBlue-injected secret header (header name
+  // is determined by the route layer / env var, not by this verifier).
+  readonly headerValue: string;
 }
 
-export type SendBlueSignatureVerificationResult =
+export type SendBlueWebhookSecretResult =
   | { readonly ok: true }
   | {
       readonly ok: false;
-      readonly reason:
-        | 'malformed_signature'
-        | 'missing_signature'
-        | 'malformed_timestamp'
-        | 'stale_timestamp'
-        | 'signature_mismatch';
+      readonly reason: 'missing_header' | 'secret_mismatch';
     };
 
-// Verify an inbound SendBlue webhook signature.
+// Verify an inbound SendBlue webhook by comparing the secret-bearing
+// header against the configured secret with a timing-safe compare.
 //
-// Scheme: HMAC-SHA256(signingSecret, body) → hex digest. When a
-// timestamp is present, the basestring becomes `${timestamp}.${body}`
-// (mirrors common webhook patterns).
+// Returns:
+//   * { ok: true } on match
+//   * { ok: false, reason: 'missing_header' } when the header was
+//     absent or empty on the request
+//   * { ok: false, reason: 'secret_mismatch' } when the header was
+//     present but does not equal the configured secret (or has a
+//     different byte-length, which timingSafeEqual rejects upfront).
 //
-// SendBlue's exact webhook signature header name + prefix scheme are
-// not documented in our repo as of 3F.1. The verifier tolerates the
-// common variants:
-//   * bare hex:        `abc123...`
-//   * sha256-prefixed: `sha256=abc123...`
-//   * v1-prefixed:     `v1=abc123...`
-// The 3F.2 founder smoke test confirms the actual format against
-// real SendBlue payloads; if the scheme differs, this function will
-// be patched then (same pattern as the 3E.1 → 3E.2 SendBlueClient fix).
-export function verifySendBlueSignature(
-  input: VerifySendBlueSignatureInput
-): SendBlueSignatureVerificationResult {
-  if (!input.signature || input.signature.length === 0) {
-    return Object.freeze({ ok: false as const, reason: 'missing_signature' as const });
+// The route layer treats any { ok: false } result as fail-closed:
+// audit `fomo.sendblue.webhook_unauthorized`, return HTTP 401, do
+// NOT parse the body, do NOT transition alert state, do NOT update
+// memory_signals.
+export function verifySendBlueWebhookSecret(
+  input: VerifySendBlueWebhookSecretInput
+): SendBlueWebhookSecretResult {
+  if (!input.headerValue || input.headerValue.length === 0) {
+    return Object.freeze({ ok: false as const, reason: 'missing_header' as const });
   }
-
-  // Strip known prefixes. Case-insensitive on the prefix only — the
-  // hex digest itself must be lowercase to match Node's hex output.
-  let providedHex = input.signature.trim();
-  const m =
-    /^sha256=(.+)$/i.exec(providedHex) ??
-    /^v1=(.+)$/i.exec(providedHex);
-  if (m) providedHex = m[1]!;
-  providedHex = providedHex.toLowerCase();
-
-  if (!/^[a-f0-9]{64}$/.test(providedHex)) {
-    return Object.freeze({ ok: false as const, reason: 'malformed_signature' as const });
+  if (!input.configuredSecret || input.configuredSecret.length === 0) {
+    // Defensive — bootstrap is supposed to fail-close before we get
+    // here, but if a misconfig slips through, treat as auth fail.
+    return Object.freeze({ ok: false as const, reason: 'secret_mismatch' as const });
   }
-
-  // Optional freshness check.
-  if (input.maxAgeSeconds !== undefined) {
-    const tsRaw = input.timestamp?.trim() ?? '';
-    if (!/^\d{8,12}$/.test(tsRaw)) {
-      return Object.freeze({ ok: false as const, reason: 'malformed_timestamp' as const });
-    }
-    const ts = Number(tsRaw);
-    const now = (input.now ?? (() => Math.floor(Date.now() / 1000)))();
-    if (Math.abs(now - ts) > input.maxAgeSeconds) {
-      return Object.freeze({ ok: false as const, reason: 'stale_timestamp' as const });
-    }
-  }
-
-  // Basestring: include timestamp when present, else body alone.
-  const basestring =
-    input.timestamp !== undefined && input.timestamp.trim().length > 0
-      ? `${input.timestamp.trim()}.${input.body}`
-      : input.body;
-
-  const expectedHex = createHmac('sha256', input.signingSecret)
-    .update(basestring)
-    .digest('hex');
-  const expected = Buffer.from(expectedHex, 'utf8');
-  const provided = Buffer.from(providedHex, 'utf8');
+  // Trim the header value but NOT the configured secret — header
+  // whitespace is HTTP-protocol noise, configured-secret whitespace
+  // is operator intent.
+  const provided = Buffer.from(input.headerValue.trim(), 'utf8');
+  const expected = Buffer.from(input.configuredSecret, 'utf8');
+  // timingSafeEqual requires equal-length buffers; mismatched length
+  // is itself a fail signal we expose as 'secret_mismatch'. This
+  // does technically leak the configured secret's length via a
+  // wrong-length probe, but in practice the secret is rotated per-
+  // webhook in the dashboard, so this is not a meaningful exposure.
   if (expected.length !== provided.length) {
-    return Object.freeze({ ok: false as const, reason: 'signature_mismatch' as const });
+    return Object.freeze({ ok: false as const, reason: 'secret_mismatch' as const });
   }
   if (!timingSafeEqual(expected, provided)) {
-    return Object.freeze({ ok: false as const, reason: 'signature_mismatch' as const });
+    return Object.freeze({ ok: false as const, reason: 'secret_mismatch' as const });
   }
   return Object.freeze({ ok: true as const });
 }

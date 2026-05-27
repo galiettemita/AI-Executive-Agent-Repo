@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict';
-import { createHmac } from 'node:crypto';
 import { describe, it } from 'node:test';
 
 import { InMemoryAlertStateTransitionStore } from '../core/alert-state-transitions.ts';
@@ -19,13 +18,11 @@ import {
   type SendBlueInboundRouteDeps
 } from './sendblue-inbound.ts';
 
-const SIGNING_SECRET = 'test-sb-webhook-signing-secret';
+const WEBHOOK_SECRET = 'shh-test-sb-webhook-secret-from-dashboard';
+const WEBHOOK_SECRET_HEADER = 'sb-signing-secret';
 const FOUNDER_PHONE = '+16467023459';
 const FOUNDER_USER = 'founder';
 
-function sign(body: string): string {
-  return createHmac('sha256', SIGNING_SECRET).update(body).digest('hex');
-}
 
 interface HarnessOverrides {
   readonly killSwitches?: KillSwitches;
@@ -69,7 +66,8 @@ function buildHarness(overrides: HarnessOverrides = {}) {
       }));
 
   const deps: SendBlueInboundRouteDeps = {
-    signingSecret: SIGNING_SECRET,
+    webhookSecret: WEBHOOK_SECRET,
+    webhookSecretHeader: WEBHOOK_SECRET_HEADER,
     founderPhoneNumber: FOUNDER_PHONE,
     founderUserId: FOUNDER_USER,
     killSwitches: switches,
@@ -158,7 +156,7 @@ describe('handleSendBlueInbound — kill switch off', () => {
     });
     const body = inboundBody();
     const r = await handleSendBlueInbound(
-      { body, signature: sign(body) },
+      { body, secretHeaderValue: WEBHOOK_SECRET },
       h.deps
     );
     assert.equal(r.status, 200);
@@ -173,31 +171,74 @@ describe('handleSendBlueInbound — kill switch off', () => {
 });
 
 /* ====================================================================== */
-/* Signature verification                                                 */
+/* Webhook secret verification (SendBlue uses shared-secret-in-header)    */
+/*                                                                        */
+/* Per docs.sendblue.com/getting-started/webhooks:                        */
+/*   "When you configure a secret, Sendblue will include it in the        */
+/*    webhook request headers, allowing you to verify that the request    */
+/*    is genuinely from Sendblue."                                        */
+/* NOT HMAC over body. Plain equality with timing-safe compare.           */
 /* ====================================================================== */
 
-describe('handleSendBlueInbound — signature failures', () => {
-  it('returns 401 + audits signature_invalid on wrong signature', async () => {
+describe('handleSendBlueInbound — webhook secret auth failures (fail-closed)', () => {
+  it('returns 401 + audits signature_invalid + error_code=secret_mismatch on wrong secret', async () => {
     const h = buildHarness();
     const body = inboundBody();
     const r = await handleSendBlueInbound(
-      { body, signature: 'a'.repeat(64) },
+      { body, secretHeaderValue: 'completely-wrong-secret-value' },
       h.deps
     );
     assert.equal(r.status, 401);
     const audits = await h.auditStore.recent(null as unknown as string, 50);
-    assert.ok(audits.find((e) => e.action === 'fomo.sendblue.signature_invalid'));
-    // Did NOT process the payload past sig verification.
+    const failAudit = audits.find((e) => e.action === 'fomo.sendblue.signature_invalid');
+    assert.ok(failAudit);
+    assert.equal((failAudit?.detail as { error_code: string }).error_code, 'secret_mismatch');
+    // Did NOT process the payload past auth verification.
     assert.equal(await h.inboundReplyStore.count(FOUNDER_USER), 0);
   });
 
-  it('returns 401 on missing signature header', async () => {
+  it('returns 401 + error_code=missing_header when the secret header is absent', async () => {
     const h = buildHarness();
     const r = await handleSendBlueInbound(
-      { body: inboundBody(), signature: '' },
+      { body: inboundBody(), secretHeaderValue: '' },
       h.deps
     );
     assert.equal(r.status, 401);
+    const audits = await h.auditStore.recent(null as unknown as string, 50);
+    const failAudit = audits.find((e) => e.action === 'fomo.sendblue.signature_invalid');
+    assert.ok(failAudit);
+    assert.equal((failAudit?.detail as { error_code: string }).error_code, 'missing_header');
+  });
+
+  it('auth-failed requests do NOT parse the body, NOT transition state, NOT update memory (load-bearing fail-closed)', async () => {
+    const h = buildHarness();
+    let parserCalls = 0;
+    h.deps.replyParser.parse = async () => {
+      parserCalls++;
+      // If the route somehow reached the parser, return a STOP intent
+      // — the test below proves that even with this "would have
+      // flipped stop_active" response, NOTHING is actually written
+      // because auth failed before parser invocation.
+      return Object.freeze({
+        ok: true as const,
+        source: 'deterministic' as const,
+        intent: 'stop' as const
+      });
+    };
+    const body = inboundBody({ content: 'STOP' });
+    const r = await handleSendBlueInbound(
+      { body, secretHeaderValue: 'wrong-secret-value-must-be-rejected' },
+      h.deps
+    );
+    assert.equal(r.status, 401);
+    // Parser was NEVER called.
+    assert.equal(parserCalls, 0);
+    // stop_active was NEVER written.
+    assert.equal(await h.memoryStore.get(FOUNDER_USER, 'stop_active', null), null);
+    // No feedback events written.
+    assert.equal(await h.feedbackStore.countByKind(FOUNDER_USER, 'stop'), 0);
+    // No inbound_replies row.
+    assert.equal(await h.inboundReplyStore.count(FOUNDER_USER), 0);
   });
 });
 
@@ -210,7 +251,7 @@ describe('handleSendBlueInbound — payload validation', () => {
     const h = buildHarness();
     const body = 'not json';
     const r = await handleSendBlueInbound(
-      { body, signature: sign(body) },
+      { body, secretHeaderValue: WEBHOOK_SECRET },
       h.deps
     );
     assert.equal(r.status, 400);
@@ -228,7 +269,7 @@ describe('handleSendBlueInbound — payload validation', () => {
     const h = buildHarness();
     const body = JSON.stringify({ random: 'payload' });
     const r = await handleSendBlueInbound(
-      { body, signature: sign(body) },
+      { body, secretHeaderValue: WEBHOOK_SECRET },
       h.deps
     );
     assert.equal(r.status, 400);
@@ -252,7 +293,7 @@ describe('handleSendBlueInbound — from-number allowlist', () => {
     const h = buildHarness();
     const body = inboundBody({ from_number: '+19998887777' });
     const r = await handleSendBlueInbound(
-      { body, signature: sign(body) },
+      { body, secretHeaderValue: WEBHOOK_SECRET },
       h.deps
     );
     assert.equal(r.status, 403);
@@ -285,11 +326,10 @@ describe('handleSendBlueInbound — idempotency on SendBlue retry', () => {
       });
     };
     const body = inboundBody({ content: 'STOP', message_handle: 'sb-msg-dup' });
-    const sig = sign(body);
 
-    const r1 = await handleSendBlueInbound({ body, signature: sig }, h.deps);
+    const r1 = await handleSendBlueInbound({ body, secretHeaderValue: WEBHOOK_SECRET }, h.deps);
     assert.equal(r1.status, 200);
-    const r2 = await handleSendBlueInbound({ body, signature: sig }, h.deps);
+    const r2 = await handleSendBlueInbound({ body, secretHeaderValue: WEBHOOK_SECRET }, h.deps);
     assert.equal(r2.status, 200);
 
     // Parser was called exactly ONCE (the second request short-circuited
@@ -331,7 +371,7 @@ describe('handleSendBlueInbound — STOP (deterministic compliance)', () => {
       });
     };
     const body = inboundBody({ content: 'STOP' });
-    const r = await handleSendBlueInbound({ body, signature: sign(body) }, h.deps);
+    const r = await handleSendBlueInbound({ body, secretHeaderValue: WEBHOOK_SECRET }, h.deps);
     assert.equal(r.status, 200);
     // Parser was called once (route hands the raw text to the
     // parser, which short-circuits deterministically — caller does
@@ -373,7 +413,7 @@ describe('handleSendBlueInbound — STOP (deterministic compliance)', () => {
         intent: 'start' as const
       });
     const body = inboundBody({ content: 'START' });
-    const r = await handleSendBlueInbound({ body, signature: sign(body) }, h.deps);
+    const r = await handleSendBlueInbound({ body, secretHeaderValue: WEBHOOK_SECRET }, h.deps);
     assert.equal(r.status, 200);
     const sig = await h.memoryStore.get(FOUNDER_USER, 'stop_active', null);
     assert.equal((sig?.detail as { active: boolean }).active, false);
@@ -409,7 +449,7 @@ describe('handleSendBlueInbound — snooze (classifier, with matched alert)', ()
         low_confidence_forced_unclear: false
       });
     const body = inboundBody({ content: 'tomorrow' });
-    const r = await handleSendBlueInbound({ body, signature: sign(body) }, h.deps);
+    const r = await handleSendBlueInbound({ body, secretHeaderValue: WEBHOOK_SECRET }, h.deps);
     assert.equal(r.status, 200);
     // State machine walked all the way to snoozed.
     assert.equal(await h.transitions.currentState('alert-snooze-1'), 'snoozed');
@@ -451,7 +491,7 @@ describe('handleSendBlueInbound — ignore_sender (sender-suppression memory sig
         low_confidence_forced_unclear: false
       });
     const body = inboundBody({ content: 'never alert me about this sender again' });
-    const r = await handleSendBlueInbound({ body, signature: sign(body) }, h.deps);
+    const r = await handleSendBlueInbound({ body, secretHeaderValue: WEBHOOK_SECRET }, h.deps);
     assert.equal(r.status, 200);
     assert.equal(await h.transitions.currentState('alert-suppress-1'), 'ignored');
     assert.equal(await h.feedbackStore.countByKind(FOUNDER_USER, 'ignored_sender'), 1);
@@ -491,7 +531,7 @@ describe('handleSendBlueInbound — unclear (fail-safe; no state transition)', (
         low_confidence_forced_unclear: true
       });
     const body = inboundBody({ content: 'asdf' });
-    const r = await handleSendBlueInbound({ body, signature: sign(body) }, h.deps);
+    const r = await handleSendBlueInbound({ body, secretHeaderValue: WEBHOOK_SECRET }, h.deps);
     assert.equal(r.status, 200);
     // Alert stayed in 'sent' (no transition past replied for unclear).
     assert.equal(await h.transitions.currentState('alert-unclear-1'), 'sent');
@@ -530,7 +570,7 @@ describe('handleSendBlueInbound — privacy invariants', () => {
         low_confidence_forced_unclear: false
       });
     const body = inboundBody({ content: SECRET_REPLY });
-    await handleSendBlueInbound({ body, signature: sign(body) }, h.deps);
+    await handleSendBlueInbound({ body, secretHeaderValue: WEBHOOK_SECRET }, h.deps);
     const audits = await h.auditStore.recent(FOUNDER_USER, 50);
     const sysAudits = await h.auditStore.recent(null as unknown as string, 50);
     for (const e of [...audits, ...sysAudits]) {
@@ -545,7 +585,7 @@ describe('handleSendBlueInbound — privacy invariants', () => {
   it('audit detail NEVER contains the full founder phone number', async () => {
     const h = buildHarness();
     const body = inboundBody({ content: 'tomorrow' });
-    await handleSendBlueInbound({ body, signature: sign(body) }, h.deps);
+    await handleSendBlueInbound({ body, secretHeaderValue: WEBHOOK_SECRET }, h.deps);
     const audits = await h.auditStore.recent(FOUNDER_USER, 50);
     const sysAudits = await h.auditStore.recent(null as unknown as string, 50);
     for (const e of [...audits, ...sysAudits]) {
@@ -560,14 +600,14 @@ describe('handleSendBlueInbound — privacy invariants', () => {
   it('audit detail NEVER contains the SendBlue signing secret', async () => {
     const h = buildHarness();
     const body = inboundBody({ content: 'tomorrow' });
-    await handleSendBlueInbound({ body, signature: sign(body) }, h.deps);
+    await handleSendBlueInbound({ body, secretHeaderValue: WEBHOOK_SECRET }, h.deps);
     const audits = await h.auditStore.recent(FOUNDER_USER, 50);
     const sysAudits = await h.auditStore.recent(null as unknown as string, 50);
     for (const e of [...audits, ...sysAudits]) {
       const detailStr = JSON.stringify(e.detail);
       assert.ok(
-        !detailStr.includes(SIGNING_SECRET),
-        `audit ${e.action} leaked signing secret: ${detailStr}`
+        !detailStr.includes(WEBHOOK_SECRET),
+        `audit ${e.action} leaked webhook secret: ${detailStr}`
       );
     }
   });
