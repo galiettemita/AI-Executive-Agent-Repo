@@ -17,7 +17,7 @@
 **Founder Gmail account used:** techsmarterusa@gmail.com
 **Founder phone number used (4-char suffix only):** `3459`
 **SendBlue account email:** (same as founder)
-**ngrok subdomain used:** ngrok-free.app dynamic tunnel (transient; configured in SendBlue dashboard webhook endpoint at run time)
+**ngrok subdomain used:** `unshivering-interaulic-beatriz.ngrok-free.dev` (full webhook URL configured in SendBlue dashboard: `https://unshivering-interaulic-beatriz.ngrok-free.dev/sendblue/inbound`)
 
 ---
 
@@ -60,7 +60,7 @@
 | `FOMO_SENDBLUE_INBOUND_ENABLED`    | ✅    | **`true` (3F.2 invariant)**                                          |
 | `SENDBLUE_WEBHOOK_SECRET`          | ✅    | The secret configured in SendBlue dashboard Global Webhook Secret    |
 | `SENDBLUE_WEBHOOK_SECRET_HEADER`   | ✅    | Default `sb-signing-secret`. CONFIRMED via §5 below                  |
-| `SENDBLUE_INBOUND_PUBLIC_URL`      | ✅    | ngrok-free.app dynamic URL configured in dashboard                   |
+| `SENDBLUE_INBOUND_PUBLIC_URL`      | ✅    | `https://unshivering-interaulic-beatriz.ngrok-free.dev` (set in SendBlue dashboard) |
 | `FOMO_GMAIL_POLLING_MAX_CYCLES`    | ✅    | 30                                                                   |
 | `FOMO_OUTBOUND_MAX_CYCLES`         | ✅    | 30                                                                   |
 | `BREVIO_DEV_MODE`                  | ✅    | UNSET                                                                |
@@ -95,7 +95,7 @@ psql "$DATABASE_URL" -f apps/fomo/src/db/migrations/0004_inbound_replies.sql
 # ngrok inspector "Replay" used on the "tomorrow" POST — idempotency test
 #
 # Deliberate bad-secret curl for signature_invalid:
-curl -X POST "https://<ngrok-subdomain>.ngrok-free.app/sendblue/inbound" \
+curl -X POST "https://unshivering-interaulic-beatriz.ngrok-free.dev/sendblue/inbound" \
   -H "sb-signing-secret: wrong-secret-deliberate" \
   -H "content-type: application/json" \
   -d '{"messageId":"deliberate-bad-auth-test","content":"x","number":"+15555555555"}'
