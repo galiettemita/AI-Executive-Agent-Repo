@@ -305,24 +305,34 @@ async function main(): Promise<void> {
       demoRankRow = rankRows[0] ?? null;
     }
 
-    const invRows = await db
-      .select({
-        id: tool_invocations.id,
-        tool_id: tool_invocations.tool_id,
-        status: tool_invocations.status,
-        occurred_at: tool_invocations.occurred_at,
-        metadata: tool_invocations.metadata
-      })
-      .from(tool_invocations)
-      .where(
-        sql`${tool_invocations.tool_id} = 'sendblue.send_user_message' AND ${tool_invocations.metadata}::text LIKE ${'%' + demoAlertId + '%'}`
-      );
-    demoSendInvocations = invRows.map((r: { id: number; tool_id: string; status: string; occurred_at: Date }) => ({
-      id: r.id,
-      tool_id: r.tool_id,
-      status: r.status,
-      occurred_at: r.occurred_at
-    }));
+    // The v0.1 runtime writes tool_invocations without alert_id in
+    // metadata, so we correlate by time window against the alert's
+    // approved → sent transition (same pattern used for Slack
+    // approval + reply parser below).
+    const sentTransitionForInv = demoTrail.find(
+      (t: StateTransitionRow) => t.from_state === 'approved' && t.to_state === 'sent'
+    );
+    if (sentTransitionForInv) {
+      const invWindowStart = new Date(sentTransitionForInv.at.getTime() - 60_000);
+      const invWindowEnd = new Date(sentTransitionForInv.at.getTime() + 60_000);
+      const invRows = await db
+        .select({
+          id: tool_invocations.id,
+          tool_id: tool_invocations.tool_id,
+          status: tool_invocations.status,
+          occurred_at: tool_invocations.occurred_at
+        })
+        .from(tool_invocations)
+        .where(
+          sql`${tool_invocations.tool_id} = 'sendblue.send_user_message' AND ${tool_invocations.occurred_at} BETWEEN ${invWindowStart} AND ${invWindowEnd}`
+        );
+      demoSendInvocations = invRows.map((r: { id: number; tool_id: string; status: string; occurred_at: Date }) => ({
+        id: r.id,
+        tool_id: r.tool_id,
+        status: r.status,
+        occurred_at: r.occurred_at
+      }));
+    }
 
     const fbRows = await db
       .select({
