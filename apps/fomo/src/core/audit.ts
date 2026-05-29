@@ -119,6 +119,22 @@ export type AuditAction =
   // alert_id, message_id, rank_result_id, destination_slug. NEVER
   // the rendered message text, NEVER the full destination phone.
   | 'fomo.send.stop_enforced'
+  // SendBlue OPTED_OUT drift detection (Phase 3G.1 item #2) — fires
+  // when SendBlue's send API returns a 4xx whose decoded
+  // providerError.error_message === 'OPTED_OUT'. SendBlue's
+  // carrier-level opt-out list and our local stop_active memory
+  // signal can drift: a user texts STOP, we record stop_active=true
+  // and SendBlue records carrier opt-out, then a future SQL clear
+  // (or any memory_signals tampering) flips our local back to
+  // active=false while SendBlue's spam-rule firewall still blocks
+  // outbound. The runtime catches OPTED_OUT, re-writes
+  // stop_active=true (source='opt_out_drift_carrier'), and emits
+  // this audit so the operator knows local cache was wrong.
+  // Detail surfaces alert_id + message_id + rank_result_id +
+  // destination_slug + provider error_message/error_reason/error_code.
+  // NEVER the raw response body, NEVER the rendered message text,
+  // NEVER the full destination phone. Real incident: 2026-05-29 01:12 UTC.
+  | 'fomo.send.opt_out_drift_detected'
   // SendBlue inbound reply events (Phase 3F.1) — fire on the
   // /sendblue/inbound HTTP route. Sanitized detail ONLY: route
   // identifiers (provider_message_id, intent, intent_source,
@@ -144,6 +160,46 @@ export type AuditAction =
   | 'fomo.sendblue.stop_recorded'
   | 'fomo.sendblue.start_recorded'
   | 'fomo.sendblue.kill_switch_off';
+
+// Phase 3G.1 — runtime registry of every FOMO-namespaced audit
+// action. Used by the 3G.1 evidence script (and any future ops
+// tooling) to assert the runtime has registered a new action
+// without booting the server. The `satisfies` clause ensures every
+// entry is a real member of the AuditAction union at compile time.
+export const FOMO_AUDIT_ACTIONS = [
+  'gmail.poll.cycle',
+  'fomo.rank.completed',
+  'fomo.rank.already_ranked',
+  'fomo.rank.failed',
+  'alert.created',
+  'fomo.slack.posted',
+  'fomo.slack.already_alerted',
+  'fomo.slack.failed',
+  'fomo.slack.interaction_received',
+  'fomo.slack.signature_invalid',
+  'fomo.slack.payload_invalid',
+  'fomo.slack.approval_unauthorized',
+  'fomo.slack.approval_captured',
+  'fomo.slack.approval_duplicate',
+  'fomo.send.attempted',
+  'fomo.send.succeeded',
+  'fomo.send.failed',
+  'fomo.send.status_unknown',
+  'fomo.send.unauthorized_destination',
+  'fomo.send.kill_switch_off',
+  'fomo.send.stop_enforced',
+  'fomo.send.opt_out_drift_detected',
+  'fomo.sendblue.inbound_received',
+  'fomo.sendblue.signature_invalid',
+  'fomo.sendblue.payload_invalid',
+  'fomo.sendblue.reply_unauthorized',
+  'fomo.sendblue.reply_duplicate',
+  'fomo.sendblue.reply_parsed',
+  'fomo.sendblue.reply_unclear',
+  'fomo.sendblue.stop_recorded',
+  'fomo.sendblue.start_recorded',
+  'fomo.sendblue.kill_switch_off'
+] as const satisfies readonly AuditAction[];
 
 export type AuditResult = 'success' | 'failure';
 

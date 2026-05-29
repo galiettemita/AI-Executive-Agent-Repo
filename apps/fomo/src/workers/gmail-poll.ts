@@ -159,6 +159,14 @@ export interface GmailPollCycleReport {
   readonly users_total: number;
   readonly users_polled: number;
   readonly users_skipped: number;
+  // Phase 3G.1 item #3 — distinct sub-count of users skipped
+  // specifically because their oauth_tokens.needs_reauth=true. Always
+  // ≤ users_skipped. Surfaced separately so an operator can grep for
+  // the needs_reauth failure mode without parsing per-user outcomes
+  // — the generic users_skipped bucket also covers "no token" /
+  // "cursor vanished" / "decrypt failed" which are different
+  // problems.
+  readonly users_needs_reauth: number;
   readonly users_unauthorized: number;
   readonly users_api_error: number;
   readonly messages_observed: number;
@@ -191,6 +199,7 @@ export async function runOnce(deps: GmailPollDeps): Promise<GmailPollCycleReport
   const outcomes: GmailPollUserOutcome[] = [];
   let users_polled = 0;
   let users_skipped = 0;
+  let users_needs_reauth = 0;
   let users_unauthorized = 0;
   let users_api_error = 0;
   let messages_observed = 0;
@@ -227,6 +236,7 @@ export async function runOnce(deps: GmailPollDeps): Promise<GmailPollCycleReport
     if (googleToken.needs_reauth) {
       outcomes.push({ user_id, status: 'skipped_needs_reauth' });
       users_skipped++;
+      users_needs_reauth++;
       continue;
     }
     const accessToken = await deps.tokenStore.loadAccessToken(user_id, 'google');
@@ -566,6 +576,7 @@ export async function runOnce(deps: GmailPollDeps): Promise<GmailPollCycleReport
     users_total: userIds.length,
     users_polled,
     users_skipped,
+    users_needs_reauth,
     users_unauthorized,
     users_api_error,
     messages_observed,
@@ -597,6 +608,7 @@ export async function runOnce(deps: GmailPollDeps): Promise<GmailPollCycleReport
       users_total: report.users_total,
       users_polled: report.users_polled,
       users_skipped: report.users_skipped,
+      users_needs_reauth: report.users_needs_reauth,
       users_unauthorized: report.users_unauthorized,
       users_api_error: report.users_api_error,
       messages_observed: report.messages_observed,

@@ -693,6 +693,54 @@ async function processOneAlert(
     });
   }
   if (outcome.kind === 'failed') {
+    // Phase 3G.1 item #2 — OPTED_OUT drift detection.
+    //
+    // SendBlue's carrier-level opt-out list and our local
+    // memory_signals.stop_active can drift. The user texts STOP → our
+    // /sendblue/inbound route records stop_active=true AND SendBlue
+    // records carrier-level opt-out. A subsequent operation (a manual
+    // SQL clear, a memory-store reset) can flip our local back to
+    // active=false while SendBlue's spam-rule firewall keeps blocking.
+    // When that drift happens, the next send returns HTTP 400 with
+    // `error_message: "OPTED_OUT"`. We catch it here, re-write
+    // stop_active=true with source='opt_out_drift_carrier', and emit
+    // a named audit so the operator sees the drift loudly.
+    //
+    // The alert still transitions approved → failed below (same as any
+    // other clear-failure 4xx) so the alert is not retried.
+    if (outcome.providerError?.error_message === 'OPTED_OUT') {
+      await deps.memoryStore.upsert({
+        user_id,
+        kind: 'stop_active',
+        scope_key: null,
+        detail: {
+          active: true,
+          recorded_at: new Date().toISOString(),
+          drift_detected_via: 'sendblue_opted_out_response'
+        },
+        confidence: 1,
+        source: 'opt_out_drift_carrier'
+      });
+      await deps.auditStore.write({
+        actor_user_id: user_id,
+        actor_ip: null,
+        actor_user_agent: null,
+        action: 'fomo.send.opt_out_drift_detected',
+        target: `alert:${alert_id}`,
+        result: 'success',
+        detail: {
+          alert_id,
+          message_id: alert.message_id,
+          rank_result_id: alert.rank_result_id,
+          destination_slug: destinationSlug(destination),
+          provider_error_message: outcome.providerError.error_message,
+          provider_error_reason: outcome.providerError.error_reason,
+          provider_error_code: outcome.providerError.error_code,
+          stop_active_synced: true
+        }
+      });
+    }
+
     await deps.auditStore.write({
       actor_user_id: user_id,
       actor_ip: null,
@@ -707,7 +755,14 @@ async function processOneAlert(
         destination_slug: destinationSlug(destination),
         provider_status: outcome.providerStatus,
         http_status: outcome.httpStatus,
-        reason: outcome.reason
+        reason: outcome.reason,
+        // Phase 3G.1 item #2: surface the three named safe fields in
+        // the failed-send detail so the operator sees the category
+        // (e.g. OPTED_OUT) without parsing reason text. NEVER the raw
+        // response body.
+        provider_error_message: outcome.providerError?.error_message ?? null,
+        provider_error_reason: outcome.providerError?.error_reason ?? null,
+        provider_error_code: outcome.providerError?.error_code ?? null
       }
     });
     await writeTransition(deps, {

@@ -92,6 +92,38 @@ export interface SendInput {
 
 export type SendOutcomeKind = 'sent' | 'failed' | 'send_status_unknown';
 
+// Phase 3G.1 item #2 — named safe fields extracted from a SendBlue
+// 4xx response body. ONLY these three fields are surfaced; the raw
+// body is never persisted or returned. In particular `error_detail`
+// (which SendBlue uses for a user-facing description like "Your
+// message has been declined because the user has opted out of your
+// messages") is intentionally dropped — it can contain message
+// content or other recipient context that would violate the
+// substrate-wide privacy invariant.
+//
+// Source: real 400 response observed during the 3G smoke run on
+// 2026-05-29 01:14 UTC against a phone in carrier-level opt-out:
+//   {
+//     "status": "ERROR",
+//     "error_code": 402,
+//     "error_message": "OPTED_OUT",
+//     "error_reason": "SpamRule",
+//     "error_detail": "Your message has been declined..."  ← NOT surfaced
+//   }
+export interface SendBlueProviderError {
+  // SendBlue's machine-readable error category (e.g. "OPTED_OUT",
+  // "RATE_LIMITED"). Used by the caller to drive named handlers like
+  // the OPTED_OUT → stop_active drift detector. Always uppercase
+  // when present.
+  readonly error_message: string | null;
+  // SendBlue's documented sub-category (e.g. "SpamRule"). Short
+  // tokens; never user-facing prose.
+  readonly error_reason: string | null;
+  // SendBlue's numeric error code as a string (we normalize numeric
+  // codes to their string form so the audit shape is stable).
+  readonly error_code: string | null;
+}
+
 export interface SendOutcome {
   readonly kind: SendOutcomeKind;
   // The provider's top-level status field (e.g. 'QUEUED', 'FAILED',
@@ -108,6 +140,11 @@ export interface SendOutcome {
   // Operator-facing diagnostic — short string describing why this
   // outcome was chosen. NEVER includes the rendered message content.
   readonly reason: string;
+  // Phase 3G.1 item #2: named safe error fields from 4xx responses.
+  // Present whenever the response was a non-2xx with a parseable JSON
+  // body that carried any of the three named fields. Never includes
+  // raw body content.
+  readonly providerError?: SendBlueProviderError;
 }
 
 export interface SendBlueClientConfig {
@@ -256,7 +293,8 @@ export class SendBlueClient {
         providerStatus: providerStatus(parsed),
         providerMessageHandle: '',
         httpStatus,
-        reason: `auth_error: HTTP ${httpStatus} ${providerCode(parsed) ?? ''}`.trim()
+        reason: `auth_error: HTTP ${httpStatus} ${providerCode(parsed) ?? ''}`.trim(),
+        providerError: extractProviderError(parsed)
       });
     }
 
@@ -283,14 +321,25 @@ export class SendBlueClient {
       });
     }
 
-    // Other 4xx → clear failure.
+    // Other 4xx → clear failure. Phase 3G.1 item #2: surface the
+    // named safe fields from the provider error body so the caller
+    // (outbound-sender) can route OPTED_OUT to a stop_active drift
+    // handler instead of treating it as a generic HTTP 400.
     if (httpStatus >= 400) {
+      const provErr = extractProviderError(parsed);
+      // Compose a reason that includes the named error_message when
+      // present (e.g. `client_error: HTTP 400 OPTED_OUT`) so audit
+      // log readers see the category without parsing detail.
+      const reasonSuffix = provErr.error_message
+        ? provErr.error_message
+        : (providerCode(parsed) ?? '');
       return Object.freeze({
         kind: 'failed' as const,
         providerStatus: providerStatus(parsed),
         providerMessageHandle: '',
         httpStatus,
-        reason: `client_error: HTTP ${httpStatus} ${providerCode(parsed) ?? ''}`.trim()
+        reason: `client_error: HTTP ${httpStatus} ${reasonSuffix}`.trim(),
+        providerError: provErr
       });
     }
 
@@ -368,9 +417,49 @@ function providerCode(body: unknown): string | undefined {
   }
   if ('error_code' in body) {
     const v = (body as { error_code: unknown }).error_code;
-    return typeof v === 'string' ? v : undefined;
+    if (typeof v === 'string') return v;
+    if (typeof v === 'number') return String(v);
   }
   return undefined;
+}
+
+// Phase 3G.1 item #2: pull only the three named safe fields out of a
+// SendBlue 4xx response. NOT the raw body, NOT error_detail (which
+// can carry user-facing prose with recipient context), NOT any
+// payload fields. Same allowlist semantics as the audit-detail
+// redaction layer.
+function extractProviderError(body: unknown): SendBlueProviderError {
+  const out: { error_message: string | null; error_reason: string | null; error_code: string | null } = {
+    error_message: null,
+    error_reason: null,
+    error_code: null
+  };
+  if (!body || typeof body !== 'object') return Object.freeze(out);
+
+  if ('error_message' in body) {
+    const v = (body as { error_message: unknown }).error_message;
+    if (typeof v === 'string' && v.length > 0 && v.length <= 64) {
+      // Length-bounded: real SendBlue error_message values are short
+      // tokens like "OPTED_OUT". Anything > 64 chars is suspicious
+      // and gets dropped rather than persisted.
+      out.error_message = v;
+    }
+  }
+  if ('error_reason' in body) {
+    const v = (body as { error_reason: unknown }).error_reason;
+    if (typeof v === 'string' && v.length > 0 && v.length <= 64) {
+      out.error_reason = v;
+    }
+  }
+  if ('error_code' in body) {
+    const v = (body as { error_code: unknown }).error_code;
+    if (typeof v === 'string' && v.length > 0 && v.length <= 16) {
+      out.error_code = v;
+    } else if (typeof v === 'number' && Number.isFinite(v)) {
+      out.error_code = String(v);
+    }
+  }
+  return Object.freeze(out);
 }
 
 /* ====================================================================== */
