@@ -48,13 +48,22 @@ export type MemorySignalSource =
   | 'user_confirmed'   // user explicitly told us
   | 'founder_set'      // founder configured during onboarding/admin
   | 'feedback_derived' // computed from feedback events
-  | 'inferred';        // best-effort guess from behavior
+  | 'inferred'         // best-effort guess from behavior
+  // Phase 3G.1 item #2 — the outbound-sender detected a SendBlue
+  // OPTED_OUT response, meaning the carrier-level opt-out list and
+  // our local stop_active memory have drifted. We re-write
+  // stop_active=true with this source so the operator can
+  // distinguish "user said STOP" (user_confirmed) from "carrier
+  // already had them opted out and local cache was wrong"
+  // (opt_out_drift_carrier).
+  | 'opt_out_drift_carrier';
 
 export const MEMORY_SIGNAL_SOURCES: readonly MemorySignalSource[] = Object.freeze([
   'user_confirmed',
   'founder_set',
   'feedback_derived',
-  'inferred'
+  'inferred',
+  'opt_out_drift_carrier'
 ] as const);
 
 export function isMemorySignalSource(value: unknown): value is MemorySignalSource {
@@ -105,6 +114,11 @@ export function defaultConfidence(source: MemorySignalSource): number {
       return 0.7;
     case 'inferred':
       return 0.5;
+    case 'opt_out_drift_carrier':
+      // The carrier authoritatively declined to deliver — same
+      // confidence as a user-confirmed STOP. Operator can still
+      // override by texting START.
+      return 1.0;
   }
 }
 

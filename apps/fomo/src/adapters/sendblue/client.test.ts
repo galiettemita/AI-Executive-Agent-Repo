@@ -148,6 +148,151 @@ describe('SendBlueClient.send — clear failure', () => {
   });
 });
 
+// Phase 3G.1 item #2 — SendBlue 400 OPTED_OUT decoder.
+//
+// Real incident captured: 2026-05-29 01:12 UTC during the 3G smoke
+// run. Alert d9728e57-… transitioned approved → failed with the
+// audit detail showing only `client_error: HTTP 400` and no usable
+// reason. The actual SendBlue response body had been:
+//
+//   {
+//     "accountEmail": "orbitai-labs",
+//     "content": "...",
+//     "is_outbound": true,
+//     "status": "ERROR",
+//     "error_code": 402,
+//     "error_message": "OPTED_OUT",
+//     "error_reason": "SpamRule",
+//     "error_detail": "Your message has been declined because the user
+//                      has opted out of your messages"
+//   }
+//
+// Without this decoder the runtime persisted only `http_status: 400`
+// into audit detail, so the operator had to hand-roll a curl against
+// the SendBlue API to discover OPTED_OUT. This test set proves the
+// fix surfaces error_message/error_reason/error_code as named safe
+// fields without persisting `error_detail`, `content`, `accountEmail`,
+// or any other raw response payload.
+describe('SendBlueClient.send — 400 response-body decoder (3G.1 item #2)', () => {
+  it('surfaces OPTED_OUT into providerError.error_message/error_reason/error_code', async () => {
+    const { fetch } = mockFetch(() =>
+      jsonResponse(400, {
+        accountEmail: 'orbitai-labs',
+        content: 'real recipient text would be here',
+        is_outbound: true,
+        status: 'ERROR',
+        error_code: 402,
+        error_message: 'OPTED_OUT',
+        error_reason: 'SpamRule',
+        error_detail: 'Your message has been declined because the user has opted out of your messages'
+      })
+    );
+    const client = new SendBlueClient({ apiKeyId: 'k', apiSecretKey: 's', fromNumber: '+15555550001', fetchImpl: fetch });
+    const out = await client.send({ to: '+15555550100', content: 'hi' });
+    assert.equal(out.kind, 'failed');
+    assert.equal(out.httpStatus, 400);
+    assert.ok(out.providerError, 'providerError must be present on a parseable 4xx');
+    assert.equal(out.providerError!.error_message, 'OPTED_OUT');
+    assert.equal(out.providerError!.error_reason, 'SpamRule');
+    assert.equal(out.providerError!.error_code, '402'); // normalized to string
+  });
+
+  it('omits error_detail, content, accountEmail, and any non-allowlisted field from providerError', async () => {
+    const { fetch } = mockFetch(() =>
+      jsonResponse(400, {
+        accountEmail: 'orbitai-labs',
+        content: 'CANARY-PAYLOAD-MUST-NOT-LEAK-12345',
+        to_number: '+19999999999',
+        from_number: '+18888888888',
+        error_message: 'OPTED_OUT',
+        error_reason: 'SpamRule',
+        error_code: 402,
+        error_detail: 'CANARY-DETAIL-MUST-NOT-LEAK-67890'
+      })
+    );
+    const client = new SendBlueClient({ apiKeyId: 'k', apiSecretKey: 's', fromNumber: '+15555550001', fetchImpl: fetch });
+    const out = await client.send({ to: '+15555550100', content: 'hi' });
+    // Walk every string in the outcome object and assert NO canary value appears anywhere.
+    const dump = JSON.stringify(out);
+    assert.equal(dump.includes('CANARY-PAYLOAD-MUST-NOT-LEAK-12345'), false, 'content field leaked');
+    assert.equal(dump.includes('CANARY-DETAIL-MUST-NOT-LEAK-67890'), false, 'error_detail leaked');
+    assert.equal(dump.includes('orbitai-labs'), false, 'accountEmail leaked');
+    assert.equal(dump.includes('+19999999999'), false, 'to_number leaked');
+    assert.equal(dump.includes('+18888888888'), false, 'from_number leaked');
+    // The three named-safe fields ARE present.
+    assert.equal(out.providerError!.error_message, 'OPTED_OUT');
+    assert.equal(out.providerError!.error_reason, 'SpamRule');
+    assert.equal(out.providerError!.error_code, '402');
+  });
+
+  it('the reason string surfaces the named error_message (so audit readers see the category)', async () => {
+    const { fetch } = mockFetch(() =>
+      jsonResponse(400, { status: 'ERROR', error_code: 402, error_message: 'OPTED_OUT', error_reason: 'SpamRule' })
+    );
+    const client = new SendBlueClient({ apiKeyId: 'k', apiSecretKey: 's', fromNumber: '+15555550001', fetchImpl: fetch });
+    const out = await client.send({ to: '+15555550100', content: 'hi' });
+    assert.match(out.reason, /OPTED_OUT/);
+    assert.match(out.reason, /HTTP 400/);
+  });
+
+  it('drops over-length values (defense-in-depth against accidental long-string injection)', async () => {
+    const { fetch } = mockFetch(() =>
+      jsonResponse(400, {
+        error_message: 'X'.repeat(500),
+        error_reason: 'Y'.repeat(500),
+        error_code: 'Z'.repeat(500)
+      })
+    );
+    const client = new SendBlueClient({ apiKeyId: 'k', apiSecretKey: 's', fromNumber: '+15555550001', fetchImpl: fetch });
+    const out = await client.send({ to: '+15555550100', content: 'hi' });
+    assert.equal(out.providerError!.error_message, null);
+    assert.equal(out.providerError!.error_reason, null);
+    assert.equal(out.providerError!.error_code, null);
+  });
+
+  it('providerError fields are null when the response body has no error_* fields', async () => {
+    const { fetch } = mockFetch(() => jsonResponse(400, { something_else: 'whatever' }));
+    const client = new SendBlueClient({ apiKeyId: 'k', apiSecretKey: 's', fromNumber: '+15555550001', fetchImpl: fetch });
+    const out = await client.send({ to: '+15555550100', content: 'hi' });
+    assert.ok(out.providerError);
+    assert.equal(out.providerError!.error_message, null);
+    assert.equal(out.providerError!.error_reason, null);
+    assert.equal(out.providerError!.error_code, null);
+  });
+
+  it('non-string non-number error_code is dropped, not coerced', async () => {
+    const { fetch } = mockFetch(() =>
+      jsonResponse(400, { error_message: 'OPTED_OUT', error_code: { nested: 'object' } })
+    );
+    const client = new SendBlueClient({ apiKeyId: 'k', apiSecretKey: 's', fromNumber: '+15555550001', fetchImpl: fetch });
+    const out = await client.send({ to: '+15555550100', content: 'hi' });
+    assert.equal(out.providerError!.error_code, null);
+    assert.equal(out.providerError!.error_message, 'OPTED_OUT');
+  });
+
+  it('401 auth-error path ALSO surfaces providerError when present (parity)', async () => {
+    const { fetch } = mockFetch(() =>
+      jsonResponse(401, { error_message: 'INVALID_KEY', error_code: 'AUTH_FAILED' })
+    );
+    const client = new SendBlueClient({ apiKeyId: 'k', apiSecretKey: 's', fromNumber: '+15555550001', fetchImpl: fetch });
+    const out = await client.send({ to: '+15555550100', content: 'hi' });
+    assert.equal(out.kind, 'failed');
+    assert.equal(out.httpStatus, 401);
+    assert.equal(out.providerError!.error_message, 'INVALID_KEY');
+    assert.equal(out.providerError!.error_code, 'AUTH_FAILED');
+  });
+
+  it('outcome remains Object.frozen including the nested providerError', async () => {
+    const { fetch } = mockFetch(() =>
+      jsonResponse(400, { error_message: 'OPTED_OUT', error_reason: 'SpamRule', error_code: 402 })
+    );
+    const client = new SendBlueClient({ apiKeyId: 'k', apiSecretKey: 's', fromNumber: '+15555550001', fetchImpl: fetch });
+    const out = await client.send({ to: '+15555550100', content: 'hi' });
+    assert.ok(Object.isFrozen(out));
+    assert.ok(Object.isFrozen(out.providerError));
+  });
+});
+
 describe('SendBlueClient.send — send_status_unknown (load-bearing — never auto-retry)', () => {
   it('returns send_status_unknown on network failure', async () => {
     const { fetch } = mockFetch(() => {

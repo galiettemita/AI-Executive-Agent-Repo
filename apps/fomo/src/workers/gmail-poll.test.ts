@@ -273,6 +273,68 @@ describe('runOnce — skip cases', () => {
     assert.equal(r.users_skipped, 1);
     assert.equal(r.outcomes[0]?.status, 'skipped_needs_reauth');
   });
+
+  // Phase 3G.1 item #3 — regression test for the silent-skip incident.
+  //
+  // Original incident captured: 2026-05-28 UTC, observed during the 3F.2
+  // smoke run. The polling worker silently skipped every cycle for 18+
+  // hours because `oauth_tokens.needs_reauth=true` for the founder.
+  // The detail was buried in per-user outcomes + the generic
+  // users_skipped count. An operator only discovered the failure mode
+  // via a manual psql query against oauth_tokens. The fix surfaces a
+  // dedicated `users_needs_reauth` count on the cycle report (and on
+  // the fomo.poll.cycle log event) so the failure is loud.
+  //
+  // fail-before/pass-after: before this fix the GmailPollCycleReport
+  // did NOT have a `users_needs_reauth` field; this test would have
+  // failed at compile time. After the fix the field exists and is
+  // populated.
+  describe('runOnce — needs_reauth visibility (Phase 3G.1 item #3)', () => {
+    it('surfaces users_needs_reauth as a distinct count, not buried in users_skipped only', async () => {
+      const h = makeHarness();
+      await seedUser(h, 'u-stale', 'h-1');
+      await h.tokenStore.markNeedsReauth('u-stale', 'google');
+      const r = await runOnce(h.deps);
+      assert.equal(r.users_needs_reauth, 1);
+      // users_skipped is still incremented (outer bucket) so existing
+      // operators tracking the generic count don't see a regression.
+      assert.equal(r.users_skipped, 1);
+    });
+
+    it('users_needs_reauth is zero when needs_reauth is false but user is otherwise skipped (e.g. no cursor)', async () => {
+      const h = makeHarness();
+      await h.cursorStore.upsert({ user_id: 'u-noToken', history_id: 'h-1' });
+      const r = await runOnce(h.deps);
+      assert.equal(r.users_skipped, 1);
+      // Distinguishes "skipped because no token" (0 in needs_reauth)
+      // from "skipped because token expired" (1 in needs_reauth).
+      assert.equal(r.users_needs_reauth, 0);
+    });
+
+    it('users_needs_reauth and users_polled are mutually exclusive per user', async () => {
+      const h = makeHarness();
+      await seedUser(h, 'u-stale', 'h-1');
+      await h.tokenStore.markNeedsReauth('u-stale', 'google');
+      await seedUser(h, 'u-fresh', 'h-2');
+      const r = await runOnce(h.deps);
+      assert.equal(r.users_total, 2);
+      assert.equal(r.users_needs_reauth, 1);
+      assert.equal(r.users_polled, 1);
+    });
+
+    it('cycle audit detail includes users_needs_reauth so operators can grep without parsing outcomes', async () => {
+      const h = makeHarness();
+      await seedUser(h, 'u-stale', 'h-1');
+      await h.tokenStore.markNeedsReauth('u-stale', 'google');
+      await runOnce(h.deps);
+      const audits = await h.auditStore.recent(null, 100);
+      const cycle = audits.find((a) => a.action === 'gmail.poll.cycle');
+      assert.ok(cycle, 'gmail.poll.cycle audit must fire');
+      const detail = cycle.detail as Record<string, unknown>;
+      assert.equal(detail.users_needs_reauth, 1);
+      assert.equal(detail.users_skipped, 1);
+    });
+  });
 });
 
 /* ====================================================================== */

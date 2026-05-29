@@ -6,6 +6,11 @@ import { loadFomoConfig } from './config.js';
 import { handleHealth } from './routes/health.js';
 import { tryHandleOAuthGoogleRequest, type OAuthGoogleRouteDeps } from './routes/oauth-google.js';
 import { GmailClient } from './adapters/gmail/client.js';
+import { loadDbClient } from './db/client.js';
+import {
+  PendingMigrationsError,
+  verifyMigrationsOrThrow
+} from './db/migration-verifier.js';
 import { createStores, type SubstrateStoresHandle } from './db/store-factory.js';
 import { loadKillSwitches, type KillSwitches } from './core/kill-switches.js';
 import { createToolRegistry } from './core/tool-registry.js';
@@ -18,6 +23,8 @@ import {
   type GmailPollRankerDep,
   type GmailPollSlackReviewDep
 } from './workers/gmail-poll.js';
+import { findUsersNeedingReauth } from './workers/needs-reauth-boot-check.js';
+import { snapshotMemorySignalsForBoot } from './workers/memory-signals-boot-snapshot.js';
 import { OpenAIBackend } from './core/model-backends/openai.js';
 import { createModelRouter } from './core/model-router.js';
 import { rankEmail } from './ranker/index.js';
@@ -492,6 +499,10 @@ function startGmailPolling(
           users_total: report.users_total,
           users_polled: report.users_polled,
           users_skipped: report.users_skipped,
+          // Phase 3G.1 item #3 — surface needs_reauth count distinctly
+          // from the generic users_skipped bucket so operators see
+          // silent OAuth drift without parsing per-user outcomes.
+          users_needs_reauth: report.users_needs_reauth,
           users_unauthorized: report.users_unauthorized,
           users_api_error: report.users_api_error,
           messages_observed: report.messages_observed,
@@ -904,6 +915,44 @@ export function createFomoRuntime(config: FomoConfig = loadFomoConfig()): FomoRu
       ranker_enabled: ranker !== null,
       slack_review_enabled: slackWiring.dep !== null
     });
+
+    // Phase 3G.1 item #3 — needs_reauth visibility at boot.
+    //
+    // Real incident (2026-05-28): the polling worker silently skipped
+    // every cycle for 18+ hours because `oauth_tokens.needs_reauth=true`
+    // for the founder user. The fact was buried in per-user outcomes
+    // and `users_skipped` count. An operator only discovered it via a
+    // manual psql query.
+    //
+    // Fix: at boot, walk the SAME active-user set the worker iterates
+    // (cursorStore.listUserIds()), check each user's token, and log
+    // WARN per user with needs_reauth=true. Founder directive
+    // 2026-05-29: must use the same active-user set the polling
+    // worker uses (not a broader oauth_tokens scan).
+    void (async (): Promise<void> => {
+      try {
+        const findings = await findUsersNeedingReauth({
+          cursorStore: storesHandle.stores.gmailCursors,
+          tokenStore: storesHandle.stores.tokens
+        });
+        for (const f of findings) {
+          logEvent(config, undefined, 'fomo.poll.needs_reauth_at_boot', 'WARN', {
+            user_id: f.user_id,
+            provider: f.provider,
+            detail:
+              'oauth_tokens.needs_reauth=true; polling will skip this user every cycle. ' +
+              'Run the founder OAuth re-auth flow (smoke-test-3b3-gmail.md §7) before this user can be polled.'
+          });
+        }
+      } catch (err) {
+        // Best-effort visibility surface. We do NOT block boot on a
+        // failure here; the polling worker still runs and surfaces
+        // any cycle-time issues via fomo.poll.cycle / fomo.poll.error.
+        logEvent(config, undefined, 'fomo.poll.needs_reauth_check_failed', 'WARN', {
+          error: err instanceof Error ? err.message : String(err)
+        });
+      }
+    })();
   } else {
     logEvent(config, undefined, 'fomo.poll.disabled', 'INFO', {
       detail: 'FOMO_GMAIL_POLLING_ENABLED is not "true"; polling worker dormant'
@@ -1027,12 +1076,95 @@ export function createFomoRuntime(config: FomoConfig = loadFomoConfig()): FomoRu
       outbound_worker_started: outboundHandle !== null,
       sendblue_inbound_route_mounted: inboundWiring.routeDeps !== null
     });
+
+    // Phase 3G.1 item #10 — memory_signals snapshot for the founder
+    // at boot. Surfaces every active signal (≥ 0.5 confidence)
+    // with kind, age, source, confidence, and a single named-safe
+    // active_flag boolean. NEVER logs the raw detail body.
+    //
+    // Real incident (2026-05-29 01:00): stop_active=true from
+    // 2026-05-28 survived into the next day silently. This snapshot
+    // makes that state loud at boot.
+    const founderUserId = (process.env.FOMO_FOUNDER_USER_ID ?? '').trim();
+    if (founderUserId) {
+      void (async (): Promise<void> => {
+        try {
+          const snap = await snapshotMemorySignalsForBoot(founderUserId, {
+            memoryStore: storesHandle.stores.memory
+          });
+          logEvent(config, undefined, 'fomo.memory_signals.snapshot_at_boot', 'INFO', {
+            user_id: founderUserId,
+            signal_count: snap.length,
+            signals: snap.map((s) => ({
+              kind: s.kind,
+              scope_key: s.scope_key,
+              age_seconds: s.age_seconds,
+              source: s.source,
+              confidence: s.confidence,
+              active_flag: s.active_flag
+            }))
+          });
+        } catch (err) {
+          logEvent(config, undefined, 'fomo.memory_signals.snapshot_failed', 'WARN', {
+            error: err instanceof Error ? err.message : String(err)
+          });
+        }
+      })();
+    }
   });
 
   return runtime;
 }
 
 export async function main(): Promise<void> {
+  // Phase 3G.1 item #1 — Neon migration verification at boot.
+  //
+  // Real incident (2026-05-28 01:06 UTC): the first 3 POSTs to
+  // /sendblue/inbound during the 3F.2 smoke run returned HTTP 500
+  // because migration 0004_inbound_replies had been applied via
+  // PGlite in gated tests but not against the live Neon DB. Same
+  // shape hit 3D.2 with the `alerts` table.
+  //
+  // Policy (founder-locked 2026-05-29): fail-loud everywhere. No
+  // auto-apply. No env bypass. Refuse to boot when any required
+  // table is missing, naming each one.
+  //
+  // In-memory dev mode (DATABASE_URL unset) skips this check — the
+  // store-factory's in-memory bundle has no schema to verify.
+  if ((process.env.DATABASE_URL ?? '').trim()) {
+    const verifyConfig = loadFomoConfig();
+    const dbResult = loadDbClient({ env: process.env });
+    if (!dbResult.ok) {
+      logEvent(verifyConfig, undefined, 'fomo.migrations.db_unavailable', 'ERROR', {
+        reason: dbResult.reason
+      });
+      process.exit(1);
+    }
+    try {
+      await verifyMigrationsOrThrow(dbResult.client);
+      logEvent(verifyConfig, undefined, 'fomo.migrations.verified', 'INFO', {
+        backend: 'postgres'
+      });
+    } catch (err) {
+      if (err instanceof PendingMigrationsError) {
+        logEvent(verifyConfig, undefined, 'fomo.migrations.pending', 'ERROR', {
+          missing_count: err.missing_tables.length,
+          missing: err.missing_tables.map((m) => ({ table: m.name, migration: m.migration }))
+        });
+        // Print the named list verbatim to stderr so a human reading
+        // the terminal sees it without parsing JSON.
+        process.stderr.write(err.message + '\n');
+      } else {
+        logEvent(verifyConfig, undefined, 'fomo.migrations.verifier_error', 'ERROR', {
+          error: err instanceof Error ? err.message : String(err)
+        });
+      }
+      await dbResult.pool.end();
+      process.exit(1);
+    }
+    await dbResult.pool.end();
+  }
+
   const runtime = createFomoRuntime();
   runtime.server.listen(runtime.config.port);
 

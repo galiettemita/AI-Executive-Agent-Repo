@@ -686,3 +686,141 @@ describe('runOutboundOnce — STOP enforcement (Phase 3F.1)', () => {
     }
   });
 });
+
+// Phase 3G.1 item #2 — OPTED_OUT drift detection.
+//
+// Original incident captured: 2026-05-29 01:12 UTC during the 3G smoke
+// run. Alert d9728e57-… approved → failed with audit detail showing
+// only `client_error: HTTP 400`, no usable error category. Local
+// stop_active was false (we'd cleared it via SQL), but SendBlue's
+// spam-rule firewall kept blocking because the carrier-level opt-out
+// list still had the founder's phone marked. The runtime had no way
+// to surface the drift — operator had to hand-roll curl to discover.
+//
+// This test set proves:
+//   * When SendBlue returns 400 OPTED_OUT, the worker emits the new
+//     fomo.send.opt_out_drift_detected audit row with named fields.
+//   * The worker writes memory_signals.stop_active=true with
+//     source='opt_out_drift_carrier' so the next outbound cycle short-
+//     circuits via stop_enforced instead of round-tripping to SendBlue.
+//   * The fomo.send.failed row STILL fires (unchanged behavior) and
+//     gains the new provider_error_message/reason/code named fields.
+//   * The alert STILL transitions approved → failed (unchanged).
+//   * The raw response body (error_detail, content, accountEmail,
+//     to_number, from_number) NEVER appears in any audit row.
+describe('runOutboundOnce — OPTED_OUT drift detection (Phase 3G.1 item #2)', () => {
+  function optedOutResponse(): Promise<{ status: number; body: object }> {
+    return Promise.resolve({
+      status: 400,
+      body: {
+        accountEmail: 'orbitai-labs',
+        content: 'CANARY-PAYLOAD-MUST-NOT-LEAK-12345',
+        is_outbound: true,
+        status: 'ERROR',
+        error_code: 402,
+        error_message: 'OPTED_OUT',
+        error_reason: 'SpamRule',
+        error_detail: 'CANARY-DETAIL-MUST-NOT-LEAK-67890',
+        to_number: '+19999999999',
+        from_number: '+18888888888'
+      }
+    });
+  }
+
+  it('emits fomo.send.opt_out_drift_detected with named provider fields when SendBlue returns OPTED_OUT', async () => {
+    const sendBlueFetch = mockFetch(optedOutResponse);
+    const gmailFetch = mockFetch(async () => ({ status: 200, body: FAKE_GMAIL_MSG }));
+    const h = await buildHarness({ sendBlueFetch, gmailFetch });
+
+    await runOutboundOnce(h.deps);
+
+    const events = await h.auditStore.recent(FOUNDER_USER, 500);
+    const drift = events.find((e) => e.action === 'fomo.send.opt_out_drift_detected');
+    assert.ok(drift, 'fomo.send.opt_out_drift_detected must be emitted');
+    const d = drift.detail as Record<string, unknown>;
+    assert.equal(d.provider_error_message, 'OPTED_OUT');
+    assert.equal(d.provider_error_reason, 'SpamRule');
+    assert.equal(d.provider_error_code, '402');
+    assert.equal(d.stop_active_synced, true);
+    assert.equal(d.alert_id, ALERT_ID);
+  });
+
+  it('writes stop_active=true with source=opt_out_drift_carrier so the next cycle short-circuits', async () => {
+    const sendBlueFetch = mockFetch(optedOutResponse);
+    const gmailFetch = mockFetch(async () => ({ status: 200, body: FAKE_GMAIL_MSG }));
+    const h = await buildHarness({ sendBlueFetch, gmailFetch });
+
+    // Local cache says active=false going in (the drift scenario).
+    await h.memoryStore.upsert({
+      user_id: FOUNDER_USER,
+      kind: 'stop_active',
+      scope_key: null,
+      detail: { active: false },
+      source: 'user_confirmed',
+      confidence: 1.0
+    });
+
+    await runOutboundOnce(h.deps);
+
+    const signal = await h.memoryStore.get(FOUNDER_USER, 'stop_active', null);
+    assert.ok(signal, 'stop_active signal must exist after drift detection');
+    assert.equal((signal.detail as { active?: boolean }).active, true);
+    assert.equal(signal.source, 'opt_out_drift_carrier');
+    assert.equal(signal.confidence, 1.0);
+  });
+
+  it('STILL emits fomo.send.failed with the provider error fields surfaced (no double-state-transition)', async () => {
+    const sendBlueFetch = mockFetch(optedOutResponse);
+    const gmailFetch = mockFetch(async () => ({ status: 200, body: FAKE_GMAIL_MSG }));
+    const h = await buildHarness({ sendBlueFetch, gmailFetch });
+
+    await runOutboundOnce(h.deps);
+
+    const events = await h.auditStore.recent(FOUNDER_USER, 500);
+    const failed = events.find((e) => e.action === 'fomo.send.failed');
+    assert.ok(failed, 'fomo.send.failed must still fire on the same alert');
+    const d = failed.detail as Record<string, unknown>;
+    assert.equal(d.provider_error_message, 'OPTED_OUT');
+    assert.equal(d.provider_error_reason, 'SpamRule');
+    assert.equal(d.provider_error_code, '402');
+    assert.equal(d.http_status, 400);
+    // Same state-machine transition as any other clear failure.
+    assert.equal(await h.transitions.currentState(ALERT_ID), 'failed');
+  });
+
+  it('does NOT leak error_detail, content, accountEmail, or any non-allowlisted field into ANY audit row', async () => {
+    const sendBlueFetch = mockFetch(optedOutResponse);
+    const gmailFetch = mockFetch(async () => ({ status: 200, body: FAKE_GMAIL_MSG }));
+    const h = await buildHarness({ sendBlueFetch, gmailFetch });
+
+    await runOutboundOnce(h.deps);
+
+    const events = await h.auditStore.recent(FOUNDER_USER, 500);
+    for (const e of events) {
+      const dump = JSON.stringify(e.detail);
+      assert.equal(dump.includes('CANARY-PAYLOAD-MUST-NOT-LEAK-12345'), false, `${e.action} leaked content`);
+      assert.equal(dump.includes('CANARY-DETAIL-MUST-NOT-LEAK-67890'), false, `${e.action} leaked error_detail`);
+      assert.equal(dump.includes('orbitai-labs'), false, `${e.action} leaked accountEmail`);
+      assert.equal(dump.includes('+19999999999'), false, `${e.action} leaked to_number`);
+      assert.equal(dump.includes('+18888888888'), false, `${e.action} leaked from_number`);
+    }
+  });
+
+  it('does NOT emit opt_out_drift_detected for non-OPTED_OUT 400s (e.g. plain invalid_number)', async () => {
+    const sendBlueFetch = mockFetch(async () => ({
+      status: 400,
+      body: { error_message: 'INVALID_NUMBER', error_reason: 'BadFormat', error_code: 100 }
+    }));
+    const gmailFetch = mockFetch(async () => ({ status: 200, body: FAKE_GMAIL_MSG }));
+    const h = await buildHarness({ sendBlueFetch, gmailFetch });
+
+    await runOutboundOnce(h.deps);
+
+    const events = await h.auditStore.recent(FOUNDER_USER, 500);
+    assert.equal(events.find((e) => e.action === 'fomo.send.opt_out_drift_detected'), undefined);
+    // But the named fields still surface in fomo.send.failed.
+    const failed = events.find((e) => e.action === 'fomo.send.failed');
+    assert.ok(failed);
+    assert.equal((failed.detail as { provider_error_message: unknown }).provider_error_message, 'INVALID_NUMBER');
+  });
+});

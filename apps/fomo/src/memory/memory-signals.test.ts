@@ -29,10 +29,10 @@ describe('MEMORY_SIGNAL_KINDS', () => {
 });
 
 describe('MEMORY_SIGNAL_SOURCES', () => {
-  it('declares the four provenance sources', () => {
+  it('declares the five provenance sources (Phase 3G.1 adds opt_out_drift_carrier for item #2)', () => {
     assert.deepEqual(
       [...MEMORY_SIGNAL_SOURCES].sort(),
-      ['feedback_derived', 'founder_set', 'inferred', 'user_confirmed']
+      ['feedback_derived', 'founder_set', 'inferred', 'opt_out_drift_carrier', 'user_confirmed']
     );
   });
 });
