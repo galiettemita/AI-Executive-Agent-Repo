@@ -44,7 +44,7 @@
 
 import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -660,14 +660,29 @@ export async function tryHandleOnboardRequest(
 /* Privacy copy loader                                                    */
 /* ---------------------------------------------------------------------- */
 
+// Resolves docs/privacy-copy-v0.5.md by walking upward from the module
+// location. Source layout (apps/fomo/src/routes/) is 4 levels up; compiled
+// layout (apps/fomo/dist/src/routes/) is 5 levels up. Walking up makes
+// the loader robust to either.
+function resolvePrivacyCopyPath(): string {
+  let dir = path.dirname(fileURLToPath(import.meta.url));
+  for (let i = 0; i < 7; i++) {
+    const candidate = path.join(dir, 'docs', 'privacy-copy-v0.5.md');
+    if (existsSync(candidate)) return candidate;
+    const parent = path.dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  throw new Error(
+    `privacy-copy-v0.5.md not found by walking up from ${path.dirname(fileURLToPath(import.meta.url))}`
+  );
+}
+
 // Reads docs/privacy-copy-v0.5.md at startup. The route renders the
 // markdown verbatim (no transformation) at the bottom of the consent
 // page. Founder reviews + edits the .md file, not the route source.
 export async function loadPrivacyCopy(): Promise<string> {
-  const here = path.dirname(fileURLToPath(import.meta.url));
-  const docsDir = path.resolve(here, '..', '..', '..', '..', 'docs');
-  const file = path.join(docsDir, 'privacy-copy-v0.5.md');
-  return readFile(file, 'utf8');
+  return readFile(resolvePrivacyCopyPath(), 'utf8');
 }
 
 // Sync companion used at boot. The runtime's createFomoRuntime is
@@ -675,10 +690,7 @@ export async function loadPrivacyCopy(): Promise<string> {
 // require making boot async too. Reading once at boot is fine via
 // sync IO.
 export function loadPrivacyCopySync(): string {
-  const here = path.dirname(fileURLToPath(import.meta.url));
-  const docsDir = path.resolve(here, '..', '..', '..', '..', 'docs');
-  const file = path.join(docsDir, 'privacy-copy-v0.5.md');
-  return readFileSync(file, 'utf8');
+  return readFileSync(resolvePrivacyCopyPath(), 'utf8');
 }
 
 export function buildConsentPageHtml(privacyCopy: string, tokenPlaintext: string): string {
