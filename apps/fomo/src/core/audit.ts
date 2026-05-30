@@ -159,7 +159,19 @@ export type AuditAction =
   | 'fomo.sendblue.reply_unclear'
   | 'fomo.sendblue.stop_recorded'
   | 'fomo.sendblue.start_recorded'
-  | 'fomo.sendblue.kill_switch_off';
+  | 'fomo.sendblue.kill_switch_off'
+  // Friend-beta onboarding events (Phase v0.5.1 step #3+#4). Fire
+  // when the founder issues an invite token (issue-friend-token
+  // script) and when a friend lands at /onboard.
+  // Sanitized detail only: invite_id, token_hash_prefix (8 chars),
+  // intended_phone_slug (last 4), expires_at_iso, consumed_user_id.
+  // NEVER the plaintext token, NEVER the raw phone, NEVER the full
+  // intended_phone_hash. See [[multitenant-design-principles]] §5b/§5d.
+  | 'fomo.onboard.invite_issued'
+  | 'fomo.onboard.invite_invalid'
+  | 'fomo.onboard.phone_mismatch'
+  | 'fomo.onboard.user_created'
+  | 'fomo.onboard.kill_switch_off';
 
 // Phase 3G.1 — runtime registry of every FOMO-namespaced audit
 // action. Used by the 3G.1 evidence script (and any future ops
@@ -198,7 +210,12 @@ export const FOMO_AUDIT_ACTIONS = [
   'fomo.sendblue.reply_unclear',
   'fomo.sendblue.stop_recorded',
   'fomo.sendblue.start_recorded',
-  'fomo.sendblue.kill_switch_off'
+  'fomo.sendblue.kill_switch_off',
+  'fomo.onboard.invite_issued',
+  'fomo.onboard.invite_invalid',
+  'fomo.onboard.phone_mismatch',
+  'fomo.onboard.user_created',
+  'fomo.onboard.kill_switch_off'
 ] as const satisfies readonly AuditAction[];
 
 export type AuditResult = 'success' | 'failure';

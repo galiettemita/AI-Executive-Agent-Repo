@@ -1,0 +1,21 @@
+-- Phase v0.5.1 Step 4.1 — invite phone encrypted binding.
+--
+-- Closes the half-wired gap from Step 4: /onboard/callback needs the
+-- plaintext friend phone to populate users.phone_e164_encrypted, but
+-- Step 4 left it as an injected placeholder dependency. This column
+-- carries the KEK-wrapped phone plaintext from issue time to callback
+-- time, all on disk, all encrypted.
+--
+-- Envelope shape mirrors users.phone_e164_encrypted:
+--   { v: key_version, ct: base64(nonce || ciphertext || tag) }
+--
+-- AAD binds the encryption to the invite's intended_phone_hash so the
+-- ciphertext is per-invite — swapping ciphertexts across invites
+-- fails AEAD verification.
+--
+-- Nullable for backward-compatibility with the Step 1 migration's
+-- gated-PG test fixtures that insert invite_tokens rows directly.
+-- Application code enforces non-null on every new issue via the
+-- InviteTokenStore interface.
+
+ALTER TABLE "invite_tokens" ADD COLUMN "intended_phone_encrypted" jsonb;

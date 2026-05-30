@@ -113,13 +113,27 @@ export interface SendBlueInboundRouteDeps {
   // patch this during 3F.2 smoke (when we observe a real inbound
   // request) without a code change.
   readonly webhookSecretHeader: string;
-  // The founder's destination phone (E.164). Inbound webhooks from
-  // any other from-number are rejected as unauthorized. v0.1 is
-  // founder-only.
+  // The founder's destination phone (E.164). v0.1 single-user
+  // shortcut; matched first before the phoneAllowlist below. Inbound
+  // webhooks from any other from-number that ALSO don't match a
+  // user via the phoneAllowlist are rejected as unauthorized.
   readonly founderPhoneNumber: string;
   // The founder's user_id (same string used in OAuth/cursor/alerts).
-  // Every inbound reply is attributed to this user.
+  // Used when the from-number matches founderPhoneNumber.
   readonly founderUserId: string;
+
+  // Phase v0.5.1 Step 6 — multi-tenant routing. When the from-number
+  // doesn't match founderPhoneNumber, the route hashes it via
+  // phoneHash and looks up the user_id via phoneAllowlist. This
+  // enables friends (provisioned through /onboard) to text STOP and
+  // have it persist for THEIR user_id only — no cross-user
+  // contamination. When phoneAllowlist + phoneHash are absent the
+  // route behaves exactly as v0.1 (founder-only).
+  //
+  // Per-user routing also enables outbound-sender per-user stop_active
+  // enforcement to actually mean what it says.
+  readonly phoneAllowlist?: import('../security/phone-allowlist.js').PhoneAllowlistStore;
+  readonly phoneHash?: import('../security/phone-allowlist.js').PhoneHashConfig;
 
   readonly killSwitches: KillSwitches;
   readonly inboundReplyStore: InboundReplyStore;
@@ -348,8 +362,29 @@ export async function handleSendBlueInbound(
 
   const fromSlug = phoneSlug(extracted.fromNumber);
 
-  // 5. From-number allowlist — founder-only.
-  if (extracted.fromNumber !== deps.founderPhoneNumber) {
+  // 5. From-number routing — per-user (Phase v0.5.1 Step 6).
+  //
+  // Resolution order:
+  //   (a) If from_number matches FOMO_FOUNDER_PHONE_NUMBER (env), the
+  //       founder is the user. v0.1 backward-compat path.
+  //   (b) Otherwise, if phoneAllowlist + phoneHash are wired, hash
+  //       the from-number and look up the user_id.
+  //   (c) Otherwise (or unknown hash) — 403 unauthorized.
+  //
+  // The resolved `userId` flows through every subsequent operation;
+  // memory_signals.stop_active, feedback_events, audit actor_user_id,
+  // and alert_state_transitions all scope to THIS userId, NOT the
+  // founder's. That's how friend STOP doesn't bleed into the founder's
+  // memory + vice versa.
+  let userId: string | null = null;
+  if (extracted.fromNumber === deps.founderPhoneNumber) {
+    userId = deps.founderUserId;
+  } else if (deps.phoneAllowlist && deps.phoneHash) {
+    const { hashPhone } = await import('../security/phone-allowlist.js');
+    const phoneHashValue = hashPhone(extracted.fromNumber, deps.phoneHash);
+    userId = await deps.phoneAllowlist.findUserIdByPhoneHash(phoneHashValue);
+  }
+  if (!userId) {
     await deps.auditStore.write({
       actor_user_id: null,
       actor_ip: null,
@@ -359,7 +394,7 @@ export async function handleSendBlueInbound(
       result: 'failure',
       detail: {
         from_slug: fromSlug,
-        error_code: 'not_founder_phone',
+        error_code: 'unknown_from_number',
         provider_message_id: extracted.providerMessageId
       }
     });
@@ -371,11 +406,11 @@ export async function handleSendBlueInbound(
   //    early-return 200 so SendBlue stops retrying.
   const dedupOutcome = await deps.inboundReplyStore.record({
     provider_message_id: extracted.providerMessageId,
-    user_id: deps.founderUserId
+    user_id: userId
   });
   if (!dedupOutcome.inserted) {
     await deps.auditStore.write({
-      actor_user_id: deps.founderUserId,
+      actor_user_id: userId,
       actor_ip: null,
       actor_user_agent: null,
       action: 'fomo.sendblue.reply_duplicate',
@@ -397,7 +432,7 @@ export async function handleSendBlueInbound(
   //    we surface a payload field that contains the original
   //    provider_message_handle we can refine this lookup in 3F.2.
   //    For substrate scope, the recent-sent heuristic is sufficient.
-  const matchedAlert = await findMostRecentSentAlert(deps);
+  const matchedAlert = await findMostRecentSentAlert(deps, userId);
 
   // 8. Run the parser (deterministic safety pre-pass → classifier).
   //    The parser never persists the reply text; it only feeds the
@@ -405,11 +440,11 @@ export async function handleSendBlueInbound(
   const parseResult: ReplyParseResult = await deps.replyParser.parse({
     user_reply_text: extracted.content,
     alert_context: {
-      alert_subject: await resolveAlertSubject(deps, matchedAlert),
+      alert_subject: await resolveAlertSubject(deps, userId, matchedAlert),
       alert_sender_name: undefined, // not available without re-reading Gmail
       alert_message_id: matchedAlert?.message_id ?? 'no-alert-match'
     },
-    user_id: deps.founderUserId
+    user_id: userId
   });
 
   // 9. Apply outcome. NEVER throws back to caller; every path audits
@@ -417,12 +452,12 @@ export async function handleSendBlueInbound(
   //    SendBlue keeps retrying anything non-2xx.
   let routeOutcome: RouteOutcome;
   try {
-    routeOutcome = await applyParseResult(deps, parseResult, matchedAlert, fromSlug, extracted.providerMessageId, now);
+    routeOutcome = await applyParseResult(deps, userId, parseResult, matchedAlert, fromSlug, extracted.providerMessageId, now);
   } catch (err) {
     // True internal error — surface 500 so SendBlue retries (idempotency
     // gate above will dedupe).
     await deps.auditStore.write({
-      actor_user_id: deps.founderUserId,
+      actor_user_id: userId,
       actor_ip: null,
       actor_user_agent: null,
       action: 'fomo.sendblue.payload_invalid',
@@ -451,6 +486,7 @@ export async function handleSendBlueInbound(
 
 async function applyParseResult(
   deps: SendBlueInboundRouteDeps,
+  userId: string,
   result: ReplyParseResult,
   matchedAlert: Alert | null,
   fromSlug: string,
@@ -460,15 +496,15 @@ async function applyParseResult(
   // Deterministic → stop / start (compliance commands).
   if (result.ok && result.source === 'deterministic') {
     if (result.intent === 'stop') {
-      return applyStop(deps, fromSlug, providerMessageId);
+      return applyStop(deps, userId, fromSlug, providerMessageId);
     }
-    return applyStart(deps, fromSlug, providerMessageId);
+    return applyStart(deps, userId, fromSlug, providerMessageId);
   }
 
   // Classifier failure — audit only, no state writes.
   if (!result.ok) {
     await deps.auditStore.write({
-      actor_user_id: deps.founderUserId,
+      actor_user_id: userId,
       actor_ip: null,
       actor_user_agent: null,
       action: 'fomo.sendblue.reply_unclear',
@@ -497,29 +533,30 @@ async function applyParseResult(
   const c = result.classification;
   switch (c.intent) {
     case 'snooze':
-      return applySnooze(deps, matchedAlert, c.snooze_hint, fromSlug, providerMessageId, now);
+      return applySnooze(deps, userId, matchedAlert, c.snooze_hint, fromSlug, providerMessageId, now);
     case 'ignore':
-      return applyIgnore(deps, matchedAlert, 'user_ignored', fromSlug, providerMessageId);
+      return applyIgnore(deps, userId, matchedAlert, 'user_ignored', fromSlug, providerMessageId);
     case 'ignore_sender':
-      return applyIgnoreSender(deps, matchedAlert, fromSlug, providerMessageId);
+      return applyIgnoreSender(deps, userId, matchedAlert, fromSlug, providerMessageId);
     case 'why':
-      return applyWhy(deps, matchedAlert, fromSlug, providerMessageId);
+      return applyWhy(deps, userId, matchedAlert, fromSlug, providerMessageId);
     case 'false_positive':
-      return applyIgnore(deps, matchedAlert, 'false_positive', fromSlug, providerMessageId);
+      return applyIgnore(deps, userId, matchedAlert, 'false_positive', fromSlug, providerMessageId);
     case 'unclear':
-      return applyUnclear(deps, matchedAlert, fromSlug, providerMessageId, result.low_confidence_forced_unclear);
+      return applyUnclear(deps, userId, matchedAlert, fromSlug, providerMessageId, result.low_confidence_forced_unclear);
   }
 }
 
 async function applyStop(
   deps: SendBlueInboundRouteDeps,
+  userId: string,
   fromSlug: string,
   providerMessageId: string
 ): Promise<RouteOutcome> {
   // 1. Memory signal: stop_active = true. Idempotent — second STOP
   //    just re-upserts the same row.
   await deps.memoryStore.upsert({
-    user_id: deps.founderUserId,
+    user_id: userId,
     kind: 'stop_active',
     scope_key: null,
     detail: {
@@ -531,7 +568,7 @@ async function applyStop(
   });
   // 2. Feedback event.
   await deps.feedbackStore.write({
-    user_id: deps.founderUserId,
+    user_id: userId,
     alert_id: null,
     sender_email: null,
     kind: 'stop',
@@ -539,7 +576,7 @@ async function applyStop(
   });
   // 3. Audit.
   await deps.auditStore.write({
-    actor_user_id: deps.founderUserId,
+    actor_user_id: userId,
     actor_ip: null,
     actor_user_agent: null,
     action: 'fomo.sendblue.stop_recorded',
@@ -564,11 +601,12 @@ async function applyStop(
 
 async function applyStart(
   deps: SendBlueInboundRouteDeps,
+  userId: string,
   fromSlug: string,
   providerMessageId: string
 ): Promise<RouteOutcome> {
   await deps.memoryStore.upsert({
-    user_id: deps.founderUserId,
+    user_id: userId,
     kind: 'stop_active',
     scope_key: null,
     detail: {
@@ -579,7 +617,7 @@ async function applyStart(
     confidence: 1.0
   });
   await deps.auditStore.write({
-    actor_user_id: deps.founderUserId,
+    actor_user_id: userId,
     actor_ip: null,
     actor_user_agent: null,
     action: 'fomo.sendblue.start_recorded',
@@ -604,6 +642,7 @@ async function applyStart(
 
 async function applySnooze(
   deps: SendBlueInboundRouteDeps,
+  userId: string,
   matchedAlert: Alert | null,
   hint: 'later' | 'tomorrow' | 'remind_me_later' | 'unspecified' | null,
   fromSlug: string,
@@ -616,7 +655,7 @@ async function applySnooze(
   if (!matchedAlert) {
     // No alert to attach the snooze to. Audit only.
     await deps.auditStore.write({
-      actor_user_id: deps.founderUserId,
+      actor_user_id: userId,
       actor_ip: null,
       actor_user_agent: null,
       action: 'fomo.sendblue.reply_parsed',
@@ -648,7 +687,7 @@ async function applySnooze(
   await walkTransition(deps, matchedAlert, 'replied', 'snoozed', `sendblue:snooze hint=${hint ?? 'null'} until=${snoozeUntil}`);
 
   await deps.feedbackStore.write({
-    user_id: deps.founderUserId,
+    user_id: userId,
     alert_id: matchedAlert.alert_id,
     sender_email: null,
     kind: 'user_snoozed',
@@ -661,7 +700,7 @@ async function applySnooze(
   });
 
   await deps.auditStore.write({
-    actor_user_id: deps.founderUserId,
+    actor_user_id: userId,
     actor_ip: null,
     actor_user_agent: null,
     action: 'fomo.sendblue.reply_parsed',
@@ -691,6 +730,7 @@ async function applySnooze(
 
 async function applyIgnore(
   deps: SendBlueInboundRouteDeps,
+  userId: string,
   matchedAlert: Alert | null,
   feedbackKind: 'user_ignored' | 'false_positive',
   fromSlug: string,
@@ -698,7 +738,7 @@ async function applyIgnore(
 ): Promise<RouteOutcome> {
   if (!matchedAlert) {
     await deps.auditStore.write({
-      actor_user_id: deps.founderUserId,
+      actor_user_id: userId,
       actor_ip: null,
       actor_user_agent: null,
       action: 'fomo.sendblue.reply_parsed',
@@ -727,7 +767,7 @@ async function applyIgnore(
   await walkTransition(deps, matchedAlert, 'replied', 'ignored', `sendblue:${feedbackKind}`);
 
   await deps.feedbackStore.write({
-    user_id: deps.founderUserId,
+    user_id: userId,
     alert_id: matchedAlert.alert_id,
     sender_email: null,
     kind: feedbackKind,
@@ -735,7 +775,7 @@ async function applyIgnore(
   });
 
   await deps.auditStore.write({
-    actor_user_id: deps.founderUserId,
+    actor_user_id: userId,
     actor_ip: null,
     actor_user_agent: null,
     action: 'fomo.sendblue.reply_parsed',
@@ -763,6 +803,7 @@ async function applyIgnore(
 
 async function applyIgnoreSender(
   deps: SendBlueInboundRouteDeps,
+  userId: string,
   matchedAlert: Alert | null,
   fromSlug: string,
   providerMessageId: string
@@ -771,7 +812,7 @@ async function applyIgnoreSender(
   // know which sender; degrade to audit-only.
   if (!matchedAlert) {
     await deps.auditStore.write({
-      actor_user_id: deps.founderUserId,
+      actor_user_id: userId,
       actor_ip: null,
       actor_user_agent: null,
       action: 'fomo.sendblue.reply_parsed',
@@ -802,7 +843,7 @@ async function applyIgnoreSender(
   // for v0.1 substrate — the future re-derivation worker can map
   // message_id → sender via Gmail re-read and tighten the signal.
   await deps.memoryStore.upsert({
-    user_id: deps.founderUserId,
+    user_id: userId,
     kind: 'sender_suppressed',
     scope_key: `message:${matchedAlert.message_id}`,
     detail: {
@@ -819,7 +860,7 @@ async function applyIgnoreSender(
   await walkTransition(deps, matchedAlert, 'replied', 'ignored', `sendblue:ignore_sender`);
 
   await deps.feedbackStore.write({
-    user_id: deps.founderUserId,
+    user_id: userId,
     alert_id: matchedAlert.alert_id,
     sender_email: null,
     kind: 'ignored_sender',
@@ -827,7 +868,7 @@ async function applyIgnoreSender(
   });
 
   await deps.auditStore.write({
-    actor_user_id: deps.founderUserId,
+    actor_user_id: userId,
     actor_ip: null,
     actor_user_agent: null,
     action: 'fomo.sendblue.reply_parsed',
@@ -856,6 +897,7 @@ async function applyIgnoreSender(
 
 async function applyWhy(
   deps: SendBlueInboundRouteDeps,
+  userId: string,
   matchedAlert: Alert | null,
   fromSlug: string,
   providerMessageId: string
@@ -866,7 +908,7 @@ async function applyWhy(
   if (matchedAlert) {
     await walkTransition(deps, matchedAlert, 'sent', 'replied', 'sendblue:why');
     await deps.feedbackStore.write({
-      user_id: deps.founderUserId,
+      user_id: userId,
       alert_id: matchedAlert.alert_id,
       sender_email: null,
       kind: 'asked_why',
@@ -874,7 +916,7 @@ async function applyWhy(
     });
   }
   await deps.auditStore.write({
-    actor_user_id: deps.founderUserId,
+    actor_user_id: userId,
     actor_ip: null,
     actor_user_agent: null,
     action: 'fomo.sendblue.reply_parsed',
@@ -904,13 +946,14 @@ async function applyWhy(
 
 async function applyUnclear(
   deps: SendBlueInboundRouteDeps,
+  userId: string,
   matchedAlert: Alert | null,
   fromSlug: string,
   providerMessageId: string,
   lowConfidenceForced: boolean
 ): Promise<RouteOutcome> {
   await deps.auditStore.write({
-    actor_user_id: deps.founderUserId,
+    actor_user_id: userId,
     actor_ip: null,
     actor_user_agent: null,
     action: 'fomo.sendblue.reply_unclear',
@@ -945,9 +988,10 @@ async function applyUnclear(
 // 'sent'. The future scheduler can refine by passing a thread-id
 // from SendBlue's payload (if available).
 async function findMostRecentSentAlert(
-  deps: SendBlueInboundRouteDeps
+  deps: SendBlueInboundRouteDeps,
+  userId: string
 ): Promise<Alert | null> {
-  const recent = await deps.alertStore.recent(deps.founderUserId, 20);
+  const recent = await deps.alertStore.recent(userId, 20);
   for (const a of recent) {
     const state = (await deps.transitions.currentState(a.alert_id)) ?? 'detected';
     if (state === 'sent') return a;
@@ -957,10 +1001,11 @@ async function findMostRecentSentAlert(
 
 async function resolveAlertSubject(
   deps: SendBlueInboundRouteDeps,
+  userId: string,
   matchedAlert: Alert | null
 ): Promise<string> {
   if (!matchedAlert) return '(no alert context available)';
-  const rank = await deps.rankResultStore.get(deps.founderUserId, matchedAlert.message_id);
+  const rank = await deps.rankResultStore.get(userId, matchedAlert.message_id);
   if (!rank) return '(rank context missing)';
   // The rank_result.reason is the closest thing to a subject we
   // have at hand without re-reading Gmail. It's already model-

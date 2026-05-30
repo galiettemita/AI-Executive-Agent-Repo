@@ -112,11 +112,23 @@ async function main(): Promise<void> {
     process.exit(0);
   }
 
-  process.stderr.write(
-    `[migrate:neon] ✖ Verifier still reports ${verification.missing_tables.length} missing table(s):\n`
-  );
-  for (const m of verification.missing_tables) {
-    process.stderr.write(`    - ${m.name.padEnd(28)} (introduced by ${m.migration})\n`);
+  if (verification.missing_tables.length > 0) {
+    process.stderr.write(
+      `[migrate:neon] ✖ Verifier still reports ${verification.missing_tables.length} missing table(s):\n`
+    );
+    for (const m of verification.missing_tables) {
+      process.stderr.write(`    - table  ${m.name.padEnd(28)} (introduced by ${m.migration})\n`);
+    }
+  }
+  if (verification.missing_columns.length > 0) {
+    process.stderr.write(
+      `[migrate:neon] ✖ Verifier still reports ${verification.missing_columns.length} missing column(s):\n`
+    );
+    for (const m of verification.missing_columns) {
+      process.stderr.write(
+        `    - column ${`${m.table}.${m.column}`.padEnd(48)} (introduced by ${m.migration})\n`
+      );
+    }
   }
   process.exit(1);
 }
