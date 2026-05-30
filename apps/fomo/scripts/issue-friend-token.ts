@@ -26,6 +26,7 @@
 import {
   encryptInviteBoundPhone,
   hashPhone,
+  isFictionalE164,
   loadPhoneHashConfig,
   normalizeE164,
   phoneSlug
@@ -39,10 +40,16 @@ interface ParsedArgs {
   phone: string;
   ttl_hours: number;
   base_url: string;
+  confirm_briefed: boolean;
 }
 
 function parseArgs(argv: readonly string[]): ParsedArgs {
-  const out: { phone?: string; ttl_hours?: number; base_url?: string } = {};
+  const out: {
+    phone?: string;
+    ttl_hours?: number;
+    base_url?: string;
+    confirm_briefed?: boolean;
+  } = {};
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     const next = argv[i + 1];
@@ -59,6 +66,21 @@ function parseArgs(argv: readonly string[]): ParsedArgs {
     } else if (a === '--base-url' && typeof next === 'string') {
       out.base_url = next;
       i++;
+    } else if (a === '--confirm-briefed' && typeof next === 'string') {
+      // Required for v0.5.2 (real friend) tokens. Founder must type a
+      // sentinel string proving they briefed the friend before this
+      // call. Sentinel is intentionally annoying-to-type so it cannot
+      // be muscle-memoried in a shell history scrollback.
+      if (next !== 'yes-friend-was-briefed') {
+        throw new Error(
+          '--confirm-briefed must be the literal string "yes-friend-was-briefed". ' +
+            'This is a v0.5.2 gate: the founder MUST brief the friend before this script runs ' +
+            '(privacy copy walked through, Gmail-readonly explained, STOP demonstrated, beta status named). ' +
+            'No surprise OAuth — see project_v05-2-real-friend-scope correction #2.'
+        );
+      }
+      out.confirm_briefed = true;
+      i++;
     }
   }
   if (!out.phone) {
@@ -71,7 +93,8 @@ function parseArgs(argv: readonly string[]): ParsedArgs {
   return {
     phone: out.phone,
     ttl_hours: out.ttl_hours ?? 24,
-    base_url: baseUrl
+    base_url: baseUrl,
+    confirm_briefed: out.confirm_briefed ?? false
   };
 }
 
@@ -111,6 +134,25 @@ async function main(): Promise<void> {
   } catch {
     process.stderr.write(
       `[issue-friend-token] Invalid --phone argument. Must be E.164 (e.g. +15555550100).\n`
+    );
+    process.exit(2);
+  }
+
+  // Phase v0.5.2 briefing gate. A REAL phone (i.e. not in the
+  // NANPA-reserved 555-0100-to-555-0199 fictional range) cannot be
+  // invited unless the founder passed --confirm-briefed yes-friend-was-briefed.
+  // This blocks "let me just mint a token and figure out the briefing
+  // later" — see project_v05-2-real-friend-scope correction #2.
+  //
+  // Synthetic 555 phones (v0.5.1 substrate path) skip this gate. They
+  // are by definition non-real; nobody to brief.
+  if (!isFictionalE164(normalizedPhone) && !args.confirm_briefed) {
+    process.stderr.write(
+      `[issue-friend-token] Real phone provided (not in NANPA-reserved 555-0100..0199 fictional range).\n` +
+        `  This is v0.5.2 — REAL friend onboarding. Founder MUST brief the friend BEFORE this token mints.\n` +
+        `  Briefing must cover: privacy copy walked through, Gmail-readonly scope explained, STOP demonstrated, beta status named.\n` +
+        `  Re-run with: --confirm-briefed yes-friend-was-briefed\n` +
+        `  Refusing to mint a token for a real phone without briefing confirmation.\n`
     );
     process.exit(2);
   }
@@ -157,7 +199,13 @@ async function main(): Promise<void> {
         token_hash_prefix: tokenHashPrefix(issued.token_hash),
         intended_phone_slug: slug,
         expires_at: issued.expires_at.toISOString(),
-        ttl_hours: args.ttl_hours
+        ttl_hours: args.ttl_hours,
+        // v0.5.2: durable record that the founder briefed the friend.
+        // For 555 fictional phones this stays false (briefing N/A); for
+        // real phones this is true (the script refused otherwise).
+        briefed_confirmed: args.confirm_briefed,
+        // For audit-only differentiation: synthetic vs real friend mints.
+        phone_class: isFictionalE164(normalizedPhone) ? 'synthetic_555' : 'real'
       }
     });
 

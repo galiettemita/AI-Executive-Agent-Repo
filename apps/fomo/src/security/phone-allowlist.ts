@@ -126,6 +126,26 @@ export function phoneSlug(e164: string): string {
   return normalized.slice(-4);
 }
 
+/**
+ * Phase v0.5.2 helper: identifies NANPA-reserved fictional phones.
+ *
+ * `+1 555 0100 0000` through `+1 555 0100 9999` (formatted with the
+ * NANPA "(555) 0100" prefix) are explicitly reserved for fictional
+ * use — TV/movies, test fixtures, documentation. They are guaranteed
+ * never to belong to a real subscriber.
+ *
+ * v0.5.1 uses these for the synthetic-user smoke (no human exists for
+ * the friend). v0.5.2 refuses them — a real-friend invite token bound
+ * to a fictional number would be unusable in production. Used by
+ * `issue-friend-token` to gate the briefing-required path: real phones
+ * REQUIRE `--confirm-briefed`, fictional phones do not.
+ *
+ * Input must be a pre-normalized E.164 string (leading `+`, digits only).
+ */
+export function isFictionalE164(e164: string): boolean {
+  return /^\+1555010\d{4}$/.test(e164);
+}
+
 /* ---------------------------------------------------------------------- */
 /* Encrypted envelope storage shape                                       */
 /* ---------------------------------------------------------------------- */
