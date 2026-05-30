@@ -942,5 +942,91 @@ describe('Phase 2E gated Postgres verification', { skip: !RUN_PG ? 'BREVIO_RUN_P
       );
       assert.equal(result.rows.length, 0, 'expired token must not consume');
     });
+
+    // Regression: a v0.5.1 smoke discovered that PostgresPhoneAllowlistStore
+    // .setPhone is a pure UPDATE — without a prior provisionUser, it
+    // silently affects 0 rows and the /onboard callback succeeds with no
+    // users row. InMemoryPhoneAllowlistStore auto-created the row via
+    // Map.set, so unit tests passed against a permissive mock. The fix
+    // adds provisionUser; this test codifies the Postgres contract.
+    it('PostgresPhoneAllowlistStore.setPhone WITHOUT provisionUser silently affects 0 rows (the v0.5.1 bug)', async () => {
+      assert.ok(pglite);
+      assert.ok(db);
+      const { PostgresPhoneAllowlistStore } = await import('../../security/phone-allowlist.js');
+      const cryptoCfg = {
+        kek: Buffer.alloc(32, 7),
+        devMode: false
+      };
+      const phoneHashCfg = { hmacKey: Buffer.alloc(32, 11) };
+      const store = new PostgresPhoneAllowlistStore(db, cryptoCfg, phoneHashCfg);
+      const orphanUserId = '11111111-2222-3333-4444-555555555555';
+      // setPhone without provisionUser → no row to update, no error
+      await store.setPhone(orphanUserId, '+15550100099');
+      const rows = await pglite.query<{ count: string | number }>(
+        `SELECT count(*) AS count FROM users WHERE id::text = '${orphanUserId}'`
+      );
+      assert.equal(
+        Number(rows.rows[0].count),
+        0,
+        'setPhone without provisionUser must NOT have created a row (the bug was: the /onboard callback assumed it would)'
+      );
+    });
+
+    it('provisionUser inserts a users row with is_founder=false; setPhone then populates phone fields; full path is queryable', async () => {
+      assert.ok(pglite);
+      assert.ok(db);
+      const { PostgresPhoneAllowlistStore } = await import('../../security/phone-allowlist.js');
+      const cryptoCfg = {
+        kek: Buffer.alloc(32, 7),
+        devMode: false
+      };
+      const phoneHashCfg = { hmacKey: Buffer.alloc(32, 11) };
+      const store = new PostgresPhoneAllowlistStore(db, cryptoCfg, phoneHashCfg);
+      const friendUserId = '22222222-3333-4444-5555-666666666666';
+
+      // Correct order: provisionUser → setPhone
+      await store.provisionUser({ user_id: friendUserId, email: 'friend-regression@example.test' });
+      await store.setPhone(friendUserId, '+15550100098');
+
+      const row = await pglite.query<{
+        email: string;
+        is_founder: boolean;
+        has_hash: boolean;
+        has_envelope: boolean;
+      }>(
+        `SELECT email, is_founder,
+                (phone_e164_hash IS NOT NULL) AS has_hash,
+                (phone_e164_encrypted IS NOT NULL) AS has_envelope
+         FROM users WHERE id::text = '${friendUserId}'`
+      );
+      assert.equal(row.rows.length, 1, 'users row must exist after provisionUser');
+      assert.equal(row.rows[0].email, 'friend-regression@example.test');
+      assert.equal(row.rows[0].is_founder, false, 'friend must have is_founder=false');
+      assert.equal(row.rows[0].has_hash, true, 'setPhone after provisionUser must populate phone_e164_hash');
+      assert.equal(row.rows[0].has_envelope, true, 'setPhone after provisionUser must populate phone_e164_encrypted');
+    });
+
+    it('provisionUser is idempotent — repeated calls (browser refresh) do not error or duplicate', async () => {
+      assert.ok(pglite);
+      assert.ok(db);
+      const { PostgresPhoneAllowlistStore } = await import('../../security/phone-allowlist.js');
+      const cryptoCfg = {
+        kek: Buffer.alloc(32, 7),
+        devMode: false
+      };
+      const phoneHashCfg = { hmacKey: Buffer.alloc(32, 11) };
+      const store = new PostgresPhoneAllowlistStore(db, cryptoCfg, phoneHashCfg);
+      const friendUserId = '33333333-4444-5555-6666-777777777777';
+      const email = 'friend-idempotent@example.test';
+
+      await store.provisionUser({ user_id: friendUserId, email });
+      await store.provisionUser({ user_id: friendUserId, email });
+      await store.provisionUser({ user_id: friendUserId, email });
+
+      const rows = await pglite.query<{ count: string | number }>(
+        `SELECT count(*) AS count FROM users WHERE id::text = '${friendUserId}'`
+      );
+      assert.equal(Number(rows.rows[0].count), 1, 'provisionUser must remain at exactly one row');
+    });
   });
 });

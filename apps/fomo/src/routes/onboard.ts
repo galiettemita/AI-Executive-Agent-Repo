@@ -522,24 +522,39 @@ export async function handleOnboardCallback(
     return htmlResponse(500, renderInvalidPage('unknown'));
   }
 
-  // Provision the friend user. We run the four side-effects in
-  // sequence; the invite consume is LAST so any failure leaves the
-  // token un-consumed and the friend can retry.
+  // Provision the friend user. Ordering matters:
+  //   1. Fetch Gmail profile FIRST — we need emailAddress to insert
+  //      users (NOT NULL email column) + historyId for the cursor row.
+  //   2. provisionUser inserts the users row idempotently (browser
+  //      refresh on success page = same insert, ON CONFLICT DO NOTHING).
+  //   3. setPhone is a pure UPDATE — requires the users row to exist.
+  //   4. tokenStore.save + cursorStore.upsert reference user_id.
+  //   5. invite consume is LAST so any failure leaves the token
+  //      un-consumed and the friend can retry.
   //
   // Failure handling:
+  //   * provisionUser is idempotent — no failure path beyond DB-level
+  //     errors which bubble.
   //   * setPhone may throw DuplicatePhoneError → another user owns
   //     this hash. We abort with phone_mismatch audit.
   //   * tokenStore.save / cursorStore.upsert may fail with DB error
   //     → we abort; the partially-created state is acceptable because
   //     the next legitimate retry sees existing rows + idempotent
-  //     setPhone (same user_uuid + same hash = no-op).
+  //     provisionUser + idempotent setPhone (same user_uuid + same
+  //     hash = no-op).
   //   * consume throws InvalidInviteTokenError → token expired or
   //     was already consumed by a race. We abort. The partial state
   //     persists but is harmless (no audit_log / alerts / etc. yet).
   //
   // For v0.5.1 we accept this "best-effort, last-step-atomic" shape;
   // a true SQL-level transaction wrapper is future work.
+  let profile: { emailAddress: string; historyId: string };
   try {
+    profile = await deps.gmailClient.getProfile(exchange.access_token);
+    await deps.phoneAllowlist.provisionUser({
+      user_id: nonceRow.user_uuid,
+      email: profile.emailAddress
+    });
     await deps.phoneAllowlist.setPhone(nonceRow.user_uuid, bound_phone_plaintext);
     await deps.tokenStore.save({
       user_id: nonceRow.user_uuid,
@@ -553,7 +568,6 @@ export async function handleOnboardCallback(
     // Initialize gmail_cursors so the polling worker starts from
     // current state, not history-id 0 (which would fetch the entire
     // mailbox).
-    const profile = await deps.gmailClient.getProfile(exchange.access_token);
     await deps.cursorStore.upsert({
       user_id: nonceRow.user_uuid,
       history_id: profile.historyId

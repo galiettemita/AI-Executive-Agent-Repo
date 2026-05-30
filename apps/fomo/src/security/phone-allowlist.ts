@@ -238,6 +238,12 @@ export class DuplicatePhoneError extends Error {
 /* ---------------------------------------------------------------------- */
 
 export interface PhoneAllowlistStore {
+  // Provision a new friend's users row. Idempotent on (id) via
+  // ON CONFLICT DO NOTHING — repeated callback hits (browser refresh,
+  // OAuth retry) must not double-insert. Sets is_founder=false. The
+  // caller MUST invoke this before setPhone — setPhone is a pure UPDATE
+  // and silently affects 0 rows when the user_id doesn't exist yet.
+  provisionUser(input: { user_id: string; email: string }): Promise<void>;
   // Set a user's phone. Idempotent for the same (user_id, hash) pair.
   // Throws DuplicatePhoneError when ANOTHER user already owns the hash.
   setPhone(user_id: string, e164: string): Promise<void>;
@@ -259,6 +265,20 @@ export class PostgresPhoneAllowlistStore implements PhoneAllowlistStore {
     this.db = db;
     this.crypto = crypto;
     this.phoneHash = phoneHash;
+  }
+
+  async provisionUser(input: { user_id: string; email: string }): Promise<void> {
+    // ON CONFLICT (id) DO NOTHING covers the "browser refreshed /onboard/callback
+    // after success" case — the second hit must NOT throw. We also DO NOTHING
+    // on email conflict for the same reason: if a prior run partially provisioned
+    // (orphan rows after a crash), retrying with the same Gmail account
+    // must be tolerated. The setPhone UNIQUE constraint is the real
+    // identity guard, not this insert.
+    await this.db.execute(
+      sql`INSERT INTO ${users} (id, email, is_founder)
+          VALUES (${input.user_id}::uuid, ${input.email}, false)
+          ON CONFLICT (id) DO NOTHING`
+    );
   }
 
   async setPhone(user_id: string, e164: string): Promise<void> {
@@ -328,13 +348,27 @@ export class PostgresPhoneAllowlistStore implements PhoneAllowlistStore {
 // test against; duplicate-phone rejection is enforced application-side
 // here (no SQL UNIQUE) so the failure mode is testable without PGlite.
 export class InMemoryPhoneAllowlistStore implements PhoneAllowlistStore {
-  private readonly byUser = new Map<string, { hash: string; envelope: PhoneEnvelopeJson; is_founder: boolean }>();
+  private readonly byUser = new Map<string, { hash: string; envelope: PhoneEnvelopeJson; is_founder: boolean; email?: string }>();
   private readonly crypto: CryptoConfig;
   private readonly phoneHash: PhoneHashConfig;
 
   constructor(crypto: CryptoConfig, phoneHash: PhoneHashConfig) {
     this.crypto = crypto;
     this.phoneHash = phoneHash;
+  }
+
+  async provisionUser(input: { user_id: string; email: string }): Promise<void> {
+    // Idempotent: if user already exists, leave as-is.
+    if (this.byUser.has(input.user_id)) return;
+    // Placeholder row — setPhone will fill the hash + envelope. The
+    // placeholder hash is empty so it can't collide with any real
+    // hash via findUserIdByPhoneHash.
+    this.byUser.set(input.user_id, {
+      hash: '',
+      envelope: { v: 0, alg: 'placeholder', ciphertext: '', iv: '', tag: '' } as unknown as PhoneEnvelopeJson,
+      is_founder: false,
+      email: input.email
+    });
   }
 
   async setPhone(user_id: string, e164: string): Promise<void> {
@@ -358,6 +392,9 @@ export class InMemoryPhoneAllowlistStore implements PhoneAllowlistStore {
   }
 
   async findUserIdByPhoneHash(phone_hash: string): Promise<string | null> {
+    // Empty phone_hash never matches — protects against placeholder
+    // rows from provisionUser that haven't had setPhone called yet.
+    if (phone_hash === '') return null;
     for (const [uid, row] of this.byUser.entries()) {
       if (row.hash === phone_hash) return uid;
     }
