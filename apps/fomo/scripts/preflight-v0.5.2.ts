@@ -171,8 +171,8 @@ require_(
 /* SendBlue (real iMessage delivery is the v0.5.2 PASS criterion)         */
 /* ---------------------------------------------------------------------- */
 
-require_('SENDBLUE_API_KEY', 'SENDBLUE_API_KEY required — real iMessage delivery to a real friend phone.');
-require_('SENDBLUE_API_SECRET', 'SENDBLUE_API_SECRET required.');
+require_('SENDBLUE_API_KEY_ID', 'SENDBLUE_API_KEY_ID required — real iMessage delivery to a real friend phone (canonical name from 3F.2; index.ts:395 reads this).');
+require_('SENDBLUE_API_SECRET_KEY', 'SENDBLUE_API_SECRET_KEY required (canonical name from 3F.2; index.ts:396 reads this).');
 require_('SENDBLUE_FROM_NUMBER', 'SENDBLUE_FROM_NUMBER required (the Brevio-side sender number).');
 require_('SENDBLUE_WEBHOOK_SECRET', 'SENDBLUE_WEBHOOK_SECRET required (inbound STOP needs the signed-header check to pass).');
 
