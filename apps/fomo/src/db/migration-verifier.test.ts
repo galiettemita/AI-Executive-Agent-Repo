@@ -36,6 +36,7 @@ import { type DrizzleClient } from './client.js';
 import * as schema from './schema.js';
 import {
   PendingMigrationsError,
+  REQUIRED_COLUMNS,
   REQUIRED_TABLES,
   verifyMigrations,
   verifyMigrationsOrThrow
@@ -78,16 +79,17 @@ describe('migration-verifier', () => {
   it('REQUIRED_TABLES is frozen and lists every public-schema table the runtime depends on', () => {
     assert.ok(Object.isFrozen(REQUIRED_TABLES));
     // Cross-check the count matches the gated-pg test (which is the
-    // authoritative end-to-end migration apply target). 13 tables as
-    // of Phase 3F.1 (after 0004_inbound_replies).
-    assert.equal(REQUIRED_TABLES.length, 13);
+    // authoritative end-to-end migration apply target). 14 tables as
+    // of Phase v0.5.1 (after 0005_users_v05 adds `invite_tokens`).
+    assert.equal(REQUIRED_TABLES.length, 14);
   });
 
-  it('verifyMigrations returns ok=true when every required table exists', async () => {
+  it('verifyMigrations returns ok=true when every required table AND column exists', async () => {
     assert.ok(db);
     const result = await verifyMigrations(db);
     assert.equal(result.ok, true);
     assert.deepEqual(result.missing_tables, []);
+    assert.deepEqual(result.missing_columns, []);
     assert.equal(result.required_tables.length, REQUIRED_TABLES.length);
   });
 
@@ -216,6 +218,171 @@ describe('migration-verifier', () => {
       // never writes. (PGlite resets statistics on every connection,
       // but the relative delta inside one connection still holds.)
       assert.deepEqual(after.rows, before.rows);
+    });
+  });
+
+  /* ------------------------------------------------------------------ */
+  /* Step 4.2 — column-level verification (load-bearing v0.5.1 columns) */
+  /* ------------------------------------------------------------------ */
+  //
+  // Real incident class hardened against: 3G.1 verified table presence
+  // only. A migration that ALTERs an existing table to add a load-
+  // bearing column (e.g. 0005's users.is_founder, 0006's
+  // invite_tokens.intended_phone_encrypted) is INVISIBLE to that
+  // verifier. Neon could have the table without the column and the
+  // runtime would fail at first use of the missing column. These
+  // tests prove the column-level fail-loud behavior.
+
+  describe('column-level verification (Step 4.2)', () => {
+    it('REQUIRED_COLUMNS covers every load-bearing v0.5.1 column added by ALTER TABLE migrations', () => {
+      // Founder directive 2026-05-29: spec is the test. If a new
+      // migration adds a load-bearing column, this list must be
+      // updated AND the test below must include the column.
+      const have = new Set(REQUIRED_COLUMNS.map((c) => `${c.table}.${c.column}`));
+      for (const expected of [
+        'users.phone_e164_encrypted',
+        'users.phone_e164_hash',
+        'users.is_founder',
+        'invite_tokens.token_hash',
+        'invite_tokens.intended_phone_hash',
+        'invite_tokens.intended_phone_encrypted',
+        'invite_tokens.consumed_at'
+      ]) {
+        assert.ok(have.has(expected), `REQUIRED_COLUMNS missing ${expected}`);
+      }
+    });
+
+    it('table exists but required column missing → verifier fails with named column', async () => {
+      // Spin up a fresh PGlite with every migration EXCEPT 0006 —
+      // that leaves invite_tokens in place but without
+      // intended_phone_encrypted. This is the exact drift shape the
+      // step exists to catch.
+      const scratch = new PGlite();
+      try {
+        await applyMigrations(scratch, { skip: ['0006_invite_phone_encrypted.sql'] });
+        const scratchDb = drizzle(scratch, { schema }) as unknown as DrizzleClient;
+
+        const result = await verifyMigrations(scratchDb);
+        assert.equal(result.ok, false);
+        // Tables — all present (we didn't drop invite_tokens, we just
+        // skipped the ALTER that adds the new column).
+        assert.deepEqual(result.missing_tables, []);
+        // Column — named.
+        const names = result.missing_columns.map((m) => `${m.table}.${m.column}`);
+        assert.ok(
+          names.includes('invite_tokens.intended_phone_encrypted'),
+          `expected invite_tokens.intended_phone_encrypted in missing_columns; got: ${names.join(',')}`
+        );
+        const drift = result.missing_columns.find(
+          (m) => m.table === 'invite_tokens' && m.column === 'intended_phone_encrypted'
+        );
+        assert.ok(drift);
+        assert.equal(drift.migration, '0006_invite_phone_encrypted.sql');
+      } finally {
+        await scratch.close();
+      }
+    });
+
+    it('multiple missing columns → ALL are named with their source migrations', async () => {
+      // Skip BOTH 0005 and 0006. 0005 adds users.* + invite_tokens
+      // (CREATE TABLE). Skipping 0005 entirely drops the invite_tokens
+      // table — so the missing_tables list reports it, NOT the column.
+      // For column-only drift, skip 0006 (one missing column) and
+      // ALSO patch users so its phone_e164_hash column is missing.
+      const scratch = new PGlite();
+      try {
+        await applyMigrations(scratch, { skip: ['0006_invite_phone_encrypted.sql'] });
+        // Drop the users.phone_e164_hash column to simulate a partial
+        // 0005 apply (e.g. an operator hand-rolled a portion of the
+        // migration on Neon).
+        await scratch.exec('ALTER TABLE users DROP COLUMN phone_e164_hash');
+        const scratchDb = drizzle(scratch, { schema }) as unknown as DrizzleClient;
+
+        const result = await verifyMigrations(scratchDb);
+        assert.equal(result.ok, false);
+        const names = result.missing_columns.map((m) => `${m.table}.${m.column}`).sort();
+        assert.ok(names.includes('users.phone_e164_hash'));
+        assert.ok(names.includes('invite_tokens.intended_phone_encrypted'));
+        // Each missing column carries its source migration so the
+        // operator can correlate to the recovery action.
+        const byColumn = new Map(result.missing_columns.map((m) => [`${m.table}.${m.column}`, m.migration]));
+        assert.equal(byColumn.get('users.phone_e164_hash'), '0005_users_v05.sql');
+        assert.equal(byColumn.get('invite_tokens.intended_phone_encrypted'), '0006_invite_phone_encrypted.sql');
+      } finally {
+        await scratch.close();
+      }
+    });
+
+    it('column drift skipped when the parent table itself is missing (no double-reporting)', async () => {
+      // Skip 0005 entirely → invite_tokens table is missing. The
+      // column entries that belong to invite_tokens MUST NOT also
+      // appear in missing_columns — the operator's recovery action
+      // is "apply 0005," which restores both table + columns. Double-
+      // reporting is noise.
+      const scratch = new PGlite();
+      try {
+        await applyMigrations(scratch, {
+          skip: ['0005_users_v05.sql', '0006_invite_phone_encrypted.sql']
+        });
+        const scratchDb = drizzle(scratch, { schema }) as unknown as DrizzleClient;
+
+        const result = await verifyMigrations(scratchDb);
+        assert.equal(result.ok, false);
+        assert.ok(result.missing_tables.find((m) => m.name === 'invite_tokens'));
+        for (const c of result.missing_columns) {
+          assert.notEqual(c.table, 'invite_tokens', 'columns on a missing table must not double-report');
+        }
+      } finally {
+        await scratch.close();
+      }
+    });
+
+    it('PendingMigrationsError message names ALL missing columns on their own lines', async () => {
+      const scratch = new PGlite();
+      try {
+        await applyMigrations(scratch, { skip: ['0006_invite_phone_encrypted.sql'] });
+        const scratchDb = drizzle(scratch, { schema }) as unknown as DrizzleClient;
+        let caught: PendingMigrationsError | null = null;
+        try {
+          await verifyMigrationsOrThrow(scratchDb);
+        } catch (err) {
+          caught = err as PendingMigrationsError;
+        }
+        assert.ok(caught instanceof PendingMigrationsError);
+        // The message must name the column AND the source migration
+        // so the operator can act without parsing JSON.
+        assert.match(caught!.message, /invite_tokens\.intended_phone_encrypted/);
+        assert.match(caught!.message, /0006_invite_phone_encrypted\.sql/);
+        assert.match(caught!.message, /pnpm --filter @brevio\/fomo run migrate:neon/);
+      } finally {
+        await scratch.close();
+      }
+    });
+
+    it('PendingMigrationsError carries structured missing_columns alongside missing_tables', () => {
+      const err = new PendingMigrationsError(
+        [{ name: 'oauth_tokens', migration: '0000_init.sql' }],
+        [{ table: 'invite_tokens', column: 'intended_phone_encrypted', migration: '0006_invite_phone_encrypted.sql' }]
+      );
+      assert.equal(err.missing_tables.length, 1);
+      assert.equal(err.missing_columns.length, 1);
+      assert.match(err.message, /oauth_tokens/);
+      assert.match(err.message, /intended_phone_encrypted/);
+    });
+
+    it('column-level verification is READ-ONLY (no information_schema mutation)', async () => {
+      assert.ok(db);
+      // information_schema is non-mutable from user SQL anyway, but
+      // we still assert the verifier doesn't somehow trigger ALTER
+      // statements by counting the row count before + after.
+      const before = await pglite!.query<{ n: string }>(
+        `SELECT count(*)::text AS n FROM information_schema.columns WHERE table_schema='public'`
+      );
+      await verifyMigrations(db);
+      const after = await pglite!.query<{ n: string }>(
+        `SELECT count(*)::text AS n FROM information_schema.columns WHERE table_schema='public'`
+      );
+      assert.equal(after.rows[0].n, before.rows[0].n);
     });
   });
 });

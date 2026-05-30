@@ -39,6 +39,17 @@ import {
   tryHandleSendBlueInboundRequest,
   type SendBlueInboundRouteDeps
 } from './routes/sendblue-inbound.js';
+import {
+  InMemoryOnboardNonceStore,
+  loadPrivacyCopySync,
+  tryHandleOnboardRequest,
+  type OnboardRouteDeps
+} from './routes/onboard.js';
+import { PostgresInviteTokenStore } from './security/invite-tokens.js';
+import {
+  PostgresPhoneAllowlistStore,
+  loadPhoneHashConfig
+} from './security/phone-allowlist.js';
 import { parseReply } from './reply-parser/index.js';
 import { REPLY_PARSER_OPENAI_RESPONSE_FORMAT } from './reply-parser/openai-response-format.js';
 import { type RawEmailContext } from './core/egress-policy.js';
@@ -254,6 +265,11 @@ function buildSlackReviewWiring(
   const channelId = env.SLACK_FOUNDER_CHANNEL_ID;
   const signingSecret = env.SLACK_SIGNING_SECRET;
   const founderUserId = env.SLACK_FOUNDER_USER_ID?.trim() || undefined;
+  // Brevio's founder user_id (NOT the Slack user id above). Used by
+  // the friend-safe Slack card branch (Phase v0.5.1 Step 5) to
+  // distinguish founder-owned vs friend-owned alerts. Required when
+  // slack_review_enabled is on.
+  const brevioFounderUserId = env.FOMO_FOUNDER_USER_ID?.trim();
 
   if (!botToken || botToken.length === 0) {
     throw new Error(
@@ -279,10 +295,18 @@ function buildSlackReviewWiring(
         'inbound Slack interactivity endpoint.'
     );
   }
+  if (!brevioFounderUserId || brevioFounderUserId.length === 0) {
+    throw new Error(
+      'FOMO_SLACK_REVIEW_ENABLED=true but FOMO_FOUNDER_USER_ID is missing. ' +
+        'Required by the v0.5.1 friend-safe Slack card branch to distinguish ' +
+        'founder-owned vs friend-owned alerts. Set FOMO_FOUNDER_USER_ID (typically ' +
+        "the literal string 'founder') or set FOMO_SLACK_REVIEW_ENABLED=false."
+    );
+  }
 
   // SlackClient constructor throws synchronously on bad token/channel
   // shape — surfaced here at boot rather than at first dispatch.
-  const client = new SlackClient({ botToken, channelId });
+  const client = new SlackClient({ botToken, channelId, founderUserId: brevioFounderUserId });
 
   // Phase 3D.2: the approval-capture route needs to recover the raw
   // email view to rebuild the resolution card. Since gmail.read goes
@@ -655,11 +679,32 @@ function buildSendBlueInboundWiring(
   const replyRouter = createModelRouter({ costStore: storesHandle.stores.cost });
   replyRouter.registerBackend('classification', replyBackend);
 
+  // Phase v0.5.1 Step 8 — wire phoneAllowlist + phoneHash so friend
+  // STOP messages route to friend user_ids (not the founder). Only
+  // works when the substrate is Postgres-backed; in-memory dev mode
+  // falls back to founder-only (env-equality match in the route).
+  let phoneAllowlist: import('./security/phone-allowlist.js').PhoneAllowlistStore | undefined;
+  let phoneHash: import('./security/phone-allowlist.js').PhoneHashConfig | undefined;
+  if (storesHandle.backend === 'postgres' && storesHandle.db?.ok) {
+    try {
+      const crypto = loadCryptoConfig();
+      phoneHash = loadPhoneHashConfig(env);
+      phoneAllowlist = new PostgresPhoneAllowlistStore(storesHandle.db.client, crypto, phoneHash);
+    } catch {
+      // BREVIO_PHONE_HASH_KEY not configured — friend routing
+      // unavailable. Founder-only behavior continues to work.
+      phoneAllowlist = undefined;
+      phoneHash = undefined;
+    }
+  }
+
   const routeDeps: SendBlueInboundRouteDeps = Object.freeze({
     webhookSecret,
     webhookSecretHeader,
     founderPhoneNumber: founderPhone,
     founderUserId,
+    phoneAllowlist,
+    phoneHash,
     killSwitches,
     inboundReplyStore: storesHandle.stores.inboundReplies,
     alertStore: storesHandle.stores.alerts,
@@ -675,6 +720,80 @@ function buildSendBlueInboundWiring(
 
   return { routeDeps, inboundEnabled: true };
 }
+
+/* ---------------------------------------------------------------------- */
+/* Phase v0.5.1 Step 8 — onboard route + founder bootstrap                */
+/* ---------------------------------------------------------------------- */
+
+// Build the OnboardRouteDeps when FOMO_FRIEND_BETA_ENABLED=true AND
+// every required dep is configured. Kill switch is the dispatcher's
+// gate (see [src/routes/onboard.ts] tryHandleOnboardRequest); this
+// builder additionally refuses to construct deps unless OAuth + phone
+// hash + crypto are all wired, so the runtime fails LOUD at boot
+// instead of half-mounting an unusable route.
+function buildOnboardWiring(
+  storesHandle: SubstrateStoresHandle,
+  killSwitches: KillSwitches,
+  oauthGoogleDeps: OAuthGoogleRouteDeps | null,
+  privacyCopy: string,
+  gmailClient: GmailClient,
+  env: NodeJS.ProcessEnv = process.env
+): { routeDeps: OnboardRouteDeps | null } {
+  if (!killSwitches.friend_beta_enabled) {
+    return { routeDeps: null };
+  }
+  // The /onboard flow uses the same OAuth Google config the founder
+  // OAuth path uses. If oauthGoogleDeps isn't wired, the friend can't
+  // complete OAuth — refuse to boot rather than half-mount.
+  if (!oauthGoogleDeps) {
+    throw new Error(
+      'FOMO_FRIEND_BETA_ENABLED=true but Google OAuth is not configured. ' +
+        'Set GOOGLE_CLIENT_ID + GOOGLE_CLIENT_SECRET + BREVIO_OAUTH_REDIRECT_URI_GOOGLE ' +
+        '(the /onboard friend-beta flow reuses the OAuth Google config) or set ' +
+        'FOMO_FRIEND_BETA_ENABLED=false. Refusing to boot a half-wired /onboard route.'
+    );
+  }
+  if (storesHandle.backend !== 'postgres' || !storesHandle.db?.ok) {
+    throw new Error(
+      'FOMO_FRIEND_BETA_ENABLED=true but the substrate is not Postgres-backed. ' +
+        'Friend-beta requires DATABASE_URL set (invite_tokens + users tables live ' +
+        'on disk; in-memory stores would lose every invite on restart). ' +
+        'Set DATABASE_URL or set FOMO_FRIEND_BETA_ENABLED=false.'
+    );
+  }
+  const dbClient = storesHandle.db.client;
+  const crypto = loadCryptoConfig();
+  const phoneHash = loadPhoneHashConfig(env);
+
+  const inviteStore = new PostgresInviteTokenStore(dbClient);
+  const phoneAllowlist = new PostgresPhoneAllowlistStore(dbClient, crypto, phoneHash);
+  const nonceStore = new InMemoryOnboardNonceStore();
+
+  const routeDeps: OnboardRouteDeps = Object.freeze({
+    inviteStore,
+    nonceStore,
+    tokenStore: storesHandle.stores.tokens,
+    cursorStore: storesHandle.stores.gmailCursors,
+    phoneAllowlist,
+    auditStore: storesHandle.stores.audit,
+    killSwitches,
+    stateConfig: oauthGoogleDeps.stateConfig,
+    providerConfig: oauthGoogleDeps.providerConfig,
+    gmailClient,
+    crypto,
+    phoneHash,
+    privacyCopy
+  });
+
+  return { routeDeps };
+}
+
+// Note: the v0.5.1 inbound route's founder path is env-equality
+// (deps.founderPhoneNumber === from_number → userId = deps.founderUserId),
+// so the founder does NOT need to live in the `users` table. Only
+// friends (provisioned via /onboard) live there, and each friend's
+// user_id is the UUID minted at /start time. The phoneAllowlist
+// branch only runs for non-founder from-numbers.
 
 // Mirrors startGmailPolling for the outbound-sender worker: each tick
 // refreshes the per-user token snapshot, builds a fresh gateDeps off
@@ -896,6 +1015,38 @@ export function createFomoRuntime(config: FomoConfig = loadFomoConfig()): FomoRu
   // OAuth routes — graceful skip when not configured.
   const oauthGoogleDeps = buildOAuthGoogleDeps(storesHandle, config, gmailClient);
 
+  // Phase v0.5.1 Step 8 — friend-beta onboard route. Built only when
+  // FOMO_FRIEND_BETA_ENABLED=true AND every required dep is wired
+  // (OAuth Google + Postgres backend + BREVIO_PHONE_HASH_KEY).
+  // buildOnboardWiring THROWS at boot if the switch is on but a
+  // required dep is missing — refuses to half-mount.
+  let onboardWiring: { routeDeps: OnboardRouteDeps | null } = { routeDeps: null };
+  if (killSwitches.friend_beta_enabled) {
+    const privacyCopy = loadPrivacyCopySync();
+    onboardWiring = buildOnboardWiring(
+      storesHandle,
+      killSwitches,
+      oauthGoogleDeps,
+      privacyCopy,
+      gmailClient
+    );
+    if (onboardWiring.routeDeps) {
+      logEvent(config, undefined, 'fomo.onboard.enabled', 'INFO', {
+        onboard_route_mounted: true,
+        privacy_copy_bytes: privacyCopy.length,
+        detail:
+          'FOMO_FRIEND_BETA_ENABLED=true; /onboard route mounted. ' +
+          'Founder mints invites via `pnpm --filter @brevio/fomo run issue-friend-token`.'
+      });
+    }
+  } else {
+    logEvent(config, undefined, 'fomo.onboard.disabled', 'INFO', {
+      detail:
+        'FOMO_FRIEND_BETA_ENABLED is not "true"; /onboard route NOT mounted ' +
+        '(friend beta gated; founder flow unaffected).'
+    });
+  }
+
   // Polling worker — bootstrapped only when FOMO_GMAIL_POLLING_ENABLED=true.
   // Safe default: off (no autonomous Gmail reads until founder opts in).
   let pollingHandle: PollingHandle | null = null;
@@ -1020,6 +1171,19 @@ export function createFomoRuntime(config: FomoConfig = loadFomoConfig()): FomoRu
           }
         }
 
+        // Onboard route (Phase v0.5.1 Step 8) — only when wired.
+        // Note: the dispatcher gates on FOMO_FRIEND_BETA_ENABLED
+        // internally; returning null means the route is effectively
+        // unmounted and the request falls through to the 404 handler.
+        if (onboardWiring.routeDeps) {
+          const onboardResp = await tryHandleOnboardRequest(req, onboardWiring.routeDeps);
+          if (onboardResp) {
+            res.writeHead(onboardResp.status, onboardResp.headers);
+            res.end(onboardResp.body);
+            return;
+          }
+        }
+
         // OAuth routes — only when wired.
         if (oauthGoogleDeps) {
           const oauthResp = await tryHandleOAuthGoogleRequest(req, oauthGoogleDeps);
@@ -1074,7 +1238,11 @@ export function createFomoRuntime(config: FomoConfig = loadFomoConfig()): FomoRu
       slack_interactivity_route_mounted: slackWiring.routeDeps !== null,
       send_enabled: sendWiring.runDeps !== null,
       outbound_worker_started: outboundHandle !== null,
-      sendblue_inbound_route_mounted: inboundWiring.routeDeps !== null
+      sendblue_inbound_route_mounted: inboundWiring.routeDeps !== null,
+      // Phase v0.5.1 Step 8 — surface friend-beta onboard route status
+      // at boot so operators see immediately whether friend onboarding
+      // is reachable. False when FOMO_FRIEND_BETA_ENABLED is not "true".
+      onboard_route_mounted: onboardWiring.routeDeps !== null
     });
 
     // Phase 3G.1 item #10 — memory_signals snapshot for the founder
@@ -1148,8 +1316,14 @@ export async function main(): Promise<void> {
     } catch (err) {
       if (err instanceof PendingMigrationsError) {
         logEvent(verifyConfig, undefined, 'fomo.migrations.pending', 'ERROR', {
-          missing_count: err.missing_tables.length,
-          missing: err.missing_tables.map((m) => ({ table: m.name, migration: m.migration }))
+          missing_table_count: err.missing_tables.length,
+          missing_column_count: err.missing_columns.length,
+          missing_tables: err.missing_tables.map((m) => ({ table: m.name, migration: m.migration })),
+          missing_columns: err.missing_columns.map((m) => ({
+            table: m.table,
+            column: m.column,
+            migration: m.migration
+          }))
         });
         // Print the named list verbatim to stderr so a human reading
         // the terminal sees it without parsing JSON.

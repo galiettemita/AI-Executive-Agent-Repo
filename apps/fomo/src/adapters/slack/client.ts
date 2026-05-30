@@ -86,12 +86,19 @@ export interface SlackClientConfig {
   readonly botToken: string;
   // Channel id (e.g. "C0123456789"). NOT a channel name.
   readonly channelId: string;
+  // Phase v0.5.1 Step 5 — the founder's user_id. Used by the card
+  // builder to branch between the founder-owned card (full snippet)
+  // and the friend-safe card (no body content). UNCONDITIONAL —
+  // does NOT depend on FOMO_FRIEND_BETA_ENABLED. Privacy is an
+  // invariant of the data shape, not a behavior of the kill switch.
+  readonly founderUserId: string;
   readonly fetchImpl?: FetchLike;
 }
 
 export class SlackClient {
   private readonly botToken: string;
   private readonly channelId: string;
+  private readonly founderUserId: string;
   private readonly fetchImpl: FetchLike;
 
   constructor(config: SlackClientConfig) {
@@ -108,8 +115,14 @@ export class SlackClient {
         `SlackClient: botToken must start with "xoxb-" (got "${config.botToken.slice(0, 5)}..."). Use a bot token, not a user token or webhook URL.`
       );
     }
+    if (!config.founderUserId || config.founderUserId.length === 0) {
+      throw new Error(
+        'SlackClient: founderUserId is required (Phase v0.5.1 Step 5 — friend-safe card branch needs to know who the founder is)'
+      );
+    }
     this.botToken = config.botToken;
     this.channelId = config.channelId;
+    this.founderUserId = config.founderUserId;
     this.fetchImpl = config.fetchImpl ?? fetch;
   }
 
@@ -118,7 +131,7 @@ export class SlackClient {
   }
 
   async postFounderReviewCard(input: SlackPostInput): Promise<SlackPostResult> {
-    const body = buildFounderReviewBlocks(input, this.channelId);
+    const body = buildFounderReviewBlocks(input, this.channelId, this.founderUserId);
 
     let response: Response;
     try {
@@ -180,7 +193,7 @@ export class SlackClient {
   // transitioned by the time we call this; the update is purely
   // visual feedback in the channel.
   async updateFounderReviewCard(input: SlackUpdateInput): Promise<SlackPostResult> {
-    const body = buildFounderReviewResolutionBlocks(input);
+    const body = buildFounderReviewResolutionBlocks(input, this.founderUserId);
     let response: Response;
     try {
       response = await this.fetchImpl(SLACK_UPDATE_URL, {
@@ -253,7 +266,8 @@ interface SlackPostBody {
 
 export function buildFounderReviewBlocks(
   input: SlackPostInput,
-  channelId: string
+  channelId: string,
+  founderUserId: string
 ): SlackPostBody {
   const { alert_id, user_id, view, rank } = input;
   // Fallback text for notifications (Slack mobile, screen readers).
@@ -263,6 +277,24 @@ export function buildFounderReviewBlocks(
   const senderLine = view.sender_name
     ? `${view.sender_name} <${view.sender_email_masked}>`
     : view.sender_email_masked;
+
+  // Phase v0.5.1 Step 5 — friend-safe card branch.
+  //
+  // The rule (founder-locked 2026-05-29): if alert.user_id !==
+  // founderUserId, render the friend-safe card UNCONDITIONALLY.
+  // Privacy must NOT depend on FOMO_FRIEND_BETA_ENABLED — the kill
+  // switch protects route surfaces (the /onboard route doesn't
+  // mount), but if a friend-owned alert exists in the system for
+  // any reason (manual SQL insert, half-rolled-back feature,
+  // migration carryover, anything), the card must STILL be safe.
+  //
+  // Friend-safe card may include: sender, subject, ranker reason,
+  // label, score.
+  // Friend-safe card must NOT include: body excerpt, snippet,
+  // attachment names, raw headers, raw email body, message_id (the
+  // Gmail message id is a privacy identifier that would let the
+  // founder cross-correlate friend emails — drop it).
+  const is_friend_owned = user_id !== founderUserId;
 
   const blocks: unknown[] = [
     {
@@ -275,12 +307,17 @@ export function buildFounderReviewBlocks(
         { type: 'mrkdwn', text: `*Sender*\n${senderLine}` },
         { type: 'mrkdwn', text: `*Subject*\n${view.subject}` }
       ]
-    },
-    {
+    }
+  ];
+
+  if (!is_friend_owned) {
+    // Founder-owned alert — full v0.1 card including the snippet
+    // (the founder's own email; no third-party privacy concern).
+    blocks.push({
       type: 'section',
       text: { type: 'mrkdwn', text: `*Snippet*\n${view.body_snippet}` }
-    },
-    {
+    });
+    blocks.push({
       type: 'section',
       fields: [
         { type: 'mrkdwn', text: `*Ranker label*\n${rank.label}` },
@@ -288,38 +325,58 @@ export function buildFounderReviewBlocks(
         { type: 'mrkdwn', text: `*Model*\n${rank.model_name}` },
         { type: 'mrkdwn', text: `*Prompt*\n${rank.prompt_version}` }
       ]
-    },
-    {
+    });
+  } else {
+    // Friend-owned alert — only label + score from the rank stats.
+    // model / prompt_version are operational metadata; the founder
+    // doesn't need them for the approve/reject decision.
+    blocks.push({
       type: 'section',
-      text: { type: 'mrkdwn', text: `*Why*\n${rank.reason}` }
-    },
+      fields: [
+        { type: 'mrkdwn', text: `*Ranker label*\n${rank.label}` },
+        { type: 'mrkdwn', text: `*Score*\n${rank.score}` }
+      ]
+    });
+  }
+
+  blocks.push({
+    type: 'section',
+    text: { type: 'mrkdwn', text: `*Why*\n${rank.reason}` }
+  });
+
+  blocks.push({
     // Phase 3D.2: Approve / Reject interactive buttons. block_id carries
     // alert_id for routing — block_id is preserved verbatim in Slack's
     // interactivity payload, which lets the receiving route handler
     // recover alert_id without trusting the action.value field (which
     // could be tampered with by a misbuilt re-post). action_id encodes
     // the decision; the route handler validates both.
-    {
-      type: 'actions',
-      block_id: `fomo_alert:${alert_id}`,
-      elements: [
-        {
-          type: 'button',
-          action_id: 'fomo.approve',
-          text: { type: 'plain_text', text: '✅ Approve' },
-          style: 'primary',
-          value: alert_id
-        },
-        {
-          type: 'button',
-          action_id: 'fomo.reject',
-          text: { type: 'plain_text', text: '❌ Reject' },
-          style: 'danger',
-          value: alert_id
-        }
-      ]
-    },
-    {
+    type: 'actions',
+    block_id: `fomo_alert:${alert_id}`,
+    elements: [
+      {
+        type: 'button',
+        action_id: 'fomo.approve',
+        text: { type: 'plain_text', text: '✅ Approve' },
+        style: 'primary',
+        value: alert_id
+      },
+      {
+        type: 'button',
+        action_id: 'fomo.reject',
+        text: { type: 'plain_text', text: '❌ Reject' },
+        style: 'danger',
+        value: alert_id
+      }
+    ]
+  });
+
+  // Footer context — alert_id always; user_id + received_at + message_id
+  // only on founder-owned cards. The friend-safe card shows a
+  // friend-tag so the operator can still tell at a glance who this
+  // alert belongs to without revealing which Gmail message.
+  if (!is_friend_owned) {
+    blocks.push({
       type: 'context',
       elements: [
         {
@@ -327,8 +384,18 @@ export function buildFounderReviewBlocks(
           text: `alert_id: \`${alert_id}\` • user: \`${user_id}\` • received: ${view.received_at} • message_id: \`${view.message_id}\``
         }
       ]
-    }
-  ];
+    });
+  } else {
+    blocks.push({
+      type: 'context',
+      elements: [
+        {
+          type: 'mrkdwn',
+          text: `alert_id: \`${alert_id}\` • friend-owned (user redacted) • received: ${view.received_at}`
+        }
+      ]
+    });
+  }
 
   return Object.freeze({
     channel: channelId,
@@ -378,7 +445,8 @@ export interface SlackUpdateInput {
 }
 
 export function buildFounderReviewResolutionBlocks(
-  input: SlackUpdateInput
+  input: SlackUpdateInput,
+  founderUserId: string
 ): { readonly channel: string; readonly ts: string; readonly text: string; readonly blocks: readonly unknown[] } {
   const { ts, channel, alert_id, user_id, view, rank, decision } = input;
   const verb = decision.kind === 'approved' ? '✅ Approved' : '❌ Rejected';
@@ -387,6 +455,13 @@ export function buildFounderReviewResolutionBlocks(
   const senderLine = view.sender_name
     ? `${view.sender_name} <${view.sender_email_masked}>`
     : view.sender_email_masked;
+
+  // Phase v0.5.1 Step 5 — same UNCONDITIONAL friend-safe branch as
+  // buildFounderReviewBlocks. The resolution card is what shows in
+  // the Slack channel AFTER the founder clicks Approve/Reject; if
+  // the original alert was friend-owned, the resolution card must
+  // also be friend-safe.
+  const is_friend_owned = user_id !== founderUserId;
 
   const blocks: unknown[] = [
     {
@@ -399,12 +474,15 @@ export function buildFounderReviewResolutionBlocks(
         { type: 'mrkdwn', text: `*Sender*\n${senderLine}` },
         { type: 'mrkdwn', text: `*Subject*\n${view.subject}` }
       ]
-    },
-    {
+    }
+  ];
+
+  if (!is_friend_owned) {
+    blocks.push({
       type: 'section',
       text: { type: 'mrkdwn', text: `*Snippet*\n${view.body_snippet}` }
-    },
-    {
+    });
+    blocks.push({
       type: 'section',
       fields: [
         { type: 'mrkdwn', text: `*Ranker label*\n${rank.label}` },
@@ -412,19 +490,31 @@ export function buildFounderReviewResolutionBlocks(
         { type: 'mrkdwn', text: `*Model*\n${rank.model_name}` },
         { type: 'mrkdwn', text: `*Prompt*\n${rank.prompt_version}` }
       ]
-    },
-    {
+    });
+  } else {
+    blocks.push({
       type: 'section',
-      text: { type: 'mrkdwn', text: `*Why (ranker)*\n${rank.reason}` }
-    },
-    {
-      type: 'section',
-      text: {
-        type: 'mrkdwn',
-        text: `*${verb}* by <@${decision.actor}> at \`${decision.at}\`.`
-      }
-    },
-    {
+      fields: [
+        { type: 'mrkdwn', text: `*Ranker label*\n${rank.label}` },
+        { type: 'mrkdwn', text: `*Score*\n${rank.score}` }
+      ]
+    });
+  }
+
+  blocks.push({
+    type: 'section',
+    text: { type: 'mrkdwn', text: `*Why (ranker)*\n${rank.reason}` }
+  });
+  blocks.push({
+    type: 'section',
+    text: {
+      type: 'mrkdwn',
+      text: `*${verb}* by <@${decision.actor}> at \`${decision.at}\`.`
+    }
+  });
+
+  if (!is_friend_owned) {
+    blocks.push({
       type: 'context',
       elements: [
         {
@@ -432,8 +522,18 @@ export function buildFounderReviewResolutionBlocks(
           text: `alert_id: \`${alert_id}\` • user: \`${user_id}\` • received: ${view.received_at} • message_id: \`${view.message_id}\``
         }
       ]
-    }
-  ];
+    });
+  } else {
+    blocks.push({
+      type: 'context',
+      elements: [
+        {
+          type: 'mrkdwn',
+          text: `alert_id: \`${alert_id}\` • friend-owned (user redacted) • received: ${view.received_at}`
+        }
+      ]
+    });
+  }
 
   return Object.freeze({ channel, ts, text: fallback, blocks: Object.freeze(blocks) });
 }

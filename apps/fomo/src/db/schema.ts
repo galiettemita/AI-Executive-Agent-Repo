@@ -48,9 +48,66 @@ export const users = pgTable(
     id: uuid('id').primaryKey().defaultRandom(),
     email: text('email').notNull(),
     timezone: text('timezone'),
-    created_at: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
+    created_at: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    // Phase v0.5.1 — friend-beta substrate.
+    //
+    // phone_e164_encrypted holds a KEK-wrapped ciphertext envelope
+    // (same jsonb shape as the existing token-crypto wrapper). The
+    // plaintext E.164 is NEVER on disk; decrypt at outbound-send
+    // time only.
+    //
+    // phone_e164_hash holds a deterministic HMAC over the normalized
+    // E.164, keyed by BREVIO_PHONE_HASH_KEY. This is the lookup +
+    // uniqueness key — encrypted columns can't be deterministically
+    // indexed. Per multi-tenant-design-principles memory.
+    //
+    // is_founder distinguishes the founder row from friend rows. The
+    // friend-safe Slack card renderer reads this to branch (and the
+    // branch is UNCONDITIONAL — it never consults FOMO_FRIEND_BETA_ENABLED).
+    phone_e164_encrypted: jsonb('phone_e164_encrypted'),
+    phone_e164_hash: text('phone_e164_hash'),
+    is_founder: boolean('is_founder').notNull().default(false)
   },
-  (table) => [uniqueIndex('users_email_uq').on(table.email)]
+  (table) => [
+    uniqueIndex('users_email_uq').on(table.email),
+    uniqueIndex('users_phone_e164_hash_uq').on(table.phone_e164_hash)
+  ]
+);
+
+/* ---------------------------------------------------------------------- */
+/* invite_tokens — Phase v0.5.1 (one-time, expiring, intent-bound)        */
+/* ---------------------------------------------------------------------- */
+//
+// One-time invite tokens for the /onboard friend-beta flow. Token row
+// holds only the token_hash (sha256 hex over the random plaintext);
+// the plaintext is returned to the founder ONCE at issue time, then
+// never persisted. Consumption is ATOMIC and fires AFTER successful
+// OAuth callback + user creation — not on the initial /onboard GET.
+// See [[multitenant-design-principles]] memory §5a-§5e.
+
+export const invite_tokens = pgTable(
+  'invite_tokens',
+  {
+    id: bigserial('id', { mode: 'number' }).primaryKey(),
+    token_hash: text('token_hash').notNull(),
+    intended_phone_hash: text('intended_phone_hash').notNull(),
+    // Phase v0.5.1 Step 4.1 — KEK-wrapped phone plaintext, AAD-bound
+    // to the invite's intended_phone_hash. Decrypted at callback time
+    // to populate users.phone_e164_encrypted. NEVER null on new
+    // issues; nullable at the SQL layer only for back-compat with
+    // step-1 test fixtures.
+    intended_phone_encrypted: jsonb('intended_phone_encrypted'),
+    issued_by_user_id: text('issued_by_user_id').notNull(),
+    issued_at: timestamp('issued_at', { withTimezone: true }).notNull().defaultNow(),
+    expires_at: timestamp('expires_at', { withTimezone: true }).notNull(),
+    consumed_at: timestamp('consumed_at', { withTimezone: true }),
+    consumed_user_id: text('consumed_user_id')
+  },
+  (table) => [
+    uniqueIndex('invite_tokens_token_hash_uq').on(table.token_hash),
+    index('invite_tokens_intended_phone_idx').on(table.intended_phone_hash, table.expires_at),
+    index('invite_tokens_unconsumed_idx').on(table.consumed_at, table.expires_at)
+  ]
 );
 
 /* ---------------------------------------------------------------------- */

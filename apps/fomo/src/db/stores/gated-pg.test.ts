@@ -94,6 +94,7 @@ describe('Phase 2E gated Postgres verification', { skip: !RUN_PG ? 'BREVIO_RUN_P
       'feedback_events',
       'gmail_cursors',
       'inbound_replies',
+      'invite_tokens',
       'memory_signals',
       'oauth_tokens',
       'rank_results',
@@ -775,6 +776,171 @@ describe('Phase 2E gated Postgres verification', { skip: !RUN_PG ? 'BREVIO_RUN_P
       for (const f of forbidden) {
         assert.ok(!cols.has(f), `inbound_replies must not have column '${f}'`);
       }
+    });
+  });
+
+  // Phase v0.5.1 — multi-tenant substrate. Schema-only checks for the
+  // new `users.phone_e164_*` columns + `invite_tokens` table. The
+  // application-layer stores (phone allowlist, invite-token store)
+  // are tested in their own files; here we prove the migration shape
+  // is what the runtime expects + the UNIQUE constraints actually
+  // fire under real Postgres semantics.
+  describe('Phase v0.5.1 — users extension + invite_tokens schema', () => {
+    it('users has phone_e164_encrypted (jsonb), phone_e164_hash (text), is_founder (boolean) — and NOT a plaintext phone column', async () => {
+      assert.ok(pglite);
+      const result = await pglite.query<{ column_name: string; data_type: string }>(
+        `SELECT column_name, data_type FROM information_schema.columns
+         WHERE table_schema='public' AND table_name='users'
+         ORDER BY ordinal_position`
+      );
+      const byName = new Map(result.rows.map((r) => [r.column_name, r.data_type]));
+      assert.equal(byName.get('phone_e164_encrypted'), 'jsonb');
+      assert.equal(byName.get('phone_e164_hash'), 'text');
+      assert.equal(byName.get('is_founder'), 'boolean');
+      // Defense-in-depth: prove there is no plaintext phone column.
+      const forbidden = ['phone', 'phone_e164', 'phone_number', 'phone_plaintext'];
+      for (const f of forbidden) {
+        assert.ok(!byName.has(f), `users must not have plaintext phone column '${f}'`);
+      }
+    });
+
+    it('users.phone_e164_hash has a UNIQUE index — duplicate hash on second insert rejects', async () => {
+      assert.ok(pglite);
+      const hash = 'hash-fixture-1234567890abcdef';
+      await pglite.exec(
+        `INSERT INTO users (email, phone_e164_encrypted, phone_e164_hash, is_founder)
+         VALUES ('founder@example.test', '{"v":1,"ct":"abc"}'::jsonb, '${hash}', true)`
+      );
+      // The second insert with the SAME phone_e164_hash must violate
+      // the UNIQUE index — proves Step 1's duplicate-phone protection
+      // at the SQL layer.
+      let threw = false;
+      try {
+        await pglite.exec(
+          `INSERT INTO users (email, phone_e164_encrypted, phone_e164_hash, is_founder)
+           VALUES ('friend@example.test', '{"v":1,"ct":"def"}'::jsonb, '${hash}', false)`
+        );
+      } catch (err) {
+        threw = true;
+        assert.match(
+          String(err),
+          /duplicate key value violates unique constraint|users_phone_e164_hash_uq/i,
+          'expected unique-constraint violation'
+        );
+      }
+      assert.ok(threw, 'second insert with duplicate phone_e164_hash must reject');
+
+      // The first row is UNTOUCHED — per the founder directive, the
+      // duplicate insert must not corrupt the existing row.
+      const after = await pglite.query<{ email: string; is_founder: boolean }>(
+        `SELECT email, is_founder FROM users WHERE phone_e164_hash = '${hash}'`
+      );
+      assert.equal(after.rows.length, 1);
+      assert.equal(after.rows[0].email, 'founder@example.test');
+      assert.equal(after.rows[0].is_founder, true);
+    });
+
+    it('invite_tokens has token_hash + intended_phone_hash + consumed_at columns, NEVER a plaintext token column', async () => {
+      assert.ok(pglite);
+      const result = await pglite.query<{ column_name: string; data_type: string }>(
+        `SELECT column_name, data_type FROM information_schema.columns
+         WHERE table_schema='public' AND table_name='invite_tokens'
+         ORDER BY ordinal_position`
+      );
+      const names = new Set(result.rows.map((r) => r.column_name));
+      assert.ok(names.has('token_hash'), 'invite_tokens must store the token hash');
+      assert.ok(names.has('intended_phone_hash'), 'invite_tokens must bind to the intended phone hash');
+      assert.ok(names.has('issued_by_user_id'));
+      assert.ok(names.has('issued_at'));
+      assert.ok(names.has('expires_at'));
+      assert.ok(names.has('consumed_at'));
+      assert.ok(names.has('consumed_user_id'));
+      // Privacy invariant — the plaintext invite token is NEVER stored.
+      const forbidden = ['token', 'token_plaintext', 'token_raw', 'plaintext_token'];
+      for (const f of forbidden) {
+        assert.ok(!names.has(f), `invite_tokens must not have plaintext token column '${f}'`);
+      }
+    });
+
+    it('invite_tokens.token_hash has a UNIQUE index — duplicate token_hash on second insert rejects', async () => {
+      assert.ok(pglite);
+      const tokenHash = 'tokenhash-fixture-cafef00ddeadbeef';
+      const phoneHash = 'phonehash-fixture-aabbccddeeff';
+      await pglite.exec(
+        `INSERT INTO invite_tokens (token_hash, intended_phone_hash, issued_by_user_id, expires_at)
+         VALUES ('${tokenHash}', '${phoneHash}', 'founder', now() + interval '1 day')`
+      );
+      let threw = false;
+      try {
+        await pglite.exec(
+          `INSERT INTO invite_tokens (token_hash, intended_phone_hash, issued_by_user_id, expires_at)
+           VALUES ('${tokenHash}', 'phonehash-other', 'founder', now() + interval '1 day')`
+        );
+      } catch (err) {
+        threw = true;
+        assert.match(String(err), /duplicate key|invite_tokens_token_hash_uq/i);
+      }
+      assert.ok(threw, 'second insert with duplicate token_hash must reject');
+    });
+
+    it('atomic consumption UPDATE only fires on first call (conditional WHERE consumed_at IS NULL)', async () => {
+      assert.ok(pglite);
+      const tokenHash = 'tokenhash-atomic-fixture-deadbeefcafe';
+      const phoneHash = 'phonehash-atomic-fixture-99887766';
+      await pglite.exec(
+        `INSERT INTO invite_tokens (token_hash, intended_phone_hash, issued_by_user_id, expires_at)
+         VALUES ('${tokenHash}', '${phoneHash}', 'founder', now() + interval '1 day')`
+      );
+
+      // First atomic consume — should return one row id, set consumed_at.
+      const first = await pglite.query<{ id: number }>(
+        `UPDATE invite_tokens
+         SET consumed_at = now(), consumed_user_id = 'friend-1'
+         WHERE token_hash = '${tokenHash}'
+           AND consumed_at IS NULL
+           AND expires_at > now()
+         RETURNING id`
+      );
+      assert.equal(first.rows.length, 1, 'first consume must return 1 row');
+
+      // Second atomic consume — must return zero rows (already consumed).
+      // This is the exact shape the /onboard callback uses; the runtime
+      // surfaces zero-rows-returned as "token already consumed or expired"
+      // and rolls back user creation.
+      const second = await pglite.query<{ id: number }>(
+        `UPDATE invite_tokens
+         SET consumed_at = now(), consumed_user_id = 'friend-replay'
+         WHERE token_hash = '${tokenHash}'
+           AND consumed_at IS NULL
+           AND expires_at > now()
+         RETURNING id`
+      );
+      assert.equal(second.rows.length, 0, 'second consume must return 0 rows (already consumed)');
+
+      // Verify the original consumed_user_id is untouched (replay didn't overwrite).
+      const after = await pglite.query<{ consumed_user_id: string }>(
+        `SELECT consumed_user_id FROM invite_tokens WHERE token_hash = '${tokenHash}'`
+      );
+      assert.equal(after.rows[0].consumed_user_id, 'friend-1');
+    });
+
+    it('expired invite tokens cannot be consumed (conditional WHERE expires_at > now())', async () => {
+      assert.ok(pglite);
+      const tokenHash = 'tokenhash-expired-fixture-feedface';
+      const phoneHash = 'phonehash-expired-fixture-11223344';
+      await pglite.exec(
+        `INSERT INTO invite_tokens (token_hash, intended_phone_hash, issued_by_user_id, expires_at)
+         VALUES ('${tokenHash}', '${phoneHash}', 'founder', now() - interval '1 hour')`
+      );
+      const result = await pglite.query<{ id: number }>(
+        `UPDATE invite_tokens
+         SET consumed_at = now(), consumed_user_id = 'friend-late'
+         WHERE token_hash = '${tokenHash}'
+           AND consumed_at IS NULL
+           AND expires_at > now()
+         RETURNING id`
+      );
+      assert.equal(result.rows.length, 0, 'expired token must not consume');
     });
   });
 });

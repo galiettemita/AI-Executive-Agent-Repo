@@ -162,13 +162,28 @@ async function main(): Promise<void> {
           findings.push({
             severity: 'pass',
             item: '#1 migration verifier — live Neon verification clean',
-            detail: `all ${result.required_tables.length} required tables present`
+            detail:
+              `all ${result.required_tables.length} required tables present + ` +
+              `all required columns present (Step 4.2 column-level check)`
           });
         } else {
+          const parts: string[] = [];
+          if (result.missing_tables.length > 0) {
+            parts.push(
+              `tables: ${result.missing_tables.map((m) => `${m.name} (${m.migration})`).join(', ')}`
+            );
+          }
+          if (result.missing_columns.length > 0) {
+            parts.push(
+              `columns: ${result.missing_columns
+                .map((m) => `${m.table}.${m.column} (${m.migration})`)
+                .join(', ')}`
+            );
+          }
           findings.push({
             severity: 'fail',
             item: '#1 migration verifier — live Neon has pending migrations',
-            detail: result.missing_tables.map((m) => `${m.name} (${m.migration})`).join(', ')
+            detail: parts.join(' | ')
           });
         }
       } catch (err) {
