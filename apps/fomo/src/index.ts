@@ -1063,6 +1063,23 @@ export function createFomoRuntime(config: FomoConfig = loadFomoConfig()): FomoRu
         'FOMO_FRIEND_BETA_ENABLED is not "true"; /onboard route NOT mounted ' +
         '(friend beta gated; founder flow unaffected).'
     });
+    // Also persist a one-shot audit row so the kill-switch-off state is
+    // visible from audit_log (not just stdout). The dispatcher's per-
+    // request audit only fires when /onboard is mounted-but-gated; with
+    // the route unmounted at boot, there'd otherwise be NO durable
+    // record that the kill switch is off. Best-effort — failures here
+    // must not block boot.
+    storesHandle.stores.audit
+      .write({
+        actor_user_id: null,
+        actor_ip: null,
+        actor_user_agent: null,
+        action: 'fomo.onboard.kill_switch_off',
+        target: 'route:/onboard',
+        result: 'success',
+        detail: { stage: 'boot', detail: 'FOMO_FRIEND_BETA_ENABLED is not "true"' }
+      })
+      .catch(() => undefined);
   }
 
   // Polling worker — bootstrapped only when FOMO_GMAIL_POLLING_ENABLED=true.
