@@ -25,6 +25,7 @@ import {
   decryptPhoneForUser,
   encryptPhoneForUser,
   hashPhone,
+  isFictionalE164,
   loadPhoneHashConfig,
   normalizeE164,
   phoneHashesEqual,
@@ -185,6 +186,46 @@ describe('phoneSlug', () => {
 
   it('rejects malformed inputs (does NOT silently slice garbage)', () => {
     assert.throws(() => phoneSlug('abc'), InvalidPhoneError);
+  });
+});
+
+/* ---------------------------------------------------------------------- */
+/* isFictionalE164 (Phase v0.5.2 briefing-gate guard)                     */
+/* ---------------------------------------------------------------------- */
+
+describe('isFictionalE164', () => {
+  it('returns true for the NANPA-reserved fictional range +1 555 0100 XXXX', () => {
+    // v0.5.1 used these for synthetic phones; v0.5.2 issue-friend-token
+    // skips the --confirm-briefed requirement for these because no
+    // human exists to brief.
+    assert.equal(isFictionalE164('+15550100000'), true);
+    assert.equal(isFictionalE164('+15550100001'), true); // founder fixture
+    assert.equal(isFictionalE164('+15550100002'), true); // friend fixture
+    assert.equal(isFictionalE164('+15550100099'), true);
+    assert.equal(isFictionalE164('+15550109999'), true);
+  });
+
+  it('returns false for any real-shaped E.164', () => {
+    // The whole point of the gate: real phones must trip the
+    // --confirm-briefed requirement. Any false-negative here is the
+    // exact bug v0.5.2 correction #2 was written to prevent.
+    assert.equal(isFictionalE164('+14155551234'), false); // 415 area code, not 555 prefix
+    assert.equal(isFictionalE164('+12125551212'), false); // 212-555 (also fictional but NOT in the 555-0100 range)
+    assert.equal(isFictionalE164('+12143547196'), false); // 214 area code
+    assert.equal(isFictionalE164('+447911123456'), false); // UK
+    assert.equal(isFictionalE164('+15550200000'), false); // 555-02XX is NOT reserved
+    assert.equal(isFictionalE164('+15550099999'), false); // 555-0099 is NOT reserved (just below the range)
+  });
+
+  it('does NOT match malformed inputs (returns false rather than throwing)', () => {
+    // isFictionalE164 is the GATE check before normalizeE164 has
+    // already been called by the caller; it should not throw on
+    // anything the regex can simply not match.
+    assert.equal(isFictionalE164(''), false);
+    assert.equal(isFictionalE164('not a phone'), false);
+    assert.equal(isFictionalE164('+15550100'), false); // too short
+    assert.equal(isFictionalE164('+155501000001'), false); // too long
+    assert.equal(isFictionalE164('15550100002'), false); // missing leading +
   });
 });
 

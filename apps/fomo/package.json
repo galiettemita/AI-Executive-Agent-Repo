@@ -27,7 +27,9 @@
     "smoke-evidence:3g1": "node --experimental-strip-types --loader ./test-loader.mjs scripts/smoke-evidence-3g1.ts",
     "issue-friend-token": "node --experimental-strip-types --loader ./test-loader.mjs scripts/issue-friend-token.ts",
     "preflight:v0.5.1": "node --experimental-strip-types --loader ./test-loader.mjs scripts/preflight-v0.5.1.ts",
-    "smoke-evidence:v0.5.1": "node --experimental-strip-types --loader ./test-loader.mjs scripts/smoke-evidence-v0.5.1.ts"
+    "smoke-evidence:v0.5.1": "node --experimental-strip-types --loader ./test-loader.mjs scripts/smoke-evidence-v0.5.1.ts",
+    "preflight:v0.5.2": "node --experimental-strip-types --loader ./test-loader.mjs scripts/preflight-v0.5.2.ts",
+    "smoke-evidence:v0.5.2": "node --experimental-strip-types --loader ./test-loader.mjs scripts/smoke-evidence-v0.5.2.ts"
   },
   "dependencies": {
     "drizzle-orm": "0.45.2",
