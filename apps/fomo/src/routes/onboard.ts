@@ -208,12 +208,24 @@ function renderInvalidPage(reason: 'unknown' | 'expired' | 'consumed' | 'missing
 }
 
 function renderSuccessPage(phone_slug: string): string {
+  // Wording note: v0.5.1 smoke surfaced that the prior copy ("We'll
+  // text the iMessage thread...") read like an imminent action just
+  // after OAuth. The new copy makes three things explicit:
+  //  1. Onboarding is complete — NO text was sent during onboarding.
+  //  2. Future SMS is conditional: an email must look important AND
+  //     the founder must approve it in Slack first.
+  //  3. STOP/START is always available.
+  // The phone ending is shown for transparency (the friend knows
+  // which number Brevio will reach them at) but framed as "when the
+  // conditions are met," not "any moment now."
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><title>Brevio — connected</title></head>
 <body style="font-family:system-ui,sans-serif;max-width:560px;margin:48px auto;padding:0 16px;line-height:1.5">
 <h1 style="margin-bottom:8px">You're connected to Brevio</h1>
-<p>Gmail connected. We'll text the iMessage thread for the phone ending in <strong>${phone_slug}</strong> when something important lands.</p>
-<p>Reply <code>STOP</code> from your phone at any time to disable Brevio.</p>
+<p><strong>You're all set — no text was sent during onboarding.</strong></p>
+<p>From now on, Brevio reads your Gmail in the background. When an email looks genuinely important, the founder reviews it in Slack first. If they approve it, you'll get a short iMessage at the phone ending in <strong>${phone_slug}</strong>.</p>
+<p>You can reply <code>STOP</code> to that iMessage thread at any time to disable Brevio. <code>START</code> re-enables it.</p>
+<p style="color:#666;font-size:14px;margin-top:24px">No auto-send. Every alert goes through founder review.</p>
 </body></html>`;
 }
 

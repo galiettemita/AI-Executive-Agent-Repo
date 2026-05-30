@@ -387,6 +387,53 @@ describe('GET /onboard/callback — provisioning + atomic consume', () => {
     assert.equal(JSON.stringify(events).includes(FRIEND_PHONE), false, 'raw phone leaked into audit');
   });
 
+  // Wording regression: v0.5.1 synthetic smoke surfaced that an alt-Gmail
+  // tester read the prior success-page copy ("We'll text the iMessage
+  // thread...") as "a text was just sent." For a real friend in v0.5.2,
+  // that misread could cause unnecessary alarm. Lock the new clarity in:
+  //  1. Explicit "no text was sent during onboarding"
+  //  2. Conditional framing for future SMS ("when an email looks important,
+  //     the founder reviews it... If they approve it...")
+  //  3. STOP/START guidance present
+  //  4. "No auto-send" reinforced at the bottom
+  //  5. Phone-ending still shown (transparency invariant)
+  it('success page wording: no SMS during onboarding, founder-review-conditional, STOP guidance, phone ending shown', async () => {
+    const h = await buildHarness();
+    const state = await pumpStartAndExtractState(h);
+
+    const callback = await tryHandleOnboardRequest(
+      { method: 'GET', url: `/onboard/callback?code=valid-code&state=${encodeURIComponent(state)}` },
+      h.deps
+    );
+    assert.ok(callback);
+    assert.equal(callback.status, 200);
+    const body = callback.body;
+
+    // Onboarding-just-happened framing
+    assert.match(
+      body,
+      /no text was sent during onboarding/i,
+      'success page must explicitly say no SMS was sent at onboarding time'
+    );
+    // Conditional-future framing for SMS
+    assert.match(body, /when an email looks/i, 'success page must frame future SMS as conditional on email importance');
+    assert.match(body, /founder reviews it/i, 'success page must mention founder review before SMS');
+    assert.match(body, /If they approve/i, 'success page must frame the approve gate explicitly');
+    // STOP + START
+    assert.match(body, /\bSTOP\b/, 'success page must mention STOP');
+    assert.match(body, /\bSTART\b/, 'success page must mention START');
+    // Phone ending (last-4 transparency invariant)
+    assert.match(body, /phone ending in <strong>0002<\/strong>/, 'success page must show last-4 phone ending');
+    // No-auto-send reinforcement
+    assert.match(body, /No auto-send/i, 'success page must reinforce no-auto-send');
+    // Negative: must NOT contain the imminent-action phrasing the old copy had
+    assert.equal(
+      /we'll text the iMessage thread for the phone/i.test(body),
+      false,
+      'old imminent-action phrasing must be gone'
+    );
+  });
+
   it('FAILED OAuth exchange does NOT consume the invite token (correction #5c)', async () => {
     const h = await buildHarness({ fetchImpl: mockExchangeFail() });
     const state = await pumpStartAndExtractState(h);

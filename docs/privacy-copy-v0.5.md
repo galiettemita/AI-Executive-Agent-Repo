@@ -12,9 +12,12 @@
 
 Brevio reads your Gmail in the background, identifies messages
 that look genuinely important (a real intro, an actual deadline,
-something time-sensitive from a real person), and sends you a single
-short iMessage when one lands. Founder reviews every alert in Slack
-before any iMessage goes out — there is no auto-send in this beta.
+something time-sensitive from a real person), and — only when
+something important actually lands AND the founder approves it in
+Slack — sends you a single short iMessage about that email. There
+is no auto-send in this beta: every alert is gated on a founder
+click. Connecting your Gmail does NOT trigger a text on its own;
+you'll only hear from Brevio when both conditions are met.
 
 ## What Brevio reads
 
