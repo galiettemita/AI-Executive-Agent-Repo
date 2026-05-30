@@ -146,8 +146,13 @@ Simulate a friend STOP via curl (don't actually text from your real phone — th
 curl -X POST "https://<ngrok>/sendblue/inbound" \
   -H "sb-signing-secret: $SENDBLUE_WEBHOOK_SECRET" \
   -H "content-type: application/json" \
-  -d '{"messageId":"smoke-v0.5.1-friend-stop","content":"STOP","number":"+15550100002"}'
+  -d '{"messageId":"smoke-v0.5.1-friend-stop","content":"STOP","from_number":"+15550100002"}'
 ```
+
+> The route's payload extractor (apps/fomo/src/routes/sendblue-inbound.ts
+> `extractInbound`) accepts `from_number`, `fromNumber`, or `from` for the
+> sender field — NOT `number`. A payload with `"number":...` returns
+> `400 payload_invalid`. Match real SendBlue webhook shape, not a synonym.
 
 Verify per-user isolation:
 
