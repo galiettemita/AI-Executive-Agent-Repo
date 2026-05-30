@@ -61,7 +61,7 @@ import {
 import { loadCryptoConfig } from './security/token-crypto.js';
 import { loadSessionConfig } from './security/session.js';
 import { InMemoryNonceStore, loadOAuthStateConfig } from './security/oauth/state.js';
-import { loadProviderConfig } from './security/oauth/providers/index.js';
+import { loadProviderConfig, type ProviderConfig } from './security/oauth/providers/index.js';
 import type { FomoConfig, RequestContext } from './types.js';
 
 interface FomoRuntime {
@@ -742,14 +742,16 @@ function buildOnboardWiring(
   if (!killSwitches.friend_beta_enabled) {
     return { routeDeps: null };
   }
-  // The /onboard flow uses the same OAuth Google config the founder
-  // OAuth path uses. If oauthGoogleDeps isn't wired, the friend can't
-  // complete OAuth — refuse to boot rather than half-mount.
+  // The /onboard flow reuses the founder Google OAuth client + state
+  // signing key, but its redirect_uri MUST point at /onboard/callback,
+  // not /oauth/google/callback — the founder callback has no knowledge
+  // of invite tokens and would mis-provision the friend's Gmail as the
+  // founder. We derive the friend redirect_uri from FOMO_FRIEND_BETA_BASE_URL.
   if (!oauthGoogleDeps) {
     throw new Error(
       'FOMO_FRIEND_BETA_ENABLED=true but Google OAuth is not configured. ' +
         'Set GOOGLE_CLIENT_ID + GOOGLE_CLIENT_SECRET + BREVIO_OAUTH_REDIRECT_URI_GOOGLE ' +
-        '(the /onboard friend-beta flow reuses the OAuth Google config) or set ' +
+        '(the /onboard friend-beta flow reuses the OAuth Google client) or set ' +
         'FOMO_FRIEND_BETA_ENABLED=false. Refusing to boot a half-wired /onboard route.'
     );
   }
@@ -761,6 +763,22 @@ function buildOnboardWiring(
         'Set DATABASE_URL or set FOMO_FRIEND_BETA_ENABLED=false.'
     );
   }
+  const friendBaseUrl = env.FOMO_FRIEND_BETA_BASE_URL;
+  if (!friendBaseUrl || friendBaseUrl.trim() === '') {
+    throw new Error(
+      'FOMO_FRIEND_BETA_ENABLED=true but FOMO_FRIEND_BETA_BASE_URL is not set. ' +
+        'The /onboard flow uses this to build its redirect_uri (must point at /onboard/callback, ' +
+        'NOT /oauth/google/callback — those are different routes). ' +
+        'Set FOMO_FRIEND_BETA_BASE_URL=https://<your-ngrok>.ngrok-free.dev or set ' +
+        'FOMO_FRIEND_BETA_ENABLED=false. Refusing to boot a half-wired /onboard route.'
+    );
+  }
+  const normalizedBase = friendBaseUrl.replace(/\/+$/, '');
+  const onboardRedirectUri = `${normalizedBase}/onboard/callback`;
+  const friendProviderConfig: ProviderConfig = Object.freeze({
+    ...oauthGoogleDeps.providerConfig,
+    redirectUri: onboardRedirectUri
+  });
   const dbClient = storesHandle.db.client;
   const crypto = loadCryptoConfig();
   const phoneHash = loadPhoneHashConfig(env);
@@ -778,7 +796,7 @@ function buildOnboardWiring(
     auditStore: storesHandle.stores.audit,
     killSwitches,
     stateConfig: oauthGoogleDeps.stateConfig,
-    providerConfig: oauthGoogleDeps.providerConfig,
+    providerConfig: friendProviderConfig,
     gmailClient,
     crypto,
     phoneHash,

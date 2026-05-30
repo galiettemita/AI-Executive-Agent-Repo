@@ -115,16 +115,17 @@ const friendBaseUrl = (process.env.FOMO_FRIEND_BETA_BASE_URL ?? '').trim();
 if (!friendBaseUrl) {
   issues.push({
     name: 'FOMO_FRIEND_BETA_BASE_URL',
-    severity: 'warn',
+    severity: 'error',
     message:
-      'FOMO_FRIEND_BETA_BASE_URL not set. Informational only — issue-friend-token uses this to build the URL it prints. ' +
-      'Without it the script prints `<YOUR_BASE_URL>/onboard?token=...` and the founder builds the URL by hand.'
+      'FOMO_FRIEND_BETA_BASE_URL required. The /onboard friend OAuth flow uses this to build its redirect_uri ' +
+      '(must point at /onboard/callback, NOT /oauth/google/callback — those are different routes). ' +
+      'Set it to https://<your-ngrok>.ngrok-free.dev (or http://localhost:8080 for same-machine synthetic).'
   });
 } else if (!/^https?:\/\//.test(friendBaseUrl)) {
   issues.push({
     name: 'FOMO_FRIEND_BETA_BASE_URL',
-    severity: 'warn',
-    message: `FOMO_FRIEND_BETA_BASE_URL='${friendBaseUrl.slice(0, 40)}...' should start with https:// or http://`
+    severity: 'error',
+    message: `FOMO_FRIEND_BETA_BASE_URL='${friendBaseUrl.slice(0, 40)}...' must start with https:// or http://`
   });
 }
 
