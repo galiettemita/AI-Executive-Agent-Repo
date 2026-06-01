@@ -453,6 +453,22 @@ function buildSendWiring(
 
   const client = new SendBlueClient({ apiKeyId, apiSecretKey, fromNumber });
 
+  // v0.5.x: when friend_beta is on AND the substrate is Postgres-backed,
+  // build a phone resolver that decrypts users.phone_e164_encrypted for
+  // friend user_ids. v0.1 single-user behavior is preserved when off
+  // (founder env-equality only; friend uids resolve to null = refuse).
+  // The v0.5.1 substrate smoke didn't exercise this path because friend
+  // STOP was curl-simulated; v0.5.2 surfaced it as a real bug.
+  const friendPhoneResolver: ((uid: string) => Promise<string | null>) | null =
+    killSwitches.friend_beta_enabled && storesHandle.backend === 'postgres' && storesHandle.db?.ok
+      ? (() => {
+          const crypto = loadCryptoConfig();
+          const phoneHash = loadPhoneHashConfig(env);
+          const store = new PostgresPhoneAllowlistStore(storesHandle.db.client, crypto, phoneHash);
+          return (uid: string): Promise<string | null> => store.getPhoneForUser(uid);
+        })()
+      : null;
+
   const runDeps = (gateDeps: PolicyGateDeps): OutboundSenderDeps =>
     Object.freeze({
       dispatch,
@@ -466,8 +482,15 @@ function buildSendWiring(
       // Phase 3F.1 — outbound-sender consults this BEFORE every
       // cycle's send to honor STOP. Per founder directive 2026-05-26.
       memoryStore: storesHandle.stores.memory,
-      destinationFor: (uid: string): string | null =>
-        uid === founderUserId ? founderPhone : null
+      destinationFor: friendPhoneResolver
+        ? async (uid: string): Promise<string | null> => {
+            if (uid === founderUserId) return founderPhone;
+            // v0.5.x: resolve friend phone from the encrypted allowlist.
+            // Returns null when the user_id has no phone on file — the
+            // worker then fails-closed with fomo.send.unauthorized_destination.
+            return friendPhoneResolver(uid);
+          }
+        : (uid: string): string | null => (uid === founderUserId ? founderPhone : null)
     });
 
   return { client, runDeps, founderUserId };

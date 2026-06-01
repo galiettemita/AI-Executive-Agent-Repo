@@ -84,15 +84,19 @@ export interface OutboundSenderDeps {
 
   // Returns the ONE allowlisted destination phone for this user (in
   // E.164 form, e.g. '+14155551234'), or null when this user has no
-  // configured destination. v0.1 is founder-only: this returns the
-  // FOMO_FOUNDER_PHONE_NUMBER for the founder's user_id and null for
-  // everyone else.
+  // configured destination.
+  //
+  //   v0.1 (founder-only): returns FOMO_FOUNDER_PHONE_NUMBER for the
+  //     founder's user_id; null for everyone else.
+  //   v0.5.x (friend beta): also resolves friend user_ids via the phone
+  //     allowlist store (decrypts users.phone_e164_encrypted on demand).
+  //     Async because the store is async.
   //
   // The worker treats null as "refuse to dispatch" and surfaces
   // `fomo.send.unauthorized_destination` in audit — defense-in-depth
   // against a misconfig that would otherwise let the system text an
   // arbitrary number.
-  readonly destinationFor: (user_id: string) => string | null;
+  readonly destinationFor: (user_id: string) => Promise<string | null> | string | null;
 
   // ID generator for invocation_id (per dispatch call). Defaults to a
   // counter-prefixed string; tests inject a deterministic one.
@@ -427,8 +431,9 @@ async function processOneAlert(
     });
   }
 
-  // Defense-in-depth: founder-phone allowlist.
-  const destination = deps.destinationFor(user_id);
+  // Defense-in-depth: founder-phone allowlist. v0.5.x: destinationFor
+  // may be async (friend phone lookup via the encrypted-allowlist store).
+  const destination = await Promise.resolve(deps.destinationFor(user_id));
   if (!destination) {
     await deps.auditStore.write({
       actor_user_id: user_id,
