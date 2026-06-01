@@ -947,6 +947,30 @@ export function createFomoRuntime(config: FomoConfig = loadFomoConfig()): FomoRu
   const cryptoConfig = loadCryptoConfig();
   const storesHandle = createStores({ env: process.env, crypto: cryptoConfig });
 
+  // Phase v0.5.3 item #3 — best-effort audit hook for pg pool errors.
+  // The pool already has a stderr-logging error handler installed by
+  // loadDbClient (primary, works when DB is down). Here we add a
+  // second listener that writes a fomo.db.connection_error audit row.
+  // Wrapped so a DB write failure cascades to nothing — the stderr
+  // log path is always our primary signal.
+  if (storesHandle.backend === 'postgres' && storesHandle.db?.ok) {
+    storesHandle.db.pool.on('error', (err) => {
+      const code = (err as NodeJS.ErrnoException).code ?? 'unknown';
+      const message = (err.message ?? String(err)).slice(0, 200);
+      storesHandle.stores.audit
+        .write({
+          actor_user_id: null,
+          actor_ip: null,
+          actor_user_agent: null,
+          action: 'fomo.db.connection_error',
+          target: 'pg:pool',
+          result: 'failure',
+          detail: { error_code: code, message }
+        })
+        .catch(() => undefined);
+    });
+  }
+
   // Kill switches — read once at boot. Per FOMO_PLAN §16.5, defaults are
   // safe (everything off). FOMO_GMAIL_POLLING_ENABLED controls whether
   // the polling worker installs its interval.
