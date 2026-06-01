@@ -5,6 +5,7 @@ import { pathToFileURL } from 'node:url';
 import { loadFomoConfig } from './config.js';
 import { handleHealth } from './routes/health.js';
 import { tryHandleOAuthGoogleRequest, type OAuthGoogleRouteDeps } from './routes/oauth-google.js';
+import { buildOAuthRefreshHelper } from './security/oauth/refresh-helper.js';
 import { GmailClient } from './adapters/gmail/client.js';
 import { loadDbClient } from './db/client.js';
 import {
@@ -503,7 +504,11 @@ function startGmailPolling(
   killSwitches: KillSwitches,
   config: FomoConfig,
   ranker: GmailPollRankerDep | null,
-  slackReview: GmailPollSlackReviewDep | null
+  slackReview: GmailPollSlackReviewDep | null,
+  // Phase v0.5.3 item #2 — optional OAuth refresh helper. When wired,
+  // the polling worker auto-refreshes expired access_tokens using the
+  // stored refresh_token. Null when OAuth provider isn't configured.
+  oauthRefresh: import('./workers/gmail-poll.js').OAuthRefreshDep | null
 ): PollingHandle {
   const stores = storesHandle.stores;
   let stopped = false;
@@ -536,7 +541,8 @@ function startGmailPolling(
           toolInvocationStore: stores.toolInvocations,
           gateDeps,
           ranker: ranker ?? undefined,
-          slackReview: slackReview ?? undefined
+          slackReview: slackReview ?? undefined,
+          oauthRefresh: oauthRefresh ?? undefined
         });
         cyclesRun++;
         if (stopped) return;
@@ -1116,6 +1122,17 @@ export function createFomoRuntime(config: FomoConfig = loadFomoConfig()): FomoRu
   // Safe default: off (no autonomous Gmail reads until founder opts in).
   let pollingHandle: PollingHandle | null = null;
   if (killSwitches.polling_enabled) {
+    // Phase v0.5.3 item #2 — wire OAuth auto-refresh. Only when the
+    // Google provider is configured (oauthGoogleDeps wired with a
+    // valid client_id/secret); otherwise the worker uses the v0.1
+    // behavior (marks needs_reauth on Gmail 401, never auto-refreshes).
+    const oauthRefresh = oauthGoogleDeps
+      ? buildOAuthRefreshHelper({
+          tokenStore: storesHandle.stores.tokens,
+          auditStore: storesHandle.stores.audit,
+          providerConfig: oauthGoogleDeps.providerConfig
+        })
+      : null;
     pollingHandle = startGmailPolling(
       storesHandle,
       gmailClient,
@@ -1123,7 +1140,8 @@ export function createFomoRuntime(config: FomoConfig = loadFomoConfig()): FomoRu
       killSwitches,
       config,
       ranker,
-      slackWiring.dep
+      slackWiring.dep,
+      oauthRefresh
     );
     logEvent(config, undefined, 'fomo.poll.enabled', 'INFO', {
       interval_ms: killSwitches.polling_interval_ms,
