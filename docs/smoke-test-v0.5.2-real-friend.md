@@ -14,6 +14,7 @@
 
 ## 0. Prerequisites (founder verifies before any code runs)
 
+- [ ] **SendBlue account-tier check (the v0.5.2 wall — discovered 2026-06-01).** Before briefing any friend, confirm with SendBlue support OR via a non-smoke test that your SendBlue account tier supports the "inbound-first" verification flow end-to-end: a NEW recipient texts your sender number → their inbound POSTs to your webhook → your account can subsequently send to them. Free Sandbox + AI Agent tiers are documented as "inbound-first," but webhook delivery for new contacts has been gated by SendBlue support on some accounts. **If you skip this check, you'll burn the friend's time briefing them only to hit `HTTP 400: This contact must be verified before sending messages to it.`** See [[sendblue-plan-gates]] for the v0.5.2 incident detail.
 - [ ] `docs/SMOKE_REPORT_v0.5.1.md` on `main` with `VERDICT: PASS` (substrate proven)
 - [ ] The friend has been **briefed out-of-band**. Briefing covered:
   - What Brevio reads (Gmail subjects + senders + body for the ranker call only, body NOT persisted)
