@@ -11,8 +11,8 @@ import {
 } from './memory-signals.ts';
 
 describe('MEMORY_SIGNAL_KINDS', () => {
-  it('declares the 6 v0.1 personalization signal kinds plus the Phase 3F.1 stop_active compliance signal (7 total)', () => {
-    assert.equal(MEMORY_SIGNAL_KINDS.length, 7);
+  it('declares the 6 v0.1 personalization signal kinds + Phase 3F.1 stop_active + Phase v0.5.3 sendblue_contact_status (8 total)', () => {
+    assert.equal(MEMORY_SIGNAL_KINDS.length, 8);
     const expected = [
       'sender_importance',
       'sender_suppressed',
@@ -22,7 +22,12 @@ describe('MEMORY_SIGNAL_KINDS', () => {
       'quietness_preference',
       // Phase 3F.1: TCPA-style STOP enforcement signal. Outbound-sender
       // refuses to dispatch when active=true.
-      'stop_active'
+      'stop_active',
+      // Phase v0.5.3 item #1: SendBlue contact-registration gate.
+      // Outbound-sender refuses to dispatch when registered=false (the
+      // friend was onboarded but the SendBlue POST /api/v2/contacts call
+      // failed; OAuth not rolled back per founder correction #1).
+      'sendblue_contact_status'
     ];
     assert.deepEqual([...MEMORY_SIGNAL_KINDS].sort(), [...expected].sort());
   });

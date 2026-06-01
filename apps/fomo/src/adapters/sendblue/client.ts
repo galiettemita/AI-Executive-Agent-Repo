@@ -378,6 +378,152 @@ export class SendBlueClient {
         : 'missing_provider_status_field'
     });
   }
+
+  // Phase v0.5.3 item #1 — pre-register a new contact in SendBlue.
+  // SendBlue's Free Sandbox + AI Agent tiers gate outbound to "verified
+  // contacts": a recipient must be added via this endpoint (or the
+  // dashboard) AND text the sender number once before SendBlue will
+  // relay outbound or inbound for them. v0.5.2 surfaced that without
+  // this call, outbound 400s with `ContactHasNotBeenVerified` AND
+  // inbound webhooks are silently dropped at SendBlue's edge.
+  //
+  // The /onboard/callback calls this right after provisionUser +
+  // setPhone. Failure does NOT roll back OAuth (founder correction
+  // #1): the caller writes `memory_signals.sendblue_contact_status =
+  // {registered: false, error_reason}` and the outbound worker
+  // refuses to dispatch until a later retry succeeds.
+  async registerContact(input: RegisterContactInput): Promise<RegisterContactOutcome> {
+    if (!input.number || typeof input.number !== 'string' || input.number.length === 0) {
+      return Object.freeze({
+        kind: 'failed' as const,
+        httpStatus: 0,
+        reason: 'argument_error: missing number'
+      });
+    }
+    if (!/^\+\d{7,15}$/.test(input.number)) {
+      return Object.freeze({
+        kind: 'failed' as const,
+        httpStatus: 0,
+        reason: `argument_error: number must be E.164 (got '${input.number.slice(0, 4)}...')`
+      });
+    }
+
+    const ac = new AbortController();
+    const timer = setTimeout(() => ac.abort(), this.timeoutMs);
+
+    let response: Response;
+    try {
+      response = await this.fetchImpl(SENDBLUE_CONTACTS_URL, {
+        method: 'POST',
+        headers: {
+          'sb-api-key-id': this.apiKeyId,
+          'sb-api-secret-key': this.apiSecretKey,
+          'content-type': 'application/json'
+        },
+        body: JSON.stringify({
+          number: input.number,
+          first_name: input.first_name ?? 'Friend'
+        }),
+        signal: ac.signal
+      });
+    } catch (err) {
+      // Network failure / abort / timeout. Status is ambiguous; we
+      // don't know if SendBlue registered the contact. The caller
+      // treats this as failure (NOT unknown) because the outbound
+      // gate is "registered=true OR refuse," so an unconfirmed
+      // registration must NOT unblock sends.
+      const reason = ac.signal.aborted
+        ? `timeout after ${this.timeoutMs}ms`
+        : err instanceof Error
+          ? `network_error: ${err.message}`
+          : `network_error: ${String(err)}`;
+      return Object.freeze({
+        kind: 'failed' as const,
+        httpStatus: 0,
+        reason
+      });
+    } finally {
+      clearTimeout(timer);
+    }
+
+    const httpStatus = response.status;
+
+    // 2xx → success. SendBlue's response body for contact-create is
+    // not specified in the docs we read; we don't depend on any
+    // field beyond the HTTP status.
+    if (httpStatus >= 200 && httpStatus < 300) {
+      return Object.freeze({
+        kind: 'registered' as const,
+        httpStatus,
+        reason: `http_${httpStatus}`
+      });
+    }
+
+    // 401/403 → auth failure. Caller decides whether to surface as
+    // operator-actionable; we always treat as registration-failed.
+    if (httpStatus === 401 || httpStatus === 403) {
+      return Object.freeze({
+        kind: 'failed' as const,
+        httpStatus,
+        reason: `auth_error: HTTP ${httpStatus}`
+      });
+    }
+
+    // 409 / "already exists" → some providers treat duplicate-add as
+    // an error. SendBlue's behavior is undocumented as of v0.5.3; if
+    // we ever see 409 we treat it as success (the contact IS
+    // registered, the add was just a no-op).
+    if (httpStatus === 409) {
+      return Object.freeze({
+        kind: 'registered' as const,
+        httpStatus,
+        reason: 'already_registered (HTTP 409)'
+      });
+    }
+
+    // 5xx → ambiguous. Caller fails the registration step; the
+    // outbound gate will refuse until retry succeeds.
+    if (httpStatus >= 500) {
+      return Object.freeze({
+        kind: 'failed' as const,
+        httpStatus,
+        reason: `provider_server_error: HTTP ${httpStatus}`
+      });
+    }
+
+    // Other 4xx → clear failure. Try to surface SendBlue's
+    // provider_error_message if present; otherwise generic.
+    let parsed: unknown = null;
+    try {
+      parsed = await response.json();
+    } catch {
+      // unparseable body; keep parsed=null
+    }
+    const provErr = extractProviderError(parsed);
+    const suffix = provErr.error_message ?? '';
+    return Object.freeze({
+      kind: 'failed' as const,
+      httpStatus,
+      reason: `client_error: HTTP ${httpStatus}${suffix ? ' ' + suffix : ''}`
+    });
+  }
+}
+
+const SENDBLUE_CONTACTS_URL = 'https://api.sendblue.co/api/v2/contacts';
+
+export interface RegisterContactInput {
+  readonly number: string; // E.164
+  readonly first_name?: string;
+}
+
+export type RegisterContactOutcome =
+  | { readonly kind: 'registered'; readonly httpStatus: number; readonly reason: string }
+  | { readonly kind: 'failed'; readonly httpStatus: number; readonly reason: string };
+
+// Minimal interface for the /onboard callback's dependency. The full
+// SendBlueClient satisfies this; tests inject a fake.
+export interface SendBlueContactRegistrar {
+  registerContact(input: RegisterContactInput): Promise<RegisterContactOutcome>;
 }
 
 function providerStatus(body: unknown): string | undefined {

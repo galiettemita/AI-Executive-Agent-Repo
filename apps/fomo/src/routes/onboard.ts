@@ -77,6 +77,8 @@ import {
 import { type CryptoConfig } from '../security/token-crypto.js';
 import { type AuditStore } from '../core/audit.js';
 import { type KillSwitches } from '../core/kill-switches.js';
+import { type SendBlueContactRegistrar } from '../adapters/sendblue/client.js';
+import { type MemorySignalStore } from '../memory/memory-signals.js';
 
 const ONBOARD_PROVIDER = 'google';
 const ONBOARD_SKILL = 'onboard:friend';
@@ -177,6 +179,23 @@ export interface OnboardRouteDeps {
   // earlier Step 4 design baked the token at boot, which would make
   // every friend POST /onboard/start with the same (wrong) token.
   readonly privacyCopy: string;
+  // Phase v0.5.3 item #1 — after provisionUser + setPhone succeed,
+  // call SendBlue's POST /api/v2/contacts so the friend's number is
+  // pre-registered on the account. Without this, v0.5.2 surfaced
+  // that SendBlue silently drops both inbound webhooks AND outbound
+  // sends to the new contact (the "verified-contact" gate).
+  //
+  // Optional dep: when SendBlue isn't wired (FOMO_SEND_ENABLED=false)
+  // OR the founder is running a localhost-only smoke without SendBlue
+  // creds, this is null and the callback writes
+  // memory_signals.sendblue_contact_status = {registered: false,
+  // error_reason: 'send_disabled'}. The outbound worker (only running
+  // when send IS enabled) then refuses to dispatch.
+  readonly sendBlueContactRegistrar: SendBlueContactRegistrar | null;
+  // Phase v0.5.3 item #1 — memory store, for writing the contact-status
+  // signal after the registration attempt. Same store the outbound
+  // worker reads from.
+  readonly memoryStore: MemorySignalStore;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -585,6 +604,25 @@ export async function handleOnboardCallback(
       history_id: profile.historyId
     });
 
+    // Phase v0.5.3 item #1 — pre-register the friend with SendBlue
+    // BEFORE consuming the invite. v0.5.2 surfaced that SendBlue's
+    // "verified-contact" gate silently drops both inbound webhooks
+    // AND outbound sends for unregistered contacts. We write
+    // memory_signals.sendblue_contact_status either way; outbound
+    // worker reads it and refuses to dispatch when registered=false.
+    //
+    // Per founder correction #1: we do NOT roll back OAuth on
+    // registration failure (friend's tokens are valuable; the
+    // registration is independently retryable). The outbound gate
+    // makes the partial state safe.
+    await attemptSendBlueContactRegistration({
+      deps,
+      user_uuid: nonceRow.user_uuid,
+      phone_plaintext: bound_phone_plaintext,
+      friend_first_name_hint: profile.emailAddress.split('@')[0]?.slice(0, 32) ?? 'Friend',
+      now
+    });
+
     // ATOMIC CONSUME — last step. Throws InvalidInviteTokenError on
     // any of {unknown, consumed, expired}. The partial state created
     // above is left as-is (no rollback in v0.5.1; the friend re-tries
@@ -717,6 +755,123 @@ export async function loadPrivacyCopy(): Promise<string> {
 // sync IO.
 export function loadPrivacyCopySync(): string {
   return readFileSync(resolvePrivacyCopyPath(), 'utf8');
+}
+
+/* ---------------------------------------------------------------------- */
+/* Phase v0.5.3 item #1 — SendBlue contact registration helper            */
+/* ---------------------------------------------------------------------- */
+
+interface ContactRegistrationContext {
+  deps: OnboardRouteDeps;
+  user_uuid: string;
+  phone_plaintext: string;
+  friend_first_name_hint: string;
+  now: () => number;
+}
+
+// Best-effort SendBlue contact-add. Always writes a memory_signals
+// row recording the outcome — the outbound worker uses that signal
+// as the OUTGOING gate. Never throws (failure is recorded, not
+// raised — per founder correction #1, registration failure must not
+// roll back OAuth or block the rest of the callback chain).
+export async function attemptSendBlueContactRegistration(
+  ctx: ContactRegistrationContext
+): Promise<void> {
+  const { deps, user_uuid, phone_plaintext, friend_first_name_hint } = ctx;
+  const at = new Date(ctx.now()).toISOString();
+  const slug = phoneSlug(phone_plaintext);
+
+  // Send not wired (e.g. FOMO_SEND_ENABLED=false during a localhost
+  // founder smoke). Record the disabled state; outbound worker won't
+  // run anyway, but the signal is honest.
+  if (!deps.sendBlueContactRegistrar) {
+    await deps.memoryStore.upsert({
+      user_id: user_uuid,
+      kind: 'sendblue_contact_status',
+      scope_key: null,
+      detail: { registered: false, error_reason: 'send_disabled', attempted_at: at },
+      source: 'founder_set'
+    });
+    await deps.auditStore.write({
+      actor_user_id: user_uuid,
+      actor_ip: null,
+      actor_user_agent: null,
+      action: 'fomo.sendblue.contact_registration_failed',
+      target: `user:${user_uuid}`,
+      result: 'failure',
+      detail: { from_slug: slug, error_reason: 'send_disabled' }
+    });
+    return;
+  }
+
+  let outcome;
+  try {
+    outcome = await deps.sendBlueContactRegistrar.registerContact({
+      number: phone_plaintext,
+      first_name: friend_first_name_hint
+    });
+  } catch (err) {
+    // SendBlueClient.registerContact catches its own network errors
+    // and returns a typed outcome. This catches anything truly
+    // unexpected (e.g. a typo in our wiring). Still record + don't
+    // re-throw, per correction #1.
+    const reason = err instanceof Error ? err.message : String(err);
+    await deps.memoryStore.upsert({
+      user_id: user_uuid,
+      kind: 'sendblue_contact_status',
+      scope_key: null,
+      detail: { registered: false, error_reason: `unexpected: ${reason.slice(0, 80)}`, attempted_at: at },
+      source: 'founder_set'
+    });
+    await deps.auditStore.write({
+      actor_user_id: user_uuid,
+      actor_ip: null,
+      actor_user_agent: null,
+      action: 'fomo.sendblue.contact_registration_failed',
+      target: `user:${user_uuid}`,
+      result: 'failure',
+      detail: { from_slug: slug, error_reason: 'unexpected_throw' }
+    });
+    return;
+  }
+
+  if (outcome.kind === 'registered') {
+    await deps.memoryStore.upsert({
+      user_id: user_uuid,
+      kind: 'sendblue_contact_status',
+      scope_key: null,
+      detail: { registered: true, registered_at: at },
+      source: 'founder_set'
+    });
+    await deps.auditStore.write({
+      actor_user_id: user_uuid,
+      actor_ip: null,
+      actor_user_agent: null,
+      action: 'fomo.sendblue.contact_registered',
+      target: `user:${user_uuid}`,
+      result: 'success',
+      detail: { from_slug: slug, http_status: outcome.httpStatus, reason: outcome.reason }
+    });
+    return;
+  }
+
+  // outcome.kind === 'failed'
+  await deps.memoryStore.upsert({
+    user_id: user_uuid,
+    kind: 'sendblue_contact_status',
+    scope_key: null,
+    detail: { registered: false, error_reason: outcome.reason, attempted_at: at },
+    source: 'founder_set'
+  });
+  await deps.auditStore.write({
+    actor_user_id: user_uuid,
+    actor_ip: null,
+    actor_user_agent: null,
+    action: 'fomo.sendblue.contact_registration_failed',
+    target: `user:${user_uuid}`,
+    result: 'failure',
+    detail: { from_slug: slug, http_status: outcome.httpStatus, error_reason: outcome.reason }
+  });
 }
 
 export function buildConsentPageHtml(privacyCopy: string, tokenPlaintext: string): string {

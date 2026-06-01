@@ -760,6 +760,7 @@ function buildOnboardWiring(
   oauthGoogleDeps: OAuthGoogleRouteDeps | null,
   privacyCopy: string,
   gmailClient: GmailClient,
+  sendBlueClient: SendBlueClient | null,
   env: NodeJS.ProcessEnv = process.env
 ): { routeDeps: OnboardRouteDeps | null } {
   if (!killSwitches.friend_beta_enabled) {
@@ -823,7 +824,12 @@ function buildOnboardWiring(
     gmailClient,
     crypto,
     phoneHash,
-    privacyCopy
+    privacyCopy,
+    // Phase v0.5.3 item #1 — SendBlue contact auto-registration on
+    // /onboard/callback. null when send not wired (FOMO_SEND_ENABLED=false);
+    // the callback records registered=false with reason='send_disabled'.
+    sendBlueContactRegistrar: sendBlueClient,
+    memoryStore: storesHandle.stores.memory
   });
 
   return { routeDeps };
@@ -1069,7 +1075,8 @@ export function createFomoRuntime(config: FomoConfig = loadFomoConfig()): FomoRu
       killSwitches,
       oauthGoogleDeps,
       privacyCopy,
-      gmailClient
+      gmailClient,
+      sendWiring.client
     );
     if (onboardWiring.routeDeps) {
       logEvent(config, undefined, 'fomo.onboard.enabled', 'INFO', {

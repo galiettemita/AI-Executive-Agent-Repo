@@ -171,7 +171,58 @@ export type AuditAction =
   | 'fomo.onboard.invite_invalid'
   | 'fomo.onboard.phone_mismatch'
   | 'fomo.onboard.user_created'
-  | 'fomo.onboard.kill_switch_off';
+  | 'fomo.onboard.kill_switch_off'
+  // Phase v0.5.3 production-hardening events. Fire when the substrate
+  // self-heals from real-world conditions v0.5.2 surfaced. Sanitized
+  // detail only (operator identifiers + safe slugs; NEVER raw phones,
+  // refresh tokens, SendBlue payloads, or DB connection strings).
+  //
+  // SendBlue contact lifecycle (v0.5.3 item #1):
+  //   - contact_registered     → /onboard/callback POSTed /api/v2/contacts
+  //     successfully; memory_signals.sendblue_contact_status set to
+  //     {registered: true}. Friend's outbound path is unblocked.
+  //   - contact_registration_failed → POST /api/v2/contacts returned 4xx/5xx
+  //     OR send not enabled. users row + oauth_tokens are NOT rolled back
+  //     (friend's OAuth grant is valuable); memory_signals records
+  //     {registered: false, error_reason}. Outbound is gated by the
+  //     next event below until founder retries.
+  //   - send.contact_not_registered → outbound worker refused to send
+  //     because memory_signals.sendblue_contact_status is false. Alert
+  //     transitions approved → failed with reason 'contact_not_registered';
+  //     NO SendBlue API call is made.
+  | 'fomo.sendblue.contact_registered'
+  | 'fomo.sendblue.contact_registration_failed'
+  | 'fomo.send.contact_not_registered'
+  // OAuth auto-refresh (v0.5.3 item #2):
+  //   - oauth.refreshed        → polling worker detected near-expired
+  //     access_token, called refreshAccessToken, saved the new token,
+  //     advanced last_refreshed_at. Detail: provider, expires_at_iso.
+  //   - oauth.refresh_failed   → Google returned 4xx (typically
+  //     invalid_grant). refresh_token is revoked/invalid; worker sets
+  //     needs_reauth=true, skips the user this cycle. Detail: provider,
+  //     reason ('invalid_grant'|'network'|'unknown'). NEVER the
+  //     refresh_token plaintext, NEVER the access_token plaintext.
+  | 'fomo.oauth.refreshed'
+  | 'fomo.oauth.refresh_failed'
+  // DB pool resilience (v0.5.3 item #3):
+  //   - db.connection_error    → pg pool emitted an 'error' event from
+  //     a transient connection drop (ECONNRESET, server-side timeout,
+  //     etc.). The handler logs (primary, always works) + audits
+  //     best-effort (DB may be down; the audit write is wrapped in
+  //     try/catch and does NOT re-throw). Process does NOT exit.
+  //     Detail: error_code, sanitized message. NEVER the connection
+  //     string, NEVER credentials.
+  | 'fomo.db.connection_error'
+  // SendBlue webhook-delivery reconciliation (v0.5.3 item #4):
+  //   - sendblue.delivery_gap_detected → ops:reconcile-sendblue
+  //     compared SendBlue's /api/v2/messages against our audit_log
+  //     (joined by message_handle = provider_message_id) and found
+  //     an inbound SendBlue claims to have received that has NO
+  //     fomo.sendblue.inbound_received row on our side. Most common
+  //     cause: our server was down during webhook delivery + SendBlue's
+  //     retries exhausted. Detail: provider_message_id, from_slug,
+  //     date_sent_iso. NEVER the message content, NEVER the raw phone.
+  | 'fomo.sendblue.delivery_gap_detected';
 
 // Phase 3G.1 — runtime registry of every FOMO-namespaced audit
 // action. Used by the 3G.1 evidence script (and any future ops
@@ -215,7 +266,14 @@ export const FOMO_AUDIT_ACTIONS = [
   'fomo.onboard.invite_invalid',
   'fomo.onboard.phone_mismatch',
   'fomo.onboard.user_created',
-  'fomo.onboard.kill_switch_off'
+  'fomo.onboard.kill_switch_off',
+  'fomo.sendblue.contact_registered',
+  'fomo.sendblue.contact_registration_failed',
+  'fomo.send.contact_not_registered',
+  'fomo.oauth.refreshed',
+  'fomo.oauth.refresh_failed',
+  'fomo.db.connection_error',
+  'fomo.sendblue.delivery_gap_detected'
 ] as const satisfies readonly AuditAction[];
 
 export type AuditResult = 'success' | 'failure';

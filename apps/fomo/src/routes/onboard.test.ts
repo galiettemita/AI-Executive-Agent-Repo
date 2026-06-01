@@ -25,6 +25,8 @@ import { describe, it } from 'node:test';
 import { InMemoryTokenStore } from '../security/oauth/token-store.js';
 import { InMemoryGmailCursorStore } from '../memory/gmail-cursors.js';
 import { InMemoryAuditStore } from '../core/audit.js';
+import { InMemoryMemorySignalStore } from '../memory/memory-signals.js';
+import { type SendBlueContactRegistrar } from '../adapters/sendblue/client.js';
 import { SAFE_DEFAULT_KILL_SWITCHES } from '../core/kill-switches.js';
 import { type CryptoConfig } from '../security/token-crypto.js';
 import {
@@ -115,6 +117,8 @@ function mockExchangeFail(): typeof fetch {
 async function buildHarness(opts: {
   fetchImpl?: typeof fetch;
   friend_beta_enabled?: boolean;
+  /** v0.5.3 item #1: inject a failing/disabled registrar; `null` simulates send_disabled, omitted = default success. */
+  sendBlueContactRegistrar?: SendBlueContactRegistrar | null;
 } = {}): Promise<{
   deps: OnboardRouteDeps;
   inviteStore: InMemoryInviteTokenStore;
@@ -123,6 +127,7 @@ async function buildHarness(opts: {
   cursorStore: InMemoryGmailCursorStore;
   audit: InMemoryAuditStore;
   nonceStore: InMemoryOnboardNonceStore;
+  memoryStore: InMemoryMemorySignalStore;
   /** Plaintext token (never persisted). */
   invitedToken: string;
   /** Token hash (the lookup key). */
@@ -149,6 +154,16 @@ async function buildHarness(opts: {
     issued_by_user_id: 'founder'
   });
 
+  const memoryStore = new InMemoryMemorySignalStore();
+  // v0.5.3 item #1 — default fake: SendBlue registration succeeds.
+  // Individual tests inject a failing/disabled registrar to exercise
+  // the gate behavior.
+  const registrarOk: SendBlueContactRegistrar = {
+    async registerContact() {
+      return Object.freeze({ kind: 'registered' as const, httpStatus: 200, reason: 'http_200' });
+    }
+  };
+
   const deps: OnboardRouteDeps = {
     inviteStore,
     nonceStore,
@@ -166,7 +181,9 @@ async function buildHarness(opts: {
     crypto: cryptoConfig,
     phoneHash: phoneHashConfig,
     privacyCopy: 'Privacy copy goes here. Gmail readonly. STOP works. Founder reviews. Beta.',
-    fetchImpl: opts.fetchImpl ?? mockExchangeOk()
+    fetchImpl: opts.fetchImpl ?? mockExchangeOk(),
+    sendBlueContactRegistrar: opts.sendBlueContactRegistrar !== undefined ? opts.sendBlueContactRegistrar : registrarOk,
+    memoryStore
   };
   return {
     deps,
@@ -176,6 +193,7 @@ async function buildHarness(opts: {
     cursorStore,
     audit,
     nonceStore,
+    memoryStore,
     invitedToken: issued.token_plaintext,
     invitedTokenHash: issued.token_hash,
     friendPhoneHash

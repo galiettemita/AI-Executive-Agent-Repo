@@ -35,7 +35,22 @@ export const MEMORY_SIGNAL_KINDS = [
   // recorded_at: ISO, source_event_id?: number, source_text_slug?:
   // string }. NEVER the founder's raw reply text, NEVER the full
   // from-phone.
-  'stop_active'
+  'stop_active',
+  // Phase v0.5.3 item #1 — SendBlue contact registration status.
+  // Identity: (user_id, kind='sendblue_contact_status', scope_key=null).
+  // The outbound-sender worker consults this BEFORE every send and
+  // refuses to dispatch when registered=false (audits
+  // fomo.send.contact_not_registered, transitions approved→failed,
+  // makes NO SendBlue API call). Written by /onboard/callback after
+  // attempting POST /api/v2/contacts; on failure detail records
+  // {registered: false, error_reason}. Per founder correction #1:
+  // we do NOT roll back OAuth on registration failure — friend's
+  // tokens are valuable and the registration is independently
+  // retryable. Detail shape:
+  //   { registered: true,  registered_at: ISO } |
+  //   { registered: false, error_reason: string, attempted_at: ISO }
+  // NEVER the SendBlue API key or raw response body.
+  'sendblue_contact_status'
 ] as const;
 
 export type MemorySignalKind = (typeof MEMORY_SIGNAL_KINDS)[number];
