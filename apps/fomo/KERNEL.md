@@ -456,6 +456,25 @@ The kernel-level implementations of §4.8 in v0.1:
 
 When Phase 4+ adds calendar / drafting / sending / payments / bookings / MCP tools / browser-fallback / delegated agents, the kernel-completeness gate must verify §4.8 still holds for every new capability *in the same PR* — no separate compliance phase, no "we'll wire approval later." API first; browser fallback only when sandboxed; user approval before final commitment.
 
+## Long-term: Email Context Provider abstraction
+
+> Permanent Brevio architecture rule (founder directive 2026-05-30). Companion to §4.8. Canonical home: [`FOMO_DESIGN.md §6 Rule 2`](../../FOMO_DESIGN.md), [`FOMO_PLAN.md §4.2`](../../FOMO_PLAN.md), and [`docs/future-architecture-notes.md §Email Context Provider Abstraction`](../../docs/future-architecture-notes.md).
+
+Email is one *category* of context. Gmail is the v0.1 / v0.5 implementation of that category, not the final email strategy. Long-term Brevio must have an `EmailContextProvider` abstraction with at least `GmailProvider` (first), `OutlookProvider` (likely next, Microsoft Graph), `iCloudMailProvider`, `YahooMailProvider`, and `GenericIMAPProvider`. Every provider normalizes inbound mail into the same `RawEmailContext` shape (or its future equivalent); the ranker, egress policy, alert pipeline, memory signals, feedback events, and SendBlue outbound flows must NOT depend on Gmail-specific assumptions.
+
+Every future provider must satisfy the same kernel-level guarantees Gmail satisfies in v0.1:
+
+- Tool Registry entry + Permission Gate consultation
+- OAuth / credential manager via the existing token-crypto + oauth-state path (no raw passwords absent security review)
+- Egress Policy (no raw body / headers / attachment filenames leave Brevio)
+- Audit Log (sanitized detail; no payload-content columns)
+- Per-provider kill switch default-off, strict opt-in
+- Provider-specific failure taxonomy (`*UnauthorizedError`, `*ApiError`, retryable vs terminal)
+- Founder-only smoke gate before non-founder traffic, on the 3B.3 / 3C.4 / 3F.2 / 3G pattern
+- §4.8 holds: API-first; browser-fallback for webmail only when sandboxed; user approval before commitment
+
+**v0.5 scope (unchanged):** Gmail remains the only active `EmailContextProvider`. Outlook, iCloud, Yahoo, generic IMAP, and webmail browser automation are NOT in v0.5 scope. This section is long-term architecture documentation only — no runtime code change.
+
 ---
 
 ## Run the gate

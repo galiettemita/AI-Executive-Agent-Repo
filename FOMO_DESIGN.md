@@ -303,6 +303,30 @@ Reading context is different from taking action.
 
 **v0.1:** Gmail is the first external context provider. Memory signals are the first internal context provider.
 
+#### Email is the first context category — Gmail is the first email provider, not the final email strategy (founder directive 2026-05-30)
+
+Brevio must not be architected as Gmail-only forever. Email is one *category* of context; Gmail is the v0.1 / v0.5 implementation of that category. Long-term Brevio must have an `EmailContextProvider` abstraction:
+
+```text
+EmailContextProvider
+├── GmailProvider        — v0.1 / v0.5 (first; fastest, cleanest API path)
+├── OutlookProvider      — likely next official provider (Microsoft Graph)
+├── iCloudMailProvider   — later (weaker provider support; extra security review)
+├── YahooMailProvider    — later (weaker provider support; extra security review)
+└── GenericIMAPProvider  — later (no OAuth in many cases; extra security review)
+```
+
+Long-term invariants:
+
+* Every provider normalizes inbound email into the same `RawEmailContext` shape (or its future equivalent). The ranker, egress policy, alert pipeline, memory signals, feedback events, and SendBlue outbound flows MUST NOT depend on Gmail-specific assumptions.
+* Every provider passes through the same gateway shape the v0.1 Gmail path passes through: Tool Registry, Permission Gate, OAuth / credential manager, Egress Policy, Audit Log, kill switches, founder-only smoke-test gate, and provider-specific failure handling (`*UnauthorizedError`, `*ApiError`, retryable vs terminal).
+* Outlook / Microsoft is likely the next official provider after Gmail because its API path (Microsoft Graph) is the closest to Gmail in OAuth, scope, and reliability terms.
+* iCloud, Yahoo, and generic IMAP must receive extra security review because provider OAuth support, polling semantics, and UX surface area (re-auth flows, app-specific passwords) are weaker.
+* No raw email passwords may be collected unless explicitly approved after a dedicated security review and a founder-only smoke gate.
+* No browser automation for webmail inbox access unless Rule 8 below (§6 Rule 8 — API-first, browser-fallback only when sandboxed, explicit user approval, founder-only smoke test) is satisfied.
+
+**v0.5 scope (locked):** Gmail is the only active `EmailContextProvider`. Outlook, iCloud, Yahoo, generic IMAP, and webmail browser automation are NOT in scope for v0.5 — they are documented here so the ranker, egress policy, memory, feedback, and SendBlue flows are not built with Gmail-only assumptions that would have to be unwound later.
+
 ### 3. Gateway Connectors
 
 Every tool and context provider should eventually pass through a gateway layer for:
