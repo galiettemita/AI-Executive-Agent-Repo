@@ -30,7 +30,10 @@
     "smoke-evidence:v0.5.1": "node --experimental-strip-types --loader ./test-loader.mjs scripts/smoke-evidence-v0.5.1.ts",
     "preflight:v0.5.2": "node --experimental-strip-types --loader ./test-loader.mjs scripts/preflight-v0.5.2.ts",
     "smoke-evidence:v0.5.2": "node --experimental-strip-types --loader ./test-loader.mjs scripts/smoke-evidence-v0.5.2.ts",
-    "ops:refresh-oauth": "node --experimental-strip-types --loader ./test-loader.mjs scripts/ops-refresh-oauth.ts"
+    "ops:refresh-oauth": "node --experimental-strip-types --loader ./test-loader.mjs scripts/ops-refresh-oauth.ts",
+    "ops:reconcile-sendblue": "node --experimental-strip-types --loader ./test-loader.mjs scripts/ops-reconcile-sendblue.ts",
+    "preflight:v0.5.3": "node --experimental-strip-types --loader ./test-loader.mjs scripts/preflight-v0.5.3.ts",
+    "smoke-evidence:v0.5.3": "node --experimental-strip-types --loader ./test-loader.mjs scripts/smoke-evidence-v0.5.3.ts"
   },
   "dependencies": {
     "drizzle-orm": "0.45.2",

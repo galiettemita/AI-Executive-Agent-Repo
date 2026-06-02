@@ -116,7 +116,15 @@ export type OutboundSenderOutcome =
   | 'preflight_skipped'
   // Phase 3F.1 — STOP enforcement refused the send. Alert transitions
   // approved → failed (reason: stop_enforced). NEVER calls SendBlue.
-  | 'stop_enforced';
+  | 'stop_enforced'
+  // Phase v0.5.3 item #1 — friend's SendBlue contact-registration
+  // memory signal says registered=false. /onboard/callback attempted
+  // POST /api/v2/contacts but it failed (network / 4xx / send_disabled).
+  // Outbound refuses to dispatch; transitions approved → failed
+  // (reason: contact_not_registered). NEVER calls SendBlue. Founder
+  // retries registration via ops:retry-sendblue-contact (or by reissuing
+  // the friend an invite, which triggers a fresh registration attempt).
+  | 'contact_not_registered';
 
 export interface OutboundSenderAlertResult {
   readonly user_id: string;
@@ -138,6 +146,10 @@ export interface OutboundSenderUserOutcome {
   // to send. Per-user; rolls up to alerts_stop_enforced in the cycle
   // report. Useful smoke evidence: prove STOP blocks future sends.
   readonly alerts_stop_enforced: number;
+  // Phase v0.5.3 item #1 — count of alerts the SendBlue contact-
+  // registration gate refused. Non-zero means the friend's
+  // memory_signals.sendblue_contact_status is registered=false.
+  readonly alerts_contact_not_registered: number;
 }
 
 export interface OutboundSenderCycleReport {
@@ -153,6 +165,8 @@ export interface OutboundSenderCycleReport {
   readonly alerts_preflight_skipped: number;
   // Phase 3F.1 — alerts the STOP-enforcement check refused.
   readonly alerts_stop_enforced: number;
+  // Phase v0.5.3 item #1 — alerts the contact-registration gate refused.
+  readonly alerts_contact_not_registered: number;
   readonly results: readonly OutboundSenderAlertResult[];
   readonly user_outcomes: readonly OutboundSenderUserOutcome[];
 }
@@ -181,6 +195,7 @@ export async function runOutboundOnce(
   let alerts_unauthorized = 0;
   let alerts_preflight_skipped = 0;
   let alerts_stop_enforced = 0;
+  let alerts_contact_not_registered = 0;
 
   const userIds = await deps.cursorStore.listUserIds();
 
@@ -200,7 +215,8 @@ export async function runOutboundOnce(
           alerts_status_unknown: 0,
           alerts_unauthorized: 0,
           alerts_preflight_skipped: 0,
-          alerts_stop_enforced: 0
+          alerts_stop_enforced: 0,
+          alerts_contact_not_registered: 0
         })
       );
       continue;
@@ -215,6 +231,12 @@ export async function runOutboundOnce(
     // Per-user check is correct: STOP is a global user-level
     // compliance signal, not per-alert.
     const stopActive = await isStopActive(deps, user_id);
+    // Phase v0.5.3 item #1 — SendBlue contact-registration gate.
+    // Checked ONCE per user per cycle alongside STOP. Refuses every
+    // approved alert when the friend's memory_signal explicitly says
+    // registered=false. Missing signal (founder, pre-v0.5.3 friends)
+    // returns false here (= allow), preserving prior PASSes.
+    const contactBlocked = await isSendBlueContactBlocked(deps, user_id);
 
     let user_sent = 0;
     let user_failed = 0;
@@ -222,6 +244,7 @@ export async function runOutboundOnce(
     let user_unauthorized = 0;
     let user_preflight_skipped = 0;
     let user_stop_enforced = 0;
+    let user_contact_not_registered = 0;
 
     for (const alert_id of approvedIds) {
       alerts_considered++;
@@ -230,6 +253,13 @@ export async function runOutboundOnce(
         results.push(r);
         user_stop_enforced++;
         alerts_stop_enforced++;
+        continue;
+      }
+      if (contactBlocked) {
+        const r = await processContactNotRegistered(deps, user_id, alert_id);
+        results.push(r);
+        user_contact_not_registered++;
+        alerts_contact_not_registered++;
         continue;
       }
       const r = await processOneAlert(deps, user_id, alert_id, newInvocationId);
@@ -241,6 +271,7 @@ export async function runOutboundOnce(
         case 'unauthorized_destination': user_unauthorized++; alerts_unauthorized++; break;
         case 'preflight_skipped': user_preflight_skipped++; alerts_preflight_skipped++; break;
         case 'stop_enforced': user_stop_enforced++; alerts_stop_enforced++; break;
+        case 'contact_not_registered': user_contact_not_registered++; alerts_contact_not_registered++; break;
       }
     }
 
@@ -253,7 +284,8 @@ export async function runOutboundOnce(
         alerts_status_unknown: user_status_unknown,
         alerts_unauthorized: user_unauthorized,
         alerts_preflight_skipped: user_preflight_skipped,
-        alerts_stop_enforced: user_stop_enforced
+        alerts_stop_enforced: user_stop_enforced,
+        alerts_contact_not_registered: user_contact_not_registered
       })
     );
   }
@@ -272,6 +304,7 @@ export async function runOutboundOnce(
     alerts_unauthorized,
     alerts_preflight_skipped,
     alerts_stop_enforced,
+    alerts_contact_not_registered,
     results: Object.freeze(results.map((r) => Object.freeze(r))),
     user_outcomes: Object.freeze(userOutcomes.map((o) => Object.freeze(o)))
   });
@@ -293,6 +326,88 @@ async function isStopActive(
   if (!signal) return false;
   const detail = signal.detail as { active?: unknown };
   return detail.active === true;
+}
+
+// Phase v0.5.3 item #1 — SendBlue contact-registration gate.
+// Returns true (= block this send) ONLY when the user has an
+// explicit memory_signal saying registered=false. A missing signal
+// returns false (= allow), to preserve v0.5.1 / v0.5.2 friends who
+// were onboarded before this gate existed AND to leave the founder
+// (env-equality routed, no memory signal) unaffected. New friends
+// onboarded under v0.5.3 always have a signal (set by /onboard/callback),
+// so the explicit-false case is the v0.5.3-discovered "SendBlue
+// rejected the registration" scenario the gate exists to catch.
+async function isSendBlueContactBlocked(
+  deps: OutboundSenderDeps,
+  user_id: string
+): Promise<boolean> {
+  const signal = await deps.memoryStore.get(user_id, 'sendblue_contact_status', null);
+  if (!signal) return false;
+  const detail = signal.detail as { registered?: unknown };
+  return detail.registered === false;
+}
+
+// Process an alert the contact-registration gate refused. Audits
+// fomo.send.contact_not_registered + transitions approved → failed
+// (reason: contact_not_registered). NEVER calls SendBlue. Sanitized
+// audit detail — references the signal's error_reason WITHOUT echoing
+// SendBlue's full response body.
+async function processContactNotRegistered(
+  deps: OutboundSenderDeps,
+  user_id: string,
+  alert_id: string
+): Promise<OutboundSenderAlertResult> {
+  const alert = await deps.alertStore.get(alert_id);
+  if (!alert) {
+    await deps.auditStore.write({
+      actor_user_id: user_id,
+      actor_ip: null,
+      actor_user_agent: null,
+      action: 'fomo.send.contact_not_registered',
+      target: `alert:${alert_id}`,
+      result: 'failure',
+      detail: { alert_id, error_code: 'unknown_alert_id' }
+    });
+    return Object.freeze({
+      user_id,
+      alert_id,
+      outcome: 'preflight_skipped' as const,
+      reason: 'unknown_alert_id (during contact_not_registered check)'
+    });
+  }
+  // Pull the safe error_reason field from the signal for operator
+  // visibility. NEVER include SendBlue's raw response body.
+  const signal = await deps.memoryStore.get(user_id, 'sendblue_contact_status', null);
+  const detail = (signal?.detail ?? {}) as { error_reason?: unknown };
+  const errorReason =
+    typeof detail.error_reason === 'string' ? detail.error_reason.slice(0, 120) : 'unknown';
+  await deps.auditStore.write({
+    actor_user_id: user_id,
+    actor_ip: null,
+    actor_user_agent: null,
+    action: 'fomo.send.contact_not_registered',
+    target: `alert:${alert_id}`,
+    result: 'failure',
+    detail: {
+      alert_id,
+      message_id: alert.message_id,
+      rank_result_id: alert.rank_result_id,
+      registration_error_reason: errorReason
+    }
+  });
+  await writeTransition(deps, {
+    alert_id,
+    user_id,
+    from_state: 'approved',
+    to_state: 'failed',
+    reason: `outbound-sender: contact_not_registered (registration_error: ${errorReason})`
+  });
+  return Object.freeze({
+    user_id,
+    alert_id,
+    outcome: 'contact_not_registered' as const,
+    reason: 'SendBlue contact-status memory_signal is registered=false for this user'
+  });
 }
 
 // Process an alert that the STOP-enforcement check refused. Audits

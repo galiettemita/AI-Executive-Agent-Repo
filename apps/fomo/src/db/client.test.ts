@@ -117,3 +117,119 @@ describe('closeDbClient', () => {
     await closeDbClient(result); // should not throw
   });
 });
+
+describe('pg pool error handler (Phase v0.5.3 item #3 — Neon ECONNRESET resilience)', () => {
+  // Regression for the v0.5.2 incident: pg pool's 'error' event from
+  // a transient Neon connection drop went unhandled, crashing the
+  // dev server for 18+ hours mid-smoke. Per founder correction #3:
+  // log structured sanitized error FIRST (works when DB is down),
+  // audit best-effort SECOND (wrapped, never re-throws), NEVER crash.
+
+  it('attaches an error listener so an idle-connection error does NOT cascade to a process crash', () => {
+    const captured: string[] = [];
+    const result = loadDbClient({
+      env: { DATABASE_URL: 'postgres://x:y@localhost:5432/z' },
+      idleTimeoutMs: 100,
+      connectionTimeoutMs: 100,
+      stderrWrite: (line) => captured.push(line)
+    });
+    assert.ok(result.ok);
+    if (!result.ok) return;
+
+    // BEFORE v0.5.3 fix: pg pool's 'error' event with no listener
+    // = Node unhandled-error → process.exit(1). The mere presence of
+    // a listener prevents the crash.
+    assert.ok(result.pool.listenerCount('error') > 0, 'pool must have an error listener attached');
+
+    // Manually fire an 'error' event with a synthetic ECONNRESET. If
+    // the handler is missing or throws, this test process would die.
+    const err = new Error('read ECONNRESET') as NodeJS.ErrnoException;
+    err.code = 'ECONNRESET';
+    assert.doesNotThrow(() => result.pool.emit('error', err));
+
+    // Structured log to stderr fired with sanitized detail.
+    assert.equal(captured.length, 1);
+    const logged = JSON.parse(captured[0]);
+    assert.equal(logged.event, 'fomo.db.connection_error');
+    assert.equal(logged.severity, 'ERROR');
+    assert.equal(logged.attrs.error_code, 'ECONNRESET');
+    assert.match(logged.attrs.message, /ECONNRESET/);
+    // NEVER the connection string.
+    assert.equal(captured[0].includes('postgres://x:y@'), false);
+
+    void closeDbClient(result);
+  });
+
+  it('onPoolError callback fires after the stderr log; a thrown callback does NOT crash the process', () => {
+    const captured: string[] = [];
+    let auditCalls = 0;
+    const result = loadDbClient({
+      env: { DATABASE_URL: 'postgres://x:y@localhost:5432/z' },
+      idleTimeoutMs: 100,
+      connectionTimeoutMs: 100,
+      stderrWrite: (line) => captured.push(line),
+      onPoolError: () => {
+        auditCalls++;
+        // Adversarial: a throwing callback must NOT cascade to a crash.
+        throw new Error('audit-store unavailable (e.g. DB also down)');
+      }
+    });
+    assert.ok(result.ok);
+    if (!result.ok) return;
+
+    const err = new Error('Connection terminated unexpectedly') as NodeJS.ErrnoException;
+    err.code = 'ECONNRESET';
+    assert.doesNotThrow(() => result.pool.emit('error', err));
+
+    // Stderr log fired first.
+    assert.equal(captured.length, 1);
+    // Callback fired second (and threw — but we caught it).
+    assert.equal(auditCalls, 1);
+
+    void closeDbClient(result);
+  });
+
+  it('onPoolError callback that returns a rejected Promise does NOT crash the process', () => {
+    const result = loadDbClient({
+      env: { DATABASE_URL: 'postgres://x:y@localhost:5432/z' },
+      idleTimeoutMs: 100,
+      connectionTimeoutMs: 100,
+      stderrWrite: () => undefined,
+      onPoolError: () => Promise.reject(new Error('audit-store down'))
+    });
+    assert.ok(result.ok);
+    if (!result.ok) return;
+
+    // The handler's wrapper attaches .catch() to the returned Promise,
+    // preventing the rejection from becoming an unhandled-rejection.
+    const err = new Error('idle client error');
+    assert.doesNotThrow(() => result.pool.emit('error', err));
+
+    void closeDbClient(result);
+  });
+
+  it('sanitizes the error message to <=200 chars (defense-in-depth against pg leaking creds/long strings)', () => {
+    const captured: string[] = [];
+    const result = loadDbClient({
+      env: { DATABASE_URL: 'postgres://x:y@localhost:5432/z' },
+      idleTimeoutMs: 100,
+      connectionTimeoutMs: 100,
+      stderrWrite: (line) => captured.push(line)
+    });
+    assert.ok(result.ok);
+    if (!result.ok) return;
+
+    // 1000-char error message including what looks like a secret. The
+    // canary near the end must be truncated out of the logged detail.
+    const longMsg = 'connection error: ' + 'x'.repeat(800) + ' BREVIO_TOKEN_KEK_LEAK_CANARY';
+    const err = new Error(longMsg) as NodeJS.ErrnoException;
+    err.code = 'EPIPE';
+    result.pool.emit('error', err);
+
+    const logged = JSON.parse(captured[0]);
+    assert.ok(logged.attrs.message.length <= 200, `message must be bounded; got length ${logged.attrs.message.length}`);
+    assert.equal(logged.attrs.message.includes('BREVIO_TOKEN_KEK_LEAK_CANARY'), false);
+
+    void closeDbClient(result);
+  });
+});

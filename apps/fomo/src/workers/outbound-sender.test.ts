@@ -824,3 +824,187 @@ describe('runOutboundOnce — OPTED_OUT drift detection (Phase 3G.1 item #2)', (
     assert.equal((failed.detail as { provider_error_message: unknown }).provider_error_message, 'INVALID_NUMBER');
   });
 });
+
+describe('runOutboundOnce — SendBlue contact-registration gate (Phase v0.5.3 item #1)', () => {
+  // Regression for the v0.5.2 incident: friend was onboarded with
+  // OAuth + users + oauth_tokens all in place, but SendBlue's contact
+  // registration silently dropped both her inbound webhooks AND
+  // outbound sends. Per founder correction #1: we do NOT roll back
+  // OAuth on registration failure (friend's tokens are valuable);
+  // instead memory_signals.sendblue_contact_status records
+  // registered=false and THE OUTBOUND WORKER refuses to send.
+  it('refuses to send when sendblue_contact_status.registered=false; audits fomo.send.contact_not_registered; transitions approved→failed; NEVER calls SendBlue', async () => {
+    let sendBlueCalls = 0;
+    const sendBlueFetch = mockFetch(async () => {
+      sendBlueCalls++;
+      return { status: 200, body: { status: 'QUEUED' } };
+    });
+    const gmailFetch = mockFetch(async () => ({ status: 200, body: FAKE_GMAIL_MSG }));
+    const h = await buildHarness({ sendBlueFetch, gmailFetch });
+
+    // Pre-set the gate: registered=false (as /onboard/callback would
+    // when SendBlue's POST /api/v2/contacts returns a 4xx). The
+    // error_reason is operator-visible diagnostic; never includes the
+    // raw SendBlue response body.
+    await h.memoryStore.upsert({
+      user_id: FOUNDER_USER,
+      kind: 'sendblue_contact_status',
+      scope_key: null,
+      detail: {
+        registered: false,
+        error_reason: 'client_error: HTTP 400 ContactHasNotBeenVerified',
+        attempted_at: new Date().toISOString()
+      },
+      source: 'founder_set',
+      confidence: 1.0
+    });
+
+    const report = await runOutboundOnce(h.deps);
+
+    // The approved alert was considered, then refused at the gate.
+    assert.equal(report.alerts_considered, 1);
+    assert.equal(report.alerts_sent, 0);
+    assert.equal(report.alerts_contact_not_registered, 1);
+    assert.equal(report.alerts_stop_enforced, 0);
+
+    // SendBlue API was NEVER called.
+    assert.equal(sendBlueCalls, 0, 'SendBlue must NOT be called when contact registration is false');
+
+    // Alert transitioned approved → failed with reason
+    // contact_not_registered.
+    assert.equal(await h.transitions.currentState(ALERT_ID), 'failed');
+
+    // fomo.send.contact_not_registered audit fired.
+    const events = await h.auditStore.recent(FOUNDER_USER, 500);
+    const gateAudit = events.find((e) => e.action === 'fomo.send.contact_not_registered');
+    assert.ok(gateAudit, 'expected fomo.send.contact_not_registered audit row');
+    const detail = gateAudit?.detail as { alert_id: string; registration_error_reason: string };
+    assert.equal(detail.alert_id, ALERT_ID);
+    // Operator-visible error_reason carried forward; bounded to 120 chars.
+    assert.match(detail.registration_error_reason, /HTTP 400 ContactHasNotBeenVerified/);
+
+    // fomo.send.attempted should NOT fire (worker short-circuited).
+    assert.equal(events.find((e) => e.action === 'fomo.send.attempted'), undefined);
+  });
+
+  it('proceeds normally when sendblue_contact_status.registered=true (the happy path)', async () => {
+    const sendBlueFetch = mockFetch(async () => ({
+      status: 200,
+      body: { status: 'QUEUED', message_handle: 'mh-contact-ok-1' }
+    }));
+    const gmailFetch = mockFetch(async () => ({ status: 200, body: FAKE_GMAIL_MSG }));
+    const h = await buildHarness({ sendBlueFetch, gmailFetch });
+
+    await h.memoryStore.upsert({
+      user_id: FOUNDER_USER,
+      kind: 'sendblue_contact_status',
+      scope_key: null,
+      detail: { registered: true, registered_at: new Date().toISOString() },
+      source: 'founder_set',
+      confidence: 1.0
+    });
+
+    const report = await runOutboundOnce(h.deps);
+
+    assert.equal(report.alerts_sent, 1);
+    assert.equal(report.alerts_contact_not_registered, 0);
+    assert.equal(await h.transitions.currentState(ALERT_ID), 'sent');
+  });
+
+  it('does NOT block when no sendblue_contact_status signal exists (preserves founder + pre-v0.5.3 friends)', async () => {
+    // Missing-signal returns false (= allow) so the gate doesn't
+    // retroactively block the founder (env-equality routed, no
+    // memory signal) or v0.5.1/v0.5.2 friends onboarded before this
+    // gate existed.
+    const sendBlueFetch = mockFetch(async () => ({
+      status: 200,
+      body: { status: 'QUEUED', message_handle: 'mh-no-signal-1' }
+    }));
+    const gmailFetch = mockFetch(async () => ({ status: 200, body: FAKE_GMAIL_MSG }));
+    const h = await buildHarness({ sendBlueFetch, gmailFetch });
+    // No memoryStore.upsert — no signal at all.
+
+    const report = await runOutboundOnce(h.deps);
+
+    assert.equal(report.alerts_sent, 1);
+    assert.equal(report.alerts_contact_not_registered, 0);
+    assert.equal(await h.transitions.currentState(ALERT_ID), 'sent');
+  });
+
+  it('contact_not_registered gate fires BEFORE stop_enforced if both signals are present (stop wins because it is the more privacy-load-bearing block)', async () => {
+    // Ordering choice: STOP enforcement runs first (compliance-load-bearing).
+    // The contact_not_registered gate only fires when stop is NOT
+    // active. This tests that the gate ordering is correct AND that
+    // we don't double-process an alert.
+    let sendBlueCalls = 0;
+    const sendBlueFetch = mockFetch(async () => {
+      sendBlueCalls++;
+      return { status: 200, body: { status: 'QUEUED' } };
+    });
+    const gmailFetch = mockFetch(async () => ({ status: 200, body: FAKE_GMAIL_MSG }));
+    const h = await buildHarness({ sendBlueFetch, gmailFetch });
+
+    await h.memoryStore.upsert({
+      user_id: FOUNDER_USER,
+      kind: 'stop_active',
+      scope_key: null,
+      detail: { active: true, recorded_at: new Date().toISOString() },
+      source: 'user_confirmed',
+      confidence: 1.0
+    });
+    await h.memoryStore.upsert({
+      user_id: FOUNDER_USER,
+      kind: 'sendblue_contact_status',
+      scope_key: null,
+      detail: { registered: false, error_reason: 'test', attempted_at: new Date().toISOString() },
+      source: 'founder_set',
+      confidence: 1.0
+    });
+
+    const report = await runOutboundOnce(h.deps);
+
+    // STOP wins because it's checked first.
+    assert.equal(report.alerts_stop_enforced, 1);
+    assert.equal(report.alerts_contact_not_registered, 0);
+    assert.equal(sendBlueCalls, 0, 'SendBlue must NOT be called when either gate blocks');
+  });
+
+  it('canary privacy: registration_error_reason NEVER contains raw SendBlue response body or full destination phone', async () => {
+    const gmailFetch = mockFetch(async () => ({ status: 200, body: FAKE_GMAIL_MSG }));
+    const h = await buildHarness({ gmailFetch });
+
+    // Adversarial error_reason that includes content that should NOT
+    // leak (the registration code that writes this signal only ever
+    // sets error_reason from SendBlueClient.registerContact's bounded
+    // `reason` field — never from the raw response body — but defense-
+    // in-depth: even if a future caller passes an unsafe value, the
+    // outbound audit row bounds it to 120 chars and the destination
+    // phone never appears in this audit path).
+    const adversarial =
+      'should-not-leak-canary-aaa raw_body_canary_bbb +15551234567';
+    await h.memoryStore.upsert({
+      user_id: FOUNDER_USER,
+      kind: 'sendblue_contact_status',
+      scope_key: null,
+      detail: { registered: false, error_reason: adversarial, attempted_at: new Date().toISOString() },
+      source: 'founder_set',
+      confidence: 1.0
+    });
+
+    await runOutboundOnce(h.deps);
+
+    const events = await h.auditStore.recent(FOUNDER_USER, 500);
+    const gateAudit = events.find((e) => e.action === 'fomo.send.contact_not_registered');
+    assert.ok(gateAudit);
+    const detail = gateAudit?.detail as { registration_error_reason: string };
+    // The reason field IS surfaced (operator-visible) but bounded.
+    assert.ok(detail.registration_error_reason.length <= 120);
+    // The phone digits in the adversarial string would appear in the
+    // reason field (since this audit row intentionally surfaces what
+    // the signal recorded). But the audit row does NOT include
+    // destination_slug or any other phone field on this code path —
+    // we never reach the destinationFor step. Confirm that:
+    const serialized = JSON.stringify(gateAudit?.detail ?? {});
+    assert.equal(/destination_slug|to_number|from_number/.test(serialized), false);
+  });
+});

@@ -5,6 +5,7 @@ import { pathToFileURL } from 'node:url';
 import { loadFomoConfig } from './config.js';
 import { handleHealth } from './routes/health.js';
 import { tryHandleOAuthGoogleRequest, type OAuthGoogleRouteDeps } from './routes/oauth-google.js';
+import { buildOAuthRefreshHelper } from './security/oauth/refresh-helper.js';
 import { GmailClient } from './adapters/gmail/client.js';
 import { loadDbClient } from './db/client.js';
 import {
@@ -503,7 +504,11 @@ function startGmailPolling(
   killSwitches: KillSwitches,
   config: FomoConfig,
   ranker: GmailPollRankerDep | null,
-  slackReview: GmailPollSlackReviewDep | null
+  slackReview: GmailPollSlackReviewDep | null,
+  // Phase v0.5.3 item #2 — optional OAuth refresh helper. When wired,
+  // the polling worker auto-refreshes expired access_tokens using the
+  // stored refresh_token. Null when OAuth provider isn't configured.
+  oauthRefresh: import('./workers/gmail-poll.js').OAuthRefreshDep | null
 ): PollingHandle {
   const stores = storesHandle.stores;
   let stopped = false;
@@ -536,7 +541,8 @@ function startGmailPolling(
           toolInvocationStore: stores.toolInvocations,
           gateDeps,
           ranker: ranker ?? undefined,
-          slackReview: slackReview ?? undefined
+          slackReview: slackReview ?? undefined,
+          oauthRefresh: oauthRefresh ?? undefined
         });
         cyclesRun++;
         if (stopped) return;
@@ -760,6 +766,7 @@ function buildOnboardWiring(
   oauthGoogleDeps: OAuthGoogleRouteDeps | null,
   privacyCopy: string,
   gmailClient: GmailClient,
+  sendBlueClient: SendBlueClient | null,
   env: NodeJS.ProcessEnv = process.env
 ): { routeDeps: OnboardRouteDeps | null } {
   if (!killSwitches.friend_beta_enabled) {
@@ -823,7 +830,12 @@ function buildOnboardWiring(
     gmailClient,
     crypto,
     phoneHash,
-    privacyCopy
+    privacyCopy,
+    // Phase v0.5.3 item #1 — SendBlue contact auto-registration on
+    // /onboard/callback. null when send not wired (FOMO_SEND_ENABLED=false);
+    // the callback records registered=false with reason='send_disabled'.
+    sendBlueContactRegistrar: sendBlueClient,
+    memoryStore: storesHandle.stores.memory
   });
 
   return { routeDeps };
@@ -934,6 +946,30 @@ export function createFomoRuntime(config: FomoConfig = loadFomoConfig()): FomoRu
   // Phase 2E client.
   const cryptoConfig = loadCryptoConfig();
   const storesHandle = createStores({ env: process.env, crypto: cryptoConfig });
+
+  // Phase v0.5.3 item #3 — best-effort audit hook for pg pool errors.
+  // The pool already has a stderr-logging error handler installed by
+  // loadDbClient (primary, works when DB is down). Here we add a
+  // second listener that writes a fomo.db.connection_error audit row.
+  // Wrapped so a DB write failure cascades to nothing — the stderr
+  // log path is always our primary signal.
+  if (storesHandle.backend === 'postgres' && storesHandle.db?.ok) {
+    storesHandle.db.pool.on('error', (err) => {
+      const code = (err as NodeJS.ErrnoException).code ?? 'unknown';
+      const message = (err.message ?? String(err)).slice(0, 200);
+      storesHandle.stores.audit
+        .write({
+          actor_user_id: null,
+          actor_ip: null,
+          actor_user_agent: null,
+          action: 'fomo.db.connection_error',
+          target: 'pg:pool',
+          result: 'failure',
+          detail: { error_code: code, message }
+        })
+        .catch(() => undefined);
+    });
+  }
 
   // Kill switches — read once at boot. Per FOMO_PLAN §16.5, defaults are
   // safe (everything off). FOMO_GMAIL_POLLING_ENABLED controls whether
@@ -1069,7 +1105,8 @@ export function createFomoRuntime(config: FomoConfig = loadFomoConfig()): FomoRu
       killSwitches,
       oauthGoogleDeps,
       privacyCopy,
-      gmailClient
+      gmailClient,
+      sendWiring.client
     );
     if (onboardWiring.routeDeps) {
       logEvent(config, undefined, 'fomo.onboard.enabled', 'INFO', {
@@ -1109,6 +1146,17 @@ export function createFomoRuntime(config: FomoConfig = loadFomoConfig()): FomoRu
   // Safe default: off (no autonomous Gmail reads until founder opts in).
   let pollingHandle: PollingHandle | null = null;
   if (killSwitches.polling_enabled) {
+    // Phase v0.5.3 item #2 — wire OAuth auto-refresh. Only when the
+    // Google provider is configured (oauthGoogleDeps wired with a
+    // valid client_id/secret); otherwise the worker uses the v0.1
+    // behavior (marks needs_reauth on Gmail 401, never auto-refreshes).
+    const oauthRefresh = oauthGoogleDeps
+      ? buildOAuthRefreshHelper({
+          tokenStore: storesHandle.stores.tokens,
+          auditStore: storesHandle.stores.audit,
+          providerConfig: oauthGoogleDeps.providerConfig
+        })
+      : null;
     pollingHandle = startGmailPolling(
       storesHandle,
       gmailClient,
@@ -1116,7 +1164,8 @@ export function createFomoRuntime(config: FomoConfig = loadFomoConfig()): FomoRu
       killSwitches,
       config,
       ranker,
-      slackWiring.dep
+      slackWiring.dep,
+      oauthRefresh
     );
     logEvent(config, undefined, 'fomo.poll.enabled', 'INFO', {
       interval_ms: killSwitches.polling_interval_ms,

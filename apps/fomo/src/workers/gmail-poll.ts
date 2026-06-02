@@ -121,7 +121,39 @@ export interface GmailPollDeps {
   // Max history items fetched per user per cycle. Forwarded to
   // listHistorySince.maxResults. Defaults to 100 (Gmail's own page size).
   readonly maxResultsPerUser?: number;
+  // Phase v0.5.3 item #2 — optional OAuth auto-refresh. When wired,
+  // the polling worker calls refreshIfNeeded(user_id) at the top of
+  // every user-loop iteration. The helper consults expires_at +
+  // refresh_token; if the access_token is expired or near-expiry
+  // (configurable skew, default 60s), it calls refreshAccessToken,
+  // saves the new token, and clears needs_reauth. On invalid_grant
+  // (or any 4xx), it sets needs_reauth=true and audits
+  // fomo.oauth.refresh_failed; the worker then skips that user this
+  // cycle. Absent → v0.1 behavior (worker uses whatever access_token
+  // is stored, marks needs_reauth on 401 from Gmail).
+  readonly oauthRefresh?: OAuthRefreshDep;
 }
+
+// Phase v0.5.3 item #2 — OAuth auto-refresh hook. Implementations
+// call Google's refresh endpoint via the existing refreshAccessToken
+// helper. The result drives the worker's per-user decision:
+//   'refreshed'      → new access_token saved; worker uses it normally
+//   'still_valid'    → token wasn't expired; worker uses existing access_token
+//   'needs_reauth'   → refresh_token is revoked/invalid; worker skips
+//                       (needs_reauth=true already set by the impl, audit
+//                       row fomo.oauth.refresh_failed already written)
+//   'transient_fail' → network/5xx; worker skips THIS cycle but does
+//                       NOT mark needs_reauth (next cycle retries the
+//                       refresh).
+export interface OAuthRefreshDep {
+  refreshIfNeeded(user_id: string): Promise<OAuthRefreshOutcome>;
+}
+
+export type OAuthRefreshOutcome =
+  | { readonly kind: 'refreshed'; readonly new_expires_at: Date }
+  | { readonly kind: 'still_valid' }
+  | { readonly kind: 'needs_reauth'; readonly reason: string }
+  | { readonly kind: 'transient_fail'; readonly reason: string };
 
 export type GmailPollUserOutcome =
   | { readonly user_id: string; readonly status: 'skipped_no_token' }
@@ -233,11 +265,55 @@ export async function runOnce(deps: GmailPollDeps): Promise<GmailPollCycleReport
       users_skipped++;
       continue;
     }
+
+    // Phase v0.5.3 item #2 — OAuth auto-refresh. When wired, the
+    // refresh helper consults expires_at + refresh_token; if the
+    // access_token is expired (or within the configured skew), it
+    // calls refreshAccessToken, saves the new token, and clears
+    // needs_reauth. We run BEFORE the needs_reauth-skip check so
+    // that a refresh-token-driven recovery from a previously-marked
+    // user is possible on the next cycle after a Gmail 401.
+    // Per founder correction #2: invalid_grant / 4xx sets
+    // needs_reauth=true + audits fomo.oauth.refresh_failed +
+    // returns 'needs_reauth' — caller skips the user safely.
+    if (deps.oauthRefresh) {
+      const refreshResult = await deps.oauthRefresh.refreshIfNeeded(user_id);
+      if (refreshResult.kind === 'needs_reauth') {
+        outcomes.push({ user_id, status: 'skipped_needs_reauth' });
+        users_skipped++;
+        users_needs_reauth++;
+        continue;
+      }
+      if (refreshResult.kind === 'transient_fail') {
+        // Network/5xx — skip this cycle but do NOT mark needs_reauth.
+        // The next cycle will retry the refresh; refresh_token stays
+        // valid for repeated attempts.
+        outcomes.push({
+          user_id,
+          status: 'api_error',
+          previous_history_id: cursor.history_id,
+          error: `oauth_refresh_transient: ${refreshResult.reason}`,
+          retryable: true
+        });
+        users_api_error++;
+        continue;
+      }
+      // 'refreshed' or 'still_valid' → fall through; the next
+      // tokenStore.list call below picks up the new token if it
+      // was just refreshed (the refresh impl saves to the store).
+    }
+
+    // Re-check needs_reauth AFTER the refresh attempt (refresh may
+    // have cleared it OR marked it true on a revoked refresh_token).
     if (googleToken.needs_reauth) {
-      outcomes.push({ user_id, status: 'skipped_needs_reauth' });
-      users_skipped++;
-      users_needs_reauth++;
-      continue;
+      // Re-fetch to pick up any change the refresh helper made.
+      const refreshedView = (await deps.tokenStore.list(user_id)).find((t) => t.provider === 'google');
+      if (refreshedView?.needs_reauth) {
+        outcomes.push({ user_id, status: 'skipped_needs_reauth' });
+        users_skipped++;
+        users_needs_reauth++;
+        continue;
+      }
     }
     const accessToken = await deps.tokenStore.loadAccessToken(user_id, 'google');
     if (accessToken === null) {
