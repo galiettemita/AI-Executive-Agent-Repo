@@ -211,7 +211,10 @@ async function main(): Promise<void> {
     .select({ action: audit_log.action, actor_user_id: audit_log.actor_user_id, detail: audit_log.detail })
     .from(audit_log)
     .where(
-      sql`${audit_log.action} = ANY(${slackReviewActions})
+      sql`${audit_log.action} IN (${sql.join(
+        slackReviewActions.map((a) => sql`${a}`),
+        sql`, `
+      )})
           AND ${audit_log.actor_user_id} IS NOT NULL
           AND ${audit_log.actor_user_id} != ${FOUNDER_USER_ID}
           AND ${audit_log.actor_user_id} != ${MORRIS_USER_ID}
@@ -420,7 +423,12 @@ async function main(): Promise<void> {
       : await db
           .select({ id: users.id, is_founder: users.is_founder })
           .from(users)
-          .where(sql`${users.id} = ANY(${friendBIdsArr}) AND ${users.is_founder} = true`);
+          .where(
+            sql`${users.id} IN (${sql.join(
+              friendBIdsArr.map((id) => sql`${id}`),
+              sql`, `
+            )}) AND ${users.is_founder} = true`
+          );
 
   findings.push({
     severity: friendBIsFounderRows.length === 0 ? 'pass' : 'fail',

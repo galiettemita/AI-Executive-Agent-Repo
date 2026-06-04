@@ -1436,8 +1436,15 @@ export async function main(): Promise<void> {
         // the terminal sees it without parsing JSON.
         process.stderr.write(err.message + '\n');
       } else {
+        const cause = err instanceof Error ? (err as { cause?: unknown }).cause : undefined;
+        const causeErr = cause instanceof Error ? cause : undefined;
         logEvent(verifyConfig, undefined, 'fomo.migrations.verifier_error', 'ERROR', {
-          error: err instanceof Error ? err.message : String(err)
+          error: err instanceof Error ? err.message : String(err),
+          error_code: (err as { code?: unknown } | undefined)?.code ?? null,
+          cause_message: causeErr?.message ?? (cause === undefined ? null : String(cause)),
+          cause_code: causeErr ? (causeErr as { code?: unknown }).code ?? null : null,
+          cause_stack: causeErr?.stack ?? null,
+          stack: err instanceof Error ? err.stack : null
         });
       }
       await dbResult.pool.end();
