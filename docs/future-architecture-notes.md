@@ -305,6 +305,76 @@ When L6 starts (≥10 tools), build:
 
 ---
 
+## Email Context Provider Abstraction
+
+**Source:** founder directive 2026-05-30 — long-term architecture rule, no code change
+**Layer:** L1 (Gmail-read) onward — cross-cutting across every layer that consumes inbound email
+**Maps to "Future Agent Intelligence Requirement" component:** Context Providers (canonical home: [FOMO_DESIGN.md §6 Rule 2](../FOMO_DESIGN.md), [FOMO_PLAN.md §4.2](../FOMO_PLAN.md))
+
+### Concept
+
+Brevio must not be architected as Gmail-only forever. Email is one *category* of context. Gmail is the v0.1 / v0.5 implementation of that category, not the final email strategy. The long-term shape is an `EmailContextProvider` abstraction:
+
+```text
+EmailContextProvider
+├── GmailProvider        — v0.1 / v0.5 (first; fastest, cleanest API path)
+├── OutlookProvider      — likely next official provider (Microsoft Graph)
+├── iCloudMailProvider   — later (weaker provider support; extra security review)
+├── YahooMailProvider    — later (weaker provider support; extra security review)
+└── GenericIMAPProvider  — later (no OAuth in many cases; extra security review)
+```
+
+Every provider normalizes inbound email into the same `RawEmailContext` shape (or its future equivalent). The ranker, egress policy, alert pipeline, memory signals, feedback events, and SendBlue outbound flows MUST NOT depend on Gmail-specific assumptions.
+
+### Why this is documented before any non-Gmail code lands
+
+The v0.5 substrate is the first time real users (the founder, then a briefed iPhone friend) flow through the FOMO pipeline. Every Gmail-shape assumption baked into the ranker prompt, egress redaction rules, `rank_results` columns, alert state machine, audit detail keys, feedback events, and outbound-sender template becomes harder to unwind once friend beta is live. This entry exists so future implementers reading the v0.5 substrate read it as "Gmail-first" rather than "Gmail-only." It does not authorize any non-Gmail provider work — it constrains how Gmail-specific decisions are framed today.
+
+### Invariants every future EmailContextProvider must satisfy
+
+1. **Normalized shape.** Inbound mail is normalized to the same `RawEmailContext` (or successor) the v0.1 Gmail client emits. The ranker / egress / alert / memory / feedback layers see one shape, regardless of provider.
+2. **Gateway parity.** Every provider passes through the same gateway shape Gmail passes through in v0.1: Tool Registry, Permission Gate, OAuth / credential manager (via the existing token-crypto + oauth-state path), Egress Policy, Audit Log, kill switches, founder-only smoke-test gate.
+3. **Provider-specific failure handling.** Each provider has its own `*UnauthorizedError` / `*ApiError` taxonomy (mirroring `GmailUnauthorizedError`, `OpenAIAuthError`, `SendBlueProviderError`) — never a leaky catch-all. Retryable vs terminal must be modeled per provider.
+4. **Per-provider kill switch.** A provider only goes live when its dedicated env-driven kill switch is on AND its credentials/config are present. "Real or absent, never half-wired" (see [[real-or-absent-no-half-wired]]).
+5. **Per-provider founder-only smoke gate.** Every new provider needs its own preflight + evidence + runbook + smoke report committed before any non-founder traffic touches it, on the same pattern as 3B.3 / 3C.4 / 3F.2 / 3G.
+6. **No raw password collection** unless a security review explicitly approves it AND a smoke gate proves it. Provider OAuth is preferred everywhere it exists.
+7. **No browser automation for webmail** unless Architecture Rule §4.8 holds (API-first, sandboxed fallback, explicit user approval, founder-only smoke). See §"Permanent execution-policy rule for every future layer" above.
+
+### Recommended sequencing
+
+* **GmailProvider** — already live (v0.1 → v0.5). Reference implementation. Whatever Gmail does at the gateway / state-machine / egress level becomes the per-provider checklist.
+* **OutlookProvider (Microsoft Graph)** — likely the next official provider. Cleanest API path after Gmail: real OAuth, real REST surface, real webhook / change-notification primitives. When this lands, the abstraction's load is tested for the first time.
+* **iCloudMailProvider / YahooMailProvider / GenericIMAPProvider** — later. Each must receive extra security review because OAuth coverage is weaker, polling semantics differ, and the UX surface (re-auth flows, app-specific passwords) is bumpier.
+
+### What this rule does NOT do today
+
+* It does NOT change v0.5 runtime behavior. Gmail remains the only active `EmailContextProvider` through v0.5.2.
+* It does NOT block, defer, or expand the v0.5.2 real-friend smoke. That gate is unchanged.
+* It does NOT permit Outlook / iCloud / Yahoo / IMAP / browser automation work to begin without its own 6-question pre-phase gate (see [[two-question-gate]]).
+
+### Future-implementation guidance
+
+When the second `EmailContextProvider` (most likely Outlook) starts, do NOT branch the Gmail code path. Instead:
+
+1. Extract a thin `EmailContextProvider` TS interface from the existing Gmail surface area (`GmailClient` + cursor store + polling worker hooks). The interface should mention nothing Gmail-specific in its method names or return shapes.
+2. Move the current Gmail implementation behind the interface in the same PR — no parallel paths.
+3. Add the new provider behind the same interface, with its own kill switch (e.g., `FOMO_OUTLOOK_POLLING_ENABLED`), its own credential plumbing, its own preflight + evidence + runbook + smoke report.
+4. Verify the ranker / egress / alert / memory / feedback / SendBlue paths are unchanged. If they need to change to accept the new provider, the v0.5 substrate baked in a Gmail-only assumption — name it and fix it.
+5. Keep `RawEmailContext` (or its successor) load-bearing. A new field added for one provider must be either available from every provider or marked optional with documented semantics.
+
+### Recovery
+
+This entry has no archived source — there is no prior `EmailContextProvider` code to restore. The Gmail-first implementation is live at:
+
+* `apps/fomo/src/adapters/gmail/client.ts` — Gmail HTTP client
+* `apps/fomo/src/memory/gmail-cursors.ts` — Gmail cursor store
+* `apps/fomo/src/workers/gmail-poll.ts` — polling worker
+* `apps/fomo/src/dispatch/external-executors.ts` — `gmail.read` executor wiring
+
+When the abstraction is introduced, use these as the reference shape.
+
+---
+
 ## Agent-to-Agent Protocol
 
 **Archived from:** `packages/shared/src/schemas/a2a-runtime.ts` (190 lines)
@@ -648,6 +718,7 @@ Use this when planning a layer to find which archived concepts are relevant.
 
 | Layer | Concept | Section |
 |---|---|---|
+| L1 (Gmail-read) onward | Email Context Provider abstraction (Gmail-first, not Gmail-only) | §Email Context Provider Abstraction |
 | L2 (Calendar read) | Tool Router | §Tool Router |
 | L2 | Capability Discovery (when adding the second OAuth provider) | §Capability Discovery |
 | L3 (Drafting) | Approval Gating | §Approval Gating |
