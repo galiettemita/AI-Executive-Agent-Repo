@@ -1033,6 +1033,65 @@ Must prove:
 * user consent for auto-send,
 * founder spot-checking works.
 
+### Future phase candidate — Personalized Importance Learning / False-Positive Reduction
+
+**Version not locked. This may be pulled forward before v1.0 if friend-beta testing shows false positives are damaging user trust.**
+
+This is intentionally placed *before* v1.0 in the milestone list to make clear it is NOT a post-v1.0 concept. The issue is already appearing in v0.5 testing — urgent-sounding spam and commercial emails were classified as important during the v0.5.2 (Morris) and v0.5.4 (Sheila) smokes. If similar false positives surface as a trust blocker in further v0.5.x friend-beta work, this phase can be scheduled ahead of the v1.0 wedge decision rather than after it.
+
+Right now this milestone changes nothing operationally:
+
+* no runtime code is introduced by adding it to this plan,
+* no ranker rewrite is begun,
+* no new memory-signal kinds are implemented,
+* no new feedback-event kinds are implemented,
+* no current v0.5 scope is changed (Gmail-only `EmailContextProvider`, founder-approved outbound, 3-friend beta cap),
+* implementation requires its own future 6-question gate.
+
+The current phase map (post-v0.5.4 PASS, 2026-06-04) has multiple competing v0.5.5+ candidates surfaced by Friend B feedback (Google OAuth verification, iMessage tone + summary length, STOP confirmation reply — see [docs/SMOKE_REPORT_v0.5.4.md §12](docs/SMOKE_REPORT_v0.5.4.md)) plus this one. Founder picks the order at the next 6-question gate. Do NOT auto-schedule.
+
+Goal:
+
+Brevio learns each user's personal definition of important — per-user, reversible, auditable — so it becomes less noisy over time without becoming blind. Implementation of the permanent product principle now anchored in [FOMO_DESIGN.md §13.5](FOMO_DESIGN.md) and fully specified in [docs/personalized-importance-learning.md](docs/personalized-importance-learning.md).
+
+Why this is its own phase (not a ranker tweak):
+
+A prompt-only change to the ranker has no per-user memory, cannot be reversed by an individual user, and cannot be audited. Personalized Importance Learning requires structured feedback events, aggregated memory signals, reply-parser extensions, and an eval suite that includes a cross-user contamination test. None of that lives in a system prompt. The canonical doc explains the three permanent failure modes of the prompt-only approach (see §3 of the canonical doc).
+
+Proposed sub-phase shape (high-level, not commit-ready):
+
+* **X.1 Substrate** — register new feedback-event kinds + memory-signal kinds; aggregation code; migrations; gated PG tests (per the [InMemory Mock Divergence](docs/personalized-importance-learning.md#15-where-this-principle-lives-in-the-codebase) lesson — the InMemory store must not silently diverge from Postgres on these new kinds).
+* **X.2 Reply parser extension** — recognize the importance-learning intents (`mark_important`, `mark_unimportant`, `ignore_sender`, `surface_more_like_this`, `commercial_but_useful`, `conditional_surface`, `reverse_preference`); deterministic post-processor writes the feedback event.
+* **X.3 Ranker context** — plumb aggregated signals into the ranker prompt; bake-off against existing eval; do not regress v0.1 eval categories.
+* **X.4 Eval suite** — synthetic fixtures for every category in [canonical doc §10](docs/personalized-importance-learning.md): urgent spam, promotional fake urgency, newsletter with urgent headline, commercial but important, security alert, bank fraud, flight change, invoice, sender user marked important, sender user marked unimportant, **cross-user contamination test** (load-bearing).
+* **X.5 Smoke gate** — founder-only smoke: synthetic email → alert → reply "not important" → confirm feedback event written → confirm memory signal updated → confirm next similar email scores lower. Mock tests prove code; smoke tests prove reality.
+
+Each sub-phase is its own scoped change. Per the [Scope Isolation + Hardening Discipline](docs/personalized-importance-learning.md#15-where-this-principle-lives-in-the-codebase) rule (founder-validated 2026-05-29), do NOT bundle these with unrelated milestone work.
+
+Implementation gate:
+
+Before any code lands, run the standard 6-question pre-phase gate. The phase-specific six are proposed in [docs/personalized-importance-learning.md §13](docs/personalized-importance-learning.md). Summary:
+
+1. Does this phase make FOMO more real today AND preserve the long-term Brevio agent OS direction?
+2. Is scope strictly within Personalized Importance Learning, or has it expanded to ranker rewrites / new providers / new tool capabilities?
+3. Are the new feedback-event and memory-signal kinds end-to-end wired in this PR — producer, aggregator, ranker consumer, and eval — or is anything stubbed?
+4. Does the smoke cover the cross-user contamination case, and does the implementation pass it?
+5. Is every learned preference reversible by the user through a natural-language reply, and is that path tested?
+6. Are all eval fixtures synthetic? (No real user emails — founder included — as test cases.)
+
+A "no" on any of the six blocks the phase until resolved.
+
+Scope this phase explicitly does NOT include:
+
+* a ranker rewrite beyond plumbing in the new aggregated signals;
+* auto-send (still its own gate per §17 v0.8);
+* friend-beta expansion (capped at 3 per [three-friend-beta-cap](docs/personalized-importance-learning.md#15-where-this-principle-lives-in-the-codebase) memory; Friend C optional);
+* browser automation;
+* new email providers (Gmail still the only active `EmailContextProvider` per [FOMO_DESIGN.md §6.2](FOMO_DESIGN.md));
+* committing real private email examples;
+* any global suppression rule from one user's preference;
+* any cross-user "users like you" aggregation pattern.
+
 ### v1.0 — Wedge decision
 
 Continue, pivot, or kill.
