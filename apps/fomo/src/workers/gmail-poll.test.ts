@@ -1198,3 +1198,165 @@ describe('runOnce — FOMO_SLACK_REVIEW_ENABLED=false BLOCKS Slack post even wit
 // dispatcher.ts and is used implicitly by dispatch.register; explicit
 // reference here keeps a lint plugin from pruning the import.
 void AuthorizedToolCall;
+
+/* ====================================================================== */
+/* Phase v0.5.5 — STOP enforcement at the polling layer                   */
+/* ====================================================================== */
+
+describe('runOnce — v0.5.5 STOP enforcement (polling layer)', () => {
+  it('stop_active=true → cursor advances + gmail.read dispatched + ranker NOT called + alerts NOT created + fomo.poll.skipped_stop_active fires', async () => {
+    const { InMemoryMemorySignalStore } = await import('../memory/memory-signals.ts');
+    const memoryStore = new InMemoryMemorySignalStore();
+
+    // Seed the user with stop_active=true.
+    await memoryStore.upsert({
+      user_id: 'u-stop',
+      kind: 'stop_active',
+      scope_key: null,
+      detail: { active: true, recorded_at: '2026-06-04T12:00:00Z' },
+      source: 'user_confirmed',
+      confidence: 1.0
+    });
+
+    const historyMap = new Map<string, { status: number; body: unknown }>();
+    historyMap.set('h-stop-start', {
+      status: 200,
+      body: {
+        history: [
+          { id: 'h-1', messagesAdded: [{ message: { id: 'm-stop-1', threadId: 't-1' } }] },
+          { id: 'h-2', messagesAdded: [{ message: { id: 'm-stop-2', threadId: 't-2' } }] }
+        ],
+        historyId: 'h-stop-end'
+      }
+    });
+    const harness = makeHarness({ behavior: { history: historyMap } });
+    await seedUser(harness, 'u-stop', 'h-stop-start');
+
+    const rankCalls: Array<{ user_id: string }> = [];
+    const rankResultStore = new InMemoryRankResultStore();
+    harness.deps = {
+      ...harness.deps,
+      memoryStore,
+      ranker: {
+        rank: async (req) => {
+          rankCalls.push({ user_id: req.user_id });
+          return { ok: true, decision: { label: 'important', score: 0.9, reason: 'x' }, model_name: 'mock', prompt_version: 'v', latency_ms: 1, input_tokens: 1, output_tokens: 1, estimated_cost_usd: 0 };
+        },
+        store: rankResultStore
+      } as Parameters<typeof runOnce>[0]['ranker']
+    };
+
+    const report = await runOnce(harness.deps);
+
+    // Cursor advanced + messages dispatched (polling continued).
+    assert.equal(report.messages_observed, 2, 'two messages observed');
+    assert.equal(report.messages_dispatched, 2, 'both gmail.read calls dispatched (cursor advances)');
+    // Ranker bypassed.
+    assert.equal(rankCalls.length, 0, "ranker MUST NOT be called for STOP'd user");
+    assert.equal(report.messages_ranked, 0);
+    assert.equal(report.alerts_created, 0, 'no alerts created');
+    // New v0.5.5 counter.
+    assert.equal(report.users_skipped_stop_active, 1);
+    assert.equal(report.users_polled, 1, 'user is still counted as polled — cursor advanced');
+    // The new audit kind fires exactly once.
+    const audits = await harness.auditStore.recent('u-stop', 50);
+    const skipAudits = audits.filter((e) => e.action === 'fomo.poll.skipped_stop_active');
+    assert.equal(skipAudits.length, 1, 'exactly one fomo.poll.skipped_stop_active audit row');
+    const skipDetail = skipAudits[0]?.detail as Record<string, unknown> | null;
+    assert.equal(skipDetail?.messages_observed, 2);
+  });
+
+  it('stop_active=true with ZERO new messages → no skip audit (no information to surface)', async () => {
+    const { InMemoryMemorySignalStore } = await import('../memory/memory-signals.ts');
+    const memoryStore = new InMemoryMemorySignalStore();
+    await memoryStore.upsert({
+      user_id: 'u-stop-empty',
+      kind: 'stop_active',
+      scope_key: null,
+      detail: { active: true, recorded_at: '2026-06-04T12:00:00Z' },
+      source: 'user_confirmed',
+      confidence: 1.0
+    });
+
+    const historyMap = new Map<string, { status: number; body: unknown }>();
+    historyMap.set('h-empty-start', { status: 200, body: { historyId: 'h-empty-end' } });
+    const harness = makeHarness({ behavior: { history: historyMap } });
+    await seedUser(harness, 'u-stop-empty', 'h-empty-start');
+    harness.deps = { ...harness.deps, memoryStore };
+
+    const report = await runOnce(harness.deps);
+    assert.equal(report.messages_observed, 0);
+    assert.equal(report.users_skipped_stop_active, 0, 'no skip audit emitted when no messages to skip');
+    const audits = await harness.auditStore.recent('u-stop-empty', 50);
+    assert.equal(audits.filter((e) => e.action === 'fomo.poll.skipped_stop_active').length, 0);
+  });
+
+  it('cross-tenant: user A stop_active + user B not → A skipped, B ranked normally; B audits untouched by A state', async () => {
+    const { InMemoryMemorySignalStore } = await import('../memory/memory-signals.ts');
+    const memoryStore = new InMemoryMemorySignalStore();
+    // Only user A is stopped.
+    await memoryStore.upsert({
+      user_id: 'u-a',
+      kind: 'stop_active',
+      scope_key: null,
+      detail: { active: true, recorded_at: '2026-06-04T12:00:00Z' },
+      source: 'user_confirmed',
+      confidence: 1.0
+    });
+
+    const historyMap = new Map<string, { status: number; body: unknown }>();
+    historyMap.set('h-a-start', {
+      status: 200,
+      body: { history: [{ id: 'h-a1', messagesAdded: [{ message: { id: 'm-a-1', threadId: 't-a-1' } }] }], historyId: 'h-a-end' }
+    });
+    historyMap.set('h-b-start', {
+      status: 200,
+      body: { history: [{ id: 'h-b1', messagesAdded: [{ message: { id: 'm-b-1', threadId: 't-b-1' } }] }], historyId: 'h-b-end' }
+    });
+    const harness = makeHarness({ behavior: { history: historyMap } });
+    await seedUser(harness, 'u-a', 'h-a-start');
+    await seedUser(harness, 'u-b', 'h-b-start');
+
+    const rankCalls: Array<{ user_id: string }> = [];
+    const rankResultStore = new InMemoryRankResultStore();
+    harness.deps = {
+      ...harness.deps,
+      memoryStore,
+      ranker: {
+        rank: async (req) => {
+          rankCalls.push({ user_id: req.user_id });
+          return { ok: true, decision: { label: 'important', score: 0.9, reason: 'x' }, model_name: 'mock', prompt_version: 'v', latency_ms: 1, input_tokens: 1, output_tokens: 1, estimated_cost_usd: 0 };
+        },
+        store: rankResultStore
+      } as Parameters<typeof runOnce>[0]['ranker']
+    };
+
+    const report = await runOnce(harness.deps);
+
+    // Ranker ran exactly ONCE — for user B only.
+    assert.equal(rankCalls.length, 1, 'ranker called exactly once');
+    assert.equal(rankCalls[0]?.user_id, 'u-b', 'ranker called for u-b only');
+    assert.equal(report.users_skipped_stop_active, 1, 'one user skipped (u-a)');
+    assert.equal(report.users_polled, 2, 'both users counted as polled');
+    assert.equal(report.messages_ranked, 1);
+
+    // Audit isolation: skip audit is attributed to u-a only.
+    const aAudits = await harness.auditStore.recent('u-a', 50);
+    const bAudits = await harness.auditStore.recent('u-b', 50);
+    assert.equal(aAudits.filter((e) => e.action === 'fomo.poll.skipped_stop_active').length, 1);
+    assert.equal(bAudits.filter((e) => e.action === 'fomo.poll.skipped_stop_active').length, 0);
+    assert.equal(aAudits.filter((e) => e.action === 'fomo.rank.completed').length, 0);
+    assert.equal(bAudits.filter((e) => e.action === 'fomo.rank.completed').length, 1);
+  });
+
+  it('memoryStore dep absent → exact v0.5.4 behavior (ranker called normally; no skip audit)', async () => {
+    const { harness, rankCalls } = await setupRankerHarness({
+      rank: async () => rankerSuccess()
+    });
+    // No memoryStore wired.
+    const report = await runOnce(harness.deps);
+    assert.equal(report.messages_ranked, 2);
+    assert.equal(rankCalls.length, 2);
+    assert.equal(report.users_skipped_stop_active, 0);
+  });
+});

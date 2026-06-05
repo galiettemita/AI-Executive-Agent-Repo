@@ -542,7 +542,14 @@ function startGmailPolling(
           gateDeps,
           ranker: ranker ?? undefined,
           slackReview: slackReview ?? undefined,
-          oauthRefresh: oauthRefresh ?? undefined
+          oauthRefresh: oauthRefresh ?? undefined,
+          // Phase v0.5.5 — wire memoryStore so the polling worker can
+          // consult stop_active per-user and bypass ranker dispatch for
+          // STOP'd users (cursor still advances; per-cycle audit row
+          // fomo.poll.skipped_stop_active fires). Also enables the
+          // defense-in-depth alert-suppression check inside
+          // postSlackCandidateReview.
+          memoryStore: stores.memory
         });
         cyclesRun++;
         if (stopped) return;
@@ -558,6 +565,10 @@ function startGmailPolling(
           users_needs_reauth: report.users_needs_reauth,
           users_unauthorized: report.users_unauthorized,
           users_api_error: report.users_api_error,
+          // Phase v0.5.5 — surface STOP-suppressed user count per cycle
+          // so operators see the polling-after-STOP suppression at a
+          // glance without correlating per-message audits.
+          users_skipped_stop_active: report.users_skipped_stop_active,
           messages_observed: report.messages_observed,
           messages_dispatched: report.messages_dispatched,
           messages_failed: report.messages_failed,
@@ -648,6 +659,13 @@ function startGmailPolling(
 function buildSendBlueInboundWiring(
   storesHandle: SubstrateStoresHandle,
   killSwitches: KillSwitches,
+  // Phase v0.5.5 — optional. When wired (FOMO_SEND_ENABLED=true and
+  // SendBlue credentials configured), the inbound route uses this
+  // client to send the courtesy STOP confirmation reply. Absent →
+  // exact v0.5.4 behavior (stop_active recorded; no confirmation
+  // iMessage). Threaded through from the same SendBlueClient that
+  // powers the outbound-sender; we narrow the type at the dep boundary.
+  sendBlueClient: SendBlueClient | null,
   env: NodeJS.ProcessEnv = process.env
 ): {
   routeDeps: SendBlueInboundRouteDeps | null;
@@ -744,7 +762,13 @@ function buildSendBlueInboundWiring(
     auditStore: storesHandle.stores.audit,
     replyParser: {
       parse: (req: Parameters<typeof parseReply>[0]) => parseReply(req, { router: replyRouter })
-    }
+    },
+    // Phase v0.5.5 — only wire if the SendBlue client is available.
+    // Absent → applyStop runs the v0.5.4 path (stop_active recorded;
+    // no courtesy confirmation sent). Narrow dep boundary: only `.send`.
+    stopConfirmation: sendBlueClient
+      ? { send: (input) => sendBlueClient.send(input) }
+      : undefined
   });
 
   return { routeDeps, inboundEnabled: true };
@@ -1071,7 +1095,11 @@ export function createFomoRuntime(config: FomoConfig = loadFomoConfig()): FomoRu
   // is on but the webhook signing secret / founder phone / founder
   // user_id / OpenAI key are missing. Safe default: route NOT mounted,
   // returns 404, no reply parsing happens.
-  const inboundWiring = buildSendBlueInboundWiring(storesHandle, killSwitches);
+  const inboundWiring = buildSendBlueInboundWiring(
+    storesHandle,
+    killSwitches,
+    sendWiring.client ?? null
+  );
   if (inboundWiring.routeDeps) {
     logEvent(config, undefined, 'fomo.sendblue.inbound.enabled', 'INFO', {
       inbound_route_mounted: true,

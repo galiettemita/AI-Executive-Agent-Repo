@@ -59,6 +59,7 @@ import { type ToolInvocationStore } from '../core/tool-invocations.js';
 import { AuthorizedToolCall, type DispatchTable } from '../dispatch/dispatcher.js';
 import { type AlertStore } from '../memory/alerts.js';
 import { type GmailCursorStore } from '../memory/gmail-cursors.js';
+import { type MemorySignalStore } from '../memory/memory-signals.js';
 import { type RankResultStore } from '../memory/rank-results.js';
 import { type RankerResult } from '../ranker/index.js';
 import { type TokenStore } from '../security/oauth/token-store.js';
@@ -132,6 +133,21 @@ export interface GmailPollDeps {
   // cycle. Absent → v0.1 behavior (worker uses whatever access_token
   // is stored, marks needs_reauth on 401 from Gmail).
   readonly oauthRefresh?: OAuthRefreshDep;
+  // Phase v0.5.5 — STOP enforcement at the polling layer. When wired,
+  // the polling worker calls memoryStore.get(user_id, 'stop_active',
+  // null) at the top of every user-loop iteration. If the signal is
+  // active (detail.active === true), the worker:
+  //   - still fetches Gmail history + dispatches gmail.read per
+  //     message (so the cursor advances + the inbox doesn't fall
+  //     behind), but
+  //   - bypasses the ranker dispatch entirely (no LLM cost; no
+  //     rank_results row), and
+  //   - emits ONE fomo.poll.skipped_stop_active audit row per user-
+  //     cycle when messages were observed under suppression.
+  // Absent → v0.1 behavior (no per-user STOP check at the polling
+  // layer; defense-in-depth check inside postSlackCandidateReview
+  // still fires if the ranker somehow produces a candidate).
+  readonly memoryStore?: MemorySignalStore;
 }
 
 // Phase v0.5.3 item #2 — OAuth auto-refresh hook. Implementations
@@ -201,6 +217,14 @@ export interface GmailPollCycleReport {
   readonly users_needs_reauth: number;
   readonly users_unauthorized: number;
   readonly users_api_error: number;
+  // Phase v0.5.5 — distinct sub-count of users polled (cursor
+  // advanced, gmail.read dispatched) but with the ranker bypassed
+  // because their stop_active memory signal was true. Zero when
+  // deps.memoryStore is absent (the per-user check requires it).
+  // Always ≤ users_polled (these users are counted under polled too,
+  // because they were processed normally except for the ranker
+  // dispatch).
+  readonly users_skipped_stop_active: number;
   readonly messages_observed: number;
   readonly messages_dispatched: number;
   readonly messages_failed: number;
@@ -234,6 +258,7 @@ export async function runOnce(deps: GmailPollDeps): Promise<GmailPollCycleReport
   let users_needs_reauth = 0;
   let users_unauthorized = 0;
   let users_api_error = 0;
+  let users_skipped_stop_active = 0;
   let messages_observed = 0;
   let messages_dispatched = 0;
   let messages_failed = 0;
@@ -321,6 +346,31 @@ export async function runOnce(deps: GmailPollDeps): Promise<GmailPollCycleReport
       outcomes.push({ user_id, status: 'skipped_no_token' });
       users_skipped++;
       continue;
+    }
+
+    // Phase v0.5.5 — STOP enforcement at the polling layer. When the
+    // memoryStore dep is wired, check the user's stop_active signal
+    // BEFORE deciding whether to dispatch ranker calls. If active,
+    // we still fetch Gmail history + dispatch gmail.read (so the
+    // cursor advances + the user's inbox doesn't fall behind), but
+    // we set stopActiveSuppressed=true which the per-message ranker
+    // dispatch checks below. This avoids per-message LLM cost AND
+    // prevents alert creation AND keeps the cursor warm — exactly
+    // the v0.5.4 SMOKE_REPORT §12 followup #1 design.
+    //
+    // The check is best-effort: if memoryStore is absent (e.g. a
+    // test fixture that doesn't wire it), the flag stays false and
+    // the worker behaves exactly as v0.5.4 (ranker dispatched
+    // unconditionally; defense-in-depth check inside
+    // postSlackCandidateReview is the only STOP guard at the alert-
+    // creation layer).
+    let stopActiveSuppressed = false;
+    if (deps.memoryStore) {
+      const stopSignal = await deps.memoryStore.get(user_id, 'stop_active', null);
+      const detail = (stopSignal?.detail ?? {}) as { active?: unknown };
+      if (detail.active === true) {
+        stopActiveSuppressed = true;
+      }
     }
 
     // Discover new message IDs since the cursor.
@@ -472,7 +522,13 @@ export async function runOnce(deps: GmailPollDeps): Promise<GmailPollCycleReport
       // The ranker dep is OPTIONAL — when absent, behavior matches 3B.2
       // (RawEmailContext discarded). Ranker failures NEVER abort the
       // cycle; they are audited and counted, then the loop continues.
-      if (deps.ranker) {
+      //
+      // Phase v0.5.5 — STOP enforcement bypass. When stopActiveSuppressed
+      // is true for this user this cycle, skip the ranker entirely. The
+      // RawEmailContext is discarded (same path as ranker-dep-absent).
+      // No LLM cost, no rank_results row, no alert creation. The per-
+      // cycle audit row fires once at the bottom of the user loop.
+      if (deps.ranker && !stopActiveSuppressed) {
         let rankerResult: RankerResult;
         try {
           rankerResult = await deps.ranker.rank({ raw: result.output, user_id });
@@ -607,6 +663,31 @@ export async function runOnce(deps: GmailPollDeps): Promise<GmailPollCycleReport
       }
     }
 
+    // Phase v0.5.5 — emit ONE fomo.poll.skipped_stop_active audit
+    // row per user-cycle when the ranker was suppressed AND the
+    // cycle actually had messages to suppress. This is the smoke-
+    // evidence signal for criterion C6 (polling-after-STOP
+    // suppression). We skip emission on a no-message cycle because
+    // a row with messages_observed=0 carries no information
+    // (no alerts would have been created anyway).
+    if (stopActiveSuppressed && newIds.length > 0) {
+      await deps.auditStore.write({
+        actor_user_id: user_id,
+        actor_ip: null,
+        actor_user_agent: null,
+        action: 'fomo.poll.skipped_stop_active',
+        target: 'memory_signal:stop_active',
+        result: 'success',
+        detail: {
+          user_id,
+          messages_observed: newIds.length,
+          messages_dispatched: dispatched,
+          reason: 'stop_active=true; ranker bypassed; cursor still advanced'
+        }
+      });
+      users_skipped_stop_active++;
+    }
+
     // Advance the cursor whether or not any messages were observed.
     // Gmail's listHistorySince returns the current global historyId
     // even when no items matched the filter, so this acks the read
@@ -655,6 +736,7 @@ export async function runOnce(deps: GmailPollDeps): Promise<GmailPollCycleReport
     users_needs_reauth,
     users_unauthorized,
     users_api_error,
+    users_skipped_stop_active,
     messages_observed,
     messages_dispatched,
     messages_failed,
@@ -687,6 +769,7 @@ export async function runOnce(deps: GmailPollDeps): Promise<GmailPollCycleReport
       users_needs_reauth: report.users_needs_reauth,
       users_unauthorized: report.users_unauthorized,
       users_api_error: report.users_api_error,
+      users_skipped_stop_active: report.users_skipped_stop_active,
       messages_observed: report.messages_observed,
       messages_dispatched: report.messages_dispatched,
       messages_failed: report.messages_failed,
@@ -795,6 +878,40 @@ interface PostSlackArgs {
 async function postSlackCandidateReview(args: PostSlackArgs): Promise<SlackPostOutcome> {
   const { user_id, invocation_id, message_id, rank_result_id, rawEmail, rankerResult, deps, slackReview } = args;
   const newAlertId = deps.newAlertId ?? randomUUID;
+
+  // Phase v0.5.5 — defense-in-depth STOP check at the alert-creation
+  // layer. The polling-layer check (stopActiveSuppressed in runOnce)
+  // already bypasses the ranker call when stop_active=true, so this
+  // path normally is unreachable for STOP'd users. But if any future
+  // code path (manual trigger, ranker invoked elsewhere, test fixture
+  // that injects rankerResults directly) reaches here for a STOP'd
+  // user, this backstop refuses to create the alert + audits the
+  // suppression. The two checks are intentionally redundant per
+  // [[real-or-absent-no-half-wired]] — STOP enforcement at the alert
+  // boundary cannot rely on the polling-layer check to always fire.
+  if (deps.memoryStore) {
+    const stopSignal = await deps.memoryStore.get(user_id, 'stop_active', null);
+    const detail = (stopSignal?.detail ?? {}) as { active?: unknown };
+    if (detail.active === true) {
+      await deps.auditStore.write({
+        actor_user_id: user_id,
+        actor_ip: null,
+        actor_user_agent: null,
+        action: 'fomo.alert.suppressed_stop_active',
+        target: 'tool:slack.founder_review',
+        result: 'success',
+        detail: {
+          user_id,
+          rank_result_id,
+          message_id,
+          invocation_id,
+          reason:
+            'stop_active=true at alert-creation; backstop fired (polling-layer suppression should have caught this upstream)'
+        }
+      });
+      return 'failed';
+    }
+  }
 
   const alertOutcome = await slackReview.alertStore.create({
     alert_id: newAlertId(),
