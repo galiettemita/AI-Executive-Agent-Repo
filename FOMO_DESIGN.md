@@ -832,6 +832,65 @@ That is forbidden.
 
 ---
 
+## 13.5 Personalized Importance Learning (long-term product principle)
+
+Brevio is not a generic email-alert bot. It is not a "for everyone, ranked by a global model" surface. The first user-facing promise — *I can ignore my inbox without being scared that I missed something important* — only holds if Brevio learns each user's *personal* definition of important, and keeps each user's learning isolated from every other user's.
+
+This section is the design-side anchor for that capability. The canonical doc lives at [docs/personalized-importance-learning.md](docs/personalized-importance-learning.md). Read it before changing ranker behavior, commercial / spam handling, the reply parser, feedback events, or memory signals.
+
+### Why this is a permanent product principle, not a ranker tweak
+
+During v0.5.x testing, Brevio classified urgent-sounding spam and commercial emails as important. The reflexive fix — "ignore all commercial mail" — is wrong. It is wrong because some commercial and transactional emails are exactly the ones a user would be sad to miss:
+
+* bank fraud alerts,
+* flight changes,
+* invoices,
+* subscription / account warnings,
+* shipping issues,
+* school / payment notices,
+* customer-support replies,
+* job / application updates,
+* security alerts.
+
+A category-level suppression would silently turn Brevio blind to the most consequential interruptions in the user's life. That is a worse failure mode than the noise we are trying to reduce.
+
+The right response is not a smarter prompt. It is a per-user, signal-backed, reversible, auditable learning loop — feedback events feed memory signals, memory signals feed the ranker, the user can correct the system in plain English, and every correction is per-user and never bleeds across users.
+
+### The permanent quotes
+
+> **Brevio must learn each user's personal definition of important.**
+
+> **Brevio should become less noisy over time without becoming blind.**
+
+> **Personalized learning must improve interruption quality without silently suppressing genuinely important messages.**
+
+These three sentences are on the same load-bearing tier as the §6 architecture laws and the §13 safe-learning-tier discipline. Every future change to ranker behavior, commercial-handling rules, feedback intent parsing, or memory-signal kinds must serve them.
+
+### What this means at the architecture level
+
+* **Per-user keyspace, always.** Every learned signal is keyed by `user_id`. The v0.5.x cross-tenant isolation invariants — Morris's data untouched by Sheila's smoke; one user's `stop_active` row never modifying another's — apply unchanged. There is no global learning, no "users like you also suppressed…" aggregation, no cross-user inference. See [v0.5.4 cross-tenant proof](docs/SMOKE_REPORT_v0.5.4.md) §6 for the existing isolation pattern.
+* **Reversible by the user.** Every learned preference must be undoable by a plain-English reply. A learning system the user can't undo is not safe.
+* **Auditable.** The user (and the founder, during review) can ask "why did you send / not send me this?" and get an answer that names the contributing signals.
+* **Single corrections do not flip.** One "not important" reply lowers a score; it does not flip a suppression. Hard suppressions require an explicit `ignore_sender` reply or N≥k consistent corrections within a recency window.
+* **Real or absent.** A feedback event kind without an aggregator, or a memory signal kind without a ranker consumer, must not ship. The learning loop is end-to-end or it does not exist. (Carry-forward from [§22 Safety Lessons](#22-safety-lessons-from-brevio-audit).)
+
+### What this does NOT change about the existing safe-learning tier discipline
+
+The L0–L5 safe-learning tier table in §13 above still governs *all* learning, including Personalized Importance Learning. Specifically:
+
+* Recording a feedback event (L0): no approval needed.
+* Adjusting sender importance from explicit user replies (L1): no approval, but must be reversible.
+* Inferring a preference Brevio wants to *propose* to the user ("hold school emails until 7pm"): L2 — Brevio proposes; the user decides.
+* Changing alert behavior significantly: L3 — explicit user approval required.
+
+Personalized Importance Learning operates entirely within L0–L2. Anything that wants to escalate to L3+ runs its own approval prompt and its own 6-question gate.
+
+### Scope boundary
+
+This section establishes the *principle*. It does not implement anything. The implementation is a future phase (see [FOMO_PLAN.md §17 — Personalized Importance Learning / False-Positive Reduction](FOMO_PLAN.md)). Implementation must pass a dedicated 6-question gate; the proposed gate questions are in [docs/personalized-importance-learning.md §13](docs/personalized-importance-learning.md).
+
+---
+
 ## 14. Memory-First Architecture
 
 The memory promise is:
