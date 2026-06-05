@@ -38,14 +38,36 @@ describe('validateRankerOutput — happy path', () => {
     assert.ok(r.ok);
   });
 
-  it('truncates overly long reason rather than fail-closing', () => {
+  it('v0.5.6: fails-closed on overly long reason (no ellipsis truncation)', () => {
+    // v0.5.6 founder Q4 lock 2026-06-05: "no arbitrary ellipsis from
+    // truncation". Replaced the previous truncate-with-ellipsis behavior
+    // with a fail-closed length check. OpenAI strict mode enforces
+    // maxLength=180 server-side (openai-response-format.ts); this is
+    // defense-in-depth.
     const longReason = 'a'.repeat(500);
     const r = validateRankerOutput(`{"label":"important","score":0.7,"reason":${JSON.stringify(longReason)}}`);
+    assert.equal(r.ok, false);
+    if (!r.ok) {
+      assert.match(r.reason, /reason length 500 exceeds MAX_REASON_LEN=180/);
+    }
+  });
+
+  it('v0.5.6: accepts reason at boundary (length === 180)', () => {
+    const atBoundary = 'b'.repeat(180);
+    const r = validateRankerOutput(`{"label":"important","score":0.7,"reason":${JSON.stringify(atBoundary)}}`);
     assert.ok(r.ok);
     if (r.ok) {
-      assert.ok(r.value.reason.length <= 240);
-      assert.ok(r.value.reason.endsWith('…'));
+      assert.equal(r.value.reason.length, 180);
+      // Critical: no ellipsis appended.
+      assert.ok(!r.value.reason.endsWith('…'));
+      assert.equal(r.value.reason, atBoundary);
     }
+  });
+
+  it('v0.5.6: fails-closed at length 181 (off-by-one regression guard)', () => {
+    const tooLong = 'c'.repeat(181);
+    const r = validateRankerOutput(`{"label":"important","score":0.7,"reason":${JSON.stringify(tooLong)}}`);
+    assert.equal(r.ok, false);
   });
 
   it('returned decision object is frozen', () => {

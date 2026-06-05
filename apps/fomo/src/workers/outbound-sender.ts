@@ -617,10 +617,44 @@ async function processOneAlert(
   }
 
   const view: SlackEgressView = applyEgressForSlackCard(gmailRawOrSkip.raw);
+  // v0.5.6: thread rank.reason through to renderFounderText. The shell
+  // is now sentence-shaped and uses rank.reason as the prose-y "why"
+  // line, replacing the previous body_snippet (3E.1 directive PRESERVED:
+  // rank.reason is the ONLY allowed model-generated text in the body).
   const rendered = renderFounderText({
     view,
-    rank: { label: rank.label as RankLabel, score: rank.score }
+    rank: {
+      label: rank.label as RankLabel,
+      score: rank.score,
+      reason: rank.reason
+    }
   });
+
+  // v0.5.6 Q6 lock: if renderFounderText substituted the deterministic
+  // fallback because rank.reason failed the body-render schema (empty or
+  // > REASON_HARD_CAP_FOR_RENDER), write fomo.alert.drafter_schema_failed
+  // BEFORE the send. The alert continues to send with the fallback body
+  // (best-effort audit, NO retry). Detail surfaces violation kind +
+  // original length so operators can size-tune the schema cap. NEVER
+  // the original reason text content.
+  if (rendered.reason_source === 'fallback') {
+    await deps.auditStore.write({
+      actor_user_id: user_id,
+      actor_ip: null,
+      actor_user_agent: null,
+      action: 'fomo.alert.drafter_schema_failed',
+      target: `alert:${alert_id}`,
+      result: 'failure',
+      detail: {
+        alert_id,
+        message_id: alert.message_id,
+        rank_result_id: alert.rank_result_id,
+        reason_violation_kind: rendered.reason_violation_kind,
+        original_reason_length: rendered.original_reason_length,
+        template_version: rendered.template_version
+      }
+    });
+  }
 
   // Audit the send attempt BEFORE invoking the provider. Even if the
   // process dies after this row, the operator sees that we tried.
@@ -639,7 +673,11 @@ async function processOneAlert(
       template_version: rendered.template_version,
       label: rank.label,
       score: rank.score,
-      content_chars: rendered.text.length
+      content_chars: rendered.text.length,
+      // v0.5.6: surfaces whether this send used the ranker's reason
+      // or the deterministic fallback. Smoke-evidence C6 + C8 key off
+      // this field.
+      reason_source: rendered.reason_source
     }
   });
 

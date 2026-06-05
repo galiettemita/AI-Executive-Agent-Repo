@@ -28,7 +28,7 @@
 import { sql } from 'drizzle-orm';
 
 import { loadDbClient } from '../src/db/client.js';
-import { FOMO_AUDIT_ACTIONS } from '../src/core/audit.js';
+import { FOMO_AUDIT_ACTIONS, type AuditAction } from '../src/core/audit.js';
 import { FOUNDER_TEXT_TEMPLATE_VERSION } from '../src/core/founder-text-template.js';
 
 type Severity = 'pass' | 'warn' | 'fail' | 'pending';
@@ -53,14 +53,19 @@ const TARGET_MAX = 280;
 const HARD_MAX = 320;
 const ABSOLUTE_MAX = 340;
 
-// The runtime commit registers this kind. As-strict-as-v0.5.5 typing is
-// deferred until runtime lands (cast widening is the scaffolding-time
-// workaround; removed when runtime adds the kind to FOMO_AUDIT_ACTIONS).
-const EXPECTED_V056_NEW_AUDIT_KIND = 'fomo.alert.drafter_schema_failed';
+// Strictly typed via `as const satisfies AuditAction` (runtime commit
+// landed). If anyone removes this kind from FOMO_AUDIT_ACTIONS in a
+// future PR, tsc fails here — exactly the protection the founder asked
+// for in the v0.5.5 runtime directive: "remove/avoid any loose string-
+// cast workaround that hides missing audit action registration."
+const EXPECTED_V056_NEW_AUDIT_KIND = 'fomo.alert.drafter_schema_failed' as const satisfies AuditAction;
 
 // The previous (v0.5.5-and-prior) template version. Runtime commit bumps
-// past this; if it equals this, runtime hasn't shipped yet.
-const V055_TEMPLATE_VERSION_BASELINE = 'founder-text-v0.1.0';
+// past this; if it equals this, runtime hasn't shipped yet. Typed as
+// `string` (not the literal) so the runtime check against the bumped
+// FOUNDER_TEXT_TEMPLATE_VERSION stays meaningful — tsc would otherwise
+// flag the equality as statically impossible.
+const V055_TEMPLATE_VERSION_BASELINE: string = 'founder-text-v0.1.0';
 
 function symbol(s: Severity): string {
   switch (s) {
@@ -96,7 +101,7 @@ async function main(): Promise<void> {
   /* Registry inspection — determines which criteria are PENDING    */
   /* ============================================================== */
 
-  const auditActionSet = new Set(FOMO_AUDIT_ACTIONS as readonly string[]);
+  const auditActionSet = new Set(FOMO_AUDIT_ACTIONS);
   const newAuditKindRegistered = auditActionSet.has(EXPECTED_V056_NEW_AUDIT_KIND);
   const templateVersionBumped = FOUNDER_TEXT_TEMPLATE_VERSION !== V055_TEMPLATE_VERSION_BASELINE;
   const runtimePending = !newAuditKindRegistered || !templateVersionBumped;

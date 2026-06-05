@@ -80,6 +80,11 @@ interface HarnessOptions {
   readonly gmailFetch: typeof fetch;
   // Kill switches (defaults: ranker off, send on, slack off, polling off).
   readonly switches?: ReturnType<typeof loadKillSwitches>;
+  // v0.5.6: override the seeded rank_results.reason. Defaults to
+  // 'deposit due tonight'. Used by v0.5.6 fallback-path tests to seed
+  // a too-long or empty reason and assert
+  // fomo.alert.drafter_schema_failed is written.
+  readonly reasonOverride?: string;
 }
 
 async function buildHarness(opts: HarnessOptions) {
@@ -101,7 +106,8 @@ async function buildHarness(opts: HarnessOptions) {
   });
   await cursorStore.upsert({ user_id: FOUNDER_USER, history_id: 'h1' });
 
-  // Seed the rank_results row.
+  // Seed the rank_results row. v0.5.6: reason is overridable so the
+  // fallback-path tests can seed an empty or too-long reason.
   const writeOutcome = await rankResultStore.write({
     user_id: FOUNDER_USER,
     message_id: MESSAGE_ID,
@@ -110,7 +116,7 @@ async function buildHarness(opts: HarnessOptions) {
     prompt_version: 'ranker-v0.1.0',
     label: 'important',
     score: 0.92,
-    reason: 'deposit due tonight',
+    reason: opts.reasonOverride ?? 'deposit due tonight',
     latency_ms: 100,
     input_tokens: 50,
     output_tokens: 20,
@@ -1006,5 +1012,249 @@ describe('runOutboundOnce — SendBlue contact-registration gate (Phase v0.5.3 i
     // we never reach the destinationFor step. Confirm that:
     const serialized = JSON.stringify(gateAudit?.detail ?? {});
     assert.equal(/destination_slug|to_number|from_number/.test(serialized), false);
+  });
+});
+
+/* ============================================================== */
+/* Phase v0.5.6 — iMessage Tone + Summary Length                  */
+/* ============================================================== */
+//
+// Covers the new runtime contract:
+//   - rank.reason is threaded through to renderFounderText
+//   - fomo.send.attempted audit detail carries reason_source
+//   - When rank.reason fails the body-render schema (empty or >180),
+//     fomo.alert.drafter_schema_failed audit fires BEFORE
+//     fomo.send.attempted; the send still proceeds with the
+//     deterministic fallback body (Q6: best-effort audit, no retry).
+//   - Founder isolation: only founder's audit rows in this run.
+//   - v0.5.5 STOP enforcement remains untouched: when stop_active=true,
+//     stop_enforced wins and the v0.5.6 fallback path never fires.
+
+describe('runOutboundOnce — v0.5.6 rank.reason wiring (happy path)', () => {
+  it('fomo.send.attempted detail carries reason_source=rank when reason is within bounds', async () => {
+    const sendBlueFetch = mockFetch(async () => ({
+      status: 200,
+      body: { status: 'QUEUED', message_handle: 'mh-1' }
+    }));
+    const gmailFetch = mockFetch(async () => ({ status: 200, body: FAKE_GMAIL_MSG }));
+    const h = await buildHarness({
+      sendBlueFetch,
+      gmailFetch,
+      reasonOverride: 'Counselor flagged a time-sensitive dorm deposit deadline tonight.'
+    });
+
+    await runOutboundOnce(h.deps);
+
+    const events = await h.auditStore.recent(FOUNDER_USER, 500);
+    const attempted = events.find((e) => e.action === 'fomo.send.attempted');
+    assert.ok(attempted);
+    const detail = attempted?.detail as { reason_source: string; template_version: string };
+    assert.equal(detail.reason_source, 'rank');
+    // Template version is the bumped v0.5.6 value.
+    assert.equal(detail.template_version, 'founder-text-v0.2.0');
+
+    // No fallback audit when reason is within bounds.
+    const fallback = events.find((e) => e.action === 'fomo.alert.drafter_schema_failed');
+    assert.equal(fallback, undefined);
+  });
+});
+
+describe('runOutboundOnce — v0.5.6 deterministic fallback (Q6: best-effort audit, no retry)', () => {
+  it('empty rank.reason triggers fallback + fomo.alert.drafter_schema_failed audit + send still proceeds', async () => {
+    const sendBlueFetch = mockFetch(async () => ({
+      status: 200,
+      body: { status: 'QUEUED', message_handle: 'mh-1' }
+    }));
+    const gmailFetch = mockFetch(async () => ({ status: 200, body: FAKE_GMAIL_MSG }));
+    const h = await buildHarness({
+      sendBlueFetch,
+      gmailFetch,
+      reasonOverride: ''
+    });
+
+    const report = await runOutboundOnce(h.deps);
+
+    // Send still proceeds with the deterministic fallback body.
+    assert.equal(report.alerts_sent, 1);
+    assert.equal(await h.transitions.currentState(ALERT_ID), 'sent');
+
+    const events = await h.auditStore.recent(FOUNDER_USER, 500);
+    const fallback = events.find((e) => e.action === 'fomo.alert.drafter_schema_failed');
+    assert.ok(fallback, 'drafter_schema_failed must fire on empty reason');
+    const fbDetail = fallback?.detail as {
+      reason_violation_kind: string;
+      original_reason_length: number;
+      template_version: string;
+    };
+    assert.equal(fbDetail.reason_violation_kind, 'empty');
+    assert.equal(fbDetail.original_reason_length, 0);
+    assert.equal(fbDetail.template_version, 'founder-text-v0.2.0');
+
+    // fomo.send.attempted detail.reason_source === 'fallback'.
+    const attempted = events.find((e) => e.action === 'fomo.send.attempted');
+    assert.ok(attempted);
+    assert.equal(
+      (attempted?.detail as { reason_source: string }).reason_source,
+      'fallback'
+    );
+  });
+
+  it('over-long rank.reason (>180) triggers fallback + reason_violation_kind=too_long', async () => {
+    const sendBlueFetch = mockFetch(async () => ({
+      status: 200,
+      body: { status: 'QUEUED', message_handle: 'mh-1' }
+    }));
+    const gmailFetch = mockFetch(async () => ({ status: 200, body: FAKE_GMAIL_MSG }));
+    const tooLong = 'x'.repeat(250);
+    const h = await buildHarness({
+      sendBlueFetch,
+      gmailFetch,
+      reasonOverride: tooLong
+    });
+
+    await runOutboundOnce(h.deps);
+
+    const events = await h.auditStore.recent(FOUNDER_USER, 500);
+    const fallback = events.find((e) => e.action === 'fomo.alert.drafter_schema_failed');
+    assert.ok(fallback);
+    const fbDetail = fallback?.detail as {
+      reason_violation_kind: string;
+      original_reason_length: number;
+    };
+    assert.equal(fbDetail.reason_violation_kind, 'too_long');
+    assert.equal(fbDetail.original_reason_length, 250);
+  });
+
+  it('drafter_schema_failed fires BEFORE fomo.send.attempted (audit ordering)', async () => {
+    const sendBlueFetch = mockFetch(async () => ({
+      status: 200,
+      body: { status: 'QUEUED', message_handle: 'mh-1' }
+    }));
+    const gmailFetch = mockFetch(async () => ({ status: 200, body: FAKE_GMAIL_MSG }));
+    const h = await buildHarness({
+      sendBlueFetch,
+      gmailFetch,
+      reasonOverride: ''
+    });
+
+    await runOutboundOnce(h.deps);
+
+    const events = await h.auditStore.recent(FOUNDER_USER, 500);
+    // recent() returns newest-first; the EARLIER event has the LARGER index.
+    const fallbackIdx = events.findIndex((e) => e.action === 'fomo.alert.drafter_schema_failed');
+    const attemptedIdx = events.findIndex((e) => e.action === 'fomo.send.attempted');
+    assert.ok(fallbackIdx >= 0 && attemptedIdx >= 0);
+    assert.ok(
+      fallbackIdx > attemptedIdx,
+      `drafter_schema_failed must precede send.attempted in audit log (fb idx=${fallbackIdx}, attempted idx=${attemptedIdx})`
+    );
+  });
+
+  it('Q6 no-retry: cycle with fallback-fired alert does NOT re-process on a second cycle', async () => {
+    const sendBlueFetch = mockFetch(async () => ({
+      status: 200,
+      body: { status: 'QUEUED', message_handle: 'mh-1' }
+    }));
+    const gmailFetch = mockFetch(async () => ({ status: 200, body: FAKE_GMAIL_MSG }));
+    const h = await buildHarness({
+      sendBlueFetch,
+      gmailFetch,
+      reasonOverride: ''
+    });
+
+    const r1 = await runOutboundOnce(h.deps);
+    assert.equal(r1.alerts_sent, 1);
+    const eventsAfterCycle1 = await h.auditStore.recent(FOUNDER_USER, 500);
+    const fallbackCountAfter1 = eventsAfterCycle1.filter(
+      (e) => e.action === 'fomo.alert.drafter_schema_failed'
+    ).length;
+    assert.equal(fallbackCountAfter1, 1);
+
+    const r2 = await runOutboundOnce(h.deps);
+    assert.equal(r2.alerts_considered, 0, 'second cycle must not re-find the already-sent alert');
+    const eventsAfterCycle2 = await h.auditStore.recent(FOUNDER_USER, 500);
+    const fallbackCountAfter2 = eventsAfterCycle2.filter(
+      (e) => e.action === 'fomo.alert.drafter_schema_failed'
+    ).length;
+    // Critical: fallback audit must NOT fire a second time (no retry).
+    assert.equal(fallbackCountAfter2, 1, 'fallback audit must NOT fire on a second cycle (Q6 no-retry)');
+  });
+});
+
+describe('runOutboundOnce — v0.5.6 cross-tenant + founder isolation', () => {
+  it('only founder-tagged audit rows appear in this run; no leakage to other actor_user_ids', async () => {
+    const sendBlueFetch = mockFetch(async () => ({
+      status: 200,
+      body: { status: 'QUEUED', message_handle: 'mh-1' }
+    }));
+    const gmailFetch = mockFetch(async () => ({ status: 200, body: FAKE_GMAIL_MSG }));
+    const h = await buildHarness({
+      sendBlueFetch,
+      gmailFetch,
+      reasonOverride: ''
+    });
+
+    await runOutboundOnce(h.deps);
+
+    // Sample a few OTHER user_ids and verify the audit store has zero
+    // rows for them. The InMemoryAuditStore filters by actor_user_id.
+    const otherUsers = ['friend-morris', 'friend-gm3258', 'sheila-residual'];
+    for (const u of otherUsers) {
+      const events = await h.auditStore.recent(u, 100);
+      assert.equal(events.length, 0, `actor_user_id=${u} must have zero audit rows`);
+    }
+    // And founder must have ≥ the expected rows (drafter_schema_failed +
+    // send.attempted + send.succeeded at minimum).
+    const founderEvents = await h.auditStore.recent(FOUNDER_USER, 100);
+    assert.ok(
+      founderEvents.some((e) => e.action === 'fomo.alert.drafter_schema_failed')
+    );
+    assert.ok(founderEvents.some((e) => e.action === 'fomo.send.attempted'));
+    assert.ok(founderEvents.some((e) => e.action === 'fomo.send.succeeded'));
+  });
+});
+
+describe('runOutboundOnce — v0.5.6 preserves v0.5.5 STOP enforcement', () => {
+  it('stop_active=true wins over the v0.5.6 fallback path: stop_enforced fires; drafter_schema_failed does NOT', async () => {
+    const sendBlueFetch = mockFetch(async () => {
+      throw new Error('SendBlue must NOT be called when stop_enforced fires');
+    });
+    const gmailFetch = mockFetch(async () => ({ status: 200, body: FAKE_GMAIL_MSG }));
+    const h = await buildHarness({
+      sendBlueFetch,
+      gmailFetch,
+      // An empty reason WOULD trigger the v0.5.6 fallback, but
+      // stop_enforced must short-circuit before rendering.
+      reasonOverride: ''
+    });
+
+    // Flip stop_active=true on the founder BEFORE the cycle.
+    await h.memoryStore.upsert({
+      user_id: FOUNDER_USER,
+      kind: 'stop_active',
+      scope_key: null,
+      detail: { active: true, recorded_at: new Date().toISOString() },
+      source: 'user_confirmed',
+      confidence: 1.0
+    });
+
+    const report = await runOutboundOnce(h.deps);
+    assert.equal(report.alerts_stop_enforced, 1, 'stop_enforced counter must increment');
+    assert.equal(report.alerts_sent, 0);
+    assert.equal(await h.transitions.currentState(ALERT_ID), 'failed');
+
+    const events = await h.auditStore.recent(FOUNDER_USER, 500);
+    // v0.5.5 stop_enforced audit fires.
+    assert.ok(events.find((e) => e.action === 'fomo.send.stop_enforced'));
+    // v0.5.6 fallback audit does NOT fire because we never reached the
+    // body-render step.
+    assert.equal(
+      events.find((e) => e.action === 'fomo.alert.drafter_schema_failed'),
+      undefined,
+      'drafter_schema_failed must NOT fire when stop_enforced short-circuits the send'
+    );
+    // fomo.send.attempted does NOT fire either (stop_enforced is checked
+    // before the render).
+    assert.equal(events.find((e) => e.action === 'fomo.send.attempted'), undefined);
   });
 });

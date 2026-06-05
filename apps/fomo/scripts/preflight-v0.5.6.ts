@@ -47,7 +47,7 @@
 //   * No friend involved this phase (three-friend cap holds)
 
 import { loadKillSwitches } from '../src/core/kill-switches.js';
-import { FOMO_AUDIT_ACTIONS } from '../src/core/audit.js';
+import { FOMO_AUDIT_ACTIONS, type AuditAction } from '../src/core/audit.js';
 import { MEMORY_SIGNAL_KINDS } from '../src/memory/memory-signals.js';
 import { FOUNDER_TEXT_TEMPLATE_VERSION } from '../src/core/founder-text-template.js';
 
@@ -211,6 +211,11 @@ checkCycleMin(
 /* v0.5.3 + v0.5.5 audit registry invariants (carried forward)            */
 /* ---------------------------------------------------------------------- */
 
+// Strictly typed via `as const satisfies readonly AuditAction[]`. Mirrors
+// the v0.5.5 founder directive ("After runtime lands, remove/avoid any
+// loose string-cast workaround that hides missing audit action
+// registration"): if anyone removes one of these from FOMO_AUDIT_ACTIONS
+// in a future PR, tsc fails here.
 const requiredCarryForwardActions = [
   // v0.5.3 hardening (still required)
   'fomo.sendblue.contact_registered',
@@ -225,8 +230,8 @@ const requiredCarryForwardActions = [
   'fomo.sendblue.stop_confirmation_failed',
   'fomo.alert.suppressed_stop_active',
   'fomo.poll.skipped_stop_active'
-] as const;
-const auditActionSet = new Set(FOMO_AUDIT_ACTIONS as readonly string[]);
+] as const satisfies readonly AuditAction[];
+const auditActionSet = new Set(FOMO_AUDIT_ACTIONS);
 const missingCarryForward = requiredCarryForwardActions.filter((a) => !auditActionSet.has(a));
 if (missingCarryForward.length > 0) {
   issues.push({
@@ -290,7 +295,10 @@ if (!windowHours) {
  *    sentence-shaped composition, sentence-boundary truncation, ranker.reason
  *    substituted in place of body_snippet).
  */
-const EXPECTED_V056_NEW_AUDIT_KIND = 'fomo.alert.drafter_schema_failed';
+// Same strict-typing pattern as the carry-forward list above. Runtime
+// commit registers this kind, so `as const satisfies` narrows to the
+// AuditAction union at compile time.
+const EXPECTED_V056_NEW_AUDIT_KIND = 'fomo.alert.drafter_schema_failed' as const satisfies AuditAction;
 if (!auditActionSet.has(EXPECTED_V056_NEW_AUDIT_KIND)) {
   issues.push({
     name: 'FOMO_AUDIT_ACTIONS',
@@ -299,7 +307,11 @@ if (!auditActionSet.has(EXPECTED_V056_NEW_AUDIT_KIND)) {
   });
 }
 
-const V055_TEMPLATE_VERSION_BASELINE = 'founder-text-v0.1.0';
+// Typed as `string` (not the literal) so the runtime check stays
+// meaningful after the runtime commit bumped FOUNDER_TEXT_TEMPLATE_VERSION
+// from this baseline. Without the widening, tsc would correctly flag the
+// equality as statically impossible.
+const V055_TEMPLATE_VERSION_BASELINE: string = 'founder-text-v0.1.0';
 if (FOUNDER_TEXT_TEMPLATE_VERSION === V055_TEMPLATE_VERSION_BASELINE) {
   issues.push({
     name: 'FOUNDER_TEXT_TEMPLATE_VERSION',
