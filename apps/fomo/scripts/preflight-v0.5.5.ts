@@ -226,10 +226,15 @@ const requiredHardeningActions = [
   'fomo.db.connection_error',
   'fomo.sendblue.delivery_gap_detected'
 ] as const;
-// Widen to Set<string> on purpose — at scaffolding time the 4 v0.5.5 kinds are
-// NOT in the strict FOMO_AUDIT_ACTIONS union, but we still need to query their
-// presence so we can emit the PENDING warns. Runtime commit will register them.
-const auditActionSet = new Set(FOMO_AUDIT_ACTIONS as readonly string[]);
+// Strictly typed: FOMO_AUDIT_ACTIONS is a `readonly AuditAction[]`. The 4
+// v0.5.5 kinds are now registered (runtime commit landed); the type system
+// guarantees they are members of the union, so the .has() calls below resolve
+// against the strict union without any widening. If anyone removes one of
+// the 4 v0.5.5 kinds from FOMO_AUDIT_ACTIONS in a future PR, tsc fails here
+// — exactly the protection the founder asked for in the v0.5.5 runtime
+// directive: "After runtime lands, remove/avoid any loose string-cast
+// workaround that hides missing audit action registration."
+const auditActionSet = new Set(FOMO_AUDIT_ACTIONS);
 const missingHardeningActions = requiredHardeningActions.filter((a) => !auditActionSet.has(a));
 if (missingHardeningActions.length > 0) {
   issues.push({

@@ -35,9 +35,8 @@
 import { sql } from 'drizzle-orm';
 
 import { loadDbClient } from '../src/db/client.js';
-import { audit_log, memory_signals, alerts, alert_state_transitions, users } from '../src/db/schema.js';
+import { audit_log, memory_signals, alerts } from '../src/db/schema.js';
 import { FOMO_AUDIT_ACTIONS } from '../src/core/audit.js';
-import { MEMORY_SIGNAL_KINDS } from '../src/memory/memory-signals.js';
 
 type Severity = 'pass' | 'warn' | 'fail' | 'pending';
 
@@ -50,25 +49,26 @@ interface Finding {
 const SMOKE_WINDOW_HOURS = Number((process.env.FOMO_V0_5_5_WINDOW_HOURS ?? '24').trim()) || 24;
 const FOUNDER_USER_ID = (process.env.FOMO_FOUNDER_USER_ID ?? 'founder').trim();
 
-// These four audit kinds are EXPECTED runtime outputs of the v0.5.5 implementation commit.
-// They are typed as `string` (not narrowed to a literal union) on purpose: drizzle's
-// `audit_log.action` column is typed as the strict union of registered FOMO_AUDIT_ACTIONS
-// values, and since these four are NOT yet registered (scaffolding-vs-runtime boundary),
-// tsc would reject SQL templates that compare the column against the literal strings.
-// Typing them as `string` lets the smoke-evidence SQL compile against the scaffolding
-// commit; the runtime commit will register them, at which point this widening is
-// harmless because the values exist in the union anyway.
-const KIND_STOP_CONFIRMATION_SENT: string = 'fomo.sendblue.stop_confirmation_sent';
-const KIND_STOP_CONFIRMATION_FAILED: string = 'fomo.sendblue.stop_confirmation_failed';
-const KIND_ALERT_SUPPRESSED: string = 'fomo.alert.suppressed_stop_active';
-const KIND_POLL_SKIPPED: string = 'fomo.poll.skipped_stop_active';
-
-const EXPECTED_V055_AUDIT_KINDS: readonly string[] = [
+// These four audit kinds are runtime outputs of the v0.5.5 implementation
+// commit (now landed). They are narrowed to the strict AuditAction literal
+// union via `as const satisfies readonly AuditAction[]` so the type system
+// guarantees registration: if anyone removes one from FOMO_AUDIT_ACTIONS in
+// a future PR, tsc fails here. Founder directive: "After runtime lands,
+// remove/avoid any loose string-cast workaround that hides missing audit
+// action registration." This is the strict-typed version.
+import { type AuditAction } from '../src/core/audit.js';
+const EXPECTED_V055_AUDIT_KINDS = [
+  'fomo.sendblue.stop_confirmation_sent',
+  'fomo.sendblue.stop_confirmation_failed',
+  'fomo.alert.suppressed_stop_active',
+  'fomo.poll.skipped_stop_active'
+] as const satisfies readonly AuditAction[];
+const [
   KIND_STOP_CONFIRMATION_SENT,
   KIND_STOP_CONFIRMATION_FAILED,
   KIND_ALERT_SUPPRESSED,
   KIND_POLL_SKIPPED
-];
+] = EXPECTED_V055_AUDIT_KINDS;
 
 function symbol(s: Severity): string {
   switch (s) {
@@ -104,10 +104,14 @@ async function main(): Promise<void> {
   /* Registry inspection — determines which criteria are PENDING    */
   /* ============================================================== */
 
-  // Widen to Set<string> on purpose — scaffolding-time the new v0.5.5 kinds
-  // are not in the strict union, but we need to be able to query their presence.
-  const auditActionSet = new Set(FOMO_AUDIT_ACTIONS as readonly string[]);
-  const memorySignalSet = new Set(MEMORY_SIGNAL_KINDS as readonly string[]);
+  // Strictly typed: FOMO_AUDIT_ACTIONS is `readonly AuditAction[]`. After
+  // the v0.5.5 runtime commit landed, all 4 new kinds are members of the
+  // union, so the .has() calls below resolve against the strict union with
+  // no widening. Removed the v0.5.5-scaffolding-time `as readonly string[]`
+  // workaround per founder directive ("remove any loose string-cast that
+  // hides missing audit registration"). If a future PR removes one of the
+  // 4 kinds from FOMO_AUDIT_ACTIONS, tsc fails here.
+  const auditActionSet = new Set(FOMO_AUDIT_ACTIONS);
   const missingV055Actions = EXPECTED_V055_AUDIT_KINDS.filter((a) => !auditActionSet.has(a));
   const runtimePending = missingV055Actions.length > 0;
 
@@ -310,7 +314,6 @@ async function main(): Promise<void> {
     .select({ user_id: memory_signals.user_id, updated_at: memory_signals.updated_at })
     .from(memory_signals)
     .where(sql`${memory_signals.kind} = 'stop_active'`);
-  const windowAgo = `now() - (${SMOKE_WINDOW_HOURS} || ' hours')::interval`;
   const inWindowRows = await db.execute<{ user_id: string }>(
     sql`SELECT user_id FROM memory_signals
         WHERE kind = 'stop_active'

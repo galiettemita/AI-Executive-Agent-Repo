@@ -149,6 +149,28 @@ export interface SendBlueInboundRouteDeps {
     parse: (req: ReplyParserRequest) => Promise<ReplyParseResult>;
   };
 
+  // Phase v0.5.5 — STOP confirmation send dep. Optional: when absent,
+  // applyStop records the stop_active signal but does NOT attempt a
+  // courtesy confirmation iMessage (silently continues exactly as
+  // v0.5.4). When present, applyStop calls .send() exactly once per
+  // user per 24h idempotency window with the deterministic canonical
+  // body; success/failure is audited via fomo.sendblue.stop_confirmation_{sent,failed}.
+  //
+  // This is intentionally a narrowly-typed dep (just `.send`) so it
+  // can be mocked in tests AND so it is clear at every call site that
+  // this is the ONLY allowed outbound exception after STOP. The
+  // normal FOMO alert pipeline (outbound-sender.ts) continues to be
+  // blocked by `fomo.send.stop_enforced` — the courtesy confirmation
+  // is the only message a STOP'd user receives, once per 24h.
+  //
+  // Q6 (founder-locked): best-effort audit, no retry on failure. The
+  // confirmation is a courtesy/trust message, not load-bearing. STOP
+  // enforcement (the suppression of future alerts) is load-bearing
+  // and works whether or not the confirmation arrived.
+  readonly stopConfirmation?: {
+    send: (input: import('../adapters/sendblue/client.js').SendInput) => Promise<import('../adapters/sendblue/client.js').SendOutcome>;
+  };
+
   // Optional clock for tests.
   readonly now?: () => Date;
 }
@@ -452,7 +474,7 @@ export async function handleSendBlueInbound(
   //    SendBlue keeps retrying anything non-2xx.
   let routeOutcome: RouteOutcome;
   try {
-    routeOutcome = await applyParseResult(deps, userId, parseResult, matchedAlert, fromSlug, extracted.providerMessageId, now);
+    routeOutcome = await applyParseResult(deps, userId, parseResult, matchedAlert, fromSlug, extracted.providerMessageId, now, extracted.fromNumber);
   } catch (err) {
     // True internal error — surface 500 so SendBlue retries (idempotency
     // gate above will dedupe).
@@ -491,12 +513,16 @@ async function applyParseResult(
   matchedAlert: Alert | null,
   fromSlug: string,
   providerMessageId: string,
-  now: () => Date
+  now: () => Date,
+  // Phase v0.5.5 — full E.164 of the inbound sender, threaded through
+  // so applyStop can send the courtesy confirmation back to them. Only
+  // used by the STOP path; other intent handlers ignore it.
+  fromNumber: string
 ): Promise<RouteOutcome> {
   // Deterministic → stop / start (compliance commands).
   if (result.ok && result.source === 'deterministic') {
     if (result.intent === 'stop') {
-      return applyStop(deps, userId, fromSlug, providerMessageId);
+      return applyStop(deps, userId, fromSlug, providerMessageId, fromNumber, now);
     }
     return applyStart(deps, userId, fromSlug, providerMessageId);
   }
@@ -547,21 +573,72 @@ async function applyParseResult(
   }
 }
 
+// Phase v0.5.5 — canonical deterministic STOP confirmation body.
+// Exported so smoke-evidence + tests can assert exact wording without
+// duplicating the string. Kept terse + friendly per the v0.5.4 Sheila
+// feedback (the full tone rewrite is the v0.5.5+ B1 phase candidate);
+// must contain the two canonical phrases the smoke-evidence C8 check
+// looks for: "unsubscrib"/"STOP" + "START".
+export const STOP_CONFIRMATION_BODY = "You're unsubscribed from Brevio. Text START to turn it back on.";
+
+// Phase v0.5.5 — 24h idempotency window for STOP confirmations
+// (founder-locked Q5). Duplicate STOP within 24h → no new confirmation.
+// STOP after 24h → fresh confirmation may be sent.
+export const STOP_CONFIRMATION_IDEMPOTENCY_WINDOW_MS = 24 * 60 * 60 * 1000;
+
 async function applyStop(
   deps: SendBlueInboundRouteDeps,
   userId: string,
   fromSlug: string,
-  providerMessageId: string
+  providerMessageId: string,
+  // Phase v0.5.5 — full E.164 of the inbound sender, for the courtesy
+  // confirmation send back to them. Never logged or persisted; only
+  // passed through to SendBlue's send API.
+  fromNumber: string,
+  now: () => Date
 ): Promise<RouteOutcome> {
+  const nowDate = now();
+  const nowIso = nowDate.toISOString();
+  const nowMs = nowDate.getTime();
+
+  // Phase v0.5.5 — read the existing stop_active signal BEFORE upserting
+  // so we can carry forward `stop_confirmation_sent_at` for the 24h
+  // idempotency check. Memory_signals.upsert REPLACES detail, so we have
+  // to merge ourselves rather than relying on Postgres-side JSONB merge.
+  const existing = await deps.memoryStore.get(userId, 'stop_active', null);
+  const existingDetail = (existing?.detail ?? {}) as {
+    active?: unknown;
+    recorded_at?: unknown;
+    stop_confirmation_sent_at?: unknown;
+  };
+  const priorConfirmationSentAtIso =
+    typeof existingDetail.stop_confirmation_sent_at === 'string'
+      ? existingDetail.stop_confirmation_sent_at
+      : null;
+  const priorConfirmationSentAtMs = priorConfirmationSentAtIso
+    ? Date.parse(priorConfirmationSentAtIso)
+    : NaN;
+  const withinIdempotencyWindow =
+    Number.isFinite(priorConfirmationSentAtMs) &&
+    nowMs - priorConfirmationSentAtMs < STOP_CONFIRMATION_IDEMPOTENCY_WINDOW_MS;
+
   // 1. Memory signal: stop_active = true. Idempotent — second STOP
-  //    just re-upserts the same row.
+  //    just re-upserts the same row. We preserve any prior
+  //    stop_confirmation_sent_at so the 24h idempotency check above
+  //    remains consistent across multiple STOPs. If we DO end up
+  //    sending a fresh confirmation below, we re-upsert with the
+  //    bumped timestamp at that point (separate write, after the
+  //    SendBlue call resolves).
   await deps.memoryStore.upsert({
     user_id: userId,
     kind: 'stop_active',
     scope_key: null,
     detail: {
       active: true,
-      recorded_at: new Date().toISOString()
+      recorded_at: nowIso,
+      ...(priorConfirmationSentAtIso
+        ? { stop_confirmation_sent_at: priorConfirmationSentAtIso }
+        : {})
     },
     source: 'user_confirmed',
     confidence: 1.0
@@ -574,7 +651,7 @@ async function applyStop(
     kind: 'stop',
     detail: { source: 'sendblue_inbound', provider_message_id: providerMessageId }
   });
-  // 3. Audit.
+  // 3. Audit (stop_recorded — the load-bearing enforcement signal).
   await deps.auditStore.write({
     actor_user_id: userId,
     actor_ip: null,
@@ -588,6 +665,123 @@ async function applyStop(
       stop_active: true
     }
   });
+
+  // 4. Phase v0.5.5 — STOP confirmation send. Best-effort, idempotent
+  //    over 24h, no retry on failure.
+  //
+  //    Skip when:
+  //      - the stopConfirmation dep is absent (founder hasn't wired
+  //        it; preserves exact v0.5.4 behavior), OR
+  //      - we already sent a confirmation < 24h ago.
+  //
+  //    The confirmation is the ONLY allowed outbound exception after
+  //    STOP — it bypasses the outbound-sender STOP enforcement on
+  //    purpose, because it IS the message telling the user that STOP
+  //    was received. The normal FOMO alert pipeline continues to be
+  //    blocked by `fomo.send.stop_enforced`.
+  if (deps.stopConfirmation && !withinIdempotencyWindow) {
+    let outcome: import('../adapters/sendblue/client.js').SendOutcome;
+    try {
+      outcome = await deps.stopConfirmation.send({
+        to: fromNumber,
+        content: STOP_CONFIRMATION_BODY
+      });
+    } catch (err) {
+      // Network/abort path: SendBlueClient.send normally returns a
+      // SendOutcome with kind='send_status_unknown' for these, but
+      // defense-in-depth catches the throw too. Per Q6: audit, do not
+      // retry, do not re-throw (the inbound webhook 200 response is
+      // already in flight; throwing here would cascade to a 500 and
+      // trigger a SendBlue webhook retry, which would then idempotency-
+      // gate at the inbound_replies UNIQUE constraint — still safe, but
+      // noisier than a clean fail-soft).
+      await deps.auditStore.write({
+        actor_user_id: userId,
+        actor_ip: null,
+        actor_user_agent: null,
+        action: 'fomo.sendblue.stop_confirmation_failed',
+        target: 'memory_signal:stop_active',
+        result: 'failure',
+        detail: {
+          from_slug: fromSlug,
+          provider_message_id: providerMessageId,
+          error_code: 'send_threw',
+          error_message: (err instanceof Error ? err.message : String(err)).slice(0, 200),
+          reason: 'best-effort send threw; no retry per v0.5.5 Q6'
+        }
+      });
+      return buildStopOutcome();
+    }
+
+    if (outcome.kind === 'sent') {
+      // Re-upsert with the bumped stop_confirmation_sent_at so the
+      // next STOP within 24h skips this branch via withinIdempotencyWindow.
+      await deps.memoryStore.upsert({
+        user_id: userId,
+        kind: 'stop_active',
+        scope_key: null,
+        detail: {
+          active: true,
+          recorded_at: nowIso,
+          stop_confirmation_sent_at: nowIso
+        },
+        source: 'user_confirmed',
+        confidence: 1.0
+      });
+      await deps.auditStore.write({
+        actor_user_id: userId,
+        actor_ip: null,
+        actor_user_agent: null,
+        action: 'fomo.sendblue.stop_confirmation_sent',
+        target: 'memory_signal:stop_active',
+        result: 'success',
+        detail: {
+          from_slug: fromSlug,
+          provider_status: outcome.providerStatus ?? null,
+          provider_message_handle: outcome.providerMessageHandle || null,
+          message_preview: STOP_CONFIRMATION_BODY,
+          idempotency_window_remaining_seconds: Math.floor(
+            STOP_CONFIRMATION_IDEMPOTENCY_WINDOW_MS / 1000
+          ),
+          target_user_id: userId
+        }
+      });
+    } else {
+      // 'failed' or 'send_status_unknown' both write the _failed audit
+      // and do NOT retry. Per Q6: the confirmation is courtesy; a
+      // missed confirmation is recoverable by the user re-STOPing
+      // after the 24h window expires. We deliberately do NOT bump
+      // stop_confirmation_sent_at on failure — so a re-STOP within
+      // 24h will retry once (since priorConfirmationSentAtIso stays
+      // null and withinIdempotencyWindow stays false). This is the
+      // tightest "no retry but one re-attempt on failed first-send"
+      // semantics consistent with Q6.
+      await deps.auditStore.write({
+        actor_user_id: userId,
+        actor_ip: null,
+        actor_user_agent: null,
+        action: 'fomo.sendblue.stop_confirmation_failed',
+        target: 'memory_signal:stop_active',
+        result: 'failure',
+        detail: {
+          from_slug: fromSlug,
+          provider_message_id: providerMessageId,
+          provider_status: outcome.providerStatus ?? null,
+          http_status: outcome.httpStatus,
+          outcome_kind: outcome.kind,
+          error_code:
+            outcome.providerError?.error_code ?? (outcome.kind === 'failed' ? 'send_failed' : 'send_status_unknown'),
+          error_message: (outcome.providerError?.error_message ?? outcome.reason).slice(0, 200),
+          reason: 'best-effort send did not return kind=sent; no retry per v0.5.5 Q6'
+        }
+      });
+    }
+  }
+
+  return buildStopOutcome();
+}
+
+function buildStopOutcome(): RouteOutcome {
   return Object.freeze({
     classified_intent: 'stop',
     source: 'deterministic' as const,

@@ -222,7 +222,40 @@ export type AuditAction =
   //     cause: our server was down during webhook delivery + SendBlue's
   //     retries exhausted. Detail: provider_message_id, from_slug,
   //     date_sent_iso. NEVER the message content, NEVER the raw phone.
-  | 'fomo.sendblue.delivery_gap_detected';
+  | 'fomo.sendblue.delivery_gap_detected'
+  // Phase v0.5.5 — STOP Enforcement + Confirmation. Four new audit
+  // kinds fire when (a) the polling worker skips ranker dispatch
+  // because the user has stop_active=true (`fomo.poll.skipped_stop_active`),
+  // (b) the alert-creation pipeline short-circuits at the
+  // postSlackCandidateReview defense-in-depth check
+  // (`fomo.alert.suppressed_stop_active`), (c) the SendBlue inbound
+  // route's `applyStop` sends the deterministic STOP confirmation
+  // courtesy reply (`fomo.sendblue.stop_confirmation_sent`), or
+  // (d) that confirmation send fails (`fomo.sendblue.stop_confirmation_failed`).
+  //
+  // Q5 (founder-locked): 24h idempotency window for confirmations.
+  // Duplicate STOP within 24h → no new confirmation send → no
+  // `stop_confirmation_sent` row.
+  //
+  // Q6 (founder-locked): best-effort audit, no retry. Confirmation
+  // send failure writes `fomo.sendblue.stop_confirmation_failed` and
+  // stops. STOP enforcement itself is load-bearing; the confirmation
+  // is a courtesy/trust message. Detail surfaces sanitized
+  // error_code + error_message (≤200 chars) + target_user_id. NEVER
+  // the SendBlue API key, NEVER the rendered confirmation body
+  // beyond the canonical `message_preview` field.
+  //
+  // The STOP confirmation is the ONLY allowed outbound exception
+  // after STOP — the normal FOMO alert pipeline (outbound-sender.ts)
+  // continues to be blocked by `fomo.send.stop_enforced`. This
+  // exception path uses a separate SendBlue client call with its
+  // own 24h idempotency guard, and writes to the same `stop_active`
+  // memory signal's detail JSONB (key: `stop_confirmation_sent_at`,
+  // ISO 8601). No new memory_signal kind.
+  | 'fomo.poll.skipped_stop_active'
+  | 'fomo.alert.suppressed_stop_active'
+  | 'fomo.sendblue.stop_confirmation_sent'
+  | 'fomo.sendblue.stop_confirmation_failed';
 
 // Phase 3G.1 — runtime registry of every FOMO-namespaced audit
 // action. Used by the 3G.1 evidence script (and any future ops
@@ -273,7 +306,12 @@ export const FOMO_AUDIT_ACTIONS = [
   'fomo.oauth.refreshed',
   'fomo.oauth.refresh_failed',
   'fomo.db.connection_error',
-  'fomo.sendblue.delivery_gap_detected'
+  'fomo.sendblue.delivery_gap_detected',
+  // Phase v0.5.5 — STOP Enforcement + Confirmation.
+  'fomo.poll.skipped_stop_active',
+  'fomo.alert.suppressed_stop_active',
+  'fomo.sendblue.stop_confirmation_sent',
+  'fomo.sendblue.stop_confirmation_failed'
 ] as const satisfies readonly AuditAction[];
 
 export type AuditResult = 'success' | 'failure';
