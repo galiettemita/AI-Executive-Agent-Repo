@@ -1,10 +1,32 @@
 # Design: FOMO-Killer — Minimal MCP OS Demo + FOMO Trust Workflow v0.1
 
 Generated: 2026-05-22
+Last cleanup pass: 2026-06-04
 Repo: Executive AI Agent / Brevio monorepo
-Status: Draft for review
+Status: **Approved long-term constitution.** Directionally locked. Cleanups via PR; principle changes require explicit founder directive.
 Mode: Startup, foundation-aware, OpenClaw-style runtime direction
 Supersedes: prior FOMO-only and foundation-aware drafts
+
+---
+
+## 0. Current Status / How to Use This Document
+
+**This document is the long-term Brevio / FOMO design constitution.** It describes the product vision, the MCP OS architecture laws, the permanent product principles (assistant voice, safe-learning tiers, personalized importance learning, memory-first architecture, API-first / browser-fallback / approval-required execution policy), and the eight architecture rules every future capability must compose with.
+
+**It is NOT the active phase tracker.** Do not read sections like the "Historical v0.1 Build Path" (formerly "The Assignment") as a list of phases still to do. v0.1 has already proven the founder loop, and the v0.5.x friend-beta substrate (multi-tenant, real-friend, production-hardening, second-friend cross-tenant smokes) has already shipped — see the latest `docs/SMOKE_REPORT_v0.5.*.md` for what's landed.
+
+**Active phase state lives in three other places:**
+
+* **[FOMO_PLAN.md](FOMO_PLAN.md)** — the implementation plan, the milestone ladder (§17), the day-by-day phase breakdown, the per-phase gates, and the current set of v0.5.x+ future-phase candidates.
+* **[apps/fomo/KERNEL.md](apps/fomo/KERNEL.md)** — the kernel-completeness map: what's wired, what's reserved, what's intentionally absent.
+* **PR reports under [docs/](docs/)** — `SMOKE_REPORT_*.md` for what each phase actually proved; `personalized-importance-learning.md` for the long-term product principle and proposed future-phase shape.
+
+**How to use this doc when designing or shipping anything:**
+
+* Before changing a permanent rule (anything in §6 architecture laws, §10 assistant voice, §13 safe-learning tiers, §13.5 personalized importance learning, §22 safety lessons), read this whole doc first. Permanent rules are not casually rewritten — they survived because they were earned.
+* Before introducing a new tool, capability, or external dependency, check §6 Rule 8 (API-first / browser-fallback / approval-required) and §23 stack rules (reserved ≠ active). Both are load-bearing constraints.
+* Before treating a "reserved" stack entry (Redis, pgvector, R2, Langfuse, Sentry, PostHog, etc.) as available, read §23 — "reserved" means "preserved as a future option, NOT active." Activating any reserved item requires an approved current phase with a real caller.
+* When in doubt between this doc and FOMO_PLAN.md, this doc wins on *principles*; FOMO_PLAN.md wins on *what to build next*.
 
 ---
 
@@ -889,6 +911,10 @@ Personalized Importance Learning operates entirely within L0–L2. Anything that
 
 This section establishes the *principle*. It does not implement anything. The implementation is a future phase (see [FOMO_PLAN.md §17 — Personalized Importance Learning / False-Positive Reduction](FOMO_PLAN.md)). Implementation must pass a dedicated 6-question gate; the proposed gate questions are in [docs/personalized-importance-learning.md §13](docs/personalized-importance-learning.md).
 
+### Version not locked — may be pulled forward before v1.0
+
+**This phase may be pulled forward before v1.0 if friend-beta false positives damage trust.** It is not a post-v1.0 concept by default. The issue is already appearing in v0.5.x testing (urgent-sounding spam and commercial emails classified as important during the v0.5.2 Morris and v0.5.4 Sheila smokes). If similar false positives surface as a trust blocker in further v0.5.x friend-beta work, this phase is scheduled ahead of the v1.0 wedge decision rather than after it. Position in [FOMO_PLAN.md §17](FOMO_PLAN.md) reflects this: the future-phase candidate is intentionally listed *before* v1.0, not after.
+
 ---
 
 ## 14. Memory-First Architecture
@@ -903,13 +929,15 @@ The assistant should feel like it remembers well, but memory must be safe, sourc
 
 ### Memory layers
 
-| Layer                    | v0.1 service           | Purpose                                     |
+> **Reserved ≠ active.** A "reserved" entry in the table below is a *future option preserved by design*, NOT a live dependency. As of v0.5.x, only Neon Postgres + Postgres event tables are active for memory. Adding a reserved layer (Upstash Redis, pgvector, Cloudflare R2) requires an approved current phase with a real caller — see §23 for the canonical rule.
+
+| Layer                    | v0.5.x state           | Purpose                                     |
 | ------------------------ | ---------------------- | ------------------------------------------- |
-| Short-term working state | Upstash Redis          | locks, rate limits, active sessions         |
-| Exact long-term memory   | Neon Postgres          | users, tools, permissions, alerts, feedback |
-| Semantic memory          | pgvector reserved      | future meaning-based memory search          |
-| Raw artifacts            | Cloudflare R2 reserved | future files, attachments, exports          |
-| Episodic memory          | Postgres events        | successful/failed workflows                 |
+| Short-term working state | Upstash Redis — RESERVED (no active caller in v0.5.x) | locks, rate limits, active sessions (future) |
+| Exact long-term memory   | Neon Postgres — ACTIVE | users, tools, permissions, alerts, feedback |
+| Semantic memory          | pgvector — RESERVED (no active caller) | future meaning-based memory search          |
+| Raw artifacts            | Cloudflare R2 — RESERVED (no active caller) | future files, attachments, exports          |
+| Episodic memory          | Postgres events — ACTIVE | successful/failed workflows               |
 
 ### v0.1 memory signals
 
@@ -1064,14 +1092,21 @@ Do not blindly use the fanciest model.
 
 Run a bake-off.
 
-Candidates:
+### Current active provider direction
 
-* GPT small/mini model,
-* GPT stronger model,
-* Claude Haiku/small appropriate model,
-* Claude Sonnet/strong appropriate model.
+> **Brevio is OpenAI-first as of v0.5.x.** The active ranker model is an OpenAI GPT-class model selected after the v0.1 bake-off (see `fomo.ranker.enabled` boot log + KERNEL.md for the live model id). Other model providers (Anthropic Claude small/mid/strong, future open-weight providers, future MCP-served models) remain documented as **future router options** — they are NOT active and are NOT a fallback path that fires silently.
 
-Compare:
+> **Any provider change requires an explicit eval + smoke gate.** Swapping the active provider, adding a second active provider, or introducing a router that splits traffic between providers is a phase-scale change. It needs (a) a fresh model bake-off across the comparison axes below, (b) a per-phase 6-question gate, and (c) a founder-only smoke before it goes live. No silent provider swaps. No "we'll see how it does in production" router behavior.
+
+### Future-option candidates (NOT active — for the next router bake-off, when one is scheduled)
+
+* GPT small/mini model — currently active for `classification`
+* GPT stronger model — future router upgrade path
+* Claude Haiku / small appropriate model — future router option, not active
+* Claude Sonnet / strong appropriate model — future router option, not active
+* Open-weight or self-hosted models — future option only; no current commitment
+
+### Compare on (every bake-off)
 
 * precision,
 * recall,
@@ -1082,7 +1117,7 @@ Compare:
 * latency,
 * cost per 1,000 emails.
 
-v0.1 uses one active capability tag:
+v0.5.x uses one active capability tag:
 
 * `classification`
 
@@ -1212,18 +1247,20 @@ The rule:
 
 v0.1 stack:
 
-| Layer                    | Service                                                 |
-| ------------------------ | ------------------------------------------------------- |
-| Frontend/onboarding      | Vercel + Next.js                                        |
-| Backend/webhooks/workers | Render Starter or equivalent always-on Node runtime     |
-| Database                 | Neon Postgres                                           |
-| ORM                      | Drizzle ORM                                             |
-| Vector memory            | pgvector reserved, not active unless real caller exists |
-| Cache/locks/rate limits  | Upstash Redis                                           |
-| File/object storage      | Cloudflare R2 reserved                                  |
-| Messaging                | SendBlue active; Linq future adapter                    |
-| Models                   | OpenAI + Anthropic APIs                                 |
-| Observability            | structured logs + Postgres audit first                  |
+> **Reserved ≠ active. Permanent rule.** A "reserved" entry in the table below is a *future option preserved by design* — it appears here so that when its time comes, the architecture choice is already made and consistent. It does NOT mean the dependency is live, available, or safe to import into runtime code. **Do NOT add Redis, R2, pgvector, Langfuse, Sentry, PostHog, or any other reserved capability to `apps/fomo` unless an approved current phase has a real caller for it.** Adding an unused dependency creates supply-chain risk, secrets to manage, observability noise, and false signal that "this is wired" when it isn't. If you find yourself reaching for a reserved entry mid-phase, stop and re-gate the phase scope.
+
+| Layer                    | v0.5.x state                                                                      |
+| ------------------------ | --------------------------------------------------------------------------------- |
+| Frontend/onboarding      | Vercel + Next.js — ACTIVE                                                         |
+| Backend/webhooks/workers | Render Starter or equivalent always-on Node runtime — ACTIVE                      |
+| Database                 | Neon Postgres — ACTIVE                                                            |
+| ORM                      | Drizzle ORM — ACTIVE                                                              |
+| Vector memory            | pgvector — RESERVED (no active caller in v0.5.x)                                  |
+| Cache/locks/rate limits  | Upstash Redis — RESERVED (no active caller in v0.5.x)                             |
+| File/object storage      | Cloudflare R2 — RESERVED (no active caller in v0.5.x)                             |
+| Messaging                | SendBlue — ACTIVE; Linq — RESERVED (future adapter, no active caller)             |
+| Models                   | OpenAI — ACTIVE (see §18); Anthropic + others — RESERVED (future router options)  |
+| Observability            | Structured logs + Postgres audit — ACTIVE; Langfuse / Sentry / PostHog — RESERVED |
 
 No AWS direct dependency in `apps/fomo`.
 
@@ -1297,15 +1334,19 @@ The founder should explain:
 
 ---
 
-## 27. The Assignment
+## 27. Historical v0.1 Build Path
 
-### Phase 0 — Rewrite plan before coding
+> **Historical reference only. Do NOT interpret Phase 0–6 below as pending work.** Every phase listed here has already shipped: v0.1 founder demo (KERNEL + FOMO workflow + Slack approval + SendBlue iMessage), v0.5.1 multi-tenant substrate, v0.5.2 first real-friend smoke (Morris), v0.5.3 production hardening, v0.5.4 second-friend cross-tenant smoke (Sheila) — all with VERDICT: PASS. The "Decide" gate (Phase 6) is folded into the standing 6-question gate that runs before every new phase. Active phase work lives in [FOMO_PLAN.md §17 Implementation Milestones](FOMO_PLAN.md) and the latest `docs/SMOKE_REPORT_v0.5.*.md`.
+
+The sub-sections below are preserved as a record of the build sequence Claude was originally given. They show *how the v0.1 substrate got built* — not what is currently open. A future reader debugging "why does the kernel look like this?" should read them; a future reader looking for "what should I do next?" should NOT.
+
+### Phase 0 — Rewrite plan before coding (HISTORICAL — COMPLETE)
 
 Update `FOMO_PLAN.md` around this new design.
 
 Do not code until the plan is approved.
 
-### Phase 1 — Repo cleanup and salvage audit
+### Phase 1 — Repo cleanup and salvage audit (HISTORICAL — COMPLETE)
 
 * new branch,
 * no history rewrite,
@@ -1319,7 +1360,7 @@ Do not code until the plan is approved.
 * preserve future concepts in `docs/future-architecture-notes.md`,
 * no fake active code.
 
-### Phase 2 — Minimal MCP OS kernel
+### Phase 2 — Minimal MCP OS kernel (HISTORICAL — COMPLETE)
 
 Build the smallest real kernel slice:
 
@@ -1333,7 +1374,7 @@ Build the smallest real kernel slice:
 * State Machine,
 * Safe Logger.
 
-### Phase 3 — FOMO workflow
+### Phase 3 — FOMO workflow (HISTORICAL — COMPLETE)
 
 Build:
 
@@ -1345,17 +1386,17 @@ Build:
 * reply parser,
 * feedback/memory update.
 
-### Phase 4 — Founder demo
+### Phase 4 — Founder demo (HISTORICAL — COMPLETE)
 
 Founder receives a real SendBlue iMessage for a real Gmail alert, after Slack approval.
 
-### Phase 5 — Friend beta
+### Phase 5 — Friend beta (HISTORICAL — COMPLETE through v0.5.4)
 
-Only after gates pass.
+Substrate, first real friend (v0.5.2 Morris), production hardening (v0.5.3), and second-friend cross-tenant proof (v0.5.4 Sheila) all PASS. Three-friend beta cap (locked 2026-06-03): Friend B was the last GUARANTEED smoke; Friend C is OPTIONAL, not auto-scheduled.
 
-### Phase 6 — Decide
+### Phase 6 — Decide (FOLDED INTO STANDING 6Q GATE)
 
-Continue, pivot, or kill.
+The original "continue, pivot, or kill" gate has graduated into the standing **6-question gate** every phase must pass before code is written (see [feedback_two-question-gate](.) memory and [docs/personalized-importance-learning.md §13](docs/personalized-importance-learning.md)). It is no longer a one-shot v0.1 milestone; it runs at the start of every new phase.
 
 ---
 
