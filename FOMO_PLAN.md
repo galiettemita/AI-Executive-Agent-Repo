@@ -8,6 +8,49 @@ AWS: no direct AWS dependency in `apps/fomo`
 
 ---
 
+## Phase foundations: three permanent product layers (founder-locked 2026-06-06)
+
+Every future Brevio phase is built ON TOP of three permanent product layers, NOT on top of v0.5.x email-specific features. These layers apply to every future Brevio surface — email alerts, calendar reminders, draft suggestions, task updates, booking/payment preparation, tool results, browser automation summaries, "why did you send this?" answers, memory explanations, and future delegated agents.
+
+1. **Human Message Renderer (HMR)** — first surface email alerts (v0.5.7). Future surfaces must implement HMR variants per surface (calendar reminders, draft suggestions, task updates, booking, tool results, browser summaries, memory explanations, etc.). Each new surface is its own 6-question gate.
+2. **Personalized Importance Learning (PIL)** — no current implementation. First PIL phase must ship coordinated with the Feedback + Learn/Grow Loop (PIL learns from feedback events). PIL is per-user, auditable, reversible, safe.
+3. **Feedback + Learn/Grow Loop** — no current implementation. Provides the input signal PIL learns from. Onboarding-heavy feedback, light steady-state, intelligent when uncertain. Feedback prompts themselves are HMR output (no robotic command syntax).
+
+Recommended future phase names (subject to 6-question gate at the time):
+
+- **v0.6.x — PIL substrate** (per-user importance-signal storage + reversible adjustment APIs; depends on Feedback substrate)
+- **v0.7.x — Feedback + Learn/Grow substrate** (per-user feedback events + onboarding-heavy ask-cadence + HMR-shaped feedback prompts)
+- **v0.5.8 / v0.6.0 — HMR second surface** (calendar reminders OR draft suggestions — first non-email HMR application)
+
+Canonical doc: [`docs/brevio-product-philosophy.md`](docs/brevio-product-philosophy.md). Every future 6-question gate must answer the three principle-gate questions in that doc.
+
+---
+
+## Phases are picked by which Brevio core dimension they advance (founder-locked 2026-06-06)
+
+The next serious Brevio phase is NOT picked by "what FOMO bug is next." It is picked by **which Brevio core agent dimension it advances.** FOMO-only polish that does not advance a core dimension should be DEFERRED.
+
+Brevio has 12 permanent core agent dimensions — see [`docs/brevio-core-agent-dimensions.md`](docs/brevio-core-agent-dimensions.md):
+
+1. Autonomy
+2. Proactivity
+3. Memory Architecture
+4. Agent Core + Reasoning
+5. Tool / Workflow Orchestration
+6. Security / Permission Gates
+7. Multimodal + Perception
+8. Feedback + Learn/Grow Loop
+9. Human Message Renderer
+10. Observability / Evals / Reliability
+11. Production Scale
+12. User Trust / Consent
+
+Every 6-question gate must include a **Core Dimension Check** (which dimensions does this phase advance / preserve / intentionally defer?) BEFORE the per-phase Q1-Q6. A phase that cannot name at least one dimension being advanced is FOMO-only polish and should be deferred.
+
+Likely next strategic build candidate (as of 2026-06-06): **Feedback + Learn/Grow Loop substrate (v0.5.8)** — advances [Feedback + Learn/Grow Loop], underwrites [Memory Architecture], [Agent Core + Reasoning], [Proactivity], [Personalized Importance Learning], and every future autonomy tier + coffee / stocks / travel / calendar / browser action. PIL CANNOT ship before Feedback (Feedback is the input signal PIL learns from).
+
+---
+
 ## 1. Executive Verdict
 
 This plan turns the new `FOMO_DESIGN.md` into an implementation path Claude can follow without drifting.

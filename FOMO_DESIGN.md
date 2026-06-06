@@ -9,6 +9,47 @@ Supersedes: prior FOMO-only and foundation-aware drafts
 
 ---
 
+## Permanent product principles (founder-locked 2026-06-06)
+
+Brevio has three permanent product layers that guide every phase. These are NOT email-only features — they apply to every future Brevio surface (email alerts, calendar reminders, draft suggestions, task updates, booking/payment preparation, tool results, browser automation summaries, "why did you send this?" answers, memory explanations, and future delegated agents).
+
+1. **Human Message Renderer (HMR)** — Brevio turns structured context into natural, human-feeling messages; never dumps raw fields as UX.
+2. **Personalized Importance Learning (PIL)** — Brevio learns each user's personal definition of important; per-user, auditable, reversible, safe.
+3. **Feedback + Learn/Grow Loop** — Brevio learns from user feedback naturally (not via robotic command syntax); asks more during onboarding, less as confidence grows, intelligently when uncertain.
+
+Motto: **Brevio should speak like a human, learn what matters, and grow from feedback.**
+
+Only goal: **Brevio's only goal is to serve the user better over time.**
+
+Canonical doc: [`docs/brevio-product-philosophy.md`](docs/brevio-product-philosophy.md). Every future 6-question gate must answer the three principle-gate questions in that doc, in addition to its per-phase Q1-Q6.
+
+---
+
+## FOMO is the wedge, not the product — Brevio core agent dimensions (founder-locked 2026-06-06)
+
+FOMO is only valuable if it builds reusable Brevio agent OS layers. FOMO-only polish that does not advance a core dimension should be DEFERRED, not shipped.
+
+Brevio is a proactive, autonomous, memory-rich, permissioned personal agent. FOMO (the Gmail alert wedge) earns initial trust and reveals user-specific importance signals; it is the entry point, not the destination. Every phase from here forward must be evaluated against the 12 permanent core agent dimensions:
+
+1. **Autonomy** — tiered, bounded, reversible.
+2. **Proactivity** — signal-based, calibrated, never nagging.
+3. **Memory Architecture** — per-user, multi-modal, reversible, explainable.
+4. **Agent Core + Reasoning** — multi-step plans with rollback + audit.
+5. **Tool / Workflow Orchestration** — MCP-style tool chains, graceful failures.
+6. **Security / Permission Gates** — per-action consent, revocable, auditable.
+7. **Multimodal + Perception** — PDFs / images / voice / web / calendar / screen.
+8. **Feedback + Learn/Grow Loop** — natural feedback capture, HMR-shaped prompts.
+9. **Human Message Renderer** — cross-surface human voice (deterministic body).
+10. **Observability / Evals / Reliability** — labeled gold sets, SLOs, dashboards.
+11. **Production Scale** — load tests, per-tenant quotas, DR, multi-region.
+12. **User Trust / Consent** — trust scores, export / delete, autonomy gating.
+
+Every 6-question gate must include a Core Dimension Check (which dimensions does this phase advance / preserve / intentionally defer?) BEFORE the per-phase Q1-Q6. A phase that cannot name at least one dimension being advanced is FOMO-only polish and should be deferred.
+
+Canonical doc: [`docs/brevio-core-agent-dimensions.md`](docs/brevio-core-agent-dimensions.md). For each dimension: long-term meaning, what exists today in FOMO, what is missing, future build path, what must never be faked, smoke/eval proof required, examples / risks if skipped.
+
+---
+
 ## 0. Current Status / How to Use This Document
 
 **This document is the long-term Brevio / FOMO design constitution.** It describes the product vision, the MCP OS architecture laws, the permanent product principles (assistant voice, safe-learning tiers, personalized importance learning, memory-first architecture, API-first / browser-fallback / approval-required execution policy), and the eight architecture rules every future capability must compose with.
