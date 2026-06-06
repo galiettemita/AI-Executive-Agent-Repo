@@ -492,11 +492,19 @@ export async function runKernelIntegrationScenario(
         kind: 'founder_approved' as const,
         detail: { score: 0.91 }
       },
+      // Phase v0.5.9 — extended audit detail with Brevio-wide fields
+      // (source_surface, verb, dimension, role, legacy_kind). The
+      // founder_approved → approved + role=founder mapping is the canonical
+      // legacy → generic shape exercised by smoke C8.
       domain_audit: async () =>
         logKernelAudit(stores.audit, 'feedback.written', `alert:${SYNTHETIC_ALERT_ID}`, {
           kind: 'founder_approved',
           alert_id: SYNTHETIC_ALERT_ID,
-          sender_present: true
+          sender_present: true,
+          source_surface: 'email_alert',
+          verb: 'approved',
+          role: 'founder',
+          legacy_kind: 'founder_approved'
         })
     },
     {
@@ -507,11 +515,17 @@ export async function runKernelIntegrationScenario(
         kind: 'user_snoozed' as const,
         detail: { reply_text: HARNESS_REPLY_TEXT, until: '2026-05-22T22:00:00.000Z' }
       },
+      // Phase v0.5.9 — user_snoozed → snoozed + role=user, dimension=alert.
       domain_audit: async () =>
         logKernelAudit(stores.audit, 'feedback.written', `alert:${SYNTHETIC_ALERT_ID}`, {
           kind: 'user_snoozed',
           alert_id: SYNTHETIC_ALERT_ID,
-          sender_present: true
+          sender_present: true,
+          source_surface: 'email_alert',
+          verb: 'snoozed',
+          dimension: 'alert',
+          role: 'user',
+          legacy_kind: 'user_snoozed'
         })
     },
     {

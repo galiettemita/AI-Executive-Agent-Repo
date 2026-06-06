@@ -57,7 +57,7 @@ import { type KillSwitches } from '../core/kill-switches.js';
 import { transition } from '../core/state-machine.js';
 import { type AlertState } from '../core/state-machine.js';
 import { type Alert, type AlertStore } from '../memory/alerts.js';
-import { type FeedbackStore } from '../memory/feedback-events.js';
+import { type FeedbackStore, mapLegacyFeedbackKind } from '../memory/feedback-events.js';
 import { type RankResultStore } from '../memory/rank-results.js';
 import { applyEgressForSlackCard, type RawEmailContext } from '../core/egress-policy.js';
 
@@ -434,15 +434,48 @@ export async function handleSlackInteractivity(
     reason: `slack:${decision} actor_slug=${userSlug(user_id_slack)}`
   });
 
-  await deps.feedbackStore.write({
+  // Phase v0.5.9 — explicit source_surface='email_alert' (Slack interactivity
+  // is the founder-review path for the email_alert surface). The legacy kind
+  // is still passed; storage keeps it literal; the audit emitter below uses
+  // mapLegacyFeedbackKind to derive the extended detail.
+  const legacyKind = decision === 'approved' ? 'founder_approved' : 'founder_rejected';
+  const writtenEvent = await deps.feedbackStore.write({
     user_id: alert.user_id,
     alert_id,
-    kind: decision === 'approved' ? 'founder_approved' : 'founder_rejected',
+    kind: legacyKind,
     sender_email: null,
+    source_surface: 'email_alert',
     detail: {
       rank_result_id: alert.rank_result_id,
       message_id: alert.message_id,
       actor_slug: userSlug(user_id_slack)
+    }
+  });
+
+  // Phase v0.5.9 — emit feedback.written audit with the extended Q6.A detail
+  // (source_surface, verb, dimension, role, legacy_kind). The legacy kind
+  // (`founder_approved` / `founder_rejected`) maps to verb=approved/rejected
+  // + role=founder via mapLegacyFeedbackKind. Slack interactivity does NOT
+  // invoke the applyFeedback consumer: verb='approved'/'rejected' do not
+  // match the v0.5.9 hardcoded consumer arm (which is (email_alert, ignored,
+  // sender) only). Future surfaces / future phases can wire the consumer
+  // here when they activate.
+  const mapped = mapLegacyFeedbackKind(legacyKind);
+  await deps.auditStore.write({
+    actor_user_id: alert.user_id,
+    actor_ip: null,
+    actor_user_agent: null,
+    action: 'feedback.written',
+    target: `alert:${alert_id}`,
+    result: 'success',
+    detail: {
+      feedback_event_id: writtenEvent.id ?? null,
+      source_surface: 'email_alert',
+      verb: mapped?.verb,
+      dimension: mapped?.overlay.dimension,
+      role: mapped?.overlay.role,
+      legacy_kind: legacyKind,
+      sender_present: false
     }
   });
 

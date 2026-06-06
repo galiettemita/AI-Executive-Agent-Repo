@@ -11,8 +11,8 @@ import {
 } from './memory-signals.ts';
 
 describe('MEMORY_SIGNAL_KINDS', () => {
-  it('declares the 6 v0.1 personalization signal kinds + Phase 3F.1 stop_active + Phase v0.5.3 sendblue_contact_status (8 total)', () => {
-    assert.equal(MEMORY_SIGNAL_KINDS.length, 8);
+  it('declares the 6 v0.1 personalization signal kinds + 3F.1 stop_active + v0.5.3 sendblue_contact_status + v0.5.9 sender_feedback_ignored (9 total)', () => {
+    assert.equal(MEMORY_SIGNAL_KINDS.length, 9);
     const expected = [
       'sender_importance',
       'sender_suppressed',
@@ -27,7 +27,12 @@ describe('MEMORY_SIGNAL_KINDS', () => {
       // Outbound-sender refuses to dispatch when registered=false (the
       // friend was onboarded but the SendBlue POST /api/v2/contacts call
       // failed; OAuth not rolled back per founder correction #1).
-      'sendblue_contact_status'
+      'sendblue_contact_status',
+      // Phase v0.5.9 — Brevio-wide Feedback + Learn/Grow Loop substrate.
+      // Written by applyFeedback when (source_surface=email_alert, verb=ignored,
+      // dimension=sender) fires. scope_key is the HMAC hash of the sender
+      // (privacy-preserving). Write-only this phase; ranker does NOT consume.
+      'sender_feedback_ignored'
     ];
     assert.deepEqual([...MEMORY_SIGNAL_KINDS].sort(), [...expected].sort());
   });
