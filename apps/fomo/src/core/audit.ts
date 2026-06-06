@@ -255,7 +255,22 @@ export type AuditAction =
   | 'fomo.poll.skipped_stop_active'
   | 'fomo.alert.suppressed_stop_active'
   | 'fomo.sendblue.stop_confirmation_sent'
-  | 'fomo.sendblue.stop_confirmation_failed';
+  | 'fomo.sendblue.stop_confirmation_failed'
+  // Phase v0.5.6 — iMessage Tone + Summary Length. Fires when the
+  // outbound-sender's body-render step (renderFounderText) detects
+  // that the stored rank_result.reason fails the v0.5.6 body schema
+  // (empty/whitespace OR length > REASON_HARD_CAP_FOR_RENDER) and
+  // substitutes the deterministic fallback string. Defense-in-depth
+  // at the body-render layer for any rank_result that bypassed the
+  // ranker-level validator (e.g. historical rows from a prior phase,
+  // or a strict-mode escape). Q6 founder-locked: best-effort audit,
+  // NO retry — the alert continues to send with the fallback body.
+  // 3E.1 directive (2026-05-25) PRESERVED: the fallback is
+  // deterministic, never LLM-generated. Detail: alert_id, message_id,
+  // rank_result_id, reason_violation_kind ('empty' | 'too_long'),
+  // original_reason_length. NEVER the original reason text body,
+  // NEVER any email content.
+  | 'fomo.alert.drafter_schema_failed';
 
 // Phase 3G.1 — runtime registry of every FOMO-namespaced audit
 // action. Used by the 3G.1 evidence script (and any future ops
@@ -311,7 +326,9 @@ export const FOMO_AUDIT_ACTIONS = [
   'fomo.poll.skipped_stop_active',
   'fomo.alert.suppressed_stop_active',
   'fomo.sendblue.stop_confirmation_sent',
-  'fomo.sendblue.stop_confirmation_failed'
+  'fomo.sendblue.stop_confirmation_failed',
+  // Phase v0.5.6 — iMessage Tone + Summary Length.
+  'fomo.alert.drafter_schema_failed'
 ] as const satisfies readonly AuditAction[];
 
 export type AuditResult = 'success' | 'failure';
