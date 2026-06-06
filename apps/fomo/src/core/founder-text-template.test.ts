@@ -59,8 +59,10 @@ describe('renderFounderText — shape + version (v0.5.6)', () => {
     assert.equal(out.original_reason_length, DEFAULT_REASON.length);
   });
 
-  it('template version is the bumped v0.2.0', () => {
-    assert.equal(FOUNDER_TEXT_TEMPLATE_VERSION, 'founder-text-v0.2.0');
+  it('template version is the bumped v0.5.7 HMR rename ("human-message-v0.3.0")', () => {
+    // v0.5.7 Q6.A lock — renamed from 'founder-text-v0.2.0' to surface
+    // the Human Message Renderer product principle in audit detail.
+    assert.equal(FOUNDER_TEXT_TEMPLATE_VERSION, 'human-message-v0.3.0');
   });
 
   it('output is frozen', () => {
@@ -114,21 +116,23 @@ describe('renderFounderText — Friend B "robotic" fixes (v0.5.6 Q1–Q3)', () =
     );
   });
 
-  it('contains sender + subject + reason in that order, separated by newlines', () => {
+  it('composes a Q1.A two-sentence body: "<Sender> emailed you about <subject>. <Why>." (v0.5.7)', () => {
+    // v0.5.7 Q1.A canonical template. The output is a SINGLE LINE
+    // (no newlines), shaped as two sentences. Sender opener uses the
+    // resolved first name (Modified Q2.B step 1) and subject is wrapped
+    // in quotes per Q3.B (no aggressive noun rewriting).
     const out = renderFounderText({
       view: viewFixture(),
       rank: { label: 'important', score: 0.91, reason: DEFAULT_REASON }
     });
-    const lines = out.text.split('\n');
-    assert.ok(lines[0]?.includes('Sarah J.'), 'first line is sender');
-    assert.ok(
-      lines[1]?.includes('Reminder: deposit due tonight'),
-      'second line is subject'
-    );
-    assert.ok(
-      lines[2]?.includes('Counselor flagged'),
-      'third line is rank.reason'
-    );
+    // No newlines — the v0.5.6 newline-separated field shape is gone.
+    assert.equal(out.text.split('\n').length, 1, `v0.5.7 body must be single-line; got: ${out.text}`);
+    // Sender opener (first-name from sender_name = "Sarah J." → "Sarah").
+    assert.ok(out.text.startsWith('Sarah emailed you about '), `expected "Sarah emailed you about" opener; got: ${out.text}`);
+    // Subject (quoted) — v0.5.7 leaves the subject as-is between quotes.
+    assert.ok(out.text.includes('"Reminder: deposit due tonight"'), `subject must appear in quotes; got: ${out.text}`);
+    // Reason follows after the period + space.
+    assert.ok(out.text.includes(DEFAULT_REASON), `rank.reason content must appear verbatim; got: ${out.text}`);
   });
 });
 
@@ -164,52 +168,37 @@ describe('renderFounderText — NO arbitrary ellipsis (v0.5.6 Q4)', () => {
   });
 });
 
-describe('renderFounderText — sentence-boundary truncation (v0.5.6 Q4)', () => {
-  it('truncates an overlong subject at a word boundary, never mid-word', () => {
+describe('renderFounderText — length policy (v0.5.7 carry-forward from v0.5.6 Q4)', () => {
+  it('overlong subject does not break the body — total stays under hard cap', () => {
+    // v0.5.7: Q3.B strip rules apply (bracket/Re:/Fwd: only). The
+    // renderer does NOT word-truncate the subject in-place; instead
+    // applyLengthBudget shrinks the reason or collapses the shape if
+    // the total exceeds HARD_MAX (320). Either way, the output respects
+    // the cap and uses no arbitrary ellipsis.
     const longSubject =
       'Reminder: deposit due tonight please confirm or reschedule absolutely by the close of business tomorrow afternoon';
     const out = renderFounderText({
       view: viewFixture({ subject: longSubject }),
       rank: { label: 'important', score: 0.91, reason: DEFAULT_REASON }
     });
-    const lines = out.text.split('\n');
-    const subjectLine = lines[1] ?? '';
-    // Load-bearing check: the truncated subject must be a prefix of the
-    // collapsed original (no characters added by truncation, no ellipsis)
-    // AND the next character in the original after the truncation point
-    // must be whitespace OR the truncation must end on a sentence
-    // terminator. Either case proves the cut happened at a word boundary,
-    // not mid-word.
-    assert.doesNotMatch(subjectLine, /…/);
     assert.ok(
-      longSubject.startsWith(subjectLine),
-      `truncated subject must be a prefix of the original (no chars added); got: "${subjectLine}"`
+      out.text.length <= FOUNDER_TEXT_HARD_MAX_CHARS,
+      `length ${out.text.length} > HARD_MAX ${FOUNDER_TEXT_HARD_MAX_CHARS}`
     );
-    const nextChar = longSubject.charAt(subjectLine.length);
-    const endsOnSentenceTerminator = /[.!?]$/.test(subjectLine);
-    const cutAtWordBoundary = nextChar === '' || /\s/.test(nextChar);
-    assert.ok(
-      endsOnSentenceTerminator || cutAtWordBoundary,
-      `cut must be at a word/sentence boundary; subject="${subjectLine}", nextChar=${JSON.stringify(nextChar)}`
-    );
+    assert.doesNotMatch(out.text, /…/);
   });
 
-  it('truncates an overlong reason at the last sentence boundary within budget', () => {
+  it('reason sentence-boundary truncation: final sentence ends on .!?', () => {
+    // v0.5.7: the reason is rendered verbatim (no truncation) when it
+    // fits the schema (≤180) and the overall body fits HARD_MAX. The
+    // ensureSentenceTerminator helper ensures the body ends on .!?.
     const multiSentenceReason =
-      'First sentence about why this matters. Second sentence with more context. Third sentence that pushes past the per-line cap.';
+      'First sentence about why this matters. Second sentence with more context.';
     const out = renderFounderText({
       view: viewFixture(),
-      rank: {
-        label: 'important',
-        score: 0.91,
-        reason: multiSentenceReason
-      }
+      rank: { label: 'important', score: 0.91, reason: multiSentenceReason }
     });
-    const lines = out.text.split('\n');
-    const reasonLine = lines[2] ?? '';
-    // The reason line must end on `.` `!` or `?` if any sentence
-    // terminator existed in the prefix.
-    assert.match(reasonLine, /[.!?]$/);
+    assert.match(out.text, /[.!?]$/);
   });
 });
 
@@ -331,15 +320,21 @@ describe('renderFounderText — deterministic fallback (v0.5.6 Q6)', () => {
   });
 });
 
-describe('renderFounderText — leak / privacy discipline (3E.1 carry-forward)', () => {
-  it('uses the masked sender email (never unmasks)', () => {
+describe('renderFounderText — leak / privacy discipline (3E.1 carry-forward + v0.5.7 anti-masked)', () => {
+  it('NEVER unmasks the sender email (no raw local part in body)', () => {
     const out = renderFounderText({
       view: viewFixture({
         sender_email_masked: 's***@school.edu'
       }),
       rank: { label: 'important', score: 0.91, reason: DEFAULT_REASON }
     });
-    assert.ok(out.text.includes('s***@school.edu'));
+    // v0.5.6 used to INCLUDE the masked email "s***@school.edu" in the
+    // opener. v0.5.7 founder lock 2026-06-06 reverses that — the masked
+    // email is NOT in the opener; the Modified Q2.B sender resolution
+    // chain uses first-name / domain-label / "Someone" instead.
+    assert.ok(!out.text.includes('s***@school.edu'), `v0.5.7 must NOT include masked email in opener; got: ${out.text}`);
+    // The opener should use a resolved sender display token instead.
+    assert.ok(/emailed you/.test(out.text), `expected "emailed you" opener; got: ${out.text}`);
   });
 
   it('NEVER includes body_snippet content (v0.5.6: snippet is no longer an input slot)', () => {
@@ -380,7 +375,11 @@ describe('renderFounderText — leak / privacy discipline (3E.1 carry-forward)',
     assert.doesNotMatch(out.text, /^Subject:/m);
   });
 
-  it('falls back to masked email alone when sender_name is missing', () => {
+  it('when sender_name is missing, uses the Modified Q2.B chain (domain label / "Someone"), NEVER masked email', () => {
+    // v0.5.7 founder lock: do NOT expose the masked email as the
+    // opener. The Modified Q2.B chain falls through to a domain label
+    // (school.edu → "School") for non-curated domains or "Someone" for
+    // pathological inputs. Either way, no "***@" in the body.
     const out = renderFounderText({
       view: viewFixture({
         sender_name: '',
@@ -388,8 +387,9 @@ describe('renderFounderText — leak / privacy discipline (3E.1 carry-forward)',
       }),
       rank: { label: 'important', score: 0.91, reason: DEFAULT_REASON }
     });
-    assert.ok(out.text.includes('s***@school.edu'));
-    assert.ok(!out.text.includes('<'));
+    assert.ok(!out.text.includes('s***@school.edu'), `must NOT include masked email; got: ${out.text}`);
+    assert.ok(!out.text.includes('***@'), `must NOT include any "***@" shape; got: ${out.text}`);
+    assert.ok(/emailed you/.test(out.text), `expected "emailed you" opener; got: ${out.text}`);
   });
 });
 

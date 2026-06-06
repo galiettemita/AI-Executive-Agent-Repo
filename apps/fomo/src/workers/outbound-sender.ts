@@ -45,13 +45,14 @@ import { type SendOutcome } from '../adapters/sendblue/client.js';
 import { type AlertStateTransitionStore } from '../core/alert-state-transitions.js';
 import { type AuditStore } from '../core/audit.js';
 import {
-  applyEgressForSlackCard,
-  type RawEmailContext,
-  type SlackEgressView
+  applyEgressForHumanMessage,
+  type RawEmailContext
 } from '../core/egress-policy.js';
 import {
-  FOUNDER_TEXT_TEMPLATE_VERSION,
-  renderFounderText
+  renderHumanMessage
+} from '../core/human-message-renderer.js';
+import {
+  FOUNDER_TEXT_TEMPLATE_VERSION
 } from '../core/founder-text-template.js';
 import { decidePolicy, type PolicyGateDeps } from '../core/policy-gate.js';
 import { transition } from '../core/state-machine.js';
@@ -616,28 +617,28 @@ async function processOneAlert(
     });
   }
 
-  const view: SlackEgressView = applyEgressForSlackCard(gmailRawOrSkip.raw);
-  // v0.5.6: thread rank.reason through to renderFounderText. The shell
-  // is now sentence-shaped and uses rank.reason as the prose-y "why"
-  // line, replacing the previous body_snippet (3E.1 directive PRESERVED:
-  // rank.reason is the ONLY allowed model-generated text in the body).
-  const rendered = renderFounderText({
-    view,
+  // v0.5.7: render via the Human Message Renderer directly. The raw
+  // RawEmailContext is available (gmailRawOrSkip.raw), so the renderer
+  // gets the full Q2.B chain (including email-local first-name extraction
+  // for `john.doe@…`-style senders). 3E.1 PRESERVED — renderHumanMessage
+  // is pure deterministic; only rank.reason is model-generated.
+  const hmrView = applyEgressForHumanMessage(gmailRawOrSkip.raw);
+  const rendered = renderHumanMessage({
+    surface: 'email_alert',
+    view: hmrView,
     rank: {
       label: rank.label as RankLabel,
       score: rank.score,
       reason: rank.reason
-    }
+    },
+    prompt_version: rank.prompt_version
   });
 
-  // v0.5.6 Q6 lock: if renderFounderText substituted the deterministic
-  // fallback because rank.reason failed the body-render schema (empty or
-  // > REASON_HARD_CAP_FOR_RENDER), write fomo.alert.drafter_schema_failed
-  // BEFORE the send. The alert continues to send with the fallback body
-  // (best-effort audit, NO retry). Detail surfaces violation kind +
-  // original length so operators can size-tune the schema cap. NEVER
-  // the original reason text content.
-  if (rendered.reason_source === 'fallback') {
+  // v0.5.6 Q6 lock (carry-forward): if the renderer substituted the
+  // deterministic fallback because rank.reason failed the body-render
+  // schema, write fomo.alert.drafter_schema_failed BEFORE the send.
+  // Best-effort audit, NO retry.
+  if (rendered.reason_voice === 'fallback') {
     await deps.auditStore.write({
       actor_user_id: user_id,
       actor_ip: null,
@@ -651,6 +652,34 @@ async function processOneAlert(
         rank_result_id: alert.rank_result_id,
         reason_violation_kind: rendered.reason_violation_kind,
         original_reason_length: rendered.original_reason_length,
+        template_version: rendered.template_version
+      }
+    });
+  }
+
+  // v0.5.7 Q5.A: if ANY HMR degradation rule triggered (sender→generic,
+  // subject_empty, reason fallback, or transitional legacy_3p voice),
+  // write fomo.alert.hmr_degradation_applied. Best-effort audit, NO
+  // retry. Detail surfaces STRUCTURAL fields only — NEVER raw subject,
+  // body, header, or attachment content. Companion to v0.5.6's
+  // drafter_schema_failed (which fires only on reason_voice='fallback'
+  // — this v0.5.7 audit covers the OTHER three Q5.A paths too).
+  if (rendered.degradation_applied) {
+    await deps.auditStore.write({
+      actor_user_id: user_id,
+      actor_ip: null,
+      actor_user_agent: null,
+      action: 'fomo.alert.hmr_degradation_applied',
+      target: `alert:${alert_id}`,
+      result: 'failure',
+      detail: {
+        alert_id,
+        message_id: alert.message_id,
+        rank_result_id: alert.rank_result_id,
+        sender_resolution_path: rendered.sender_resolution_path,
+        subject_strip_applied: rendered.subject_strip_applied,
+        reason_voice: rendered.reason_voice,
+        template_shape: rendered.template_shape,
         template_version: rendered.template_version
       }
     });
@@ -674,10 +703,19 @@ async function processOneAlert(
       label: rank.label,
       score: rank.score,
       content_chars: rendered.text.length,
-      // v0.5.6: surfaces whether this send used the ranker's reason
-      // or the deterministic fallback. Smoke-evidence C6 + C8 key off
+      // v0.5.6 carry-forward — surfaces whether the send used the
+      // ranker's reason verbatim or the deterministic fallback.
+      // Derived from reason_voice ('2p_action' | 'legacy_3p' → 'rank',
+      // 'fallback' → 'fallback'). Smoke-evidence v0.5.6 C6/C8 key off
       // this field.
-      reason_source: rendered.reason_source
+      reason_source:
+        rendered.reason_voice === 'fallback' ? 'fallback' : 'rank',
+      // v0.5.7 Q6.A — 4 new structural audit fields. Smoke-evidence
+      // v0.5.7 C7/C8/C9/C6 key off these.
+      sender_resolution_path: rendered.sender_resolution_path,
+      subject_strip_applied: rendered.subject_strip_applied,
+      reason_voice: rendered.reason_voice,
+      template_shape: rendered.template_shape
     }
   });
 

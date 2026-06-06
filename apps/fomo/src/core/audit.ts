@@ -270,7 +270,23 @@ export type AuditAction =
   // rank_result_id, reason_violation_kind ('empty' | 'too_long'),
   // original_reason_length. NEVER the original reason text body,
   // NEVER any email content.
-  | 'fomo.alert.drafter_schema_failed';
+  | 'fomo.alert.drafter_schema_failed'
+  // Phase v0.5.7 — Human Message Renderer. Fires when the
+  // outbound-sender's body-render step (renderHumanMessage) applies
+  // ANY of the Q5.A degradation fallback rules:
+  //   * sender_resolution_path='generic' (fell through Q2.B chain to "Someone")
+  //   * subject_strip_applied='subject_empty' (subject was empty, "about X" clause dropped)
+  //   * reason_voice='fallback' (rank.reason failed schema; deterministic fallback substituted)
+  //   * reason_voice='legacy_3p' (ranker-v0.1.0 still in use; transitional)
+  // Best-effort audit, NO retry. The alert continues to send with the
+  // degraded body. 3E.1 PRESERVED: renderHumanMessage remains
+  // deterministic; only rank.reason is model-generated. Detail surfaces
+  // STRUCTURAL fields only (which fallback fired, which audit-field
+  // enum value), NEVER raw subject/body/header/attachment content.
+  // Companion to v0.5.6's `fomo.alert.drafter_schema_failed` (which
+  // fires only on reason_voice='fallback'); this v0.5.7 audit covers
+  // the OTHER three Q5.A degradation paths too.
+  | 'fomo.alert.hmr_degradation_applied';
 
 // Phase 3G.1 — runtime registry of every FOMO-namespaced audit
 // action. Used by the 3G.1 evidence script (and any future ops
@@ -328,7 +344,9 @@ export const FOMO_AUDIT_ACTIONS = [
   'fomo.sendblue.stop_confirmation_sent',
   'fomo.sendblue.stop_confirmation_failed',
   // Phase v0.5.6 — iMessage Tone + Summary Length.
-  'fomo.alert.drafter_schema_failed'
+  'fomo.alert.drafter_schema_failed',
+  // Phase v0.5.7 — Human Message Renderer.
+  'fomo.alert.hmr_degradation_applied'
 ] as const satisfies readonly AuditAction[];
 
 export type AuditResult = 'success' | 'failure';

@@ -261,12 +261,13 @@ const requiredCarryForwardActions = [
   // v0.5.6 schema-violation fallback (still required)
   'fomo.alert.drafter_schema_failed'
 ] as const satisfies readonly AuditAction[];
-// Cast to readonly string[] at SCAFFOLDING time so the Set is Set<string>
-// and `.has()` accepts the not-yet-registered EXPECTED_V057_NEW_AUDIT_KIND.
-// Runtime commit removes the cast once the kind is in the AuditAction
-// union, restoring the strict pattern. Same shape as v0.5.6 scaffolding
-// (commit a1159ca3).
-const auditActionSet = new Set(FOMO_AUDIT_ACTIONS as readonly string[]);
+// v0.5.7 RUNTIME tightening (per v0.5.5 founder directive: remove/avoid
+// any loose string-cast workaround that hides missing audit action
+// registration). With the runtime commit landed and
+// 'fomo.alert.hmr_degradation_applied' added to the AuditAction union,
+// the cast is gone — tsc now catches any future removal of any kind
+// referenced via `.has(EXPECTED_V057_NEW_AUDIT_KIND)`.
+const auditActionSet = new Set(FOMO_AUDIT_ACTIONS);
 const missingCarryForward = requiredCarryForwardActions.filter((a) => !auditActionSet.has(a));
 if (missingCarryForward.length > 0) {
   issues.push({
@@ -330,12 +331,10 @@ if (!windowHours) {
  *    the HMR product principle in audit (Brevio-owned message renderer,
  *    not a vendor layer). Locked per Q6.A.
  */
-// Plain string literal at SCAFFOLDING time — the kind is not yet in the
-// AuditAction union (runtime commit widens the union). The runtime commit
-// also tightens this constant to `as const satisfies AuditAction` to match
-// the carry-forward pattern above. See same-shape comment in
-// scripts/preflight-v0.5.6.ts at scaffolding time (commit a1159ca3).
-const EXPECTED_V057_NEW_AUDIT_KIND = 'fomo.alert.hmr_degradation_applied';
+// v0.5.7 RUNTIME tightening — the kind is now registered in
+// FOMO_AUDIT_ACTIONS + the AuditAction union, so `as const satisfies`
+// catches accidental removal at compile time.
+const EXPECTED_V057_NEW_AUDIT_KIND = 'fomo.alert.hmr_degradation_applied' as const satisfies AuditAction;
 if (!auditActionSet.has(EXPECTED_V057_NEW_AUDIT_KIND)) {
   issues.push({
     name: 'FOMO_AUDIT_ACTIONS',

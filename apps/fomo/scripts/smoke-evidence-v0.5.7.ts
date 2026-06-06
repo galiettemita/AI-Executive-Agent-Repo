@@ -72,12 +72,9 @@ const TARGET_MAX = 280;
 const HARD_MAX = 320;
 const ABSOLUTE_MAX = 340;
 
-// Plain string literal at SCAFFOLDING time — the kind is not yet in the
-// AuditAction union (runtime commit widens the union). The runtime commit
-// also tightens this constant to `as const satisfies AuditAction` to match
-// the v0.5.5/v0.5.6 guardrail pattern. See same-shape comment in
-// scripts/smoke-evidence-v0.5.6.ts at scaffolding time (commit a1159ca3).
-const EXPECTED_V057_NEW_AUDIT_KIND = 'fomo.alert.hmr_degradation_applied';
+// v0.5.7 RUNTIME tightening — the kind is registered, `as const satisfies`
+// catches accidental removal at compile time.
+const EXPECTED_V057_NEW_AUDIT_KIND = 'fomo.alert.hmr_degradation_applied' as const satisfies AuditAction;
 
 // The v0.5.6 template version. Runtime commit bumps past this to
 // 'human-message-v0.3.0'. Typed as `string` (not the literal) so the
@@ -143,11 +140,8 @@ async function main(): Promise<void> {
   /* Registry inspection — determines which criteria are PENDING    */
   /* ============================================================== */
 
-  // Cast to readonly string[] at SCAFFOLDING time so the Set is Set<string>
-  // and `.has()` accepts the not-yet-registered EXPECTED_V057_NEW_AUDIT_KIND.
-  // Runtime commit removes the cast once the kind is in the AuditAction
-  // union. Same shape as v0.5.6 scaffolding.
-  const auditActionSet = new Set(FOMO_AUDIT_ACTIONS as readonly string[]);
+  // v0.5.7 RUNTIME tightening — the kind is registered, cast removed.
+  const auditActionSet = new Set(FOMO_AUDIT_ACTIONS);
   const newAuditKindRegistered = auditActionSet.has(EXPECTED_V057_NEW_AUDIT_KIND);
   const templateVersionBumped = FOUNDER_TEXT_TEMPLATE_VERSION !== V056_TEMPLATE_VERSION_BASELINE;
   const runtimePending = !newAuditKindRegistered || !templateVersionBumped;
