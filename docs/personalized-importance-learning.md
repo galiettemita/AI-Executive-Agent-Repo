@@ -1,5 +1,23 @@
 # Personalized Importance Learning
 
+## PIL in context: one of three permanent product layers (founder-locked 2026-06-06)
+
+PIL is one of three permanent product layers that guide all future Brevio phases:
+
+1. **Human Message Renderer (HMR)** — turns structured context into natural, human-feeling messages; first surface email alerts (v0.5.7).
+2. **Personalized Importance Learning (PIL)** — this doc. Learns each user\'s personal definition of important. Per-user, auditable, reversible, safe.
+3. **Feedback + Learn/Grow Loop** — provides the input signal PIL learns from.
+
+PIL CANNOT be implemented in isolation. PIL must ship coordinated with the Feedback + Learn/Grow Loop — the Feedback loop is the SOURCE of PIL\'s training signal; PIL is the model that signal feeds. Shipping PIL without Feedback would mean PIL has nothing to learn from; shipping Feedback without PIL would mean feedback goes nowhere.
+
+Feedback prompts themselves are HMR output. They must feel like a person checking in, not a survey form — no robotic command syntax like "Reply \'not important\' if I got this wrong." Use natural phrasing like "Was this the kind of thing you want me to catch?" See the Feedback UX correction section in [`docs/brevio-product-philosophy.md`](brevio-product-philosophy.md).
+
+The existing PIL invariants (per-user, auditable, reversible, safe — described in the sections below) carry forward and now ALSO bind the Feedback loop. Cross-user learning is explicitly forbidden across both layers.
+
+Canonical philosophy doc: [`docs/brevio-product-philosophy.md`](brevio-product-philosophy.md).
+
+---
+
 Status: Permanent product-direction doc. Documentation only — no runtime code is implied or implemented by this file.
 Created: 2026-06-04 (founder directive)
 Companion to: [FOMO_DESIGN.md](../FOMO_DESIGN.md), [FOMO_PLAN.md](../FOMO_PLAN.md), [CLAUDE.md](../CLAUDE.md), [docs/future-architecture-notes.md](./future-architecture-notes.md)
