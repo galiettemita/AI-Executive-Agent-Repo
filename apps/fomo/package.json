@@ -32,6 +32,7 @@
     "smoke-evidence:v0.5.2": "node --experimental-strip-types --loader ./test-loader.mjs scripts/smoke-evidence-v0.5.2.ts",
     "ops:refresh-oauth": "node --experimental-strip-types --loader ./test-loader.mjs scripts/ops-refresh-oauth.ts",
     "ops:reconcile-sendblue": "node --experimental-strip-types --loader ./test-loader.mjs scripts/ops-reconcile-sendblue.ts",
+    "diagnose:gmail-history": "node --experimental-strip-types --loader ./test-loader.mjs scripts/diagnose-gmail-history.ts",
     "preflight:v0.5.3": "node --experimental-strip-types --loader ./test-loader.mjs scripts/preflight-v0.5.3.ts",
     "smoke-evidence:v0.5.3": "node --experimental-strip-types --loader ./test-loader.mjs scripts/smoke-evidence-v0.5.3.ts",
     "preflight:v0.5.4": "node --experimental-strip-types --loader ./test-loader.mjs scripts/preflight-v0.5.4.ts",

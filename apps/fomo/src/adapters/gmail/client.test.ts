@@ -131,10 +131,12 @@ describe('GmailClient.listHistorySince', () => {
   // from v0.5.7). The Q1.A filter swap MUST still include the legacy
   // messageAdded path; the only widening is adding labelAdded.
   it('v0.5.8 C4: external messageAdded path still produces dispatch (no regression)', async () => {
-    let requestedHistoryTypes = '';
+    let requestedHistoryTypes: string[] = [];
+    let rawUrl = '';
     const fetchImpl = mockFetch(async (url) => {
+      rawUrl = url;
       const parsed = new URL(url);
-      requestedHistoryTypes = parsed.searchParams.get('historyTypes') ?? '';
+      requestedHistoryTypes = parsed.searchParams.getAll('historyTypes');
       return {
         status: 200,
         body: {
@@ -148,14 +150,15 @@ describe('GmailClient.listHistorySince', () => {
     const client = new GmailClient({ fetchImpl });
     const result = await client.listHistorySince('at', '12345');
 
-    // Q1.A — filter is comma-separated; messageAdded must remain in it.
-    assert.ok(
-      requestedHistoryTypes.split(',').includes('messageAdded'),
-      `expected historyTypes to include 'messageAdded' (got '${requestedHistoryTypes}')`
-    );
-    assert.ok(
-      requestedHistoryTypes.split(',').includes('labelAdded'),
-      `expected historyTypes to include 'labelAdded' (got '${requestedHistoryTypes}')`
+    // Q1.A — Gmail's contract is REPEATED historyTypes params, not a
+    // comma-joined single value. The query string must look like
+    // `?historyTypes=messageAdded&historyTypes=labelAdded`. Asserting on
+    // .getAll() catches the comma-joined regression that v0.5.8 smoke
+    // 2026-06-06 surfaced against real Gmail.
+    assert.deepEqual(
+      requestedHistoryTypes,
+      ['messageAdded', 'labelAdded'],
+      `expected exactly ['messageAdded','labelAdded'] (got ${JSON.stringify(requestedHistoryTypes)}; raw=${rawUrl})`
     );
 
     assert.deepEqual([...result.added_message_ids], ['m-ext-1']);

@@ -189,11 +189,16 @@ export class GmailClient {
     startHistoryId: string,
     opts: { readonly maxResults?: number } = {}
   ): Promise<GmailHistoryListResult> {
+    // Gmail expects historyTypes as REPEATED params, not a comma-joined
+    // string. Comma-joined produces a 400 INVALID_ARGUMENT — Gmail decodes
+    // the whole value as one enum literal. v0.5.8 smoke 2026-06-06 caught
+    // this against real Gmail; unit test C4 had the same wrong assumption.
     const params = new URLSearchParams({
       startHistoryId,
-      historyTypes: 'messageAdded,labelAdded',
       maxResults: String(opts.maxResults ?? 100)
     });
+    params.append('historyTypes', 'messageAdded');
+    params.append('historyTypes', 'labelAdded');
     const url = `${GMAIL_API_BASE}/users/me/history?${params.toString()}`;
     const json = await this.get(url, accessToken);
     const root = json as Record<string, unknown>;
