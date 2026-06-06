@@ -50,7 +50,28 @@ export const MEMORY_SIGNAL_KINDS = [
   //   { registered: true,  registered_at: ISO } |
   //   { registered: false, error_reason: string, attempted_at: ISO }
   // NEVER the SendBlue API key or raw response body.
-  'sendblue_contact_status'
+  'sendblue_contact_status',
+  // Phase v0.5.9 — Feedback + Learn/Grow Loop substrate (Brevio-wide).
+  // Identity: (user_id, kind='sender_feedback_ignored', scope_key=<HMAC-hashed sender>).
+  // Written by applyFeedback when the v0.5.9 match arm fires:
+  //   (source_surface='email_alert', mapped_verb='ignored', detail.dimension='sender')
+  // Detail shape (privacy-safe, locked at founder approval time):
+  //   {
+  //     ignored_count: number,           // count of ignored events seen
+  //     first_ignored_at: ISO8601,       // first event for this (user, sender)
+  //     last_ignored_at: ISO8601,        // most recent
+  //     source_feedback_event_ids: bigint[],  // bounded list of source IDs
+  //     source_surface: 'email_alert'
+  //   }
+  // NEVER the raw sender_email (the scope_key IS the HMAC hash —
+  // HMAC-SHA-256(BREVIO_SENDER_HASH_KEY, user_id+':'+normalize(email))
+  // truncated to 32 hex chars). user_id participation in the MAC input
+  // prevents cross-user enumeration even with key compromise.
+  //
+  // WRITE-ONLY in v0.5.9: the ranker does NOT consume this signal; PIL
+  // is a future phase. Reversible via DELETE memory_signals row or
+  // UPDATE detail.ignored_count=0.
+  'sender_feedback_ignored'
 ] as const;
 
 export type MemorySignalKind = (typeof MEMORY_SIGNAL_KINDS)[number];

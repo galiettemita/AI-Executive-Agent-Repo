@@ -322,7 +322,27 @@ export type AuditAction =
   // Detail surfaces sanitized fields only: reason ('malformed_labelAdded').
   // NEVER the raw event JSON, NEVER a message_id (the malformed event
   // may not even carry one).
-  | 'fomo.gmail.poll.event_skipped';
+  | 'fomo.gmail.poll.event_skipped'
+  // Phase v0.5.9 — Feedback + Learn/Grow Loop substrate (Brevio-wide).
+  // Fires once per memory_signal upsert performed by the applyFeedback
+  // consumer. The v0.5.9 hardcoded match arm is:
+  //   (source_surface='email_alert', mapped_verb='ignored', detail.dimension='sender')
+  //   → upsert memory_signals(kind='sender_feedback_ignored', scope_key=<HMAC-hashed>)
+  // Detail is STRUCTURAL ONLY per Q6.C + founder approval-time privacy
+  // guardrail (NO raw sender email):
+  //   - feedback_event_id: bigint
+  //   - source_surface: BrevioFeedbackSurface
+  //   - verb: BrevioFeedbackEventKind (the generic/mapped verb)
+  //   - dimension: string | undefined (e.g. 'sender', 'alert')
+  //   - memory_signal_kind: MemorySignalKind (e.g. 'sender_feedback_ignored')
+  //   - memory_signal_action: 'created' | 'updated'
+  //   - memory_signal_scope_key_hash: string (the same HMAC hash that's
+  //       the scope_key — exposes the lookup key for cross-row joins
+  //       without leaking the raw sender)
+  //   - confidence: number
+  // NEVER subject, sender_email, body, snippet, raw headers, attachment
+  // names, access tokens.
+  | 'brevio.feedback.applied';
 
 // Phase 3G.1 — runtime registry of every FOMO-namespaced audit
 // action. Used by the 3G.1 evidence script (and any future ops
@@ -385,7 +405,14 @@ export const FOMO_AUDIT_ACTIONS = [
   'fomo.alert.hmr_degradation_applied',
   // Phase v0.5.8 — Gmail INBOX Event Reliability Hardening.
   'fomo.gmail.poll.event_observed',
-  'fomo.gmail.poll.event_skipped'
+  'fomo.gmail.poll.event_skipped',
+  // Phase v0.5.9 — Feedback + Learn/Grow Loop substrate (Brevio-wide).
+  // Closes the historical gap on 'feedback.written' (was in the AuditAction
+  // union but missing from this runtime array; the v0.5.9 evidence script
+  // now iterates the registry). 'brevio.feedback.applied' is the new
+  // consumer-side audit emitted by applyFeedback on memory_signal upsert.
+  'feedback.written',
+  'brevio.feedback.applied'
 ] as const satisfies readonly AuditAction[];
 
 export type AuditResult = 'success' | 'failure';

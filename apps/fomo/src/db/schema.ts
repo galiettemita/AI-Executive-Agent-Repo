@@ -182,12 +182,22 @@ export const feedback_events = pgTable(
     alert_id: text('alert_id'),
     sender_email: text('sender_email'),
     kind: text('kind').notNull(),
-    detail: jsonb('detail').$type<Record<string, unknown> | null>()
+    detail: jsonb('detail').$type<Record<string, unknown> | null>(),
+    // Phase v0.5.9 — Brevio-wide surface discriminator. Added by migration
+    // 0007_feedback_events_source_surface.sql. NOT NULL DEFAULT 'email_alert'
+    // so existing rows backfill atomically. Write-time gate restricts new
+    // writes to values in BREVIO_FEEDBACK_ACTIVE_SURFACES (v0.5.9 =
+    // ['email_alert']); all 13 surfaces in BREVIO_FEEDBACK_SURFACES are
+    // declared but inactive surfaces are rejected.
+    source_surface: text('source_surface').notNull().default('email_alert')
   },
   (table) => [
     index('feedback_events_user_id_idx').on(table.user_id),
     index('feedback_events_kind_idx').on(table.user_id, table.kind),
-    index('feedback_events_sender_idx').on(table.user_id, table.sender_email)
+    index('feedback_events_sender_idx').on(table.user_id, table.sender_email),
+    // Phase v0.5.9 — per-user per-surface lookup for the future PIL consumer
+    // and the cross-tenant isolation check (smoke-evidence C11).
+    index('feedback_events_source_surface_idx').on(table.user_id, table.source_surface)
   ]
 );
 

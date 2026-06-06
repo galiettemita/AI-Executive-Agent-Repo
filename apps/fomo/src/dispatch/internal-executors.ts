@@ -13,6 +13,7 @@
 
 import { type AuditAction, type AuditResult, type AuditStore } from '../core/audit.js';
 import {
+  type BrevioFeedbackEventKind,
   type FeedbackEventKind,
   type FeedbackStore
 } from '../memory/feedback-events.js';
@@ -63,9 +64,19 @@ export function auditWriteExecutor(audit: AuditStore): Executor<AuditWriteArgs, 
 export interface FeedbackWriteArgs {
   alert_id: string | null;
   sender_email: string | null;
-  kind: FeedbackEventKind;
+  // Phase v0.5.9 — caller may pass a legacy email-shaped kind OR a Brevio
+  // generic verb. Storage is literal; the audit emitter / applyFeedback
+  // consumer derive the (verb, role, dimension) tuple via mapLegacyFeedbackKind.
+  kind: FeedbackEventKind | BrevioFeedbackEventKind;
   detail?: Record<string, unknown> | null;
   occurred_at?: string;
+  // Phase v0.5.9 — optional Brevio-wide surface. Defaults to 'email_alert'
+  // inside FeedbackStore.write when omitted. Writes with a value NOT in
+  // BREVIO_FEEDBACK_ACTIVE_SURFACES throw BrevioFeedbackError; the
+  // executor lets the error propagate so dispatch callers see the failure
+  // (existing dispatch error semantics — no behavior change for legacy
+  // callers that don't set source_surface).
+  source_surface?: string;
 }
 
 export function feedbackWriteExecutor(feedback: FeedbackStore): Executor<FeedbackWriteArgs, void> {
@@ -76,7 +87,8 @@ export function feedbackWriteExecutor(feedback: FeedbackStore): Executor<Feedbac
       sender_email: args.sender_email,
       kind: args.kind,
       detail: args.detail,
-      occurred_at: args.occurred_at
+      occurred_at: args.occurred_at,
+      source_surface: args.source_surface
     });
   };
 }

@@ -99,7 +99,11 @@ export const REQUIRED_COLUMNS: readonly RequiredColumn[] = Object.freeze([
   { table: 'invite_tokens', column: 'intended_phone_hash', migration: '0005_users_v05.sql' },
   { table: 'invite_tokens', column: 'consumed_at', migration: '0005_users_v05.sql' },
   // 0006_invite_phone_encrypted.sql — ALTER TABLE invite_tokens ADD COLUMN
-  { table: 'invite_tokens', column: 'intended_phone_encrypted', migration: '0006_invite_phone_encrypted.sql' }
+  { table: 'invite_tokens', column: 'intended_phone_encrypted', migration: '0006_invite_phone_encrypted.sql' },
+  // 0007_feedback_events_source_surface.sql — ALTER TABLE feedback_events
+  // ADD COLUMN source_surface text NOT NULL DEFAULT 'email_alert' + index
+  // (user_id, source_surface). Phase v0.5.9 Brevio-wide feedback substrate.
+  { table: 'feedback_events', column: 'source_surface', migration: '0007_feedback_events_source_surface.sql' }
 ]);
 
 export interface MigrationVerificationResult {
