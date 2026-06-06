@@ -1614,4 +1614,99 @@ describe('runOnce — v0.5.8 Gmail INBOX event reliability', () => {
     assert.ok(json.includes('is_dedupe_drop'));
     assert.ok(json.includes('message_id'));
   });
+
+  // SMOKE-INCIDENT 2026-06-06 — v0.5.8 founder-only smoke surfaced that
+  // 3 of 5 Gmail-to-self messages returned HTTP 404 NOT_FOUND on
+  // `messages.get` after `history.list` reported them (transient Gmail
+  // pipeline IDs — draft→sent transitions, threading merges). The cycle
+  // continued correctly: messages_failed counted the 404s, the stable
+  // messages dispatched + ranked + alerted, the cursor advanced. This
+  // regression test locks in that behavior. A future hardening phase
+  // (hardening-backlog entry #2) may reclassify 404 as a benign
+  // transient skip with its own counter; until then, the current
+  // behavior is the contract.
+  //
+  // Importantly: `fomo.gmail.poll.event_observed` fires BEFORE the
+  // dispatch loop in `runOnce`, so EVERY observed message_id gets an
+  // event_observed audit row regardless of whether the subsequent
+  // `messages.get` call 404s. The KEY METRIC `messages_observed_via_*`
+  // counters reflect what Gmail's history feed surfaced, not what
+  // dispatch could fetch.
+  it('v0.5.8 SMOKE-INCIDENT (2026-06-06): history.list returns IDs but messages.get 404s for some → messages_failed counts, event_observed still fires for each observed id, cycle continues', async () => {
+    const historyMap = new Map<string, { status: number; body: unknown }>();
+    historyMap.set('h-404-mix', {
+      status: 200,
+      body: {
+        history: [
+          {
+            id: 'h-404-mix-1',
+            messagesAdded: [
+              { message: { id: 'm-stable-ok', threadId: 't-stable' } },
+              { message: { id: 'm-transient-404', threadId: 't-transient' } }
+            ]
+          }
+        ],
+        historyId: 'h-404-mix-end'
+      }
+    });
+    const messageMap = new Map<string, { status: number; body: unknown }>();
+    messageMap.set('m-transient-404', {
+      status: 404,
+      body: { error: { code: 404, status: 'NOT_FOUND', message: 'Requested entity was not found.' } }
+    });
+    // m-stable-ok uses the default fakeMessageJSON path (200 OK).
+    const h = makeHarness({ behavior: { history: historyMap, message: messageMap } });
+    await seedUser(h, 'u-404-mix', 'h-404-mix');
+
+    const r = await runOnce(h.deps);
+
+    // Both messages were OBSERVED by history.list — the dispatch outcome
+    // does not affect observation counters.
+    assert.equal(r.messages_observed, 2);
+    assert.equal(r.messages_observed_via_messageAdded_only, 2);
+    assert.equal(r.messages_observed_via_labelAdded_only, 0);
+    assert.equal(r.messages_observed_via_both, 0);
+    assert.equal(r.messages_dedupe_drops, 0);
+    assert.equal(r.messages_event_skipped, 0);
+
+    // Dispatch: 1 stable success, 1 transient 404 → messages_failed.
+    assert.equal(r.messages_dispatched, 1);
+    assert.equal(r.messages_failed, 1);
+
+    // Cursor advanced cleanly despite the partial failure.
+    const cursor = await h.cursorStore.get('u-404-mix');
+    assert.equal(cursor?.history_id, 'h-404-mix-end');
+
+    // event_observed fires for BOTH ids — the audit is observation-time,
+    // not dispatch-time. This is the Q6.A contract this test pins.
+    const userAudit = await h.auditStore.recent('u-404-mix', 100);
+    const observedRows = userAudit.filter((e) => e.action === 'fomo.gmail.poll.event_observed');
+    assert.equal(observedRows.length, 2);
+    const observedIds = observedRows
+      .map((e) => (e.detail as { message_id?: string } | null)?.message_id ?? '')
+      .sort();
+    assert.deepEqual(observedIds, ['m-stable-ok', 'm-transient-404']);
+
+    // tool.invoked fires for BOTH dispatches (success + failure).
+    const toolRows = userAudit.filter((e) => e.action === 'tool.invoked');
+    assert.equal(toolRows.length, 2);
+    const successCount = toolRows.filter((e) => e.result === 'success').length;
+    const failureCount = toolRows.filter((e) => e.result === 'failure').length;
+    assert.equal(successCount, 1);
+    assert.equal(failureCount, 1);
+
+    // tool_invocations row for the 404 captures the structured error so
+    // the operator can see the cause without re-reading dev logs. (This
+    // is the same path that surfaced the 404 root cause during smoke
+    // when audit_log alone showed only aggregate counts; see
+    // hardening-backlog #3 for the audit-detail observability gap.)
+    const invocations = await h.toolInvocationStore.recent('u-404-mix', 100);
+    const failedInv = invocations.find((i) => i.status === 'failure');
+    assert.ok(failedInv);
+    assert.equal(failedInv.error_code, 'executor_error');
+    assert.ok(
+      typeof failedInv.error_reason === 'string' && failedInv.error_reason.includes('404'),
+      `expected error_reason to mention 404 (got ${String(failedInv.error_reason)})`
+    );
+  });
 });

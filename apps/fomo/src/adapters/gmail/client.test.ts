@@ -169,10 +169,19 @@ describe('GmailClient.listHistorySince', () => {
     assert.equal(result.malformed_labelAdded_skipped, 0);
   });
 
-  // C5 — Gmail-to-self labelAdded:INBOX-only path produces dispatch.
-  // The v0.5.7 baseline NEVER surfaced this message. v0.5.8 surfaces it
-  // via the labelAdded path with INBOX literal post-filter.
-  it('v0.5.8 C5: Gmail-to-self labelAdded:INBOX-only path produces dispatch', async () => {
+  // C5 — labelAdded:INBOX-only path produces dispatch (archive→inbox
+  // move, forwarded mail, filter-routed mail). v0.5.7 baseline NEVER
+  // surfaced these messages; v0.5.8 surfaces them via the labelAdded
+  // path with INBOX literal post-filter.
+  //
+  // NOTE: the v0.5.8 SMOKE_REPORT §13 finding #4 corrected the original
+  // assumption that this fixture shape matched Gmail-to-self self-sends
+  // — on the founder's Gmail account, self-sends emitted `messageAdded`
+  // for the inbox copy, not `labelAdded:INBOX`. The labelAdded:INBOX-only
+  // shape IS valid for archive→inbox moves (proven via the smoke), for
+  // forwarded mail, and for filter-routed mail. Keep this test focused
+  // on the *parser contract*, not on a specific Gmail trigger.
+  it('v0.5.8 C5: labelAdded:INBOX-only path (archive→inbox / forwarded / filter-routed) produces dispatch', async () => {
     const fetchImpl = mockFetch(async () => ({
       status: 200,
       body: {
@@ -180,8 +189,8 @@ describe('GmailClient.listHistorySince', () => {
         history: [
           {
             id: '13050',
-            // NOTE: NO messagesAdded — only labelsAdded. This is the exact
-            // Gmail-to-self self-send shape that v0.5.7 missed.
+            // NOTE: NO messagesAdded — only labelsAdded. This is the
+            // shape v0.5.7 missed (archive→inbox moves, forwarded mail).
             labelsAdded: [
               { message: { id: 'm-self-1', threadId: 't-self-1' }, labelIds: ['INBOX', 'UNREAD'] }
             ]
