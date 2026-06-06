@@ -39,7 +39,10 @@
     "preflight:v0.5.5": "node --experimental-strip-types --loader ./test-loader.mjs scripts/preflight-v0.5.5.ts",
     "smoke-evidence:v0.5.5": "node --experimental-strip-types --loader ./test-loader.mjs scripts/smoke-evidence-v0.5.5.ts",
     "preflight:v0.5.6": "node --experimental-strip-types --loader ./test-loader.mjs scripts/preflight-v0.5.6.ts",
-    "smoke-evidence:v0.5.6": "node --experimental-strip-types --loader ./test-loader.mjs scripts/smoke-evidence-v0.5.6.ts"
+    "smoke-evidence:v0.5.6": "node --experimental-strip-types --loader ./test-loader.mjs scripts/smoke-evidence-v0.5.6.ts",
+    "preflight:v0.5.7": "node --experimental-strip-types --loader ./test-loader.mjs scripts/preflight-v0.5.7.ts",
+    "smoke-evidence:v0.5.7": "node --experimental-strip-types --loader ./test-loader.mjs scripts/smoke-evidence-v0.5.7.ts",
+    "render-hmr-samples": "node --experimental-strip-types --loader ./test-loader.mjs scripts/render-hmr-samples.ts"
   },
   "dependencies": {
     "drizzle-orm": "0.45.2",

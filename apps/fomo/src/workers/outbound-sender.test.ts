@@ -251,9 +251,11 @@ describe('runOutboundOnce — happy path (sent)', () => {
     const succeeded = events.find((e) => e.action === 'fomo.send.succeeded');
     assert.ok(succeeded);
     assert.equal((succeeded?.detail as { destination_slug: string }).destination_slug, FOUNDER_PHONE_SLUG);
+    // v0.5.7 Q6.A: template_version renamed from 'founder-text-vN' to
+    // 'human-message-vN' to surface the HMR product principle in audit.
     assert.match(
       (succeeded?.detail as { template_version: string }).template_version,
-      /^founder-text-v/
+      /^(human-message|founder-text)-v/
     );
 
     // fomo.send.attempted fired BEFORE the send.
@@ -1051,7 +1053,7 @@ describe('runOutboundOnce — v0.5.6 rank.reason wiring (happy path)', () => {
     const detail = attempted?.detail as { reason_source: string; template_version: string };
     assert.equal(detail.reason_source, 'rank');
     // Template version is the bumped v0.5.6 value.
-    assert.equal(detail.template_version, 'founder-text-v0.2.0');
+    assert.equal(detail.template_version, 'human-message-v0.3.0');
 
     // No fallback audit when reason is within bounds.
     const fallback = events.find((e) => e.action === 'fomo.alert.drafter_schema_failed');
@@ -1088,7 +1090,7 @@ describe('runOutboundOnce — v0.5.6 deterministic fallback (Q6: best-effort aud
     };
     assert.equal(fbDetail.reason_violation_kind, 'empty');
     assert.equal(fbDetail.original_reason_length, 0);
-    assert.equal(fbDetail.template_version, 'founder-text-v0.2.0');
+    assert.equal(fbDetail.template_version, 'human-message-v0.3.0');
 
     // fomo.send.attempted detail.reason_source === 'fallback'.
     const attempted = events.find((e) => e.action === 'fomo.send.attempted');
@@ -1256,5 +1258,128 @@ describe('runOutboundOnce — v0.5.6 preserves v0.5.5 STOP enforcement', () => {
     // fomo.send.attempted does NOT fire either (stop_enforced is checked
     // before the render).
     assert.equal(events.find((e) => e.action === 'fomo.send.attempted'), undefined);
+  });
+});
+
+/* ================================================================== */
+/* v0.5.7 — Human Message Renderer wiring                              */
+/* ================================================================== */
+
+describe('runOutboundOnce — v0.5.7 HMR audit-field population (Q6.A)', () => {
+  it('fomo.send.attempted detail carries all 4 new HMR audit fields with structural enum values', async () => {
+    const sendBlueFetch = mockFetch(async () => ({
+      status: 202,
+      body: { status: 'ENQUEUED', message_handle: 'mh-test' }
+    }));
+    const gmailFetch = mockFetch(async () => ({ status: 200, body: FAKE_GMAIL_MSG }));
+    const h = await buildHarness({ sendBlueFetch, gmailFetch });
+    await runOutboundOnce(h.deps);
+
+    const events = await h.auditStore.recent(FOUNDER_USER, 100);
+    const attempted = events.find((e) => e.action === 'fomo.send.attempted');
+    assert.ok(attempted, 'fomo.send.attempted must fire');
+    const detail = attempted.detail as {
+      sender_resolution_path: string;
+      subject_strip_applied: string;
+      reason_voice: string;
+      template_shape: string;
+    };
+    // Harness sender_name="Sarah" → first_name path.
+    assert.equal(detail.sender_resolution_path, 'first_name');
+    // Harness subject="lunch?" → no prefix to strip → 'none'.
+    assert.equal(detail.subject_strip_applied, 'none');
+    // Harness prompt_version='ranker-v0.1.0' → reason_voice='legacy_3p'.
+    assert.equal(detail.reason_voice, 'legacy_3p');
+    // Both sender + subject present → two_sentence shape.
+    assert.equal(detail.template_shape, 'two_sentence');
+  });
+
+  it('fomo.alert.hmr_degradation_applied fires when ANY Q5.A degradation rule triggers (legacy_3p case)', async () => {
+    // Harness prompt_version='ranker-v0.1.0' → legacy_3p → degradation_applied=true.
+    const sendBlueFetch = mockFetch(async () => ({
+      status: 202,
+      body: { status: 'ENQUEUED', message_handle: 'mh-test' }
+    }));
+    const gmailFetch = mockFetch(async () => ({ status: 200, body: FAKE_GMAIL_MSG }));
+    const h = await buildHarness({ sendBlueFetch, gmailFetch });
+    await runOutboundOnce(h.deps);
+
+    const events = await h.auditStore.recent(FOUNDER_USER, 100);
+    const degrade = events.find((e) => e.action === 'fomo.alert.hmr_degradation_applied');
+    assert.ok(degrade, 'fomo.alert.hmr_degradation_applied must fire on legacy_3p (any Q5.A path)');
+    const detail = degrade.detail as {
+      sender_resolution_path: string;
+      subject_strip_applied: string;
+      reason_voice: string;
+      template_shape: string;
+    };
+    assert.equal(detail.reason_voice, 'legacy_3p');
+    // STRUCTURAL audit only — no raw subject/body/header in detail.
+    const detailStr = JSON.stringify(degrade.detail);
+    assert.ok(!detailStr.includes('lunch?'), `audit must not leak subject; got: ${detailStr}`);
+    assert.ok(!detailStr.includes('Sarah'), `audit must not leak sender_name; got: ${detailStr}`);
+    assert.ok(!detailStr.includes('@example.com'), `audit must not leak raw email; got: ${detailStr}`);
+  });
+
+  it('hmr_degradation_applied fires BEFORE fomo.send.attempted (audit ordering)', async () => {
+    const sendBlueFetch = mockFetch(async () => ({
+      status: 202,
+      body: { status: 'ENQUEUED', message_handle: 'mh-test' }
+    }));
+    const gmailFetch = mockFetch(async () => ({ status: 200, body: FAKE_GMAIL_MSG }));
+    const h = await buildHarness({ sendBlueFetch, gmailFetch });
+    await runOutboundOnce(h.deps);
+    const events = await h.auditStore.recent(FOUNDER_USER, 100);
+    // recent() returns newest-first per existing fixture; reverse to scan
+    // chronologically.
+    const chronological = [...events].reverse();
+    const degradeIdx = chronological.findIndex((e) => e.action === 'fomo.alert.hmr_degradation_applied');
+    const attemptedIdx = chronological.findIndex((e) => e.action === 'fomo.send.attempted');
+    assert.ok(degradeIdx >= 0 && attemptedIdx >= 0);
+    assert.ok(
+      degradeIdx < attemptedIdx,
+      `hmr_degradation_applied (idx ${degradeIdx}) must precede send.attempted (idx ${attemptedIdx})`
+    );
+  });
+
+  it('over-long reason → BOTH drafter_schema_failed AND hmr_degradation_applied fire (companion audits)', async () => {
+    const sendBlueFetch = mockFetch(async () => ({
+      status: 202,
+      body: { status: 'ENQUEUED', message_handle: 'mh-test' }
+    }));
+    const gmailFetch = mockFetch(async () => ({ status: 200, body: FAKE_GMAIL_MSG }));
+    const h = await buildHarness({
+      sendBlueFetch,
+      gmailFetch,
+      reasonOverride: 'x'.repeat(250)
+    });
+    await runOutboundOnce(h.deps);
+
+    const events = await h.auditStore.recent(FOUNDER_USER, 100);
+    const drafter = events.find((e) => e.action === 'fomo.alert.drafter_schema_failed');
+    const degrade = events.find((e) => e.action === 'fomo.alert.hmr_degradation_applied');
+    assert.ok(drafter, 'drafter_schema_failed must fire on reason violation (v0.5.6 carry-forward)');
+    assert.ok(degrade, 'hmr_degradation_applied must fire (companion to drafter_schema_failed)');
+    const dd = degrade.detail as { reason_voice: string };
+    assert.equal(dd.reason_voice, 'fallback');
+  });
+
+  it('Q5.A no-retry: second cycle does NOT re-fire hmr_degradation_applied for an already-sent alert', async () => {
+    const sendBlueFetch = mockFetch(async () => ({
+      status: 202,
+      body: { status: 'ENQUEUED', message_handle: 'mh-test' }
+    }));
+    const gmailFetch = mockFetch(async () => ({ status: 200, body: FAKE_GMAIL_MSG }));
+    const h = await buildHarness({ sendBlueFetch, gmailFetch });
+    await runOutboundOnce(h.deps);
+    await runOutboundOnce(h.deps);
+
+    const events = await h.auditStore.recent(FOUNDER_USER, 100);
+    const degradeCount = events.filter((e) => e.action === 'fomo.alert.hmr_degradation_applied').length;
+    assert.equal(
+      degradeCount,
+      1,
+      `hmr_degradation_applied must fire exactly once across two cycles (no retry); got ${degradeCount}`
+    );
   });
 });

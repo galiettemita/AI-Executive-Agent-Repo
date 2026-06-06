@@ -20,7 +20,11 @@
 //   * Slack view masks the sender email (e.g. s***@school.edu)
 //   * reply parser view excludes the email body entirely
 
-export type EgressPurpose = 'model_ranker' | 'model_reply_parser' | 'slack_founder_card';
+export type EgressPurpose =
+  | 'model_ranker'
+  | 'model_reply_parser'
+  | 'slack_founder_card'
+  | 'human_message_renderer';
 
 export interface RawEmailContext {
   // Stable identifier from Gmail.
@@ -61,6 +65,37 @@ export interface SlackEgressView {
   readonly sender_name: string | undefined;
   readonly subject: string;
   readonly body_snippet: string;
+  readonly received_at: string;
+  readonly message_id: string;
+}
+
+// Phase v0.5.7 — Human Message Renderer projection.
+//
+// `renderHumanMessage` (apps/fomo/src/core/human-message-renderer.ts) is
+// a PURE deterministic function that produces user-facing iMessage text.
+// It needs slightly more raw signal than the Slack card to run the
+// founder-locked Modified Q2.B sender resolution chain (specifically:
+// the local part of the email for the human-readable pattern test, and
+// the domain for the curated SaaS labels — see sender-resolution.ts).
+//
+// Privacy boundary: this view DOES include the raw sender_email so the
+// deterministic Q2.B chain can do its job. The renderer NEVER includes
+// the raw email (or any mask of it) in its output text — human-message-
+// renderer.test.ts asserts this invariant. The view itself is consumed
+// ONLY by the renderer and the offline taste-check fixture; it is not
+// passed to Slack history or any model call.
+//
+// 3E.1 PRESERVED: no LLM body generation. The renderer is a pure
+// function; the only model-generated text in its output is `rank.reason`
+// (the existing 3E.1 carve-out, unchanged).
+export interface HumanMessageEgressView {
+  readonly purpose: 'human_message_renderer';
+  readonly sender_name: string | undefined;
+  // Raw email for the deterministic Q2.B chain. NEVER serialized into
+  // audit detail or persisted; consumed only by renderHumanMessage which
+  // produces a display TOKEN and a path enum.
+  readonly sender_email: string;
+  readonly subject: string;
   readonly received_at: string;
   readonly message_id: string;
 }
@@ -135,6 +170,20 @@ export function applyEgressForSlackCard(
     sender_name: raw.sender_name,
     subject: raw.subject,
     body_snippet: makeSnippet(raw.body_plain, opts.slack_snippet_max_chars),
+    received_at: raw.received_at.toISOString(),
+    message_id: raw.message_id
+  });
+}
+
+// Phase v0.5.7 — projects a RawEmailContext into the HMR view.
+export function applyEgressForHumanMessage(
+  raw: RawEmailContext
+): HumanMessageEgressView {
+  return Object.freeze({
+    purpose: 'human_message_renderer',
+    sender_name: raw.sender_name,
+    sender_email: raw.sender_email,
+    subject: raw.subject,
     received_at: raw.received_at.toISOString(),
     message_id: raw.message_id
   });
