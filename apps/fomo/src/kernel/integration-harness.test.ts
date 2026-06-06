@@ -178,19 +178,22 @@ describe('Kernel Integration Gate — full scenario report', () => {
     // ---- Audit Log (Phase 2A + Phase 2F.1 + Phase 3A + Phase 3B.2) ----
     // The harness writes an audit entry at every meaningful kernel touch.
     // Required-count breakdown (must hold for the Kernel Integration Gate):
-    //   policy.decided      9  (3 denied + 5 allowed from explicit loop,
-    //                            + 1 from polling worker's gmail.read dispatch)
-    //   tool.invoked        9  (one per tool_invocations write)
-    //   session.created     1  (from the dispatched audit.write executor —
-    //                            this IS the domain audit; no extra audit
-    //                            wrapper around it, which is the
-    //                            "no-recursive-audit" invariant)
-    //   state.transitioned  6  (one per state machine transition)
-    //   feedback.written    2  (founder_approved + user_snoozed)
-    //   memory.upserted     2  (sender_importance + quietness_preference)
-    //   model.routed        1  (single classification call)
-    //                      —
-    //                      30  total (under SYNTHETIC_USER_ID)
+    //   policy.decided                9  (3 denied + 5 allowed from explicit loop,
+    //                                      + 1 from polling worker's gmail.read dispatch)
+    //   tool.invoked                  9  (one per tool_invocations write)
+    //   session.created               1  (from the dispatched audit.write executor —
+    //                                      this IS the domain audit; no extra audit
+    //                                      wrapper around it, which is the
+    //                                      "no-recursive-audit" invariant)
+    //   state.transitioned            6  (one per state machine transition)
+    //   feedback.written              2  (founder_approved + user_snoozed)
+    //   memory.upserted               2  (sender_importance + quietness_preference)
+    //   model.routed                  1  (single classification call)
+    //   fomo.gmail.poll.event_observed 1 (Phase v0.5.8 — per-message post-dedupe
+    //                                      observability emitted by the polling
+    //                                      worker for the single dispatched msg)
+    //                                —
+    //                                31  total (under SYNTHETIC_USER_ID)
     //
     // Note: the polling worker also writes a 'gmail.poll.cycle' aggregate
     // entry with actor_user_id=null (system actor). audit.recent() is
@@ -198,9 +201,10 @@ describe('Kernel Integration Gate — full scenario report', () => {
     // below. The worker's own unit tests assert the cycle entry's shape.
     assert.ok(report.audit.entries_written > 0, 'audit log must participate in the kernel path');
     // Phase 3D.1: removing slack from the explicit invocations list
-    // dropped 2 audit entries (one policy.decided + one tool.invoked),
-    // bringing the total from 30 to 28.
-    assert.equal(report.audit.entries_written, 28);
+    // dropped 2 audit entries (30 → 28). Phase v0.5.8 added one
+    // fomo.gmail.poll.event_observed entry per dispatched poll message
+    // (28 → 29).
+    assert.equal(report.audit.entries_written, 29);
     // Each required audit category must be exercised at least once.
     for (const requiredAction of [
       'policy.decided',
@@ -258,8 +262,10 @@ describe('Kernel Integration Gate — full scenario report', () => {
     assert.equal(b.feedback.events_written, 2);
     assert.equal(a.tool_invocations.entries_written, 8);
     assert.equal(b.tool_invocations.entries_written, 8);
-    assert.equal(a.audit.entries_written, 28);
-    assert.equal(b.audit.entries_written, 28);
+    // Phase v0.5.8 added 1 fomo.gmail.poll.event_observed per polled msg
+    // (28 → 29).
+    assert.equal(a.audit.entries_written, 29);
+    assert.equal(b.audit.entries_written, 29);
     // Polling cursor advance is independent per run.
     assert.equal(a.polling.cursor_after, 'h-harness-2');
     assert.equal(b.polling.cursor_after, 'h-harness-2');

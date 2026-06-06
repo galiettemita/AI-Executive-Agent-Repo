@@ -122,6 +122,235 @@ describe('GmailClient.listHistorySince', () => {
     const client = new GmailClient({ fetchImpl });
     await assert.rejects(client.listHistorySince('at', '12345'), GmailUnauthorizedError);
   });
+
+  /* ------------------------------------------------------------------ */
+  /* Phase v0.5.8 — Gmail INBOX Event Reliability Hardening              */
+  /* ------------------------------------------------------------------ */
+
+  // C4 — external messageAdded path produces dispatch (no regression
+  // from v0.5.7). The Q1.A filter swap MUST still include the legacy
+  // messageAdded path; the only widening is adding labelAdded.
+  it('v0.5.8 C4: external messageAdded path still produces dispatch (no regression)', async () => {
+    let requestedHistoryTypes = '';
+    const fetchImpl = mockFetch(async (url) => {
+      const parsed = new URL(url);
+      requestedHistoryTypes = parsed.searchParams.get('historyTypes') ?? '';
+      return {
+        status: 200,
+        body: {
+          historyId: '12999',
+          history: [
+            { id: '12500', messagesAdded: [{ message: { id: 'm-ext-1', threadId: 't-ext-1' } }] }
+          ]
+        }
+      };
+    });
+    const client = new GmailClient({ fetchImpl });
+    const result = await client.listHistorySince('at', '12345');
+
+    // Q1.A — filter is comma-separated; messageAdded must remain in it.
+    assert.ok(
+      requestedHistoryTypes.split(',').includes('messageAdded'),
+      `expected historyTypes to include 'messageAdded' (got '${requestedHistoryTypes}')`
+    );
+    assert.ok(
+      requestedHistoryTypes.split(',').includes('labelAdded'),
+      `expected historyTypes to include 'labelAdded' (got '${requestedHistoryTypes}')`
+    );
+
+    assert.deepEqual([...result.added_message_ids], ['m-ext-1']);
+    const prov = result.event_provenance.get('m-ext-1');
+    assert.ok(prov, 'provenance entry must exist for added id');
+    assert.equal(prov.via_messageAdded, true);
+    assert.equal(prov.via_labelAdded_inbox, false);
+    assert.equal(result.malformed_labelAdded_skipped, 0);
+  });
+
+  // C5 — Gmail-to-self labelAdded:INBOX-only path produces dispatch.
+  // The v0.5.7 baseline NEVER surfaced this message. v0.5.8 surfaces it
+  // via the labelAdded path with INBOX literal post-filter.
+  it('v0.5.8 C5: Gmail-to-self labelAdded:INBOX-only path produces dispatch', async () => {
+    const fetchImpl = mockFetch(async () => ({
+      status: 200,
+      body: {
+        historyId: '13100',
+        history: [
+          {
+            id: '13050',
+            // NOTE: NO messagesAdded — only labelsAdded. This is the exact
+            // Gmail-to-self self-send shape that v0.5.7 missed.
+            labelsAdded: [
+              { message: { id: 'm-self-1', threadId: 't-self-1' }, labelIds: ['INBOX', 'UNREAD'] }
+            ]
+          }
+        ]
+      }
+    }));
+    const client = new GmailClient({ fetchImpl });
+    const result = await client.listHistorySince('at', '13000');
+
+    assert.deepEqual([...result.added_message_ids], ['m-self-1']);
+    const prov = result.event_provenance.get('m-self-1');
+    assert.ok(prov);
+    assert.equal(prov.via_messageAdded, false);
+    assert.equal(prov.via_labelAdded_inbox, true);
+    assert.equal(result.malformed_labelAdded_skipped, 0);
+  });
+
+  // C6 — routed/forwarded labelAdded:INBOX path produces dispatch. From
+  // the parser's view, this is shape-identical to C5 — a labelAdded
+  // event with INBOX literal — regardless of whether the message was
+  // freshly delivered, forwarded, or filter-routed. The test asserts
+  // a *second*, distinct fixture (different ids/timestamps) to make
+  // the regression specifically catch a "first-fixture-only" parser bug.
+  it('v0.5.8 C6: routed / forwarded labelAdded:INBOX path produces dispatch', async () => {
+    const fetchImpl = mockFetch(async () => ({
+      status: 200,
+      body: {
+        historyId: '14500',
+        history: [
+          {
+            id: '14400',
+            labelsAdded: [
+              { message: { id: 'm-routed-1', threadId: 't-routed-1' }, labelIds: ['INBOX'] }
+            ]
+          },
+          {
+            id: '14450',
+            labelsAdded: [
+              {
+                message: { id: 'm-routed-2', threadId: 't-routed-2' },
+                labelIds: ['INBOX', 'Label_routed_by_filter_xyz']
+              }
+            ]
+          }
+        ]
+      }
+    }));
+    const client = new GmailClient({ fetchImpl });
+    const result = await client.listHistorySince('at', '14000');
+
+    assert.deepEqual([...result.added_message_ids], ['m-routed-1', 'm-routed-2']);
+    for (const id of ['m-routed-1', 'm-routed-2']) {
+      const prov = result.event_provenance.get(id);
+      assert.ok(prov, `provenance for ${id} must exist`);
+      assert.equal(prov.via_labelAdded_inbox, true);
+      assert.equal(prov.via_messageAdded, false);
+    }
+  });
+
+  // C8 — labelAdded with NON-INBOX label is ignored (no dispatch).
+  // Q2.A — accept ONLY where addedLabels includes the literal 'INBOX'.
+  // STARRED / IMPORTANT / custom labels are silently filtered (no audit
+  // — would be noise per Q5 lock).
+  it('v0.5.8 C8: labelAdded with NON-INBOX label is ignored (no dispatch)', async () => {
+    const fetchImpl = mockFetch(async () => ({
+      status: 200,
+      body: {
+        historyId: '15500',
+        history: [
+          {
+            id: '15400',
+            labelsAdded: [
+              // STARRED-only — must be skipped.
+              { message: { id: 'm-starred-1', threadId: 't-1' }, labelIds: ['STARRED'] },
+              // IMPORTANT-only — must be skipped.
+              { message: { id: 'm-important-1', threadId: 't-2' }, labelIds: ['IMPORTANT'] },
+              // Custom user label — must be skipped.
+              { message: { id: 'm-custom-1', threadId: 't-3' }, labelIds: ['Label_my_project'] },
+              // INBOX present alongside other labels — must be ACCEPTED.
+              { message: { id: 'm-inbox-1', threadId: 't-4' }, labelIds: ['STARRED', 'INBOX'] }
+            ]
+          }
+        ]
+      }
+    }));
+    const client = new GmailClient({ fetchImpl });
+    const result = await client.listHistorySince('at', '15000');
+
+    // Only the INBOX-bearing event surfaces; the others are silently
+    // ignored. Q5 says no audit for non-INBOX labels (avoid noise) —
+    // verified at the worker layer; the client just returns the post-
+    // filter ids.
+    assert.deepEqual([...result.added_message_ids], ['m-inbox-1']);
+    assert.equal(result.event_provenance.has('m-starred-1'), false);
+    assert.equal(result.event_provenance.has('m-important-1'), false);
+    assert.equal(result.event_provenance.has('m-custom-1'), false);
+    assert.equal(result.malformed_labelAdded_skipped, 0);
+  });
+
+  // C9 — malformed labelAdded (missing or non-array labelIds) → skipped
+  // silently; malformed_labelAdded_skipped count surfaces so the worker
+  // can emit one fomo.gmail.poll.event_skipped audit per skipped event.
+  // (The audit emission itself is verified by gmail-poll.test.ts.)
+  it('v0.5.8 C9: malformed labelAdded (missing addedLabels) is skipped + counted', async () => {
+    const fetchImpl = mockFetch(async () => ({
+      status: 200,
+      body: {
+        historyId: '16500',
+        history: [
+          {
+            id: '16400',
+            labelsAdded: [
+              // Malformed — labelIds missing entirely.
+              { message: { id: 'm-malformed-1', threadId: 't-1' } },
+              // Malformed — labelIds is null.
+              { message: { id: 'm-malformed-2', threadId: 't-2' }, labelIds: null },
+              // Malformed — labelIds is a string (not an array).
+              {
+                message: { id: 'm-malformed-3', threadId: 't-3' },
+                labelIds: 'INBOX' as unknown as readonly string[]
+              },
+              // Well-formed control — should still surface.
+              { message: { id: 'm-good-1', threadId: 't-4' }, labelIds: ['INBOX'] }
+            ]
+          }
+        ]
+      }
+    }));
+    const client = new GmailClient({ fetchImpl });
+    const result = await client.listHistorySince('at', '16000');
+
+    assert.deepEqual([...result.added_message_ids], ['m-good-1']);
+    assert.equal(
+      result.malformed_labelAdded_skipped,
+      3,
+      'three malformed labelAdded events expected to be counted'
+    );
+    assert.equal(result.event_provenance.has('m-malformed-1'), false);
+    assert.equal(result.event_provenance.has('m-malformed-2'), false);
+    assert.equal(result.event_provenance.has('m-malformed-3'), false);
+  });
+
+  // Cross-event-type dedupe at the client layer (Q3.A first-seen wins).
+  // Companion to C7 (which is in gmail-poll.test.ts — proves the worker
+  // dispatches exactly once). This client-level test proves the parser
+  // dedupes too: same id in BOTH event types yields ONE added id with
+  // BOTH provenance flags set.
+  it('v0.5.8: same message_id in BOTH messageAdded AND labelAdded:INBOX yields ONE added id with both provenance flags', async () => {
+    const fetchImpl = mockFetch(async () => ({
+      status: 200,
+      body: {
+        historyId: '17500',
+        history: [
+          {
+            id: '17400',
+            messagesAdded: [{ message: { id: 'm-both-1', threadId: 't-1' } }],
+            labelsAdded: [{ message: { id: 'm-both-1', threadId: 't-1' }, labelIds: ['INBOX'] }]
+          }
+        ]
+      }
+    }));
+    const client = new GmailClient({ fetchImpl });
+    const result = await client.listHistorySince('at', '17000');
+
+    // Q3.A first-seen wins: m-both-1 appears EXACTLY once.
+    assert.deepEqual([...result.added_message_ids], ['m-both-1']);
+    const prov = result.event_provenance.get('m-both-1');
+    assert.ok(prov);
+    assert.equal(prov.via_messageAdded, true);
+    assert.equal(prov.via_labelAdded_inbox, true);
+  });
 });
 
 describe('GmailClient.getMessage + projectGmailMessage', () => {
