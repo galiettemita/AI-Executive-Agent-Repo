@@ -1360,3 +1360,353 @@ describe('runOnce — v0.5.5 STOP enforcement (polling layer)', () => {
     assert.equal(report.users_skipped_stop_active, 0);
   });
 });
+
+/* ====================================================================== */
+/* Phase v0.5.8 — Gmail INBOX Event Reliability Hardening                  */
+/*   * C7: same message_id in BOTH messageAdded AND labelAdded:INBOX in    */
+/*         one cycle → exactly ONE dispatch (Q3.A dedupe + DB UNIQUE       */
+/*         fallback per Q4.A).                                             */
+/*   * C9 (worker side): malformed labelAdded → fomo.gmail.poll.           */
+/*         event_skipped audit emitted; cycle continues.                   */
+/*   * fomo.gmail.poll.event_observed populated with Q6.A structural-only  */
+/*         fields per (cycle, message_id) post-dedupe.                     */
+/*   * 4 new cycle-level counters on gmail.poll.cycle audit detail.        */
+/* ====================================================================== */
+
+describe('runOnce — v0.5.8 Gmail INBOX event reliability', () => {
+  it('v0.5.8 C7: same message_id in BOTH messageAdded AND labelAdded:INBOX → exactly ONE dispatch', async () => {
+    const historyMap = new Map<string, { status: number; body: unknown }>();
+    historyMap.set('h-c7', {
+      status: 200,
+      body: {
+        history: [
+          {
+            id: 'h-c7-1',
+            messagesAdded: [{ message: { id: 'm-both-c7', threadId: 't-c7' } }],
+            labelsAdded: [{ message: { id: 'm-both-c7', threadId: 't-c7' }, labelIds: ['INBOX'] }]
+          }
+        ],
+        historyId: 'h-c7-end'
+      }
+    });
+    const h = makeHarness({ behavior: { history: historyMap } });
+    await seedUser(h, 'u-c7', 'h-c7');
+
+    const r = await runOnce(h.deps);
+
+    // Q3.A first-seen wins: messages_observed counts unique post-dedupe ids.
+    assert.equal(r.messages_observed, 1);
+    assert.equal(r.messages_dispatched, 1);
+    assert.equal(r.messages_observed_via_both, 1);
+    assert.equal(r.messages_dedupe_drops, 1);
+    assert.equal(r.messages_observed_via_messageAdded_only, 0);
+    assert.equal(r.messages_observed_via_labelAdded_only, 0);
+
+    // Exactly ONE tool.invoked for the dispatched message; the DB
+    // UNIQUE(user_id, message_id) is the load-bearing cross-cycle
+    // fallback per Q4.A but is not exercised in this single-cycle test.
+    const invocations = await h.toolInvocationStore.recent('u-c7');
+    assert.equal(invocations.length, 1);
+    assert.equal(invocations[0]?.tool_id, 'gmail.read');
+
+    // event_observed: exactly ONE row per unique message_id; both
+    // event types present; is_dedupe_drop true; inbox_label_present true.
+    const userAudit = await h.auditStore.recent('u-c7', 100);
+    const observedRows = userAudit.filter((e) => e.action === 'fomo.gmail.poll.event_observed');
+    assert.equal(observedRows.length, 1);
+    const detail = observedRows[0]?.detail as
+      | {
+          event_types_seen: readonly string[];
+          inbox_label_present: boolean;
+          is_dedupe_drop: boolean;
+          message_id: string;
+        }
+      | null;
+    assert.ok(detail);
+    assert.deepEqual([...detail.event_types_seen].sort(), ['labelAdded', 'messageAdded']);
+    assert.equal(detail.inbox_label_present, true);
+    assert.equal(detail.is_dedupe_drop, true);
+    assert.equal(detail.message_id, 'm-both-c7');
+  });
+
+  it('v0.5.8 C9 (worker): malformed labelAdded → fomo.gmail.poll.event_skipped audit + no dispatch', async () => {
+    const historyMap = new Map<string, { status: number; body: unknown }>();
+    historyMap.set('h-c9', {
+      status: 200,
+      body: {
+        history: [
+          {
+            id: 'h-c9-1',
+            labelsAdded: [
+              // 2 malformed (no labelIds, null labelIds).
+              { message: { id: 'm-mal-1', threadId: 't-1' } },
+              { message: { id: 'm-mal-2', threadId: 't-2' }, labelIds: null },
+              // 1 well-formed (control — should surface).
+              { message: { id: 'm-good-c9', threadId: 't-3' }, labelIds: ['INBOX'] }
+            ]
+          }
+        ],
+        historyId: 'h-c9-end'
+      }
+    });
+    const h = makeHarness({ behavior: { history: historyMap } });
+    await seedUser(h, 'u-c9', 'h-c9');
+
+    const r = await runOnce(h.deps);
+
+    // Only the well-formed event surfaces.
+    assert.equal(r.messages_observed, 1);
+    assert.equal(r.messages_dispatched, 1);
+    assert.equal(r.messages_observed_via_labelAdded_only, 1);
+    assert.equal(r.messages_event_skipped, 2);
+
+    // Two fomo.gmail.poll.event_skipped audit rows, one per malformed.
+    const userAudit = await h.auditStore.recent('u-c9', 100);
+    const skippedRows = userAudit.filter((e) => e.action === 'fomo.gmail.poll.event_skipped');
+    assert.equal(skippedRows.length, 2);
+    for (const row of skippedRows) {
+      const detail = row.detail as { reason?: string } | null;
+      assert.equal(detail?.reason, 'malformed_labelAdded');
+    }
+
+    // Defense-in-depth: NEVER a malformed message_id in the event_skipped
+    // detail (Q5 says detail is reason-only; the malformed event may not
+    // even carry a usable id).
+    for (const row of skippedRows) {
+      const json = JSON.stringify(row.detail ?? {});
+      assert.equal(json.includes('m-mal-1'), false);
+      assert.equal(json.includes('m-mal-2'), false);
+    }
+  });
+
+  it('v0.5.8 cycle counters: external messageAdded path → messages_observed_via_messageAdded_only ≥ 1', async () => {
+    const historyMap = new Map<string, { status: number; body: unknown }>();
+    historyMap.set('h-ext', {
+      status: 200,
+      body: {
+        history: [{ id: 'h-ext-1', messagesAdded: [{ message: { id: 'm-ext-only', threadId: 't' } }] }],
+        historyId: 'h-ext-end'
+      }
+    });
+    const h = makeHarness({ behavior: { history: historyMap } });
+    await seedUser(h, 'u-ext', 'h-ext');
+
+    const r = await runOnce(h.deps);
+
+    assert.equal(r.messages_observed, 1);
+    assert.equal(r.messages_observed_via_messageAdded_only, 1);
+    assert.equal(r.messages_observed_via_labelAdded_only, 0);
+    assert.equal(r.messages_observed_via_both, 0);
+    assert.equal(r.messages_dedupe_drops, 0);
+
+    // event_observed detail: messageAdded only; inbox_label_present false.
+    const userAudit = await h.auditStore.recent('u-ext', 100);
+    const observed = userAudit.find((e) => e.action === 'fomo.gmail.poll.event_observed');
+    assert.ok(observed);
+    const detail = observed.detail as
+      | {
+          event_types_seen: readonly string[];
+          inbox_label_present: boolean;
+          is_dedupe_drop: boolean;
+        }
+      | null;
+    assert.ok(detail);
+    assert.deepEqual([...detail.event_types_seen], ['messageAdded']);
+    assert.equal(detail.inbox_label_present, false);
+    assert.equal(detail.is_dedupe_drop, false);
+  });
+
+  it('v0.5.8 cycle counters: Gmail-to-self labelAdded:INBOX-only path → messages_observed_via_labelAdded_only ≥ 1 (the KEY METRIC)', async () => {
+    const historyMap = new Map<string, { status: number; body: unknown }>();
+    historyMap.set('h-self', {
+      status: 200,
+      body: {
+        history: [
+          {
+            id: 'h-self-1',
+            // No messagesAdded — only labelsAdded:INBOX. v0.5.7 baseline
+            // would miss this entirely. v0.5.8 surfaces it.
+            labelsAdded: [{ message: { id: 'm-self-only', threadId: 't' }, labelIds: ['INBOX'] }]
+          }
+        ],
+        historyId: 'h-self-end'
+      }
+    });
+    const h = makeHarness({ behavior: { history: historyMap } });
+    await seedUser(h, 'u-self', 'h-self');
+
+    const r = await runOnce(h.deps);
+
+    assert.equal(r.messages_observed, 1);
+    assert.equal(r.messages_observed_via_labelAdded_only, 1);
+    assert.equal(r.messages_observed_via_messageAdded_only, 0);
+    assert.equal(r.messages_observed_via_both, 0);
+    assert.equal(r.messages_dispatched, 1);
+
+    // event_observed for the labelAdded-only path.
+    const userAudit = await h.auditStore.recent('u-self', 100);
+    const observed = userAudit.find((e) => e.action === 'fomo.gmail.poll.event_observed');
+    assert.ok(observed);
+    const detail = observed.detail as
+      | {
+          event_types_seen: readonly string[];
+          inbox_label_present: boolean;
+          is_dedupe_drop: boolean;
+        }
+      | null;
+    assert.ok(detail);
+    assert.deepEqual([...detail.event_types_seen], ['labelAdded']);
+    assert.equal(detail.inbox_label_present, true);
+    assert.equal(detail.is_dedupe_drop, false);
+  });
+
+  it('v0.5.8 sanitization: event_observed detail contains NO subject / sender / body / raw label names', async () => {
+    const historyMap = new Map<string, { status: number; body: unknown }>();
+    historyMap.set('h-sanitize', {
+      status: 200,
+      body: {
+        history: [
+          {
+            id: 'h-sanitize-1',
+            // Mix: INBOX + STARRED. Q2.A accepts (INBOX present); the
+            // detail must NOT leak the raw label names beyond the boolean
+            // inbox_label_present derivative per Q6 founder lock.
+            labelsAdded: [
+              {
+                message: { id: 'm-sanitize', threadId: 't' },
+                labelIds: ['INBOX', 'STARRED', 'Label_my_private_project']
+              }
+            ]
+          }
+        ],
+        historyId: 'h-sanitize-end'
+      }
+    });
+    const h = makeHarness({ behavior: { history: historyMap } });
+    await seedUser(h, 'u-sanitize', 'h-sanitize');
+
+    await runOnce(h.deps);
+
+    const userAudit = await h.auditStore.recent('u-sanitize', 100);
+    const observed = userAudit.find((e) => e.action === 'fomo.gmail.poll.event_observed');
+    assert.ok(observed);
+    const json = JSON.stringify(observed.detail ?? {});
+
+    // Forbidden substrings (Q6 lock: structural ONLY).
+    for (const forbidden of [
+      'STARRED',
+      'Label_my_private_project',
+      'Subject:',
+      'From:',
+      '@gmail.com',
+      'subject m-sanitize' // would only appear if the body leaked from the message fixture
+    ]) {
+      assert.equal(
+        json.includes(forbidden),
+        false,
+        `event_observed detail must not include forbidden substring '${forbidden}'; got ${json}`
+      );
+    }
+
+    // Allowed structural fields ARE present.
+    assert.ok(json.includes('inbox_label_present'));
+    assert.ok(json.includes('event_types_seen'));
+    assert.ok(json.includes('is_dedupe_drop'));
+    assert.ok(json.includes('message_id'));
+  });
+
+  // SMOKE-INCIDENT 2026-06-06 — v0.5.8 founder-only smoke surfaced that
+  // 3 of 5 Gmail-to-self messages returned HTTP 404 NOT_FOUND on
+  // `messages.get` after `history.list` reported them (transient Gmail
+  // pipeline IDs — draft→sent transitions, threading merges). The cycle
+  // continued correctly: messages_failed counted the 404s, the stable
+  // messages dispatched + ranked + alerted, the cursor advanced. This
+  // regression test locks in that behavior. A future hardening phase
+  // (hardening-backlog entry #2) may reclassify 404 as a benign
+  // transient skip with its own counter; until then, the current
+  // behavior is the contract.
+  //
+  // Importantly: `fomo.gmail.poll.event_observed` fires BEFORE the
+  // dispatch loop in `runOnce`, so EVERY observed message_id gets an
+  // event_observed audit row regardless of whether the subsequent
+  // `messages.get` call 404s. The KEY METRIC `messages_observed_via_*`
+  // counters reflect what Gmail's history feed surfaced, not what
+  // dispatch could fetch.
+  it('v0.5.8 SMOKE-INCIDENT (2026-06-06): history.list returns IDs but messages.get 404s for some → messages_failed counts, event_observed still fires for each observed id, cycle continues', async () => {
+    const historyMap = new Map<string, { status: number; body: unknown }>();
+    historyMap.set('h-404-mix', {
+      status: 200,
+      body: {
+        history: [
+          {
+            id: 'h-404-mix-1',
+            messagesAdded: [
+              { message: { id: 'm-stable-ok', threadId: 't-stable' } },
+              { message: { id: 'm-transient-404', threadId: 't-transient' } }
+            ]
+          }
+        ],
+        historyId: 'h-404-mix-end'
+      }
+    });
+    const messageMap = new Map<string, { status: number; body: unknown }>();
+    messageMap.set('m-transient-404', {
+      status: 404,
+      body: { error: { code: 404, status: 'NOT_FOUND', message: 'Requested entity was not found.' } }
+    });
+    // m-stable-ok uses the default fakeMessageJSON path (200 OK).
+    const h = makeHarness({ behavior: { history: historyMap, message: messageMap } });
+    await seedUser(h, 'u-404-mix', 'h-404-mix');
+
+    const r = await runOnce(h.deps);
+
+    // Both messages were OBSERVED by history.list — the dispatch outcome
+    // does not affect observation counters.
+    assert.equal(r.messages_observed, 2);
+    assert.equal(r.messages_observed_via_messageAdded_only, 2);
+    assert.equal(r.messages_observed_via_labelAdded_only, 0);
+    assert.equal(r.messages_observed_via_both, 0);
+    assert.equal(r.messages_dedupe_drops, 0);
+    assert.equal(r.messages_event_skipped, 0);
+
+    // Dispatch: 1 stable success, 1 transient 404 → messages_failed.
+    assert.equal(r.messages_dispatched, 1);
+    assert.equal(r.messages_failed, 1);
+
+    // Cursor advanced cleanly despite the partial failure.
+    const cursor = await h.cursorStore.get('u-404-mix');
+    assert.equal(cursor?.history_id, 'h-404-mix-end');
+
+    // event_observed fires for BOTH ids — the audit is observation-time,
+    // not dispatch-time. This is the Q6.A contract this test pins.
+    const userAudit = await h.auditStore.recent('u-404-mix', 100);
+    const observedRows = userAudit.filter((e) => e.action === 'fomo.gmail.poll.event_observed');
+    assert.equal(observedRows.length, 2);
+    const observedIds = observedRows
+      .map((e) => (e.detail as { message_id?: string } | null)?.message_id ?? '')
+      .sort();
+    assert.deepEqual(observedIds, ['m-stable-ok', 'm-transient-404']);
+
+    // tool.invoked fires for BOTH dispatches (success + failure).
+    const toolRows = userAudit.filter((e) => e.action === 'tool.invoked');
+    assert.equal(toolRows.length, 2);
+    const successCount = toolRows.filter((e) => e.result === 'success').length;
+    const failureCount = toolRows.filter((e) => e.result === 'failure').length;
+    assert.equal(successCount, 1);
+    assert.equal(failureCount, 1);
+
+    // tool_invocations row for the 404 captures the structured error so
+    // the operator can see the cause without re-reading dev logs. (This
+    // is the same path that surfaced the 404 root cause during smoke
+    // when audit_log alone showed only aggregate counts; see
+    // hardening-backlog #3 for the audit-detail observability gap.)
+    const invocations = await h.toolInvocationStore.recent('u-404-mix', 100);
+    const failedInv = invocations.find((i) => i.status === 'failure');
+    assert.ok(failedInv);
+    assert.equal(failedInv.error_code, 'executor_error');
+    assert.ok(
+      typeof failedInv.error_reason === 'string' && failedInv.error_reason.includes('404'),
+      `expected error_reason to mention 404 (got ${String(failedInv.error_reason)})`
+    );
+  });
+});

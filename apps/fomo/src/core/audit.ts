@@ -286,7 +286,43 @@ export type AuditAction =
   // Companion to v0.5.6's `fomo.alert.drafter_schema_failed` (which
   // fires only on reason_voice='fallback'); this v0.5.7 audit covers
   // the OTHER three Q5.A degradation paths too.
-  | 'fomo.alert.hmr_degradation_applied';
+  | 'fomo.alert.hmr_degradation_applied'
+  // Phase v0.5.8 — Gmail INBOX Event Reliability Hardening. Fires once
+  // per (cycle, message_id) AFTER the per-cycle Q3.A Set<message_id>
+  // dedupe, regardless of which Gmail history event type surfaced the
+  // message first. The Q1.A filter swap (historyTypes='messageAdded,
+  // labelAdded') means a single new INBOX message can surface via:
+  //   - messageAdded only (typical external mail, fresh delivery)
+  //   - labelAdded:INBOX only (typical Gmail-to-self self-sends; v0.5.7
+  //     baseline = NEVER surfaced; the KEY METRIC the hardening targets)
+  //   - both (Gmail history batched both events into the same cursor span)
+  // Detail is STRUCTURAL ONLY per Q6.A founder lock (sanitized + minimal):
+  //   - event_types_seen: ('messageAdded'|'labelAdded')[]
+  //   - inbox_label_present: boolean (true if labelAdded included the
+  //     literal 'INBOX' system label; the Q2.A INBOX-literal filter
+  //     guarantees this is true whenever 'labelAdded' is in event_types_seen)
+  //   - is_dedupe_drop: boolean (true if both event types fired for the
+  //     same message_id in the same cycle and the second sighting was
+  //     dropped — equals via_both per Q3.A first-seen-wins)
+  //   - message_id: the Gmail message id (opaque)
+  // NEVER subject, sender, body, raw label names beyond the boolean
+  // derivative inbox_label_present, raw event JSON, or attachment names.
+  // Companion: cycle-level aggregate counters on gmail.poll.cycle detail
+  // (messages_observed_via_messageAdded_only, *_labelAdded_only, *_both,
+  // messages_dedupe_drops) carry the rollup view without per-message scan
+  // cost. messages_observed continues to count post-dedupe UNIQUE messages.
+  | 'fomo.gmail.poll.event_observed'
+  // Phase v0.5.8 — Q5 fallback for malformed Gmail history events.
+  // Fires once per malformed labelAdded event observed in a poll cycle.
+  // Gmail rarely returns a labelAdded event without an addedLabels field
+  // (or with a non-array addedLabels), but defense-in-depth: the parser
+  // silently skips the event AND emits this audit so the operator can
+  // notice if Gmail's API contract drifts. Best-effort, NO retry — the
+  // cycle continues; the cursor still advances on the next happy event.
+  // Detail surfaces sanitized fields only: reason ('malformed_labelAdded').
+  // NEVER the raw event JSON, NEVER a message_id (the malformed event
+  // may not even carry one).
+  | 'fomo.gmail.poll.event_skipped';
 
 // Phase 3G.1 — runtime registry of every FOMO-namespaced audit
 // action. Used by the 3G.1 evidence script (and any future ops
@@ -346,7 +382,10 @@ export const FOMO_AUDIT_ACTIONS = [
   // Phase v0.5.6 — iMessage Tone + Summary Length.
   'fomo.alert.drafter_schema_failed',
   // Phase v0.5.7 — Human Message Renderer.
-  'fomo.alert.hmr_degradation_applied'
+  'fomo.alert.hmr_degradation_applied',
+  // Phase v0.5.8 — Gmail INBOX Event Reliability Hardening.
+  'fomo.gmail.poll.event_observed',
+  'fomo.gmail.poll.event_skipped'
 ] as const satisfies readonly AuditAction[];
 
 export type AuditResult = 'success' | 'failure';

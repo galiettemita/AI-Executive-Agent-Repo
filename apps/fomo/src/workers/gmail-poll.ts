@@ -237,6 +237,29 @@ export interface GmailPollCycleReport {
   readonly slack_posts: number;
   readonly slack_posts_already: number;
   readonly slack_posts_failed: number;
+  // Phase v0.5.8 — Gmail INBOX event-type provenance aggregates per Q6.A.
+  // Sum across all users polled this cycle. The existing messages_observed
+  // counter continues to count post-dedupe UNIQUE messages (documented
+  // invariant); these four split that total by provenance:
+  //   - messages_observed_via_messageAdded_only: surfaced via messageAdded only
+  //   - messages_observed_via_labelAdded_only:   surfaced via labelAdded:INBOX
+  //     only — the KEY METRIC (mail v0.5.7 would have missed)
+  //   - messages_observed_via_both: surfaced via BOTH event types in the
+  //     same cursor span
+  //   - messages_dedupe_drops: count of dropped second-sightings per Q3.A
+  //     (should equal messages_observed_via_both — sanity invariant)
+  // Sums-equal invariant: messages_observed_via_messageAdded_only +
+  // messages_observed_via_labelAdded_only + messages_observed_via_both
+  // = messages_observed for the users polled this cycle.
+  readonly messages_observed_via_messageAdded_only: number;
+  readonly messages_observed_via_labelAdded_only: number;
+  readonly messages_observed_via_both: number;
+  readonly messages_dedupe_drops: number;
+  // Phase v0.5.8 — Q5 fallback counter. Number of labelAdded events
+  // skipped this cycle because Gmail returned malformed payload (missing
+  // or non-array labelIds). Best-effort; each skipped event also produces
+  // one fomo.gmail.poll.event_skipped audit row.
+  readonly messages_event_skipped: number;
   readonly outcomes: readonly GmailPollUserOutcome[];
 }
 
@@ -269,6 +292,12 @@ export async function runOnce(deps: GmailPollDeps): Promise<GmailPollCycleReport
   let slack_posts = 0;
   let slack_posts_already = 0;
   let slack_posts_failed = 0;
+  // Phase v0.5.8 — Gmail INBOX event-type provenance cycle aggregates.
+  let messages_observed_via_messageAdded_only = 0;
+  let messages_observed_via_labelAdded_only = 0;
+  let messages_observed_via_both = 0;
+  let messages_dedupe_drops = 0;
+  let messages_event_skipped = 0;
 
   const userIds = await deps.cursorStore.listUserIds();
 
@@ -416,6 +445,69 @@ export async function runOnce(deps: GmailPollDeps): Promise<GmailPollCycleReport
 
     const newIds = history.added_message_ids;
     messages_observed += newIds.length;
+
+    // Phase v0.5.8 — emit one fomo.gmail.poll.event_skipped audit per
+    // malformed labelAdded event the client skipped per Q5. Best-effort:
+    // if the audit write throws, the cycle continues (gmail.poll.cycle is
+    // load-bearing; this auxiliary audit is observability only).
+    for (let i = 0; i < history.malformed_labelAdded_skipped; i++) {
+      messages_event_skipped++;
+      try {
+        await deps.auditStore.write({
+          actor_user_id: user_id,
+          actor_ip: null,
+          actor_user_agent: null,
+          action: 'fomo.gmail.poll.event_skipped',
+          target: 'worker:gmail-poll',
+          result: 'success',
+          detail: { reason: 'malformed_labelAdded' }
+        });
+      } catch {
+        // best-effort per Q5 lock
+      }
+    }
+
+    // Phase v0.5.8 — emit one fomo.gmail.poll.event_observed audit per
+    // post-dedupe unique message_id with STRUCTURAL-ONLY detail per Q6.A.
+    // Also accumulate the four cycle-level counters here so the gmail.poll.
+    // cycle aggregate at end-of-cycle has the rollup view. Best-effort
+    // writes per Q6.A (audit shape is observability; missing rows do not
+    // block dispatch).
+    for (const message_id of newIds) {
+      const prov = history.event_provenance.get(message_id);
+      const via_messageAdded = prov?.via_messageAdded ?? false;
+      const via_labelAdded_inbox = prov?.via_labelAdded_inbox ?? false;
+      const is_dedupe_drop = via_messageAdded && via_labelAdded_inbox;
+      if (via_messageAdded && !via_labelAdded_inbox) {
+        messages_observed_via_messageAdded_only++;
+      } else if (!via_messageAdded && via_labelAdded_inbox) {
+        messages_observed_via_labelAdded_only++;
+      } else if (via_messageAdded && via_labelAdded_inbox) {
+        messages_observed_via_both++;
+        messages_dedupe_drops++;
+      }
+      const event_types_seen: ('messageAdded' | 'labelAdded')[] = [];
+      if (via_messageAdded) event_types_seen.push('messageAdded');
+      if (via_labelAdded_inbox) event_types_seen.push('labelAdded');
+      try {
+        await deps.auditStore.write({
+          actor_user_id: user_id,
+          actor_ip: null,
+          actor_user_agent: null,
+          action: 'fomo.gmail.poll.event_observed',
+          target: 'worker:gmail-poll',
+          result: 'success',
+          detail: {
+            message_id,
+            event_types_seen,
+            inbox_label_present: via_labelAdded_inbox,
+            is_dedupe_drop
+          }
+        });
+      } catch {
+        // best-effort per Q6.A lock
+      }
+    }
 
     let dispatched = 0;
     let failed = 0;
@@ -747,6 +839,11 @@ export async function runOnce(deps: GmailPollDeps): Promise<GmailPollCycleReport
     slack_posts,
     slack_posts_already,
     slack_posts_failed,
+    messages_observed_via_messageAdded_only,
+    messages_observed_via_labelAdded_only,
+    messages_observed_via_both,
+    messages_dedupe_drops,
+    messages_event_skipped,
     outcomes: Object.freeze(outcomes.map((o) => Object.freeze(o)))
   });
 
@@ -779,7 +876,20 @@ export async function runOnce(deps: GmailPollDeps): Promise<GmailPollCycleReport
       alerts_created: report.alerts_created,
       slack_posts: report.slack_posts,
       slack_posts_already: report.slack_posts_already,
-      slack_posts_failed: report.slack_posts_failed
+      slack_posts_failed: report.slack_posts_failed,
+      // Phase v0.5.8 — Gmail INBOX event-type provenance rollup per Q6.A.
+      // The four counters split messages_observed by provenance; the
+      // labelAdded_only counter is the KEY METRIC (mail v0.5.7 would have
+      // missed). messages_event_skipped counts Q5 malformed-skip fallback
+      // events (each also produced one fomo.gmail.poll.event_skipped row).
+      // Invariants: *_via_messageAdded_only + *_via_labelAdded_only +
+      //             *_via_both == messages_observed
+      //             messages_dedupe_drops == messages_observed_via_both
+      messages_observed_via_messageAdded_only: report.messages_observed_via_messageAdded_only,
+      messages_observed_via_labelAdded_only: report.messages_observed_via_labelAdded_only,
+      messages_observed_via_both: report.messages_observed_via_both,
+      messages_dedupe_drops: report.messages_dedupe_drops,
+      messages_event_skipped: report.messages_event_skipped
     }
   });
 
