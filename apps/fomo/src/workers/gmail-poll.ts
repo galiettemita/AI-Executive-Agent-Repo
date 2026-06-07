@@ -58,6 +58,7 @@ import { transition } from '../core/state-machine.js';
 import { type ToolInvocationStore } from '../core/tool-invocations.js';
 import { AuthorizedToolCall, type DispatchTable } from '../dispatch/dispatcher.js';
 import { type AlertStore } from '../memory/alerts.js';
+import { hashSenderKey } from '../memory/feedback-apply.js';
 import { type GmailCursorStore } from '../memory/gmail-cursors.js';
 import { type MemorySignalStore } from '../memory/memory-signals.js';
 import { type RankResultStore } from '../memory/rank-results.js';
@@ -148,6 +149,13 @@ export interface GmailPollDeps {
   // layer; defense-in-depth check inside postSlackCandidateReview
   // still fires if the ranker somehow produces a candidate).
   readonly memoryStore?: MemorySignalStore;
+  // Phase v0.5.11 — PIL substrate. When provided, the rank step computes
+  // hashSenderKey(user_id, rawEmail.sender_email, senderHashKey) and
+  // threads it onto alerts.sender_email_hash at create time. Absent →
+  // alerts.sender_email_hash stays NULL (v0.1 / pre-migration backward
+  // compat). The HMAC matches the v0.5.9 sender_feedback_ignored
+  // scope_key family, so the v0.5.11 aggregation pipe can JOIN through it.
+  readonly senderHashKey?: Buffer;
 }
 
 // Phase v0.5.3 item #2 — OAuth auto-refresh hook. Implementations
@@ -1023,13 +1031,24 @@ async function postSlackCandidateReview(args: PostSlackArgs): Promise<SlackPostO
     }
   }
 
+  // Phase v0.5.11 — thread HMAC(sender_email) onto the new alert row when
+  // the senderHashKey dep is wired. This is the v0.5.10 §15 bonus finding
+  // #1 closure: the v0.5.10 applyIgnoreSender path could not bind to a
+  // real sender because alerts had no privacy-safe sender identifier.
+  // Now it does. v0.5.11 aggregation pipe reads alert.sender_email_hash as
+  // the canonical scope_key for sender_importance / sender_suppressed.
+  const sender_email_hash = deps.senderHashKey
+    ? hashSenderKey(user_id, rawEmail.sender_email, deps.senderHashKey)
+    : null;
+
   const alertOutcome = await slackReview.alertStore.create({
     alert_id: newAlertId(),
     user_id,
     message_id,
     rank_result_id,
     label: rankerResult.decision.label,
-    score: rankerResult.decision.score
+    score: rankerResult.decision.score,
+    sender_email_hash
   });
 
   if (!alertOutcome.inserted) {

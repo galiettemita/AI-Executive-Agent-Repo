@@ -417,12 +417,18 @@ export const alerts = pgTable(
     rank_result_id: bigint('rank_result_id', { mode: 'number' }).notNull(),
     label: text('label').notNull(),
     score: doublePrecision('score').notNull(),
-    created_at: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
+    created_at: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    // Phase v0.5.11 — PIL substrate. HMAC(sender_email, BREVIO_SENDER_HASH_KEY).
+    // Nullable: existing pre-migration rows = NULL; new rows populated forward
+    // by the rank step. Never stores cleartext sender_email — the 3D.1 privacy
+    // invariant is preserved.
+    sender_email_hash: text('sender_email_hash')
   },
   (table) => [
     uniqueIndex('alerts_rank_result_uq').on(table.rank_result_id),
     index('alerts_user_created_idx').on(table.user_id, table.created_at),
-    index('alerts_user_message_idx').on(table.user_id, table.message_id)
+    index('alerts_user_message_idx').on(table.user_id, table.message_id),
+    index('alerts_sender_email_hash_idx').on(table.sender_email_hash)
   ]
 );
 

@@ -21,7 +21,8 @@ function rowToAlert(r: typeof alerts.$inferSelect): Alert {
     rank_result_id: r.rank_result_id,
     label: r.label as AlertLabel,
     score: r.score,
-    created_at: r.created_at.toISOString()
+    created_at: r.created_at.toISOString(),
+    sender_email_hash: r.sender_email_hash
   });
 }
 
@@ -41,7 +42,8 @@ export class PostgresAlertStore implements AlertStore {
         message_id: input.message_id,
         rank_result_id: input.rank_result_id,
         label: input.label,
-        score: input.score
+        score: input.score,
+        sender_email_hash: input.sender_email_hash ?? null
       })
       .onConflictDoNothing({ target: alerts.rank_result_id })
       .returning();
