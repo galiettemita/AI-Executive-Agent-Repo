@@ -475,7 +475,11 @@ export async function handleSlackInteractivity(
       dimension: mapped?.overlay.dimension,
       role: mapped?.overlay.role,
       legacy_kind: legacyKind,
-      sender_present: false
+      sender_present: false,
+      // Phase v0.5.10 — intent_source symmetry. Slack interactivity is
+      // the founder approve/reject path; identified here so audit
+      // consumers can split feedback-event creators by source.
+      intent_source: 'slack_interactivity'
     }
   });
 

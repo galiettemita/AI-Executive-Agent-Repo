@@ -60,6 +60,7 @@ import {
   type OutboundSenderDeps
 } from './workers/outbound-sender.js';
 import { loadCryptoConfig } from './security/token-crypto.js';
+import { loadSenderHashKey } from './memory/feedback-apply.js';
 import { loadSessionConfig } from './security/session.js';
 import { InMemoryNonceStore, loadOAuthStateConfig } from './security/oauth/state.js';
 import { loadProviderConfig, type ProviderConfig } from './security/oauth/providers/index.js';
@@ -745,6 +746,9 @@ function buildSendBlueInboundWiring(
     }
   }
 
+  // Phase v0.5.10 — load the v0.5.9 HMAC key for the routing module's
+  // applyFeedback consumer (ignore_sender → sender_feedback_ignored).
+  const senderHashKey = loadSenderHashKey(env);
   const routeDeps: SendBlueInboundRouteDeps = Object.freeze({
     webhookSecret,
     webhookSecretHeader,
@@ -760,6 +764,7 @@ function buildSendBlueInboundWiring(
     feedbackStore: storesHandle.stores.feedback,
     memoryStore: storesHandle.stores.memory,
     auditStore: storesHandle.stores.audit,
+    senderHashKey,
     replyParser: {
       parse: (req: Parameters<typeof parseReply>[0]) => parseReply(req, { router: replyRouter })
     },

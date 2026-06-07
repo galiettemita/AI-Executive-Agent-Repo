@@ -52,11 +52,14 @@ describe('parseReplyDeterministic — explicit non-matches (fall through to clas
     'STOP STOP STOP',
     'cancel my subscription',
     'how do I cancel',
-    'why',
+    // Phase v0.5.10 — removed 'why', 'ignore', 'not important' from this
+    // list because the Q3.C explicit-feedback-phrase allowlist now
+    // catches them deterministically (intent='why', 'ignore',
+    // 'false_positive' respectively). The natural-language variations
+    // that AREN'T canonical allowlist forms still fall through to the
+    // classifier.
     'later',
     'tomorrow',
-    'ignore',
-    'not important',
     '',
     '   ',
     '...',

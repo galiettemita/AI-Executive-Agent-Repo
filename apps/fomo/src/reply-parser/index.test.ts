@@ -92,8 +92,10 @@ describe('parseReply — deterministic pre-pass (LLM NEVER consulted)', () => {
 /* ====================================================================== */
 
 describe('parseReply — classifier path (soft intents)', () => {
-  it('parses "tomorrow" → snooze with snooze_hint=tomorrow', async () => {
-    const replyText = 'tomorrow please';
+  it('parses snooze-shaped reply → snooze with snooze_hint=tomorrow', async () => {
+    // Phase v0.5.10 — reply must be >3 words to bypass the Q3.C ≤3-word
+    // safe rule (and not match the explicit-feedback-phrase allowlist).
+    const replyText = 'please snooze this until tomorrow morning';
     const { router, cost } = makeRouter();
     const backend = new MockModelBackend({
       model_name: 'mock-reply-parser',
@@ -204,7 +206,9 @@ describe('parseReply — classifier path (soft intents)', () => {
 
 describe('parseReply — confidence-threshold fail-safe (load-bearing safety)', () => {
   it('forces intent to "unclear" when classifier confidence < 0.7 (default)', async () => {
-    const replyText = 'maybe';
+    // Phase v0.5.10 — reply must be >3 words to bypass the ≤3-word safe
+    // rule so we exercise ONLY the confidence-threshold mechanism here.
+    const replyText = 'maybe later when convenient probably';
     const { router } = makeRouter();
     router.registerBackend(
       'classification',
@@ -278,7 +282,8 @@ describe('parseReply — confidence-threshold fail-safe (load-bearing safety)', 
   });
 
   it('respects a custom confidenceThreshold (smoke tunability)', async () => {
-    const replyText = 'maybe later';
+    // Phase v0.5.10 — >3 words so the ≤3-word safe rule doesn't fire.
+    const replyText = 'maybe push this to later please';
     const { router } = makeRouter();
     router.registerBackend(
       'classification',
@@ -374,7 +379,9 @@ describe('parseReply — classifier failure paths', () => {
 
 describe('parseReply — egress invariant (no PII / no email body in prompt)', () => {
   it('classifier prompt never contains the egress canary fields', async () => {
-    const replyText = 'tomorrow';
+    // Phase v0.5.10 — reply must be >3 words to bypass Q3.C ≤3-word
+    // safe rule and exercise the classifier path.
+    const replyText = 'please snooze until tomorrow';
     let promptSeenByBackend = '';
     const { router } = makeRouter();
     // Custom backend that captures the prompt the router sent.

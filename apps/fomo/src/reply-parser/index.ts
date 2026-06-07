@@ -39,7 +39,7 @@ import {
 } from '../core/egress-policy.js';
 import { type ModelRouter, type ModelRouteResult } from '../core/model-router.js';
 
-import { parseReplyDeterministic, type DeterministicMatch } from './deterministic.js';
+import { countNormalizedWordTokens, parseReplyDeterministic, type DeterministicMatch } from './deterministic.js';
 import { PROMPT_VERSION, buildReplyParserPrompt } from './prompt.js';
 import {
   type ReplyClassification,
@@ -55,6 +55,17 @@ export type {
 export type { ReplyClassification, ReplyIntent, SnoozeHint } from './validator.js';
 
 export const DEFAULT_CONFIDENCE_THRESHOLD = 0.7;
+
+// Phase v0.5.10 (Q3.C) — ≤3-word safe rule. Any inbound reply whose
+// normalized word-token count is ≤ this threshold AND that did NOT match
+// the deterministic pre-pass (compliance OR soft allowlist) is forced
+// to 'unclear' regardless of the classifier's output. Protects against
+// ambiguous short replies like "ok", "yes", "thanks", "got it".
+//
+// The allowlist absorbs CANONICAL short feedback phrases ("this mattered",
+// "not important", etc.) into the deterministic path BEFORE this rule
+// fires, so genuine 2-3-word feedback is still routed correctly.
+export const SHORT_REPLY_SAFE_RULE_MAX_WORDS = 3;
 
 export interface ReplyParserDeps {
   readonly router: ModelRouter;
@@ -188,20 +199,36 @@ export async function parseReply(
   if (rawClassification.confidence < threshold && rawClassification.intent !== 'unclear') {
     // Per founder directive: "If classifier confidence is low, fail safe."
     // Force the intent to 'unclear' regardless of the model's pick.
-    // The orchestrator does NOT auto-retry — a second call wouldn't
-    // necessarily be more confident.
     classification = Object.freeze({
       intent: 'unclear' as ReplyIntent,
       confidence: rawClassification.confidence,
       reason: `forced_unclear: classifier picked '${rawClassification.intent}' with confidence ${rawClassification.confidence.toFixed(2)} < ${threshold}`,
-      // Snooze hint is null when intent is non-snooze (the validator
-      // already enforces this for non-snooze; force it here for the
-      // unclear case too).
       snooze_hint: null
     });
     forcedUnclear = true;
   } else {
     classification = rawClassification;
+  }
+
+  // ─── Pass 4 (Phase v0.5.10 Q3.C): ≤3-word safe rule ──────────────
+  // Belt-and-suspenders on top of the confidence threshold. If the
+  // reply is ≤ SHORT_REPLY_SAFE_RULE_MAX_WORDS words AND we got past
+  // the deterministic pre-pass (so we know it didn't match the
+  // explicit-feedback-phrase allowlist OR a compliance command) AND
+  // the classifier produced a non-unclear intent, force it to unclear.
+  // Protects against the LLM confidently misclassifying short ambiguous
+  // replies like "ok" / "thanks" / "got it".
+  if (
+    classification.intent !== 'unclear' &&
+    countNormalizedWordTokens(req.user_reply_text) <= SHORT_REPLY_SAFE_RULE_MAX_WORDS
+  ) {
+    classification = Object.freeze({
+      intent: 'unclear' as ReplyIntent,
+      confidence: classification.confidence,
+      reason: `forced_unclear: ≤${SHORT_REPLY_SAFE_RULE_MAX_WORDS}_word_safe_rule (classifier picked '${classification.intent}' but reply too short + not in allowlist)`,
+      snooze_hint: null
+    });
+    forcedUnclear = true;
   }
 
   return Object.freeze({
