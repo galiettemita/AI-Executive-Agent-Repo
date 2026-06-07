@@ -277,7 +277,8 @@ function buildPilLiveDep(
   const pilContextDeps = {
     memoryStore,
     recency_full_days: tunables.recency_full_days,
-    recency_decay_days: tunables.recency_decay_days
+    recency_decay_days: tunables.recency_decay_days,
+    k_threshold: tunables.k_threshold
   };
 
   return Object.freeze({

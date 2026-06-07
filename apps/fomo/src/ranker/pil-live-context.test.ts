@@ -184,6 +184,176 @@ describe('buildLivePilContext — canonical row passthrough', () => {
   });
 });
 
+describe('buildLivePilContext — BB5 LOAD-BEARING read-side n_events floor', () => {
+  // Symmetric to the write-side FOMO_PIL_K_THRESHOLD gate in
+  // pil-aggregation.ts. Without this floor, a single-event prior (n=1,
+  // |score|≤0.1) reached the ranker prompt and the model pinned the
+  // score against FOMO_PIL_SCORE_CAP on borderline emails — the
+  // becomes-binary-blind failure mode the founder explicitly forbade.
+
+  it('returns null when sender_importance.n_events < k_threshold AND sender_suppressed=false', async () => {
+    const d: PilContextDeps = {
+      memoryStore: new InMemoryMemorySignalStore(),
+      recency_full_days: 90,
+      recency_decay_days: 90,
+      k_threshold: 3,
+      now: () => new Date('2026-06-07T00:00:00Z')
+    };
+    await d.memoryStore.upsert({
+      user_id: 'founder',
+      kind: 'sender_importance',
+      scope_key: CANONICAL_HMAC,
+      detail: {
+        score: -0.1,
+        n_positive_events: 0,
+        n_negative_events: 1,
+        last_updated: '2026-06-06T00:00:00Z',
+        source_surface: 'email_alert',
+        source_feedback_event_ids: [1]
+      },
+      source: 'feedback_derived',
+      confidence: 0.6
+    });
+    const ctx = await buildLivePilContext('founder', CANONICAL_HMAC, d);
+    assert.equal(
+      ctx,
+      null,
+      'weak prior (n=1 < k=3, not suppressed) MUST return null to prevent becomes-blind'
+    );
+  });
+
+  it('returns non-null when sender_importance.n_events >= k_threshold (passthrough at the floor)', async () => {
+    const d: PilContextDeps = {
+      memoryStore: new InMemoryMemorySignalStore(),
+      recency_full_days: 90,
+      recency_decay_days: 90,
+      k_threshold: 3,
+      now: () => new Date('2026-06-07T00:00:00Z')
+    };
+    await d.memoryStore.upsert({
+      user_id: 'founder',
+      kind: 'sender_importance',
+      scope_key: CANONICAL_HMAC,
+      detail: {
+        score: -0.3,
+        n_positive_events: 0,
+        n_negative_events: 3,
+        last_updated: '2026-06-06T00:00:00Z',
+        source_surface: 'email_alert',
+        source_feedback_event_ids: [1, 2, 3]
+      },
+      source: 'feedback_derived',
+      confidence: 0.6
+    });
+    const ctx = await buildLivePilContext('founder', CANONICAL_HMAC, d);
+    assert.notEqual(ctx, null);
+    assert.equal(ctx!.sender_importance_n_events, 3);
+    assert.equal(ctx!.sender_importance_score, -0.3);
+  });
+
+  it('sender_suppressed=true bypasses the floor even when n_events < k_threshold', async () => {
+    const d: PilContextDeps = {
+      memoryStore: new InMemoryMemorySignalStore(),
+      recency_full_days: 90,
+      recency_decay_days: 90,
+      k_threshold: 3,
+      now: () => new Date('2026-06-07T00:00:00Z')
+    };
+    await d.memoryStore.upsert({
+      user_id: 'founder',
+      kind: 'sender_importance',
+      scope_key: CANONICAL_HMAC,
+      detail: {
+        score: -0.1,
+        n_positive_events: 0,
+        n_negative_events: 1,
+        last_updated: '2026-06-06T00:00:00Z',
+        source_surface: 'email_alert'
+      },
+      source: 'feedback_derived',
+      confidence: 0.6
+    });
+    await d.memoryStore.upsert({
+      user_id: 'founder',
+      kind: 'sender_suppressed',
+      scope_key: CANONICAL_HMAC,
+      detail: {
+        suppressed: true,
+        set_at: '2026-06-07T00:00:00Z',
+        set_by: 'explicit_ignore_sender'
+      },
+      source: 'user_confirmed',
+      confidence: 1
+    });
+    const ctx = await buildLivePilContext('founder', CANONICAL_HMAC, d);
+    assert.notEqual(
+      ctx,
+      null,
+      'suppression MUST bypass the n_events floor — explicit ignore is binary, independent of n_events'
+    );
+    assert.equal(ctx!.sender_suppressed, true);
+    // BB1 path: model receives suppression + importance both — overrides on URGENT.
+    assert.equal(ctx!.sender_importance_n_events, 1);
+    assert.equal(ctx!.sender_importance_score, -0.1);
+  });
+
+  it('k_threshold undefined → no floor applied (preserves shadow/eval default)', async () => {
+    const d: PilContextDeps = {
+      memoryStore: new InMemoryMemorySignalStore(),
+      recency_full_days: 90,
+      recency_decay_days: 90,
+      // k_threshold deliberately omitted
+      now: () => new Date('2026-06-07T00:00:00Z')
+    };
+    await d.memoryStore.upsert({
+      user_id: 'founder',
+      kind: 'sender_importance',
+      scope_key: CANONICAL_HMAC,
+      detail: {
+        score: -0.1,
+        n_positive_events: 0,
+        n_negative_events: 1,
+        last_updated: '2026-06-06T00:00:00Z',
+        source_surface: 'email_alert'
+      },
+      source: 'feedback_derived',
+      confidence: 0.6
+    });
+    const ctx = await buildLivePilContext('founder', CANONICAL_HMAC, d);
+    assert.notEqual(
+      ctx,
+      null,
+      'k_threshold undefined MUST NOT filter (preserves callers that have not opted into the floor)'
+    );
+  });
+
+  it('k_threshold=0 → no floor applied (zero is the sentinel for off)', async () => {
+    const d: PilContextDeps = {
+      memoryStore: new InMemoryMemorySignalStore(),
+      recency_full_days: 90,
+      recency_decay_days: 90,
+      k_threshold: 0,
+      now: () => new Date('2026-06-07T00:00:00Z')
+    };
+    await d.memoryStore.upsert({
+      user_id: 'founder',
+      kind: 'sender_importance',
+      scope_key: CANONICAL_HMAC,
+      detail: {
+        score: -0.1,
+        n_positive_events: 0,
+        n_negative_events: 1,
+        last_updated: '2026-06-06T00:00:00Z',
+        source_surface: 'email_alert'
+      },
+      source: 'feedback_derived',
+      confidence: 0.6
+    });
+    const ctx = await buildLivePilContext('founder', CANONICAL_HMAC, d);
+    assert.notEqual(ctx, null, 'k_threshold=0 means no floor');
+  });
+});
+
 describe('buildLivePilContext — BB4 LOAD-BEARING cross-user contamination', () => {
   it('user B asking for scope_key SAME as user A receives null (HMAC user_id keying ensures isolation; even if a DB row were inserted at the literal user A row, the (user_id, scope_key) lookup never reaches it)', async () => {
     const d = deps(() => new Date('2026-06-07T00:00:00Z'));

@@ -5,13 +5,13 @@
 //     deterministic shadowRank, NOT a live model call. These prove the
 //     v0.5.11 projection layer still PASSES under v0.5.12.
 //   - 8 LOAD-BEARING becomes-blind fixtures (BB1–BB8) — Q3.A + Q3.C + Q2.A
-//     + Q5.A guardrails. BB1/BB2/BB3/BB5 run LIVE against OpenAI if
-//     OPENAI_API_KEY is set; BB4/BB6/BB7/BB8 are deterministic wrapper-shape
-//     assertions (no model call needed).
+//     + Q5.A guardrails. BB1/BB2/BB3 run LIVE against OpenAI if
+//     OPENAI_API_KEY is set; BB4/BB5/BB6/BB7/BB8 are deterministic
+//     wrapper-shape assertions (no model call needed).
 //
 // Founder lock: if ANY of BB1–BB8 fails, v0.5.12 does NOT ship.
 //
-// Cost: BB1+BB2+BB3+BB5 each run 2 ranker calls (baseline + PIL); total ≤8 calls.
+// Cost: BB1+BB2+BB3 each run 2 ranker calls (baseline + PIL); total ≤6 calls.
 // Skips the live portion gracefully when OPENAI_API_KEY is unset — prints
 // PENDING + a clear note, returns non-PASS verdict if anything required is
 // missing.
@@ -327,64 +327,90 @@ async function runBB4_crossUserContamination(): Promise<BBFixtureResult> {
   };
 }
 
-async function runBB5_oneFalsePositiveWithinNoiseFloor(args: {
-  router: ReturnType<typeof createModelRouter> | null;
-}): Promise<BBFixtureResult> {
-  if (!args.router) {
-    return {
-      id: 'BB5',
-      name: 'BB5 — one false_positive does NOT materially change live ranker',
-      passed: false,
-      skipped: true,
-      detail: 'OPENAI_API_KEY not set — live fixture skipped.'
-    };
-  }
-  const audit = new RecordingAuditStore();
-  const pil: PilContext = Object.freeze({
-    sender_importance_score: -0.10,
-    sender_importance_n_events: 1,
-    sender_suppressed: false,
-    last_updated: new Date(Date.now() - 1 * 86_400_000).toISOString(),
-    decay_factor_applied: 1.0
-  });
-  const raw = syntheticRaw({
-    sender_email: 'updates@infraco.example',
-    sender_name: 'InfraCo Status',
-    subject: 'Scheduled maintenance Sunday 2am-4am',
-    body_snippet:
-      'We will have scheduled maintenance Sunday morning. No action required unless you operate production systems.'
-  });
-  const r = await rankEmailWithLivePil(
-    {
-      raw,
-      user_id: 'founder',
-      pil_context: pil,
-      sender_email_hash: 'e'.repeat(32)
+async function runBB5_oneFalsePositiveBelowKThresholdReturnsNull(): Promise<BBFixtureResult> {
+  // Pure deterministic — no model call. BB5 LOAD-BEARING (post-fix).
+  //
+  // Before the v0.5.12 read-side k_threshold floor, BB5 fed a manually-built
+  // PilContext (n=1, score=-0.1) directly to rankEmailWithLivePil and asserted
+  // the model's |Δ| ≤ 0.10. Three live runs produced 2 FAIL / 1 PASS:
+  // borderline emails got cap-pinned to ±0.15 against weak negative priors —
+  // the becomes-binary-blind failure mode the founder explicitly forbade.
+  //
+  // Fix: the read-side gate (symmetric to the write-side FOMO_PIL_K_THRESHOLD
+  // in pil-aggregation.ts) returns null for sender_importance rows below the
+  // floor when sender_suppressed=false. Suppressed senders always bypass.
+  //
+  // BB5 now tests the architectural contract directly: a sender_importance
+  // row with n_events=1 and k_threshold=3 produces null PIL context. The
+  // ranker then runs the baseline-only call → bit-identical to v0.5.11
+  // baseline → no audit, no prompt block, no cap-pin possible.
+  const store = new InMemoryMemorySignalStore();
+  const SCOPE = 'e'.repeat(32);
+  await store.upsert({
+    user_id: 'founder',
+    kind: 'sender_importance',
+    scope_key: SCOPE,
+    detail: {
+      score: -0.10,
+      n_positive_events: 0,
+      n_negative_events: 1,
+      last_updated: new Date(Date.now() - 1 * 86_400_000).toISOString(),
+      source_surface: 'email_alert',
+      source_feedback_event_ids: [1]
     },
-    {
-      router: args.router,
-      auditStore: audit,
-      pil_live_enabled: true,
-      pil_score_cap: FOMO_PIL_SCORE_CAP_DEFAULT
-    }
-  );
-  if (!r.result.ok || !r.audit_payload) {
-    return {
-      id: 'BB5',
-      name: 'BB5',
-      passed: false,
-      skipped: false,
-      detail: `unexpected: result.ok=${r.result.ok} audit_payload=${r.audit_payload === null ? 'null' : 'set'}`
-    };
-  }
-  const absDelta = Math.abs(r.audit_payload.pil_score_delta);
-  const withinFloor = absDelta <= 0.10; // noise floor — small single-event prior should not blow past 0.10
+    source: 'feedback_derived',
+    confidence: 0.6
+  });
+
+  // 1) Without k_threshold (or k_threshold=0): non-null context (legacy
+  //    behavior). Proves the new gate is the ONLY thing producing null.
+  const ctxWithoutFloor = await buildLivePilContext('founder', SCOPE, {
+    memoryStore: store,
+    recency_full_days: 90,
+    recency_decay_days: 90
+  });
+  const gateIsLoadBearing = ctxWithoutFloor !== null;
+
+  // 2) With k_threshold=3: null context (n=1 < 3, not suppressed).
+  const ctxWithFloor = await buildLivePilContext('founder', SCOPE, {
+    memoryStore: store,
+    recency_full_days: 90,
+    recency_decay_days: 90,
+    k_threshold: 3
+  });
+  const floorBlocksWeakPrior = ctxWithFloor === null;
+
+  // 3) Suppression bypass — adding a sender_suppressed row at the same scope
+  //    must produce non-null even with n=1 below the floor (BB1 path stays
+  //    green; explicit ignore is binary, independent of n_events).
+  await store.upsert({
+    user_id: 'founder',
+    kind: 'sender_suppressed',
+    scope_key: SCOPE,
+    detail: {
+      suppressed: true,
+      set_at: new Date().toISOString(),
+      set_by: 'explicit_ignore_sender'
+    },
+    source: 'user_confirmed',
+    confidence: 1
+  });
+  const ctxSuppressedBypass = await buildLivePilContext('founder', SCOPE, {
+    memoryStore: store,
+    recency_full_days: 90,
+    recency_decay_days: 90,
+    k_threshold: 3
+  });
+  const suppressionBypassesFloor =
+    ctxSuppressedBypass !== null && ctxSuppressedBypass.sender_suppressed === true;
+
+  const passed = gateIsLoadBearing && floorBlocksWeakPrior && suppressionBypassesFloor;
   return {
     id: 'BB5',
-    name: 'one false_positive (1 event, score=-0.1) + mid-strength email → |Δ| ≤ 0.10 (noise floor)',
-    passed: withinFloor,
+    name: 'one false_positive (1 event, score=-0.1) below k_threshold → null PIL context (no model call, no cap-pin possible); suppression bypasses the floor',
+    passed,
     skipped: false,
-    detail: `|delta|=${absDelta.toFixed(3)} (noise-floor target ≤ 0.10)`
+    detail: `gateLoadBearing=${gateIsLoadBearing} floorBlocksWeakPrior=${floorBlocksWeakPrior} suppressionBypass=${suppressionBypassesFloor}`
   };
 }
 
@@ -550,9 +576,9 @@ async function main(): Promise<void> {
   console.log(`Fixtures: ${SHADOW_FIXTURES.length} shadow carry-forward + 8 LOAD-BEARING becomes-blind (BB1–BB8)`);
   const router = buildOpenAIRouter();
   if (router) {
-    console.log('Model: live (OPENAI_API_KEY set; BB1/BB2/BB3*/BB5 will call OpenAI)');
+    console.log('Model: live (OPENAI_API_KEY set; BB1/BB2/BB3* will call OpenAI)');
   } else {
-    console.log('Model: SKIPPED (OPENAI_API_KEY not set; BB1/BB2/BB5 will be PENDING)');
+    console.log('Model: SKIPPED (OPENAI_API_KEY not set; BB1/BB2 will be PENDING)');
   }
   console.log('');
 
@@ -578,7 +604,7 @@ async function main(): Promise<void> {
     () => runBB2_negativeScoreNotAutoDropped({ router: router?.router ?? null }),
     () => runBB3_decayedSignalEqualsBaseline({ router: router?.router ?? null }),
     runBB4_crossUserContamination,
-    () => runBB5_oneFalsePositiveWithinNoiseFloor({ router: router?.router ?? null }),
+    runBB5_oneFalsePositiveBelowKThresholdReturnsNull,
     runBB6_legacyPlaceholderIgnored,
     runBB7_killSwitchOff,
     runBB8_capNotBypassable

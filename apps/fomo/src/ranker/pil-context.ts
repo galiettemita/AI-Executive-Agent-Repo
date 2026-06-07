@@ -51,6 +51,21 @@ export interface PilContextDeps {
   readonly recency_full_days: number;
   /** Tunable: linear-decay tail in days (0 = hard cliff). Default 90 per Q3.B. */
   readonly recency_decay_days: number;
+  /**
+   * v0.5.12 read-side n_events floor (live ranker only).
+   *
+   * Symmetric to the write-side FOMO_PIL_K_THRESHOLD gate in pil-aggregation.ts:
+   * the substrate only writes `sender_suppressed` once n_events ≥ k_threshold;
+   * the live read-side mirrors that by ignoring `sender_importance` rows below
+   * the same floor. Suppression always bypasses (explicit ignore is binary).
+   *
+   * Consumed ONLY by buildLivePilContext (the live ranker path).
+   * buildPilContext (the shadow eval projection) ignores this field, preserving
+   * the v0.5.11 shadow eval contract unchanged.
+   *
+   * When undefined or ≤ 0, no read-side n_events filtering is applied.
+   */
+  readonly k_threshold?: number;
   /** Override for tests; default = Date.now(). */
   readonly now?: () => Date;
 }
@@ -171,7 +186,27 @@ export async function buildLivePilContext(
     // non-canonical scope_key. Founder rule: ignore unconditionally.
     return null;
   }
-  return buildPilContext(userId, senderEmailHash, deps);
+  const ctx = await buildPilContext(userId, senderEmailHash, deps);
+  if (ctx === null) {
+    return null;
+  }
+  // Read-side n_events floor — symmetric to the write-side
+  // FOMO_PIL_K_THRESHOLD gate in pil-aggregation.ts. Without this gate, a
+  // single-event prior (n=1, |score|≤0.1) flows into the ranker prompt and
+  // the model pins the score against FOMO_PIL_SCORE_CAP on borderline
+  // emails — the "becomes-binary-blind on a weak signal" failure mode the
+  // founder explicitly forbade. Suppression always bypasses: explicit
+  // ignore_sender (binary) is independent of n_events.
+  const k = deps.k_threshold;
+  if (
+    typeof k === 'number' &&
+    k > 0 &&
+    !ctx.sender_suppressed &&
+    ctx.sender_importance_n_events < k
+  ) {
+    return null;
+  }
+  return ctx;
 }
 
 /**
