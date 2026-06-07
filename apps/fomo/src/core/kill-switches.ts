@@ -93,6 +93,33 @@ export interface KillSwitches {
   // instructions are not sufficient (founder lock — without baseline call,
   // Q1.C is rejected). Documented in C4 + BB8 LOAD-BEARING.
   readonly pil_score_cap: number;
+  // Phase v0.5.13 — Founder-only PIL Live Canary / Controlled Activation.
+  // Per-user allowlist for the v0.5.12 live PIL ranker path. Parsed from
+  // FOMO_PIL_LIVE_USER_ALLOWLIST as a comma-separated list of user_id strings.
+  // Founder correction #1 (2026-06-07): the parser TRIMS whitespace per entry
+  // and filters empty entries, but does NOT lowercase — match the existing
+  // `FOMO_FOUNDER_USER_ID?.trim()` convention used throughout the codebase.
+  // Production user_ids are 4 lowercase UUIDs + the `founder` literal, but
+  // mixed-case input is not ruled out by parsing; preserve exact strings so
+  // (user_id ∈ allowlist) is a strict === comparison.
+  //
+  // 4-case truth table (founder-locked):
+  //   pil_live_enabled=false, allowlist=any         → bit-identical v0.5.11 for all users
+  //   pil_live_enabled=true,  allowlist=[]          → all users baseline-only (fail-closed)
+  //   pil_live_enabled=true,  allowlist=[founder]   → only founder hybrid; others baseline-only
+  //   pil_live_enabled=true,  allowlist=[a,b]       → both hybrid (generic mechanism)
+  //
+  // Enforced at the polling worker call site BEFORE buildLivePilContext. When
+  // a user_id is NOT in the allowlist, the worker falls through to the
+  // single-call rankEmail path (bit-identical to pil_live_enabled=false for
+  // that user) and increments the cycle counter
+  // messages_pil_skipped_not_in_allowlist.
+  //
+  // Preflight ERRORS (founder correction #2) when pil_live_enabled=true AND
+  // allowlist is empty. Runtime fail-closed if preflight is bypassed: the
+  // worker treats every user as not-in-list and bootstrap emits a single
+  // fomo.pil_live.allowlist_empty WARN log.
+  readonly pil_live_user_allowlist: readonly string[];
 }
 
 const DEFAULTS = {
@@ -108,7 +135,8 @@ const DEFAULTS = {
   outbound_max_cycles: null,
   sendblue_inbound_enabled: false,
   pil_live_enabled: false,
-  pil_score_cap: 0.15
+  pil_score_cap: 0.15,
+  pil_live_user_allowlist: [] as readonly string[]
 } as const satisfies KillSwitches;
 
 // Strict opt-in parse: only the literal strings 'true' or '1' (case-insensitive,
@@ -147,6 +175,27 @@ function parsePositiveIntOrNull(raw: string | undefined): number | null {
   return n;
 }
 
+// Phase v0.5.13 — Founder correction #1 (2026-06-07): trim-only, no-lowercase.
+// Parse FOMO_PIL_LIVE_USER_ALLOWLIST as a comma-separated user_id list.
+// Each entry is .trim()ed (matches the existing FOMO_FOUNDER_USER_ID?.trim()
+// convention used throughout the codebase). Empty entries (trailing comma /
+// double comma) are filtered out. user_id strings are preserved with EXACT
+// case — production user_ids are 4 lowercase UUIDs + the `founder` literal,
+// but mixed-case input is not ruled out by parsing; the worker-level gate
+// compares with strict === so any case-mismatch is a configuration error the
+// preflight detects.
+//
+// Unset / empty input → []. The worker treats [] as fail-closed when global
+// kill switch is on (bootstrap logs fomo.pil_live.allowlist_empty WARN).
+function parsePilLiveUserAllowlist(raw: string | undefined): readonly string[] {
+  if (raw === undefined) return [];
+  const entries = raw
+    .split(',')
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
+  return Object.freeze(entries);
+}
+
 // Phase v0.5.12 — Q2.A bounded float for FOMO_PIL_SCORE_CAP.
 // Bounds [0.05, 0.25] founder-locked. Out-of-range / invalid → default (safe).
 // The preflight script ALSO checks the env value and produces a clearer error,
@@ -178,7 +227,8 @@ export function loadKillSwitches(env: NodeJS.ProcessEnv = process.env): KillSwit
     outbound_max_cycles: parsePositiveIntOrNull(env.FOMO_OUTBOUND_MAX_CYCLES),
     sendblue_inbound_enabled: parseBool(env.FOMO_SENDBLUE_INBOUND_ENABLED),
     pil_live_enabled: parseBool(env.FOMO_PIL_LIVE_ENABLED),
-    pil_score_cap: parsePilScoreCap(env.FOMO_PIL_SCORE_CAP, DEFAULTS.pil_score_cap)
+    pil_score_cap: parsePilScoreCap(env.FOMO_PIL_SCORE_CAP, DEFAULTS.pil_score_cap),
+    pil_live_user_allowlist: parsePilLiveUserAllowlist(env.FOMO_PIL_LIVE_USER_ALLOWLIST)
   });
 }
 

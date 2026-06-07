@@ -56,6 +56,8 @@
     "preflight:v0.5.12": "node --experimental-strip-types --loader ./test-loader.mjs scripts/preflight-v0.5.12.ts",
     "smoke-evidence:v0.5.12": "node --experimental-strip-types --loader ./test-loader.mjs scripts/smoke-evidence-v0.5.12.ts",
     "eval:pil-live": "node --experimental-strip-types --loader ./test-loader.mjs src/eval/pil-live.eval.ts",
+    "preflight:v0.5.13": "node --experimental-strip-types --loader ./test-loader.mjs scripts/preflight-v0.5.13.ts",
+    "smoke-evidence:v0.5.13": "node --experimental-strip-types --loader ./test-loader.mjs scripts/smoke-evidence-v0.5.13.ts",
     "render-hmr-samples": "node --experimental-strip-types --loader ./test-loader.mjs scripts/render-hmr-samples.ts"
   },
   "dependencies": {

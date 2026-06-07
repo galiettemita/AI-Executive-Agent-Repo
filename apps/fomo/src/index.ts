@@ -283,6 +283,13 @@ function buildPilLiveDep(
 
   return Object.freeze({
     enabled: true,
+    // Phase v0.5.13 — per-user allowlist forwarded from KillSwitches.
+    // Empty allowlist with enabled=true is the fail-closed state — the
+    // worker treats every user as not-in-list. Bootstrap (caller of
+    // buildPilLiveDep) is responsible for emitting the
+    // fomo.pil_live.allowlist_empty WARN log when it detects this state;
+    // this factory stays pure so tests can construct the dep deterministically.
+    allowlist: killSwitches.pil_live_user_allowlist,
     buildLivePilContext: (userId: string, senderEmailHash: string | null) =>
       buildLivePilContext(userId, senderEmailHash, pilContextDeps),
     rankWithPil: (args: RankEmailWithLivePilArgs) =>
@@ -1136,11 +1143,27 @@ export function createFomoRuntime(config: FomoConfig = loadFomoConfig()): FomoRu
   if (pilLive) {
     logEvent(config, undefined, 'fomo.pil_live.enabled', 'INFO', {
       pil_score_cap: killSwitches.pil_score_cap,
+      pil_live_user_allowlist_size: pilLive.allowlist.length,
       detail:
-        'FOMO_PIL_LIVE_ENABLED=true: two-call hybrid (baseline + PIL) runs when the alert sender has a canonical-HMAC PIL row. ' +
+        'FOMO_PIL_LIVE_ENABLED=true: two-call hybrid (baseline + PIL) runs when the alert sender has a canonical-HMAC PIL row ' +
+        'AND the user_id is in pil_live_user_allowlist (Phase v0.5.13 founder-only canary gate). ' +
         'brevio.rank.pil_applied audit fires per PIL-influenced rank. ' +
         'Kill switch flip to false: bit-identical v0.5.11 behavior.'
     });
+    // Phase v0.5.13 — fail-closed WARN when global is on but the allowlist
+    // is empty. Preflight ERRORS on this state (founder correction #2); the
+    // boot WARN exists for the case where preflight was bypassed. The worker
+    // still operates correctly (every user falls through to baseline-only),
+    // but the operator needs to know they're effectively running with the
+    // kill switch off despite global=true.
+    if (pilLive.allowlist.length === 0) {
+      logEvent(config, undefined, 'fomo.pil_live.allowlist_empty', 'WARN', {
+        detail:
+          'FOMO_PIL_LIVE_ENABLED=true but FOMO_PIL_LIVE_USER_ALLOWLIST is empty. ' +
+          'Worker is fail-closed: every user gets baseline-only ranks (bit-identical to FOMO_PIL_LIVE_ENABLED=false). ' +
+          'Set FOMO_PIL_LIVE_USER_ALLOWLIST to a comma-separated user_id list (typically the founder user_id) to enable the canary path.'
+      });
+    }
   }
 
   // Slack candidate review — bootstrapped only when FOMO_SLACK_REVIEW_ENABLED=true.

@@ -191,6 +191,16 @@ export interface GmailPollPilLiveDep {
   ) => Promise<RankEmailWithLivePilResult>;
   /** Cached from KillSwitches for the worker's local enabled-check. */
   readonly enabled: boolean;
+  // Phase v0.5.13 — per-user allowlist (founder-only canary). Sourced from
+  // KillSwitches.pil_live_user_allowlist (parsed from FOMO_PIL_LIVE_USER_ALLOWLIST).
+  // EXACT-string membership check at the worker call site (founder correction
+  // #1: trim-only, no-lowercase). When a user_id is NOT in this list, the
+  // worker falls through to the baseline-only single rankEmail call (bit-
+  // identical to enabled=false for that user) and increments
+  // messages_pil_skipped_not_in_allowlist. When enabled=true AND this list is
+  // empty, ALL users fall through (fail-closed). When enabled=false, this
+  // list is irrelevant — the worker never reaches the gate.
+  readonly allowlist: readonly string[];
 }
 
 // Phase v0.5.3 item #2 — OAuth auto-refresh hook. Implementations
@@ -237,6 +247,14 @@ export type GmailPollUserOutcome =
       readonly messages_ranked: number;
       readonly messages_rank_already: number;
       readonly messages_rank_failed: number;
+      // Phase v0.5.13 counter. Number of messages where the PIL allowlist
+      // gate fell through to baseline-only (user_id NOT in pilLive.allowlist
+      // while pilLive.enabled=true AND senderHashKey was present, i.e. PIL
+      // was eligible to run but the gate blocked it). Zero when pilLive is
+      // absent, enabled=false, or senderHashKey is absent. The 4-case truth
+      // table covers all states; this counter only ticks for case (c)/(d)
+      // misses or case (b) fail-closed.
+      readonly messages_pil_skipped_not_in_allowlist: number;
       // Phase 3D.1 counters. All zero when slackReview dep is absent.
       readonly alerts_created: number;
       readonly slack_posts: number;
@@ -275,6 +293,13 @@ export interface GmailPollCycleReport {
   readonly messages_ranked: number;
   readonly messages_rank_already: number;
   readonly messages_rank_failed: number;
+  // Phase v0.5.13 aggregate. Sum across all users polled this cycle of the
+  // per-user messages_pil_skipped_not_in_allowlist counter. Zero when the
+  // PIL allowlist gate never fires (pilLive absent / enabled=false / all
+  // ranks for in-list users / no senderHashKey). Non-zero values appear in
+  // the cycle audit detail so an operator can see "how many ranks did the
+  // canary gate block this cycle" without parsing per-user outcomes.
+  readonly messages_pil_skipped_not_in_allowlist: number;
   // Phase 3D.1 aggregates. All zero when slackReview dep is absent.
   readonly alerts_created: number;
   readonly slack_posts: number;
@@ -331,6 +356,7 @@ export async function runOnce(deps: GmailPollDeps): Promise<GmailPollCycleReport
   let messages_ranked = 0;
   let messages_rank_already = 0;
   let messages_rank_failed = 0;
+  let messages_pil_skipped_not_in_allowlist = 0;
   let alerts_created = 0;
   let slack_posts = 0;
   let slack_posts_already = 0;
@@ -557,6 +583,7 @@ export async function runOnce(deps: GmailPollDeps): Promise<GmailPollCycleReport
     let ranked = 0;
     let rank_already = 0;
     let rank_failed = 0;
+    let pil_skipped_not_in_allowlist = 0;
     let user_alerts_created = 0;
     let user_slack_posts = 0;
     let user_slack_posts_already = 0;
@@ -674,7 +701,21 @@ export async function runOnce(deps: GmailPollDeps): Promise<GmailPollCycleReport
           | Omit<RankEmailWithLivePilResult['audit_payload'] & {}, 'rank_result_id'>
           | null = null;
         try {
-          if (deps.pilLive?.enabled && deps.senderHashKey) {
+          // Phase v0.5.13 — per-user allowlist gate. Even when pil_live_enabled
+          // is true globally, only user_ids in pilLive.allowlist take the
+          // two-call hybrid path. Strict === membership per founder correction
+          // #1 (trim-only, no-lowercase). When the user is NOT in the list,
+          // fall through to the single-call rankEmail (bit-identical to
+          // pil_live_enabled=false for that user) and tick the
+          // messages_pil_skipped_not_in_allowlist counter.
+          //
+          // Fail-closed: when pilLive.allowlist is empty AND enabled=true,
+          // NO user matches → all ranks take the baseline path. Bootstrap
+          // logs fomo.pil_live.allowlist_empty WARN once at boot when this
+          // misconfiguration is detected; the worker doesn't re-log per cycle.
+          const userInAllowlist =
+            deps.pilLive?.enabled === true && deps.pilLive.allowlist.includes(user_id);
+          if (deps.pilLive?.enabled && deps.senderHashKey && userInAllowlist) {
             const senderEmailHash = hashSenderKey(
               user_id,
               result.output.sender_email,
@@ -690,6 +731,17 @@ export async function runOnce(deps: GmailPollDeps): Promise<GmailPollCycleReport
             rankerResult = wrapped.result;
             pilAuditPayload = wrapped.audit_payload;
           } else {
+            // Allowlist counter ticks ONLY when PIL was eligible (enabled +
+            // senderHashKey present) but the gate blocked the user. Skipping
+            // because pilLive is absent, kill switch is off, or senderHashKey
+            // is unset does NOT increment — those are different reasons.
+            if (
+              deps.pilLive?.enabled === true &&
+              deps.senderHashKey !== undefined &&
+              !userInAllowlist
+            ) {
+              pil_skipped_not_in_allowlist++;
+            }
             rankerResult = await deps.ranker.rank({ raw: result.output, user_id });
           }
         } catch (err) {
@@ -883,6 +935,7 @@ export async function runOnce(deps: GmailPollDeps): Promise<GmailPollCycleReport
       messages_ranked: ranked,
       messages_rank_already: rank_already,
       messages_rank_failed: rank_failed,
+      messages_pil_skipped_not_in_allowlist: pil_skipped_not_in_allowlist,
       alerts_created: user_alerts_created,
       slack_posts: user_slack_posts,
       slack_posts_already: user_slack_posts_already,
@@ -894,6 +947,7 @@ export async function runOnce(deps: GmailPollDeps): Promise<GmailPollCycleReport
     messages_ranked += ranked;
     messages_rank_already += rank_already;
     messages_rank_failed += rank_failed;
+    messages_pil_skipped_not_in_allowlist += pil_skipped_not_in_allowlist;
     alerts_created += user_alerts_created;
     slack_posts += user_slack_posts;
     slack_posts_already += user_slack_posts_already;
@@ -918,6 +972,7 @@ export async function runOnce(deps: GmailPollDeps): Promise<GmailPollCycleReport
     messages_ranked,
     messages_rank_already,
     messages_rank_failed,
+    messages_pil_skipped_not_in_allowlist,
     alerts_created,
     slack_posts,
     slack_posts_already,
@@ -956,6 +1011,7 @@ export async function runOnce(deps: GmailPollDeps): Promise<GmailPollCycleReport
       messages_ranked: report.messages_ranked,
       messages_rank_already: report.messages_rank_already,
       messages_rank_failed: report.messages_rank_failed,
+      messages_pil_skipped_not_in_allowlist: report.messages_pil_skipped_not_in_allowlist,
       alerts_created: report.alerts_created,
       slack_posts: report.slack_posts,
       slack_posts_already: report.slack_posts_already,
