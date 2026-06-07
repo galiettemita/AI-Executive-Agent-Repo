@@ -65,6 +65,11 @@ function buildHarness(overrides: HarnessOverrides = {}) {
         low_confidence_forced_unclear: false
       }));
 
+  // Phase v0.5.10 — synthetic 32-byte HMAC key for the v0.5.9 applyFeedback
+  // consumer arm (ignore_sender → sender_feedback_ignored). Tests don't
+  // load real BREVIO_SENDER_HASH_KEY; this fixture is sufficient for
+  // exercising the routing module's consumer-arm code path.
+  const senderHashKey = Buffer.alloc(32, 0xab);
   const deps: SendBlueInboundRouteDeps = {
     webhookSecret: WEBHOOK_SECRET,
     webhookSecretHeader: WEBHOOK_SECRET_HEADER,
@@ -78,6 +83,7 @@ function buildHarness(overrides: HarnessOverrides = {}) {
     feedbackStore,
     memoryStore,
     auditStore,
+    senderHashKey,
     replyParser: { parse: parser }
   };
   return {
@@ -453,13 +459,17 @@ describe('handleSendBlueInbound — snooze (classifier, with matched alert)', ()
     assert.equal(r.status, 200);
     // State machine walked all the way to snoozed.
     assert.equal(await h.transitions.currentState('alert-snooze-1'), 'snoozed');
-    // Feedback event written with snooze_until.
+    // Phase v0.5.10 — feedback_event is now written by the routing
+    // module with the GENERIC verb 'snoozed' (not the legacy 'user_snoozed'
+    // kind). The detail.dimension='alert' overlay marks it as a per-alert
+    // snooze. snooze_hint is forwarded.
     const fb = await h.feedbackStore.recent(FOUNDER_USER, 20);
-    const snoozeFb = fb.find((e) => e.kind === 'user_snoozed');
+    const snoozeFb = fb.find((e) => e.kind === 'snoozed');
     assert.ok(snoozeFb);
     assert.equal(snoozeFb?.alert_id, 'alert-snooze-1');
-    const detail = snoozeFb?.detail as { snooze_until: string; snooze_hint: string };
-    assert.ok(detail.snooze_until);
+    const detail = snoozeFb?.detail as { dimension: string; role: string; snooze_hint: string };
+    assert.equal(detail.dimension, 'alert');
+    assert.equal(detail.role, 'user');
     assert.equal(detail.snooze_hint, 'tomorrow');
   });
 });
@@ -494,7 +504,12 @@ describe('handleSendBlueInbound — ignore_sender (sender-suppression memory sig
     const r = await handleSendBlueInbound({ body, secretHeaderValue: WEBHOOK_SECRET }, h.deps);
     assert.equal(r.status, 200);
     assert.equal(await h.transitions.currentState('alert-suppress-1'), 'ignored');
-    assert.equal(await h.feedbackStore.countByKind(FOUNDER_USER, 'ignored_sender'), 1);
+    // Phase v0.5.10 — feedback_event is now written by the routing
+    // module with the GENERIC verb 'ignored' + detail.dimension='sender'
+    // (not the legacy 'ignored_sender' kind). The existing v0.5.5
+    // sender_suppressed memory_signal write is unchanged (still owned by
+    // applyIgnoreSender, separate from the v0.5.9 substrate).
+    assert.equal(await h.feedbackStore.countByKind(FOUNDER_USER, 'ignored'), 1);
     const sig = await h.memoryStore.get(
       FOUNDER_USER,
       'sender_suppressed',

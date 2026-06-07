@@ -145,7 +145,10 @@ export interface LegacyMappedFeedback {
   // computed at use sites.
   readonly overlay: {
     readonly role?: 'founder' | 'user';
-    readonly dimension?: 'sender' | 'alert' | 'ranker_label' | 'thread' | 'topic';
+    // Phase v0.5.10 — extended with 'importance' | 'pattern' for the
+    // new positive-signal intents (this_mattered / more_like_this).
+    // Additive; existing v0.5.9 callers unchanged.
+    readonly dimension?: 'sender' | 'alert' | 'ranker_label' | 'thread' | 'topic' | 'importance' | 'pattern';
     readonly reason?: string;
     readonly previous_label?: 'positive' | 'negative';
   };

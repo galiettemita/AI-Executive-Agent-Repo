@@ -48,6 +48,8 @@
     "smoke-evidence:v0.5.8": "node --experimental-strip-types --loader ./test-loader.mjs scripts/smoke-evidence-v0.5.8.ts",
     "preflight:v0.5.9": "node --experimental-strip-types --loader ./test-loader.mjs scripts/preflight-v0.5.9.ts",
     "smoke-evidence:v0.5.9": "node --experimental-strip-types --loader ./test-loader.mjs scripts/smoke-evidence-v0.5.9.ts",
+    "preflight:v0.5.10": "node --experimental-strip-types --loader ./test-loader.mjs scripts/preflight-v0.5.10.ts",
+    "smoke-evidence:v0.5.10": "node --experimental-strip-types --loader ./test-loader.mjs scripts/smoke-evidence-v0.5.10.ts",
     "render-hmr-samples": "node --experimental-strip-types --loader ./test-loader.mjs scripts/render-hmr-samples.ts"
   },
   "dependencies": {

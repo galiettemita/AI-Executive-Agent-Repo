@@ -73,10 +73,27 @@ export interface FeedbackWriteArgs {
   // Phase v0.5.9 — optional Brevio-wide surface. Defaults to 'email_alert'
   // inside FeedbackStore.write when omitted. Writes with a value NOT in
   // BREVIO_FEEDBACK_ACTIVE_SURFACES throw BrevioFeedbackError; the
-  // executor lets the error propagate so dispatch callers see the failure
-  // (existing dispatch error semantics — no behavior change for legacy
-  // callers that don't set source_surface).
+  // executor lets the error propagate so dispatch callers see the failure.
   source_surface?: string;
+  // Phase v0.5.10 — optional Q6.A-modified detail extension fields for
+  // the new reply-parser routing path. Purely additive; existing v0.5.9
+  // callers that omit these continue to work byte-for-byte.
+  //
+  // intent_source: where the feedback originated. One of
+  //   'reply_parser_classifier' (LLM classifier path),
+  //   'reply_parser_deterministic' (compliance OR allowlist),
+  //   'slack_interactivity' (founder Slack approve/reject),
+  //   'ops_inject' (ops:feedback-inject CLI).
+  // Privacy: NEVER raw reply text. Enum-shaped only.
+  intent_source?: 'reply_parser_classifier' | 'reply_parser_deterministic' | 'slack_interactivity' | 'ops_inject';
+  // Forward-link to inbound_replies.id when intent_source starts with
+  // 'reply_parser_'. Numeric only — NEVER the reply text body.
+  inbound_reply_id?: number;
+  // The parser's v0.2.0 intent label (e.g. 'this_mattered'). Allows
+  // tracing intent → feedback_event mapping drift. Enum string only.
+  parser_intent?: string;
+  // The parser's confidence value (0..1; 1.0 for deterministic path).
+  parser_confidence?: number;
 }
 
 export function feedbackWriteExecutor(feedback: FeedbackStore): Executor<FeedbackWriteArgs, void> {

@@ -26,6 +26,18 @@ export type ReplyIntent =
   | 'ignore_sender'
   | 'why'
   | 'false_positive'
+  // Phase v0.5.10 (Q2.A-modified) — positive-signal intents.
+  // `this_mattered`: user is CONFIRMING the alert was right (positive
+  // confirmation; NOT a negative correction). Mapping: verb='approved',
+  // detail.dimension='importance', detail.value='confirmed_important'.
+  // `more_like_this`: user wants more alerts of this shape. Mapping:
+  // verb='approved', detail.dimension='pattern',
+  // detail.value='more_like_this'.
+  // BOTH are WRITE-ONLY this phase: feedback_event written, but NO
+  // memory_signal upsert (Q4.A lock). PIL / positive-signal phases
+  // decide consumption later.
+  | 'this_mattered'
+  | 'more_like_this'
   | 'unclear';
 
 export const REPLY_INTENTS: readonly ReplyIntent[] = Object.freeze([
@@ -34,6 +46,9 @@ export const REPLY_INTENTS: readonly ReplyIntent[] = Object.freeze([
   'ignore_sender',
   'why',
   'false_positive',
+  // Phase v0.5.10 — positive-signal additions.
+  'this_mattered',
+  'more_like_this',
   'unclear'
 ]);
 

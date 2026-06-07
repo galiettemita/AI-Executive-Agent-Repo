@@ -90,6 +90,10 @@ import {
   type ReplyParserRequest,
   computeSnoozeDurationSeconds
 } from '../reply-parser/index.js';
+// Phase v0.5.10 — single policy entry point for intent → feedback_event +
+// applyFeedback routing.
+import { routeReplyFeedback } from '../reply-parser/feedback-routing.js';
+import { type ReplyIntent } from '../reply-parser/validator.js';
 
 /* ---------------------------------------------------------------------- */
 /* Deps                                                                   */
@@ -143,6 +147,12 @@ export interface SendBlueInboundRouteDeps {
   readonly feedbackStore: FeedbackStore;
   readonly memoryStore: MemorySignalStore;
   readonly auditStore: AuditStore;
+
+  // Phase v0.5.10 — HMAC key for the v0.5.9 applyFeedback consumer arm
+  // (sender_feedback_ignored upsert when intent === 'ignore_sender').
+  // Loaded from BREVIO_SENDER_HASH_KEY at boot via loadSenderHashKey;
+  // never logged.
+  readonly senderHashKey: Buffer;
 
   // The reply-parser orchestrator. Injected so tests can stub.
   readonly replyParser: {
@@ -474,7 +484,18 @@ export async function handleSendBlueInbound(
   //    SendBlue keeps retrying anything non-2xx.
   let routeOutcome: RouteOutcome;
   try {
-    routeOutcome = await applyParseResult(deps, userId, parseResult, matchedAlert, fromSlug, extracted.providerMessageId, now, extracted.fromNumber);
+    routeOutcome = await applyParseResult(
+      deps,
+      userId,
+      parseResult,
+      matchedAlert,
+      fromSlug,
+      extracted.providerMessageId,
+      now,
+      extracted.fromNumber,
+      // Phase v0.5.10 — forward-link for the feedback.written audit.
+      dedupOutcome.record.id ?? 0
+    );
   } catch (err) {
     // True internal error — surface 500 so SendBlue retries (idempotency
     // gate above will dedupe).
@@ -517,10 +538,16 @@ async function applyParseResult(
   // Phase v0.5.5 — full E.164 of the inbound sender, threaded through
   // so applyStop can send the courtesy confirmation back to them. Only
   // used by the STOP path; other intent handlers ignore it.
-  fromNumber: string
+  fromNumber: string,
+  // Phase v0.5.10 — inbound_replies.id forward-link for the
+  // feedback.written audit's correlation field.
+  inboundReplyId: number
 ): Promise<RouteOutcome> {
-  // Deterministic → stop / start (compliance commands).
-  if (result.ok && result.source === 'deterministic') {
+  // Deterministic compliance commands — stop / start. STOP/START stay
+  // a separate compliance/control path per founder lock; they NEVER
+  // become preference feedback and do NOT go through the v0.5.10
+  // routing module.
+  if (result.ok && result.source === 'deterministic' && (result.intent === 'stop' || result.intent === 'start')) {
     if (result.intent === 'stop') {
       return applyStop(deps, userId, fromSlug, providerMessageId, fromNumber, now);
     }
@@ -555,11 +582,84 @@ async function applyParseResult(
     });
   }
 
-  // Classifier success — soft intent dispatch.
-  const c = result.classification;
-  switch (c.intent) {
+  // ─── Phase v0.5.10 soft-intent dispatch ──────────────────────────
+  // Resolve the (intent, intent_source, parser_confidence, snooze_hint)
+  // tuple from either the deterministic-allowlist path (intent !=
+  // stop/start) or the classifier path. Call routeReplyFeedback FIRST
+  // to write the v0.5.9-shaped feedback_event + emit the v0.5.10-extended
+  // feedback.written audit + (for ignore_sender only) fire the v0.5.9
+  // consumer (sender_feedback_ignored upsert + brevio.feedback.applied
+  // audit). THEN dispatch to the existing applyXXX functions for the
+  // state-machine transitions + reply_parsed audit emission. The
+  // applyXXX functions no longer write feedback_events (the routing
+  // module owns those writes).
+
+  type SoftDispatchIntent = Exclude<ReplyIntent, 'unclear'>;
+  let dispatchIntent: ReplyIntent;
+  let intentSource: 'reply_parser_classifier' | 'reply_parser_deterministic';
+  let parserConfidence: number;
+  let snoozeHint: 'later' | 'tomorrow' | 'remind_me_later' | 'unspecified' | null = null;
+  let lowConfidenceForcedUnclear = false;
+
+  if (result.source === 'deterministic') {
+    // Allowlist match. The deterministic pre-pass returned a non-
+    // compliance intent (stop/start handled above), so this is a soft
+    // intent from the Q3.C allowlist.
+    dispatchIntent = result.intent as ReplyIntent; // guaranteed non-compliance here
+    intentSource = 'reply_parser_deterministic';
+    parserConfidence = 1.0;
+  } else {
+    const c = result.classification;
+    dispatchIntent = c.intent;
+    intentSource = 'reply_parser_classifier';
+    parserConfidence = c.confidence;
+    snoozeHint = c.snooze_hint;
+    lowConfidenceForcedUnclear = result.low_confidence_forced_unclear;
+  }
+
+  // unclear → routing module is NOT called (returns unclear_no_op
+  // semantically). Just dispatch to applyUnclear for the legacy reply_unclear
+  // audit + state transition.
+  if (dispatchIntent === 'unclear') {
+    return applyUnclear(deps, userId, matchedAlert, fromSlug, providerMessageId, lowConfidenceForcedUnclear);
+  }
+
+  // Phase v0.5.10 — route the feedback signal through the policy module.
+  // This writes the v0.5.9-shaped feedback_event + extended feedback.written
+  // audit + (for ignore_sender) fires applyFeedback.
+  await routeReplyFeedback(
+    {
+      user_id: userId,
+      intent: dispatchIntent as SoftDispatchIntent,
+      intent_source: intentSource,
+      parser_confidence: parserConfidence,
+      inbound_reply_id: inboundReplyId,
+      alert_id: matchedAlert?.alert_id ?? null,
+      // The v0.1 substrate alerts table does NOT carry sender_email
+      // (3D.1 privacy design). The applyFeedback consumer arm for
+      // ignore_sender requires a sender to hash into the scope_key;
+      // when sender_email is null, applyFeedback returns no_match
+      // gracefully. The feedback_event still writes; the memory_signal
+      // upsert is a future enhancement (re-derive sender from Gmail
+      // re-read or rank_results join).
+      sender_email: null,
+      snooze_hint: dispatchIntent === 'snooze' ? snoozeHint : null
+    },
+    {
+      feedbackStore: deps.feedbackStore,
+      auditStore: deps.auditStore,
+      memoryStore: deps.memoryStore,
+      senderHashKey: deps.senderHashKey,
+      now: deps.now ? () => deps.now!().getTime() : undefined
+    }
+  );
+
+  // Now dispatch to the existing applyXXX functions for state-machine
+  // transitions + the legacy reply_parsed audit. These functions no
+  // longer write feedback_events (the routing module above owns those).
+  switch (dispatchIntent) {
     case 'snooze':
-      return applySnooze(deps, userId, matchedAlert, c.snooze_hint, fromSlug, providerMessageId, now);
+      return applySnooze(deps, userId, matchedAlert, snoozeHint, fromSlug, providerMessageId, now);
     case 'ignore':
       return applyIgnore(deps, userId, matchedAlert, 'user_ignored', fromSlug, providerMessageId);
     case 'ignore_sender':
@@ -568,8 +668,16 @@ async function applyParseResult(
       return applyWhy(deps, userId, matchedAlert, fromSlug, providerMessageId);
     case 'false_positive':
       return applyIgnore(deps, userId, matchedAlert, 'false_positive', fromSlug, providerMessageId);
-    case 'unclear':
-      return applyUnclear(deps, userId, matchedAlert, fromSlug, providerMessageId, result.low_confidence_forced_unclear);
+    // Phase v0.5.10 — positive-signal intents. They flow through the
+    // routing module above (feedback_event write + audit emission),
+    // then through applyPositiveAcknowledge (state-machine transition
+    // to 'replied' + reply_parsed audit; no other side effect per Q5.A
+    // silent lock). The existing applyXXX functions are alert-action-
+    // shaped (ignore/snooze on an alert state machine) and don't fit
+    // the positive-signal semantics, so a dedicated handler.
+    case 'this_mattered':
+    case 'more_like_this':
+      return applyPositiveAcknowledge(deps, userId, matchedAlert, dispatchIntent, fromSlug, providerMessageId);
   }
 }
 
@@ -880,18 +988,8 @@ async function applySnooze(
   await walkTransition(deps, matchedAlert, 'sent', 'replied', `sendblue:snooze hint=${hint ?? 'null'}`);
   await walkTransition(deps, matchedAlert, 'replied', 'snoozed', `sendblue:snooze hint=${hint ?? 'null'} until=${snoozeUntil}`);
 
-  await deps.feedbackStore.write({
-    user_id: userId,
-    alert_id: matchedAlert.alert_id,
-    sender_email: null,
-    kind: 'user_snoozed',
-    detail: {
-      source: 'sendblue_inbound',
-      provider_message_id: providerMessageId,
-      snooze_hint: hint,
-      snooze_until: snoozeUntil
-    }
-  });
+  // Phase v0.5.10 — feedback_event write moved to feedback-routing.ts
+  // policy module. Called by applyParseResult BEFORE this function.
 
   await deps.auditStore.write({
     actor_user_id: userId,
@@ -960,13 +1058,8 @@ async function applyIgnore(
   await walkTransition(deps, matchedAlert, 'sent', 'replied', `sendblue:${feedbackKind}`);
   await walkTransition(deps, matchedAlert, 'replied', 'ignored', `sendblue:${feedbackKind}`);
 
-  await deps.feedbackStore.write({
-    user_id: userId,
-    alert_id: matchedAlert.alert_id,
-    sender_email: null,
-    kind: feedbackKind,
-    detail: { source: 'sendblue_inbound', provider_message_id: providerMessageId }
-  });
+  // Phase v0.5.10 — feedback_event write moved to feedback-routing.ts
+  // policy module. Called by applyParseResult BEFORE this function.
 
   await deps.auditStore.write({
     actor_user_id: userId,
@@ -1053,13 +1146,8 @@ async function applyIgnoreSender(
   await walkTransition(deps, matchedAlert, 'sent', 'replied', `sendblue:ignore_sender`);
   await walkTransition(deps, matchedAlert, 'replied', 'ignored', `sendblue:ignore_sender`);
 
-  await deps.feedbackStore.write({
-    user_id: userId,
-    alert_id: matchedAlert.alert_id,
-    sender_email: null,
-    kind: 'ignored_sender',
-    detail: { source: 'sendblue_inbound', provider_message_id: providerMessageId }
-  });
+  // Phase v0.5.10 — feedback_event write moved to feedback-routing.ts
+  // policy module. Called by applyParseResult BEFORE this function.
 
   await deps.auditStore.write({
     actor_user_id: userId,
@@ -1101,13 +1189,8 @@ async function applyWhy(
   // A future phase can respond with an explanation iMessage.
   if (matchedAlert) {
     await walkTransition(deps, matchedAlert, 'sent', 'replied', 'sendblue:why');
-    await deps.feedbackStore.write({
-      user_id: userId,
-      alert_id: matchedAlert.alert_id,
-      sender_email: null,
-      kind: 'asked_why',
-      detail: { source: 'sendblue_inbound', provider_message_id: providerMessageId }
-    });
+    // Phase v0.5.10 — feedback_event write moved to feedback-routing.ts
+    // policy module. Called by applyParseResult BEFORE this function.
   }
   await deps.auditStore.write({
     actor_user_id: userId,
@@ -1166,6 +1249,62 @@ async function applyUnclear(
     source: 'classifier' as const,
     alert_matched: matchedAlert !== null,
     applied_state_transition: null,
+    feedback_kind: null,
+    memory_signal_kind: null,
+    snooze_until: null
+  });
+}
+
+// Phase v0.5.10 — positive-signal intents (this_mattered / more_like_this).
+// Per Q5.A silent founder lock: NO new outbound iMessage acknowledgment.
+// Per Q4.A consumer-arm lock: NO new applyFeedback consumer arms (the
+// routing module above already wrote the feedback_event; this function
+// only walks state-machine to `replied` for symmetry with the other
+// soft-intent paths and audits a reply_parsed row).
+//
+// The state-machine transition stops at `replied` (not `ignored`/`snoozed`/
+// etc.) — a positive confirmation doesn't change what action the user
+// takes on the alert; it just acknowledges the alert was right. Future
+// HMR Feedback Acknowledgment phase can render a response message here.
+async function applyPositiveAcknowledge(
+  deps: SendBlueInboundRouteDeps,
+  userId: string,
+  matchedAlert: Alert | null,
+  intent: 'this_mattered' | 'more_like_this',
+  fromSlug: string,
+  providerMessageId: string
+): Promise<RouteOutcome> {
+  if (matchedAlert) {
+    await walkTransition(deps, matchedAlert, 'sent', 'replied', `sendblue:${intent}`);
+    // No further state transition — positive confirmation acknowledges
+    // the alert was right; it doesn't dismiss/snooze the alert action.
+  }
+  await deps.auditStore.write({
+    actor_user_id: userId,
+    actor_ip: null,
+    actor_user_agent: null,
+    action: 'fomo.sendblue.reply_parsed',
+    target: matchedAlert ? `alert:${matchedAlert.alert_id}` : 'route:sendblue.inbound',
+    result: 'success',
+    detail: {
+      from_slug: fromSlug,
+      provider_message_id: providerMessageId,
+      alert_id: matchedAlert?.alert_id,
+      intent,
+      intent_source: 'classifier',
+      alert_matched: matchedAlert !== null
+    }
+  });
+  return Object.freeze({
+    classified_intent: intent,
+    source: 'classifier' as const,
+    alert_matched: matchedAlert !== null,
+    applied_state_transition: matchedAlert ? { from: 'sent' as AlertState, to: 'replied' as AlertState } : null,
+    // No legacy FeedbackEventKind for the new positive intents — the
+    // routing module above wrote a generic 'approved' verb to
+    // feedback_events.kind. The RouteOutcome.feedback_kind is null to
+    // signal "no legacy-kind row here" (existing route-shape callers
+    // expecting a FeedbackEventKind continue to read null safely).
     feedback_kind: null,
     memory_signal_kind: null,
     snooze_until: null

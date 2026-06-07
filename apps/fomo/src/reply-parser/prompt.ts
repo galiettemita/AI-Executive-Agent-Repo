@@ -30,7 +30,14 @@
 
 import { type ReplyParserEgressView } from '../core/egress-policy.js';
 
-export const PROMPT_VERSION = 'reply-parser-v0.1.0';
+// Phase v0.5.10 (Q2.A-modified) — bumped from 'reply-parser-v0.1.0'.
+// Reason: classifier intent set extended from 6 → 8 (adds `this_mattered`
+// and `more_like_this` as positive-signal intents). Mapping for both
+// is verb='approved' with detail.dimension='importance'|'pattern' and
+// detail.value='confirmed_important'|'more_like_this' per founder lock.
+// Positive intents are feedback_events ONLY in v0.5.10 — no memory_signal
+// write, no ranker behavior change.
+export const PROMPT_VERSION = 'reply-parser-v0.2.0';
 
 // What the classifier is doing, in v0.1.
 //
@@ -57,6 +64,9 @@ export const REPLY_PARSER_SYSTEM_PREAMBLE = [
   `- "ignore_sender"   — user wants to suppress THIS sender going forward (e.g. "never alert me about this sender again", "mute Sarah", "stop pinging me about emails from this person").`,
   `- "why"             — user wants to understand WHY this email was flagged (e.g. "why", "why this one?", "how come?").`,
   `- "false_positive"  — user is telling Brevio the email was NOT actually important (e.g. "not important", "this isn't urgent", "not worth flagging", "shouldn't have alerted me").`,
+  // Phase v0.5.10 (Q2.A-modified) — positive-signal intents.
+  `- "this_mattered"   — user is CONFIRMING the alert was right; this email actually mattered (e.g. "this mattered", "good catch", "thanks for surfacing", "yes this was important", "really helpful"). This is positive confirmation that Brevio's ranking was correct.`,
+  `- "more_like_this"  — user wants more alerts of THIS shape going forward (e.g. "more like this", "yes keep these coming", "send these", "more of these please"). Positive forward-looking signal.`,
   `- "unclear"         — the reply doesn't map cleanly to any of the above. Use freely when in doubt.`,
   ``,
   `Strict rules:`,
@@ -70,7 +80,7 @@ export const REPLY_PARSER_SYSTEM_PREAMBLE = [
 export const REPLY_PARSER_OUTPUT_SCHEMA = [
   `Output schema (single-line JSON, exact keys):`,
   `{"intent":<one of the 6>,"confidence":<number 0..1>,"reason":<short string, <=120 chars, no PII>,"snooze_hint":<"later"|"tomorrow"|"remind_me_later"|"unspecified"|null>}`,
-  `- "intent" must be one of: snooze, ignore, ignore_sender, why, false_positive, unclear.`,
+  `- "intent" must be one of: snooze, ignore, ignore_sender, why, false_positive, this_mattered, more_like_this, unclear.`,
   `- "confidence" reflects how confident you are in this intent (0..1). Low confidence triggers a safe fallback downstream.`,
   `- "snooze_hint" is null when intent !== "snooze".`
 ].join('\n');

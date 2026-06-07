@@ -218,7 +218,9 @@ async function main(): Promise<void> {
       dimension: (detail.dimension as string | undefined) ?? undefined,
       role: (detail.role as string | undefined) ?? undefined,
       legacy_kind: mapped ? args.kind : undefined,
-      sender_present: writtenEvent.sender_email !== null
+      sender_present: writtenEvent.sender_email !== null,
+      // Phase v0.5.10 — intent_source symmetry.
+      intent_source: 'ops_inject'
     }
   });
 
