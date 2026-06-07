@@ -47,7 +47,12 @@ import {
   mapLegacyFeedbackKind
 } from '../memory/feedback-events.js';
 import type { MemorySignalStore } from '../memory/memory-signals.js';
+import type { SendOutcome } from '../adapters/sendblue/client.js';
 
+import {
+  isAckableFeedbackIntent,
+  renderFeedbackAck
+} from './feedback-ack-template.js';
 import type { ReplyIntent } from './validator.js';
 
 /* ---------------------------------------------------------------------- */
@@ -78,6 +83,28 @@ export interface RouteReplyFeedbackInput {
   readonly sender_email: string | null;
   // Optional snooze hint, forwarded for the snooze intent only.
   readonly snooze_hint?: 'later' | 'tomorrow' | 'remind_me_later' | 'unspecified' | null;
+  // Phase v0.5.14 — optional E.164 phone number of the inbound reply
+  // sender (the user). Used ONLY to send the acknowledgment SMS via
+  // deps.feedbackAck. NEVER logged, NEVER persisted by this module,
+  // NEVER included in feedback_event detail or audit detail. When
+  // undefined (or when deps.feedbackAck is undefined, or when intent
+  // is not ackable), no ack is sent.
+  readonly from_number?: string;
+}
+
+// Phase v0.5.14 — outcome details surfaced when the optional feedback-
+// acknowledgment send fires. `attempted` covers "we tried" regardless
+// of provider outcome; `ack` is null when we did NOT attempt (intent
+// not ackable, dep not wired, from_number missing). When attempted=true,
+// `ack.send_outcome_kind` differentiates 'sent' (provider acked) from
+// 'failed'/'send_status_unknown' (provider rejected or network). The
+// audit_log is the load-bearing record; this field exists so the route
+// handler / tests can inspect the outcome without re-querying.
+export interface FeedbackAckRouteOutcome {
+  readonly attempted: boolean;
+  readonly template_version: string | null;
+  readonly send_outcome_kind: SendOutcome['kind'] | null;
+  readonly threw: boolean;
 }
 
 export type RouteOutcome =
@@ -85,8 +112,22 @@ export type RouteOutcome =
       readonly kind: 'wrote';
       readonly feedback_event: FeedbackEvent;
       readonly applied: AppliedFeedbackResult | null; // null when consumer was not invoked
+      // Phase v0.5.14 — non-null only when the routing module entered
+      // the ack send path (intent ackable + feedbackAck dep wired +
+      // from_number present). Always non-null on the 'wrote' outcome
+      // so callers can inspect "we attempted: yes/no" + outcome shape.
+      readonly ack: FeedbackAckRouteOutcome;
     }
   | { readonly kind: 'unclear_no_op' };
+
+// Phase v0.5.14 — optional SendBlue-backed acknowledgment send. Same
+// shape as v0.5.5 stopConfirmation dep (single send(to, content)
+// method returning SendOutcome). The route handler injects this with
+// the SendBlue client closed over; tests inject a mock that records
+// invocations.
+export interface FeedbackAckDep {
+  readonly send: (args: { to: string; content: string }) => Promise<SendOutcome>;
+}
 
 export interface RouteReplyFeedbackDeps {
   readonly feedbackStore: FeedbackStore;
@@ -96,6 +137,12 @@ export interface RouteReplyFeedbackDeps {
   // here for the ignore_sender → sender_feedback_ignored upsert.
   readonly senderHashKey: Buffer;
   readonly now?: () => number;
+  // Phase v0.5.14 — optional acknowledgment send. When absent, the
+  // routing module behaves exactly as v0.5.10 (no ack send, no
+  // fomo.sendblue.feedback_ack_* audit). When present, ackable intents
+  // (per isAckableFeedbackIntent) with a non-null input.from_number
+  // produce a best-effort deterministic ack SMS.
+  readonly feedbackAck?: FeedbackAckDep;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -257,10 +304,152 @@ export async function routeReplyFeedback(
     });
   }
 
+  // Phase v0.5.14 — HMR Feedback Acknowledgment Surface (best-effort).
+  //
+  // Fires ONLY when ALL of these hold:
+  //   (1) deps.feedbackAck is wired (route handler injected the SendBlue
+  //       client; tests may omit for parity with v0.5.10 baseline)
+  //   (2) input.from_number is present (route handler passes the inbound
+  //       E.164; absent in older v0.5.10 callers)
+  //   (3) input.intent is in the locked ackable set (ignore_sender /
+  //       this_mattered / more_like_this / false_positive)
+  //
+  // Mirrors v0.5.5 STOP-confirmation semantics:
+  //   - separate success audit (fomo.sendblue.feedback_ack_sent)
+  //   - separate failure audit (fomo.sendblue.feedback_ack_failed)
+  //   - best-effort: throw/failure NEVER aborts; the feedback_event +
+  //     applyFeedback writes are already durable above
+  //   - no retry (v0.5.14 ships single-shot ack; future tier
+  //     classification considers retry)
+  //
+  // Privacy: audit detail carries parser_intent + template_version +
+  // feedback_event_id + send_outcome_kind only. The rendered body is
+  // STATIC per template_version (no PII, no metadata) so it's safe to
+  // include the version constant in the audit; the body text itself is
+  // not stored. from_number flows through to deps.feedbackAck.send but
+  // is never logged or persisted by this module.
+  const ackOutcome: FeedbackAckRouteOutcome = await sendFeedbackAck({
+    deps,
+    input,
+    feedback_event_id: writtenEvent.id ?? null
+  });
+
   return Object.freeze({
     kind: 'wrote' as const,
     feedback_event: writtenEvent,
-    applied
+    applied,
+    ack: ackOutcome
+  });
+}
+
+// Helper kept inline-private to feedback-routing — the ack-send policy
+// belongs with the rest of the routing decisions. Returns a structured
+// outcome the route handler / tests can inspect; the audit_log row is
+// the load-bearing record.
+async function sendFeedbackAck(args: {
+  deps: RouteReplyFeedbackDeps;
+  input: RouteReplyFeedbackInput;
+  feedback_event_id: number | null;
+}): Promise<FeedbackAckRouteOutcome> {
+  const { deps, input, feedback_event_id } = args;
+
+  // Gate 1-3: dep wired + from_number present + intent ackable.
+  if (
+    deps.feedbackAck === undefined ||
+    input.from_number === undefined ||
+    !isAckableFeedbackIntent(input.intent)
+  ) {
+    return Object.freeze({
+      attempted: false,
+      template_version: null,
+      send_outcome_kind: null,
+      threw: false
+    });
+  }
+
+  const rendered = renderFeedbackAck(input.intent);
+
+  let outcome: SendOutcome;
+  try {
+    outcome = await deps.feedbackAck.send({
+      to: input.from_number,
+      content: rendered.body
+    });
+  } catch (err) {
+    // Provider client threw (network/abort before HTTP boundary). The
+    // SendBlueClient.send normally returns a SendOutcome with
+    // kind='send_status_unknown' for these, but defense-in-depth catches
+    // the throw too — mirrors v0.5.5 applyStop's try/catch around
+    // stopConfirmation.send.
+    await deps.auditStore.write({
+      actor_user_id: input.user_id,
+      actor_ip: null,
+      actor_user_agent: null,
+      action: 'fomo.sendblue.feedback_ack_failed',
+      target: 'route:sendblue.inbound',
+      result: 'failure',
+      detail: {
+        parser_intent: input.intent,
+        template_version: rendered.template_version,
+        feedback_event_id,
+        error_code: 'send_throw',
+        // Bounded message; never the full stack or any raw reply text.
+        // SendBlueClient already redacts API keys before throwing.
+        error_message: (err instanceof Error ? err.message : String(err)).slice(0, 200)
+      }
+    });
+    return Object.freeze({
+      attempted: true,
+      template_version: rendered.template_version,
+      send_outcome_kind: null,
+      threw: true
+    });
+  }
+
+  // Provider returned a SendOutcome. 'sent' → success audit; everything
+  // else ('failed', 'send_status_unknown') → failure audit. The route
+  // handler does NOT retry either way.
+  if (outcome.kind === 'sent') {
+    await deps.auditStore.write({
+      actor_user_id: input.user_id,
+      actor_ip: null,
+      actor_user_agent: null,
+      action: 'fomo.sendblue.feedback_ack_sent',
+      target: 'route:sendblue.inbound',
+      result: 'success',
+      detail: {
+        parser_intent: input.intent,
+        template_version: rendered.template_version,
+        feedback_event_id,
+        send_outcome_kind: outcome.kind
+      }
+    });
+  } else {
+    await deps.auditStore.write({
+      actor_user_id: input.user_id,
+      actor_ip: null,
+      actor_user_agent: null,
+      action: 'fomo.sendblue.feedback_ack_failed',
+      target: 'route:sendblue.inbound',
+      result: 'failure',
+      detail: {
+        parser_intent: input.intent,
+        template_version: rendered.template_version,
+        feedback_event_id,
+        send_outcome_kind: outcome.kind,
+        // Sanitized provider error fields (already redacted by
+        // SendBlueClient — see SendBlueProviderError contract).
+        provider_status: outcome.providerStatus ?? null,
+        http_status: outcome.httpStatus
+      }
+    });
+  }
+
+  return Object.freeze({
+    attempted: true,
+    template_version: rendered.template_version,
+    send_outcome_kind: outcome.kind,
+    threw: false
   });
 }
 
