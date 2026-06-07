@@ -261,3 +261,77 @@ describe('loadKillSwitches — defaults to process.env when no arg given', () =>
     }
   });
 });
+
+describe('loadKillSwitches — FOMO_PIL_LIVE_USER_ALLOWLIST parser (Phase v0.5.13)', () => {
+  // Founder correction #1 (2026-06-07): trim-only, no-lowercase.
+  // Production user_ids are 4 lowercase UUIDs + the `founder` literal but
+  // mixed-case input is not ruled out by parsing — the worker-level gate
+  // compares with strict === so any case mismatch surfaces as a misconfig
+  // the preflight detects.
+
+  it('returns [] when unset', () => {
+    const s = loadKillSwitches({});
+    assert.deepEqual([...s.pil_live_user_allowlist], []);
+  });
+
+  it('returns [] when set to the empty string', () => {
+    const s = loadKillSwitches({ FOMO_PIL_LIVE_USER_ALLOWLIST: '' });
+    assert.deepEqual([...s.pil_live_user_allowlist], []);
+  });
+
+  it('parses a single user_id', () => {
+    const s = loadKillSwitches({ FOMO_PIL_LIVE_USER_ALLOWLIST: 'founder' });
+    assert.deepEqual([...s.pil_live_user_allowlist], ['founder']);
+  });
+
+  it('parses a comma-separated list', () => {
+    const s = loadKillSwitches({
+      FOMO_PIL_LIVE_USER_ALLOWLIST: 'founder,4606e1e7-7cc0-4ce4-b4e9-0b67a4d38941'
+    });
+    assert.deepEqual(
+      [...s.pil_live_user_allowlist],
+      ['founder', '4606e1e7-7cc0-4ce4-b4e9-0b67a4d38941']
+    );
+  });
+
+  it('trims whitespace per entry', () => {
+    const s = loadKillSwitches({
+      FOMO_PIL_LIVE_USER_ALLOWLIST: '  founder  ,   userB   ,userC'
+    });
+    assert.deepEqual([...s.pil_live_user_allowlist], ['founder', 'userB', 'userC']);
+  });
+
+  it('filters empty entries (trailing comma / double comma / all-whitespace entries)', () => {
+    const s = loadKillSwitches({
+      FOMO_PIL_LIVE_USER_ALLOWLIST: 'founder,,userB,   ,'
+    });
+    assert.deepEqual([...s.pil_live_user_allowlist], ['founder', 'userB']);
+  });
+
+  it('preserves EXACT case (does NOT lowercase) — founder correction #1', () => {
+    // The production `founder` literal is lowercase, and production UUIDs
+    // are lowercase by convention, but the parser MUST preserve any case
+    // the operator types so that strict === at the worker gate catches
+    // case-mismatch misconfigurations rather than silently masking them.
+    const s = loadKillSwitches({
+      FOMO_PIL_LIVE_USER_ALLOWLIST: 'Founder,4606E1E7-7CC0-4CE4-B4E9-0B67A4D38941'
+    });
+    assert.deepEqual(
+      [...s.pil_live_user_allowlist],
+      ['Founder', '4606E1E7-7CC0-4CE4-B4E9-0B67A4D38941']
+    );
+    // And the lowercase `founder` literal would NOT match `Founder` under ===.
+    assert.equal(s.pil_live_user_allowlist.includes('founder'), false);
+  });
+
+  it('result is frozen — caller cannot mutate the allowlist', () => {
+    const s = loadKillSwitches({ FOMO_PIL_LIVE_USER_ALLOWLIST: 'founder' });
+    assert.throws(() => {
+      (s.pil_live_user_allowlist as unknown as string[]).push('intruder');
+    });
+  });
+
+  it('SAFE_DEFAULT_KILL_SWITCHES has [] for pil_live_user_allowlist', () => {
+    assert.deepEqual([...SAFE_DEFAULT_KILL_SWITCHES.pil_live_user_allowlist], []);
+  });
+});
