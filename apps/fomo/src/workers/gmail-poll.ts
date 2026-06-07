@@ -62,7 +62,13 @@ import { hashSenderKey } from '../memory/feedback-apply.js';
 import { type GmailCursorStore } from '../memory/gmail-cursors.js';
 import { type MemorySignalStore } from '../memory/memory-signals.js';
 import { type RankResultStore } from '../memory/rank-results.js';
-import { type RankerResult } from '../ranker/index.js';
+import {
+  type RankEmailWithLivePilArgs,
+  type RankEmailWithLivePilResult,
+  type RankerResult,
+  writeBrevioRankPilAppliedAudit
+} from '../ranker/index.js';
+import { type PilContext as PilContextForLive } from '../ranker/pil-context.js';
 import { type TokenStore } from '../security/oauth/token-store.js';
 
 // Phase 3C.3: optional ranker dep. When present, every dispatched
@@ -156,6 +162,35 @@ export interface GmailPollDeps {
   // compat). The HMAC matches the v0.5.9 sender_feedback_ignored
   // scope_key family, so the v0.5.11 aggregation pipe can JOIN through it.
   readonly senderHashKey?: Buffer;
+  // Phase v0.5.12 — Live ranker reads PIL in guarded mode. When wired AND
+  // killSwitches.pil_live_enabled is true AND the alert sender has a
+  // canonical-HMAC PIL row in memory_signals, the rank step runs the
+  // two-call hybrid (baseline + PIL) and emits brevio.rank.pil_applied.
+  // When absent OR kill switch is off OR no canonical PIL row exists:
+  // single rankEmail call with pil_context: null, bit-identical to v0.5.11.
+  // Founder lock C1 + BB7.
+  readonly pilLive?: GmailPollPilLiveDep;
+}
+
+/**
+ * Phase v0.5.12 — composite dep that bundles the read-side filter (via
+ * buildLivePilContext) and the two-call hybrid (via rankEmailWithLivePil)
+ * so the worker can stay agnostic to the wrapper's internal mechanics.
+ * Boot wires this in index.ts only when FOMO_PIL_LIVE_ENABLED+FOMO_RANKER_ENABLED
+ * are both on; otherwise the field is omitted.
+ */
+export interface GmailPollPilLiveDep {
+  /** Read-side filter that returns null for non-canonical scope_keys (BB6). */
+  readonly buildLivePilContext: (
+    userId: string,
+    senderEmailHash: string | null
+  ) => Promise<PilContextForLive | null>;
+  /** Two-call hybrid + audit-payload assembly. */
+  readonly rankWithPil: (
+    args: RankEmailWithLivePilArgs
+  ) => Promise<RankEmailWithLivePilResult>;
+  /** Cached from KillSwitches for the worker's local enabled-check. */
+  readonly enabled: boolean;
 }
 
 // Phase v0.5.3 item #2 — OAuth auto-refresh hook. Implementations
@@ -630,8 +665,33 @@ export async function runOnce(deps: GmailPollDeps): Promise<GmailPollCycleReport
       // cycle audit row fires once at the bottom of the user loop.
       if (deps.ranker && !stopActiveSuppressed) {
         let rankerResult: RankerResult;
+        // Phase v0.5.12 — when pilLive is wired AND kill switch is on, the
+        // rank step may run a two-call hybrid (baseline + PIL) and clamp.
+        // When pilLive is absent OR the kill switch is off OR the alert
+        // sender has no canonical-HMAC PIL row, falls back to the single
+        // rankEmail call — bit-identical to v0.5.11 (C1 + BB7 LOAD-BEARING).
+        let pilAuditPayload:
+          | Omit<RankEmailWithLivePilResult['audit_payload'] & {}, 'rank_result_id'>
+          | null = null;
         try {
-          rankerResult = await deps.ranker.rank({ raw: result.output, user_id });
+          if (deps.pilLive?.enabled && deps.senderHashKey) {
+            const senderEmailHash = hashSenderKey(
+              user_id,
+              result.output.sender_email,
+              deps.senderHashKey
+            );
+            const pilContext = await deps.pilLive.buildLivePilContext(user_id, senderEmailHash);
+            const wrapped = await deps.pilLive.rankWithPil({
+              raw: result.output,
+              user_id,
+              pil_context: pilContext,
+              sender_email_hash: senderEmailHash
+            });
+            rankerResult = wrapped.result;
+            pilAuditPayload = wrapped.audit_payload;
+          } else {
+            rankerResult = await deps.ranker.rank({ raw: result.output, user_id });
+          }
         } catch (err) {
           // Defense-in-depth: ranker contract promises a Result, never
           // throws. If it does, treat as backend_error and continue.
@@ -693,6 +753,21 @@ export async function runOnce(deps: GmailPollDeps): Promise<GmailPollCycleReport
                 estimated_cost_usd: rankerResult.estimated_cost_usd
               }
             });
+
+            // Phase v0.5.12 — emit brevio.rank.pil_applied AFTER fomo.rank.completed.
+            // Fires ONLY when the two-call hybrid produced a non-null audit
+            // payload (kill switch on AND canonical-HMAC PIL context existed
+            // AND both baseline + PIL ranker calls succeeded). 9 locked
+            // structural fields per Q6.A. C5 LOAD-BEARING — never fires for
+            // null-context or kill-switch-off ranks.
+            if (pilAuditPayload !== null) {
+              await writeBrevioRankPilAppliedAudit(
+                deps.auditStore,
+                user_id,
+                writeOutcome.rank_result_id,
+                pilAuditPayload
+              );
+            }
 
             // Phase 3D.1: Slack candidate review posting. Fires ONLY
             // when label='important' AND the slackReview dep is wired.

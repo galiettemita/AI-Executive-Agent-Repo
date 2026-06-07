@@ -116,7 +116,10 @@ import {
   BREVIO_FEEDBACK_SURFACES
 } from '../src/memory/feedback-events.js';
 import { PROMPT_VERSION as REPLY_PARSER_PROMPT_VERSION } from '../src/reply-parser/prompt.js';
-import { PROMPT_VERSION as RANKER_PROMPT_VERSION } from '../src/ranker/prompt.js';
+import {
+  PROMPT_VERSION as RANKER_PROMPT_VERSION,
+  PROMPT_VERSION_WITH_PIL as RANKER_PROMPT_VERSION_WITH_PIL
+} from '../src/ranker/prompt.js';
 
 type Severity = 'error' | 'warn';
 interface Check {
@@ -640,26 +643,28 @@ if (!pilLiveEvalPresent) {
   });
 }
 
-// Ranker prompt version bump documentation.
+// Ranker prompt version invariant.
+//   - PROMPT_VERSION (baseline / no PIL block)  MUST == 'ranker-v0.2.0'
+//   - PROMPT_VERSION_WITH_PIL (PIL block included) MUST == 'ranker-v0.3.0'
+// Both constants ship as of v0.5.12 runtime. If either drifts, fail loud.
 const EXPECTED_V0511_RANKER_PROMPT_VERSION = 'ranker-v0.2.0' as string;
 const EXPECTED_V0512_RANKER_PROMPT_VERSION = 'ranker-v0.3.0' as string;
 const currentRankerPromptVersion = RANKER_PROMPT_VERSION as string;
-if (
-  currentRankerPromptVersion !== EXPECTED_V0511_RANKER_PROMPT_VERSION &&
-  currentRankerPromptVersion !== EXPECTED_V0512_RANKER_PROMPT_VERSION
-) {
+const currentRankerPromptVersionWithPil = RANKER_PROMPT_VERSION_WITH_PIL as string;
+if (currentRankerPromptVersion !== EXPECTED_V0511_RANKER_PROMPT_VERSION) {
   issues.push({
     name: 'RANKER_PROMPT_VERSION',
     severity: 'error',
     message:
-      `Ranker PROMPT_VERSION must be either '${EXPECTED_V0511_RANKER_PROMPT_VERSION}' (scaffolding-time / kill-switch-off) or '${EXPECTED_V0512_RANKER_PROMPT_VERSION}' (runtime PIL block included). Current: '${currentRankerPromptVersion}'.`
+      `Ranker baseline PROMPT_VERSION must be '${EXPECTED_V0511_RANKER_PROMPT_VERSION}' (the no-PIL-block shape). Current: '${currentRankerPromptVersion}'.`
   });
-} else if (currentRankerPromptVersion === EXPECTED_V0511_RANKER_PROMPT_VERSION) {
+}
+if (currentRankerPromptVersionWithPil !== EXPECTED_V0512_RANKER_PROMPT_VERSION) {
   issues.push({
-    name: 'RANKER_PROMPT_VERSION',
-    severity: 'warn',
+    name: 'RANKER_PROMPT_VERSION_WITH_PIL',
+    severity: 'error',
     message:
-      `Ranker PROMPT_VERSION still '${EXPECTED_V0511_RANKER_PROMPT_VERSION}' — expected during scaffolding. Runtime commit will introduce conditional '${EXPECTED_V0512_RANKER_PROMPT_VERSION}' for prompts that include the pil_context block. Baseline (no PIL) calls continue to use '${EXPECTED_V0511_RANKER_PROMPT_VERSION}' shape.`
+      `Ranker PIL-block PROMPT_VERSION_WITH_PIL must be '${EXPECTED_V0512_RANKER_PROMPT_VERSION}'. Current: '${currentRankerPromptVersionWithPil}'. The two-call hybrid emits baseline calls as 'ranker-v0.2.0' and PIL calls as 'ranker-v0.3.0' to keep cost_records attributable to the source prompt.`
   });
 }
 

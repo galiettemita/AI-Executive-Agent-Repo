@@ -76,6 +76,23 @@ export interface KillSwitches {
   // request time + audits `fomo.sendblue.kill_switch_off`), and
   // signature verification (every accepted request HMAC-verified).
   readonly sendblue_inbound_enabled: boolean;
+  // Phase v0.5.12 — Live ranker reads PIL in guarded mode.
+  // Q5.A global kill switch (default false). When false: pil_context is null
+  // unconditionally at the production rank call site, ranker prompt is the
+  // v0.5.11 baseline shape (PROMPT_VERSION='ranker-v0.2.0', no PIL block,
+  // single ranker call per rank), and brevio.rank.pil_applied audits do NOT
+  // fire. Behavior is bit-identical to v0.5.11. When true AND a canonical-HMAC
+  // PIL row exists for the alert sender, the two-call hybrid (Q1.C-modified)
+  // runs baseline + PIL ranker calls and clamps the score delta to
+  // ±FOMO_PIL_SCORE_CAP. The kill switch is the load-bearing contract
+  // documented in C1 + BB7 LOAD-BEARING.
+  readonly pil_live_enabled: boolean;
+  // Phase v0.5.12 — Q2.A hard cap on absolute PIL score delta after clamp.
+  // Default 0.15; bounds [0.05, 0.25] enforced by preflight. Cap is enforced
+  // at the rank-write step AFTER both model calls return — prompt-only
+  // instructions are not sufficient (founder lock — without baseline call,
+  // Q1.C is rejected). Documented in C4 + BB8 LOAD-BEARING.
+  readonly pil_score_cap: number;
 }
 
 const DEFAULTS = {
@@ -89,7 +106,9 @@ const DEFAULTS = {
   ranker_enabled: false,
   slack_review_enabled: false,
   outbound_max_cycles: null,
-  sendblue_inbound_enabled: false
+  sendblue_inbound_enabled: false,
+  pil_live_enabled: false,
+  pil_score_cap: 0.15
 } as const satisfies KillSwitches;
 
 // Strict opt-in parse: only the literal strings 'true' or '1' (case-insensitive,
@@ -128,6 +147,20 @@ function parsePositiveIntOrNull(raw: string | undefined): number | null {
   return n;
 }
 
+// Phase v0.5.12 — Q2.A bounded float for FOMO_PIL_SCORE_CAP.
+// Bounds [0.05, 0.25] founder-locked. Out-of-range / invalid → default (safe).
+// The preflight script ALSO checks the env value and produces a clearer error,
+// so this parser only needs to be safe-defaulting at runtime.
+function parsePilScoreCap(raw: string | undefined, fallback: number): number {
+  if (raw === undefined) return fallback;
+  const trimmed = raw.trim();
+  if (trimmed.length === 0) return fallback;
+  const n = Number(trimmed);
+  if (!Number.isFinite(n)) return fallback;
+  if (n < 0.05 || n > 0.25) return fallback;
+  return n;
+}
+
 export function loadKillSwitches(env: NodeJS.ProcessEnv = process.env): KillSwitches {
   return Object.freeze({
     send_enabled: parseBool(env.FOMO_SEND_ENABLED),
@@ -143,7 +176,9 @@ export function loadKillSwitches(env: NodeJS.ProcessEnv = process.env): KillSwit
     ranker_enabled: parseBool(env.FOMO_RANKER_ENABLED),
     slack_review_enabled: parseBool(env.FOMO_SLACK_REVIEW_ENABLED),
     outbound_max_cycles: parsePositiveIntOrNull(env.FOMO_OUTBOUND_MAX_CYCLES),
-    sendblue_inbound_enabled: parseBool(env.FOMO_SENDBLUE_INBOUND_ENABLED)
+    sendblue_inbound_enabled: parseBool(env.FOMO_SENDBLUE_INBOUND_ENABLED),
+    pil_live_enabled: parseBool(env.FOMO_PIL_LIVE_ENABLED),
+    pil_score_cap: parsePilScoreCap(env.FOMO_PIL_SCORE_CAP, DEFAULTS.pil_score_cap)
   });
 }
 

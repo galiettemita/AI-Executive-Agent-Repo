@@ -28,8 +28,14 @@ import { findUsersNeedingReauth } from './workers/needs-reauth-boot-check.js';
 import { snapshotMemorySignalsForBoot } from './workers/memory-signals-boot-snapshot.js';
 import { OpenAIBackend } from './core/model-backends/openai.js';
 import { createModelRouter } from './core/model-router.js';
-import { rankEmail } from './ranker/index.js';
+import {
+  rankEmail,
+  rankEmailWithLivePil,
+  type RankEmailWithLivePilArgs
+} from './ranker/index.js';
 import { RANKER_OPENAI_RESPONSE_FORMAT } from './ranker/openai-response-format.js';
+import { buildLivePilContext } from './ranker/pil-context.js';
+import type { GmailPollPilLiveDep } from './workers/gmail-poll.js';
 import { SlackClient } from './adapters/slack/client.js';
 import { SendBlueClient } from './adapters/sendblue/client.js';
 import {
@@ -225,7 +231,66 @@ function buildRankerDep(
 
   return Object.freeze({
     rank: (req: Parameters<GmailPollRankerDep['rank']>[0]) => rankEmail(req, { router }),
-    store: storesHandle.stores.rankResults
+    store: storesHandle.stores.rankResults,
+    // Phase v0.5.12 — expose router for the live PIL dep factory.
+    // The same router instance handles both baseline + PIL ranker calls so
+    // cost_records logging stays consistent.
+    router
+  });
+}
+
+/**
+ * Phase v0.5.12 — build the live PIL dep that the polling worker consults
+ * when ranking each fresh message.
+ *
+ * Returns null (and the polling worker takes the bit-identical-v0.5.11 path)
+ * when ANY of:
+ *   - killSwitches.pil_live_enabled is false (Q5.A kill switch — DEFAULT)
+ *   - ranker is null (FOMO_RANKER_ENABLED=false)
+ *   - ranker.router is missing (defensive — should not happen if ranker is set)
+ *   - memoryStore is unavailable (in-memory dev mode where the PIL substrate
+ *     isn't writable doesn't make sense to read from either)
+ *
+ * When all prerequisites hold, returns the GmailPollPilLiveDep that bundles
+ * buildLivePilContext + rankEmailWithLivePil with the loaded tunables.
+ */
+function buildPilLiveDep(
+  storesHandle: SubstrateStoresHandle,
+  killSwitches: KillSwitches,
+  ranker: (GmailPollRankerDep & { router?: ReturnType<typeof createModelRouter> }) | null,
+  env: NodeJS.ProcessEnv = process.env
+): GmailPollPilLiveDep | null {
+  if (!killSwitches.pil_live_enabled) return null;
+  if (!ranker) return null;
+  if (!ranker.router) return null;
+  if (!storesHandle.stores.memory) return null;
+
+  // Tunables are already loaded for the v0.5.11 aggregation pipe; reuse the
+  // recency window settings for the read-side decay. If the env is malformed,
+  // loadPilTunables throws — fail-loud at boot, not silent at rank time.
+  const tunables = loadPilTunables(env);
+  const memoryStore = storesHandle.stores.memory;
+  const router = ranker.router;
+  const auditStore = storesHandle.stores.audit;
+  const cap = killSwitches.pil_score_cap;
+
+  const pilContextDeps = {
+    memoryStore,
+    recency_full_days: tunables.recency_full_days,
+    recency_decay_days: tunables.recency_decay_days
+  };
+
+  return Object.freeze({
+    enabled: true,
+    buildLivePilContext: (userId: string, senderEmailHash: string | null) =>
+      buildLivePilContext(userId, senderEmailHash, pilContextDeps),
+    rankWithPil: (args: RankEmailWithLivePilArgs) =>
+      rankEmailWithLivePil(args, {
+        router,
+        auditStore,
+        pil_live_enabled: true,
+        pil_score_cap: cap
+      })
   });
 }
 
@@ -516,7 +581,14 @@ function startGmailPolling(
   // it onto alerts.sender_email_hash so the v0.5.11 aggregation pipe can
   // bind feedback events to a real sender at the privacy-safe-identifier
   // level. Null → alerts.sender_email_hash stays NULL (v0.5.10 behavior).
-  senderHashKey: Buffer | null
+  senderHashKey: Buffer | null,
+  // Phase v0.5.12 — optional PIL live dep. Wired only when both
+  // FOMO_RANKER_ENABLED and FOMO_PIL_LIVE_ENABLED are true. When wired AND
+  // the alert sender has a canonical-HMAC PIL row, the rank step runs the
+  // two-call hybrid + clamps + emits brevio.rank.pil_applied. When absent
+  // (kill switch off, or substrate missing, or ranker disabled): single
+  // rankEmail call, no audit — bit-identical to v0.5.11.
+  pilLive: import('./workers/gmail-poll.js').GmailPollPilLiveDep | null
 ): PollingHandle {
   const stores = storesHandle.stores;
   let stopped = false;
@@ -560,7 +632,10 @@ function startGmailPolling(
           memoryStore: stores.memory,
           // Phase v0.5.11 — when present, rank-step writes
           // hashSenderKey(user_id, sender_email) onto alerts.sender_email_hash.
-          senderHashKey: senderHashKey ?? undefined
+          senderHashKey: senderHashKey ?? undefined,
+          // Phase v0.5.12 — when present, rank-step may run two-call hybrid +
+          // emit brevio.rank.pil_applied audit. Absent → v0.5.11 behavior.
+          pilLive: pilLive ?? undefined
         });
         cyclesRun++;
         if (stopped) return;
@@ -1051,6 +1126,22 @@ export function createFomoRuntime(config: FomoConfig = loadFomoConfig()): FomoRu
     });
   }
 
+  // Phase v0.5.12 — build the live PIL dep ONLY when FOMO_PIL_LIVE_ENABLED=true
+  // AND the ranker is wired AND the substrate has a memoryStore. The dep
+  // captures the v0.5.11 PIL tunables (decay window) + the live cap + the
+  // two-call hybrid wrapper. When any prerequisite is absent, this stays null
+  // and the worker takes the bit-identical-v0.5.11 path. Founder lock: Q5.A.
+  const pilLive = buildPilLiveDep(storesHandle, killSwitches, ranker, process.env);
+  if (pilLive) {
+    logEvent(config, undefined, 'fomo.pil_live.enabled', 'INFO', {
+      pil_score_cap: killSwitches.pil_score_cap,
+      detail:
+        'FOMO_PIL_LIVE_ENABLED=true: two-call hybrid (baseline + PIL) runs when the alert sender has a canonical-HMAC PIL row. ' +
+        'brevio.rank.pil_applied audit fires per PIL-influenced rank. ' +
+        'Kill switch flip to false: bit-identical v0.5.11 behavior.'
+    });
+  }
+
   // Slack candidate review — bootstrapped only when FOMO_SLACK_REVIEW_ENABLED=true.
   // THROWS at boot if the switch is on but SLACK_BOT_TOKEN or
   // SLACK_FOUNDER_CHANNEL_ID is missing. Safe default (switch off)
@@ -1226,7 +1317,10 @@ export function createFomoRuntime(config: FomoConfig = loadFomoConfig()): FomoRu
       ranker,
       slackWiring.dep,
       oauthRefresh,
-      pollingSenderHashKey
+      pollingSenderHashKey,
+      // Phase v0.5.12 — pilLive dep is null when kill switch is off OR
+      // ranker is dormant OR memoryStore unavailable.
+      pilLive
     );
     logEvent(config, undefined, 'fomo.poll.enabled', 'INFO', {
       interval_ms: killSwitches.polling_interval_ms,

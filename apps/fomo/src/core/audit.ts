@@ -351,7 +351,20 @@ export type AuditAction =
   // score_before, score_after, score_delta, n_positive_events_before/after,
   // n_negative_events_before/after, suppression_flipped, threshold_k_in_force).
   // NEVER stores raw sender_email / subject / body / snippet / headers.
-  | 'brevio.signal.aggregated';
+  | 'brevio.signal.aggregated'
+  // Phase v0.5.12 — Live ranker reads PIL in guarded mode. Emitted by the
+  // production rank call site when FOMO_PIL_LIVE_ENABLED=true AND a non-null
+  // PIL context was assembled (canonical-HMAC sender_email_hash matched at
+  // least one sender_importance or sender_suppressed memory_signal for the
+  // founder user). Detail carries the 9 locked Q6.A structural fields:
+  //   rank_result_id, pil_signal_kinds_present, score_before_pil_cap,
+  //   score_after_pil_cap, pil_score_delta, pil_score_delta_was_capped,
+  //   model_mentioned_pil_in_reason, source_surface, scope_key_hash.
+  // NEVER stores raw sender_email / subject / body / snippet / headers /
+  // raw rank.reason text. The model_mentioned_pil_in_reason field is a
+  // BOOL computed via regex on rank.reason; the reason text itself stays
+  // on rank_results.reason and never enters this audit detail.
+  | 'brevio.rank.pil_applied';
 
 // Phase 3G.1 — runtime registry of every FOMO-namespaced audit
 // action. Used by the 3G.1 evidence script (and any future ops
@@ -423,7 +436,9 @@ export const FOMO_AUDIT_ACTIONS = [
   'feedback.written',
   'brevio.feedback.applied',
   // Phase v0.5.11 — PIL substrate.
-  'brevio.signal.aggregated'
+  'brevio.signal.aggregated',
+  // Phase v0.5.12 — Live ranker reads PIL in guarded mode.
+  'brevio.rank.pil_applied'
 ] as const satisfies readonly AuditAction[];
 
 export type AuditResult = 'success' | 'failure';

@@ -126,6 +126,54 @@ export async function buildPilContext(
   });
 }
 
+/* ====================================================================== */
+/* Phase v0.5.12 — buildLivePilContext (live ranker read path)            */
+/* ====================================================================== */
+
+/**
+ * Canonical HMAC scope_key shape produced by hashSenderKey(): 32 lowercase
+ * hex characters. v0.5.10 `applyIgnoreSender` writes a placeholder
+ * `scope_key='message:<id>'` row that v0.5.12 MUST ignore — see founder
+ * rule in [[v05-12-scope]] "Critical implementation rule (READ-SIDE FILTER)".
+ */
+export const CANONICAL_SCOPE_KEY_REGEX = /^[a-f0-9]{32}$/;
+
+/**
+ * Phase v0.5.12 — live ranker read path.
+ *
+ * Differences from buildPilContext (the shadow projection consumer):
+ *   1. Adds a READ-SIDE FILTER: scope_keys that do not match the canonical
+ *      32-hex HMAC shape return null. v0.5.10 `applyIgnoreSender`'s legacy
+ *      `scope_key='message:<id>'` placeholder rows are ignored. BB6 fixture
+ *      in pil-live.eval.ts is the LOAD-BEARING coverage.
+ *   2. Cross-user safety: the underlying lookup is `(userId, scope_key)`,
+ *      and `hashSenderKey()` includes user_id in the HMAC input — User A's
+ *      scope_key cannot collide with User B's lookup for the same raw
+ *      sender. Founder guardrail 3. BB4 fixture is the LOAD-BEARING
+ *      adversarial coverage.
+ *   3. Otherwise reuses buildPilContext + computeDecayFactor unchanged —
+ *      same projection contract, same Q3.B decay (no v0.5.12 divergence).
+ *
+ * The kill switch (FOMO_PIL_LIVE_ENABLED) is checked AT THE CALL SITE
+ * (worker), not inside this module — keeps the function pure for testing.
+ * BB7 fixture documents the kill-switch contract at the call site.
+ */
+export async function buildLivePilContext(
+  userId: string,
+  senderEmailHash: string | null,
+  deps: PilContextDeps
+): Promise<PilContext | null> {
+  if (senderEmailHash === null || senderEmailHash === '') {
+    return null;
+  }
+  if (!CANONICAL_SCOPE_KEY_REGEX.test(senderEmailHash)) {
+    // Legacy placeholder shape (e.g. 'message:<id>') or any other
+    // non-canonical scope_key. Founder rule: ignore unconditionally.
+    return null;
+  }
+  return buildPilContext(userId, senderEmailHash, deps);
+}
+
 /**
  * Q3.B linear decay. Pure function, exported for unit tests.
  *
