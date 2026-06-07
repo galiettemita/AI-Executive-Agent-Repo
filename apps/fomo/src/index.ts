@@ -870,6 +870,14 @@ function buildSendBlueInboundWiring(
     // no courtesy confirmation sent). Narrow dep boundary: only `.send`.
     stopConfirmation: sendBlueClient
       ? { send: (input) => sendBlueClient.send(input) }
+      : undefined,
+    // Phase v0.5.14 — HMR Feedback Acknowledgment Surface. Same shape
+    // as stopConfirmation; routeReplyFeedback decides whether to fire
+    // based on intent + from_number presence (see feedback-routing.ts).
+    // Absent → routeReplyFeedback takes the v0.5.10 baseline path
+    // (no ack, no fomo.sendblue.feedback_ack_* audit).
+    feedbackAck: sendBlueClient
+      ? { send: (input) => sendBlueClient.send(input) }
       : undefined
   });
 

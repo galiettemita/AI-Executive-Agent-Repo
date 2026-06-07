@@ -193,6 +193,19 @@ export interface SendBlueInboundRouteDeps {
     send: (input: import('../adapters/sendblue/client.js').SendInput) => Promise<import('../adapters/sendblue/client.js').SendOutcome>;
   };
 
+  // Phase v0.5.14 — HMR Feedback Acknowledgment Surface. Optional
+  // SendBlue-backed ack send for the 4 ackable feedback intents
+  // (ignore_sender / this_mattered / more_like_this / false_positive).
+  // Same shape as stopConfirmation. When absent, routeReplyFeedback
+  // takes the v0.5.10 baseline path (no ack, no fomo.sendblue.feedback_ack_*
+  // audit). When present, the route handler threads the inbound E.164
+  // (fromNumber) into routeReplyFeedback's input.from_number; the
+  // routing module decides whether to render+send+audit based on the
+  // 3-gate check (dep present + from_number present + ackable intent).
+  readonly feedbackAck?: {
+    send: (input: import('../adapters/sendblue/client.js').SendInput) => Promise<import('../adapters/sendblue/client.js').SendOutcome>;
+  };
+
   // Optional clock for tests.
   readonly now?: () => Date;
 }
@@ -656,14 +669,25 @@ async function applyParseResult(
       // the new applyPilAggregation call below uses that hash DIRECTLY as
       // the scope_key — bypassing the routeReplyFeedback re-hash path.
       sender_email: null,
-      snooze_hint: dispatchIntent === 'snooze' ? snoozeHint : null
+      snooze_hint: dispatchIntent === 'snooze' ? snoozeHint : null,
+      // Phase v0.5.14 — thread the inbound E.164 so routeReplyFeedback
+      // can fire the deterministic ack send for ackable intents. The
+      // routing module owns the 3-gate decision (dep + number + ackable);
+      // we just pass the number through. NEVER logged or persisted by
+      // routeReplyFeedback — used only as the `to` argument to deps.feedbackAck.send.
+      from_number: fromNumber
     },
     {
       feedbackStore: deps.feedbackStore,
       auditStore: deps.auditStore,
       memoryStore: deps.memoryStore,
       senderHashKey: deps.senderHashKey,
-      now: deps.now ? () => deps.now!().getTime() : undefined
+      now: deps.now ? () => deps.now!().getTime() : undefined,
+      // Phase v0.5.14 — optional ack send dep. When undefined (founder
+      // hasn't wired in bootstrap), routeReplyFeedback takes the v0.5.10
+      // baseline path (no ack, no audit). When present, ackable intents
+      // produce a best-effort deterministic ack SMS + a separate audit.
+      feedbackAck: deps.feedbackAck
     }
   );
 

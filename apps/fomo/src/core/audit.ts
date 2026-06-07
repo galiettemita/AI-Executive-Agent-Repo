@@ -256,6 +256,22 @@ export type AuditAction =
   | 'fomo.alert.suppressed_stop_active'
   | 'fomo.sendblue.stop_confirmation_sent'
   | 'fomo.sendblue.stop_confirmation_failed'
+  // Phase v0.5.14 — HMR Feedback Acknowledgment Surface. Fires when the
+  // routeReplyFeedback module sends a deterministic acknowledgment back
+  // to the user after a v0.5.10 reply-parser feedback intent
+  // (ignore_sender / this_mattered / more_like_this / false_positive)
+  // lands. Mirrors the v0.5.5 STOP confirmation pattern: best-effort,
+  // no retry, separate audit kind per success/failure. The
+  // acknowledgment is the only outbound exception triggered FROM the
+  // inbound webhook path (the normal alert pipeline is unaffected).
+  //
+  // Detail (success): parser_intent, template_version, feedback_event_id,
+  //   send_outcome_kind. NEVER raw reply text, NEVER sender_email,
+  //   NEVER the rendered body beyond the template_version constant.
+  // Detail (failure): same + sanitized error_code + error_message ≤200
+  //   chars. NEVER the SendBlue API key.
+  | 'fomo.sendblue.feedback_ack_sent'
+  | 'fomo.sendblue.feedback_ack_failed'
   // Phase v0.5.6 — iMessage Tone + Summary Length. Fires when the
   // outbound-sender's body-render step (renderFounderText) detects
   // that the stored rank_result.reason fails the v0.5.6 body schema
@@ -421,6 +437,9 @@ export const FOMO_AUDIT_ACTIONS = [
   'fomo.alert.suppressed_stop_active',
   'fomo.sendblue.stop_confirmation_sent',
   'fomo.sendblue.stop_confirmation_failed',
+  // Phase v0.5.14 — HMR Feedback Acknowledgment Surface.
+  'fomo.sendblue.feedback_ack_sent',
+  'fomo.sendblue.feedback_ack_failed',
   // Phase v0.5.6 — iMessage Tone + Summary Length.
   'fomo.alert.drafter_schema_failed',
   // Phase v0.5.7 — Human Message Renderer.
