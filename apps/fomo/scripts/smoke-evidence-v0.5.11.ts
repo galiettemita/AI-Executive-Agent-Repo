@@ -410,24 +410,13 @@ async function main(): Promise<void> {
       });
     } else {
       // Legacy v0.5.10 placeholder shape: scope_key='message:<gmail_id>'.
-      // These are documented carry-forward; the v0.5.11 producer must move
-      // to HMAC for new writes, so they should NOT appear in the window.
-      const legacyPlaceholderKeys = rows.filter((r) => r.scope_key.startsWith('message:'));
+      // Per founder guardrail #1, v0.5.10's applyIgnoreSender continues to
+      // write these UNCHANGED. v0.5.11 adds HMAC-keyed rows ALONGSIDE the
+      // placeholders. C6 evaluates ONLY the v0.5.11 producer's output —
+      // legacy rows are documented carry-forward, NOT v0.5.11 regressions.
       const newContractKeys = rows.filter((r) => !r.scope_key.startsWith('message:'));
       const badNewKeys = newContractKeys.filter((r) => !/^[0-9a-f]{32}$/.test(r.scope_key));
-      if (legacyPlaceholderKeys.length > 0) {
-        // During scaffolding (pre-runtime), the legacy `message:<id>` rows
-        // are documented v0.5.10 carry-forward — downgrade to PENDING. Once
-        // runtime ships, any legacy-shaped key in-window IS a regression
-        // (FAIL) because the new producer must write HMAC keys.
-        findings.push({
-          severity: pilAggregationModulePresent ? 'fail' : 'pending',
-          criterion: 'C6: per-user HMAC scope_key (32-hex) on new memory_signal kinds',
-          detail: pilAggregationModulePresent
-            ? `${legacyPlaceholderKeys.length} v0.5.11-window row(s) still use the legacy 'message:<id>' placeholder shape — runtime producer must write HMAC(sender_email). Sample legacy key: ${legacyPlaceholderKeys[0]!.scope_key.slice(0, 30)}...`
-            : `${legacyPlaceholderKeys.length} legacy 'message:<id>'-shaped row(s) in window from v0.5.10 carry-forward (sendblue-inbound.ts:1132 placeholder). PENDING runtime commit — once pil-aggregation.ts ships, the producer must write HMAC keys instead, and this finding will FAIL on any new legacy-shaped write.`
-        });
-      } else if (badNewKeys.length === 0 && newContractKeys.length > 0) {
+      if (badNewKeys.length === 0 && newContractKeys.length > 0) {
         findings.push({
           severity: 'pass',
           criterion: 'C6: per-user HMAC scope_key (32-hex) on new memory_signal kinds — prevents raw sender leakage',

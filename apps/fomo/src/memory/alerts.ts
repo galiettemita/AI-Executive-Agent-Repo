@@ -30,6 +30,10 @@ export interface Alert {
   readonly score: number;
   // ISO 8601 — DB-side default now() at write time.
   readonly created_at: string;
+  // Phase v0.5.11 — HMAC(sender_email, BREVIO_SENDER_HASH_KEY). Nullable for
+  // pre-migration rows + for paths that don't supply sender_email (e.g.
+  // synthetic test fixtures). NEVER the cleartext sender_email.
+  readonly sender_email_hash: string | null;
 }
 
 export interface AlertInput {
@@ -39,6 +43,10 @@ export interface AlertInput {
   readonly rank_result_id: number;
   readonly label: AlertLabel;
   readonly score: number;
+  // Phase v0.5.11 — populated forward by the rank step. Optional; callers
+  // that don't have a sender (test fixtures, manual triggers) pass null or
+  // omit the field.
+  readonly sender_email_hash?: string | null;
 }
 
 export interface AlertWriteOutcome {
@@ -81,7 +89,8 @@ export class InMemoryAlertStore implements AlertStore {
       rank_result_id: input.rank_result_id,
       label: input.label,
       score: input.score,
-      created_at: new Date().toISOString()
+      created_at: new Date().toISOString(),
+      sender_email_hash: input.sender_email_hash ?? null
     });
     this.rows.push(alert);
     return Object.freeze({ inserted: true, alert });

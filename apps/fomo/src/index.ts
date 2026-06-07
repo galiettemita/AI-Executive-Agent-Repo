@@ -61,6 +61,7 @@ import {
 } from './workers/outbound-sender.js';
 import { loadCryptoConfig } from './security/token-crypto.js';
 import { loadSenderHashKey } from './memory/feedback-apply.js';
+import { loadPilTunables } from './memory/pil-aggregation.js';
 import { loadSessionConfig } from './security/session.js';
 import { InMemoryNonceStore, loadOAuthStateConfig } from './security/oauth/state.js';
 import { loadProviderConfig, type ProviderConfig } from './security/oauth/providers/index.js';
@@ -509,7 +510,13 @@ function startGmailPolling(
   // Phase v0.5.3 item #2 — optional OAuth refresh helper. When wired,
   // the polling worker auto-refreshes expired access_tokens using the
   // stored refresh_token. Null when OAuth provider isn't configured.
-  oauthRefresh: import('./workers/gmail-poll.js').OAuthRefreshDep | null
+  oauthRefresh: import('./workers/gmail-poll.js').OAuthRefreshDep | null,
+  // Phase v0.5.11 — optional HMAC key. When wired, the rank step computes
+  // hashSenderKey(user_id, rawEmail.sender_email, senderHashKey) and threads
+  // it onto alerts.sender_email_hash so the v0.5.11 aggregation pipe can
+  // bind feedback events to a real sender at the privacy-safe-identifier
+  // level. Null → alerts.sender_email_hash stays NULL (v0.5.10 behavior).
+  senderHashKey: Buffer | null
 ): PollingHandle {
   const stores = storesHandle.stores;
   let stopped = false;
@@ -550,7 +557,10 @@ function startGmailPolling(
           // fomo.poll.skipped_stop_active fires). Also enables the
           // defense-in-depth alert-suppression check inside
           // postSlackCandidateReview.
-          memoryStore: stores.memory
+          memoryStore: stores.memory,
+          // Phase v0.5.11 — when present, rank-step writes
+          // hashSenderKey(user_id, sender_email) onto alerts.sender_email_hash.
+          senderHashKey: senderHashKey ?? undefined
         });
         cyclesRun++;
         if (stopped) return;
@@ -749,6 +759,9 @@ function buildSendBlueInboundWiring(
   // Phase v0.5.10 — load the v0.5.9 HMAC key for the routing module's
   // applyFeedback consumer (ignore_sender → sender_feedback_ignored).
   const senderHashKey = loadSenderHashKey(env);
+  // Phase v0.5.11 — load tunable PIL thresholds (Q5.C). Throws if any env
+  // var is malformed; default values apply for unset vars.
+  const pilTunables = loadPilTunables(env);
   const routeDeps: SendBlueInboundRouteDeps = Object.freeze({
     webhookSecret,
     webhookSecretHeader,
@@ -765,6 +778,7 @@ function buildSendBlueInboundWiring(
     memoryStore: storesHandle.stores.memory,
     auditStore: storesHandle.stores.audit,
     senderHashKey,
+    pilTunables,
     replyParser: {
       parse: (req: Parameters<typeof parseReply>[0]) => parseReply(req, { router: replyRouter })
     },
@@ -1190,6 +1204,19 @@ export function createFomoRuntime(config: FomoConfig = loadFomoConfig()): FomoRu
           providerConfig: oauthGoogleDeps.providerConfig
         })
       : null;
+    // Phase v0.5.11 — load the v0.5.9 HMAC key once at boot. Used by both
+    // the polling worker (rank-step alerts.sender_email_hash thread) and
+    // the SendBlue inbound route (existing v0.5.10 applyFeedback consumer).
+    // Loader throws on missing/invalid key, fail-loud per substrate policy.
+    const pollingSenderHashKey = (() => {
+      try {
+        return loadSenderHashKey(process.env);
+      } catch {
+        // Polling can run without it (alerts.sender_email_hash stays NULL);
+        // SendBlue inbound bootstrap will fail-loud separately if missing.
+        return null;
+      }
+    })();
     pollingHandle = startGmailPolling(
       storesHandle,
       gmailClient,
@@ -1198,7 +1225,8 @@ export function createFomoRuntime(config: FomoConfig = loadFomoConfig()): FomoRu
       config,
       ranker,
       slackWiring.dep,
-      oauthRefresh
+      oauthRefresh,
+      pollingSenderHashKey
     );
     logEvent(config, undefined, 'fomo.poll.enabled', 'INFO', {
       interval_ms: killSwitches.polling_interval_ms,

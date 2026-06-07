@@ -342,7 +342,16 @@ export type AuditAction =
   //   - confidence: number
   // NEVER subject, sender_email, body, snippet, raw headers, attachment
   // names, access tokens.
-  | 'brevio.feedback.applied';
+  | 'brevio.feedback.applied'
+  // Phase v0.5.11 — PIL substrate + shadow ranker context/eval. Emitted by
+  // applyPilAggregation when a feedback_event triggers an upsert of
+  // sender_importance or sender_suppressed. Detail carries the 15 locked
+  // Q6.B fields (verb, dimension, feedback_event_id, source_surface,
+  // memory_signal_kind, memory_signal_action, memory_signal_scope_key_hash,
+  // score_before, score_after, score_delta, n_positive_events_before/after,
+  // n_negative_events_before/after, suppression_flipped, threshold_k_in_force).
+  // NEVER stores raw sender_email / subject / body / snippet / headers.
+  | 'brevio.signal.aggregated';
 
 // Phase 3G.1 — runtime registry of every FOMO-namespaced audit
 // action. Used by the 3G.1 evidence script (and any future ops
@@ -412,7 +421,9 @@ export const FOMO_AUDIT_ACTIONS = [
   // now iterates the registry). 'brevio.feedback.applied' is the new
   // consumer-side audit emitted by applyFeedback on memory_signal upsert.
   'feedback.written',
-  'brevio.feedback.applied'
+  'brevio.feedback.applied',
+  // Phase v0.5.11 — PIL substrate.
+  'brevio.signal.aggregated'
 ] as const satisfies readonly AuditAction[];
 
 export type AuditResult = 'success' | 'failure';

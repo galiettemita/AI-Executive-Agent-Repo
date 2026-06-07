@@ -94,6 +94,10 @@ import {
 // applyFeedback routing.
 import { routeReplyFeedback } from '../reply-parser/feedback-routing.js';
 import { type ReplyIntent } from '../reply-parser/validator.js';
+// Phase v0.5.11 — PIL substrate aggregation pipe (canonical HMAC-keyed
+// sender_importance / sender_suppressed upserts on the 4 PIL-relevant
+// intents).
+import { applyPilAggregation } from '../memory/pil-aggregation.js';
 
 /* ---------------------------------------------------------------------- */
 /* Deps                                                                   */
@@ -153,6 +157,14 @@ export interface SendBlueInboundRouteDeps {
   // Loaded from BREVIO_SENDER_HASH_KEY at boot via loadSenderHashKey;
   // never logged.
   readonly senderHashKey: Buffer;
+
+  // Phase v0.5.11 — tunable PIL thresholds (Q5.C). Loaded once at boot via
+  // loadPilTunables(env). Optional — when absent, applyPilAggregation is
+  // not called (v0.5.10 behavior). Present → v0.5.11 aggregation pipe fires
+  // for the 4 PIL-relevant intents (this_mattered, more_like_this,
+  // false_positive, ignore_sender) when matchedAlert.sender_email_hash is
+  // available.
+  readonly pilTunables?: import('../memory/pil-aggregation.js').PilTunables;
 
   // The reply-parser orchestrator. Injected so tests can stub.
   readonly replyParser: {
@@ -627,7 +639,7 @@ async function applyParseResult(
   // Phase v0.5.10 — route the feedback signal through the policy module.
   // This writes the v0.5.9-shaped feedback_event + extended feedback.written
   // audit + (for ignore_sender) fires applyFeedback.
-  await routeReplyFeedback(
+  const routeOutcome = await routeReplyFeedback(
     {
       user_id: userId,
       intent: dispatchIntent as SoftDispatchIntent,
@@ -635,13 +647,14 @@ async function applyParseResult(
       parser_confidence: parserConfidence,
       inbound_reply_id: inboundReplyId,
       alert_id: matchedAlert?.alert_id ?? null,
-      // The v0.1 substrate alerts table does NOT carry sender_email
-      // (3D.1 privacy design). The applyFeedback consumer arm for
-      // ignore_sender requires a sender to hash into the scope_key;
-      // when sender_email is null, applyFeedback returns no_match
-      // gracefully. The feedback_event still writes; the memory_signal
-      // upsert is a future enhancement (re-derive sender from Gmail
-      // re-read or rank_results join).
+      // The v0.1 substrate alerts table did NOT carry sender_email
+      // (3D.1 privacy design). The v0.5.9 applyFeedback consumer arm for
+      // ignore_sender requires a raw sender_email to hash into the
+      // scope_key; when null, applyFeedback returns no_match gracefully.
+      // v0.5.11 closes this gap WITHOUT changing the v0.5.9 contract: the
+      // alert now carries a privacy-safe sender_email_hash (HMAC), and
+      // the new applyPilAggregation call below uses that hash DIRECTLY as
+      // the scope_key — bypassing the routeReplyFeedback re-hash path.
       sender_email: null,
       snooze_hint: dispatchIntent === 'snooze' ? snoozeHint : null
     },
@@ -653,6 +666,46 @@ async function applyParseResult(
       now: deps.now ? () => deps.now!().getTime() : undefined
     }
   );
+
+  // Phase v0.5.11 — PIL aggregation. After the v0.5.10 routing module
+  // writes the feedback_event, project the four PIL-relevant intents into
+  // canonical HMAC-keyed sender_importance / sender_suppressed signals.
+  // Hard boundaries:
+  //   - Only fires when (a) tunables are wired (i.e. boot supplied them),
+  //     (b) routeOutcome.kind === 'wrote' (no unclear no-op), (c) the
+  //     matched alert carries a sender_email_hash (the v0.5.11 rank-step
+  //     thread populated it), and (d) the intent maps to a PIL arm.
+  //   - When sender_email_hash is null (pre-migration alert, fixture, or no
+  //     matched alert), the call returns kind='skipped' and writes nothing.
+  //   - v0.5.10 sender_feedback_ignored placeholder behavior is UNTOUCHED:
+  //     applyIgnoreSender below continues to write its message:<id> row.
+  if (
+    deps.pilTunables &&
+    routeOutcome.kind === 'wrote' &&
+    matchedAlert?.sender_email_hash
+  ) {
+    const pilArm = pilArmFromIntent(dispatchIntent);
+    const feedbackEventId = routeOutcome.feedback_event.id;
+    if (pilArm !== null && typeof feedbackEventId === 'number') {
+      await applyPilAggregation(
+        {
+          user_id: userId,
+          feedback_event_id: feedbackEventId,
+          verb: pilArm.verb,
+          dimension: pilArm.dimension,
+          source_surface: 'email_alert',
+          sender_email_hash: matchedAlert.sender_email_hash,
+          k_threshold: deps.pilTunables.k_threshold,
+          score_delta: deps.pilTunables.score_delta,
+          now: deps.now ? () => deps.now!() : undefined
+        },
+        {
+          memoryStore: deps.memoryStore,
+          auditStore: deps.auditStore
+        }
+      );
+    }
+  }
 
   // Now dispatch to the existing applyXXX functions for state-machine
   // transitions + the legacy reply_parsed audit. These functions no
@@ -678,6 +731,26 @@ async function applyParseResult(
     case 'this_mattered':
     case 'more_like_this':
       return applyPositiveAcknowledge(deps, userId, matchedAlert, dispatchIntent, fromSlug, providerMessageId);
+  }
+}
+
+// Phase v0.5.11 — map v0.5.10 reply-parser intents onto the PIL aggregation
+// arm tuple. Returns null for intents that don't drive PIL writes
+// (snooze / ignore / why / unclear).
+function pilArmFromIntent(
+  intent: string
+): { verb: 'approved' | 'corrected' | 'ignored'; dimension: 'importance' | 'pattern' | 'ranker_label' | 'sender' } | null {
+  switch (intent) {
+    case 'this_mattered':
+      return { verb: 'approved', dimension: 'importance' };
+    case 'more_like_this':
+      return { verb: 'approved', dimension: 'pattern' };
+    case 'false_positive':
+      return { verb: 'corrected', dimension: 'ranker_label' };
+    case 'ignore_sender':
+      return { verb: 'ignored', dimension: 'sender' };
+    default:
+      return null;
   }
 }
 

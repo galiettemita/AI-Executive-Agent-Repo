@@ -597,16 +597,26 @@ if (!pilContextModulePresent) {
 }
 
 // Shadow eval harness — runtime commit creates it.
-issues.push({
-  name: 'PIL_SHADOW_EVAL_HARNESS',
-  severity: 'warn',
-  message:
-    'apps/fomo/src/eval/pil-shadow.eval.ts PENDING runtime commit. ' +
-    'Will pair ≥10 synthetic email fixtures with synthetic PIL states and assert ranker shift DIRECTION (not exact magnitude — model nondeterminism allowed). ' +
-    'Includes the LOAD-BEARING cross-user contamination row (per [[personalized-importance-learning]] §9.3, §10). ' +
-    'Invoked via `pnpm --filter @brevio/fomo run eval:pil-shadow`. ' +
-    'After runtime + smoke PASS this warn disappears.'
-});
+let evalHarnessPresent = false;
+try {
+  const modulePath = '../src/eval/pil-shadow.eval.js';
+  await import(modulePath);
+  evalHarnessPresent = true;
+} catch {
+  evalHarnessPresent = false;
+}
+if (!evalHarnessPresent) {
+  issues.push({
+    name: 'PIL_SHADOW_EVAL_HARNESS',
+    severity: 'warn',
+    message:
+      'apps/fomo/src/eval/pil-shadow.eval.ts PENDING runtime commit. ' +
+      'Will pair ≥10 synthetic email fixtures with synthetic PIL states and assert ranker shift DIRECTION. ' +
+      'Includes the LOAD-BEARING cross-user contamination row (per [[personalized-importance-learning]] §9.3, §10). ' +
+      'Invoked via `pnpm --filter @brevio/fomo run eval:pil-shadow`. ' +
+      'After runtime + smoke PASS this warn disappears.'
+  });
+}
 
 // alerts.sender_email_hash migration — runtime commit creates 0008.
 issues.push({

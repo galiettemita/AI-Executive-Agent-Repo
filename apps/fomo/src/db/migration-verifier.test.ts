@@ -162,7 +162,13 @@ describe('migration-verifier', () => {
           '0001_gmail_cursors.sql',
           '0002_rank_results.sql',
           '0003_alerts.sql',
-          '0004_inbound_replies.sql'
+          '0004_inbound_replies.sql',
+          // 0008 depends on 0003 (ALTER TABLE alerts); skipping 0003 means
+          // 0008 must also be skipped or it fails on "relation alerts does
+          // not exist". The verifier still surfaces sender_email_hash as
+          // a missing column under 0008 because the alerts table itself
+          // is missing — caught by the column-level check below.
+          '0008_alerts_sender_email_hash.sql'
         ]
       });
       scratchDb = drizzle(scratchPglite, { schema }) as unknown as DrizzleClient;

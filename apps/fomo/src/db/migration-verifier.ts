@@ -103,7 +103,11 @@ export const REQUIRED_COLUMNS: readonly RequiredColumn[] = Object.freeze([
   // 0007_feedback_events_source_surface.sql — ALTER TABLE feedback_events
   // ADD COLUMN source_surface text NOT NULL DEFAULT 'email_alert' + index
   // (user_id, source_surface). Phase v0.5.9 Brevio-wide feedback substrate.
-  { table: 'feedback_events', column: 'source_surface', migration: '0007_feedback_events_source_surface.sql' }
+  { table: 'feedback_events', column: 'source_surface', migration: '0007_feedback_events_source_surface.sql' },
+  // 0008_alerts_sender_email_hash.sql — ALTER TABLE alerts ADD COLUMN
+  // sender_email_hash text + index. Phase v0.5.11 PIL substrate
+  // (HMAC-keyed sender threading; closes v0.5.10 §15 bonus finding #1).
+  { table: 'alerts', column: 'sender_email_hash', migration: '0008_alerts_sender_email_hash.sql' }
 ]);
 
 export interface MigrationVerificationResult {

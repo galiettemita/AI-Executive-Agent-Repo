@@ -52,6 +52,7 @@
     "smoke-evidence:v0.5.10": "node --experimental-strip-types --loader ./test-loader.mjs scripts/smoke-evidence-v0.5.10.ts",
     "preflight:v0.5.11": "node --experimental-strip-types --loader ./test-loader.mjs scripts/preflight-v0.5.11.ts",
     "smoke-evidence:v0.5.11": "node --experimental-strip-types --loader ./test-loader.mjs scripts/smoke-evidence-v0.5.11.ts",
+    "eval:pil-shadow": "node --experimental-strip-types --loader ./test-loader.mjs src/eval/pil-shadow.eval.ts",
     "render-hmr-samples": "node --experimental-strip-types --loader ./test-loader.mjs scripts/render-hmr-samples.ts"
   },
   "dependencies": {
