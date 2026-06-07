@@ -51,6 +51,21 @@ export interface PilContextDeps {
   readonly recency_full_days: number;
   /** Tunable: linear-decay tail in days (0 = hard cliff). Default 90 per Q3.B. */
   readonly recency_decay_days: number;
+  /**
+   * v0.5.12 read-side n_events floor (live ranker only).
+   *
+   * Symmetric to the write-side FOMO_PIL_K_THRESHOLD gate in pil-aggregation.ts:
+   * the substrate only writes `sender_suppressed` once n_events ≥ k_threshold;
+   * the live read-side mirrors that by ignoring `sender_importance` rows below
+   * the same floor. Suppression always bypasses (explicit ignore is binary).
+   *
+   * Consumed ONLY by buildLivePilContext (the live ranker path).
+   * buildPilContext (the shadow eval projection) ignores this field, preserving
+   * the v0.5.11 shadow eval contract unchanged.
+   *
+   * When undefined or ≤ 0, no read-side n_events filtering is applied.
+   */
+  readonly k_threshold?: number;
   /** Override for tests; default = Date.now(). */
   readonly now?: () => Date;
 }
@@ -124,6 +139,74 @@ export async function buildPilContext(
       importance?.updated_at ?? suppressed?.updated_at ?? null,
     decay_factor_applied: decayFactor
   });
+}
+
+/* ====================================================================== */
+/* Phase v0.5.12 — buildLivePilContext (live ranker read path)            */
+/* ====================================================================== */
+
+/**
+ * Canonical HMAC scope_key shape produced by hashSenderKey(): 32 lowercase
+ * hex characters. v0.5.10 `applyIgnoreSender` writes a placeholder
+ * `scope_key='message:<id>'` row that v0.5.12 MUST ignore — see founder
+ * rule in [[v05-12-scope]] "Critical implementation rule (READ-SIDE FILTER)".
+ */
+export const CANONICAL_SCOPE_KEY_REGEX = /^[a-f0-9]{32}$/;
+
+/**
+ * Phase v0.5.12 — live ranker read path.
+ *
+ * Differences from buildPilContext (the shadow projection consumer):
+ *   1. Adds a READ-SIDE FILTER: scope_keys that do not match the canonical
+ *      32-hex HMAC shape return null. v0.5.10 `applyIgnoreSender`'s legacy
+ *      `scope_key='message:<id>'` placeholder rows are ignored. BB6 fixture
+ *      in pil-live.eval.ts is the LOAD-BEARING coverage.
+ *   2. Cross-user safety: the underlying lookup is `(userId, scope_key)`,
+ *      and `hashSenderKey()` includes user_id in the HMAC input — User A's
+ *      scope_key cannot collide with User B's lookup for the same raw
+ *      sender. Founder guardrail 3. BB4 fixture is the LOAD-BEARING
+ *      adversarial coverage.
+ *   3. Otherwise reuses buildPilContext + computeDecayFactor unchanged —
+ *      same projection contract, same Q3.B decay (no v0.5.12 divergence).
+ *
+ * The kill switch (FOMO_PIL_LIVE_ENABLED) is checked AT THE CALL SITE
+ * (worker), not inside this module — keeps the function pure for testing.
+ * BB7 fixture documents the kill-switch contract at the call site.
+ */
+export async function buildLivePilContext(
+  userId: string,
+  senderEmailHash: string | null,
+  deps: PilContextDeps
+): Promise<PilContext | null> {
+  if (senderEmailHash === null || senderEmailHash === '') {
+    return null;
+  }
+  if (!CANONICAL_SCOPE_KEY_REGEX.test(senderEmailHash)) {
+    // Legacy placeholder shape (e.g. 'message:<id>') or any other
+    // non-canonical scope_key. Founder rule: ignore unconditionally.
+    return null;
+  }
+  const ctx = await buildPilContext(userId, senderEmailHash, deps);
+  if (ctx === null) {
+    return null;
+  }
+  // Read-side n_events floor — symmetric to the write-side
+  // FOMO_PIL_K_THRESHOLD gate in pil-aggregation.ts. Without this gate, a
+  // single-event prior (n=1, |score|≤0.1) flows into the ranker prompt and
+  // the model pins the score against FOMO_PIL_SCORE_CAP on borderline
+  // emails — the "becomes-binary-blind on a weak signal" failure mode the
+  // founder explicitly forbade. Suppression always bypasses: explicit
+  // ignore_sender (binary) is independent of n_events.
+  const k = deps.k_threshold;
+  if (
+    typeof k === 'number' &&
+    k > 0 &&
+    !ctx.sender_suppressed &&
+    ctx.sender_importance_n_events < k
+  ) {
+    return null;
+  }
+  return ctx;
 }
 
 /**

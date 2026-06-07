@@ -33,8 +33,18 @@
 //     call's prompt; NOT a new LLM call.
 
 import { type RankerEgressView } from '../core/egress-policy.js';
+import { type PilContext } from './pil-context.js';
 
 export const PROMPT_VERSION = 'ranker-v0.2.0';
+
+/**
+ * Phase v0.5.12 — Bumped when the assembled prompt INCLUDES a PIL context
+ * block. Baseline (pil_context=null) calls continue to use PROMPT_VERSION
+ * = 'ranker-v0.2.0'. The two-call hybrid at the production rank site
+ * emits BOTH calls with their respective versions; rank_results.prompt_version
+ * tracks which call produced the final stored decision.
+ */
+export const PROMPT_VERSION_WITH_PIL = 'ranker-v0.3.0';
 
 // Goal of the FOMO ranker, in v0.1.
 //
@@ -123,7 +133,19 @@ export const RANKER_EXAMPLES_BLOCK = [
 // Build the user-message portion of the prompt for a single email view.
 // The egress view already strips forbidden fields; this function only
 // formats what's allowed.
-export function buildRankerPrompt(view: RankerEgressView): string {
+//
+// v0.5.12 (Q1.C-modified): accepts an OPTIONAL `pilContext`. When non-null
+// AND the kill switch is on, the production rank site calls this twice
+// (baseline + PIL) and the worker clamps the score delta to enforce a REAL
+// cap (Q2.A). The block contains ONLY the 3 allowed structural fields per
+// the founder privacy lock: sender_importance_score, sender_suppressed,
+// signal_age_days. No raw sender_email, subject, body, snippet, headers.
+// The block is framed as a PRIOR not a directive — Q3.A: the model can
+// override on strong intrinsic signal (BB1 LOAD-BEARING).
+export function buildRankerPrompt(
+  view: RankerEgressView,
+  pilContext: PilContext | null = null
+): string {
   const attachmentLine =
     view.has_attachments
       ? `Attachments: ${view.attachment_count} (filenames withheld by egress policy)`
@@ -132,12 +154,19 @@ export function buildRankerPrompt(view: RankerEgressView): string {
     ? `From: ${view.sender_name} <${view.sender_email}>`
     : `From: ${view.sender_email}`;
 
-  return [
+  const sections: string[] = [
     RANKER_SYSTEM_PREAMBLE,
     '',
     RANKER_OUTPUT_SCHEMA,
     '',
-    RANKER_EXAMPLES_BLOCK,
+    RANKER_EXAMPLES_BLOCK
+  ];
+
+  if (pilContext !== null) {
+    sections.push('', buildPilContextBlock(pilContext));
+  }
+
+  sections.push(
     '',
     'Email to classify:',
     senderLine,
@@ -146,5 +175,53 @@ export function buildRankerPrompt(view: RankerEgressView): string {
     attachmentLine,
     'Body snippet (truncated, no HTML, no headers):',
     view.body_snippet
-  ].join('\n');
+  );
+
+  return sections.join('\n');
+}
+
+/**
+ * Phase v0.5.12 — assemble the PIL prior block for the ranker prompt.
+ *
+ * Privacy contract (founder lock + Scope OUT #3):
+ *   - ONLY 3 structural fields: sender_importance_score (decayed), sender_suppressed (bool), signal_age_days (int).
+ *   - NEVER raw sender_email, subject, body, snippet, headers, or any other free-text field.
+ *
+ * Voice contract (Q3.A — strong PRIOR not directive):
+ *   - The block frames PIL as past behavior, not a label.
+ *   - The model is instructed it MAY override the prior on strong intrinsic signal.
+ *
+ * The block keeps the v0.5.7 voice rules (Brevio voice — see [[brevio-voice-rules]]):
+ * the model is told it may mention the prior in `rank.reason` when overriding, so
+ * future audits can verify behavior changes are transparent (C6 transparency floor +
+ * model_mentioned_pil_in_reason audit field).
+ */
+export function buildPilContextBlock(pil: PilContext): string {
+  const lines = [
+    'PIL prior (the user\'s past feedback on this sender, NOT a directive — you MAY override on strong intrinsic signal):'
+  ];
+  lines.push(
+    `- sender_importance_score: ${formatScore(pil.sender_importance_score)} (decayed, in [-1.0, +1.0]; positive = user previously approved this sender, negative = user previously corrected)`
+  );
+  lines.push(`- sender_suppressed: ${pil.sender_suppressed} (true = user explicitly chose to ignore this sender or had ≥k consecutive corrections)`);
+  const ageDays = decayBasisAgeDays(pil);
+  lines.push(`- signal_age_days: ${ageDays} (older signals carry less weight; >180d ≈ no signal)`);
+  lines.push(
+    'Guidance: weight the prior modestly. If the email\'s intrinsic content carries a deadline, person, or stake the user would be sad to miss, you MAY override the prior; reflect that briefly in the reason. Do NOT echo the prior verbatim; do NOT name the sender feedback history; do NOT quote PIL scores in the reason text.'
+  );
+  return lines.join('\n');
+}
+
+function formatScore(n: number): string {
+  if (!Number.isFinite(n)) return '0.000';
+  return n.toFixed(3);
+}
+
+function decayBasisAgeDays(pil: PilContext): number {
+  if (pil.last_updated === null) return 0;
+  const t = Date.parse(pil.last_updated);
+  if (!Number.isFinite(t)) return 0;
+  const ageMs = Date.now() - t;
+  if (ageMs <= 0) return 0;
+  return Math.floor(ageMs / (1000 * 60 * 60 * 24));
 }
