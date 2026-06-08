@@ -20,6 +20,7 @@
 // keep retrying (would waste API calls + potentially trip rate limits).
 
 import { type AuditStore } from '../../core/audit.js';
+import { sanitizeProviderError } from '../../core/sanitize-provider-error.js';
 import { type TokenStore } from './token-store.js';
 import { refreshAccessToken, OAuthError, type FetchLike } from './exchange.js';
 import { type ProviderConfig } from './providers/index.js';
@@ -150,7 +151,15 @@ export function buildOAuthRefreshHelper(args: BuildOAuthRefreshHelperArgs): OAut
         // Mark needs_reauth + audit + skip. NEVER auto-retry.
         if (err instanceof OAuthError && err.httpStatus >= 400 && err.httpStatus < 500) {
           await args.tokenStore.markNeedsReauth(user_id, provider);
-          // Surface the safe provider error code without echoing the body.
+          // Phase v0.5.15 — sanitized provider error fields.
+          // err.providerError carries the OAuth RFC 6749 token (e.g.
+          // 'invalid_grant') which maps to the locked SanitizedReason set;
+          // httpStatus is a fallback for unknown OAuth codes. The raw
+          // provider error body is never inspected for content.
+          const sanitized = sanitizeProviderError({
+            raw_provider_code: err.providerError ?? null,
+            http_status: err.httpStatus
+          });
           const reason = err.providerError ?? `http_${err.httpStatus}`;
           await args.auditStore.write({
             actor_user_id: user_id,
@@ -162,7 +171,9 @@ export function buildOAuthRefreshHelper(args: BuildOAuthRefreshHelperArgs): OAut
             detail: {
               provider,
               reason,
-              http_status: err.httpStatus
+              http_status: err.httpStatus,
+              error_code: sanitized.error_code,
+              error_reason: sanitized.error_reason
             }
           });
           return Object.freeze({

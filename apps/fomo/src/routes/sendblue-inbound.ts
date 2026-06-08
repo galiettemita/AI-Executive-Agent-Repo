@@ -73,6 +73,7 @@ import type http from 'node:http';
 import { verifySendBlueWebhookSecret } from '../adapters/sendblue/client.js';
 import { type AuditStore } from '../core/audit.js';
 import { type AlertStateTransitionStore } from '../core/alert-state-transitions.js';
+import { sanitizeProviderError } from '../core/sanitize-provider-error.js';
 import { type KillSwitches } from '../core/kill-switches.js';
 import {
   transition,
@@ -900,6 +901,15 @@ async function applyStop(
       // trigger a SendBlue webhook retry, which would then idempotency-
       // gate at the inbound_replies UNIQUE constraint — still safe, but
       // noisier than a clean fail-soft).
+      // Phase v0.5.15 — sanitized error_code/error_reason; the raw
+      // err.message slice is removed entirely (deny-by-default).
+      const sanitized = sanitizeProviderError({
+        raw_provider_code: 'send_throw',
+        network_error_code:
+          err && typeof err === 'object' && 'code' in err && typeof (err as { code: unknown }).code === 'string'
+            ? ((err as { code: string }).code)
+            : null
+      });
       await deps.auditStore.write({
         actor_user_id: userId,
         actor_ip: null,
@@ -910,8 +920,8 @@ async function applyStop(
         detail: {
           from_slug: fromSlug,
           provider_message_id: providerMessageId,
-          error_code: 'send_threw',
-          error_message: (err instanceof Error ? err.message : String(err)).slice(0, 200),
+          error_code: sanitized.error_code,
+          error_reason: sanitized.error_reason,
           reason: 'best-effort send threw; no retry per v0.5.5 Q6'
         }
       });
@@ -968,17 +978,23 @@ async function applyStop(
         action: 'fomo.sendblue.stop_confirmation_failed',
         target: 'memory_signal:stop_active',
         result: 'failure',
-        detail: {
-          from_slug: fromSlug,
-          provider_message_id: providerMessageId,
-          provider_status: outcome.providerStatus ?? null,
-          http_status: outcome.httpStatus,
-          outcome_kind: outcome.kind,
-          error_code:
-            outcome.providerError?.error_code ?? (outcome.kind === 'failed' ? 'send_failed' : 'send_status_unknown'),
-          error_message: (outcome.providerError?.error_message ?? outcome.reason).slice(0, 200),
-          reason: 'best-effort send did not return kind=sent; no retry per v0.5.5 Q6'
-        }
+        detail: (() => {
+          // Phase v0.5.15 — sanitized error_code/error_reason.
+          const s = sanitizeProviderError({
+            raw_provider_code: outcome.providerError?.error_message ?? null,
+            http_status: outcome.httpStatus > 0 ? outcome.httpStatus : null
+          });
+          return {
+            from_slug: fromSlug,
+            provider_message_id: providerMessageId,
+            provider_status: outcome.providerStatus ?? null,
+            http_status: outcome.httpStatus,
+            outcome_kind: outcome.kind,
+            error_code: s.error_code,
+            error_reason: s.error_reason,
+            reason: 'best-effort send did not return kind=sent; no retry per v0.5.5 Q6'
+          };
+        })()
       });
     }
   }

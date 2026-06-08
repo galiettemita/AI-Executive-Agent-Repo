@@ -44,6 +44,7 @@
 import { type SendOutcome } from '../adapters/sendblue/client.js';
 import { type AlertStateTransitionStore } from '../core/alert-state-transitions.js';
 import { type AuditStore } from '../core/audit.js';
+import { sanitizeProviderError } from '../core/sanitize-provider-error.js';
 import {
   applyEgressForHumanMessage,
   type RawEmailContext
@@ -917,6 +918,14 @@ async function processOneAlert(
         confidence: 1,
         source: 'opt_out_drift_carrier'
       });
+      // Phase v0.5.15 — sanitized error_code/error_reason from the locked
+      // SanitizedReason set. The drift-detected audit is success-result;
+      // the sanitized fields still apply so future SendBlue API drift
+      // can't introduce raw content into this audit.
+      const driftSanitized = sanitizeProviderError({
+        raw_provider_code: outcome.providerError.error_message,
+        http_status: outcome.httpStatus > 0 ? outcome.httpStatus : null
+      });
       await deps.auditStore.write({
         actor_user_id: user_id,
         actor_ip: null,
@@ -929,14 +938,23 @@ async function processOneAlert(
           message_id: alert.message_id,
           rank_result_id: alert.rank_result_id,
           destination_slug: destinationSlug(destination),
-          provider_error_message: outcome.providerError.error_message,
-          provider_error_reason: outcome.providerError.error_reason,
-          provider_error_code: outcome.providerError.error_code,
+          error_code: driftSanitized.error_code,
+          error_reason: driftSanitized.error_reason,
           stop_active_synced: true
         }
       });
     }
 
+    // Phase v0.5.15 — replace the prior provider_error_* + raw reason
+    // passthrough with sanitized error_code + error_reason from the
+    // locked SanitizedReason set. outcome.reason is the client's own
+    // operator-facing token (never raw provider text) and stays as the
+    // `reason` field. Future SendBlue error-shape drift fails closed
+    // at the sanitizer rather than leaking content into audit detail.
+    const sendFailedSanitized = sanitizeProviderError({
+      raw_provider_code: outcome.providerError?.error_message ?? null,
+      http_status: outcome.httpStatus > 0 ? outcome.httpStatus : null
+    });
     await deps.auditStore.write({
       actor_user_id: user_id,
       actor_ip: null,
@@ -952,13 +970,8 @@ async function processOneAlert(
         provider_status: outcome.providerStatus,
         http_status: outcome.httpStatus,
         reason: outcome.reason,
-        // Phase 3G.1 item #2: surface the three named safe fields in
-        // the failed-send detail so the operator sees the category
-        // (e.g. OPTED_OUT) without parsing reason text. NEVER the raw
-        // response body.
-        provider_error_message: outcome.providerError?.error_message ?? null,
-        provider_error_reason: outcome.providerError?.error_reason ?? null,
-        provider_error_code: outcome.providerError?.error_code ?? null
+        error_code: sendFailedSanitized.error_code,
+        error_reason: sendFailedSanitized.error_reason
       }
     });
     await writeTransition(deps, {

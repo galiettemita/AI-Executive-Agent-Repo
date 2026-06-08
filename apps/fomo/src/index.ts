@@ -14,6 +14,7 @@ import {
 } from './db/migration-verifier.js';
 import { createStores, type SubstrateStoresHandle } from './db/store-factory.js';
 import { loadKillSwitches, type KillSwitches } from './core/kill-switches.js';
+import { sanitizeProviderError } from './core/sanitize-provider-error.js';
 import { createToolRegistry } from './core/tool-registry.js';
 import { type PolicyGateDeps } from './core/policy-gate.js';
 import { createDispatchTable, type DispatchTable } from './dispatch/dispatcher.js';
@@ -1089,8 +1090,16 @@ export function createFomoRuntime(config: FomoConfig = loadFomoConfig()): FomoRu
   // log path is always our primary signal.
   if (storesHandle.backend === 'postgres' && storesHandle.db?.ok) {
     storesHandle.db.pool.on('error', (err) => {
-      const code = (err as NodeJS.ErrnoException).code ?? 'unknown';
-      const message = (err.message ?? String(err)).slice(0, 200);
+      // Phase v0.5.15 — sanitized provider error fields. The prior
+      // err.message slice could leak connection string fragments or
+      // stack-style content from pg internals; replaced with the
+      // locked SanitizedReason set keyed by the Node network-level
+      // errno (ECONNRESET, ETIMEDOUT, etc.).
+      const networkCode = (err as NodeJS.ErrnoException).code ?? null;
+      const sanitized = sanitizeProviderError({
+        network_error_code: networkCode,
+        raw_provider_code: networkCode === null ? 'pg_pool_error' : null
+      });
       storesHandle.stores.audit
         .write({
           actor_user_id: null,
@@ -1099,7 +1108,10 @@ export function createFomoRuntime(config: FomoConfig = loadFomoConfig()): FomoRu
           action: 'fomo.db.connection_error',
           target: 'pg:pool',
           result: 'failure',
-          detail: { error_code: code, message }
+          detail: {
+            error_code: sanitized.error_code,
+            error_reason: sanitized.error_reason
+          }
         })
         .catch(() => undefined);
     });

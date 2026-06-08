@@ -491,7 +491,10 @@ describe('v0.5.14 ack — provider failure paths', () => {
     assert.equal(failRows.length, 1);
     const detail = failRows[0]!.detail as Record<string, unknown>;
     assert.equal(detail.send_outcome_kind, 'failed');
-    assert.equal(detail.http_status, 400);
+    // Phase v0.5.15 — sanitized error fields (deny-by-default; locked set).
+    // HTTP 400 → invalid_argument per the classification table.
+    assert.equal(detail.error_reason, 'invalid_argument');
+    assert.equal(typeof detail.error_code, 'string');
     assert.equal(audits.filter((e) => e.action === 'fomo.sendblue.feedback_ack_sent').length, 0);
   });
 
@@ -537,9 +540,21 @@ describe('v0.5.14 ack — provider failure paths', () => {
     const failRows = audits.filter((e) => e.action === 'fomo.sendblue.feedback_ack_failed');
     assert.equal(failRows.length, 1);
     const detail = failRows[0]!.detail as Record<string, unknown>;
-    assert.equal(detail.error_code, 'send_throw');
-    assert.ok(typeof detail.error_message === 'string');
-    assert.ok((detail.error_message as string).length <= 200);
+    // Phase v0.5.15 — sanitized error_code + error_reason from the locked
+    // set. The 'send_throw' provider code maps to temporary_provider_error.
+    // The raw thrown err.message ('econnreset to sendblue') is NEVER
+    // inspected or stored; this proves the deny-by-default contract.
+    assert.equal(detail.error_code, 'TEMPORARY_PROVIDER_ERROR');
+    assert.equal(detail.error_reason, 'temporary_provider_error');
+    assert.equal(
+      detail.error_message,
+      undefined,
+      'v0.5.15: raw err.message MUST NOT appear in audit detail'
+    );
+    // Privacy canary: none of the input throw text leaks into the audit.
+    const detailBlob = JSON.stringify(detail);
+    assert.equal(detailBlob.includes('econnreset'), false);
+    assert.equal(detailBlob.includes('sendblue'), false);
   });
 });
 
