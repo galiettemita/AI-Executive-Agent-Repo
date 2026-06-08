@@ -48,6 +48,7 @@ import {
 } from '../memory/feedback-events.js';
 import type { MemorySignalStore } from '../memory/memory-signals.js';
 import type { SendOutcome } from '../adapters/sendblue/client.js';
+import { sanitizeProviderError } from '../core/sanitize-provider-error.js';
 
 import {
   isAckableFeedbackIntent,
@@ -381,6 +382,20 @@ async function sendFeedbackAck(args: {
     // kind='send_status_unknown' for these, but defense-in-depth catches
     // the throw too — mirrors v0.5.5 applyStop's try/catch around
     // stopConfirmation.send.
+    //
+    // Phase v0.5.15 — sanitizeProviderError replaces the prior raw
+    // err.message slice. The thrown error contributes only its
+    // constructor-style code hint ('SEND_THROW'); the message text is
+    // never inspected for content per the deny-by-default rule.
+    const sanitized = sanitizeProviderError({
+      raw_provider_code: 'send_throw',
+      // Network-level error code may surface here when the runtime throws
+      // a NodeJS.ErrnoException (ECONNRESET, etc.) before the HTTP boundary.
+      network_error_code:
+        err && typeof err === 'object' && 'code' in err && typeof (err as { code: unknown }).code === 'string'
+          ? ((err as { code: string }).code)
+          : null
+    });
     await deps.auditStore.write({
       actor_user_id: input.user_id,
       actor_ip: null,
@@ -392,10 +407,8 @@ async function sendFeedbackAck(args: {
         parser_intent: input.intent,
         template_version: rendered.template_version,
         feedback_event_id,
-        error_code: 'send_throw',
-        // Bounded message; never the full stack or any raw reply text.
-        // SendBlueClient already redacts API keys before throwing.
-        error_message: (err instanceof Error ? err.message : String(err)).slice(0, 200)
+        error_code: sanitized.error_code,
+        error_reason: sanitized.error_reason
       }
     });
     return Object.freeze({
@@ -425,6 +438,17 @@ async function sendFeedbackAck(args: {
       }
     });
   } else {
+    // Phase v0.5.15 — route the provider's structured error tokens through
+    // sanitizeProviderError so audit detail stays bounded to the locked
+    // SanitizedReason set even if SendBlue introduces a new error_message
+    // value. The non-sanitized providerError contract from the SendBlue
+    // client carries machine-readable enums (e.g. 'OPTED_OUT') which the
+    // sanitizer maps to the safe recipient_opted_out row; novel codes fall
+    // through to provider_error (passed-through code) or generic fallback.
+    const sanitized = sanitizeProviderError({
+      raw_provider_code: outcome.providerError?.error_message ?? null,
+      http_status: outcome.httpStatus > 0 ? outcome.httpStatus : null
+    });
     await deps.auditStore.write({
       actor_user_id: input.user_id,
       actor_ip: null,
@@ -437,10 +461,8 @@ async function sendFeedbackAck(args: {
         template_version: rendered.template_version,
         feedback_event_id,
         send_outcome_kind: outcome.kind,
-        // Sanitized provider error fields (already redacted by
-        // SendBlueClient — see SendBlueProviderError contract).
-        provider_status: outcome.providerStatus ?? null,
-        http_status: outcome.httpStatus
+        error_code: sanitized.error_code,
+        error_reason: sanitized.error_reason
       }
     });
   }

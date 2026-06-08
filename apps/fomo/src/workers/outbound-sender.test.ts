@@ -746,9 +746,14 @@ describe('runOutboundOnce — OPTED_OUT drift detection (Phase 3G.1 item #2)', (
     const drift = events.find((e) => e.action === 'fomo.send.opt_out_drift_detected');
     assert.ok(drift, 'fomo.send.opt_out_drift_detected must be emitted');
     const d = drift.detail as Record<string, unknown>;
-    assert.equal(d.provider_error_message, 'OPTED_OUT');
-    assert.equal(d.provider_error_reason, 'SpamRule');
-    assert.equal(d.provider_error_code, '402');
+    // Phase v0.5.15 — sanitized error_code/error_reason from locked set.
+    // 'OPTED_OUT' provider code maps to RECIPIENT_OPTED_OUT row.
+    assert.equal(d.error_code, 'OPTED_OUT');
+    assert.equal(d.error_reason, 'recipient_opted_out');
+    // Prior provider_error_* fields removed in v0.5.15.
+    assert.equal(d.provider_error_message, undefined);
+    assert.equal(d.provider_error_reason, undefined);
+    assert.equal(d.provider_error_code, undefined);
     assert.equal(d.stop_active_synced, true);
     assert.equal(d.alert_id, ALERT_ID);
   });
@@ -788,9 +793,13 @@ describe('runOutboundOnce — OPTED_OUT drift detection (Phase 3G.1 item #2)', (
     const failed = events.find((e) => e.action === 'fomo.send.failed');
     assert.ok(failed, 'fomo.send.failed must still fire on the same alert');
     const d = failed.detail as Record<string, unknown>;
-    assert.equal(d.provider_error_message, 'OPTED_OUT');
-    assert.equal(d.provider_error_reason, 'SpamRule');
-    assert.equal(d.provider_error_code, '402');
+    // Phase v0.5.15 — sanitized error_code/error_reason from locked set.
+    assert.equal(d.error_code, 'OPTED_OUT');
+    assert.equal(d.error_reason, 'recipient_opted_out');
+    // Prior provider_error_* fields removed; http_status retained.
+    assert.equal(d.provider_error_message, undefined);
+    assert.equal(d.provider_error_reason, undefined);
+    assert.equal(d.provider_error_code, undefined);
     assert.equal(d.http_status, 400);
     // Same state-machine transition as any other clear failure.
     assert.equal(await h.transitions.currentState(ALERT_ID), 'failed');
@@ -826,10 +835,14 @@ describe('runOutboundOnce — OPTED_OUT drift detection (Phase 3G.1 item #2)', (
 
     const events = await h.auditStore.recent(FOUNDER_USER, 500);
     assert.equal(events.find((e) => e.action === 'fomo.send.opt_out_drift_detected'), undefined);
-    // But the named fields still surface in fomo.send.failed.
+    // Phase v0.5.15 — sanitized error_code/error_reason still surface in
+    // fomo.send.failed. 'INVALID_NUMBER' is not in the locked allowlist
+    // so it's passed through as the code with generic provider_error reason.
     const failed = events.find((e) => e.action === 'fomo.send.failed');
     assert.ok(failed);
-    assert.equal((failed.detail as { provider_error_message: unknown }).provider_error_message, 'INVALID_NUMBER');
+    const d = failed.detail as Record<string, unknown>;
+    assert.equal(d.error_code, 'INVALID_NUMBER');
+    assert.equal(d.error_reason, 'provider_error');
   });
 });
 

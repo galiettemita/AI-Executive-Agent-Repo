@@ -362,11 +362,14 @@ describe('v0.5.5 STOP confirmation — failure handling (Q6: best-effort audit, 
     const audits = await h.auditStore.recent(FOUNDER_USER, 50);
     const failed = audits.find((e) => e.action === 'fomo.sendblue.stop_confirmation_failed');
     assert.ok(failed, 'failed audit row must exist');
-    assert.equal(
-      (failed?.detail as { error_code?: unknown })?.error_code,
-      'send_threw',
-      'thrown-path uses distinct error_code so ops can tell apart from a clean 4xx/5xx'
-    );
+    // Phase v0.5.15 — sanitized error_code/error_reason. The throw path
+    // maps to TEMPORARY_PROVIDER_ERROR (network-style retryable failure)
+    // — operationally distinct from clean 4xx/5xx via error_reason.
+    const failedDetail = failed?.detail as Record<string, unknown> | undefined;
+    assert.equal(failedDetail?.error_code, 'TEMPORARY_PROVIDER_ERROR');
+    assert.equal(failedDetail?.error_reason, 'temporary_provider_error');
+    // Raw err.message is NOT present (deny-by-default contract).
+    assert.equal(failedDetail?.error_message, undefined);
     // stop_recorded still fired (STOP enforcement itself is load-bearing).
     assert.equal(audits.filter((e) => e.action === 'fomo.sendblue.stop_recorded').length, 1);
   });

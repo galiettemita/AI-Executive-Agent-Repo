@@ -76,6 +76,7 @@ import {
 } from '../security/phone-allowlist.js';
 import { type CryptoConfig } from '../security/token-crypto.js';
 import { type AuditStore } from '../core/audit.js';
+import { sanitizeProviderError } from '../core/sanitize-provider-error.js';
 import { type KillSwitches } from '../core/kill-switches.js';
 import { type SendBlueContactRegistrar } from '../adapters/sendblue/client.js';
 import { type MemorySignalStore } from '../memory/memory-signals.js';
@@ -815,12 +816,28 @@ export async function attemptSendBlueContactRegistration(
     // and returns a typed outcome. This catches anything truly
     // unexpected (e.g. a typo in our wiring). Still record + don't
     // re-throw, per correction #1.
-    const reason = err instanceof Error ? err.message : String(err);
+    //
+    // Phase v0.5.15 — the prior raw err.message slice landed in the
+    // memory_signal detail (potentially leaking content). Replaced with
+    // a sanitized error_code + error_reason from the locked set;
+    // network-level code hint extracted defensively.
+    const sanitizedThrow = sanitizeProviderError({
+      raw_provider_code: 'register_contact_throw',
+      network_error_code:
+        err && typeof err === 'object' && 'code' in err && typeof (err as { code: unknown }).code === 'string'
+          ? ((err as { code: string }).code)
+          : null
+    });
     await deps.memoryStore.upsert({
       user_id: user_uuid,
       kind: 'sendblue_contact_status',
       scope_key: null,
-      detail: { registered: false, error_reason: `unexpected: ${reason.slice(0, 80)}`, attempted_at: at },
+      detail: {
+        registered: false,
+        error_code: sanitizedThrow.error_code,
+        error_reason: sanitizedThrow.error_reason,
+        attempted_at: at
+      },
       source: 'founder_set'
     });
     await deps.auditStore.write({
@@ -830,7 +847,11 @@ export async function attemptSendBlueContactRegistration(
       action: 'fomo.sendblue.contact_registration_failed',
       target: `user:${user_uuid}`,
       result: 'failure',
-      detail: { from_slug: slug, error_reason: 'unexpected_throw' }
+      detail: {
+        from_slug: slug,
+        error_code: sanitizedThrow.error_code,
+        error_reason: sanitizedThrow.error_reason
+      }
     });
     return;
   }
@@ -856,11 +877,23 @@ export async function attemptSendBlueContactRegistration(
   }
 
   // outcome.kind === 'failed'
+  // Phase v0.5.15 — sanitize the registrar's outcome.reason. The client's
+  // reason string is already internal-categorized but sanitizing here
+  // closes the contract chokepoint so future client drift can't leak.
+  const sanitizedFail = sanitizeProviderError({
+    raw_provider_code: outcome.reason,
+    http_status: outcome.httpStatus > 0 ? outcome.httpStatus : null
+  });
   await deps.memoryStore.upsert({
     user_id: user_uuid,
     kind: 'sendblue_contact_status',
     scope_key: null,
-    detail: { registered: false, error_reason: outcome.reason, attempted_at: at },
+    detail: {
+      registered: false,
+      error_code: sanitizedFail.error_code,
+      error_reason: sanitizedFail.error_reason,
+      attempted_at: at
+    },
     source: 'founder_set'
   });
   await deps.auditStore.write({
@@ -870,7 +903,12 @@ export async function attemptSendBlueContactRegistration(
     action: 'fomo.sendblue.contact_registration_failed',
     target: `user:${user_uuid}`,
     result: 'failure',
-    detail: { from_slug: slug, http_status: outcome.httpStatus, error_reason: outcome.reason }
+    detail: {
+      from_slug: slug,
+      http_status: outcome.httpStatus,
+      error_code: sanitizedFail.error_code,
+      error_reason: sanitizedFail.error_reason
+    }
   });
 }
 
