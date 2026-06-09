@@ -61,7 +61,8 @@
     "render-hmr-samples": "node --experimental-strip-types --loader ./test-loader.mjs scripts/render-hmr-samples.ts",
     "preflight:v0.6.0C": "node --experimental-strip-types --loader ./test-loader.mjs scripts/preflight-v0.6.0C.ts",
     "ops:calendar-context-preview": "node --experimental-strip-types --loader ./test-loader.mjs scripts/ops-calendar-context-preview.ts",
-    "eval:calendar-shadow": "node --experimental-strip-types --loader ./test-loader.mjs src/eval/calendar-shadow.eval.ts"
+    "eval:calendar-shadow": "node --experimental-strip-types --loader ./test-loader.mjs src/eval/calendar-shadow.eval.ts",
+    "ops:calendar-real-model-dryrun": "node --experimental-strip-types --loader ./test-loader.mjs scripts/ops-calendar-real-model-dryrun.ts"
   },
   "dependencies": {
     "drizzle-orm": "0.45.2",
