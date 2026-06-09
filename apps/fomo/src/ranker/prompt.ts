@@ -33,6 +33,8 @@
 //     call's prompt; NOT a new LLM call.
 
 import { type RankerEgressView } from '../core/egress-policy.js';
+import { type CalendarContext } from '../adapters/google-calendar/types.js';
+import { buildCalendarContextBlock } from './calendar-prompt.js';
 import { type PilContext } from './pil-context.js';
 
 export const PROMPT_VERSION = 'ranker-v0.2.0';
@@ -144,7 +146,18 @@ export const RANKER_EXAMPLES_BLOCK = [
 // override on strong intrinsic signal (BB1 LOAD-BEARING).
 export function buildRankerPrompt(
   view: RankerEgressView,
-  pilContext: PilContext | null = null
+  pilContext: PilContext | null = null,
+  // Phase v0.6.0D — optional Calendar context block. Default null keeps
+  // every existing production call site bit-identical (workers/gmail-poll.ts
+  // and any other rank caller continue to pass at most 2 args). The
+  // offline shadow eval (apps/fomo/src/eval/calendar-shadow.eval.ts) is
+  // the only caller passing a non-null value in v0.6.0D. The block is
+  // inserted AFTER the PIL block and BEFORE the email body, per the
+  // Q2.A position lock.
+  calendarContext: CalendarContext | null = null,
+  // Clock injection for the eval (deterministic offsets). Production
+  // callers ignore it; the default uses Date.now.
+  calendarNow: () => number = Date.now
 ): string {
   const attachmentLine =
     view.has_attachments
@@ -164,6 +177,13 @@ export function buildRankerPrompt(
 
   if (pilContext !== null) {
     sections.push('', buildPilContextBlock(pilContext));
+  }
+
+  if (calendarContext !== null) {
+    // Q2.A: Calendar block goes AFTER PIL, BEFORE email body. When
+    // BOTH PIL and Calendar are present, PIL appears first (priors
+    // before situational context).
+    sections.push('', buildCalendarContextBlock(calendarContext, calendarNow));
   }
 
   sections.push(
