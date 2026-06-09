@@ -1,41 +1,76 @@
-// Phase v0.6.0D — Calendar shadow eval harness.
+// Phase v0.6.0D — Calendar prompt + fixture expectation harness.
 //
-// Offline. NO live Calendar API call. NO live OpenAI call. NO production
-// runtime path touched. Mirrors the pil-shadow.eval.ts pattern: 10
-// inline fixtures, deterministic substitute "ranker", side-by-side
-// baseline (no Calendar block) vs calendar-aware (with Calendar block)
-// rank.reason output for the founder taste check.
+// IMPORTANT FRAMING (founder-locked downgrade 2026-06-09):
 //
-// What the eval proves:
-//   - The Calendar block format the founder taste-checks here is the
-//     same bytes the model would see if v0.6.0E ever wires Calendar
-//     context into the live prompt.
-//   - For each fixture, baseline + calendar-aware reasons are emitted
-//     side-by-side with a structural verdict slot.
-//   - Cross-user contamination cannot leak: User A's calendar fixture
-//     does NOT appear in User B's prompt (F10, LOAD-BEARING).
-//   - Privacy canary: 19 v0.6.0C-excluded substrings are scanned
-//     against the entire stdout corpus and must produce 0 hits.
+// This is NOT a true behavioral shadow eval. The existing deterministic
+// model/router backend (MockModelBackend) only returns canned strings
+// keyed by prompt-text equality — it cannot produce semantically real
+// `rank.reason` output. The only backend that produces actual model
+// output is OpenAIBackend, which is a live network call (forbidden by
+// the v0.6.0D scope: "no live OpenAI call").
 //
-// What the eval does NOT do:
-//   - Call any real model. Both baseline and calendar-aware reasons are
-//     hardcoded per-fixture text representing what a well-tuned model
-//     might shift toward. Founder taste-checks the SHIFT, not the
-//     exact wording.
-//   - Call any Calendar API. There is no import of GoogleCalendarClient
-//     in this file (assertion via lint + the C8 grep).
-//   - Touch the live ranker. The production rank call site continues to
-//     pass calendar_context=null after v0.6.0D ships.
+// Therefore the per-fixture `expected_baseline_reason` and
+// `expected_calendar_aware_reason` strings below are **expectation
+// fixtures, not model proof**. The founder taste-checked them as
+// representative of the SHIFT pattern we'd want a real model to follow;
+// they do NOT demonstrate that a production model will actually behave
+// this way.
 //
-// Founder taste-check verdict (filled in the PR body, not here):
-//   For each fixture, mark {better, same, worse} plus optional reason.
-//   v0.6.0D PASS requires:
-//     - Calendar-relevant fixtures land "better" (more specific/useful)
-//     - Empty/irrelevant/spam fixtures land "same" (no rescue)
-//     - Private/Busy fixtures NEVER expose raw private titles and read
-//       non-creepy
-//     - Cross-user fixture proves no bleed-through
-//     - Zero "worse" verdicts in load-bearing rows
+// What this harness DOES prove (with PASS confidence):
+//   - Calendar block format is byte-identical to what v0.6.0E would
+//     ship into the live prompt.
+//   - Block placement: AFTER PIL, BEFORE email body.
+//   - Privacy canary: 19 v0.6.0C-excluded substrings scanned against
+//     the entire stdout corpus produce 0 hits — including the private
+//     event's raw title (F4) and the cross-user marker (F10).
+//   - Cross-user isolation: User A's calendar fixture does NOT appear
+//     in User B's prompt.
+//   - Production rank call site is bit-identical to v0.6.0C
+//     (`calendar_context` argument defaults to null; no production
+//     caller passes a non-null value).
+//
+// What this harness does NOT prove (deferred to v0.6.0E):
+//   - That a real model, given the calendar-aware prompt, will produce
+//     a `rank.reason` that improves on the baseline.
+//   - That a real model will not be misled by an irrelevant calendar
+//     into rescuing spam (F8 risk) or over-confident CTA wording
+//     (F7 risk).
+//   - That F4's "you have something on your calendar in 9h" phrasing
+//     reads non-creepy when emitted by a real model (founder flagged
+//     wording risk).
+//
+// Founder verdicts on the EXPECTATION FIXTURES below (locked
+// 2026-06-09 — these are taste-check outcomes on the expected
+// reason text, NOT live model behavior):
+//
+//   F1: better                F6: same
+//   F2: better                F7: better but slightly overconfident
+//   F3: same                  F8: same
+//   F4: same, wording risk    F9: same
+//   F5: better                F10: same
+//
+// v0.6.0E pre-requisite (carry-forward from this PR):
+//   Before any live ranker wiring or env flip in v0.6.0E:
+//   1. Run an actual model dry-run on the same 10 fixtures (the same
+//      assembled prompts this harness emits).
+//   2. Founder reviews the real model's `rank.reason` output for each.
+//   3. F4 guidance: avoid "you have something on your calendar" if it
+//      feels creepy. Prefer neutral wording like "there may be a
+//      schedule conflict around then", or let Calendar act silently as
+//      a prior with no mention in the reason text.
+//   4. F7 guidance: avoid CTA-ish wording like "worth a quick glance"
+//      unless model confidence is high. Prefer neutral explanation of
+//      the calendar signal.
+//   5. Behavioral PASS criteria for v0.6.0E (to be re-locked at that
+//      phase's gate, but recorded here so the lineage is unbroken):
+//        - Calendar-relevant fixtures (F1, F2, F5, F7) shift in a way
+//          the founder reads as better.
+//        - F3 stays same (out-of-window event must not bleed in).
+//        - F4 does not read creepy.
+//        - F6, F9 stay same.
+//        - F8 not rescued.
+//        - F10 zero bleed-through.
+//        - Zero load-bearing "worse" verdicts.
 
 import { projectCalendarEvent } from '../adapters/google-calendar/context-source.js';
 import type {
@@ -72,6 +107,20 @@ type FixtureKind =
   | 'private_busy_must_not_leak'
   | 'cross_user_must_not_bleed';
 
+/**
+ * Founder verdict on the expectation fixture (locked 2026-06-09).
+ *
+ * IMPORTANT: this is a verdict on the EXPECTED reason text below, not on
+ * a real model's output. Per the file-level header, the real-model
+ * dry-run is a v0.6.0E pre-requisite.
+ */
+type FounderVerdict =
+  | 'better'
+  | 'better_but_overconfident'
+  | 'same'
+  | 'same_wording_risk'
+  | 'worse';
+
 interface Fixture {
   readonly name: string;
   readonly kind: FixtureKind;
@@ -84,8 +133,20 @@ interface Fixture {
   readonly calendar_owner_user_id: string;
   /** user_id receiving the alert (whose ranker prompt we assemble). */
   readonly alert_user_id: string;
-  readonly baseline_reason: string;
-  readonly calendar_aware_reason: string;
+  /**
+   * Expectation fixture — what we'd want a well-tuned ranker to say with
+   * NO calendar context in the prompt. NOT live model output.
+   */
+  readonly expected_baseline_reason: string;
+  /**
+   * Expectation fixture — what we'd want a well-tuned ranker to say
+   * WITH the calendar block in the prompt. NOT live model output.
+   */
+  readonly expected_calendar_aware_reason: string;
+  /** Founder verdict on the expected vs expected delta (locked 2026-06-09). */
+  readonly founder_verdict: FounderVerdict;
+  /** Optional carry-forward note for the v0.6.0E real-model dry-run. */
+  readonly v0_6_0E_guidance?: string;
   /** What the eval expects qualitatively (founder confirms taste). */
   readonly expected_qualitative_outcome:
     | 'calendar_makes_reason_more_specific'
@@ -167,8 +228,9 @@ const FIXTURES: readonly Fixture[] = Object.freeze([
     window_hours: 48,
     calendar_owner_user_id: USER_A,
     alert_user_id: USER_A,
-    baseline_reason: 'Mark is confirming the 2pm Q3 board deck meeting.',
-    calendar_aware_reason: 'Mark is confirming your 1:1 in 4h about the Q3 board deck.',
+    expected_baseline_reason: 'Mark is confirming the 2pm Q3 board deck meeting.',
+    expected_calendar_aware_reason: 'Mark is confirming your 1:1 in 4h about the Q3 board deck.',
+    founder_verdict: 'better',
     expected_qualitative_outcome: 'calendar_makes_reason_more_specific'
   },
 
@@ -193,8 +255,9 @@ const FIXTURES: readonly Fixture[] = Object.freeze([
     window_hours: 48,
     calendar_owner_user_id: USER_A,
     alert_user_id: USER_A,
-    baseline_reason: 'Sheila is reminding you about tomorrow afternoon\'s parents group.',
-    calendar_aware_reason: 'Sheila is reminding you about the parents group in about 30h.',
+    expected_baseline_reason: 'Sheila is reminding you about tomorrow afternoon\'s parents group.',
+    expected_calendar_aware_reason: 'Sheila is reminding you about the parents group in about 30h.',
+    founder_verdict: 'better',
     expected_qualitative_outcome: 'calendar_makes_reason_more_specific'
   },
 
@@ -212,8 +275,9 @@ const FIXTURES: readonly Fixture[] = Object.freeze([
     window_hours: 48,
     calendar_owner_user_id: USER_A,
     alert_user_id: USER_A,
-    baseline_reason: 'Your counselor is confirming next Tuesday\'s college-apps meeting.',
-    calendar_aware_reason: 'Your counselor is confirming next Tuesday\'s college-apps meeting.',
+    expected_baseline_reason: 'Your counselor is confirming next Tuesday\'s college-apps meeting.',
+    expected_calendar_aware_reason: 'Your counselor is confirming next Tuesday\'s college-apps meeting.',
+    founder_verdict: 'same',
     expected_qualitative_outcome: 'calendar_does_not_change_reason'
   },
 
@@ -238,8 +302,11 @@ const FIXTURES: readonly Fixture[] = Object.freeze([
     window_hours: 48,
     calendar_owner_user_id: USER_A,
     alert_user_id: USER_A,
-    baseline_reason: 'Alex wants to move the 7pm to 9pm.',
-    calendar_aware_reason: 'Alex wants to move the 7pm to 9pm; you have something on your calendar in 9h.',
+    expected_baseline_reason: 'Alex wants to move the 7pm to 9pm.',
+    expected_calendar_aware_reason: 'Alex wants to move the 7pm to 9pm; you have something on your calendar in 9h.',
+    founder_verdict: 'same_wording_risk',
+    v0_6_0E_guidance:
+      'Avoid "you have something on your calendar" if it feels creepy. Prefer neutral wording like "there may be a schedule conflict around then", or let Calendar act silently as a prior with no mention in the reason text.',
     expected_qualitative_outcome: 'private_event_appears_as_Busy_only'
   },
 
@@ -276,8 +343,9 @@ const FIXTURES: readonly Fixture[] = Object.freeze([
     window_hours: 48,
     calendar_owner_user_id: USER_A,
     alert_user_id: USER_A,
-    baseline_reason: 'Galiette will send the deck after standup.',
-    calendar_aware_reason: 'Galiette will send the deck after standup (in 30m).',
+    expected_baseline_reason: 'Galiette will send the deck after standup.',
+    expected_calendar_aware_reason: 'Galiette will send the deck after standup (in 30m).',
+    founder_verdict: 'better',
     expected_qualitative_outcome: 'calendar_makes_reason_more_specific'
   },
 
@@ -295,8 +363,9 @@ const FIXTURES: readonly Fixture[] = Object.freeze([
     window_hours: 48,
     calendar_owner_user_id: USER_A,
     alert_user_id: USER_A,
-    baseline_reason: 'Weekly newsletter digest — nothing personal or time-sensitive.',
-    calendar_aware_reason: 'Weekly newsletter digest — nothing personal or time-sensitive.',
+    expected_baseline_reason: 'Weekly newsletter digest — nothing personal or time-sensitive.',
+    expected_calendar_aware_reason: 'Weekly newsletter digest — nothing personal or time-sensitive.',
+    founder_verdict: 'same',
     expected_qualitative_outcome: 'calendar_does_not_change_reason'
   },
 
@@ -321,8 +390,11 @@ const FIXTURES: readonly Fixture[] = Object.freeze([
     window_hours: 48,
     calendar_owner_user_id: USER_A,
     alert_user_id: USER_A,
-    baseline_reason: 'Stripe invoice update — usually not time-sensitive.',
-    calendar_aware_reason: 'Stripe invoice for a vendor meeting in 6h — worth a quick glance.',
+    expected_baseline_reason: 'Stripe invoice update — usually not time-sensitive.',
+    expected_calendar_aware_reason: 'Stripe invoice for a vendor meeting in 6h — worth a quick glance.',
+    founder_verdict: 'better_but_overconfident',
+    v0_6_0E_guidance:
+      'Avoid CTA-ish wording like "worth a quick glance" unless model confidence is high. Prefer neutral explanation of the calendar signal (e.g. "Stripe invoice landed; vendor meeting on calendar in 6h.").',
     expected_qualitative_outcome: 'calendar_makes_reason_more_specific'
   },
 
@@ -347,8 +419,9 @@ const FIXTURES: readonly Fixture[] = Object.freeze([
     window_hours: 48,
     calendar_owner_user_id: USER_A,
     alert_user_id: USER_A,
-    baseline_reason: 'Unrecognized commercial blast — not personal, not time-sensitive.',
-    calendar_aware_reason: 'Unrecognized commercial blast — not personal, not time-sensitive.',
+    expected_baseline_reason: 'Unrecognized commercial blast — not personal, not time-sensitive.',
+    expected_calendar_aware_reason: 'Unrecognized commercial blast — not personal, not time-sensitive.',
+    founder_verdict: 'same',
     expected_qualitative_outcome: 'calendar_does_not_rescue_spam'
   },
 
@@ -372,8 +445,9 @@ const FIXTURES: readonly Fixture[] = Object.freeze([
     window_hours: 168,
     calendar_owner_user_id: USER_A,
     alert_user_id: USER_A,
-    baseline_reason: 'School admin reminder about spring break next week.',
-    calendar_aware_reason: 'School admin reminder about spring break next week.',
+    expected_baseline_reason: 'School admin reminder about spring break next week.',
+    expected_calendar_aware_reason: 'School admin reminder about spring break next week.',
+    founder_verdict: 'same',
     expected_qualitative_outcome: 'calendar_does_not_change_reason'
   },
 
@@ -400,8 +474,9 @@ const FIXTURES: readonly Fixture[] = Object.freeze([
     window_hours: 48,
     calendar_owner_user_id: USER_A,
     alert_user_id: USER_B,
-    baseline_reason: 'Alex sent a heads-up for tomorrow morning.',
-    calendar_aware_reason: 'Alex sent a heads-up for tomorrow morning.',
+    expected_baseline_reason: 'Alex sent a heads-up for tomorrow morning.',
+    expected_calendar_aware_reason: 'Alex sent a heads-up for tomorrow morning.',
+    founder_verdict: 'same',
     expected_qualitative_outcome: 'no_bleed_through_other_users_calendar'
   }
 ]);
@@ -453,8 +528,12 @@ interface FixtureResult {
   readonly prompt_calendar_aware_bytes: number;
   readonly prompt_baseline_contains_calendar_block: boolean;
   readonly prompt_calendar_aware_contains_calendar_block: boolean;
-  readonly baseline_reason: string;
-  readonly calendar_aware_reason: string;
+  /** EXPECTATION FIXTURE — not live model output. */
+  readonly expected_baseline_reason: string;
+  /** EXPECTATION FIXTURE — not live model output. */
+  readonly expected_calendar_aware_reason: string;
+  /** Founder verdict on the expectation delta (locked 2026-06-09). */
+  readonly founder_verdict: FounderVerdict;
   readonly cross_user_isolation_clean: boolean;
 }
 
@@ -511,8 +590,9 @@ function runFixture(fixture: Fixture): {
         baseline_prompt.includes('Calendar (next'),
       prompt_calendar_aware_contains_calendar_block:
         calendar_aware_prompt.includes('Calendar (next'),
-      baseline_reason: fixture.baseline_reason,
-      calendar_aware_reason: fixture.calendar_aware_reason,
+      expected_baseline_reason: fixture.expected_baseline_reason,
+      expected_calendar_aware_reason: fixture.expected_calendar_aware_reason,
+      founder_verdict: fixture.founder_verdict,
       cross_user_isolation_clean
     },
     baseline_prompt,
@@ -527,11 +607,14 @@ function main(): void {
     stdout.push(s);
   };
 
-  emit('Phase v0.6.0D — Calendar shadow eval harness');
+  emit('Phase v0.6.0D — Calendar prompt + fixture expectation harness');
+  emit('  (NOT a behavioral shadow eval — see file header for downgrade rationale.)');
   emit(`PROMPT_VERSION baseline:        ${PROMPT_VERSION}`);
   emit(`PROMPT_VERSION calendar-aware:  ${PROMPT_VERSION_WITH_CALENDAR}`);
   emit(`Fixed clock:                    ${FIXED_NOW_ISO}`);
   emit(`Fixtures:                       ${FIXTURES.length} synthetic (no real PII)`);
+  emit('Reason text below is EXPECTED, not live model output. Live behavior is');
+  emit('a v0.6.0E pre-requisite.');
   emit();
   emit('========================================================================');
   emit('JSON-LINE per fixture (machine-readable)');
@@ -546,16 +629,20 @@ function main(): void {
 
   emit();
   emit('========================================================================');
-  emit('SIDE-BY-SIDE (founder taste-check table)');
+  emit('SIDE-BY-SIDE (EXPECTED reasons + locked founder verdicts)');
+  emit('  Both reason columns are EXPECTATION FIXTURES, not live model output.');
+  emit('  Founder verdict is on the EXPECTED delta, locked 2026-06-09.');
+  emit('  Live model behavior must be re-evaluated on these same prompts as a');
+  emit('  v0.6.0E pre-requisite before any live ranker wiring or env flip.');
   emit('========================================================================');
   emit();
-  emit('| # | Fixture | Baseline rank.reason | Calendar-aware rank.reason | Verdict slot |');
-  emit('|---|---------|----------------------|----------------------------|--------------|');
+  emit('| # | Fixture | Expected baseline rank.reason | Expected calendar-aware rank.reason | Founder verdict (on EXPECTED, not live) |');
+  emit('|---|---------|-------------------------------|-------------------------------------|-----------------------------------------|');
   for (let i = 0; i < results.length; i++) {
     const r = results[i]!;
     const short = r.name.split(' — ')[0] ?? r.name;
     emit(
-      `| ${i + 1} | ${short} | ${r.baseline_reason} | ${r.calendar_aware_reason} | _\\_ (better/same/worse) |`
+      `| ${i + 1} | ${short} | ${r.expected_baseline_reason} | ${r.expected_calendar_aware_reason} | ${r.founder_verdict} |`
     );
   }
 
@@ -640,7 +727,35 @@ function main(): void {
 
   emit();
   emit('========================================================================');
-  emit(hardFail ? 'VERDICT: FAIL (structural assertion broke)' : 'VERDICT: PASS (structural assertions green; founder taste-check required)');
+  emit('v0.6.0E PRE-REQUISITE (carry-forward from v0.6.0D)');
+  emit('========================================================================');
+  emit('Before any live ranker wiring or env flip in v0.6.0E:');
+  emit('  1. Run the actual production ranker on the same 10 fixture prompts');
+  emit('     emitted above (these exact assembled prompts).');
+  emit('  2. Founder reviews the REAL model rank.reason output for each.');
+  emit('  3. Apply F4 guidance: avoid "you have something on your calendar" if');
+  emit('     it feels creepy. Prefer "there may be a schedule conflict around');
+  emit('     then", or let Calendar act silently as a prior with no mention in');
+  emit('     the reason text.');
+  emit('  4. Apply F7 guidance: avoid CTA-ish wording like "worth a quick');
+  emit('     glance" unless model confidence is high. Prefer neutral');
+  emit('     explanation of the calendar signal.');
+  emit('  5. Behavioral PASS criteria (to be re-locked at the v0.6.0E gate):');
+  emit('       - Calendar-relevant fixtures (F1, F2, F5, F7) read better.');
+  emit('       - F3 stays same (out-of-window event must not bleed in).');
+  emit('       - F4 does NOT read creepy.');
+  emit('       - F6, F9 stay same.');
+  emit('       - F8 not rescued.');
+  emit('       - F10 zero bleed-through.');
+  emit('       - Zero load-bearing "worse" verdicts.');
+
+  emit();
+  emit('========================================================================');
+  emit(
+    hardFail
+      ? 'VERDICT: FAIL (structural assertion broke)'
+      : 'VERDICT: HARNESS PASS — prompt assembly + placement + privacy + cross-user isolation green; LIVE BEHAVIORAL PROOF DEFERRED to v0.6.0E pre-requisite above.'
+  );
   emit('========================================================================');
 
   process.stdout.write(stdout.join('\n') + '\n');

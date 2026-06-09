@@ -17,8 +17,14 @@
 // HARD INVARIANT (v0.6.0D):
 //   - The production rank call site continues to pass
 //     `calendar_context: null` UNCONDITIONALLY. This block runs only in
-//     the offline shadow eval (apps/fomo/src/eval/calendar-shadow.eval.ts).
-//     v0.6.0E is the phase that wires non-null calendar_context into
+//     the offline FIXTURE EXPECTATION HARNESS at
+//     `apps/fomo/src/eval/calendar-shadow.eval.ts`.
+//   - The harness is NOT a behavioral shadow eval. It proves prompt
+//     assembly, placement, privacy, and cross-user isolation. It does
+//     NOT prove a real model will use Calendar context correctly. That
+//     is a v0.6.0E pre-requisite (run the real ranker on the same
+//     fixture prompts; founder reviews the live output).
+//   - v0.6.0E is the phase that wires non-null calendar_context into
 //     the live ranker, under its own kill switch + allowlist + founder
 //     taste check.
 //
