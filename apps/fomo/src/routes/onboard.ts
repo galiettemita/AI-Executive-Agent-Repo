@@ -60,7 +60,8 @@ import { exchangeCodeForToken, type FetchLike } from '../security/oauth/exchange
 import { type ProviderConfig, buildAuthorizeUrl } from '../security/oauth/providers/index.js';
 import { type TokenStore } from '../security/oauth/token-store.js';
 import { type GmailCursorStore } from '../memory/gmail-cursors.js';
-import { GMAIL_READONLY_SCOPE, type GmailClient } from '../adapters/gmail/client.js';
+import { type GmailClient } from '../adapters/gmail/client.js';
+import { googleAuthorizeScopes } from '../security/oauth/google-scopes.js';
 import {
   type InviteTokenStore,
   InvalidInviteTokenError,
@@ -378,7 +379,7 @@ export async function handleOnboardStart(
 
   const authorize_url = buildAuthorizeUrl(
     deps.providerConfig,
-    [GMAIL_READONLY_SCOPE],
+    [...googleAuthorizeScopes(deps.killSwitches.calendar_context_enabled)],
     state,
     code_challenge
   );
@@ -591,7 +592,7 @@ export async function handleOnboardCallback(
     await deps.tokenStore.save({
       user_id: nonceRow.user_uuid,
       provider: 'google',
-      scopes: [GMAIL_READONLY_SCOPE],
+      scopes: Array.from(googleAuthorizeScopes(deps.killSwitches.calendar_context_enabled)),
       access_token: exchange.access_token,
       refresh_token: exchange.refresh_token ?? undefined,
       expires_at: exchange.expires_at ?? undefined

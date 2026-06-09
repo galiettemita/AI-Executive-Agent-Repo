@@ -120,6 +120,40 @@ export interface KillSwitches {
   // worker treats every user as not-in-list and bootstrap emits a single
   // fomo.pil_live.allowlist_empty WARN log.
   readonly pil_live_user_allowlist: readonly string[];
+  // Phase v0.6.0C — Read-only Calendar context substrate.
+  // Q5.A global kill switch (default false). When false: CalendarContextSource
+  // returns null unconditionally without making any Calendar API call;
+  // brevio.context.calendar_built audits do NOT fire. Behavior is bit-
+  // identical to v0.5.13 for the live ranker (which never receives the
+  // calendar_context anyway in v0.6.0C — Calendar context is built and
+  // audited but NOT passed to the rank call site until v0.6.0E).
+  readonly calendar_context_enabled: boolean;
+  // Per-user allowlist mirrors PIL's pattern (founder correction #1 to
+  // [[v05-13-scope]]): trim-only, no-lowercase, preserve EXACT case for
+  // strict === comparison. Same parser as parsePilLiveUserAllowlist;
+  // separate field so allowlists stay independent (founder may run
+  // Calendar canary on one user before PIL Live).
+  //
+  // 4-case truth table:
+  //   calendar_context_enabled=false, allowlist=any  → CalendarContextSource null for all
+  //   calendar_context_enabled=true,  allowlist=[]   → CalendarContextSource null for all (fail-closed)
+  //   calendar_context_enabled=true,  allowlist=[f]  → only f gets Calendar API calls
+  //   calendar_context_enabled=true,  allowlist=[a,b]→ both get Calendar API calls
+  //
+  // Preflight ERRORS (mirrors [[v05-13-scope]] correction #2) when
+  // calendar_context_enabled=true AND allowlist is empty.
+  readonly calendar_context_user_allowlist: readonly string[];
+  // Process-local cache TTL for CalendarContextSource. Default 60s
+  // ([docs/v0.6.0B-oauth-scope-readiness.md §4.3]). 0 disables the
+  // cache (every call goes to the Calendar API). Capped at 10 minutes
+  // to bound staleness; values above the cap fall back to default.
+  readonly calendar_context_cache_ttl_ms: number;
+  // Default windowHours for Calendar lookups when the caller passes a
+  // non-positive value. Default 48 ([docs/v0.6.0B-oauth-scope-readiness.md §1]
+  // decision row 3). Mandatory configurable from day one so future
+  // non-email windows (weekly prep 168, travel 336) don't need a code
+  // change to enable.
+  readonly calendar_context_default_window_hours: number;
 }
 
 const DEFAULTS = {
@@ -136,7 +170,11 @@ const DEFAULTS = {
   sendblue_inbound_enabled: false,
   pil_live_enabled: false,
   pil_score_cap: 0.15,
-  pil_live_user_allowlist: [] as readonly string[]
+  pil_live_user_allowlist: [] as readonly string[],
+  calendar_context_enabled: false,
+  calendar_context_user_allowlist: [] as readonly string[],
+  calendar_context_cache_ttl_ms: 60_000,
+  calendar_context_default_window_hours: 48
 } as const satisfies KillSwitches;
 
 // Strict opt-in parse: only the literal strings 'true' or '1' (case-insensitive,
@@ -196,6 +234,35 @@ function parsePilLiveUserAllowlist(raw: string | undefined): readonly string[] {
   return Object.freeze(entries);
 }
 
+// Phase v0.6.0C — bounded TTL for FOMO_CALENDAR_CONTEXT_CACHE_TTL_MS.
+// Default 60_000 (60s). Hard upper bound 600_000 (10 minutes) to keep
+// the staleness of "what's on your calendar in the next 48h" bounded.
+// Out-of-bounds / invalid → default. 0 is permitted (disables cache).
+function parseCalendarCacheTtlMs(raw: string | undefined, fallback: number): number {
+  if (raw === undefined) return fallback;
+  const trimmed = raw.trim();
+  if (trimmed.length === 0) return fallback;
+  if (!/^\d+$/.test(trimmed)) return fallback;
+  const n = Number(trimmed);
+  if (!Number.isInteger(n) || n < 0 || n > 600_000) return fallback;
+  return n;
+}
+
+// Phase v0.6.0C — bounded windowHours for FOMO_CALENDAR_CONTEXT_DEFAULT_WINDOW_HOURS.
+// Default 48. Bounds [1, 720] (1 hour to 30 days). Out-of-bounds / invalid → default.
+// The 30-day upper bound is a safety belt; v0.6.0C use cases stop at 168h
+// (weekly prep) but the env var is left flexible so future Brevio doesn't
+// need a code change to support travel/event windows.
+function parseCalendarDefaultWindowHours(raw: string | undefined, fallback: number): number {
+  if (raw === undefined) return fallback;
+  const trimmed = raw.trim();
+  if (trimmed.length === 0) return fallback;
+  if (!/^\d+$/.test(trimmed)) return fallback;
+  const n = Number(trimmed);
+  if (!Number.isInteger(n) || n < 1 || n > 720) return fallback;
+  return n;
+}
+
 // Phase v0.5.12 — Q2.A bounded float for FOMO_PIL_SCORE_CAP.
 // Bounds [0.05, 0.25] founder-locked. Out-of-range / invalid → default (safe).
 // The preflight script ALSO checks the env value and produces a clearer error,
@@ -228,7 +295,23 @@ export function loadKillSwitches(env: NodeJS.ProcessEnv = process.env): KillSwit
     sendblue_inbound_enabled: parseBool(env.FOMO_SENDBLUE_INBOUND_ENABLED),
     pil_live_enabled: parseBool(env.FOMO_PIL_LIVE_ENABLED),
     pil_score_cap: parsePilScoreCap(env.FOMO_PIL_SCORE_CAP, DEFAULTS.pil_score_cap),
-    pil_live_user_allowlist: parsePilLiveUserAllowlist(env.FOMO_PIL_LIVE_USER_ALLOWLIST)
+    pil_live_user_allowlist: parsePilLiveUserAllowlist(env.FOMO_PIL_LIVE_USER_ALLOWLIST),
+    // Phase v0.6.0C — Calendar context substrate. Allowlist parser reused
+    // from PIL (trim-only, no-lowercase) per the convention founder locked
+    // in [[v05-13-scope]] correction #1. Independent field so the two
+    // canaries can roll independently.
+    calendar_context_enabled: parseBool(env.FOMO_CALENDAR_CONTEXT_ENABLED),
+    calendar_context_user_allowlist: parsePilLiveUserAllowlist(
+      env.FOMO_CALENDAR_CONTEXT_USER_ALLOWLIST
+    ),
+    calendar_context_cache_ttl_ms: parseCalendarCacheTtlMs(
+      env.FOMO_CALENDAR_CONTEXT_CACHE_TTL_MS,
+      DEFAULTS.calendar_context_cache_ttl_ms
+    ),
+    calendar_context_default_window_hours: parseCalendarDefaultWindowHours(
+      env.FOMO_CALENDAR_CONTEXT_DEFAULT_WINDOW_HOURS,
+      DEFAULTS.calendar_context_default_window_hours
+    )
   });
 }
 

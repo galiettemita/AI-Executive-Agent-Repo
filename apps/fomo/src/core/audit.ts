@@ -380,7 +380,23 @@ export type AuditAction =
   // raw rank.reason text. The model_mentioned_pil_in_reason field is a
   // BOOL computed via regex on rank.reason; the reason text itself stays
   // on rank_results.reason and never enters this audit detail.
-  | 'brevio.rank.pil_applied';
+  | 'brevio.rank.pil_applied'
+  // Phase v0.6.0C — Read-only Calendar context substrate. Emitted by
+  // CalendarContextSource.build() exactly once per call that passed the
+  // global kill switch + allowlist gates. Success detail carries:
+  //   event_count_in_window: number
+  //   nearest_event_start_offset_minutes: number | null
+  //   window_hours_in_force: number
+  //   source_surface: 'email_alert' (single allowed value in v0.6.0C)
+  //   cache_hit: boolean
+  // Failure detail carries: window_hours_in_force, source_surface,
+  // error_code, error_reason (both from sanitizeProviderError).
+  // NEVER stores summary text, attendee identifiers, descriptions,
+  // locations, attachments, conference data, raw event ids, or any
+  // other raw event content. The v0.6.0C scope explicitly bans those
+  // fields from crossing the adapter boundary; this audit row is
+  // structural-counter-only by design.
+  | 'brevio.context.calendar_built';
 
 // Phase 3G.1 — runtime registry of every FOMO-namespaced audit
 // action. Used by the 3G.1 evidence script (and any future ops
@@ -457,7 +473,9 @@ export const FOMO_AUDIT_ACTIONS = [
   // Phase v0.5.11 — PIL substrate.
   'brevio.signal.aggregated',
   // Phase v0.5.12 — Live ranker reads PIL in guarded mode.
-  'brevio.rank.pil_applied'
+  'brevio.rank.pil_applied',
+  // Phase v0.6.0C — Read-only Calendar context substrate.
+  'brevio.context.calendar_built'
 ] as const satisfies readonly AuditAction[];
 
 export type AuditResult = 'success' | 'failure';

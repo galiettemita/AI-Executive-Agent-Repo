@@ -141,7 +141,11 @@ function sendJSON(res: http.ServerResponse, statusCode: number, payload: Record<
 function buildOAuthGoogleDeps(
   storesHandle: SubstrateStoresHandle,
   config: FomoConfig,
-  gmailClient: GmailClient
+  gmailClient: GmailClient,
+  // Phase v0.6.0C — when true, the authorize URL includes
+  // calendar.events.readonly alongside gmail.readonly. Wired from
+  // killSwitches.calendar_context_enabled at the caller.
+  calendarContextEnabled: boolean
 ): OAuthGoogleRouteDeps | null {
   const providerConfig = loadProviderConfig('google');
   if (!providerConfig) {
@@ -157,7 +161,8 @@ function buildOAuthGoogleDeps(
     tokenStore: storesHandle.stores.tokens,
     gmailCursorStore: storesHandle.stores.gmailCursors,
     gmailClient,
-    sessionConfig: loadSessionConfig()
+    sessionConfig: loadSessionConfig(),
+    calendarContextEnabled
   };
 }
 
@@ -1272,7 +1277,12 @@ export function createFomoRuntime(config: FomoConfig = loadFomoConfig()): FomoRu
   }
 
   // OAuth routes — graceful skip when not configured.
-  const oauthGoogleDeps = buildOAuthGoogleDeps(storesHandle, config, gmailClient);
+  const oauthGoogleDeps = buildOAuthGoogleDeps(
+    storesHandle,
+    config,
+    gmailClient,
+    killSwitches.calendar_context_enabled
+  );
 
   // Phase v0.5.1 Step 8 — friend-beta onboard route. Built only when
   // FOMO_FRIEND_BETA_ENABLED=true AND every required dep is wired
