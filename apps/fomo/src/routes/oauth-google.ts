@@ -53,7 +53,8 @@ import {
 } from '../security/oauth/providers/index.js';
 import { type TokenStore } from '../security/oauth/token-store.js';
 import { type GmailCursorStore } from '../memory/gmail-cursors.js';
-import { type GmailClient, GMAIL_READONLY_SCOPE, GmailUnauthorizedError, GmailApiError } from '../adapters/gmail/client.js';
+import { type GmailClient, GmailUnauthorizedError, GmailApiError } from '../adapters/gmail/client.js';
+import { googleAuthorizeScopes } from '../security/oauth/google-scopes.js';
 
 /* ---------------------------------------------------------------------- */
 /* Deps                                                                   */
@@ -71,6 +72,10 @@ export interface OAuthGoogleRouteDeps {
   // session-middleware config; only used by the HTTP adapter (the handler
   // functions receive an already-authenticated user_id).
   readonly sessionConfig?: SessionRuntimeConfig;
+  // Phase v0.6.0C — when true, the authorize URL includes
+  // calendar.events.readonly alongside gmail.readonly. Default false
+  // (omitting this dep yields the v0.5.x baseline scope set).
+  readonly calendarContextEnabled?: boolean;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -119,7 +124,7 @@ export async function handleOAuthGoogleStart(
 
   const authorize_url = buildAuthorizeUrl(
     deps.providerConfig,
-    [GMAIL_READONLY_SCOPE],
+    [...googleAuthorizeScopes(deps.calendarContextEnabled ?? false)],
     state,
     codeChallenge
   );
@@ -226,7 +231,9 @@ export async function handleOAuthGoogleCallback(
     await deps.tokenStore.save({
       user_id: claims.user_id,
       provider: 'google',
-      scopes: tokenResult.scope?.split(' ') ?? [GMAIL_READONLY_SCOPE],
+      scopes:
+        tokenResult.scope?.split(' ') ??
+        Array.from(googleAuthorizeScopes(deps.calendarContextEnabled ?? false)),
       access_token: tokenResult.access_token,
       refresh_token: tokenResult.refresh_token,
       expires_at:

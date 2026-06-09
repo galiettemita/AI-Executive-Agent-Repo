@@ -58,7 +58,9 @@
     "eval:pil-live": "node --experimental-strip-types --loader ./test-loader.mjs src/eval/pil-live.eval.ts",
     "preflight:v0.5.13": "node --experimental-strip-types --loader ./test-loader.mjs scripts/preflight-v0.5.13.ts",
     "smoke-evidence:v0.5.13": "node --experimental-strip-types --loader ./test-loader.mjs scripts/smoke-evidence-v0.5.13.ts",
-    "render-hmr-samples": "node --experimental-strip-types --loader ./test-loader.mjs scripts/render-hmr-samples.ts"
+    "render-hmr-samples": "node --experimental-strip-types --loader ./test-loader.mjs scripts/render-hmr-samples.ts",
+    "preflight:v0.6.0C": "node --experimental-strip-types --loader ./test-loader.mjs scripts/preflight-v0.6.0C.ts",
+    "ops:calendar-context-preview": "node --experimental-strip-types --loader ./test-loader.mjs scripts/ops-calendar-context-preview.ts"
   },
   "dependencies": {
     "drizzle-orm": "0.45.2",

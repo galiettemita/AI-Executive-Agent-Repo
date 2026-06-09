@@ -335,3 +335,66 @@ describe('loadKillSwitches — FOMO_PIL_LIVE_USER_ALLOWLIST parser (Phase v0.5.1
     assert.deepEqual([...SAFE_DEFAULT_KILL_SWITCHES.pil_live_user_allowlist], []);
   });
 });
+
+describe('loadKillSwitches — Phase v0.6.0C calendar context fields', () => {
+  it('defaults: enabled=false, allowlist=[], TTL=60000ms, window=48h', () => {
+    const s = loadKillSwitches({});
+    assert.equal(s.calendar_context_enabled, false);
+    assert.deepEqual([...s.calendar_context_user_allowlist], []);
+    assert.equal(s.calendar_context_cache_ttl_ms, 60_000);
+    assert.equal(s.calendar_context_default_window_hours, 48);
+  });
+
+  it('FOMO_CALENDAR_CONTEXT_ENABLED=true flips the global switch on', () => {
+    const s = loadKillSwitches({ FOMO_CALENDAR_CONTEXT_ENABLED: 'true' });
+    assert.equal(s.calendar_context_enabled, true);
+  });
+
+  it('reuses the trim-only no-lowercase allowlist parser', () => {
+    const s = loadKillSwitches({
+      FOMO_CALENDAR_CONTEXT_USER_ALLOWLIST: '  Founder ,UserA,, '
+    });
+    assert.deepEqual([...s.calendar_context_user_allowlist], ['Founder', 'UserA']);
+  });
+
+  it('FOMO_CALENDAR_CONTEXT_CACHE_TTL_MS clamps to default when out of bounds', () => {
+    assert.equal(
+      loadKillSwitches({ FOMO_CALENDAR_CONTEXT_CACHE_TTL_MS: '999999999' })
+        .calendar_context_cache_ttl_ms,
+      60_000,
+      'above 600000ms upper bound → default'
+    );
+    assert.equal(
+      loadKillSwitches({ FOMO_CALENDAR_CONTEXT_CACHE_TTL_MS: 'not-a-number' })
+        .calendar_context_cache_ttl_ms,
+      60_000,
+      'non-integer → default'
+    );
+    assert.equal(
+      loadKillSwitches({ FOMO_CALENDAR_CONTEXT_CACHE_TTL_MS: '0' })
+        .calendar_context_cache_ttl_ms,
+      0,
+      '0 is permitted (disables cache)'
+    );
+  });
+
+  it('FOMO_CALENDAR_CONTEXT_DEFAULT_WINDOW_HOURS accepts [1, 720], clamps otherwise', () => {
+    assert.equal(
+      loadKillSwitches({ FOMO_CALENDAR_CONTEXT_DEFAULT_WINDOW_HOURS: '168' })
+        .calendar_context_default_window_hours,
+      168
+    );
+    assert.equal(
+      loadKillSwitches({ FOMO_CALENDAR_CONTEXT_DEFAULT_WINDOW_HOURS: '0' })
+        .calendar_context_default_window_hours,
+      48,
+      '0 → default'
+    );
+    assert.equal(
+      loadKillSwitches({ FOMO_CALENDAR_CONTEXT_DEFAULT_WINDOW_HOURS: '999' })
+        .calendar_context_default_window_hours,
+      48,
+      '>720 → default'
+    );
+  });
+});
