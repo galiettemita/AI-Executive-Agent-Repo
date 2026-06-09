@@ -48,12 +48,37 @@
 import { type CalendarContext } from '../adapters/google-calendar/types.js';
 
 /**
- * Phase v0.6.0D — Bumped when the assembled prompt INCLUDES a Calendar
- * context block. Symmetric to PROMPT_VERSION_WITH_PIL in prompt.ts.
- * The two-call shadow eval emits BOTH calls with their respective
- * versions for side-by-side founder taste check.
+ * Phase v0.6.0E.1b — Bumped when the assembled prompt INCLUDES a Calendar
+ * context block. Bump rationale: v0.6.0E.1 real-model dry-run produced
+ * MIXED behavioral output (F1/F2/F5 did not surface calendar offsets;
+ * F10 confidence collapse from an EMPTY calendar block). v0.6.0E.1b
+ * adds an explicit Calendar guidance paragraph to the block; ranker-
+ * v0.4.0 (no guidance) is intentionally retained in history so the
+ * dry-run can produce v0.4.0 vs v0.4.1 comparisons if needed later.
+ * Symmetric to PROMPT_VERSION_WITH_PIL in prompt.ts.
  */
-export const PROMPT_VERSION_WITH_CALENDAR = 'ranker-v0.4.0';
+export const PROMPT_VERSION_WITH_CALENDAR = 'ranker-v0.4.1';
+
+/**
+ * Phase v0.6.0E.1b — Calendar guidance paragraph.
+ *
+ * Anchored verbatim from the founder's E.1b prompt behavior requirements:
+ *   - Calendar should influence the reason ONLY when directly relevant
+ *     to the email.
+ *   - Calendar should NOT rescue spam or unknown commercial blasts.
+ *   - Empty calendar should be neutral and should not collapse
+ *     score/confidence.
+ *   - Private/Busy events must not be described creepily; avoid
+ *     "you have something on your calendar" phrasing.
+ *   - Avoid CTA-ish language ("worth a quick glance") unless the email
+ *     itself asks for action.
+ *   - Prefer neutral timing language: "this lines up with…", "appears
+ *     tied to…", "same-day scheduling" only when supported.
+ *
+ * This string is constant (not configurable) and is exported for tests.
+ */
+export const CALENDAR_GUIDANCE_PARAGRAPH =
+  'Calendar guidance: use the calendar ONLY when the email directly relates to a listed event (same person, same topic, or approximately the same time). If the email is spam, an unknown commercial blast, or unrelated to any listed event, ignore the calendar entirely — base your decision on the email alone. Empty calendar ("no events") is neutral information, NOT a signal that the email is unimportant. Private events appear as "Busy" — do not speculate about what they are, and do not say "you have something on your calendar" or similar phrasing. When the calendar IS relevant, mention it neutrally ("this lines up with…", "appears tied to…", "same-day scheduling"). Avoid CTA wording like "worth a quick glance" unless the email itself clearly asks for action.';
 
 /**
  * Build the Calendar context block for the ranker prompt.
@@ -84,18 +109,25 @@ export function buildCalendarContextBlock(
 ): string {
   if (ctx === null) return '';
   const windowH = ctx.window_hours_in_force;
+  const lines: string[] = [];
   if (ctx.events.length === 0) {
-    return `Calendar (next ${windowH}h): no events.`;
+    lines.push(`Calendar (next ${windowH}h): no events.`);
+  } else {
+    lines.push(`Calendar (next ${windowH}h):`);
+    const nowMs = now();
+    for (const ev of ctx.events) {
+      const startMs = Date.parse(ev.start);
+      const offset = Number.isFinite(startMs)
+        ? formatOffset(startMs - nowMs)
+        : 'soon';
+      lines.push(`  ${offset}: ${ev.summary}`);
+    }
   }
-  const nowMs = now();
-  const lines: string[] = [`Calendar (next ${windowH}h):`];
-  for (const ev of ctx.events) {
-    const startMs = Date.parse(ev.start);
-    const offset = Number.isFinite(startMs)
-      ? formatOffset(startMs - nowMs)
-      : 'soon';
-    lines.push(`  ${offset}: ${ev.summary}`);
-  }
+  // Phase v0.6.0E.1b: append the guidance paragraph for BOTH event and
+  // empty-window cases. The empty case is where the founder explicitly
+  // wants the model to treat "no events" as neutral, NOT a downgrade
+  // signal (F10 confidence collapse in v0.6.0E.1).
+  lines.push(CALENDAR_GUIDANCE_PARAGRAPH);
   return lines.join('\n');
 }
 

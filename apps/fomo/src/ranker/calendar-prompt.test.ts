@@ -24,6 +24,7 @@ import type {
 import type { RankerEgressView } from '../core/egress-policy.ts';
 import {
   buildCalendarContextBlock,
+  CALENDAR_GUIDANCE_PARAGRAPH,
   formatOffset,
   PROMPT_VERSION_WITH_CALENDAR
 } from './calendar-prompt.ts';
@@ -81,21 +82,25 @@ describe('buildCalendarContextBlock — C1 null context', () => {
 /* ---------- C2 ------------------------------------------------------- */
 
 describe('buildCalendarContextBlock — C2 empty window', () => {
-  it('returns the locked "no events" line with window from context', () => {
+  it('returns the locked "no events" line + guidance paragraph (v0.6.0E.1b)', () => {
     const block = buildCalendarContextBlock(makeCtx([], 48), fixedClock);
-    assert.equal(block, 'Calendar (next 48h): no events.');
+    assert.equal(
+      block,
+      `Calendar (next 48h): no events.\n${CALENDAR_GUIDANCE_PARAGRAPH}`
+    );
   });
 
-  it('honors non-default window in the header', () => {
+  it('honors non-default window in the header (empty case)', () => {
     const block = buildCalendarContextBlock(makeCtx([], 168), fixedClock);
-    assert.equal(block, 'Calendar (next 168h): no events.');
+    assert.ok(block.startsWith('Calendar (next 168h): no events.'));
+    assert.ok(block.endsWith(CALENDAR_GUIDANCE_PARAGRAPH));
   });
 });
 
 /* ---------- C3 ------------------------------------------------------- */
 
 describe('buildCalendarContextBlock — C3 multi-event shape', () => {
-  it('produces the exact 4-line shape from the v0.6.0D scope', () => {
+  it('produces the locked 4-line event shape + guidance paragraph (v0.6.0E.1b)', () => {
     const events = [
       makeEvent('1:1 with Galiette', '2026-06-09T14:00:00.000Z', '2026-06-09T14:30:00.000Z'),
       makeEvent('Busy', '2026-06-09T19:00:00.000Z', '2026-06-09T20:00:00.000Z'),
@@ -108,7 +113,8 @@ describe('buildCalendarContextBlock — C3 multi-event shape', () => {
         'Calendar (next 48h):',
         '  in 4h: 1:1 with Galiette',
         '  in 9h: Busy',
-        '  in 29h: Board meeting'
+        '  in 29h: Board meeting',
+        CALENDAR_GUIDANCE_PARAGRAPH
       ].join('\n')
     );
   });
@@ -127,6 +133,34 @@ describe('buildCalendarContextBlock — C3 multi-event shape', () => {
     ];
     const block = buildCalendarContextBlock(makeCtx(events), fixedClock);
     assert.ok(block.includes('  now: Standup'));
+  });
+});
+
+describe('buildCalendarContextBlock — C3b guidance paragraph (v0.6.0E.1b)', () => {
+  it('guidance paragraph is exported as a constant and appears verbatim in the block', () => {
+    const block = buildCalendarContextBlock(makeCtx([], 48), fixedClock);
+    assert.ok(block.includes(CALENDAR_GUIDANCE_PARAGRAPH));
+  });
+
+  it('guidance covers all six founder-locked behavior requirements', () => {
+    // Anchored verbatim from the founder's E.1b prompt behavior requirements.
+    const phrasesThatMustAppear = [
+      'directly relates',
+      'spam',
+      'no events',
+      'neutral',
+      'do not say "you have something on your calendar"',
+      'CTA',
+      'lines up with',
+      'appears tied to',
+      'same-day scheduling'
+    ];
+    for (const phrase of phrasesThatMustAppear) {
+      assert.ok(
+        CALENDAR_GUIDANCE_PARAGRAPH.toLowerCase().includes(phrase.toLowerCase()),
+        `guidance paragraph must include "${phrase}"`
+      );
+    }
   });
 });
 
@@ -256,7 +290,7 @@ describe('buildRankerPrompt — C7 Calendar block position (Q2.A)', () => {
 /* ---------- prompt version sanity ------------------------------------ */
 
 describe('PROMPT_VERSION_WITH_CALENDAR', () => {
-  it('is the locked v0.6.0D version string', () => {
-    assert.equal(PROMPT_VERSION_WITH_CALENDAR, 'ranker-v0.4.0');
+  it('is the locked v0.6.0E.1b version string', () => {
+    assert.equal(PROMPT_VERSION_WITH_CALENDAR, 'ranker-v0.4.1');
   });
 });
