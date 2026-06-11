@@ -183,7 +183,15 @@ export function buildRankerPrompt(
     // Q2.A: Calendar block goes AFTER PIL, BEFORE email body. When
     // BOTH PIL and Calendar are present, PIL appears first (priors
     // before situational context).
-    sections.push('', buildCalendarContextBlock(calendarContext, calendarNow));
+    //
+    // v0.6.0E.1c: buildCalendarContextBlock now performs RELEVANCE
+    // GATING against the email view — when no event passes the gate
+    // it returns ''. We append unconditionally; the empty-string case
+    // collapses harmlessly under sections.join('\n').
+    const calendarBlock = buildCalendarContextBlock(view, calendarContext, calendarNow);
+    if (calendarBlock !== '') {
+      sections.push('', calendarBlock);
+    }
   }
 
   sections.push(

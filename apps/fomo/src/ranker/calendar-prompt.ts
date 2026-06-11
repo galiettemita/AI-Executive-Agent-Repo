@@ -1,134 +1,196 @@
-// Phase v0.6.0D — Calendar context prompt block.
+// Phase v0.6.0E.1c — Relevance-gated Calendar prompt block.
 //
-// Pure function. Builds the structured block the ranker prompt receives
-// AFTER the PIL block and BEFORE the email body, when the production
-// rank call site supplies a non-null `calendar_context`.
+// PRODUCT PRINCIPLE (founder-locked 2026-06-11):
+//   The whole point of Calendar is NOT "the model sees more text." The
+//   point is that Brevio becomes more context-aware in a useful,
+//   human-feeling way. Calendar should help Brevio understand WHY an
+//   email matters in the user's real-life context. It should not add
+//   noise, destabilize scoring, increase cost without visible benefit,
+//   or create creepy phrasing.
 //
-// HARD INVARIANT (carry-forward from v0.6.0C):
-//   - The block sees ONLY summary/start/end via the `CalendarContext`
-//     shape — `projectCalendarEvent` already discarded attendees,
-//     description, location, attachments, conferenceData, organizer,
-//     creator, htmlLink, recurringEventId at the adapter boundary.
-//   - Private events arrive with summary='Busy' (deterministic mask
-//     applied at the adapter). This module preserves that as-is —
-//     never reaches around for the raw private title (it cannot;
-//     CalendarContext doesn't carry it).
+//   v0.6.0E.1b (the "long guidance paragraph" iteration) demonstrated
+//   that dumping calendar metadata into the prompt and asking the
+//   model to figure it out:
+//     - F1/F5 did not surface calendar specificity
+//     - F6/F10 collapsed score on empty calendars
+//     - +25% input-token cost for marginal lift
 //
-// HARD INVARIANT (v0.6.0D):
-//   - The production rank call site continues to pass
-//     `calendar_context: null` UNCONDITIONALLY. This block runs only in
-//     the offline FIXTURE EXPECTATION HARNESS at
-//     `apps/fomo/src/eval/calendar-shadow.eval.ts`.
-//   - The harness is NOT a behavioral shadow eval. It proves prompt
-//     assembly, placement, privacy, and cross-user isolation. It does
-//     NOT prove a real model will use Calendar context correctly. That
-//     is a v0.6.0E pre-requisite (run the real ranker on the same
-//     fixture prompts; founder reviews the live output).
-//   - v0.6.0E is the phase that wires non-null calendar_context into
-//     the live ranker, under its own kill switch + allowlist + founder
-//     taste check.
+//   v0.6.0E.1c flips the design: the SYSTEM curates context BEFORE the
+//   model sees it. The block is omitted entirely unless we have a
+//   direct relevance signal between the email and a specific event.
 //
-// Format (founder-locked in v0.6.0D scope, lifted from the v0.6.0C
-// preview script so the founder taste-checks the same shape the model
-// would eventually see):
+// HARD CONTRACT (founder-locked v0.6.0E.1c scope):
+//   1. ctx === null or zero events → return ''.  Empty calendar should
+//      be neutral by ABSENCE, not by instruction.
+//   2. ctx has events but none are directly relevant to the email →
+//      return ''.  Do not dump the calendar list.
+//   3. The only event-renderer path is exactly ONE relevant event,
+//      rendered in a compact single-line "Calendar signal:" form.
+//   4. Private/Busy events are SKIPPED — they never reach the
+//      relevance scorer. The block must never reveal or imply a
+//      private title, and must never say "you have something on
+//      your calendar".
 //
-//   Calendar (next 48h):
-//     in 4h: 1:1 with Galiette
-//     in 9h: Busy
-//     in 29h: Board meeting
-//
-// Empty window:
-//
-//   Calendar (next 48h): no events.
-//
-// Null context:
-//
-//   (empty string — block not appended)
+// CARRY-FORWARD INVARIANTS:
+//   - Adapter boundary (v0.6.0C): only summary/start/end can ever reach
+//     this module.
+//   - Production rank call site is bit-identical to post-v0.6.0C state.
+//     This module is consumed by the offline real-model dry-run script
+//     (apps/fomo/scripts/ops-calendar-real-model-dryrun.ts) and unit
+//     tests. v0.6.0E.2 is the separate gate that wires it into the
+//     production worker.
 
-import { type CalendarContext } from '../adapters/google-calendar/types.js';
+import type { RankerEgressView } from '../core/egress-policy.js';
+import { type CalendarContext, type CalendarEvent } from '../adapters/google-calendar/types.js';
 
 /**
- * Phase v0.6.0E.1b — Bumped when the assembled prompt INCLUDES a Calendar
- * context block. Bump rationale: v0.6.0E.1 real-model dry-run produced
- * MIXED behavioral output (F1/F2/F5 did not surface calendar offsets;
- * F10 confidence collapse from an EMPTY calendar block). v0.6.0E.1b
- * adds an explicit Calendar guidance paragraph to the block; ranker-
- * v0.4.0 (no guidance) is intentionally retained in history so the
- * dry-run can produce v0.4.0 vs v0.4.1 comparisons if needed later.
- * Symmetric to PROMPT_VERSION_WITH_PIL in prompt.ts.
+ * Phase v0.6.0E.1c — Bumped because the block FORMAT changed materially:
+ *   v0.4.0 (v0.6.0D): always renders event list when ctx has events
+ *   v0.4.1 (v0.6.0E.1b): same list + long guidance paragraph
+ *   v0.4.2 (v0.6.0E.1c): omits entirely unless one relevant event
+ *                        matches; renders compact "Calendar signal:"
+ *                        single line.
  */
-export const PROMPT_VERSION_WITH_CALENDAR = 'ranker-v0.4.1';
+export const PROMPT_VERSION_WITH_CALENDAR = 'ranker-v0.4.2';
+
+/* ====================================================================== */
+/* Relevance heuristic (deterministic, pure function)                      */
+/* ====================================================================== */
 
 /**
- * Phase v0.6.0E.1b — Calendar guidance paragraph.
- *
- * Anchored verbatim from the founder's E.1b prompt behavior requirements:
- *   - Calendar should influence the reason ONLY when directly relevant
- *     to the email.
- *   - Calendar should NOT rescue spam or unknown commercial blasts.
- *   - Empty calendar should be neutral and should not collapse
- *     score/confidence.
- *   - Private/Busy events must not be described creepily; avoid
- *     "you have something on your calendar" phrasing.
- *   - Avoid CTA-ish language ("worth a quick glance") unless the email
- *     itself asks for action.
- *   - Prefer neutral timing language: "this lines up with…", "appears
- *     tied to…", "same-day scheduling" only when supported.
- *
- * This string is constant (not configurable) and is exported for tests.
+ * Stopwords filtered from token comparison. Two buckets:
+ *   - generic English filler that adds no semantic value
+ *   - generic email/meeting words that are too low-signal to drive
+ *     a relevance match on their own (we don't want "meeting" alone
+ *     to rescue Stripe → "vendor sync")
  */
-export const CALENDAR_GUIDANCE_PARAGRAPH =
-  'Calendar guidance: use the calendar ONLY when the email directly relates to a listed event (same person, same topic, or approximately the same time). If the email is spam, an unknown commercial blast, or unrelated to any listed event, ignore the calendar entirely — base your decision on the email alone. Empty calendar ("no events") is neutral information, NOT a signal that the email is unimportant. Private events appear as "Busy" — do not speculate about what they are, and do not say "you have something on your calendar" or similar phrasing. When the calendar IS relevant, mention it neutrally ("this lines up with…", "appears tied to…", "same-day scheduling"). Avoid CTA wording like "worth a quick glance" unless the email itself clearly asks for action.';
+const RELEVANCE_STOPWORDS: ReadonlySet<string> = new Set([
+  // generic filler
+  'with', 'about', 'from', 'this', 'that', 'your', 'will',
+  'have', 'been', 'were', 'they', 'their', 'them',
+  'just', 'than', 'then', 'when', 'where', 'what', 'which',
+  'over', 'into', 'onto', 'before', 'after', 'while', 'still',
+  'must', 'should', 'would', 'could', 'might', 'shall',
+  'also', 'only', 'some', 'much', 'many', 'most', 'each',
+  'such', 'same', 'well', 'very', 'here', 'there',
+  // temporal filler (time-words are weak signals on their own)
+  'today', 'tomorrow', 'yesterday',
+  'morning', 'afternoon', 'evening', 'tonight',
+  'week', 'next', 'last', 'time', 'times', 'date',
+  // generic email / meeting words (too low-signal alone)
+  'email', 'message', 'reply', 'send', 'sent', 'sending',
+  'meeting', 'meetings', 'call', 'calls', 'sync',
+  // common email pleasantries
+  'thanks', 'hello', 'please', 'reminder'
+]);
+
+function extractRelevanceTokens(text: string): Set<string> {
+  const tokens = new Set<string>();
+  const matches = text.toLowerCase().match(/[a-z0-9]+/g) ?? [];
+  for (const t of matches) {
+    if (t.length >= 4 && !RELEVANCE_STOPWORDS.has(t)) tokens.add(t);
+  }
+  return tokens;
+}
+
+/**
+ * Select the single most-relevant calendar event for this email, or null
+ * if no event passes the relevance gate.
+ *
+ * Relevance signal = count of meaningful (post-stopword) token overlaps
+ * between the email (sender_name + subject + body_snippet) and the
+ * event's summary. The MEANINGFUL token filter (length ≥ 4 +
+ * stopword-excluded) makes single-word overlaps strong signals: a match
+ * on "standup", "parents", or "sheila" is informative because the
+ * stopword list has already stripped weak overlaps like "meeting"
+ * or "today".
+ *
+ * Pure function. Exported for tests.
+ *
+ * CONTRACT:
+ *   - Returns null when ctx is null or events is empty.
+ *   - Skips events with summary === 'Busy' (private events, already
+ *     masked at the adapter boundary in v0.6.0C). This is the
+ *     load-bearing private-event rule: even when the email IS
+ *     scheduling-related, we omit. Calendar acts as a silent prior;
+ *     the prompt never says "you have something on your calendar".
+ *   - Requires at least one meaningful token overlap. If the best
+ *     event scores zero, returns null and the calendar block is
+ *     omitted entirely.
+ */
+export function selectRelevantCalendarEvent(
+  view: RankerEgressView,
+  ctx: CalendarContext | null
+): CalendarEvent | null {
+  if (ctx === null || ctx.events.length === 0) return null;
+
+  const senderName = view.sender_name ?? '';
+  const senderEmail = view.sender_email ?? '';
+  const subject = view.subject ?? '';
+  const bodySnippet = view.body_snippet ?? '';
+  const emailText = `${senderName} ${senderEmail} ${subject} ${bodySnippet}`;
+  const emailTokens = extractRelevanceTokens(emailText);
+  if (emailTokens.size === 0) return null;
+
+  let bestEvent: CalendarEvent | null = null;
+  let bestScore = 0;
+
+  for (const event of ctx.events) {
+    // SKIP private events. v0.6.0C masks visibility=private to
+    // summary='Busy'; that mask hits here as the skip signal.
+    if (event.summary === 'Busy') continue;
+
+    const eventTokens = extractRelevanceTokens(event.summary);
+    if (eventTokens.size === 0) continue;
+
+    let overlap = 0;
+    for (const tok of eventTokens) {
+      if (emailTokens.has(tok)) overlap++;
+    }
+    if (overlap > bestScore) {
+      bestScore = overlap;
+      bestEvent = event;
+    }
+  }
+
+  if (bestScore >= 1) return bestEvent;
+  return null;
+}
+
+/* ====================================================================== */
+/* Calendar block builder                                                  */
+/* ====================================================================== */
 
 /**
  * Build the Calendar context block for the ranker prompt.
  *
- * Returns the empty string when `ctx` is null so callers can safely
- * concatenate without conditional logic. When `ctx` is non-null:
+ *   - Returns '' when no event passes the relevance gate (this is the
+ *     overwhelmingly common case). The model sees no Calendar block
+ *     at all — empty/irrelevant calendars influence nothing.
+ *   - Returns a single-line "Calendar signal: …" string when there is
+ *     a directly-relevant event. Format anchored to the founder's
+ *     v0.6.0E.1c template.
  *
- *   - header line: `Calendar (next ${window_hours_in_force}h):`
- *   - one event line per event in `ctx.events`:
- *       `  in <Xh|<60m>m>: <summary>`
- *     (offset is rounded to minutes when < 60 min away, otherwise to
- *     whole hours; `Busy` already substituted upstream for private)
- *   - empty `ctx.events` → header line becomes
- *       `Calendar (next ${window_hours_in_force}h): no events.`
- *
- * The function deliberately performs NO field exclusion of its own —
- * the adapter boundary (`projectCalendarEvent`) is the load-bearing
- * gate. This function only formats; it cannot leak a field the input
- * type does not expose.
+ * Format:
+ *   `Calendar signal: This email appears related to a calendar event
+ *    <offset>: <summary>. Use this only as timing context.`
  *
  * `now` is a clock injection for tests + the eval (offsets are
- * computed relative to it). Production callers in v0.6.0E will pass
- * Date.now wrapped; here it is a parameter to keep this function pure.
+ * computed relative to it). Production callers pass Date.now.
  */
 export function buildCalendarContextBlock(
+  view: RankerEgressView,
   ctx: CalendarContext | null,
   now: () => number = Date.now
 ): string {
-  if (ctx === null) return '';
-  const windowH = ctx.window_hours_in_force;
-  const lines: string[] = [];
-  if (ctx.events.length === 0) {
-    lines.push(`Calendar (next ${windowH}h): no events.`);
-  } else {
-    lines.push(`Calendar (next ${windowH}h):`);
-    const nowMs = now();
-    for (const ev of ctx.events) {
-      const startMs = Date.parse(ev.start);
-      const offset = Number.isFinite(startMs)
-        ? formatOffset(startMs - nowMs)
-        : 'soon';
-      lines.push(`  ${offset}: ${ev.summary}`);
-    }
-  }
-  // Phase v0.6.0E.1b: append the guidance paragraph for BOTH event and
-  // empty-window cases. The empty case is where the founder explicitly
-  // wants the model to treat "no events" as neutral, NOT a downgrade
-  // signal (F10 confidence collapse in v0.6.0E.1).
-  lines.push(CALENDAR_GUIDANCE_PARAGRAPH);
-  return lines.join('\n');
+  const relevantEvent = selectRelevantCalendarEvent(view, ctx);
+  if (relevantEvent === null) return '';
+
+  const nowMs = now();
+  const startMs = Date.parse(relevantEvent.start);
+  const offset = Number.isFinite(startMs) ? formatOffset(startMs - nowMs) : 'soon';
+
+  return `Calendar signal: This email appears related to a calendar event ${offset}: ${relevantEvent.summary}. Use this only as timing context.`;
 }
 
 /**
@@ -138,10 +200,7 @@ export function buildCalendarContextBlock(
  *   - 60 minutes or more: "in NNh" (whole hours) with optional "NNm" tail
  *     omitted for terseness past the 24h mark
  *
- * Pure helper, exported for unit tests. Adjusting this format here is
- * a deliberate code change with founder review — the eval and the
- * v0.6.0E live prompt use the same formatter, so changes propagate
- * straight to the user-visible signal.
+ * Pure helper, exported for unit tests.
  */
 export function formatOffset(deltaMs: number): string {
   if (deltaMs <= 0) return 'now';
@@ -149,10 +208,7 @@ export function formatOffset(deltaMs: number): string {
   if (totalMinutes < 60) return `in ${totalMinutes}m`;
   const hours = Math.floor(totalMinutes / 60);
   const minutes = totalMinutes - hours * 60;
-  if (hours >= 24) {
-    // Past 24h, drop the minutes tail; the model only needs the day-scale signal.
-    return `in ${hours}h`;
-  }
+  if (hours >= 24) return `in ${hours}h`;
   if (minutes === 0) return `in ${hours}h`;
   return `in ${hours}h ${minutes}m`;
 }

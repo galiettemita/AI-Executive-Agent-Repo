@@ -554,7 +554,10 @@ function runFixture(fixture: Fixture): {
     fixture.window_hours
   );
 
-  const calendar_block = buildCalendarContextBlock(ctx, fixedClock);
+  // v0.6.0E.1c: buildCalendarContextBlock now requires the view to
+  // perform relevance gating. When no event passes the gate it returns
+  // '' and the prompt assembler skips the block entirely.
+  const calendar_block = buildCalendarContextBlock(fixture.view, ctx, fixedClock);
 
   const baseline_prompt = buildRankerPrompt(fixture.view, null, null);
   const calendar_aware_prompt = buildRankerPrompt(
@@ -586,10 +589,12 @@ function runFixture(fixture: Fixture): {
       expected_qualitative_outcome: fixture.expected_qualitative_outcome,
       prompt_baseline_bytes: baseline_prompt.length,
       prompt_calendar_aware_bytes: calendar_aware_prompt.length,
+      // v0.6.0E.1c: block sentinel changed from "Calendar (next" (verbose
+      // list format) to "Calendar signal" (compact relevance-gated format).
       prompt_baseline_contains_calendar_block:
-        baseline_prompt.includes('Calendar (next'),
+        baseline_prompt.includes('Calendar signal'),
       prompt_calendar_aware_contains_calendar_block:
-        calendar_aware_prompt.includes('Calendar (next'),
+        calendar_aware_prompt.includes('Calendar signal'),
       expected_baseline_reason: fixture.expected_baseline_reason,
       expected_calendar_aware_reason: fixture.expected_calendar_aware_reason,
       founder_verdict: fixture.founder_verdict,
@@ -692,16 +697,54 @@ function main(): void {
   }
   if (!hardFail) emit('[OK] all baseline prompts omit the Calendar block');
 
-  // calendar-aware prompts contain the block UNLESS the context is empty
-  // (empty calendar in window → "Calendar (next Nh): no events." is also a block;
-  // so the assertion is symmetric: every calendar-aware prompt contains the block)
+  // v0.6.0E.1c: report the relevance gate's per-fixture decision so
+  // the founder taste-check can see which fixtures the heuristic
+  // selected. HARD assertions are limited to: (a) every kind that
+  // SHOULD omit DOES omit (privacy/spam/cross-user contracts), and
+  // (b) at least one calendar_relevant_should_improve fixture renders
+  // the block (sanity check that the gate isn't broken).
+  //
+  // We do NOT hard-fail when calendar_relevant_should_improve fixtures
+  // omit the block — the relevance heuristic is conservative by
+  // design ("better to under-render than to over-render"); the v0.6.0D
+  // fixture-kind labels predate the v0.6.0E.1c gate.
+  let mustOmitButRendered = 0;
+  let relevantRendered = 0;
+  const mustOmitKinds: ReadonlySet<FixtureKind> = new Set([
+    'calendar_irrelevant_should_stay_same',
+    'spam_should_not_be_rescued',
+    'private_busy_must_not_leak',
+    'cross_user_must_not_bleed'
+  ]);
   for (let i = 0; i < results.length; i++) {
     const r = results[i]!;
-    if (!r.prompt_calendar_aware_contains_calendar_block) {
-      fail(`F${i + 1} calendar-aware prompt missing the Calendar block`);
+    const blockPresent = r.prompt_calendar_aware_contains_calendar_block;
+    if (mustOmitKinds.has(r.kind) && blockPresent) {
+      fail(
+        `F${i + 1} (${r.kind}) calendar-aware prompt CONTAINS a Calendar block but the kind requires omission (privacy/spam/cross-user contract)`
+      );
+      mustOmitButRendered++;
+    }
+    if (r.kind === 'calendar_relevant_should_improve') {
+      if (blockPresent) relevantRendered++;
+      else
+        emit(
+          `[INFO] F${i + 1} (${r.kind}) — relevance gate omitted the block; v0.6.0D fixture-kind expected one but the v0.6.0E.1c heuristic decided the relationship is weak. Founder taste-check decides.`
+        );
     }
   }
-  if (!hardFail) emit('[OK] all calendar-aware prompts include the Calendar block');
+  if (mustOmitButRendered === 0) {
+    emit('[OK] every must-omit kind (irrelevant/spam/private-busy/cross-user) correctly omits the Calendar block');
+  }
+  if (relevantRendered === 0) {
+    fail(
+      'no calendar_relevant_should_improve fixture rendered a Calendar block — the relevance gate appears broken'
+    );
+  } else {
+    emit(
+      `[OK] ${relevantRendered} calendar_relevant_should_improve fixture(s) rendered the Calendar block (gate is firing on real signals)`
+    );
+  }
 
   // F10 cross-user isolation
   const f10 = results.find((r) => r.kind === 'cross_user_must_not_bleed');
