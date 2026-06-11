@@ -396,7 +396,25 @@ export type AuditAction =
   // other raw event content. The v0.6.0C scope explicitly bans those
   // fields from crossing the adapter boundary; this audit row is
   // structural-counter-only by design.
-  | 'brevio.context.calendar_built';
+  | 'brevio.context.calendar_built'
+  // Phase v0.7.0A — "Why?" Reply Intent + Explainability Surface.
+  // Emitted exactly once per inbound `why` reply when the explain
+  // surface kill switch is on AND deps.explainSender is wired. Detail
+  // is STRUCTURAL-ONLY by founder lock — no sender, no subject, no
+  // body, no rank.reason text, no phone number:
+  //   alert_id_hash:    sha256(alert_id) sliced to 16 hex chars; null
+  //                     when no eligible alert matched (empty_state).
+  //   source_surface:   'sendblue_inbound' (single allowed value).
+  //   template_version: 'brevio-explain-v0.1.0' (literal const).
+  //   empty_state:      true when no eligible recent alert OR
+  //                     rank_result.reason was unavailable; false when
+  //                     a real composed explanation was sent.
+  //   send_outcome_kind: SendOutcome.kind on result='success', or null
+  //                      on failure (rendered separately below).
+  // Failure detail additionally carries error_code + error_reason from
+  // sanitizeProviderError when the SendBlue send threw OR returned a
+  // non-'sent' SendOutcome. NEVER raw provider response text.
+  | 'brevio.explain.served';
 
 // Phase 3G.1 — runtime registry of every FOMO-namespaced audit
 // action. Used by the 3G.1 evidence script (and any future ops
@@ -475,7 +493,9 @@ export const FOMO_AUDIT_ACTIONS = [
   // Phase v0.5.12 — Live ranker reads PIL in guarded mode.
   'brevio.rank.pil_applied',
   // Phase v0.6.0C — Read-only Calendar context substrate.
-  'brevio.context.calendar_built'
+  'brevio.context.calendar_built',
+  // Phase v0.7.0A — "Why?" Reply Intent + Explainability Surface.
+  'brevio.explain.served'
 ] as const satisfies readonly AuditAction[];
 
 export type AuditResult = 'success' | 'failure';

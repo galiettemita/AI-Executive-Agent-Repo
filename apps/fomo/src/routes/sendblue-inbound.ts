@@ -99,6 +99,15 @@ import { type ReplyIntent } from '../reply-parser/validator.js';
 // sender_importance / sender_suppressed upserts on the 4 PIL-relevant
 // intents).
 import { applyPilAggregation } from '../memory/pil-aggregation.js';
+// Phase v0.7.0A — "Why?" explainability surface deterministic renderer.
+import {
+  EMPTY_STATE_COPY,
+  EXPLAIN_LOOKUP_WINDOW_MS,
+  EXPLAIN_SOURCE_SURFACE,
+  EXPLAIN_TEMPLATE_VERSION,
+  composeExplanationFromReason,
+  hashAlertIdForAudit
+} from '../core/explain-renderer.js';
 
 /* ---------------------------------------------------------------------- */
 /* Deps                                                                   */
@@ -204,6 +213,24 @@ export interface SendBlueInboundRouteDeps {
   // routing module decides whether to render+send+audit based on the
   // 3-gate check (dep present + from_number present + ackable intent).
   readonly feedbackAck?: {
+    send: (input: import('../adapters/sendblue/client.js').SendInput) => Promise<import('../adapters/sendblue/client.js').SendOutcome>;
+  };
+
+  // Phase v0.7.0A — "Why?" explainability surface send dep. Optional:
+  // when absent OR when killSwitches.explain_surface_enabled is false,
+  // applyWhy walks the v0.5.10 baseline behavior (state transition +
+  // audit only) and does NOT send any outbound explanation iMessage.
+  // When BOTH the dep is wired AND the kill switch is on AND the
+  // inbound's fromNumber is present, applyWhy composes a deterministic
+  // explanation from the most recent eligible alert's rank.reason and
+  // sends it back, then audits brevio.explain.served (success or
+  // failure). Best-effort: send failures NEVER abort applyWhy's
+  // existing state-machine + feedback-routing path.
+  //
+  // Same narrow `.send` shape as stopConfirmation/feedbackAck so it
+  // composes cleanly with the existing SendBlue client and tests can
+  // mock easily.
+  readonly explainSender?: {
     send: (input: import('../adapters/sendblue/client.js').SendInput) => Promise<import('../adapters/sendblue/client.js').SendOutcome>;
   };
 
@@ -743,7 +770,7 @@ async function applyParseResult(
     case 'ignore_sender':
       return applyIgnoreSender(deps, userId, matchedAlert, fromSlug, providerMessageId);
     case 'why':
-      return applyWhy(deps, userId, matchedAlert, fromSlug, providerMessageId);
+      return applyWhy(deps, userId, matchedAlert, fromSlug, providerMessageId, fromNumber, now);
     case 'false_positive':
       return applyIgnore(deps, userId, matchedAlert, 'false_positive', fromSlug, providerMessageId);
     // Phase v0.5.10 — positive-signal intents. They flow through the
@@ -1295,11 +1322,19 @@ async function applyWhy(
   userId: string,
   matchedAlert: Alert | null,
   fromSlug: string,
-  providerMessageId: string
+  providerMessageId: string,
+  // Phase v0.7.0A — the inbound E.164. Threaded through so the explain
+  // surface can send an outbound explanation back to the same number.
+  // Same convention as v0.5.5 applyStop + v0.5.14 feedbackAck wiring.
+  // NEVER logged, NEVER persisted — used only as the `to` argument to
+  // deps.explainSender.send.
+  fromNumber: string,
+  // Phase v0.7.0A — clock injection so the 24h eligibility window is
+  // testable. Caller passes the same `now` used elsewhere in the route.
+  now: () => Date
 ): Promise<RouteOutcome> {
   // 'why' transitions sent → replied (acknowledgement) but does NOT
   // proceed to a terminal state — the user wants info, not closure.
-  // A future phase can respond with an explanation iMessage.
   if (matchedAlert) {
     await walkTransition(deps, matchedAlert, 'sent', 'replied', 'sendblue:why');
     // Phase v0.5.10 — feedback_event write moved to feedback-routing.ts
@@ -1321,6 +1356,24 @@ async function applyWhy(
       alert_matched: matchedAlert !== null
     }
   });
+
+  // Phase v0.7.0A — Explainability Surface (best-effort outbound).
+  //
+  // Fires AFTER the v0.5.10 baseline writes (state-machine + reply_parsed
+  // audit) so a failure here NEVER regresses existing behavior.
+  //
+  // Gates (ALL must hold):
+  //   (1) deps.killSwitches.explain_surface_enabled === true
+  //   (2) deps.explainSender is wired (bootstrap injected SendBlue client)
+  //   (3) fromNumber is present (defensive — caller always provides it)
+  await serveExplanation({
+    deps,
+    userId,
+    matchedAlert,
+    fromNumber,
+    now
+  });
+
   return Object.freeze({
     classified_intent: 'why',
     source: 'classifier' as const,
@@ -1331,6 +1384,138 @@ async function applyWhy(
     feedback_kind: matchedAlert ? ('asked_why' as FeedbackEventKind) : null,
     memory_signal_kind: null,
     snooze_until: null
+  });
+}
+
+// Phase v0.7.0A — Explain surface helper.
+//
+// Decides empty-state vs composed-explanation, sends via SendBlue,
+// audits brevio.explain.served. Structural-only audit detail per
+// founder lock: alert_id_hash, source_surface, template_version,
+// empty_state, send_outcome_kind. NEVER raw sender/subject/body/reason.
+//
+// Best-effort: throw/failure NEVER aborts the caller. The applyWhy
+// state-machine + feedback-routing writes are already durable.
+async function serveExplanation(args: {
+  deps: SendBlueInboundRouteDeps;
+  userId: string;
+  matchedAlert: Alert | null;
+  fromNumber: string;
+  now: () => Date;
+}): Promise<void> {
+  const { deps, userId, matchedAlert, fromNumber, now } = args;
+
+  // Gate 1 — kill switch.
+  if (!deps.killSwitches.explain_surface_enabled) return;
+  // Gate 2 — dep wired.
+  if (deps.explainSender === undefined) return;
+  // Gate 3 — fromNumber present (defensive).
+  if (typeof fromNumber !== 'string' || fromNumber.length === 0) return;
+
+  // Decide content: empty-state vs composed explanation.
+  // EmptyState = matchedAlert is null OR matchedAlert is older than the
+  // 24h lookup window OR rank_result is missing OR rank.reason is
+  // empty/whitespace OR compose returns null.
+  let content: string;
+  let emptyState: boolean;
+
+  if (matchedAlert === null) {
+    content = EMPTY_STATE_COPY;
+    emptyState = true;
+  } else {
+    const ageMs = now().getTime() - Date.parse(matchedAlert.created_at);
+    if (!Number.isFinite(ageMs) || ageMs < 0 || ageMs > EXPLAIN_LOOKUP_WINDOW_MS) {
+      content = EMPTY_STATE_COPY;
+      emptyState = true;
+    } else {
+      const rank = await deps.rankResultStore.get(userId, matchedAlert.message_id);
+      const composed = composeExplanationFromReason(rank?.reason ?? null);
+      if (composed === null) {
+        content = EMPTY_STATE_COPY;
+        emptyState = true;
+      } else {
+        content = composed;
+        emptyState = false;
+      }
+    }
+  }
+
+  const alertIdForAudit = emptyState ? null : matchedAlert?.alert_id ?? null;
+  const auditTarget = alertIdForAudit ? `alert:${alertIdForAudit}` : 'route:sendblue.inbound';
+
+  // Send. Both throw and non-'sent' outcome route to the failure audit.
+  let outcome: import('../adapters/sendblue/client.js').SendOutcome;
+  try {
+    outcome = await deps.explainSender.send({ to: fromNumber, content });
+  } catch (err) {
+    const sanitized = sanitizeProviderError({
+      raw_provider_code: 'send_throw',
+      network_error_code:
+        err && typeof err === 'object' && 'code' in err && typeof (err as { code: unknown }).code === 'string'
+          ? ((err as { code: string }).code)
+          : null
+    });
+    await deps.auditStore.write({
+      actor_user_id: userId,
+      actor_ip: null,
+      actor_user_agent: null,
+      action: 'brevio.explain.served',
+      target: auditTarget,
+      result: 'failure',
+      detail: {
+        alert_id_hash: hashAlertIdForAudit(alertIdForAudit),
+        source_surface: EXPLAIN_SOURCE_SURFACE,
+        template_version: EXPLAIN_TEMPLATE_VERSION,
+        empty_state: emptyState,
+        send_outcome_kind: null,
+        error_code: sanitized.error_code,
+        error_reason: sanitized.error_reason
+      }
+    });
+    return;
+  }
+
+  if (outcome.kind === 'sent') {
+    await deps.auditStore.write({
+      actor_user_id: userId,
+      actor_ip: null,
+      actor_user_agent: null,
+      action: 'brevio.explain.served',
+      target: auditTarget,
+      result: 'success',
+      detail: {
+        alert_id_hash: hashAlertIdForAudit(alertIdForAudit),
+        source_surface: EXPLAIN_SOURCE_SURFACE,
+        template_version: EXPLAIN_TEMPLATE_VERSION,
+        empty_state: emptyState,
+        send_outcome_kind: outcome.kind
+      }
+    });
+    return;
+  }
+
+  // Provider returned 'failed' / 'send_status_unknown'. Same sanitized
+  // chokepoint as the v0.5.14 feedback ack failure audit.
+  const sanitized = sanitizeProviderError({
+    raw_provider_code: outcome.providerError?.error_message ?? null,
+    http_status: outcome.httpStatus > 0 ? outcome.httpStatus : null
+  });
+  await deps.auditStore.write({
+    actor_user_id: userId,
+    actor_ip: null,
+    actor_user_agent: null,
+    action: 'brevio.explain.served',
+    target: auditTarget,
+    result: 'failure',
+    detail: {
+      alert_id_hash: hashAlertIdForAudit(alertIdForAudit),
+      source_surface: EXPLAIN_SOURCE_SURFACE,
+      template_version: EXPLAIN_TEMPLATE_VERSION,
+      empty_state: emptyState,
+      send_outcome_kind: outcome.kind,
+      error_code: sanitized.error_code,
+      error_reason: sanitized.error_reason
+    }
   });
 }
 
