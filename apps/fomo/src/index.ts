@@ -884,6 +884,15 @@ function buildSendBlueInboundWiring(
     // (no ack, no fomo.sendblue.feedback_ack_* audit).
     feedbackAck: sendBlueClient
       ? { send: (input) => sendBlueClient.send(input) }
+      : undefined,
+    // Phase v0.7.0A — "Why?" Reply Intent + Explainability Surface.
+    // Same narrow `.send` shape as stopConfirmation/feedbackAck. Wired
+    // only when SendBlue is configured; applyWhy additionally gates on
+    // killSwitches.explain_surface_enabled (default false) so a wired
+    // dep alone does NOT enable the surface. Absent → applyWhy walks
+    // the v0.5.10 baseline path (state transition + audit only).
+    explainSender: sendBlueClient
+      ? { send: (input) => sendBlueClient.send(input) }
       : undefined
   });
 

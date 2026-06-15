@@ -154,6 +154,16 @@ export interface KillSwitches {
   // non-email windows (weekly prep 168, travel 336) don't need a code
   // change to enable.
   readonly calendar_context_default_window_hours: number;
+  // Phase v0.7.0A — "Why?" Reply Intent + Explainability Surface.
+  // When false (default), the sendblue-inbound route's applyWhy path
+  // walks the v0.5.10 baseline behavior (state transition + audit only)
+  // and does NOT send an outbound explanation iMessage. When true AND
+  // deps.explainSender is wired AND the inbound's fromNumber is
+  // present, applyWhy composes a deterministic explanation from the
+  // most recent eligible alert's rank.reason and sends it back via
+  // SendBlue. Default-off keeps the rollout reversible without a code
+  // change. The kill switch is the load-bearing gate.
+  readonly explain_surface_enabled: boolean;
 }
 
 const DEFAULTS = {
@@ -174,7 +184,8 @@ const DEFAULTS = {
   calendar_context_enabled: false,
   calendar_context_user_allowlist: [] as readonly string[],
   calendar_context_cache_ttl_ms: 60_000,
-  calendar_context_default_window_hours: 48
+  calendar_context_default_window_hours: 48,
+  explain_surface_enabled: false
 } as const satisfies KillSwitches;
 
 // Strict opt-in parse: only the literal strings 'true' or '1' (case-insensitive,
@@ -311,7 +322,11 @@ export function loadKillSwitches(env: NodeJS.ProcessEnv = process.env): KillSwit
     calendar_context_default_window_hours: parseCalendarDefaultWindowHours(
       env.FOMO_CALENDAR_CONTEXT_DEFAULT_WINDOW_HOURS,
       DEFAULTS.calendar_context_default_window_hours
-    )
+    ),
+    // Phase v0.7.0A — "Why?" explainability surface. Default-off; the
+    // sendblue-inbound route's applyWhy path consults this before
+    // composing/sending an explanation message.
+    explain_surface_enabled: parseBool(env.FOMO_EXPLAIN_SURFACE_ENABLED)
   });
 }
 
