@@ -60,6 +60,8 @@ Every dimension has seven required fields:
 
 ### 3. Memory Architecture
 
+> **Canonical doctrine: [`docs/BREVIO_MEMORY_AND_SKILL_OS.md`](BREVIO_MEMORY_AND_SKILL_OS.md) (M0).** The eleven typed memory kinds, retrieval rules, consolidation loop, and explainability surfaces live there.
+
 **Long-term meaning.** Brevio remembers what matters to each user across time and surfaces. Per-user, multi-modal (facts, preferences, past corrections, decisions). Reversible. Explainable to the user.
 
 **What exists today in FOMO.** `memory_signals` table with 8 kinds (`stop_active`, `sendblue_contact_status`, etc.). Per-user keying. Audit-logged via `audit_log`. Reversible (DELETE / UPDATE active=false). `rank_results` and `audit_log` provide short-term decision memory.
@@ -95,6 +97,8 @@ Every dimension has seven required fields:
 ---
 
 ### 5. Tool / Workflow Orchestration
+
+> **Skill discipline: [`docs/BREVIO_MEMORY_AND_SKILL_OS.md`](BREVIO_MEMORY_AND_SKILL_OS.md) §6–§7 + §12.** Brevio skills are versioned, founder-approved, permission-classified artifacts that COMPOSE provider tools (including Composio actions) through Brevio's own wrapper — not raw tool calls.
 
 **Long-term meaning.** Brevio chains tools (Gmail, Calendar, Drive, web, SMS, payments, browser, etc.) to complete user-outcomes. MCP-style tool calls. Cross-tool reasoning. Tool failures degrade gracefully.
 
