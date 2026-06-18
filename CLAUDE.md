@@ -80,7 +80,13 @@ Before changing user-facing messages, ranker behavior, reply parsing, feedback e
 
 Every future 6-question gate must include the three principle-gate questions from this doc in addition to the phase-specific Q1–Q6.
 
-### 5. `docs/personalized-importance-learning.md` — false-positive and personalization doctrine
+### 5. `docs/BREVIO_MEMORY_AND_SKILL_OS.md` — M0 memory + skill doctrine
+
+This is the canonical architecture document for Brevio's external typed memory, retrieval, consolidation, skill registry, and skill lifecycle. It defines what Brevio learns, where learning lives, what stays outside the base model, and the M1–M6 implementation roadmap.
+
+Read this BEFORE proposing any memory write path, skill candidate, skill execution, autonomy expansion, or Composio integration. M1 (Typed Memory Substrate) is the canonical next implementation step after v0.7.0A.
+
+### 6. `docs/personalized-importance-learning.md` — false-positive and personalization doctrine
 
 Do not treat Brevio’s false-positive problem as a prompt-only bug.
 
@@ -94,13 +100,13 @@ Brevio must learn each user’s definition of important while avoiding:
 * global rules from one user’s preference,
 * treating all commercial email as unimportant.
 
-### 6. `SALVAGE_MAP.md` — repo history and what was kept/pruned
+### 7. `SALVAGE_MAP.md` — repo history and what was kept/pruned
 
 Read this before reviving old code or assuming archived modules are active. It explains what was kept, pruned, archived, or killed.
 
 Use it to avoid reintroducing half-wired old Brevio code.
 
-### 7. `docs/future-architecture-notes.md` — long-term archived concepts
+### 8. `docs/future-architecture-notes.md` — long-term archived concepts
 
 Read this before designing anything above L1, including:
 
@@ -115,7 +121,7 @@ Read this before designing anything above L1, including:
 
 This file preserves future ideas without making them active runtime code.
 
-### 8. `FRIENDS.md` and `OUTREACH.md`
+### 9. `FRIENDS.md` and `OUTREACH.md`
 
 These are fill-in-the-blanks templates for human-conversation tasks. They are not architecture docs.
 

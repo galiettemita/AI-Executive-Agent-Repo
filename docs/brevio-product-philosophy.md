@@ -143,6 +143,7 @@ Project docs:
 - [FOMO_DESIGN.md](../FOMO_DESIGN.md)
 - [FOMO_PLAN.md](../FOMO_PLAN.md)
 - [docs/personalized-importance-learning.md](personalized-importance-learning.md)
+- [docs/BREVIO_MEMORY_AND_SKILL_OS.md](BREVIO_MEMORY_AND_SKILL_OS.md) — M0 doctrine for typed memory + reusable skills (canonical "what Brevio learns and how").
 - [CLAUDE.md](../CLAUDE.md)
 
 ---
