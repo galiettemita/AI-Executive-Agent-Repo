@@ -64,7 +64,6 @@ import { projectCalendarEvent } from '../src/adapters/google-calendar/context-so
 import { RANKER_OPENAI_RESPONSE_FORMAT } from '../src/ranker/openai-response-format.js';
 import {
   PROMPT_VERSION,
-  PROMPT_VERSION_WITH_PIL as _PROMPT_VERSION_WITH_PIL,
   buildRankerPrompt
 } from '../src/ranker/prompt.js';
 import { PROMPT_VERSION_WITH_CALENDAR } from '../src/ranker/calendar-prompt.js';
@@ -391,7 +390,7 @@ async function main(): Promise<void> {
   };
 
   // Privacy canary on every model reason text
-  let canaryHits: string[] = [];
+  const canaryHits: string[] = [];
   for (const p of pairs) {
     for (const text of [p.baseline.reason ?? '', p.calendar_aware.reason ?? '']) {
       for (const needle of PRIVACY_NEEDLES) {

@@ -171,7 +171,7 @@ async function runScenario(opts: ScenarioOpts): Promise<ScenarioResult> {
   let baselineCalls = 0;
   let pilCalls = 0;
   const ranker = {
-    rank: async (_req: { raw: unknown; user_id: string }): Promise<RankerResult> => {
+    rank: async (): Promise<RankerResult> => {
       baselineCalls++;
       return rankerSuccess();
     },

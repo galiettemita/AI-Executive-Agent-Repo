@@ -103,6 +103,10 @@ const LEGACY_TO_GENERIC_MAP = {
 } as const;
 const LEGACY_NOT_MAPPED = ['stop'] as const;
 
+void EXPECTED_FEEDBACK_KINDS_OPTIONAL.length;
+void Object.keys(LEGACY_TO_GENERIC_MAP).length;
+void LEGACY_NOT_MAPPED.length;
+
 // Privacy canary — forbidden substrings in new audit/memory_signal detail.
 const FORBIDDEN_DETAIL_SUBSTRINGS = [
   'Subject:',
@@ -184,14 +188,6 @@ async function main(): Promise<void> {
   } catch {
     // Module load failure — runtime not yet present.
   }
-
-  const runtimePending =
-    !appliedKindRegistered ||
-    !senderIgnoredKindRegistered ||
-    !surfacesExported ||
-    !activeSurfacesExported ||
-    !kindsExported ||
-    !mappingHelperExported;
 
   /* ------------------------------------------------------------------ */
   /* C1: brevio.feedback.applied registered in FOMO_AUDIT_ACTIONS        */

@@ -142,8 +142,6 @@ async function main(): Promise<void> {
   const memorySignalSet = new Set<string>(MEMORY_SIGNAL_KINDS as readonly string[]);
   const v059MemorySignalsRegistered = memorySignalSet.has('sender_feedback_ignored');
 
-  const runtimePending = !promptBumped || !routingModulePresent;
-
   /* ------------------------------------------------------------------ */
   /* C1: feedback.written audit detail carries the 10 locked fields      */
   /* ------------------------------------------------------------------ */

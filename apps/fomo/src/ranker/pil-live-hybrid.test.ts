@@ -22,7 +22,6 @@ import { type BackendResult, type ModelBackend, createModelRouter } from '../cor
 import { type AuditStore, type AuditEntry } from '../core/audit.ts';
 
 import { rankEmailWithLivePil, writeBrevioRankPilAppliedAudit, modelMentionedPilInReason } from './index.ts';
-import { buildRankerPrompt } from './prompt.ts';
 import { type PilContext } from './pil-context.ts';
 
 const CANONICAL_HMAC = 'eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee';
@@ -39,6 +38,8 @@ class RecordingAuditStore implements AuditStore {
     } as AuditEntry);
   }
   async recent(_userId: string, _limit?: number): Promise<AuditEntry[]> {
+    void _userId;
+    void _limit;
     return this.writes;
   }
 }

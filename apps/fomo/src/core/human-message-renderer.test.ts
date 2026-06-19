@@ -287,8 +287,8 @@ describe('renderHumanMessage — Q5.A degradation matrix', () => {
   });
 
   it('valid reason exactly at REASON_HARD_CAP_FOR_RENDER (180) passes', () => {
-    const reason180 = 'X' + 'a'.repeat(178) + '.';
-    assert.equal(reason180.length, 180);
+    const reason180 = 'X' + 'a'.repeat(REASON_HARD_CAP_FOR_RENDER - 2) + '.';
+    assert.equal(reason180.length, REASON_HARD_CAP_FOR_RENDER);
     const out = renderHumanMessage({
       surface: 'email_alert',
       view: makeView(),

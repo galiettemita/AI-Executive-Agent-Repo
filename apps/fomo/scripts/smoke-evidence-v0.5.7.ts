@@ -643,11 +643,10 @@ async function main(): Promise<void> {
   console.log(
     'VERDICT: PASS  (operator must additionally confirm: §6 Test 3 taste check passed on rendered bodies — load-bearing per C10 correction; real iMessage taste check if SendBlue allows, else N/A — not failure; C5 no-ellipsis verified by code-level test suite; C12 3E.1 preserved verified by runtime unit suite + PR review. Run smoke-evidence:v0.5.1 + v0.5.2 + v0.5.3 + v0.5.4 + v0.5.5 + v0.5.6 separately to confirm prior PASS criteria still hold.)'
   );
-  ALLOWED_TEMPLATE_SHAPES.forEach((_) => {
-    // Touch ALLOWED_TEMPLATE_SHAPES so the const is not flagged as unused —
-    // it documents the allowed enum and is referenced by reviewer eye when
-    // verifying runtime commit registered the same values.
-  });
+  // Touch ALLOWED_TEMPLATE_SHAPES so the const is not flagged as unused —
+  // it documents the allowed enum and is referenced by reviewer eye when
+  // verifying runtime commit registered the same values.
+  void ALLOWED_TEMPLATE_SHAPES.length;
   process.exit(0);
 }
 

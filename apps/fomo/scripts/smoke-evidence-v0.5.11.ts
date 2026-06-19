@@ -73,9 +73,8 @@ const FOUNDER_USER_ID = (process.env.FOMO_FOUNDER_USER_ID ?? 'founder').trim();
 const EXPECTED_V0510_PROMPT_VERSION = 'reply-parser-v0.2.0' as string;
 const EXPECTED_V0511_RANKER_PROMPT_VERSION = 'ranker-v0.2.0' as string;
 
-// v0.5.11 new memory_signal kinds
+// v0.5.11 memory_signal kinds this evidence script must keep verifying.
 const PIL_NEW_KINDS = ['sender_importance', 'sender_suppressed'] as const;
-type PilKind = (typeof PIL_NEW_KINDS)[number];
 
 // v0.5.11 new audit kind
 const SIGNAL_AGGREGATED_KIND = 'brevio.signal.aggregated';
@@ -162,7 +161,7 @@ async function main(): Promise<void> {
   // gates on them as ERROR-if-missing. Here we just confirm registry intact.
   const senderImportanceRegistered = memorySignalSet.has('sender_importance');
   const senderSuppressedRegistered = memorySignalSet.has('sender_suppressed');
-  const pilKindsRegistered = senderImportanceRegistered && senderSuppressedRegistered;
+  const pilKindsRegistered = PIL_NEW_KINDS.every((kind) => memorySignalSet.has(kind));
   const v059MemorySignalUntouched = memorySignalSet.has('sender_feedback_ignored');
 
   // v0.5.10 invariant — reply parser must still be v0.2.0.
@@ -202,6 +201,7 @@ async function main(): Promise<void> {
 
   const runtimePending =
     !pilKindsRegistered ||
+    !v0510Held ||
     !signalAggregatedRegistered ||
     !pilAggregationModulePresent ||
     !pilContextModulePresent ||

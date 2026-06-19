@@ -16,7 +16,6 @@
 // PENDING + a clear note, returns non-PASS verdict if anything required is
 // missing.
 
-import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
 
 import { InMemoryCostStore } from '../core/cost-tracking.js';
@@ -54,6 +53,8 @@ class RecordingAuditStore implements AuditStore {
     } as AuditEntry);
   }
   async recent(_userId: string, _limit?: number): Promise<AuditEntry[]> {
+    void _userId;
+    void _limit;
     return this.writes;
   }
 }
@@ -247,6 +248,7 @@ async function runBB2_negativeScoreNotAutoDropped(args: {
 async function runBB3_decayedSignalEqualsBaseline(args: {
   router: ReturnType<typeof createModelRouter> | null;
 }): Promise<BBFixtureResult> {
+  void args;
   // BB3 verifies the DECAY path. The decay logic is the same in
   // buildLivePilContext (delegates to buildPilContext). We assert via the
   // projection: a 200d-old signal produces decay_factor_applied=0, hence
@@ -628,8 +630,6 @@ async function main(): Promise<void> {
 
   const allShadowPassed = shadowPass === shadowTotal;
   const noBBFail = bbFail === 0;
-  const allBBPassed = bbPass === bbResults.length;
-
   if (!allShadowPassed) {
     console.log(`VERDICT: FAIL — shadow carry-forward ${shadowPass} / ${shadowTotal}`);
     process.exit(1);
