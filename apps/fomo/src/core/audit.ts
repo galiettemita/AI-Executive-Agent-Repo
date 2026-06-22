@@ -414,7 +414,13 @@ export type AuditAction =
   // Failure detail additionally carries error_code + error_reason from
   // sanitizeProviderError when the SendBlue send threw OR returned a
   // non-'sent' SendOutcome. NEVER raw provider response text.
-  | 'brevio.explain.served';
+  | 'brevio.explain.served'
+  // M1 no-migration typed-memory facade — dormant substrate audit kinds.
+  // `brevio.memory.retrieved` records typed-memory retrieval ids/kinds only,
+  // never the memory content. `brevio.memory.retraction_recorded` records the
+  // retraction/supersession event. No consumer surface reads this facade yet.
+  | 'brevio.memory.retrieved'
+  | 'brevio.memory.retraction_recorded';
 
 // Phase 3G.1 — runtime registry of every FOMO-namespaced audit
 // action. Used by the 3G.1 evidence script (and any future ops
@@ -495,7 +501,10 @@ export const FOMO_AUDIT_ACTIONS = [
   // Phase v0.6.0C — Read-only Calendar context substrate.
   'brevio.context.calendar_built',
   // Phase v0.7.0A — "Why?" Reply Intent + Explainability Surface.
-  'brevio.explain.served'
+  'brevio.explain.served',
+  // M1 no-migration typed-memory facade.
+  'brevio.memory.retrieved',
+  'brevio.memory.retraction_recorded'
 ] as const satisfies readonly AuditAction[];
 
 export type AuditResult = 'success' | 'failure';
