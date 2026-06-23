@@ -7,9 +7,11 @@ import {
   InMemoryTypedMemoryStore,
   TYPED_MEMORY_CONFIDENCE_LEVELS,
   TYPED_MEMORY_KINDS,
+  TYPED_MEMORY_RETRIEVAL_PACK_KINDS,
   TYPED_MEMORY_SOURCES,
   isTypedMemoryConfidence,
   isTypedMemoryKind,
+  isTypedMemoryRetrievalPackKind,
   isTypedMemorySource,
   type NewTypedMemoryRow
 } from './typed-memory.ts';
@@ -46,6 +48,13 @@ describe('typed memory facade constants', () => {
 
   it('declares explicit confidence and source enums', () => {
     assert.deepEqual([...TYPED_MEMORY_CONFIDENCE_LEVELS], ['low', 'medium', 'high']);
+    assert.deepEqual([...TYPED_MEMORY_RETRIEVAL_PACK_KINDS], [
+      'ranker',
+      'hmr',
+      'explain',
+      'drafter',
+      'ops'
+    ]);
     assert.deepEqual([...TYPED_MEMORY_SOURCES], [
       'user_provided',
       'user_stated',
@@ -56,6 +65,8 @@ describe('typed memory facade constants', () => {
     ]);
     assert.equal(isTypedMemoryConfidence('medium'), true);
     assert.equal(isTypedMemoryConfidence('certain'), false);
+    assert.equal(isTypedMemoryRetrievalPackKind('ranker'), true);
+    assert.equal(isTypedMemoryRetrievalPackKind('m1_facade_test'), false);
     assert.equal(isTypedMemorySource('user_stated'), true);
     assert.equal(isTypedMemorySource('model_guessed'), false);
   });
@@ -80,6 +91,23 @@ describe('InMemoryTypedMemoryStore', () => {
     assert.equal(read?.id, written.id);
   });
 
+  it('rejects invalid typed enum values at write time', async () => {
+    const store = new InMemoryTypedMemoryStore();
+
+    await assert.rejects(
+      () => store.write(semantic({ kind: 'json_dump' as never })),
+      /kind must be one of/
+    );
+    await assert.rejects(
+      () => store.write(semantic({ source: 'model_guessed' as never })),
+      /source must be one of/
+    );
+    await assert.rejects(
+      () => store.write(semantic({ confidence: 'certain' as never })),
+      /confidence must be one of/
+    );
+  });
+
   it('preserves cross-tenant isolation by user_id', async () => {
     const store = new InMemoryTypedMemoryStore();
     await store.write(semantic({ user_id: 'u1', scope_key: 'profile:timezone' }));
@@ -93,14 +121,23 @@ describe('InMemoryTypedMemoryStore', () => {
     assert.equal(u2Rows[0]?.user_id, 'u2');
   });
 
-  it('excludes low-confidence and retracted rows from active retrieval', async () => {
+  it('excludes low-confidence, stale, and retracted rows from active retrieval', async () => {
     const store = new InMemoryTypedMemoryStore();
     await store.write(semantic({ scope_key: 'profile:confirmed', confidence: 'high' }));
     await store.write(semantic({ scope_key: 'profile:weak', confidence: 'low' }));
+    await store.write(
+      semantic({
+        scope_key: 'profile:stale',
+        confidence: 'high',
+        stale_marked_at: '2026-06-01T00:00:00.000Z'
+      })
+    );
     await store.write(semantic({ scope_key: 'profile:retracted', confidence: 'high', retracted: true }));
 
     const rows = await store.listActive('u1');
     assert.deepEqual(rows.map((r) => r.scope_key), ['profile:confirmed']);
+    assert.equal(await store.get('u1', 'semantic', 'profile:weak'), null);
+    assert.equal(await store.get('u1', 'semantic', 'profile:stale'), null);
     assert.equal(await store.get('u1', 'semantic', 'profile:retracted'), null);
   });
 
@@ -110,21 +147,62 @@ describe('InMemoryTypedMemoryStore', () => {
     const row = await store.write(semantic());
     await store.markRetrieved({
       user_id: 'u1',
-      purpose: 'm1_facade_test',
+      pack_kind: 'ranker',
       kinds: ['semantic'],
-      returned_ids: [row.id ?? 0]
+      returned_ids: [row.id ?? 0],
+      suppressions_applied: 0,
+      preferences_applied: 0
     });
 
     const [entry] = await audit.recent('u1');
     assert.equal(entry?.action, 'brevio.memory.retrieved');
     assert.deepEqual(entry?.detail, {
-      purpose: 'm1_facade_test',
-      kinds: ['semantic'],
-      returned_count: 1,
-      returned_ids: [row.id]
+      pack_kind: 'ranker',
+      row_kinds: ['semantic'],
+      row_ids: [row.id],
+      suppressions_applied: 0,
+      preferences_applied: 0
     });
     assert.equal(JSON.stringify(entry?.detail).includes('working_hours'), false);
     assert.equal(JSON.stringify(entry?.detail).includes('America/New_York'), false);
+  });
+
+  it('rejects non-structural retrieval pack kinds before they can enter audit detail', async () => {
+    const audit = new InMemoryAuditStore();
+    const store = new InMemoryTypedMemoryStore(audit);
+    const row = await store.write(semantic());
+
+    await assert.rejects(
+      () =>
+        store.markRetrieved({
+          user_id: 'u1',
+          pack_kind: 'memory-212-555-1212' as never,
+          kinds: ['semantic'],
+          returned_ids: [row.id ?? 0]
+        }),
+      /pack_kind must be one of/
+    );
+
+    assert.deepEqual(await audit.recent('u1'), []);
+  });
+
+  it('rejects non-typed retrieval row kinds before they can enter audit detail', async () => {
+    const audit = new InMemoryAuditStore();
+    const store = new InMemoryTypedMemoryStore(audit);
+    const row = await store.write(semantic());
+
+    await assert.rejects(
+      () =>
+        store.markRetrieved({
+          user_id: 'u1',
+          pack_kind: 'ranker',
+          kinds: ['semantic', 'json_dump' as never],
+          returned_ids: [row.id ?? 0]
+        }),
+      /kind must be one of/
+    );
+
+    assert.deepEqual(await audit.recent('u1'), []);
   });
 
   it('retracts rows and emits structural retraction audit', async () => {
@@ -137,11 +215,13 @@ describe('InMemoryTypedMemoryStore', () => {
 
     const [entry] = await audit.recent('u1');
     assert.equal(entry?.action, 'brevio.memory.retraction_recorded');
+    assert.equal(entry?.target, 'typed_memory');
     assert.deepEqual(entry?.detail, {
       kind: 'semantic',
-      scope_key: 'profile:role',
+      retracted_id: 1,
       superseded_by: 42
     });
+    assert.equal(JSON.stringify(entry?.detail).includes('profile:role'), false);
   });
 
   it('rejects raw email-like scope keys as a privacy canary', async () => {

@@ -19,7 +19,7 @@ Status: substrate-only scaffold. No runtime consumer, no database migration, no 
 4. **What is the no-migration safety boundary?**
    - The facade is not added to `createStores()`, has no Postgres implementation, and no production caller imports it.
 5. **What proves this is typed, safe, and reversible?**
-   - Tests cover declared kinds/sources/confidence, cross-tenant isolation, low-confidence/retracted retrieval exclusion, structural audit-only retrieval/retraction, and raw-email scope-key rejection.
+   - Tests cover declared kinds/sources/confidence, cross-tenant isolation, low-confidence/stale/retracted retrieval exclusion, structural audit-only retrieval/retraction, and raw-email scope-key rejection.
 6. **What proves this does not shrink Brevio into FOMO-only polish?**
    - The code is Brevio-memory substrate, not Gmail alert behavior; it names reusable memory kinds required for future Memory Architecture and Skill OS work.
 

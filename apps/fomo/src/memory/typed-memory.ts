@@ -23,6 +23,15 @@ export type TypedMemoryKind = (typeof TYPED_MEMORY_KINDS)[number];
 export const TYPED_MEMORY_CONFIDENCE_LEVELS = ['low', 'medium', 'high'] as const;
 export type TypedMemoryConfidence = (typeof TYPED_MEMORY_CONFIDENCE_LEVELS)[number];
 
+export const TYPED_MEMORY_RETRIEVAL_PACK_KINDS = [
+  'ranker',
+  'hmr',
+  'explain',
+  'drafter',
+  'ops'
+] as const;
+export type TypedMemoryRetrievalPackKind = (typeof TYPED_MEMORY_RETRIEVAL_PACK_KINDS)[number];
+
 export const TYPED_MEMORY_SOURCES = [
   'user_provided',
   'user_stated',
@@ -42,6 +51,15 @@ export function isTypedMemoryConfidence(value: unknown): value is TypedMemoryCon
   return (
     typeof value === 'string' &&
     (TYPED_MEMORY_CONFIDENCE_LEVELS as readonly string[]).includes(value)
+  );
+}
+
+export function isTypedMemoryRetrievalPackKind(
+  value: unknown
+): value is TypedMemoryRetrievalPackKind {
+  return (
+    typeof value === 'string' &&
+    (TYPED_MEMORY_RETRIEVAL_PACK_KINDS as readonly string[]).includes(value)
   );
 }
 
@@ -114,9 +132,11 @@ export type NewTypedMemoryRow = Omit<TypedMemoryRow, 'id' | 'created_at' | 'upda
 
 export interface TypedMemoryRetrievalAudit {
   readonly user_id: string;
-  readonly purpose: string;
+  readonly pack_kind: TypedMemoryRetrievalPackKind;
   readonly kinds: readonly TypedMemoryKind[];
   readonly returned_ids: readonly number[];
+  readonly suppressions_applied?: number;
+  readonly preferences_applied?: number;
 }
 
 export interface TypedMemoryStore {
@@ -136,6 +156,40 @@ function assertSafeScopeKey(scopeKey: string): void {
   }
 }
 
+function assertTypedMemoryKindValue(kind: string): void {
+  if (!isTypedMemoryKind(kind)) {
+    throw new Error(`typed memory kind must be one of ${TYPED_MEMORY_KINDS.join(', ')}`);
+  }
+}
+
+function assertTypedMemoryConfidenceValue(confidence: string): void {
+  if (!isTypedMemoryConfidence(confidence)) {
+    throw new Error(
+      `typed memory confidence must be one of ${TYPED_MEMORY_CONFIDENCE_LEVELS.join(', ')}`
+    );
+  }
+}
+
+function assertTypedMemorySourceValue(source: string): void {
+  if (!isTypedMemorySource(source)) {
+    throw new Error(`typed memory source must be one of ${TYPED_MEMORY_SOURCES.join(', ')}`);
+  }
+}
+
+function assertRetrievalPackKind(packKind: string): void {
+  if (!isTypedMemoryRetrievalPackKind(packKind)) {
+    throw new Error(
+      `typed memory retrieval pack_kind must be one of ${TYPED_MEMORY_RETRIEVAL_PACK_KINDS.join(', ')}`
+    );
+  }
+}
+
+function assertRetrievalKinds(kinds: readonly string[]): void {
+  for (const kind of kinds) {
+    assertTypedMemoryKindValue(kind);
+  }
+}
+
 function cloneAndFreeze<T extends TypedMemoryRow>(row: T): T {
   return Object.freeze({
     ...row,
@@ -148,6 +202,10 @@ function cloneAndFreeze<T extends TypedMemoryRow>(row: T): T {
 
 function rowKey(userId: string, kind: TypedMemoryKind, scopeKey: string): string {
   return `${userId}|${kind}|${scopeKey}`;
+}
+
+function isActiveRetrievable(row: TypedMemoryRow): boolean {
+  return !row.retracted && row.confidence !== 'low' && row.stale_marked_at === null;
 }
 
 function safeRowForStorage(row: NewTypedMemoryRow, id: number): TypedMemoryRow {
@@ -176,6 +234,9 @@ export class InMemoryTypedMemoryStore implements TypedMemoryStore {
   }
 
   async write(input: NewTypedMemoryRow): Promise<TypedMemoryRow> {
+    assertTypedMemoryKindValue(input.kind);
+    assertTypedMemorySourceValue(input.source);
+    assertTypedMemoryConfidenceValue(input.confidence);
     const id = this.rows.get(rowKey(input.user_id, input.kind, input.scope_key))?.id ?? this.nextId++;
     const row = safeRowForStorage(input, id);
     this.rows.set(rowKey(row.user_id, row.kind, row.scope_key), row);
@@ -184,7 +245,7 @@ export class InMemoryTypedMemoryStore implements TypedMemoryStore {
 
   async get(userId: string, kind: TypedMemoryKind, scopeKey: string): Promise<TypedMemoryRow | null> {
     const row = this.rows.get(rowKey(userId, kind, scopeKey));
-    if (!row || row.retracted) return null;
+    if (!row || !isActiveRetrievable(row)) return null;
     return row;
   }
 
@@ -196,8 +257,7 @@ export class InMemoryTypedMemoryStore implements TypedMemoryStore {
     const out: TypedMemoryRow[] = [];
     for (const row of this.rows.values()) {
       if (row.user_id !== userId) continue;
-      if (row.retracted) continue;
-      if (row.confidence === 'low') continue;
+      if (!isActiveRetrievable(row)) continue;
       if (!kindSet.has(row.kind)) continue;
       out.push(row);
     }
@@ -206,6 +266,8 @@ export class InMemoryTypedMemoryStore implements TypedMemoryStore {
   }
 
   async markRetrieved(audit: TypedMemoryRetrievalAudit): Promise<void> {
+    assertRetrievalPackKind(audit.pack_kind);
+    assertRetrievalKinds(audit.kinds);
     await this.audit?.write({
       actor_user_id: audit.user_id,
       actor_ip: null,
@@ -214,10 +276,11 @@ export class InMemoryTypedMemoryStore implements TypedMemoryStore {
       target: 'typed_memory',
       result: 'success',
       detail: {
-        purpose: audit.purpose,
-        kinds: [...audit.kinds],
-        returned_count: audit.returned_ids.length,
-        returned_ids: [...audit.returned_ids]
+        pack_kind: audit.pack_kind,
+        row_kinds: [...audit.kinds],
+        row_ids: [...audit.returned_ids],
+        suppressions_applied: audit.suppressions_applied ?? 0,
+        preferences_applied: audit.preferences_applied ?? 0
       }
     });
   }
@@ -242,11 +305,11 @@ export class InMemoryTypedMemoryStore implements TypedMemoryStore {
       actor_ip: null,
       actor_user_agent: null,
       action: 'brevio.memory.retraction_recorded',
-      target: `${kind}:${scopeKey}`,
+      target: 'typed_memory',
       result: 'success',
       detail: {
         kind,
-        scope_key: scopeKey,
+        retracted_id: existing.id,
         superseded_by: supersededBy
       }
     });
