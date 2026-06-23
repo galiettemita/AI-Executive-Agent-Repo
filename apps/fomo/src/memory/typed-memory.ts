@@ -1,5 +1,4 @@
 import { type AuditStore } from '../core/audit.js';
-import { redact } from '../core/safe-logger.js';
 
 // M1 no-migration typed-memory facade.
 //
@@ -190,12 +189,26 @@ function assertRetrievalKinds(kinds: readonly string[]): void {
   }
 }
 
+function cloneAndDeepFreeze<T>(value: T): T {
+  if (Array.isArray(value)) {
+    return Object.freeze(value.map((item) => cloneAndDeepFreeze(item))) as T;
+  }
+  if (typeof value === 'object' && value !== null) {
+    const out: Record<string, unknown> = {};
+    for (const [key, nested] of Object.entries(value)) {
+      out[key] = cloneAndDeepFreeze(nested);
+    }
+    return Object.freeze(out) as T;
+  }
+  return value;
+}
+
 function cloneAndFreeze<T extends TypedMemoryRow>(row: T): T {
   return Object.freeze({
     ...row,
-    ...(row.kind === 'semantic' ? { value: Object.freeze({ ...row.value }) } : {}),
+    ...(row.kind === 'semantic' ? { value: cloneAndDeepFreeze(row.value) } : {}),
     ...(row.kind === 'preference' && typeof row.value === 'object' && row.value !== null
-      ? { value: Object.freeze({ ...row.value }) }
+      ? { value: cloneAndDeepFreeze(row.value) }
       : {})
   }) as unknown as T;
 }
@@ -221,7 +234,7 @@ function safeRowForStorage(row: NewTypedMemoryRow, id: number): TypedMemoryRow {
     superseded_by: row.superseded_by ?? null
   } as TypedMemoryRow;
 
-  return cloneAndFreeze(redact(base) as TypedMemoryRow);
+  return cloneAndFreeze(base);
 }
 
 export class InMemoryTypedMemoryStore implements TypedMemoryStore {

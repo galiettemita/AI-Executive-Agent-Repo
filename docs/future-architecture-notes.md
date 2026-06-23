@@ -240,6 +240,68 @@ Code excerpt worth remembering: the safety-wrapper shape (decide → check → e
 
 ---
 
+## ACP / Agent Client Protocol
+
+**Source:** founder/operator planning decision 2026-06-23 — long-term architecture note, no code change
+**Layer:** operator/developer control plane for L6/L7 agent work; not a user-facing product runtime
+**Maps to "Future Agent Intelligence Requirement" component:** Agent Orchestration + Tool / Workflow Orchestration
+
+### Concept
+
+ACP (Agent Client Protocol) is a possible standard interface for agent clients, IDE agents, coding workers, or operator tooling to talk to Brevio/Hermes-style agent processes. In Brevio, ACP belongs as an **operator/developer interface**, not as the core product spine.
+
+The product spine remains Brevio's governed MCP-style runtime:
+
+```text
+Tool Registry → Permission Gate → Egress Policy → Audit Log → State / Memory → User-facing HMR surface
+```
+
+ACP may sit outside or beside that spine as a way for trusted development agents and internal operators to inspect work, hand off tasks, or drive controlled maintenance workflows. It must never become a shortcut around the product safety model.
+
+### Future-implementation guidance
+
+When ACP becomes useful, introduce it as a separate infrastructure phase only after there is a concrete operator need, such as:
+
+1. IDE/coding agents need a stable interface for Brevio implementation tasks.
+2. Internal Brevio workers need cleaner handoffs than shell scripts plus launchd.
+3. Operator tooling needs to inspect agent sessions, plans, or task state without scraping logs.
+
+Do **not** introduce ACP because it is fashionable or because the project already uses MCP-style language. ACP has to earn its place by reducing operational friction.
+
+If ACP exposes any capability that can affect Brevio state, code, user data, credentials, production behavior, or external services, that capability must pass through the same enforcement points as every product tool:
+
+- registry entry with explicit schema and owner,
+- risk tier,
+- consent / approval requirement where applicable,
+- egress policy,
+- audit event,
+- kill switch,
+- founder-only smoke before trusted use.
+
+### What ACP must not replace
+
+- MCP-style provider tools/adapters.
+- Brevio Tool Registry.
+- Permission Gate / policy-gate.
+- Egress Policy.
+- Audit Log.
+- HMR user-facing surfaces.
+- The 6-question gate for new phases.
+
+### Near-term decision
+
+Defer implementation. Add ACP only to the long-term plan for now. It is **not** a next Brevio milestone and should not displace Feedback + Learn/Grow, PIL, consent grants, Calendar/Drafting surfaces, or bounded autonomy work.
+
+### Smoke/eval proof required before ACP is trusted
+
+- A local ACP client can connect to the intended Brevio/Hermes agent process.
+- ACP cannot invoke an action unless the underlying Brevio gate would allow the same action through the normal product path.
+- ACP-caused work is audit-visible with source `acp` or equivalent.
+- ACP failure degrades safely: no half-executed tool calls, no silent retry of risky actions, no skipped approval.
+- ACP cannot expose raw secrets, raw user content, or production credentials through operator introspection.
+
+---
+
 ## Intent Classification (concept only)
 
 **Archived from:** `services/brevio-brain/src/classify.ts` (216 lines)

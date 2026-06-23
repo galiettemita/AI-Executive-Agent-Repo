@@ -91,6 +91,52 @@ describe('InMemoryTypedMemoryStore', () => {
     assert.equal(read?.id, written.id);
   });
 
+  it('preserves legitimate typed-memory value keys instead of applying log redaction to stored rows', async () => {
+    const store = new InMemoryTypedMemoryStore();
+    const written = await store.write(
+      semantic({
+        scope_key: 'profile:state_code',
+        attribute: 'state_code',
+        value: { state: 'NY', code: 'EST', note: 'allowed typed memory payload' }
+      })
+    );
+
+    assert.deepEqual(written.value, {
+      state: 'NY',
+      code: 'EST',
+      note: 'allowed typed memory payload'
+    });
+
+    const read = await store.get('u1', 'semantic', 'profile:state_code');
+    assert.deepEqual(read?.kind === 'semantic' ? read.value : null, written.value);
+  });
+
+  it('deep-clones and freezes typed-memory values so callers cannot mutate stored rows', async () => {
+    const store = new InMemoryTypedMemoryStore();
+    const inputValue = { prefs: { start: '09:00' }, tags: ['morning'] };
+    const written = await store.write(
+      semantic({
+        scope_key: 'profile:nested_value',
+        attribute: 'nested_value',
+        value: inputValue
+      })
+    );
+
+    inputValue.prefs.start = '12:00';
+    inputValue.tags.push('mutated');
+    assert.throws(() => {
+      if (written.kind === 'semantic') {
+        (written.value.prefs as { start: string }).start = '13:00';
+      }
+    }, /Cannot assign to read only property/);
+
+    const read = await store.get('u1', 'semantic', 'profile:nested_value');
+    assert.deepEqual(read?.kind === 'semantic' ? read.value : null, {
+      prefs: { start: '09:00' },
+      tags: ['morning']
+    });
+  });
+
   it('rejects invalid typed enum values at write time', async () => {
     const store = new InMemoryTypedMemoryStore();
 

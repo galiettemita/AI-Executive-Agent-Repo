@@ -86,7 +86,7 @@ Every dimension has seven required fields:
 
 **What is missing.** Multi-step planner ("read email → check calendar → identify conflict → draft reply → ask user"). Plan persistence (the agent's plan is auditable). Rollback (if step 3 fails, step 1's side effects unwind). Reasoning observability.
 
-**Future build path.** Per-task plan objects (stored, auditable). Step-level audit. Per-step gate via existing policy-gate. LLM-driven plans bounded by allowed-tool lists. Rollback hooks per side-effect.
+**Future build path.** Per-task plan objects (stored, auditable). Step-level audit. Per-step gate via existing policy-gate. LLM-driven plans bounded by allowed-tool lists. Rollback hooks per side-effect. ACP (Agent Client Protocol) may become an operator/developer interface for Brevio agents, IDE agents, and internal coding-worker handoffs, but it is not a replacement for Brevio's product runtime, tool gateway, permission gate, or audit model.
 
 **What must never be faked.** NO presenting a plan that wasn't actually executed. NO hiding reasoning steps from audit. NO unbounded LLM autonomy. NO "the agent decided X" without a captured chain-of-decisions.
 
@@ -106,7 +106,7 @@ Every dimension has seven required fields:
 
 **What is missing.** Calendar tool (read events, check conflicts). Drafts tool (write Gmail drafts). Memory tool (read/write per-user facts). Web tool (browse a URL the email referenced). Cross-tool plans. Tool failure → graceful degradation.
 
-**Future build path.** Add tools as separate phases (each its own 6Q gate). Each tool gets its own egress policy, audit kinds, kill switch, smoke. The agent's planner picks the tool chain. Per-tool risk class + permission gate.
+**Future build path.** Add tools as separate phases (each its own 6Q gate). Each tool gets its own egress policy, audit kinds, kill switch, smoke. The agent's planner picks the tool chain. Per-tool risk class + permission gate. Keep MCP-style tools/adapters as the user-product spine; if ACP is introduced, use it as an internal/operator control plane and route any ACP-exposed capability through the same Brevio registry, risk-tier, consent, egress, audit, and kill-switch rules.
 
 **What must never be faked.** NO claiming a tool was called when it wasn't. NO silent tool fallback. NO ignoring tool errors. Every tool call audited. NO bypassing egress policy "just this once."
 
