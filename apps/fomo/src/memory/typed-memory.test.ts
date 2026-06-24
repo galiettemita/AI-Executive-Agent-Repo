@@ -5,6 +5,7 @@ import { InMemoryAuditStore, FOMO_AUDIT_ACTIONS } from '../core/audit.ts';
 
 import {
   InMemoryTypedMemoryStore,
+  MemorySignalsBackedTypedMemoryStore,
   TYPED_MEMORY_CONFIDENCE_LEVELS,
   TYPED_MEMORY_KINDS,
   TYPED_MEMORY_RETRIEVAL_PACK_KINDS,
@@ -13,8 +14,10 @@ import {
   isTypedMemoryKind,
   isTypedMemoryRetrievalPackKind,
   isTypedMemorySource,
+  typedMemoryScopeKeyForBridgedMemorySignal,
   type NewTypedMemoryRow
 } from './typed-memory.ts';
+import { InMemoryMemorySignalStore } from './memory-signals.ts';
 
 function semantic(overrides: Partial<NewTypedMemoryRow> = {}): NewTypedMemoryRow {
   return {
@@ -276,5 +279,74 @@ describe('InMemoryTypedMemoryStore', () => {
       () => store.write(semantic({ scope_key: 'person:alice@example.com' })),
       /must not contain raw email/
     );
+  });
+});
+
+describe('MemorySignalsBackedTypedMemoryStore', () => {
+  it('bridges existing user-wide preference signals into typed-memory preference rows', async () => {
+    const memoryStore = new InMemoryMemorySignalStore();
+    await memoryStore.upsert({ user_id: 'u1', kind: 'quietness_preference', scope_key: null, detail: { max_per_day: 5 }, source: 'user_confirmed', updated_at: '2026-06-23T12:00:00.000Z' });
+    await memoryStore.upsert({ user_id: 'u1', kind: 'timing_preference', scope_key: null, detail: { window: 'evening' }, source: 'feedback_derived', updated_at: '2026-06-23T13:00:00.000Z' });
+    await memoryStore.upsert({ user_id: 'u1', kind: 'stop_active', scope_key: null, detail: { active: true }, source: 'user_confirmed', updated_at: '2026-06-23T14:00:00.000Z' });
+    const store = new MemorySignalsBackedTypedMemoryStore(memoryStore);
+    const rows = await store.listActive('u1');
+    assert.deepEqual(rows.map((row) => ({ kind: row.kind, scope_key: row.scope_key, source: row.source, confidence: row.confidence, attribute: row.kind === 'preference' ? row.attribute : null })), [
+      { kind: 'preference', scope_key: typedMemoryScopeKeyForBridgedMemorySignal('timing_preference'), source: 'feedback_derived', confidence: 'medium', attribute: 'timing_preference' },
+      { kind: 'preference', scope_key: typedMemoryScopeKeyForBridgedMemorySignal('quietness_preference'), source: 'user_stated', confidence: 'high', attribute: 'quietness_preference' }
+    ]);
+    assert.equal(rows.some((row) => row.scope_key.includes('stop_active')), false);
+  });
+
+  it('reads a bridged preference by its fixed safe typed scope key', async () => {
+    const memoryStore = new InMemoryMemorySignalStore();
+    await memoryStore.upsert({ user_id: 'u1', kind: 'quietness_preference', scope_key: null, detail: { max_per_day: 3 }, source: 'founder_set', updated_at: '2026-06-23T15:00:00.000Z' });
+    const store = new MemorySignalsBackedTypedMemoryStore(memoryStore);
+    const row = await store.get('u1', 'preference', typedMemoryScopeKeyForBridgedMemorySignal('quietness_preference'));
+    assert.equal(row?.kind, 'preference');
+    assert.equal(row?.scope_key, 'signal:quietness_preference');
+    assert.equal(row?.source, 'founder_default');
+    assert.equal(row?.source_ref, 'memory_signal:quietness_preference:1');
+    assert.equal(row?.kind === 'preference' ? row.attribute : null, 'quietness_preference');
+    assert.deepEqual(row?.kind === 'preference' ? row.value : null, { max_per_day: 3 });
+  });
+
+  it('excludes bridged rows when the underlying memory signal confidence maps to low', async () => {
+    const memoryStore = new InMemoryMemorySignalStore();
+    await memoryStore.upsert({ user_id: 'u1', kind: 'timing_preference', scope_key: null, detail: { window: 'night' }, source: 'inferred' });
+    const store = new MemorySignalsBackedTypedMemoryStore(memoryStore);
+    assert.deepEqual(await store.listActive('u1'), []);
+    assert.equal(await store.get('u1', 'preference', typedMemoryScopeKeyForBridgedMemorySignal('timing_preference')), null);
+  });
+
+  it('preserves cross-tenant isolation while bridging', async () => {
+    const memoryStore = new InMemoryMemorySignalStore();
+    await memoryStore.upsert({ user_id: 'u1', kind: 'quietness_preference', scope_key: null, detail: { max_per_day: 5 }, source: 'user_confirmed' });
+    await memoryStore.upsert({ user_id: 'u2', kind: 'quietness_preference', scope_key: null, detail: { max_per_day: 2 }, source: 'user_confirmed' });
+    const store = new MemorySignalsBackedTypedMemoryStore(memoryStore);
+    const u1Rows = await store.listActive('u1');
+    const u2Rows = await store.listActive('u2');
+    assert.equal(u1Rows.length, 1);
+    assert.equal(u2Rows.length, 1);
+    assert.deepEqual(u1Rows[0]?.kind === 'preference' ? u1Rows[0].value : null, { max_per_day: 5 });
+    assert.deepEqual(u2Rows[0]?.kind === 'preference' ? u2Rows[0].value : null, { max_per_day: 2 });
+  });
+
+  it('emits structural retrieval audit without leaking bridged preference values', async () => {
+    const audit = new InMemoryAuditStore();
+    const memoryStore = new InMemoryMemorySignalStore();
+    await memoryStore.upsert({ user_id: 'u1', kind: 'quietness_preference', scope_key: null, detail: { max_per_day: 4 }, source: 'user_confirmed' });
+    const store = new MemorySignalsBackedTypedMemoryStore(memoryStore, audit);
+    const row = await store.get('u1', 'preference', typedMemoryScopeKeyForBridgedMemorySignal('quietness_preference'));
+    await store.markRetrieved({ user_id: 'u1', pack_kind: 'ops', kinds: ['preference'], returned_ids: row?.id ? [row.id] : [], preferences_applied: 1 });
+    const [entry] = await audit.recent('u1');
+    assert.equal(entry?.action, 'brevio.memory.retrieved');
+    assert.deepEqual(entry?.detail, { pack_kind: 'ops', row_kinds: ['preference'], row_ids: [1], suppressions_applied: 0, preferences_applied: 1 });
+    assert.equal(JSON.stringify(entry?.detail).includes('max_per_day'), false);
+  });
+
+  it('rejects write and retract because the bridge is intentionally read-only', async () => {
+    const store = new MemorySignalsBackedTypedMemoryStore(new InMemoryMemorySignalStore());
+    await assert.rejects(() => store.write({ user_id: 'u1', kind: 'preference', scope_key: 'signal:quietness_preference', source: 'user_stated', source_ref: 'reply:123', confidence: 'high', stale_marked_at: null, retracted: false, superseded_by: null, attribute: 'quietness_preference', value: { max_per_day: 5 } }), /read-only/);
+    await assert.rejects(() => store.retract('u1', 'preference', 'signal:quietness_preference'), /read-only/);
   });
 });

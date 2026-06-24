@@ -1,4 +1,9 @@
 import { type AuditStore } from '../core/audit.js';
+import {
+  type MemorySignal,
+  type MemorySignalSource,
+  type MemorySignalStore
+} from './memory-signals.js';
 
 // M1 no-migration typed-memory facade.
 //
@@ -138,6 +143,22 @@ export interface TypedMemoryRetrievalAudit {
   readonly preferences_applied?: number;
 }
 
+export interface TypedMemoryStore {
+  write(row: NewTypedMemoryRow): Promise<TypedMemoryRow>;
+  get(userId: string, kind: TypedMemoryKind, scopeKey: string): Promise<TypedMemoryRow | null>;
+  listActive(userId: string, kinds?: readonly TypedMemoryKind[]): Promise<readonly TypedMemoryRow[]>;
+  markRetrieved(audit: TypedMemoryRetrievalAudit): Promise<void>;
+  retract(userId: string, kind: TypedMemoryKind, scopeKey: string, supersededBy?: number | null): Promise<boolean>;
+}
+
+export const BRIDGED_MEMORY_SIGNAL_KINDS = ['timing_preference', 'quietness_preference'] as const;
+export type BridgedMemorySignalKind = (typeof BRIDGED_MEMORY_SIGNAL_KINDS)[number];
+
+const BRIDGED_TYPED_SCOPE_KEYS: Readonly<Record<BridgedMemorySignalKind, string>> = Object.freeze({
+  timing_preference: 'signal:timing_preference',
+  quietness_preference: 'signal:quietness_preference'
+});
+
 function assertSafeScopeKey(scopeKey: string): void {
   if (scopeKey.trim().length === 0) {
     throw new Error('typed memory scope_key must be non-empty');
@@ -211,6 +232,69 @@ function rowKey(userId: string, kind: TypedMemoryKind, scopeKey: string): string
 
 function isActiveRetrievable(row: TypedMemoryRow): boolean {
   return !row.retracted && row.confidence !== 'low' && row.stale_marked_at === null;
+}
+
+function assertReadOnlyBridgeMutation(): never {
+  throw new Error(
+    'memory_signals-backed typed memory bridge is read-only; typed writes still require dedicated M1 tables'
+  );
+}
+
+function typedMemoryConfidenceFromSignal(confidence: number): TypedMemoryConfidence {
+  if (confidence >= 0.85) return 'high';
+  if (confidence >= 0.6) return 'medium';
+  return 'low';
+}
+
+function typedMemorySourceFromSignal(source: MemorySignalSource): TypedMemorySource {
+  switch (source) {
+    case 'user_confirmed':
+      return 'user_stated';
+    case 'founder_set':
+      return 'founder_default';
+    case 'feedback_derived':
+      return 'feedback_derived';
+    case 'inferred':
+      return 'consolidation_proposed';
+    case 'opt_out_drift_carrier':
+      return 'ops_injected';
+  }
+}
+
+function sourceRefForSignal(signal: MemorySignal): string {
+  return signal.id === undefined
+    ? `memory_signal:${signal.kind}`
+    : `memory_signal:${signal.kind}:${signal.id}`;
+}
+
+function typedPreferenceFromSignal(signal: MemorySignal): UserPreferenceMemory | null {
+  if (signal.kind !== 'timing_preference' && signal.kind !== 'quietness_preference') {
+    return null;
+  }
+
+  return cloneAndFreeze({
+    id: signal.id,
+    user_id: signal.user_id,
+    kind: 'preference',
+    scope_key: BRIDGED_TYPED_SCOPE_KEYS[signal.kind],
+    source: typedMemorySourceFromSignal(signal.source),
+    source_ref: sourceRefForSignal(signal),
+    confidence: typedMemoryConfidenceFromSignal(signal.confidence),
+    created_at: signal.updated_at,
+    updated_at: signal.updated_at,
+    stale_marked_at: null,
+    retracted: false,
+    superseded_by: null,
+    attribute: signal.kind,
+    value: cloneAndDeepFreeze(signal.detail)
+  });
+}
+
+function bridgedSignalKindForTypedPreferenceScope(scopeKey: string): BridgedMemorySignalKind | null {
+  for (const kind of BRIDGED_MEMORY_SIGNAL_KINDS) {
+    if (BRIDGED_TYPED_SCOPE_KEYS[kind] === scopeKey) return kind;
+  }
+  return null;
 }
 
 function safeRowForStorage(row: NewTypedMemoryRow, id: number): TypedMemoryRow {
@@ -321,3 +405,82 @@ export class InMemoryTypedMemoryStore implements TypedMemoryStore {
     return true;
   }
 }
+
+export function typedMemoryScopeKeyForBridgedMemorySignal(kind: BridgedMemorySignalKind): string {
+  return BRIDGED_TYPED_SCOPE_KEYS[kind];
+}
+
+export class MemorySignalsBackedTypedMemoryStore implements TypedMemoryStore {
+  private readonly memoryStore: Pick<MemorySignalStore, 'get' | 'list'>;
+  private readonly audit?: AuditStore;
+
+  constructor(memoryStore: Pick<MemorySignalStore, 'get' | 'list'>, audit?: AuditStore) {
+    this.memoryStore = memoryStore;
+    this.audit = audit;
+  }
+
+  async write(input: NewTypedMemoryRow): Promise<TypedMemoryRow> {
+    void input;
+    assertReadOnlyBridgeMutation();
+  }
+
+  async get(userId: string, kind: TypedMemoryKind, scopeKey: string): Promise<TypedMemoryRow | null> {
+    if (kind !== 'preference') return null;
+    const signalKind = bridgedSignalKindForTypedPreferenceScope(scopeKey);
+    if (signalKind === null) return null;
+    const signal = await this.memoryStore.get(userId, signalKind, null);
+    const row = signal ? typedPreferenceFromSignal(signal) : null;
+    if (!row || !isActiveRetrievable(row)) return null;
+    return row;
+  }
+
+  async listActive(
+    userId: string,
+    kinds: readonly TypedMemoryKind[] = TYPED_MEMORY_KINDS
+  ): Promise<readonly TypedMemoryRow[]> {
+    if (!kinds.includes('preference')) {
+      return Object.freeze([] as TypedMemoryRow[]);
+    }
+
+    const rows = (await this.memoryStore.list(userId))
+      .map((signal) => typedPreferenceFromSignal(signal))
+      .filter((row): row is UserPreferenceMemory => row !== null && isActiveRetrievable(row))
+      .sort((a, b) => b.updated_at.localeCompare(a.updated_at));
+
+    return Object.freeze(rows);
+  }
+
+  async markRetrieved(audit: TypedMemoryRetrievalAudit): Promise<void> {
+    assertRetrievalPackKind(audit.pack_kind);
+    assertRetrievalKinds(audit.kinds);
+    await this.audit?.write({
+      actor_user_id: audit.user_id,
+      actor_ip: null,
+      actor_user_agent: null,
+      action: 'brevio.memory.retrieved',
+      target: 'typed_memory',
+      result: 'success',
+      detail: {
+        pack_kind: audit.pack_kind,
+        row_kinds: [...audit.kinds],
+        row_ids: [...audit.returned_ids],
+        suppressions_applied: audit.suppressions_applied ?? 0,
+        preferences_applied: audit.preferences_applied ?? 0
+      }
+    });
+  }
+
+  async retract(
+    userId: string,
+    kind: TypedMemoryKind,
+    scopeKey: string,
+    supersededBy: number | null = null
+  ): Promise<boolean> {
+    void userId;
+    void kind;
+    void scopeKey;
+    void supersededBy;
+    assertReadOnlyBridgeMutation();
+  }
+}
+
