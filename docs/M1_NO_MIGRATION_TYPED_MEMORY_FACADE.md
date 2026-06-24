@@ -1,6 +1,6 @@
 # M1 no-migration typed memory facade
 
-Status: substrate-only scaffold. No runtime consumer, no database migration, no provider smoke.
+Status: substrate-only scaffold with a dormant read-only `memory_signals` bridge for existing user-wide preference signals. No runtime consumer, no database migration, no provider smoke.
 
 ## Core Dimension Check
 
@@ -13,11 +13,11 @@ Status: substrate-only scaffold. No runtime consumer, no database migration, no 
 1. **What reusable Brevio layer does this advance?**
    - A dormant typed-memory facade for semantic facts, preferences, projects, contacts, and repeated-behavior memory.
 2. **What is locked in scope?**
-   - TypeScript contracts, in-memory dormant implementation, structural retrieval/retraction audit actions, privacy/cross-tenant tests.
+   - TypeScript contracts, in-memory dormant implementation, read-only `memory_signals` bridge for `timing_preference` / `quietness_preference`, structural retrieval/retraction audit actions, privacy/cross-tenant tests.
 3. **What is explicitly out of scope?**
    - Migrations, Postgres stores, consumer reads, ranker/HMR integration, reply-parser changes, consolidation, skill execution, provider calls.
 4. **What is the no-migration safety boundary?**
-   - The facade is not added to `createStores()`, has no Postgres implementation, and no production caller imports it.
+   - The facade is not added to `createStores()`, has no Postgres implementation, and no production caller imports it. The bridge is read-only and only re-exposes already-existing signal rows; it does not invent new `memory_signals` kinds or mutate live signal semantics.
 5. **What proves this is typed, safe, and reversible?**
    - Tests cover declared kinds/sources/confidence, cross-tenant isolation, low-confidence/stale/retracted retrieval exclusion, structural audit-only retrieval/retraction, and raw-email scope-key rejection.
 6. **What proves this does not shrink Brevio into FOMO-only polish?**
