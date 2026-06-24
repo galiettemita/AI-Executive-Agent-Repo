@@ -491,6 +491,43 @@ describe('v0.7.0A — send returns failed outcome', () => {
   });
 });
 
+
+describe('v0.7.0A — send status unknown outcome', () => {
+  it('writes failure audit and preserves the unknown provider outcome kind', async () => {
+    const explainSender = makeExplainSender({
+      outcome: Object.freeze<SendOutcome>({
+        kind: 'send_status_unknown',
+        providerStatus: 'TIMEOUT',
+        providerMessageHandle: '',
+        httpStatus: 504,
+        reason: 'provider_timeout',
+        providerError: Object.freeze({
+          error_message: 'Gateway Timeout',
+          error_reason: 'SendBlue timed out',
+          error_code: '504'
+        })
+      })
+    });
+    const h = buildHarness({ explainEnabled: true, explainSender });
+    await seedSentAlertWithReason(h, {
+      alertId: 'alert-unknown',
+      reason: 'Jordan needs your approval today.'
+    });
+    const body = inboundBody({ content: 'why?' });
+    await handleSendBlueInbound({ body, secretHeaderValue: WEBHOOK_SECRET }, h.deps);
+
+    const audits = await h.auditStore.recent(FOUNDER_USER, 50);
+    const explainAudit = audits.find((a) => a.action === 'brevio.explain.served');
+    const detail = explainAudit!.detail as Record<string, unknown>;
+
+    assert.equal(explainAudit!.result, 'failure');
+    assert.equal(detail.send_outcome_kind, 'send_status_unknown');
+    assert.ok(detail.error_code, 'sanitized error_code present');
+    assert.ok(detail.error_reason, 'sanitized error_reason present');
+    assert.equal(await h.transitions.currentState('alert-unknown'), 'replied');
+  });
+});
+
 /* ====================================================================== */
 /* Cross-tenant LOAD-BEARING                                              */
 /* ====================================================================== */
