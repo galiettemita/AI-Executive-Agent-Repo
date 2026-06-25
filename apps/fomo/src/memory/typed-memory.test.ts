@@ -19,6 +19,7 @@ import {
   isTypedMemorySource,
   queryTypedMemoryRows,
   readTypedMemory,
+  typedMemoryScopeKeyForBridgedCorrectionSignal,
   typedMemoryScopeKeyForBridgedMemorySignal,
   type NewTypedMemoryRow
 } from './typed-memory.ts';
@@ -62,6 +63,7 @@ describe('typed memory facade constants', () => {
     assert.deepEqual([...TYPED_MEMORY_KINDS], [
       'semantic',
       'preference',
+      'correction',
       'project',
       'contact',
       'repeated_behavior'
@@ -536,6 +538,111 @@ describe('MemorySignalsBackedTypedMemoryStore', () => {
     assert.equal(entry?.action, 'brevio.memory.retrieved');
     assert.deepEqual(entry?.detail, { pack_kind: 'ops', row_kinds: ['preference'], row_ids: [1], suppressions_applied: 0, preferences_applied: 1 });
     assert.equal(JSON.stringify(entry?.detail).includes('max_per_day'), false);
+  });
+
+  it('bridges existing sender correction signals into typed correction rows without raw sender data', async () => {
+    const memoryStore = new InMemoryMemorySignalStore();
+    await memoryStore.upsert({
+      user_id: 'u1',
+      kind: 'sender_suppressed',
+      scope_key: 'abc123hmac',
+      detail: {
+        suppressed: true,
+        set_by: 'explicit_ignore_sender',
+        source_feedback_event_ids: [10]
+      },
+      source: 'user_confirmed',
+      updated_at: '2026-06-23T12:00:00.000Z'
+    });
+    await memoryStore.upsert({
+      user_id: 'u1',
+      kind: 'sender_feedback_ignored',
+      scope_key: 'def456hmac',
+      detail: {
+        ignored_count: 2,
+        first_ignored_at: '2026-06-22T12:00:00.000Z',
+        last_ignored_at: '2026-06-23T13:00:00.000Z',
+        unknown_metadata: null
+      },
+      source: 'feedback_derived',
+      updated_at: '2026-06-23T13:00:00.000Z'
+    });
+    const store = new MemorySignalsBackedTypedMemoryStore(memoryStore);
+
+    const rows = await readTypedMemory(store, 'u1', { kinds: ['correction'] });
+    assert.deepEqual(
+      rows.map((row) => ({
+        kind: row.kind,
+        scope_key: row.scope_key,
+        source: row.source,
+        rule: row.kind === 'correction' ? row.rule : null,
+        target_hmac: row.kind === 'correction' ? row.target_hmac : null
+      })),
+      [
+        {
+          kind: 'correction',
+          scope_key: typedMemoryScopeKeyForBridgedCorrectionSignal('sender_feedback_ignored', 'def456hmac'),
+          source: 'feedback_derived',
+          rule: 'sender_feedback_ignored',
+          target_hmac: 'def456hmac'
+        },
+        {
+          kind: 'correction',
+          scope_key: typedMemoryScopeKeyForBridgedCorrectionSignal('sender_suppressed', 'abc123hmac'),
+          source: 'user_stated',
+          rule: 'sender_suppressed',
+          target_hmac: 'abc123hmac'
+        }
+      ]
+    );
+    assert.equal(JSON.stringify(rows).includes('@'), false);
+    assert.deepEqual(rows[0]?.kind === 'correction' ? rows[0].value.unknown_metadata : 'missing', null);
+  });
+
+  it('reads a bridged correction by its fixed safe typed scope key', async () => {
+    const memoryStore = new InMemoryMemorySignalStore();
+    await memoryStore.upsert({
+      user_id: 'u1',
+      kind: 'sender_suppressed',
+      scope_key: 'abc123hmac',
+      detail: { suppressed: true },
+      source: 'user_confirmed',
+      updated_at: '2026-06-23T12:00:00.000Z'
+    });
+    const store = new MemorySignalsBackedTypedMemoryStore(memoryStore);
+    const row = await store.get(
+      'u1',
+      'correction',
+      typedMemoryScopeKeyForBridgedCorrectionSignal('sender_suppressed', 'abc123hmac')
+    );
+
+    assert.equal(row?.kind, 'correction');
+    assert.equal(row?.scope_key, 'signal:sender_suppressed:abc123hmac');
+    assert.equal(row?.source_ref, 'memory_signal:sender_suppressed:1');
+    assert.deepEqual(row?.kind === 'correction' ? row.value : null, { suppressed: true });
+  });
+
+  it('preserves cross-tenant isolation for bridged corrections', async () => {
+    const memoryStore = new InMemoryMemorySignalStore();
+    await memoryStore.upsert({ user_id: 'u1', kind: 'sender_suppressed', scope_key: 'sharedhash', detail: { suppressed: true }, source: 'user_confirmed' });
+    await memoryStore.upsert({ user_id: 'u2', kind: 'sender_suppressed', scope_key: 'sharedhash', detail: { suppressed: false }, source: 'user_confirmed' });
+    const store = new MemorySignalsBackedTypedMemoryStore(memoryStore);
+
+    const u1Rows = await store.listActive('u1', ['correction']);
+    const u2Rows = await store.listActive('u2', ['correction']);
+    assert.deepEqual(u1Rows[0]?.kind === 'correction' ? u1Rows[0].value : null, { suppressed: true });
+    assert.deepEqual(u2Rows[0]?.kind === 'correction' ? u2Rows[0].value : null, { suppressed: false });
+  });
+
+  it('excludes deleted, tombstoned, low-confidence, and raw-email-looking correction signals', async () => {
+    const memoryStore = new InMemoryMemorySignalStore();
+    await memoryStore.upsert({ user_id: 'u1', kind: 'sender_suppressed', scope_key: 'deletedhash', detail: { deleted: true }, source: 'user_confirmed' });
+    await memoryStore.upsert({ user_id: 'u1', kind: 'sender_feedback_ignored', scope_key: 'tombstonedhash', detail: { tombstoned_at: '2026-06-23T12:00:00.000Z' }, source: 'feedback_derived', confidence: 1 });
+    await memoryStore.upsert({ user_id: 'u1', kind: 'sender_feedback_ignored', scope_key: 'weakhash', detail: { ignored_count: 1 }, source: 'feedback_derived', confidence: 0.55 });
+    await memoryStore.upsert({ user_id: 'u1', kind: 'sender_suppressed', scope_key: 'alice@example.com', detail: { suppressed: true }, source: 'user_confirmed' });
+    const store = new MemorySignalsBackedTypedMemoryStore(memoryStore);
+
+    assert.deepEqual(await readTypedMemory(store, 'u1', { kinds: ['correction'] }), []);
   });
 
   it('rejects write and retract because the bridge is intentionally read-only', async () => {
