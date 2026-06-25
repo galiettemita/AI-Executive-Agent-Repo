@@ -267,8 +267,15 @@ function sourceRefForSignal(signal: MemorySignal): string {
     : `memory_signal:${signal.kind}:${signal.id}`;
 }
 
+function isBridgeEligiblePreferenceSignalSource(source: MemorySignalSource): boolean {
+  return source === 'user_confirmed' || source === 'founder_set';
+}
+
 function typedPreferenceFromSignal(signal: MemorySignal): UserPreferenceMemory | null {
   if (signal.kind !== 'timing_preference' && signal.kind !== 'quietness_preference') {
+    return null;
+  }
+  if (!isBridgeEligiblePreferenceSignalSource(signal.source)) {
     return null;
   }
 
@@ -483,4 +490,3 @@ export class MemorySignalsBackedTypedMemoryStore implements TypedMemoryStore {
     assertReadOnlyBridgeMutation();
   }
 }
-
