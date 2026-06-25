@@ -17,6 +17,7 @@ import {
 export const TYPED_MEMORY_KINDS = [
   'semantic',
   'preference',
+  'correction',
   'project',
   'contact',
   'repeated_behavior'
@@ -98,6 +99,13 @@ export interface UserPreferenceMemory extends TypedMemoryBase {
   readonly value: string | number | boolean | Record<string, unknown>;
 }
 
+export interface UserCorrectionMemory extends TypedMemoryBase {
+  readonly kind: 'correction';
+  readonly rule: 'sender_suppressed' | 'sender_feedback_ignored';
+  readonly target_hmac: string;
+  readonly value: Record<string, unknown>;
+}
+
 export interface UserProjectMemory extends TypedMemoryBase {
   readonly kind: 'project';
   readonly project_id: string;
@@ -125,6 +133,7 @@ export interface UserBehaviorPatternMemory extends TypedMemoryBase {
 export type TypedMemoryRow =
   | UserProfileFactMemory
   | UserPreferenceMemory
+  | UserCorrectionMemory
   | UserProjectMemory
   | UserContactMemory
   | UserBehaviorPatternMemory;
@@ -161,8 +170,15 @@ export interface TypedMemoryStore {
 
 export const BRIDGED_MEMORY_SIGNAL_KINDS = ['timing_preference', 'quietness_preference'] as const;
 export type BridgedMemorySignalKind = (typeof BRIDGED_MEMORY_SIGNAL_KINDS)[number];
+export type BridgedPreferenceSignalKind = BridgedMemorySignalKind;
 
-const BRIDGED_TYPED_SCOPE_KEYS: Readonly<Record<BridgedMemorySignalKind, string>> = Object.freeze({
+export const BRIDGED_CORRECTION_SIGNAL_KINDS = [
+  'sender_suppressed',
+  'sender_feedback_ignored'
+] as const;
+export type BridgedCorrectionSignalKind = (typeof BRIDGED_CORRECTION_SIGNAL_KINDS)[number];
+
+const BRIDGED_TYPED_SCOPE_KEYS: Readonly<Record<BridgedPreferenceSignalKind, string>> = Object.freeze({
   timing_preference: 'signal:timing_preference',
   quietness_preference: 'signal:quietness_preference'
 });
@@ -230,7 +246,8 @@ function cloneAndFreeze<T extends TypedMemoryRow>(row: T): T {
     ...(row.kind === 'semantic' ? { value: cloneAndDeepFreeze(row.value) } : {}),
     ...(row.kind === 'preference' && typeof row.value === 'object' && row.value !== null
       ? { value: cloneAndDeepFreeze(row.value) }
-      : {})
+      : {}),
+    ...(row.kind === 'correction' ? { value: cloneAndDeepFreeze(row.value) } : {})
   }) as unknown as T;
 }
 
@@ -373,9 +390,61 @@ function typedPreferenceFromSignal(signal: MemorySignal): UserPreferenceMemory |
   });
 }
 
-function bridgedSignalKindForTypedPreferenceScope(scopeKey: string): BridgedMemorySignalKind | null {
-  for (const kind of BRIDGED_MEMORY_SIGNAL_KINDS) {
+function typedCorrectionScopeKey(kind: BridgedCorrectionSignalKind, scopeKey: string): string {
+  assertSafeScopeKey(scopeKey);
+  return `signal:${kind}:${scopeKey}`;
+}
+
+function typedCorrectionFromSignal(signal: MemorySignal): UserCorrectionMemory | null {
+  if (signal.kind !== 'sender_suppressed' && signal.kind !== 'sender_feedback_ignored') {
+    return null;
+  }
+  if (signal.scope_key === null || signal.scope_key.includes('@')) {
+    return null;
+  }
+  if (isDeletedOrTombstonedMemorySignal(signal)) {
+    return null;
+  }
+
+  return cloneAndFreeze({
+    id: signal.id,
+    user_id: signal.user_id,
+    kind: 'correction',
+    scope_key: typedCorrectionScopeKey(signal.kind, signal.scope_key),
+    source: typedMemorySourceFromSignal(signal.source),
+    source_ref: sourceRefForSignal(signal),
+    confidence: typedMemoryConfidenceFromSignal(signal.confidence),
+    created_at: signal.updated_at,
+    updated_at: signal.updated_at,
+    stale_marked_at: null,
+    retracted: false,
+    superseded_by: null,
+    rule: signal.kind,
+    target_hmac: signal.scope_key,
+    value: cloneAndDeepFreeze(signal.detail)
+  });
+}
+
+function typedRowFromBridgedSignal(signal: MemorySignal): TypedMemoryRow | null {
+  return typedPreferenceFromSignal(signal) ?? typedCorrectionFromSignal(signal);
+}
+
+function bridgedSignalKindForTypedPreferenceScope(scopeKey: string): BridgedPreferenceSignalKind | null {
+  for (const kind of ['timing_preference', 'quietness_preference'] as const) {
     if (BRIDGED_TYPED_SCOPE_KEYS[kind] === scopeKey) return kind;
+  }
+  return null;
+}
+
+function bridgedCorrectionSignalForTypedScope(
+  scopeKey: string
+): { readonly kind: BridgedCorrectionSignalKind; readonly signalScopeKey: string } | null {
+  for (const kind of BRIDGED_CORRECTION_SIGNAL_KINDS) {
+    const prefix = `signal:${kind}:`;
+    if (!scopeKey.startsWith(prefix)) continue;
+    const signalScopeKey = scopeKey.slice(prefix.length);
+    if (signalScopeKey.length === 0 || signalScopeKey.includes('@')) return null;
+    return { kind, signalScopeKey };
   }
   return null;
 }
@@ -490,7 +559,17 @@ export class InMemoryTypedMemoryStore implements TypedMemoryStore {
 }
 
 export function typedMemoryScopeKeyForBridgedMemorySignal(kind: BridgedMemorySignalKind): string {
-  return BRIDGED_TYPED_SCOPE_KEYS[kind];
+  if (kind === 'timing_preference' || kind === 'quietness_preference') {
+    return BRIDGED_TYPED_SCOPE_KEYS[kind];
+  }
+  return `signal:${kind}:<scope_key>`;
+}
+
+export function typedMemoryScopeKeyForBridgedCorrectionSignal(
+  kind: BridgedCorrectionSignalKind,
+  signalScopeKey: string
+): string {
+  return typedCorrectionScopeKey(kind, signalScopeKey);
 }
 
 export class MemorySignalsBackedTypedMemoryStore implements TypedMemoryStore {
@@ -508,11 +587,15 @@ export class MemorySignalsBackedTypedMemoryStore implements TypedMemoryStore {
   }
 
   async get(userId: string, kind: TypedMemoryKind, scopeKey: string): Promise<TypedMemoryRow | null> {
-    if (kind !== 'preference') return null;
-    const signalKind = bridgedSignalKindForTypedPreferenceScope(scopeKey);
-    if (signalKind === null) return null;
-    const signal = await this.memoryStore.get(userId, signalKind, null);
-    const row = signal ? typedPreferenceFromSignal(signal) : null;
+    const preferenceKind = kind === 'preference' ? bridgedSignalKindForTypedPreferenceScope(scopeKey) : null;
+    const correctionMatch = kind === 'correction' ? bridgedCorrectionSignalForTypedScope(scopeKey) : null;
+    if (preferenceKind === null && correctionMatch === null) return null;
+    const signal = preferenceKind
+      ? await this.memoryStore.get(userId, preferenceKind, null)
+      : correctionMatch
+        ? await this.memoryStore.get(userId, correctionMatch.kind, correctionMatch.signalScopeKey)
+        : null;
+    const row = signal ? typedRowFromBridgedSignal(signal) : null;
     if (!row || !isActiveRetrievable(row)) return null;
     return row;
   }
@@ -521,13 +604,21 @@ export class MemorySignalsBackedTypedMemoryStore implements TypedMemoryStore {
     userId: string,
     kinds: readonly TypedMemoryKind[] = TYPED_MEMORY_KINDS
   ): Promise<readonly TypedMemoryRow[]> {
-    if (!kinds.includes('preference')) {
+    const includePreferences = kinds.includes('preference');
+    const includeCorrections = kinds.includes('correction');
+    if (!includePreferences && !includeCorrections) {
       return Object.freeze([] as TypedMemoryRow[]);
     }
 
     const rows = (await this.memoryStore.list(userId))
-      .map((signal) => typedPreferenceFromSignal(signal))
-      .filter((row): row is UserPreferenceMemory => row !== null && isActiveRetrievable(row))
+      .map((signal) => typedRowFromBridgedSignal(signal))
+      .filter(
+        (row): row is TypedMemoryRow =>
+          row !== null &&
+          isActiveRetrievable(row) &&
+          ((row.kind === 'preference' && includePreferences) ||
+            (row.kind === 'correction' && includeCorrections))
+      )
       .sort(compareTypedMemoryRows);
 
     return Object.freeze(rows);
