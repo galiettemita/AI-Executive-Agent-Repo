@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict';
+import { readdir, readFile } from 'node:fs/promises';
+import path from 'node:path';
 import { describe, it } from 'node:test';
+import { fileURLToPath } from 'node:url';
 
 import { InMemoryAuditStore, FOMO_AUDIT_ACTIONS } from '../core/audit.ts';
 
@@ -18,6 +21,22 @@ import {
   type NewTypedMemoryRow
 } from './typed-memory.ts';
 import { InMemoryMemorySignalStore } from './memory-signals.ts';
+
+const SRC_ROOT = path.resolve(fileURLToPath(new URL('..', import.meta.url)));
+
+async function listSourceFiles(dir: string): Promise<readonly string[]> {
+  const entries = await readdir(dir, { withFileTypes: true });
+  const files: string[] = [];
+  for (const entry of entries) {
+    const fullPath = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      files.push(...(await listSourceFiles(fullPath)));
+    } else if (entry.isFile() && fullPath.endsWith('.ts')) {
+      files.push(fullPath);
+    }
+  }
+  return files.sort();
+}
 
 function semantic(overrides: Partial<NewTypedMemoryRow> = {}): NewTypedMemoryRow {
   return {
@@ -77,6 +96,26 @@ describe('typed memory facade constants', () => {
   it('registers dormant memory audit actions in the runtime audit action list', () => {
     assert.ok(FOMO_AUDIT_ACTIONS.includes('brevio.memory.retrieved'));
     assert.ok(FOMO_AUDIT_ACTIONS.includes('brevio.memory.retraction_recorded'));
+  });
+
+  it('keeps the M1 facade dormant: no non-test production module imports typed-memory', async () => {
+    const files = await listSourceFiles(SRC_ROOT);
+    const importRegex = /import\s+[^;]+?from\s+['"]([^'"]+)['"]/g;
+
+    for (const file of files) {
+      if (file.endsWith('typed-memory.ts') || file.endsWith('.test.ts')) continue;
+
+      const source = await readFile(file, 'utf8');
+      let match: RegExpExecArray | null;
+      while ((match = importRegex.exec(source)) !== null) {
+        const specifier = match[1] ?? '';
+        assert.equal(
+          specifier.endsWith('/typed-memory.js') || specifier.endsWith('/typed-memory.ts'),
+          false,
+          `M1 no-migration facade must remain dormant; unexpected production import in ${path.relative(SRC_ROOT, file)} from ${specifier}`
+        );
+      }
+    }
   });
 });
 
