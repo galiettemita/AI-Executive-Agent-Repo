@@ -143,6 +143,14 @@ export interface TypedMemoryRetrievalAudit {
   readonly preferences_applied?: number;
 }
 
+export interface TypedMemoryQuery {
+  readonly kinds?: readonly TypedMemoryKind[];
+  readonly scopeKeys?: readonly string[];
+  readonly sources?: readonly TypedMemorySource[];
+  readonly minConfidence?: TypedMemoryConfidence;
+  readonly limit?: number;
+}
+
 export interface TypedMemoryStore {
   write(row: NewTypedMemoryRow): Promise<TypedMemoryRow>;
   get(userId: string, kind: TypedMemoryKind, scopeKey: string): Promise<TypedMemoryRow | null>;
@@ -234,6 +242,61 @@ function isActiveRetrievable(row: TypedMemoryRow): boolean {
   return !row.retracted && row.confidence !== 'low' && row.stale_marked_at === null;
 }
 
+function confidenceRank(confidence: TypedMemoryConfidence): number {
+  switch (confidence) {
+    case 'low':
+      return 0;
+    case 'medium':
+      return 1;
+    case 'high':
+      return 2;
+  }
+}
+
+function compareTypedMemoryRows(a: TypedMemoryRow, b: TypedMemoryRow): number {
+  const updated = b.updated_at.localeCompare(a.updated_at);
+  if (updated !== 0) return updated;
+  const aId = a.id ?? Number.MAX_SAFE_INTEGER;
+  const bId = b.id ?? Number.MAX_SAFE_INTEGER;
+  if (aId !== bId) return aId - bId;
+  return `${a.kind}:${a.scope_key}`.localeCompare(`${b.kind}:${b.scope_key}`);
+}
+
+function queryMatches(row: TypedMemoryRow, query: TypedMemoryQuery): boolean {
+  if (query.kinds !== undefined && !query.kinds.includes(row.kind)) return false;
+  if (query.scopeKeys !== undefined && !query.scopeKeys.includes(row.scope_key)) return false;
+  if (query.sources !== undefined && !query.sources.includes(row.source)) return false;
+  if (
+    query.minConfidence !== undefined &&
+    confidenceRank(row.confidence) < confidenceRank(query.minConfidence)
+  ) {
+    return false;
+  }
+  return true;
+}
+
+export function queryTypedMemoryRows(
+  rows: readonly TypedMemoryRow[],
+  query: TypedMemoryQuery = {}
+): readonly TypedMemoryRow[] {
+  const limit = query.limit ?? rows.length;
+  if (!Number.isInteger(limit) || limit < 0) {
+    throw new Error('typed memory query limit must be a non-negative integer');
+  }
+  const out = rows.filter((row) => isActiveRetrievable(row) && queryMatches(row, query));
+  out.sort(compareTypedMemoryRows);
+  return Object.freeze(out.slice(0, limit));
+}
+
+export async function readTypedMemory(
+  store: Pick<TypedMemoryStore, 'listActive'>,
+  userId: string,
+  query: TypedMemoryQuery = {}
+): Promise<readonly TypedMemoryRow[]> {
+  const rows = await store.listActive(userId, query.kinds ?? TYPED_MEMORY_KINDS);
+  return queryTypedMemoryRows(rows, query);
+}
+
 function assertReadOnlyBridgeMutation(): never {
   throw new Error(
     'memory_signals-backed typed memory bridge is read-only; typed writes still require dedicated M1 tables'
@@ -271,11 +334,24 @@ function isBridgeEligiblePreferenceSignalSource(source: MemorySignalSource): boo
   return source === 'user_confirmed' || source === 'founder_set';
 }
 
+function isDeletedOrTombstonedMemorySignal(signal: MemorySignal): boolean {
+  const detail = signal.detail;
+  return (
+    detail.deleted === true ||
+    detail.tombstoned === true ||
+    typeof detail.deleted_at === 'string' ||
+    typeof detail.tombstoned_at === 'string'
+  );
+}
+
 function typedPreferenceFromSignal(signal: MemorySignal): UserPreferenceMemory | null {
   if (signal.kind !== 'timing_preference' && signal.kind !== 'quietness_preference') {
     return null;
   }
   if (!isBridgeEligiblePreferenceSignalSource(signal.source)) {
+    return null;
+  }
+  if (isDeletedOrTombstonedMemorySignal(signal)) {
     return null;
   }
 
@@ -357,7 +433,7 @@ export class InMemoryTypedMemoryStore implements TypedMemoryStore {
       if (!kindSet.has(row.kind)) continue;
       out.push(row);
     }
-    out.sort((a, b) => b.updated_at.localeCompare(a.updated_at));
+    out.sort(compareTypedMemoryRows);
     return Object.freeze(out);
   }
 
@@ -452,7 +528,7 @@ export class MemorySignalsBackedTypedMemoryStore implements TypedMemoryStore {
     const rows = (await this.memoryStore.list(userId))
       .map((signal) => typedPreferenceFromSignal(signal))
       .filter((row): row is UserPreferenceMemory => row !== null && isActiveRetrievable(row))
-      .sort((a, b) => b.updated_at.localeCompare(a.updated_at));
+      .sort(compareTypedMemoryRows);
 
     return Object.freeze(rows);
   }
