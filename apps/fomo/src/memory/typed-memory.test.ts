@@ -325,12 +325,12 @@ describe('MemorySignalsBackedTypedMemoryStore', () => {
   it('bridges existing user-wide preference signals into typed-memory preference rows', async () => {
     const memoryStore = new InMemoryMemorySignalStore();
     await memoryStore.upsert({ user_id: 'u1', kind: 'quietness_preference', scope_key: null, detail: { max_per_day: 5 }, source: 'user_confirmed', updated_at: '2026-06-23T12:00:00.000Z' });
-    await memoryStore.upsert({ user_id: 'u1', kind: 'timing_preference', scope_key: null, detail: { window: 'evening' }, source: 'feedback_derived', updated_at: '2026-06-23T13:00:00.000Z' });
+    await memoryStore.upsert({ user_id: 'u1', kind: 'timing_preference', scope_key: null, detail: { window: 'evening' }, source: 'founder_set', updated_at: '2026-06-23T13:00:00.000Z' });
     await memoryStore.upsert({ user_id: 'u1', kind: 'stop_active', scope_key: null, detail: { active: true }, source: 'user_confirmed', updated_at: '2026-06-23T14:00:00.000Z' });
     const store = new MemorySignalsBackedTypedMemoryStore(memoryStore);
     const rows = await store.listActive('u1');
     assert.deepEqual(rows.map((row) => ({ kind: row.kind, scope_key: row.scope_key, source: row.source, confidence: row.confidence, attribute: row.kind === 'preference' ? row.attribute : null })), [
-      { kind: 'preference', scope_key: typedMemoryScopeKeyForBridgedMemorySignal('timing_preference'), source: 'feedback_derived', confidence: 'medium', attribute: 'timing_preference' },
+      { kind: 'preference', scope_key: typedMemoryScopeKeyForBridgedMemorySignal('timing_preference'), source: 'founder_default', confidence: 'high', attribute: 'timing_preference' },
       { kind: 'preference', scope_key: typedMemoryScopeKeyForBridgedMemorySignal('quietness_preference'), source: 'user_stated', confidence: 'high', attribute: 'quietness_preference' }
     ]);
     assert.equal(rows.some((row) => row.scope_key.includes('stop_active')), false);
@@ -351,10 +351,35 @@ describe('MemorySignalsBackedTypedMemoryStore', () => {
 
   it('excludes bridged rows when the underlying memory signal confidence maps to low', async () => {
     const memoryStore = new InMemoryMemorySignalStore();
-    await memoryStore.upsert({ user_id: 'u1', kind: 'timing_preference', scope_key: null, detail: { window: 'night' }, source: 'inferred' });
+    await memoryStore.upsert({ user_id: 'u1', kind: 'timing_preference', scope_key: null, detail: { window: 'night' }, source: 'user_confirmed', confidence: 0.55 });
     const store = new MemorySignalsBackedTypedMemoryStore(memoryStore);
     assert.deepEqual(await store.listActive('u1'), []);
     assert.equal(await store.get('u1', 'preference', typedMemoryScopeKeyForBridgedMemorySignal('timing_preference')), null);
+  });
+
+  it('excludes behavior-derived preference signals so the bridge cannot normalize a non-user-approved preference', async () => {
+    const memoryStore = new InMemoryMemorySignalStore();
+    await memoryStore.upsert({ user_id: 'u1', kind: 'quietness_preference', scope_key: null, detail: { max_per_day: 2 }, source: 'feedback_derived', updated_at: '2026-06-23T12:00:00.000Z' });
+    await memoryStore.upsert({ user_id: 'u1', kind: 'timing_preference', scope_key: null, detail: { window: 'night' }, source: 'inferred', updated_at: '2026-06-23T13:00:00.000Z', confidence: 0.9 });
+    const store = new MemorySignalsBackedTypedMemoryStore(memoryStore);
+
+    assert.deepEqual(await store.listActive('u1'), []);
+    assert.equal(
+      await store.get(
+        'u1',
+        'preference',
+        typedMemoryScopeKeyForBridgedMemorySignal('quietness_preference')
+      ),
+      null
+    );
+    assert.equal(
+      await store.get(
+        'u1',
+        'preference',
+        typedMemoryScopeKeyForBridgedMemorySignal('timing_preference')
+      ),
+      null
+    );
   });
 
   it('preserves cross-tenant isolation while bridging', async () => {
