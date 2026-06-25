@@ -17,6 +17,8 @@ import {
   isTypedMemoryKind,
   isTypedMemoryRetrievalPackKind,
   isTypedMemorySource,
+  queryTypedMemoryRows,
+  readTypedMemory,
   typedMemoryScopeKeyForBridgedMemorySignal,
   type NewTypedMemoryRow
 } from './typed-memory.ts';
@@ -321,6 +323,66 @@ describe('InMemoryTypedMemoryStore', () => {
   });
 });
 
+describe('typed memory query helpers', () => {
+  it('filters typed rows by kind, scope, source, confidence, and limit with stable ordering', async () => {
+    const store = new InMemoryTypedMemoryStore();
+    await store.write(
+      semantic({
+        scope_key: 'profile:alpha',
+        source: 'founder_default',
+        confidence: 'medium',
+        updated_at: '2026-06-23T12:00:00.000Z'
+      })
+    );
+    await store.write(
+      semantic({
+        scope_key: 'profile:beta',
+        source: 'user_stated',
+        confidence: 'high',
+        updated_at: '2026-06-23T12:00:00.000Z'
+      })
+    );
+    await store.write(
+      semantic({
+        scope_key: 'profile:gamma',
+        source: 'user_stated',
+        confidence: 'high',
+        updated_at: '2026-06-23T13:00:00.000Z'
+      })
+    );
+
+    const rows = await readTypedMemory(store, 'u1', {
+      kinds: ['semantic'],
+      sources: ['user_stated'],
+      minConfidence: 'high',
+      limit: 2
+    });
+
+    assert.deepEqual(rows.map((row) => row.scope_key), ['profile:gamma', 'profile:beta']);
+    assert.deepEqual(
+      queryTypedMemoryRows(rows, { scopeKeys: ['profile:beta'] }).map((row) => row.scope_key),
+      ['profile:beta']
+    );
+  });
+
+  it('rejects invalid helper limits before producing a retrieval pack', async () => {
+    const store = new InMemoryTypedMemoryStore();
+    await store.write(semantic());
+    await assert.rejects(() => readTypedMemory(store, 'u1', { limit: -1 }), /non-negative integer/);
+  });
+
+  it('keeps M1 no-migration scope: no typed-memory table or migration exists', async () => {
+    const migrationDir = path.join(SRC_ROOT, 'db', 'migrations');
+    const migrationFiles = await readdir(migrationDir);
+    assert.equal(migrationFiles.some((name) => /typed[_-]?memory/i.test(name)), false);
+
+    for (const file of migrationFiles.filter((name) => name.endsWith('.sql'))) {
+      const sql = await readFile(path.join(migrationDir, file), 'utf8');
+      assert.equal(/create\s+table\s+[^;]*typed[_-]?memory/i.test(sql), false, file);
+    }
+  });
+});
+
 describe('MemorySignalsBackedTypedMemoryStore', () => {
   it('bridges existing user-wide preference signals into typed-memory preference rows', async () => {
     const memoryStore = new InMemoryMemorySignalStore();
@@ -347,6 +409,29 @@ describe('MemorySignalsBackedTypedMemoryStore', () => {
     assert.equal(row?.source_ref, 'memory_signal:quietness_preference:1');
     assert.equal(row?.kind === 'preference' ? row.attribute : null, 'quietness_preference');
     assert.deepEqual(row?.kind === 'preference' ? row.value : null, { max_per_day: 3 });
+  });
+
+  it('preserves null and unknown metadata while bridging user-approved preferences', async () => {
+    const memoryStore = new InMemoryMemorySignalStore();
+    await memoryStore.upsert({
+      user_id: 'u1',
+      kind: 'timing_preference',
+      scope_key: null,
+      detail: { window: null, unknown_nested: { value: null }, unrecognized: ['kept'] },
+      source: 'user_confirmed',
+      updated_at: '2026-06-23T15:30:00.000Z'
+    });
+    const store = new MemorySignalsBackedTypedMemoryStore(memoryStore);
+    const row = await store.get(
+      'u1',
+      'preference',
+      typedMemoryScopeKeyForBridgedMemorySignal('timing_preference')
+    );
+    assert.deepEqual(row?.kind === 'preference' ? row.value : null, {
+      window: null,
+      unknown_nested: { value: null },
+      unrecognized: ['kept']
+    });
   });
 
   it('excludes bridged rows when the underlying memory signal confidence maps to low', async () => {
@@ -380,6 +465,51 @@ describe('MemorySignalsBackedTypedMemoryStore', () => {
       ),
       null
     );
+  });
+
+  it('excludes deleted and tombstoned memory_signals from typed reads', async () => {
+    const memoryStore = new InMemoryMemorySignalStore();
+    await memoryStore.upsert({
+      user_id: 'u1',
+      kind: 'quietness_preference',
+      scope_key: null,
+      detail: { max_per_day: 2, deleted: true },
+      source: 'user_confirmed',
+      updated_at: '2026-06-23T12:00:00.000Z'
+    });
+    await memoryStore.upsert({
+      user_id: 'u1',
+      kind: 'timing_preference',
+      scope_key: null,
+      detail: { window: 'morning', tombstoned_at: '2026-06-23T12:30:00.000Z' },
+      source: 'founder_set',
+      updated_at: '2026-06-23T13:00:00.000Z'
+    });
+    const store = new MemorySignalsBackedTypedMemoryStore(memoryStore);
+
+    assert.deepEqual(await readTypedMemory(store, 'u1', { kinds: ['preference'] }), []);
+    assert.equal(
+      await store.get(
+        'u1',
+        'preference',
+        typedMemoryScopeKeyForBridgedMemorySignal('timing_preference')
+      ),
+      null
+    );
+  });
+
+  it('does not surface deleted memory_signals after the existing store delete path removes them', async () => {
+    const memoryStore = new InMemoryMemorySignalStore();
+    await memoryStore.upsert({
+      user_id: 'u1',
+      kind: 'quietness_preference',
+      scope_key: null,
+      detail: { max_per_day: 5 },
+      source: 'user_confirmed'
+    });
+    assert.equal(await memoryStore.delete('u1', 'quietness_preference', null), true);
+    const store = new MemorySignalsBackedTypedMemoryStore(memoryStore);
+    assert.deepEqual(await store.listActive('u1'), []);
   });
 
   it('preserves cross-tenant isolation while bridging', async () => {
