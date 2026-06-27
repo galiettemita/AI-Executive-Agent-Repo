@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { InMemoryAuditStore, FOMO_AUDIT_ACTIONS } from '../core/audit.ts';
 
 import {
+  buildTypedMemoryContextPack,
   InMemoryTypedMemoryStore,
   MemorySignalsBackedTypedMemoryStore,
   TYPED_MEMORY_CONFIDENCE_LEVELS,
@@ -649,5 +650,127 @@ describe('MemorySignalsBackedTypedMemoryStore', () => {
     const store = new MemorySignalsBackedTypedMemoryStore(new InMemoryMemorySignalStore());
     await assert.rejects(() => store.write({ user_id: 'u1', kind: 'preference', scope_key: 'signal:quietness_preference', source: 'user_stated', source_ref: 'reply:123', confidence: 'high', stale_marked_at: null, retracted: false, superseded_by: null, attribute: 'quietness_preference', value: { max_per_day: 5 } }), /read-only/);
     await assert.rejects(() => store.retract('u1', 'preference', 'signal:quietness_preference'), /read-only/);
+  });
+
+  it('builds a frozen structural context pack over bridged memory_signals and audits without content', async () => {
+    const audit = new InMemoryAuditStore();
+    const memoryStore = new InMemoryMemorySignalStore();
+    await memoryStore.upsert({
+      user_id: 'u1',
+      kind: 'quietness_preference',
+      scope_key: null,
+      detail: { max_per_day: 4, unknown_metadata: null },
+      source: 'user_confirmed',
+      updated_at: '2026-06-23T12:00:00.000Z'
+    });
+    await memoryStore.upsert({
+      user_id: 'u1',
+      kind: 'sender_suppressed',
+      scope_key: 'abc123hmac',
+      detail: { suppressed: true, hidden_reason: 'do not leak this content' },
+      source: 'user_confirmed',
+      updated_at: '2026-06-23T13:00:00.000Z'
+    });
+    await memoryStore.upsert({
+      user_id: 'u2',
+      kind: 'sender_suppressed',
+      scope_key: 'abc123hmac',
+      detail: { suppressed: false },
+      source: 'user_confirmed',
+      updated_at: '2026-06-23T14:00:00.000Z'
+    });
+
+    const store = new MemorySignalsBackedTypedMemoryStore(memoryStore, audit);
+    const pack = await buildTypedMemoryContextPack(store, 'u1', 'ranker', {
+      kinds: ['preference', 'correction']
+    });
+
+    assert.equal(Object.isFrozen(pack), true);
+    assert.equal(Object.isFrozen(pack.rows), true);
+    assert.equal(Object.isFrozen(pack.row_ids), true);
+    assert.equal(Object.isFrozen(pack.row_kinds), true);
+    assert.deepEqual(pack.rows.map((row) => row.user_id), ['u1', 'u1']);
+    assert.deepEqual(pack.rows.map((row) => row.scope_key), [
+      typedMemoryScopeKeyForBridgedCorrectionSignal('sender_suppressed', 'abc123hmac'),
+      typedMemoryScopeKeyForBridgedMemorySignal('quietness_preference')
+    ]);
+    assert.deepEqual(pack.row_ids, [2, 1]);
+    assert.deepEqual(pack.row_kinds, ['correction', 'preference']);
+    assert.equal(pack.suppressions_applied, 1);
+    assert.equal(pack.preferences_applied, 1);
+    assert.deepEqual(pack.rows[1]?.kind === 'preference' ? pack.rows[1].value : null, {
+      max_per_day: 4,
+      unknown_metadata: null
+    });
+
+    assert.throws(() => {
+      (pack.row_ids as number[]).push(999);
+    }, /Cannot add property/);
+
+    const [entry] = await audit.recent('u1');
+    assert.equal(entry?.action, 'brevio.memory.retrieved');
+    assert.deepEqual(entry?.detail, {
+      pack_kind: 'ranker',
+      row_kinds: ['correction', 'preference'],
+      row_ids: [2, 1],
+      suppressions_applied: 1,
+      preferences_applied: 1
+    });
+    const auditJson = JSON.stringify(entry?.detail);
+    assert.equal(auditJson.includes('max_per_day'), false);
+    assert.equal(auditJson.includes('do not leak this content'), false);
+  });
+
+  it('excludes deleted and tombstoned bridged signals before building a context pack', async () => {
+    const audit = new InMemoryAuditStore();
+    const memoryStore = new InMemoryMemorySignalStore();
+    await memoryStore.upsert({
+      user_id: 'u1',
+      kind: 'quietness_preference',
+      scope_key: null,
+      detail: { max_per_day: 3, deleted: true },
+      source: 'user_confirmed',
+      updated_at: '2026-06-23T12:00:00.000Z'
+    });
+    await memoryStore.upsert({
+      user_id: 'u1',
+      kind: 'sender_feedback_ignored',
+      scope_key: 'tombstonedhash',
+      detail: { ignored_count: 2, tombstoned_at: '2026-06-23T13:00:00.000Z' },
+      source: 'feedback_derived',
+      confidence: 1,
+      updated_at: '2026-06-23T13:00:00.000Z'
+    });
+
+    const store = new MemorySignalsBackedTypedMemoryStore(memoryStore, audit);
+    const pack = await buildTypedMemoryContextPack(store, 'u1', 'ops', {
+      kinds: ['preference', 'correction']
+    });
+
+    assert.deepEqual(pack.rows, []);
+    assert.deepEqual(pack.row_ids, []);
+    assert.deepEqual(pack.row_kinds, []);
+    assert.equal(pack.suppressions_applied, 0);
+    assert.equal(pack.preferences_applied, 0);
+    const [entry] = await audit.recent('u1');
+    assert.deepEqual(entry?.detail, {
+      pack_kind: 'ops',
+      row_kinds: [],
+      row_ids: [],
+      suppressions_applied: 0,
+      preferences_applied: 0
+    });
+  });
+
+  it('rejects invalid context-pack kind before writing retrieval audit', async () => {
+    const audit = new InMemoryAuditStore();
+    const store = new MemorySignalsBackedTypedMemoryStore(new InMemoryMemorySignalStore(), audit);
+
+    await assert.rejects(
+      () => buildTypedMemoryContextPack(store, 'u1', 'memory-212-555-1212' as never),
+      /pack_kind must be one of/
+    );
+
+    assert.deepEqual(await audit.recent('u1'), []);
   });
 });
