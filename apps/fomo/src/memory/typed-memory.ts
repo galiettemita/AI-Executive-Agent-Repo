@@ -160,6 +160,16 @@ export interface TypedMemoryQuery {
   readonly limit?: number;
 }
 
+export interface TypedMemoryContextPack {
+  readonly pack_kind: TypedMemoryRetrievalPackKind;
+  readonly user_id: string;
+  readonly rows: readonly TypedMemoryRow[];
+  readonly row_ids: readonly number[];
+  readonly row_kinds: readonly TypedMemoryKind[];
+  readonly suppressions_applied: number;
+  readonly preferences_applied: number;
+}
+
 export interface TypedMemoryStore {
   write(row: NewTypedMemoryRow): Promise<TypedMemoryRow>;
   get(userId: string, kind: TypedMemoryKind, scopeKey: string): Promise<TypedMemoryRow | null>;
@@ -292,6 +302,47 @@ function queryMatches(row: TypedMemoryRow, query: TypedMemoryQuery): boolean {
   return true;
 }
 
+function typedMemoryContextRowIds(rows: readonly TypedMemoryRow[]): readonly number[] {
+  const rowIds: number[] = [];
+  for (const row of rows) {
+    if (typeof row.id === 'number') {
+      rowIds.push(row.id);
+    }
+  }
+  return Object.freeze(rowIds);
+}
+
+function typedMemoryContextRowKinds(rows: readonly TypedMemoryRow[]): readonly TypedMemoryKind[] {
+  const seen = new Set<TypedMemoryKind>();
+  const rowKinds: TypedMemoryKind[] = [];
+  for (const row of rows) {
+    if (seen.has(row.kind)) continue;
+    seen.add(row.kind);
+    rowKinds.push(row.kind);
+  }
+  return Object.freeze(rowKinds);
+}
+
+function typedMemorySuppressionsApplied(rows: readonly TypedMemoryRow[]): number {
+  let suppressionsApplied = 0;
+  for (const row of rows) {
+    if (row.kind === 'correction' && row.rule === 'sender_suppressed') {
+      suppressionsApplied += 1;
+    }
+  }
+  return suppressionsApplied;
+}
+
+function typedMemoryPreferencesApplied(rows: readonly TypedMemoryRow[]): number {
+  let preferencesApplied = 0;
+  for (const row of rows) {
+    if (row.kind === 'preference') {
+      preferencesApplied += 1;
+    }
+  }
+  return preferencesApplied;
+}
+
 export function queryTypedMemoryRows(
   rows: readonly TypedMemoryRow[],
   query: TypedMemoryQuery = {}
@@ -312,6 +363,40 @@ export async function readTypedMemory(
 ): Promise<readonly TypedMemoryRow[]> {
   const rows = await store.listActive(userId, query.kinds ?? TYPED_MEMORY_KINDS);
   return queryTypedMemoryRows(rows, query);
+}
+
+export async function buildTypedMemoryContextPack(
+  store: Pick<TypedMemoryStore, 'listActive' | 'markRetrieved'>,
+  userId: string,
+  packKind: TypedMemoryRetrievalPackKind,
+  query: TypedMemoryQuery = {}
+): Promise<TypedMemoryContextPack> {
+  assertRetrievalPackKind(packKind);
+
+  const rows = await readTypedMemory(store, userId, query);
+  const rowIds = typedMemoryContextRowIds(rows);
+  const rowKinds = typedMemoryContextRowKinds(rows);
+  const suppressionsApplied = typedMemorySuppressionsApplied(rows);
+  const preferencesApplied = typedMemoryPreferencesApplied(rows);
+
+  await store.markRetrieved({
+    user_id: userId,
+    pack_kind: packKind,
+    kinds: rowKinds,
+    returned_ids: rowIds,
+    suppressions_applied: suppressionsApplied,
+    preferences_applied: preferencesApplied
+  });
+
+  return Object.freeze({
+    pack_kind: packKind,
+    user_id: userId,
+    rows,
+    row_ids: rowIds,
+    row_kinds: rowKinds,
+    suppressions_applied: suppressionsApplied,
+    preferences_applied: preferencesApplied
+  });
 }
 
 function assertReadOnlyBridgeMutation(): never {
