@@ -111,6 +111,83 @@ describe('M1 memory_signals-backed typed memory facade — Postgres bridge', { s
     );
   });
 
+  it('bridges null-scoped Postgres preference signals with stable ordering and cross-user isolation', async () => {
+    assert.ok(db);
+    const memoryStore = new PostgresMemorySignalStore(db);
+    const typedStore = new MemorySignalsBackedTypedMemoryStore(memoryStore);
+
+    await memoryStore.upsert({
+      user_id: 'pg-pref-user-a',
+      kind: 'quietness_preference',
+      scope_key: null,
+      detail: { max_per_day: 4, unknown_metadata: null },
+      source: 'user_confirmed',
+      updated_at: '2026-06-24T12:00:00.000Z'
+    });
+    await memoryStore.upsert({
+      user_id: 'pg-pref-user-a',
+      kind: 'timing_preference',
+      scope_key: null,
+      detail: {
+        window: 'evening',
+        unknown_nested: { value: null },
+        unrecognized: ['kept']
+      },
+      source: 'founder_set',
+      updated_at: '2026-06-24T13:00:00.000Z'
+    });
+    await memoryStore.upsert({
+      user_id: 'pg-pref-user-b',
+      kind: 'quietness_preference',
+      scope_key: null,
+      detail: { max_per_day: 1, unknown_metadata: 'other-user' },
+      source: 'user_confirmed',
+      updated_at: '2026-06-24T14:00:00.000Z'
+    });
+
+    const rows = await readTypedMemory(typedStore, 'pg-pref-user-a', { kinds: ['preference'] });
+
+    assert.deepEqual(
+      rows.map((row) => ({
+        user_id: row.user_id,
+        scope_key: row.scope_key,
+        source: row.source,
+        attribute: row.kind === 'preference' ? row.attribute : null,
+        value: row.kind === 'preference' ? row.value : null
+      })),
+      [
+        {
+          user_id: 'pg-pref-user-a',
+          scope_key: typedMemoryScopeKeyForBridgedMemorySignal('timing_preference'),
+          source: 'founder_default',
+          attribute: 'timing_preference',
+          value: {
+            window: 'evening',
+            unknown_nested: { value: null },
+            unrecognized: ['kept']
+          }
+        },
+        {
+          user_id: 'pg-pref-user-a',
+          scope_key: typedMemoryScopeKeyForBridgedMemorySignal('quietness_preference'),
+          source: 'user_stated',
+          attribute: 'quietness_preference',
+          value: { max_per_day: 4, unknown_metadata: null }
+        }
+      ]
+    );
+
+    const quietness = await typedStore.get(
+      'pg-pref-user-a',
+      'preference',
+      typedMemoryScopeKeyForBridgedMemorySignal('quietness_preference')
+    );
+    assert.deepEqual(quietness?.kind === 'preference' ? quietness.value : null, {
+      max_per_day: 4,
+      unknown_metadata: null
+    });
+  });
+
   it('excludes deleted and tombstoned real Postgres memory_signals from typed reads', async () => {
     assert.ok(db);
     const memoryStore = new PostgresMemorySignalStore(db);
