@@ -857,17 +857,18 @@ Each milestone is a separate phase with its own 6-question gate, Core Dimension 
 
 ### M1 — Typed Memory Substrate
 
-- **Goal.** Ship the typed memory tables (semantic, preference, correction-extension, project, contact, repeated-behavior, stale flagging) with audit kinds + retrieval audit + no consumer changes.
-- **Scope.** Migrations (additive). Store classes (`UserProfileFactStore`, `UserPreferenceStore`, `UserProjectStore`, `UserContactStore`, `UserBehaviorPatternStore`). Stale-flag column on each + `superseded_by`. Audit kinds (`brevio.memory.retrieved`, `brevio.memory.retraction_recorded`). NO retrieval into ranker / HMR yet.
-- **Non-goals.** Any consumer surface. Vector retrieval. Consolidation. Skill anything.
-- **Data model implications.** 5 new tables; each with user_id, kind-specific schema, source/confidence/recency, retracted, superseded_by, audit timestamps. Unique index on `(user_id, kind, scope_key)` where applicable.
-- **No-migration fallback.** Not applicable — typed memory requires typed tables. (Untyped JSON columns rejected by founder doctrine.)
-- **Tests.** Per-table CRUD, retracted-exclusion, cross-tenant isolation, audit-emission, privacy canary on store inputs.
-- **Acceptance.** Stores write/read correctly. No surface reads from them. Default state is "tables exist, empty". CI green.
-- **Rollback.** Stores are dormant. Drop tables in a follow-up migration if needed (reversible because no consumer depends).
-- **Risks.** Schema mistakes hard to fix post-write — keep allowlisted attribute names + JSON schema validation.
-- **Do not touch.** Ranker. HMR. Reply parser. PIL. Calendar substrate. Outbound sender.
-- **Tier.** TIER 1 (migration + cross-user privacy).
+- **Current approved start.** M1 starts as a no-migration, read-only typed facade over the existing `memory_signals` foundation. The existing `memory_signals` table is not "completed M1" by itself; it is the substrate M1 reads from first.
+- **Goal.** Expose existing `memory_signals` through typed memory rows for semantic facts, preferences, correction signals, project/contact/repeated-behavior-shaped signals, and stale/deleted exclusions without changing live ranking or user-facing behavior.
+- **Scope.** Type definitions, bridge/query/read helpers, context-pack projection, and tests over existing `memory_signals`. The bridge remains dormant unless explicitly called by tests or future approved consumers. NO retrieval into ranker / HMR / reply parser yet.
+- **Non-goals.** New tables. DB migrations. Memory write path. Any consumer surface. Vector retrieval. Consolidation. Skill anything.
+- **Data model implications.** No schema change in this approved M1 start. Typed rows are derived from existing `memory_signals` fields such as `user_id`, `kind`, `scope_key`, `detail`, source/confidence metadata, timestamps, and deleted/tombstoned state.
+- **Migration-bearing future.** Dedicated typed memory tables are not approved by this M1 start. They require a later fresh founder gate proving a migration is necessary.
+- **Tests.** Read/query facade coverage for cross-tenant isolation, deleted/tombstoned exclusion, stable ordering, null/unknown metadata preservation, safe scope keys, and proof that no migration/new table/runtime consumer was added.
+- **Acceptance.** Typed facade reads existing `memory_signals` correctly. No new table or migration exists. No surface reads from it. CI green.
+- **Rollback.** Remove the dormant facade/query/context-pack code and tests; no data migration rollback is needed because no schema or live consumer changes are introduced.
+- **Risks.** Over-claiming M1 as complete or accidentally activating runtime consumers — keep this phase narrow and explicitly no-migration until a fresh founder gate changes it.
+- **Do not touch.** Ranker. HMR. Reply parser. PIL. Calendar substrate/live activation. Composio runtime. Tool Gateway. Browser automation. Outbound sender/action tools.
+- **Tier.** TIER 0/TIER 1 boundary: read-only typed memory architecture over existing data, with cross-user privacy tests; no migration or live behavior change.
 
 ### M2 — Memory Explain / Control Surface
 
@@ -1065,4 +1066,4 @@ These auto-memory entries are operational context, not doctrine:
 
 **End of M0 doctrine.**
 
-The next implementation step is **M1 — Typed Memory Substrate**, which lands through its own 6-question gate, its own scope lock, and its own founder approval. None of M1+ is implicitly approved by this doctrine; it is the *map*, not the *commit*.
+The current approved implementation step is **M1 — Typed Memory Substrate**, starting narrowly as a no-migration typed facade over existing `memory_signals`. This M0 doctrine remains the *map*, not a blanket approval for later migration-bearing memory tables, live consumers, Calendar activation, Composio runtime, Tool Gateway, browser automation, or action tools.
