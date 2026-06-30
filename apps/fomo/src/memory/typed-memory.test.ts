@@ -324,6 +324,25 @@ describe('InMemoryTypedMemoryStore', () => {
       /must not contain raw email/
     );
   });
+
+  it('rejects invalid read/list/retract inputs before lookup', async () => {
+    const store = new InMemoryTypedMemoryStore();
+    await store.write(semantic());
+
+    await assert.rejects(
+      () => store.get('u1', 'json_dump' as never, 'profile:working_hours'),
+      /kind must be one of/
+    );
+    await assert.rejects(
+      () => store.get('u1', 'semantic', 'person:alice@example.com'),
+      /must not contain raw email/
+    );
+    await assert.rejects(() => store.listActive('u1', ['json_dump' as never]), /kind must be one of/);
+    await assert.rejects(
+      () => store.retract('u1', 'semantic', 'person:alice@example.com'),
+      /must not contain raw email/
+    );
+  });
 });
 
 describe('typed memory query helpers', () => {
@@ -383,6 +402,13 @@ describe('typed memory query helpers', () => {
       const sql = await readFile(path.join(migrationDir, file), 'utf8');
       assert.equal(/create\s+table\s+[^;]*typed[_-]?memory/i.test(sql), false, file);
     }
+
+    const schemaSource = await readFile(path.join(SRC_ROOT, 'db', 'schema.ts'), 'utf8');
+    assert.equal(/typed[_-]?memory/i.test(schemaSource), false);
+
+    const storeFactorySource = await readFile(path.join(SRC_ROOT, 'db', 'store-factory.ts'), 'utf8');
+    assert.equal(/typed-memory/.test(storeFactorySource), false);
+    assert.equal(/typedMemory/.test(storeFactorySource), false);
   });
 });
 
@@ -650,6 +676,20 @@ describe('MemorySignalsBackedTypedMemoryStore', () => {
     const store = new MemorySignalsBackedTypedMemoryStore(new InMemoryMemorySignalStore());
     await assert.rejects(() => store.write({ user_id: 'u1', kind: 'preference', scope_key: 'signal:quietness_preference', source: 'user_stated', source_ref: 'reply:123', confidence: 'high', stale_marked_at: null, retracted: false, superseded_by: null, attribute: 'quietness_preference', value: { max_per_day: 5 } }), /read-only/);
     await assert.rejects(() => store.retract('u1', 'preference', 'signal:quietness_preference'), /read-only/);
+  });
+
+  it('rejects malformed bridge queries before reading memory_signals', async () => {
+    const store = new MemorySignalsBackedTypedMemoryStore(new InMemoryMemorySignalStore());
+
+    await assert.rejects(() => store.listActive('u1', ['json_dump' as never]), /kind must be one of/);
+    await assert.rejects(
+      () => store.get('u1', 'preference', 'person:alice@example.com'),
+      /must not contain raw email/
+    );
+    assert.throws(
+      () => typedMemoryScopeKeyForBridgedCorrectionSignal('sender_suppressed', 'alice@example.com'),
+      /must not contain raw email/
+    );
   });
 
   it('builds a frozen structural context pack over bridged memory_signals and audits without content', async () => {

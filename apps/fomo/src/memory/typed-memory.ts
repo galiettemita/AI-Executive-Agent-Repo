@@ -570,6 +570,8 @@ export class InMemoryTypedMemoryStore implements TypedMemoryStore {
   }
 
   async get(userId: string, kind: TypedMemoryKind, scopeKey: string): Promise<TypedMemoryRow | null> {
+    assertTypedMemoryKindValue(kind);
+    assertSafeScopeKey(scopeKey);
     const row = this.rows.get(rowKey(userId, kind, scopeKey));
     if (!row || !isActiveRetrievable(row)) return null;
     return row;
@@ -579,6 +581,7 @@ export class InMemoryTypedMemoryStore implements TypedMemoryStore {
     userId: string,
     kinds: readonly TypedMemoryKind[] = TYPED_MEMORY_KINDS
   ): Promise<readonly TypedMemoryRow[]> {
+    assertRetrievalKinds(kinds);
     const kindSet = new Set<TypedMemoryKind>(kinds);
     const out: TypedMemoryRow[] = [];
     for (const row of this.rows.values()) {
@@ -617,6 +620,8 @@ export class InMemoryTypedMemoryStore implements TypedMemoryStore {
     scopeKey: string,
     supersededBy: number | null = null
   ): Promise<boolean> {
+    assertTypedMemoryKindValue(kind);
+    assertSafeScopeKey(scopeKey);
     const existing = this.rows.get(rowKey(userId, kind, scopeKey));
     if (!existing || existing.retracted) return false;
     const retracted = cloneAndFreeze({
@@ -672,6 +677,8 @@ export class MemorySignalsBackedTypedMemoryStore implements TypedMemoryStore {
   }
 
   async get(userId: string, kind: TypedMemoryKind, scopeKey: string): Promise<TypedMemoryRow | null> {
+    assertTypedMemoryKindValue(kind);
+    assertSafeScopeKey(scopeKey);
     const preferenceKind = kind === 'preference' ? bridgedSignalKindForTypedPreferenceScope(scopeKey) : null;
     const correctionMatch = kind === 'correction' ? bridgedCorrectionSignalForTypedScope(scopeKey) : null;
     if (preferenceKind === null && correctionMatch === null) return null;
@@ -689,6 +696,7 @@ export class MemorySignalsBackedTypedMemoryStore implements TypedMemoryStore {
     userId: string,
     kinds: readonly TypedMemoryKind[] = TYPED_MEMORY_KINDS
   ): Promise<readonly TypedMemoryRow[]> {
+    assertRetrievalKinds(kinds);
     const includePreferences = kinds.includes('preference');
     const includeCorrections = kinds.includes('correction');
     if (!includePreferences && !includeCorrections) {
