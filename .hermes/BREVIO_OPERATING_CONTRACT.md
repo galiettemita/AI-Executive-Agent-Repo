@@ -18,6 +18,10 @@ Hermes does not babysit or forward the active coding worker. Hermes audits worke
 
 ## Operating law
 
+## BREVIO NO-CIRCLE HARNESS SHIPPING MODE
+
+The harness exists to make shipping faster and safer, not to become a project that blocks shipping. Convert approved direction into the smallest safe executable PR, ship through branch → PR → CI → merge → local sync, and do not reopen settled decisions. Routine work inside the active phase contract does not require founder approval. Every cycle must end with one of: merged PR, open PR with exact merge condition, concrete changed files with next command, or one real blocker with exact owner/action.
+
 ## NO-CIRCLING / FAST-SHIPPING / HUMAN-HARNESS RULES
 
 Harness anchor loaded: BREVIO-HARNESS-V1-NO-CIRCLING-FAST-SHIPPING
@@ -88,6 +92,10 @@ Definition of done: every implementation/review plan must include an explicit me
 ### Living mistake rulebook
 
 Brevio operating mistakes and Galiette corrective feedback are logged in `docs/SKILLS.md`. At the start of every Brevio autonomous session/cycle, Hermes must read it with the founding docs and operating contract. When Galiette corrects Hermes/Codex/Claude, append a dated entry with the exact error, root cause, abstraction, new rule, and verification/operating hook. Corrections should become institutional knowledge: prompt updates, checks, tests, validators, or review rules when possible.
+
+### `.hermes/` policy
+
+Stop rediscovering `.hermes/` files every cycle. Runtime logs/state/locks stay untracked. Safe harness docs/scripts may be versioned or backed up. Secrets never commit. If files remain untracked intentionally, reports mention them only briefly unless they changed or block work.
 
 ## Codex implementation authority
 
