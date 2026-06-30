@@ -5,16 +5,21 @@ ANCHOR="BREVIO-HARNESS-V1-NO-CIRCLING-FAST-SHIPPING"
 ROOT="/Users/galiettemita/Projects/Brevio/backend"
 PROFILE="/Users/galiettemita/.hermes/profiles/brevio-project-manager"
 
-files=(
-  "$ROOT/.hermes/project-management-cycle.prompt.md"
+required_files=(
+  "$ROOT/.hermes/BREVIO_CONSTITUTION.md"
   "$ROOT/.hermes/BREVIO_OPERATING_CONTRACT.md"
-  "$PROFILE/BREVIO_OPERATING_CONTRACT.md"
+  "$ROOT/.hermes/ACTIVE_PHASE_CONTRACT.md"
+  "$ROOT/.hermes/NEXT_PR_QUEUE.md"
+  "$ROOT/.hermes/project-management-cycle.prompt.md"
+  "$ROOT/.hermes/BREVIO_REPORT_TEMPLATE.md"
+  "$ROOT/.hermes/verify-brevio-harness.sh"
+  "$PROFILE/scripts/build-brevio-cycle-context.sh"
+  "$PROFILE/scripts/brevio-cycle.sh"
   "$PROFILE/bin/coding-worker"
-  "$ROOT/.hermes/CLAUDE_CONTINUATION_AFTER_QUOTA.md"
 )
 
 missing=0
-for file in "${files[@]}"; do
+for file in "${required_files[@]}"; do
   if [ ! -r "$file" ]; then
     echo "MISSING_FILE $file"
     missing=1
@@ -28,33 +33,43 @@ for file in "${files[@]}"; do
   fi
 done
 
-if ! grep -Fq "NO-CIRCLING / FAST-SHIPPING / HUMAN-HARNESS RULES" "$ROOT/.hermes/project-management-cycle.prompt.md"; then
-  echo "SECTION_MISSING active project-management cycle prompt"
-  missing=1
-fi
-if ! grep -Fq "NO-CIRCLING / FAST-SHIPPING / HUMAN-HARNESS RULES" "$ROOT/.hermes/BREVIO_OPERATING_CONTRACT.md"; then
-  echo "SECTION_MISSING repo-local operating contract"
-  missing=1
-fi
-if ! grep -Fq "NO-CIRCLING / FAST-SHIPPING / HUMAN-HARNESS RULES" "$PROFILE/BREVIO_OPERATING_CONTRACT.md"; then
-  echo "SECTION_MISSING profile operating contract"
-  missing=1
-fi
-if ! grep -Fq "Required self-audit before any Brevio report" "$ROOT/.hermes/project-management-cycle.prompt.md"; then
-  echo "REPORT_CHECKLIST_MISSING active project-management cycle prompt"
-  missing=1
-fi
-if ! grep -Fq "Required self-audit before any Brevio report" "$PROFILE/BREVIO_OPERATING_CONTRACT.md"; then
-  echo "REPORT_CHECKLIST_MISSING profile operating contract"
-  missing=1
+executable_files=(
+  "$ROOT/.hermes/verify-brevio-harness.sh"
+  "$PROFILE/scripts/build-brevio-cycle-context.sh"
+  "$PROFILE/scripts/brevio-cycle.sh"
+  "$PROFILE/bin/coding-worker"
+)
+for file in "${executable_files[@]}"; do
+  if [ ! -x "$file" ]; then
+    echo "NOT_EXECUTABLE $file"
+    missing=1
+  fi
+done
+
+if [ -r "$ROOT/.hermes/NEXT_PR_QUEUE.md" ]; then
+  next_count=$(grep -Ec '^## NEXT — ' "$ROOT/.hermes/NEXT_PR_QUEUE.md" || true)
+  if [ "$next_count" -ne 1 ]; then
+    echo "NEXT_QUEUE_COUNT_INVALID count=$next_count expected=1"
+    missing=1
+  else
+    echo "NEXT_QUEUE_COUNT_OK count=1"
+  fi
 fi
 
-if ! grep -Fq "Required PR review gate" "$ROOT/.hermes/project-management-cycle.prompt.md"; then
-  echo "PR_REVIEW_CHECKLIST_MISSING active project-management cycle prompt"
+if ! grep -Fq "BREVIO NO-CIRCLE HARNESS SHIPPING MODE" "$ROOT/.hermes/BREVIO_OPERATING_CONTRACT.md"; then
+  echo "NO_CIRCLE_MODE_MISSING operating contract"
   missing=1
 fi
-if ! grep -Fq "$ANCHOR" "$ROOT/.hermes/project-management-cycle.prompt.md"; then
-  echo "PR_REVIEW_ANCHOR_MISSING active project-management cycle prompt"
+if ! grep -Fq "M1-B — no-migration typed facade over existing" "$ROOT/.hermes/ACTIVE_PHASE_CONTRACT.md"; then
+  echo "ACTIVE_PHASE_MISSING M1-B contract"
+  missing=1
+fi
+if ! grep -Fq "Current NEXT queue item" "$ROOT/.hermes/BREVIO_REPORT_TEMPLATE.md"; then
+  echo "REPORT_TEMPLATE_MISSING NEXT queue field"
+  missing=1
+fi
+if ! grep -Fq "build-brevio-cycle-context.sh" "$PROFILE/scripts/brevio-cycle.sh"; then
+  echo "MECHANICAL_CONTEXT_INJECTION_MISSING brevio-cycle.sh"
   missing=1
 fi
 
