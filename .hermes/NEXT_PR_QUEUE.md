@@ -4,7 +4,7 @@ Harness anchor loaded: BREVIO-HARNESS-V1-NO-CIRCLING-FAST-SHIPPING
 
 There must be exactly one item marked `NEXT`. No cycle may say “continue M1” vaguely. Move the marker only after the current item is merged or explicitly blocked with owner/action.
 
-## NEXT — PR-B: M1 validation hardening
+## PR-B: M1 validation hardening
 
 - **Purpose:** Add focused tests/validators for the current typed-memory facade and `memory_signals` bridge so M1-B safety is mechanically proven before retrieval-pack work.
 - **Allowed files/areas:**
@@ -23,7 +23,7 @@ There must be exactly one item marked `NEXT`. No cycle may say “continue M1”
 - **Done condition:** Added validation hardening proves cross-user isolation, deleted/tombstoned exclusion, metadata/null preservation, stable ordering, and no-migration boundary for the current facade/bridge.
 - **Founder approval needed?** No, if it stays inside this contract.
 
-## PR-C: Typed retrieval pack builder, dormant only
+## NEXT — PR-C: Typed retrieval pack builder, dormant only
 
 - **Purpose:** Add retrieval-pack construction over existing `memory_signals` / typed facade without activating runtime consumers.
 - **Allowed files/areas:** pure helper(s), tests, deterministic ordering, audit metadata.
