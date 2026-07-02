@@ -34,6 +34,10 @@ If these conflict, stop only when the conflict changes the allowed action. Other
 
 - Convert approved direction into the smallest safe executable PR.
 - Ship through branch → PR → CI → merge → local sync.
+- Before starting any Brevio task, PR, audit, phase, harness change, memory increment, or coding-worker prompt, define the task's concrete exit condition.
+- Do not begin vague work like “continue M1,” “improve memory,” “harden the system,” “review the docs,” or “expand the harness” without stating exactly what done means.
+- Every task must name: task name, purpose, allowed scope, forbidden scope, expected changed files/areas, tests/validation required, exit condition, stop condition, and next task after completion.
+- When the exit condition is met, stop. Do not expand the task; move to the next queue item.
 - Do not reopen settled decisions.
 - Do not ask for approval on already-approved scope.
 - Do not produce broad planning cycles when a narrow PR is possible.

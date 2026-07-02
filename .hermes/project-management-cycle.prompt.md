@@ -18,6 +18,14 @@ Do not paste full founding PDFs into the prompt payload. The constitution points
 
 Harness anchor loaded: BREVIO-HARNESS-V1-NO-CIRCLING-FAST-SHIPPING
 
+### Every task requires an exit condition
+
+Before starting any Brevio task, PR, audit, phase, harness change, memory increment, or coding-worker prompt, define the task's exit condition. Do not begin vague work like “continue M1,” “improve memory,” “harden the system,” “review the docs,” or “expand the harness” without stating exactly what done means.
+
+Every task must include: task name, purpose, allowed scope, forbidden scope, expected changed files/areas, tests/validation required, exit condition, stop condition, and next task after completion.
+
+Exit conditions must be concrete: PR opened and CI green; PR merged and local main synced; a specific test added and passing; an exact file updated and verifier passing; or a blocker proven with command output plus owner/action identified. If a task has no exit condition, do not start it. Define the exit condition first. If the exit condition is met, stop and move to the next queue item instead of expanding scope.
+
 ### No circling
 
 - Do not re-ask whether already-approved work is approved.

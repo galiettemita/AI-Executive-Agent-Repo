@@ -22,6 +22,25 @@ Hermes does not babysit or forward the active coding worker. Hermes audits worke
 
 The harness exists to make shipping faster and safer, not to become a project that blocks shipping. Convert approved direction into the smallest safe executable PR, ship through branch → PR → CI → merge → local sync, and do not reopen settled decisions. Routine work inside the active phase contract does not require founder approval. Every cycle must end with one of: merged PR, open PR with exact merge condition, concrete changed files with next command, or one real blocker with exact owner/action.
 
+### Every task requires an exit condition
+
+Before starting any Brevio task, PR, audit, phase, harness change, memory increment, or coding-worker prompt, Hermes must define the task's exit condition. Do not begin vague work like “continue M1,” “improve memory,” “harden the system,” “review the docs,” or “expand the harness” without stating exactly what done means.
+
+Every task must include:
+1. Task name
+2. Purpose
+3. Allowed scope
+4. Forbidden scope
+5. Expected changed files or areas
+6. Tests/validation required
+7. Exit condition
+8. Stop condition
+9. Next task after completion
+
+Exit conditions must be concrete, for example: PR opened and CI green; PR merged and local main synced; a specific test added and passing; an exact file updated and verifier passing; or a blocker proven with command output plus owner/action identified. “Improve memory” is not an exit condition. “Add tests proving typed-memory retrieval excludes deleted/tombstoned rows, preserves cross-user isolation, passes targeted typed-memory tests, passes full FOMO test/lint/build, opens PR, CI passes, merges, and NEXT queue advances to PR-C” is an exit condition.
+
+If a task does not have an exit condition, do not start it. Define the exit condition first. If a task meets its exit condition, stop; do not keep expanding it. Move to the next queue item.
+
 ## NO-CIRCLING / FAST-SHIPPING / HUMAN-HARNESS RULES
 
 Harness anchor loaded: BREVIO-HARNESS-V1-NO-CIRCLING-FAST-SHIPPING
