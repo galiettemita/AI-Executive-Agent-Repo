@@ -23,7 +23,7 @@ There must be exactly one item marked `NEXT`. No cycle may say “continue M1”
 - **Done condition:** Added validation hardening proves cross-user isolation, deleted/tombstoned exclusion, metadata/null preservation, stable ordering, and no-migration boundary for the current facade/bridge.
 - **Founder approval needed?** No, if it stays inside this contract.
 
-## NEXT — PR-C: Typed retrieval pack builder, dormant only
+## PR-C: Typed retrieval pack builder, dormant only
 
 - **Purpose:** Add retrieval-pack construction over existing `memory_signals` / typed facade without activating runtime consumers.
 - **Allowed files/areas:** pure helper(s), tests, deterministic ordering, audit metadata.
@@ -33,6 +33,7 @@ There must be exactly one item marked `NEXT`. No cycle may say “continue M1”
 - **Merge condition:** CI green, dormant-only helper, no runtime imports from consumer surfaces.
 - **Done condition:** A caller can construct a deterministic typed retrieval pack in tests only.
 - **Founder approval needed?** No, if dormant only.
+- **Status:** Completed in PR #78, merged as `c4ac65ca3dc2978837bdea547c0d6ac39ad0c9e9`.
 
 ## PR-D: Memory audit/evidence helper surface, dormant only
 
@@ -44,8 +45,9 @@ There must be exactly one item marked `NEXT`. No cycle may say “continue M1”
 - **Merge condition:** CI green, helper dormant, evidence contains ids/kinds/structural reasons only—not raw private content.
 - **Done condition:** Tests can inspect considered/excluded memory rows safely.
 - **Founder approval needed?** No, if dormant only.
+- **Status:** Completed in PR #79, merged as `3778934c0e57f9f051c1cc3c61073aad79a19a5a`.
 
-## PR-E: M1-B closeout
+## NEXT — PR-E: M1-B closeout
 
 - **Purpose:** Prove M1-B no-migration foundation is complete enough for the next phase and identify the next phase recommendation.
 - **Allowed files/areas:** closeout doc, final validation checklist, queue update.
