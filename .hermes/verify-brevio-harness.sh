@@ -12,6 +12,7 @@ required_files=(
   "$ROOT/.hermes/NEXT_PR_QUEUE.md"
   "$ROOT/.hermes/project-management-cycle.prompt.md"
   "$ROOT/.hermes/BREVIO_REPORT_TEMPLATE.md"
+  "$ROOT/.hermes/M1_B_CLOSEOUT.md"
   "$ROOT/.hermes/verify-brevio-harness.sh"
   "$PROFILE/scripts/build-brevio-cycle-context.sh"
   "$PROFILE/scripts/brevio-cycle.sh"
@@ -60,8 +61,12 @@ if ! grep -Fq "BREVIO NO-CIRCLE HARNESS SHIPPING MODE" "$ROOT/.hermes/BREVIO_OPE
   echo "NO_CIRCLE_MODE_MISSING operating contract"
   missing=1
 fi
-if ! grep -Fq "M1-B — no-migration typed facade over existing" "$ROOT/.hermes/ACTIVE_PHASE_CONTRACT.md"; then
-  echo "ACTIVE_PHASE_MISSING M1-B contract"
+if ! grep -Eq "^## Current phase$" "$ROOT/.hermes/ACTIVE_PHASE_CONTRACT.md"; then
+  echo "ACTIVE_PHASE_MISSING current phase heading"
+  missing=1
+fi
+if ! grep -Eq "^## Memory V1 exit condition$" "$ROOT/.hermes/ACTIVE_PHASE_CONTRACT.md"; then
+  echo "ACTIVE_PHASE_MISSING Memory V1 exit condition"
   missing=1
 fi
 if ! grep -Fq "Current NEXT queue item" "$ROOT/.hermes/BREVIO_REPORT_TEMPLATE.md"; then
