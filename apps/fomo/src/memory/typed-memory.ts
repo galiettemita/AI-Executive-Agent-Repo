@@ -170,6 +170,31 @@ export interface TypedMemoryContextPack {
   readonly preferences_applied: number;
 }
 
+export type TypedMemoryRetrievalEvidenceReason =
+  | 'included'
+  | 'inactive_retracted'
+  | 'inactive_stale'
+  | 'low_confidence'
+  | 'kind_not_requested'
+  | 'scope_not_requested'
+  | 'source_not_requested'
+  | 'below_min_confidence'
+  | 'limit_exceeded';
+
+export interface TypedMemoryRetrievalEvidenceRow {
+  readonly id?: number;
+  readonly kind: TypedMemoryKind;
+  readonly decision: 'included' | 'excluded';
+  readonly reasons: readonly TypedMemoryRetrievalEvidenceReason[];
+}
+
+export interface TypedMemoryRetrievalEvidence {
+  readonly returned_ids: readonly number[];
+  readonly returned_kinds: readonly TypedMemoryKind[];
+  readonly considered: readonly TypedMemoryRetrievalEvidenceRow[];
+  readonly excluded_count: number;
+}
+
 export interface TypedMemoryStore {
   write(row: NewTypedMemoryRow): Promise<TypedMemoryRow>;
   get(userId: string, kind: TypedMemoryKind, scopeKey: string): Promise<TypedMemoryRow | null>;
@@ -354,6 +379,74 @@ export function queryTypedMemoryRows(
   const out = rows.filter((row) => isActiveRetrievable(row) && queryMatches(row, query));
   out.sort(compareTypedMemoryRows);
   return Object.freeze(out.slice(0, limit));
+}
+
+export function buildTypedMemoryRetrievalEvidence(
+  rows: readonly TypedMemoryRow[],
+  query: TypedMemoryQuery = {}
+): TypedMemoryRetrievalEvidence {
+  const limit = query.limit ?? rows.length;
+  if (!Number.isInteger(limit) || limit < 0) {
+    throw new Error('typed memory query limit must be a non-negative integer');
+  }
+  if (query.kinds !== undefined) assertRetrievalKinds(query.kinds);
+  if (query.sources !== undefined) {
+    for (const source of query.sources) assertTypedMemorySourceValue(source);
+  }
+  if (query.minConfidence !== undefined) assertTypedMemoryConfidenceValue(query.minConfidence);
+
+  const eligible = rows.filter((row) => isActiveRetrievable(row) && queryMatches(row, query));
+  eligible.sort(compareTypedMemoryRows);
+  const returnedRows = eligible.slice(0, limit);
+  const returnedKeys = new Set(
+    returnedRows.map((row) => `${row.id ?? 'no-id'}:${row.kind}:${row.scope_key}`)
+  );
+  const considered: TypedMemoryRetrievalEvidenceRow[] = [];
+
+  for (const row of [...rows].sort(compareTypedMemoryRows)) {
+    const reasons: TypedMemoryRetrievalEvidenceReason[] = [];
+    if (row.retracted) reasons.push('inactive_retracted');
+    if (row.stale_marked_at !== null) reasons.push('inactive_stale');
+    if (row.confidence === 'low') reasons.push('low_confidence');
+    if (query.kinds !== undefined && !query.kinds.includes(row.kind)) reasons.push('kind_not_requested');
+    if (query.scopeKeys !== undefined && !query.scopeKeys.includes(row.scope_key)) reasons.push('scope_not_requested');
+    if (query.sources !== undefined && !query.sources.includes(row.source)) reasons.push('source_not_requested');
+    if (
+      query.minConfidence !== undefined &&
+      confidenceRank(row.confidence) < confidenceRank(query.minConfidence)
+    ) {
+      reasons.push('below_min_confidence');
+    }
+
+    const rowKeyForEvidence = `${row.id ?? 'no-id'}:${row.kind}:${row.scope_key}`;
+    if (reasons.length === 0 && returnedKeys.has(rowKeyForEvidence)) {
+      considered.push(
+        Object.freeze({
+          id: row.id,
+          kind: row.kind,
+          decision: 'included',
+          reasons: Object.freeze(['included'] as const)
+        })
+      );
+      continue;
+    }
+    if (reasons.length === 0) reasons.push('limit_exceeded');
+    considered.push(
+      Object.freeze({
+        id: row.id,
+        kind: row.kind,
+        decision: 'excluded',
+        reasons: Object.freeze(reasons)
+      })
+    );
+  }
+
+  return Object.freeze({
+    returned_ids: typedMemoryContextRowIds(returnedRows),
+    returned_kinds: typedMemoryContextRowKinds(returnedRows),
+    considered: Object.freeze(considered),
+    excluded_count: considered.filter((row) => row.decision === 'excluded').length
+  });
 }
 
 export async function readTypedMemory(

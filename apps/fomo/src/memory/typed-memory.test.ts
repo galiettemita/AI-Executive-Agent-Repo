@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { InMemoryAuditStore, FOMO_AUDIT_ACTIONS } from '../core/audit.ts';
 
 import {
+  buildTypedMemoryRetrievalEvidence,
   buildTypedMemoryContextPack,
   InMemoryTypedMemoryStore,
   MemorySignalsBackedTypedMemoryStore,
@@ -391,6 +392,122 @@ describe('typed memory query helpers', () => {
     const store = new InMemoryTypedMemoryStore();
     await store.write(semantic());
     await assert.rejects(() => readTypedMemory(store, 'u1', { limit: -1 }), /non-negative integer/);
+  });
+
+  it('builds structural retrieval evidence for included and excluded rows without leaking content', async () => {
+    const store = new InMemoryTypedMemoryStore();
+    const rows = [
+      await store.write(
+        semantic({
+          scope_key: 'profile:included_newer',
+          updated_at: '2026-06-23T13:00:00.000Z',
+          value: { private_note: 'do not leak included value' }
+        })
+      ),
+      await store.write(
+        semantic({
+          scope_key: 'profile:limit_excluded',
+          updated_at: '2026-06-23T12:00:00.000Z',
+          value: { private_note: 'do not leak limit value' }
+        })
+      ),
+      await store.write(
+        semantic({
+          scope_key: 'profile:low_confidence',
+          confidence: 'low',
+          updated_at: '2026-06-23T11:00:00.000Z',
+          value: { private_note: 'do not leak low value' }
+        })
+      ),
+      await store.write(
+        semantic({
+          scope_key: 'profile:stale',
+          stale_marked_at: '2026-06-23T00:00:00.000Z',
+          updated_at: '2026-06-23T10:00:00.000Z',
+          value: { private_note: 'do not leak stale value' }
+        })
+      ),
+      await store.write(
+        semantic({
+          scope_key: 'profile:retracted',
+          retracted: true,
+          updated_at: '2026-06-23T09:00:00.000Z',
+          value: { private_note: 'do not leak retracted value' }
+        })
+      ),
+      await store.write({
+        user_id: 'u1',
+        kind: 'preference',
+        scope_key: 'preference:alert_timing',
+        source: 'user_stated',
+        source_ref: 'reply:456',
+        confidence: 'high',
+        stale_marked_at: null,
+        retracted: false,
+        superseded_by: null,
+        attribute: 'alert_timing',
+        value: 'private preference value',
+        updated_at: '2026-06-23T14:00:00.000Z'
+      } as NewTypedMemoryRow)
+    ];
+
+    const evidence = buildTypedMemoryRetrievalEvidence(rows, {
+      kinds: ['semantic'],
+      minConfidence: 'medium',
+      limit: 1
+    });
+
+    assert.equal(Object.isFrozen(evidence), true);
+    assert.deepEqual(evidence.returned_ids, [1]);
+    assert.deepEqual(evidence.returned_kinds, ['semantic']);
+    assert.equal(evidence.excluded_count, 5);
+    assert.deepEqual(
+      evidence.considered.map((row) => ({ id: row.id, kind: row.kind, decision: row.decision, reasons: row.reasons })),
+      [
+        { id: 6, kind: 'preference', decision: 'excluded', reasons: ['kind_not_requested'] },
+        { id: 1, kind: 'semantic', decision: 'included', reasons: ['included'] },
+        { id: 2, kind: 'semantic', decision: 'excluded', reasons: ['limit_exceeded'] },
+        { id: 3, kind: 'semantic', decision: 'excluded', reasons: ['low_confidence', 'below_min_confidence'] },
+        { id: 4, kind: 'semantic', decision: 'excluded', reasons: ['inactive_stale'] },
+        { id: 5, kind: 'semantic', decision: 'excluded', reasons: ['inactive_retracted'] }
+      ]
+    );
+    const evidenceJson = JSON.stringify(evidence);
+    assert.equal(evidenceJson.includes('scope_key'), false);
+    assert.equal(evidenceJson.includes('private'), false);
+    assert.equal(evidenceJson.includes('included_newer'), false);
+    assert.equal(evidenceJson.includes('alert_timing'), false);
+  });
+
+  it('keeps retrieval evidence scoped to rows already isolated for one user', async () => {
+    const store = new InMemoryTypedMemoryStore();
+    await store.write(
+      semantic({
+        user_id: 'u1',
+        scope_key: 'profile:u1_private_context',
+        value: { private_note: 'u1 private value' }
+      })
+    );
+    await store.write(
+      semantic({
+        user_id: 'u2',
+        scope_key: 'profile:u2_private_context',
+        value: { private_note: 'u2 private value' }
+      })
+    );
+
+    const rows = await readTypedMemory(store, 'u1', { kinds: ['semantic'] });
+    const evidence = buildTypedMemoryRetrievalEvidence(rows, { kinds: ['semantic'] });
+
+    assert.deepEqual(evidence.returned_ids, [1]);
+    assert.deepEqual(
+      evidence.considered.map((row) => ({ id: row.id, kind: row.kind, decision: row.decision, reasons: row.reasons })),
+      [{ id: 1, kind: 'semantic', decision: 'included', reasons: ['included'] }]
+    );
+    const evidenceJson = JSON.stringify(evidence);
+    assert.equal(evidenceJson.includes('u2'), false);
+    assert.equal(evidenceJson.includes('private'), false);
+    assert.equal(evidenceJson.includes('profile:'), false);
   });
 
   it('keeps M1 no-migration scope: no typed-memory table or migration exists', async () => {
