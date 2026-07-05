@@ -104,21 +104,25 @@ describe('typed memory facade constants', () => {
     assert.ok(FOMO_AUDIT_ACTIONS.includes('brevio.memory.retraction_recorded'));
   });
 
-  it('keeps the M1 facade dormant: no non-test production module imports typed-memory', async () => {
+  it('keeps the M1 facade dormant except the approved visible recall helper', async () => {
     const files = await listSourceFiles(SRC_ROOT);
     const importRegex = /import\s+[^;]+?from\s+['"]([^'"]+)['"]/g;
+    const allowedTypedMemoryImporters = new Set(['memory/typed-memory-visible-recall.ts']);
 
     for (const file of files) {
       if (file.endsWith('typed-memory.ts') || file.endsWith('.test.ts')) continue;
+      const relativeFile = path.relative(SRC_ROOT, file);
 
       const source = await readFile(file, 'utf8');
       let match: RegExpExecArray | null;
       while ((match = importRegex.exec(source)) !== null) {
         const specifier = match[1] ?? '';
+        const importsTypedMemory =
+          specifier.endsWith('/typed-memory.js') || specifier.endsWith('/typed-memory.ts');
         assert.equal(
-          specifier.endsWith('/typed-memory.js') || specifier.endsWith('/typed-memory.ts'),
+          importsTypedMemory && !allowedTypedMemoryImporters.has(relativeFile),
           false,
-          `M1 no-migration facade must remain dormant; unexpected production import in ${path.relative(SRC_ROOT, file)} from ${specifier}`
+          `M1 no-migration facade must remain dormant outside approved helpers; unexpected production import in ${relativeFile} from ${specifier}`
         );
       }
     }
