@@ -33,8 +33,52 @@ export interface VisibleExplicitPreferenceRecall {
   };
 }
 
+export interface VisibleMemoryWhyUsedExplanation {
+  readonly memory_used: string;
+  readonly answer: string;
+  readonly relevance: string;
+  readonly source: string;
+  readonly audit: string;
+  readonly safety: string;
+}
+
+const MAX_WHY_USED_FIELD_LENGTH = 240;
+
 function humanizePreferenceAttribute(attribute: string): string {
   return attribute.replace(/[_:-]+/g, ' ').replace(/\s+/g, ' ').trim() || 'preference';
+}
+
+function boundedHumanText(text: string): string {
+  const normalized = text.replace(/\s+/g, ' ').trim();
+  if (normalized.length <= MAX_WHY_USED_FIELD_LENGTH) return normalized;
+  return `${normalized.slice(0, MAX_WHY_USED_FIELD_LENGTH - 3)}...`;
+}
+
+function sourceLabel(source: TypedMemorySource): string {
+  switch (source) {
+    case 'user_provided':
+    case 'user_stated':
+      return 'a user-stated preference';
+    case 'founder_default':
+      return 'a founder-set default preference';
+    case 'feedback_derived':
+      return 'a feedback-derived memory';
+    case 'consolidation_proposed':
+      return 'a proposed memory consolidation';
+    case 'ops_injected':
+      return 'an operator-provided memory';
+  }
+}
+
+function sourceRefLabel(refType: VisibleExplicitPreferenceRecall['source_metadata']['source_ref_type']): string {
+  switch (refType) {
+    case 'memory_signal':
+      return 'the memory-signals substrate';
+    case 'reply':
+      return 'a prior user reply';
+    case 'unknown':
+      return 'stored memory metadata';
+  }
 }
 
 function safeUserVisiblePreferenceValue(value: UserPreferenceMemory['value']): string {
@@ -70,6 +114,7 @@ export async function recallVisibleExplicitPreference(
   const preference = rows.find(
     (row): row is UserPreferenceMemory =>
       row.kind === 'preference' &&
+      row.superseded_by === null &&
       (query.attribute === undefined || row.attribute === query.attribute)
   );
   if (preference === undefined) return null;
@@ -97,5 +142,31 @@ export async function recallVisibleExplicitPreference(
       row_id: preference.id,
       scope_key: preference.scope_key
     })
+  });
+}
+
+export function explainVisibleExplicitPreferenceUse(
+  recall: VisibleExplicitPreferenceRecall
+): VisibleMemoryWhyUsedExplanation {
+  const label = humanizePreferenceAttribute(recall.attribute);
+  const source = sourceLabel(recall.source_metadata.source);
+  const sourceRef = sourceRefLabel(recall.source_metadata.source_ref_type);
+  const confidence = recall.source_metadata.confidence;
+  const updatedAt = recall.source_metadata.updated_at;
+
+  const memoryUsed = `your saved ${label} preference`;
+  const relevance = `I used it because this request matched the saved ${label} preference for this user.`;
+  const sourceText = `This came from ${source} recorded through ${sourceRef}.`;
+  const auditText = `The recall used ${confidence}-confidence preference metadata last updated ${updatedAt}; raw preference content is not needed to explain why it was used.`;
+  const safetyText = 'The explanation is scoped to this user and summarizes memory metadata without exposing raw private values.';
+  const answer = `${relevance} ${sourceText} ${auditText}`;
+
+  return Object.freeze({
+    memory_used: boundedHumanText(memoryUsed),
+    answer: boundedHumanText(answer),
+    relevance: boundedHumanText(relevance),
+    source: boundedHumanText(sourceText),
+    audit: boundedHumanText(auditText),
+    safety: boundedHumanText(safetyText)
   });
 }
