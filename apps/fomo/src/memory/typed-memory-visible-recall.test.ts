@@ -7,7 +7,10 @@ import {
   MemorySignalsBackedTypedMemoryStore,
   type NewTypedMemoryRow
 } from './typed-memory.ts';
-import { recallVisibleExplicitPreference } from './typed-memory-visible-recall.ts';
+import {
+  explainVisibleExplicitPreferenceUse,
+  recallVisibleExplicitPreference
+} from './typed-memory-visible-recall.ts';
 
 function preference(overrides: Record<string, unknown> = {}): NewTypedMemoryRow {
   return {
@@ -153,5 +156,153 @@ describe('Memory V1 visible explicit-preference recall', () => {
     await store.write(preference({ scope_key: 'preference:retracted', attribute: 'retracted', retracted: true }));
 
     assert.equal(await recallVisibleExplicitPreference(store, 'u1'), null);
+  });
+
+  it('explains why a visible explicit preference was used in bounded human-readable language', async () => {
+    const store = new InMemoryTypedMemoryStore();
+    await store.write(preference());
+
+    const recall = await recallVisibleExplicitPreference(store, 'u1', { attribute: 'alert_timing' });
+    assert.ok(recall);
+    const explanation = explainVisibleExplicitPreferenceUse(recall);
+
+    assert.deepEqual(explanation, {
+      memory_used: 'your saved alert timing preference',
+      answer:
+        'I used it because this request matched the saved alert timing preference for this user. This came from a user-stated preference recorded through a prior user reply. The recall used high-confidence preference metadata last updated 2026-06...',
+      relevance:
+        'I used it because this request matched the saved alert timing preference for this user.',
+      source: 'This came from a user-stated preference recorded through a prior user reply.',
+      audit:
+        'The recall used high-confidence preference metadata last updated 2026-06-25T12:00:00.000Z; raw preference content is not needed to explain why it was used.',
+      safety:
+        'The explanation is scoped to this user and summarizes memory metadata without exposing raw private values.'
+    });
+    assert.equal(Object.isFrozen(explanation), true);
+    assert.ok(explanation.answer.length <= 240);
+  });
+
+  it('uses safe source metadata labels without dumping raw internals', async () => {
+    const store = new InMemoryTypedMemoryStore();
+    await store.write(preference({ source: 'founder_default', source_ref: 'memory_signal:99' }));
+
+    const recall = await recallVisibleExplicitPreference(store, 'u1', {
+      attribute: 'alert_timing',
+      sources: ['founder_default']
+    });
+    assert.ok(recall);
+    const explanation = explainVisibleExplicitPreferenceUse(recall);
+    const json = JSON.stringify(explanation);
+
+    assert.equal(
+      explanation.source,
+      'This came from a founder-set default preference recorded through the memory-signals substrate.'
+    );
+    assert.equal(json.includes('memory_signal:99'), false);
+    assert.equal(json.includes('scope_key'), false);
+    assert.equal(json.includes('row_id'), false);
+  });
+
+  it('does not leak raw private, email-like, or structured preference values into why-used explanation', async () => {
+    const store = new InMemoryTypedMemoryStore();
+    await store.write(preference({ value: 'alice@example.com' }));
+    await store.write(
+      preference({
+        scope_key: 'preference:quietness',
+        attribute: 'quietness_preference',
+        value: { private_note: 'never reveal nested text' },
+        updated_at: '2026-06-25T15:00:00.000Z'
+      })
+    );
+
+    const emailRecall = await recallVisibleExplicitPreference(store, 'u1', { attribute: 'alert_timing' });
+    const structuredRecall = await recallVisibleExplicitPreference(store, 'u1', {
+      attribute: 'quietness_preference'
+    });
+    assert.ok(emailRecall);
+    assert.ok(structuredRecall);
+
+    const emailExplanation = JSON.stringify(explainVisibleExplicitPreferenceUse(emailRecall));
+    const structuredExplanation = JSON.stringify(explainVisibleExplicitPreferenceUse(structuredRecall));
+
+    assert.equal(emailExplanation.includes('alice@example.com'), false);
+    assert.equal(emailExplanation.includes('[redacted]'), false);
+    assert.equal(structuredExplanation.includes('never reveal nested text'), false);
+    assert.equal(structuredExplanation.includes('private_note'), false);
+    assert.match(structuredExplanation, /quietness preference/);
+  });
+
+  it('keeps why-used explanations cross-user isolated', async () => {
+    const store = new InMemoryTypedMemoryStore();
+    await store.write(preference({ user_id: 'u1', value: 'evening' }));
+    await store.write(
+      preference({
+        user_id: 'u2',
+        value: 'other user secret alice@example.com',
+        source_ref: 'reply:other-user-secret',
+        updated_at: '2026-06-26T12:00:00.000Z'
+      })
+    );
+
+    const recall = await recallVisibleExplicitPreference(store, 'u1', { attribute: 'alert_timing' });
+    assert.ok(recall);
+    const json = JSON.stringify(explainVisibleExplicitPreferenceUse(recall));
+
+    assert.equal(json.includes('u2'), false);
+    assert.equal(json.includes('other user secret'), false);
+    assert.equal(json.includes('alice@example.com'), false);
+    assert.equal(json.includes('other-user-secret'), false);
+  });
+
+  it('does not explain low-confidence, stale, retracted, deleted, or tombstoned memory', async () => {
+    const store = new InMemoryTypedMemoryStore();
+    await store.write(preference({ confidence: 'low' }));
+    await store.write(
+      preference({
+        scope_key: 'preference:stale',
+        attribute: 'stale',
+        stale_marked_at: '2026-06-25T00:00:00.000Z'
+      })
+    );
+    await store.write(preference({ scope_key: 'preference:retracted', attribute: 'retracted', retracted: true }));
+    await store.write(
+      preference({
+        scope_key: 'preference:tombstoned',
+        attribute: 'tombstoned',
+        superseded_by: 999
+      })
+    );
+
+    const memoryStore = new InMemoryMemorySignalStore();
+    await memoryStore.upsert({
+      user_id: 'u1',
+      kind: 'quietness_preference',
+      scope_key: null,
+      detail: { max_per_day: 1 },
+      source: 'user_confirmed',
+      updated_at: '2026-06-25T14:00:00.000Z'
+    });
+    await memoryStore.delete('u1', 'quietness_preference', null);
+    const bridgedStore = new MemorySignalsBackedTypedMemoryStore(memoryStore);
+
+    assert.equal(await recallVisibleExplicitPreference(store, 'u1'), null);
+    assert.equal(await recallVisibleExplicitPreference(bridgedStore, 'u1'), null);
+  });
+
+  it('selects the newest matching candidate deterministically before explaining why it was used', async () => {
+    const store = new InMemoryTypedMemoryStore();
+    await store.write(preference({ value: 'morning', updated_at: '2026-06-25T10:00:00.000Z' }));
+    await store.write(preference({ value: 'evening', updated_at: '2026-06-25T12:00:00.000Z' }));
+
+    const firstRecall = await recallVisibleExplicitPreference(store, 'u1', { attribute: 'alert_timing' });
+    const secondRecall = await recallVisibleExplicitPreference(store, 'u1', { attribute: 'alert_timing' });
+    assert.ok(firstRecall);
+    assert.ok(secondRecall);
+
+    assert.equal(firstRecall.preference_summary, 'alert timing: evening');
+    assert.deepEqual(
+      explainVisibleExplicitPreferenceUse(firstRecall),
+      explainVisibleExplicitPreferenceUse(secondRecall)
+    );
   });
 });
