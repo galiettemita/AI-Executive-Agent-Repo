@@ -4,19 +4,22 @@ Harness anchor loaded: BREVIO-HARNESS-V1-NO-CIRCLING-FAST-SHIPPING
 
 There must be exactly one item marked `NEXT`. No cycle may say “continue M1” or “continue Memory V1” vaguely. Move the marker only after the current item is merged or explicitly blocked with owner/action.
 
-## NEXT — PR-H: Memory V1 forget/correct explicit preference
+## NEXT — PR-I: Memory V1 remember-this explicit preference
 
-- **Exact branch:** `memory-v1-forget-correct-preference`
-- **Purpose:** Add the next narrow visible Memory V1 trust behavior: prove a user can forget or correct an explicit preference memory safely, with source/audit metadata preserved and no cross-user leakage.
+- **Exact branch:** `memory-v1-remember-this-preference`
+- **Purpose:** Add the next narrow visible Memory V1 trust behavior: prove a user-stated “remember this” explicit preference can be saved through a dormant/tested helper, then recalled, explained, corrected, and forgotten by the existing visible loop.
 - **Memory V1 exit condition advanced:**
+  1. remember explicit user preferences;
+  2. retrieve relevant memories safely;
+  3. explain why a memory was used;
   4. forget or correct a memory;
   5. prove source/audit metadata;
   6. prevent cross-user leakage;
   7. expose at least one visible memory behavior to the user.
 - **Allowed files/areas:**
-  - `apps/fomo/src/memory/typed-memory-visible-recall.ts` only if the existing visible memory helper needs a tiny correction/forget adapter
-  - `apps/fomo/src/memory/typed-memory-visible-recall.test.ts` only if testing visible forget/correct behavior there is the smallest path
-  - `apps/fomo/src/memory/typed-memory.ts` / `apps/fomo/src/memory/typed-memory.test.ts` only for existing typed-memory retract/correct helper coverage if required by the smallest safe diff
+  - `apps/fomo/src/memory/typed-memory-visible-recall.ts` only if the existing visible memory helper needs a tiny remember-this adapter
+  - `apps/fomo/src/memory/typed-memory-visible-recall.test.ts` only if testing the full visible loop there is the smallest path
+  - `apps/fomo/src/memory/typed-memory.ts` / `apps/fomo/src/memory/typed-memory.test.ts` only if existing typed-memory helper coverage is required by the smallest safe diff
   - at most one new small helper/test file under `apps/fomo/src/memory/`
 - **Forbidden files/areas:**
   - migrations
@@ -31,13 +34,19 @@ There must be exactly one item marked `NEXT`. No cycle may say “continue M1”
   - large memory graph/advanced ranking/recency decay
   - new harness expansion
 - **Expected changed files:** 1–3 memory files, no docs unless a test fixture/comment needs a one-line clarification.
-- **Tests required:** targeted memory tests proving forget/correct behavior is user-scoped, source/audit-backed, excludes forgotten/corrected memories from visible recall/explanation, does not leak raw private content, and keeps runtime dormant; plus full FOMO test/lint/build or CI for the exact PR commit.
-- **Merge condition:** PR exists, CI green for the PR commit, diff stays inside allowed memory files, no forbidden surfaces touched, and tests demonstrate forget/correct behavior for explicit preference memory.
-- **Exit condition:** PR merged and local `main` synced; a test proves forgotten/corrected explicit preference memory no longer appears in visible recall/why-used explanation for that user while other users remain isolated.
+- **Tests required:** targeted memory tests proving remember-this saves an explicit preference in a source/audit-backed, user-scoped, private-value-safe way; prove future visible recall/why-used/correct/forget respects it; plus full FOMO test/lint/build or CI for the exact PR commit.
+- **Merge condition:** PR exists, CI green for the PR commit, diff stays inside allowed memory files, no forbidden surfaces touched, and tests demonstrate the full visible Memory V1 loop from save → recall → explain → correct/forget.
+- **Exit condition:** PR merged and local `main` synced; a test proves a user-stated explicit preference can be remembered and then governed by the existing visible recall/explain/forget/correct loop without runtime activation.
 - **Stop condition:** Stop and report owner/action if implementation requires migration/new table/runtime integration into live ranker/HMR/reply-parser/Calendar/Composio/Tool Gateway/browser/action tools/production deploy.
 - **Founder approval needed?** No if helper/test-level or narrow visible local behavior only; yes if live production/user deployment or external action scope is touched.
 
 ## Completed
+
+### PR-H: Memory V1 forget/correct explicit preference
+
+- **Purpose:** Prove a user can forget or correct an explicit preference memory safely, with source/audit metadata preserved and no cross-user leakage.
+- **Status:** Completed in PR #87, canonical commit `5f910b2581657d32a89ec622782d081cda2c4835`, merged as `d24b99ad79a993af0975183240a35e21a52a4731`.
+- **Done condition met:** PR merged and local `main` synced; tests proved the visible loop: recall → why-used explanation → forget/correct → recall again, with old memory excluded and corrected memory used.
 
 ### PR-G: Memory V1 why-used explanation
 
