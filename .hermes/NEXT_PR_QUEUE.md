@@ -4,19 +4,20 @@ Harness anchor loaded: BREVIO-HARNESS-V1-NO-CIRCLING-FAST-SHIPPING
 
 There must be exactly one item marked `NEXT`. No cycle may say “continue M1” or “continue Memory V1” vaguely. Move the marker only after the current item is merged or explicitly blocked with owner/action.
 
-## NEXT — PR-G: Memory V1 why-used explanation
+## NEXT — PR-H: Memory V1 forget/correct explicit preference
 
-- **Exact branch:** `memory-v1-why-used-explanation`
-- **Purpose:** Expose a user-trust explanation for visible memory recall: given a visible memory recall result, Brevio can answer “why did you use this memory?” using source/audit metadata without leaking private raw content or activating unsafe runtime behavior.
+- **Exact branch:** `memory-v1-forget-correct-preference`
+- **Purpose:** Add the next narrow visible Memory V1 trust behavior: prove a user can forget or correct an explicit preference memory safely, with source/audit metadata preserved and no cross-user leakage.
 - **Memory V1 exit condition advanced:**
-  3. explain why a memory was used;
+  4. forget or correct a memory;
   5. prove source/audit metadata;
   6. prevent cross-user leakage;
   7. expose at least one visible memory behavior to the user.
 - **Allowed files/areas:**
-  - `apps/fomo/src/memory/typed-memory-visible-recall.ts`
-  - `apps/fomo/src/memory/typed-memory-visible-recall.test.ts`
-  - at most one new small helper/test file under `apps/fomo/src/memory/` if the explanation surface is clearer as a separate helper
+  - `apps/fomo/src/memory/typed-memory-visible-recall.ts` only if the existing visible memory helper needs a tiny correction/forget adapter
+  - `apps/fomo/src/memory/typed-memory-visible-recall.test.ts` only if testing visible forget/correct behavior there is the smallest path
+  - `apps/fomo/src/memory/typed-memory.ts` / `apps/fomo/src/memory/typed-memory.test.ts` only for existing typed-memory retract/correct helper coverage if required by the smallest safe diff
+  - at most one new small helper/test file under `apps/fomo/src/memory/`
 - **Forbidden files/areas:**
   - migrations
   - new tables or schema changes
@@ -30,13 +31,19 @@ There must be exactly one item marked `NEXT`. No cycle may say “continue M1”
   - large memory graph/advanced ranking/recency decay
   - new harness expansion
 - **Expected changed files:** 1–3 memory files, no docs unless a test fixture/comment needs a one-line clarification.
-- **Tests required:** targeted memory tests proving the why-used explanation is user-visible, source/audit-backed, cross-user isolated, and does not leak raw private content; plus full FOMO test/lint/build or CI for the exact PR commit.
-- **Merge condition:** PR exists, CI green for the PR commit, diff stays inside allowed memory files, no forbidden surfaces touched, and tests demonstrate the “why did you use this memory?” explanation object/string.
-- **Exit condition:** PR merged and local `main` synced; a test proves the explanation can be produced from visible recall metadata without broad runtime activation or private-content leakage.
+- **Tests required:** targeted memory tests proving forget/correct behavior is user-scoped, source/audit-backed, excludes forgotten/corrected memories from visible recall/explanation, does not leak raw private content, and keeps runtime dormant; plus full FOMO test/lint/build or CI for the exact PR commit.
+- **Merge condition:** PR exists, CI green for the PR commit, diff stays inside allowed memory files, no forbidden surfaces touched, and tests demonstrate forget/correct behavior for explicit preference memory.
+- **Exit condition:** PR merged and local `main` synced; a test proves forgotten/corrected explicit preference memory no longer appears in visible recall/why-used explanation for that user while other users remain isolated.
 - **Stop condition:** Stop and report owner/action if implementation requires migration/new table/runtime integration into live ranker/HMR/reply-parser/Calendar/Composio/Tool Gateway/browser/action tools/production deploy.
 - **Founder approval needed?** No if helper/test-level or narrow visible local behavior only; yes if live production/user deployment or external action scope is touched.
 
 ## Completed
+
+### PR-G: Memory V1 why-used explanation
+
+- **Purpose:** Expose a user-trust explanation for visible memory recall: given a visible memory recall result, Brevio can answer “why did you use this memory?” using source/audit metadata without leaking private raw content or activating unsafe runtime behavior.
+- **Status:** Completed in PR #85, canonical commit `b69718708557a282760126cd129b8a0720130e1a`, merged as `a558b7bc8c98a9bfd3f0667a9767b1021a45c243`.
+- **Done condition met:** PR merged and local `main` synced; tests proved why-used explanation can be produced from visible recall metadata without broad runtime activation or private-content leakage.
 
 ### PR-F: Memory V1 visible explicit-preference recall
 
