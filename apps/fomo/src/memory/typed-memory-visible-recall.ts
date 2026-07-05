@@ -1,5 +1,6 @@
 import {
   readTypedMemory,
+  type NewTypedMemoryRow,
   type TypedMemoryConfidence,
   type TypedMemorySource,
   type TypedMemoryStore,
@@ -40,6 +41,41 @@ export interface VisibleMemoryWhyUsedExplanation {
   readonly source: string;
   readonly audit: string;
   readonly safety: string;
+}
+
+export interface VisiblePreferenceForgetResult {
+  readonly action: 'forgot';
+  readonly user_id: string;
+  readonly attribute: string;
+  readonly forgotten: boolean;
+  readonly message: string;
+  readonly audit_metadata: {
+    readonly memory_kind: 'preference';
+    readonly scope_key: string;
+    readonly forgotten_row_id?: number;
+  };
+}
+
+export interface VisiblePreferenceCorrectOptions {
+  readonly correctedValue: UserPreferenceMemory['value'];
+  readonly updatedAt?: string;
+  readonly sourceRef?: string;
+  readonly source?: Extract<TypedMemorySource, 'user_provided' | 'user_stated'>;
+}
+
+export interface VisiblePreferenceCorrectResult {
+  readonly action: 'corrected';
+  readonly user_id: string;
+  readonly attribute: string;
+  readonly message: string;
+  readonly audit_metadata: {
+    readonly memory_kind: 'preference';
+    readonly scope_key: string;
+    readonly previous_row_id?: number;
+    readonly corrected_row_id?: number;
+    readonly source: Extract<TypedMemorySource, 'user_provided' | 'user_stated'>;
+    readonly updated_at: string;
+  };
 }
 
 const MAX_WHY_USED_FIELD_LENGTH = 240;
@@ -168,5 +204,76 @@ export function explainVisibleExplicitPreferenceUse(
     source: boundedHumanText(sourceText),
     audit: boundedHumanText(auditText),
     safety: boundedHumanText(safetyText)
+  });
+}
+
+export async function forgetVisibleExplicitPreference(
+  store: Pick<TypedMemoryStore, 'listActive' | 'retract'>,
+  userId: string,
+  query: VisibleExplicitPreferenceRecallQuery
+): Promise<VisiblePreferenceForgetResult | null> {
+  const recall = await recallVisibleExplicitPreference(store, userId, query);
+  if (recall === null) return null;
+
+  const forgotten = await store.retract(userId, 'preference', recall.audit_metadata.scope_key);
+  const label = humanizePreferenceAttribute(recall.attribute);
+  return Object.freeze({
+    action: 'forgot' as const,
+    user_id: userId,
+    attribute: recall.attribute,
+    forgotten,
+    message: forgotten
+      ? `I forgot that saved ${label} preference. I will not use it in future memory recall.`
+      : `I could not find an active saved ${label} preference to forget.`,
+    audit_metadata: Object.freeze({
+      memory_kind: 'preference' as const,
+      scope_key: recall.audit_metadata.scope_key,
+      forgotten_row_id: recall.audit_metadata.row_id
+    })
+  });
+}
+
+export async function correctVisibleExplicitPreference(
+  store: Pick<TypedMemoryStore, 'listActive' | 'write'>,
+  userId: string,
+  query: VisibleExplicitPreferenceRecallQuery,
+  options: VisiblePreferenceCorrectOptions
+): Promise<VisiblePreferenceCorrectResult | null> {
+  const recall = await recallVisibleExplicitPreference(store, userId, query);
+  if (recall === null) return null;
+
+  const updatedAt = options.updatedAt ?? new Date().toISOString();
+  const source = options.source ?? 'user_stated';
+  const corrected = {
+    user_id: userId,
+    kind: 'preference',
+    scope_key: recall.audit_metadata.scope_key,
+    source,
+    source_ref: options.sourceRef ?? 'reply:memory-v1-correction',
+    confidence: 'high',
+    created_at: updatedAt,
+    updated_at: updatedAt,
+    stale_marked_at: null,
+    retracted: false,
+    superseded_by: null,
+    attribute: recall.attribute,
+    value: options.correctedValue
+  } as NewTypedMemoryRow;
+  const row = await store.write(corrected);
+  const label = humanizePreferenceAttribute(recall.attribute);
+
+  return Object.freeze({
+    action: 'corrected' as const,
+    user_id: userId,
+    attribute: recall.attribute,
+    message: `I updated that saved ${label} preference. I will use the corrected version going forward.`,
+    audit_metadata: Object.freeze({
+      memory_kind: 'preference' as const,
+      scope_key: recall.audit_metadata.scope_key,
+      previous_row_id: recall.audit_metadata.row_id,
+      corrected_row_id: row.id,
+      source,
+      updated_at: updatedAt
+    })
   });
 }

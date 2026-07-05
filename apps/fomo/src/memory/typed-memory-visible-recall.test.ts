@@ -8,7 +8,9 @@ import {
   type NewTypedMemoryRow
 } from './typed-memory.ts';
 import {
+  correctVisibleExplicitPreference,
   explainVisibleExplicitPreferenceUse,
+  forgetVisibleExplicitPreference,
   recallVisibleExplicitPreference
 } from './typed-memory-visible-recall.ts';
 
@@ -303,6 +305,131 @@ describe('Memory V1 visible explicit-preference recall', () => {
     assert.deepEqual(
       explainVisibleExplicitPreferenceUse(firstRecall),
       explainVisibleExplicitPreferenceUse(secondRecall)
+    );
+  });
+
+  it('runs the visible loop: recall, explain, forget, then old preference no longer surfaces', async () => {
+    const store = new InMemoryTypedMemoryStore();
+    await store.write(preference({ value: 'evening' }));
+
+    const before = await recallVisibleExplicitPreference(store, 'u1', { attribute: 'alert_timing' });
+    assert.ok(before);
+    assert.equal(before.preference_summary, 'alert timing: evening');
+    assert.match(explainVisibleExplicitPreferenceUse(before).answer, /matched the saved alert timing preference/);
+
+    const result = await forgetVisibleExplicitPreference(store, 'u1', { attribute: 'alert_timing' });
+    assert.deepEqual(result, {
+      action: 'forgot',
+      user_id: 'u1',
+      attribute: 'alert_timing',
+      forgotten: true,
+      message:
+        'I forgot that saved alert timing preference. I will not use it in future memory recall.',
+      audit_metadata: {
+        memory_kind: 'preference',
+        scope_key: 'preference:alert_timing',
+        forgotten_row_id: 1
+      }
+    });
+    assert.equal(Object.isFrozen(result), true);
+    assert.equal(Object.isFrozen(result?.audit_metadata), true);
+    assert.equal(JSON.stringify(result).includes('evening'), false);
+
+    assert.equal(await recallVisibleExplicitPreference(store, 'u1', { attribute: 'alert_timing' }), null);
+  });
+
+  it('runs the visible loop: recall, explain, correct, then future recall uses corrected preference', async () => {
+    const store = new InMemoryTypedMemoryStore();
+    await store.write(preference({ value: 'evening' }));
+
+    const before = await recallVisibleExplicitPreference(store, 'u1', { attribute: 'alert_timing' });
+    assert.ok(before);
+    assert.equal(before.preference_summary, 'alert timing: evening');
+    assert.match(explainVisibleExplicitPreferenceUse(before).answer, /user-stated preference/);
+
+    const result = await correctVisibleExplicitPreference(
+      store,
+      'u1',
+      { attribute: 'alert_timing' },
+      {
+        correctedValue: 'morning',
+        updatedAt: '2026-06-26T09:00:00.000Z',
+        sourceRef: 'reply:correction-789'
+      }
+    );
+
+    assert.deepEqual(result, {
+      action: 'corrected',
+      user_id: 'u1',
+      attribute: 'alert_timing',
+      message:
+        'I updated that saved alert timing preference. I will use the corrected version going forward.',
+      audit_metadata: {
+        memory_kind: 'preference',
+        scope_key: 'preference:alert_timing',
+        previous_row_id: 1,
+        corrected_row_id: 1,
+        source: 'user_stated',
+        updated_at: '2026-06-26T09:00:00.000Z'
+      }
+    });
+    assert.equal(JSON.stringify(result).includes('evening'), false);
+    assert.equal(JSON.stringify(result).includes('morning'), false);
+    assert.equal(JSON.stringify(result).includes('correction-789'), false);
+
+    const after = await recallVisibleExplicitPreference(store, 'u1', { attribute: 'alert_timing' });
+    assert.ok(after);
+    assert.equal(after.preference_summary, 'alert timing: morning');
+    assert.equal(after.source_metadata.updated_at, '2026-06-26T09:00:00.000Z');
+    assert.match(explainVisibleExplicitPreferenceUse(after).audit, /2026-06-26T09:00:00.000Z/);
+  });
+
+  it('keeps forget and correct scoped to one user', async () => {
+    const store = new InMemoryTypedMemoryStore();
+    await store.write(preference({ user_id: 'u1', value: 'evening' }));
+    await store.write(preference({ user_id: 'u2', value: 'midnight' }));
+
+    await forgetVisibleExplicitPreference(store, 'u1', { attribute: 'alert_timing' });
+    assert.equal(await recallVisibleExplicitPreference(store, 'u1', { attribute: 'alert_timing' }), null);
+    assert.equal(
+      (await recallVisibleExplicitPreference(store, 'u2', { attribute: 'alert_timing' }))?.preference_summary,
+      'alert timing: midnight'
+    );
+
+    await correctVisibleExplicitPreference(
+      store,
+      'u2',
+      { attribute: 'alert_timing' },
+      { correctedValue: 'morning', updatedAt: '2026-06-27T09:00:00.000Z' }
+    );
+    assert.equal(await recallVisibleExplicitPreference(store, 'u1', { attribute: 'alert_timing' }), null);
+    assert.equal(
+      (await recallVisibleExplicitPreference(store, 'u2', { attribute: 'alert_timing' }))?.preference_summary,
+      'alert timing: morning'
+    );
+  });
+
+  it('does not forget or correct inactive/unsafe preference memory', async () => {
+    const store = new InMemoryTypedMemoryStore();
+    await store.write(preference({ confidence: 'low' }));
+    await store.write(preference({ scope_key: 'preference:retracted', attribute: 'retracted', retracted: true }));
+    await store.write(
+      preference({
+        scope_key: 'preference:tombstoned',
+        attribute: 'tombstoned',
+        superseded_by: 99
+      })
+    );
+
+    assert.equal(await forgetVisibleExplicitPreference(store, 'u1', { attribute: 'alert_timing' }), null);
+    assert.equal(
+      await correctVisibleExplicitPreference(
+        store,
+        'u1',
+        { attribute: 'alert_timing' },
+        { correctedValue: 'morning', updatedAt: '2026-06-27T09:00:00.000Z' }
+      ),
+      null
     );
   });
 });
