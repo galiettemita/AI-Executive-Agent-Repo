@@ -11,6 +11,7 @@ import {
   correctVisibleExplicitPreference,
   explainVisibleExplicitPreferenceUse,
   forgetVisibleExplicitPreference,
+  rememberVisibleExplicitPreference,
   recallVisibleExplicitPreference
 } from './typed-memory-visible-recall.ts';
 
@@ -33,6 +34,103 @@ function preference(overrides: Record<string, unknown> = {}): NewTypedMemoryRow 
 }
 
 describe('Memory V1 visible explicit-preference recall', () => {
+  it('remembers a user-stated explicit preference, then recalls, explains, corrects, and forgets it', async () => {
+    const store = new InMemoryTypedMemoryStore();
+
+    const remembered = await rememberVisibleExplicitPreference(store, 'u1', {
+      attribute: 'alert_timing',
+      value: 'alice@example.com evenings only',
+      updatedAt: '2026-06-28T09:00:00.000Z',
+      sourceRef: 'reply:remember-this-123'
+    });
+
+    assert.deepEqual(remembered, {
+      action: 'remembered',
+      user_id: 'u1',
+      attribute: 'alert_timing',
+      message:
+        'I remembered that saved alert timing preference. I can use it in future memory recall.',
+      audit_metadata: {
+        memory_kind: 'preference',
+        scope_key: 'preference:alert_timing',
+        remembered_row_id: 1,
+        source: 'user_stated',
+        confidence: 'high',
+        updated_at: '2026-06-28T09:00:00.000Z'
+      }
+    });
+    assert.equal(Object.isFrozen(remembered), true);
+    assert.equal(Object.isFrozen(remembered.audit_metadata), true);
+    assert.equal(JSON.stringify(remembered).includes('alice@example.com'), false);
+    assert.equal(JSON.stringify(remembered).includes('remember-this-123'), false);
+
+    const recalled = await recallVisibleExplicitPreference(store, 'u1', { attribute: 'alert_timing' });
+    assert.ok(recalled);
+    assert.equal(recalled.preference_summary, 'alert timing: [redacted]');
+    assert.equal(recalled.source_metadata.source, 'user_stated');
+    assert.equal(recalled.source_metadata.source_ref_type, 'reply');
+    assert.equal(recalled.source_metadata.confidence, 'high');
+    assert.equal(recalled.source_metadata.updated_at, '2026-06-28T09:00:00.000Z');
+    assert.equal(recalled.audit_metadata.scope_key, 'preference:alert_timing');
+    assert.match(
+      explainVisibleExplicitPreferenceUse(recalled).answer,
+      /matched the saved alert timing preference/
+    );
+
+    await correctVisibleExplicitPreference(
+      store,
+      'u1',
+      { attribute: 'alert_timing' },
+      {
+        correctedValue: 'mornings',
+        updatedAt: '2026-06-29T09:00:00.000Z',
+        sourceRef: 'reply:correction-after-remember'
+      }
+    );
+
+    const corrected = await recallVisibleExplicitPreference(store, 'u1', { attribute: 'alert_timing' });
+    assert.ok(corrected);
+    assert.equal(corrected.preference_summary, 'alert timing: mornings');
+    assert.equal(corrected.source_metadata.updated_at, '2026-06-29T09:00:00.000Z');
+
+    const forgotten = await forgetVisibleExplicitPreference(store, 'u1', { attribute: 'alert_timing' });
+    assert.equal(forgotten?.forgotten, true);
+    assert.equal(await recallVisibleExplicitPreference(store, 'u1', { attribute: 'alert_timing' }), null);
+  });
+
+  it('keeps remember-this explicit preferences user-scoped and rejects raw private scope material', async () => {
+    const store = new InMemoryTypedMemoryStore();
+    await rememberVisibleExplicitPreference(store, 'u1', {
+      attribute: 'alert_timing',
+      value: 'morning',
+      updatedAt: '2026-06-28T09:00:00.000Z'
+    });
+    await rememberVisibleExplicitPreference(store, 'u2', {
+      attribute: 'alert_timing',
+      value: 'other user secret alice@example.com',
+      updatedAt: '2026-06-28T10:00:00.000Z',
+      sourceRef: 'reply:other-user-secret'
+    });
+
+    const recall = await recallVisibleExplicitPreference(store, 'u1', { attribute: 'alert_timing' });
+    const json = JSON.stringify(recall);
+
+    assert.equal(recall?.user_id, 'u1');
+    assert.equal(recall?.preference_summary, 'alert timing: morning');
+    assert.equal(json.includes('u2'), false);
+    assert.equal(json.includes('other user secret'), false);
+    assert.equal(json.includes('alice@example.com'), false);
+    assert.equal(json.includes('other-user-secret'), false);
+    await assert.rejects(
+      rememberVisibleExplicitPreference(store, 'u1', {
+        attribute: 'alice@example.com',
+        value: 'never use private email as scope',
+        updatedAt: '2026-06-28T11:00:00.000Z'
+      }),
+      /must not contain raw email addresses/
+    );
+  });
+
   it('returns a safe user-visible explanation with source and audit metadata', async () => {
     const store = new InMemoryTypedMemoryStore();
     await store.write(preference());

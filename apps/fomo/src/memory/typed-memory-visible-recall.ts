@@ -43,6 +43,30 @@ export interface VisibleMemoryWhyUsedExplanation {
   readonly safety: string;
 }
 
+export interface VisiblePreferenceRememberOptions {
+  readonly attribute: string;
+  readonly value: UserPreferenceMemory['value'];
+  readonly updatedAt?: string;
+  readonly sourceRef?: string;
+  readonly source?: Extract<TypedMemorySource, 'user_provided' | 'user_stated'>;
+  readonly confidence?: Extract<TypedMemoryConfidence, 'medium' | 'high'>;
+}
+
+export interface VisiblePreferenceRememberResult {
+  readonly action: 'remembered';
+  readonly user_id: string;
+  readonly attribute: string;
+  readonly message: string;
+  readonly audit_metadata: {
+    readonly memory_kind: 'preference';
+    readonly scope_key: string;
+    readonly remembered_row_id?: number;
+    readonly source: Extract<TypedMemorySource, 'user_provided' | 'user_stated'>;
+    readonly confidence: Extract<TypedMemoryConfidence, 'medium' | 'high'>;
+    readonly updated_at: string;
+  };
+}
+
 export interface VisiblePreferenceForgetResult {
   readonly action: 'forgot';
   readonly user_id: string;
@@ -134,6 +158,17 @@ function sourceRefType(sourceRef: string): VisibleExplicitPreferenceRecall['sour
   return 'unknown';
 }
 
+function visiblePreferenceScopeKey(attribute: string): string {
+  const normalized = attribute.trim();
+  if (normalized.length === 0) {
+    throw new Error('visible preference attribute must be non-empty');
+  }
+  if (normalized.includes('@')) {
+    throw new Error('visible preference attribute must not contain raw email addresses');
+  }
+  return `preference:${normalized}`;
+}
+
 export async function recallVisibleExplicitPreference(
   store: Pick<TypedMemoryStore, 'listActive'>,
   userId: string,
@@ -177,6 +212,49 @@ export async function recallVisibleExplicitPreference(
       memory_kind: 'preference' as const,
       row_id: preference.id,
       scope_key: preference.scope_key
+    })
+  });
+}
+
+export async function rememberVisibleExplicitPreference(
+  store: Pick<TypedMemoryStore, 'write'>,
+  userId: string,
+  options: VisiblePreferenceRememberOptions
+): Promise<VisiblePreferenceRememberResult> {
+  const updatedAt = options.updatedAt ?? new Date().toISOString();
+  const source = options.source ?? 'user_stated';
+  const confidence = options.confidence ?? 'high';
+  const attribute = options.attribute.trim();
+  const scopeKey = visiblePreferenceScopeKey(attribute);
+  const row = await store.write({
+    user_id: userId,
+    kind: 'preference',
+    scope_key: scopeKey,
+    source,
+    source_ref: options.sourceRef ?? 'reply:memory-v1-remember-this',
+    confidence,
+    created_at: updatedAt,
+    updated_at: updatedAt,
+    stale_marked_at: null,
+    retracted: false,
+    superseded_by: null,
+    attribute,
+    value: options.value
+  } as NewTypedMemoryRow);
+  const label = humanizePreferenceAttribute(attribute);
+
+  return Object.freeze({
+    action: 'remembered' as const,
+    user_id: userId,
+    attribute,
+    message: `I remembered that saved ${label} preference. I can use it in future memory recall.`,
+    audit_metadata: Object.freeze({
+      memory_kind: 'preference' as const,
+      scope_key: scopeKey,
+      remembered_row_id: row.id,
+      source,
+      confidence,
+      updated_at: updatedAt
     })
   });
 }
