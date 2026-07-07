@@ -4,24 +4,18 @@ Harness anchor loaded: BREVIO-HARNESS-V1-NO-CIRCLING-FAST-SHIPPING
 
 There must be exactly one item marked `NEXT`. No cycle may say “continue M1” or “continue Memory V1” vaguely. Move the marker only after the current item is merged or explicitly blocked with owner/action.
 
-## NEXT — PR-I: Memory V1 remember-this explicit preference
+## NEXT — PR-J: Memory V1 closeout and next-phase gate
 
-- **Exact branch:** `memory-v1-remember-this-preference`
-- **Purpose:** Add the next narrow visible Memory V1 trust behavior: prove a user-stated “remember this” explicit preference can be saved through a dormant/tested helper, then recalled, explained, corrected, and forgotten by the existing visible loop.
-- **Memory V1 exit condition advanced:**
-  1. remember explicit user preferences;
-  2. retrieve relevant memories safely;
-  3. explain why a memory was used;
-  4. forget or correct a memory;
-  5. prove source/audit metadata;
-  6. prevent cross-user leakage;
-  7. expose at least one visible memory behavior to the user.
+- **Exact branch:** `memory-v1-closeout-queue`
+- **Purpose:** Close Memory V1 with evidence from PR-F through PR-I, update the active phase contract so the harness stops re-queuing completed Memory V1 work, and name the next smallest approved phase gate before any Feedback/Learn implementation starts.
+- **Memory V1 exit condition advanced:** confirms all seven Memory V1 exit conditions are complete from merged code/tests, including remember → recall → explain → correct/forget for explicit preferences.
+- **Brevio core dimensions advanced:** Memory Architecture, User Trust/Consent, Observability/Evals/Reliability. Preserves Security/Permission Gates and HMR. Defers Autonomy, Proactivity, Tool/Workflow Orchestration, Calendar, Composio, browser automation, and action tools.
 - **Allowed files/areas:**
-  - `apps/fomo/src/memory/typed-memory-visible-recall.ts` only if the existing visible memory helper needs a tiny remember-this adapter
-  - `apps/fomo/src/memory/typed-memory-visible-recall.test.ts` only if testing the full visible loop there is the smallest path
-  - `apps/fomo/src/memory/typed-memory.ts` / `apps/fomo/src/memory/typed-memory.test.ts` only if existing typed-memory helper coverage is required by the smallest safe diff
-  - at most one new small helper/test file under `apps/fomo/src/memory/`
+  - `.hermes/ACTIVE_PHASE_CONTRACT.md`
+  - `.hermes/NEXT_PR_QUEUE.md`
+  - optional one-line closeout note in an existing `.hermes/` closeout file if needed
 - **Forbidden files/areas:**
+  - product runtime code
   - migrations
   - new tables or schema changes
   - production deploy
@@ -32,15 +26,20 @@ There must be exactly one item marked `NEXT`. No cycle may say “continue M1”
   - ranker/HMR/reply-parser behavior changes
   - broad UI redesign or dashboard
   - large memory graph/advanced ranking/recency decay
-  - new harness expansion
-- **Expected changed files:** 1–3 memory files, no docs unless a test fixture/comment needs a one-line clarification.
-- **Tests required:** targeted memory tests proving remember-this saves an explicit preference in a source/audit-backed, user-scoped, private-value-safe way; prove future visible recall/why-used/correct/forget respects it; plus full FOMO test/lint/build or CI for the exact PR commit.
-- **Merge condition:** PR exists, CI green for the PR commit, diff stays inside allowed memory files, no forbidden surfaces touched, and tests demonstrate the full visible Memory V1 loop from save → recall → explain → correct/forget.
-- **Exit condition:** PR merged and local `main` synced; a test proves a user-stated explicit preference can be remembered and then governed by the existing visible recall/explain/forget/correct loop without runtime activation.
-- **Stop condition:** Stop and report owner/action if implementation requires migration/new table/runtime integration into live ranker/HMR/reply-parser/Calendar/Composio/Tool Gateway/browser/action tools/production deploy.
-- **Founder approval needed?** No if helper/test-level or narrow visible local behavior only; yes if live production/user deployment or external action scope is touched.
+- **Expected changed files:** 2 tracked harness/phase files, no product source changes.
+- **Tests required:** `.hermes/verify-brevio-harness.sh`; `pnpm run lint`; `pnpm run test`; `pnpm run build` or clear evidence they already pass for the exact commit being closed out.
+- **Merge condition:** PR exists, CI green for the PR commit, diff only updates tracked phase/queue state, Memory V1 closeout cites exact merged commits/tests, and the next implementation phase is a gate rather than silent runtime activation.
+- **Exit condition:** PR merged and local `main` synced; exactly one NEXT item remains and it no longer points at completed PR-I.
+- **Stop condition:** Stop and report owner/action if closeout requires production deploy, live behavior activation, migration, OAuth/security scope change, Calendar/Composio/Tool Gateway/browser/action tooling, or a strategic phase decision that Galiette has not approved.
+- **Founder approval needed?** No for closeout/queue hygiene; yes before implementing a new strategic phase beyond the closeout gate.
 
 ## Completed
+
+### PR-I: Memory V1 remember-this explicit preference
+
+- **Purpose:** Add the next narrow visible Memory V1 trust behavior: prove a user-stated “remember this” explicit preference can be saved through a dormant/tested helper, then recalled, explained, corrected, and forgotten by the existing visible loop.
+- **Status:** Completed on `main` at `1eb1f54ba5e1e00d2bdd4d0a95689ac1d3fc7f18`.
+- **Done condition met:** Local `main` is synced with `origin/main`; tests prove remember → recall → explain → correct/forget for explicit user preferences, with source/audit metadata, cross-user isolation, private-value redaction, no migration/new table, and no runtime activation.
 
 ### PR-H: Memory V1 forget/correct explicit preference
 
