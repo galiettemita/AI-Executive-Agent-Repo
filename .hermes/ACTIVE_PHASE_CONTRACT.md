@@ -4,15 +4,15 @@ Harness anchor loaded: BREVIO-HARNESS-V1-NO-CIRCLING-FAST-SHIPPING
 
 ## Current phase
 
-Memory V1 closeout — visible explicit-preference memory is implemented; close the phase evidence and gate the next phase before new runtime behavior.
+Memory V1 Visible Behavior
 
-## Phase objective
+## Phase purpose
 
-Move from the completed M1-B no-migration foundation into small, safe, user-visible memory behavior. Do not attempt the entire long-term Brevio memory system before producing visible usefulness.
+Make Brevio’s memory feel real to the user through the smallest safe visible behaviors.
 
 ## Memory V1 exit condition
 
-Memory V1 is done when Brevio can:
+Memory V1 Visible Behavior advances these exit conditions:
 
 1. remember explicit user preferences;
 2. retrieve relevant memories safely;
@@ -22,67 +22,62 @@ Memory V1 is done when Brevio can:
 6. prevent cross-user leakage;
 7. expose at least one visible memory behavior to the user.
 
-## Current closeout evidence
+## Founder decision
 
-Memory V1 implementation evidence is complete on `main` through commit `1eb1f54ba5e1e00d2bdd4d0a95689ac1d3fc7f18`:
+M1-B / Memory V1 closeout foundation work is complete enough. Do not reopen M1 A/B/C. Do not continue hidden M1-B hardening unless a specific blocker appears. Do not start another broad memory architecture plan. Do not create more harness/meta work unless a repeated real blocker proves a gap.
 
-- PR-F added visible explicit-preference recall.
-- PR-G added why-used explanation.
-- PR-H added forget/correct behavior.
-- PR-I added remember-this save behavior and tests the full remember → recall → explain → correct/forget loop without runtime activation.
-
-Closeout PR-J must only reconcile tracked phase/queue state and must not add runtime behavior.
-
-## Startup-speed rule
-
-Every PR must be small, merged, tested, and tied to a Memory V1 exit condition. Do not build invisible architecture for more than one PR at a time without a visible behavior milestone.
+The approved next phase is Memory V1 Visible Behavior. Convert it into small executable PRs.
 
 ## Allowed without fresh founder approval
 
-- explicit user preference memory using the existing M1-B memory substrate;
-- safe retrieval of relevant explicit preferences;
-- structural explanation of why a memory was used;
-- forget/correct behavior for explicit memories;
-- source/audit metadata tests;
-- cross-user leakage prevention tests;
-- one visible user-facing memory behavior when it is narrow, reversible, and non-production-deploying;
+- explicit memory command behavior such as “remember this”;
+- retrieval of explicit preferences into safe assistant context;
+- “why did you use this memory?” explanation;
+- “forget this” / “correct this” command path, if narrow and safe;
+- user-visible memory evidence or debug surface, if small;
+- tests proving source/audit metadata;
+- tests proving cross-user isolation;
+- tests proving deleted/tombstoned memory is not used;
+- tests proving private values do not leak into audit/log metadata;
+- dormant helpers only when directly tied to a visible Memory V1 PR;
 - PR creation, CI wait, merge after green checks, and local sync for in-scope work.
 
 ## Forbidden without fresh founder approval
 
 - DB migration;
-- new table;
+- new table/schema;
 - production deploy;
-- advanced ranking;
-- complex recency decay;
-- Calendar memory or Calendar live activation;
-- Composio runtime memory;
+- live ranking behavior change unrelated to the specific Memory V1 task;
+- broad HMR rewrite;
+- Calendar live activation;
+- Composio runtime;
 - Tool Gateway;
 - browser automation;
 - action tools;
-- full HMR expansion;
-- autonomous memory from every tool;
-- large memory dashboard;
-- perfect long-term memory graph;
-- broad UI redesign;
 - irreversible data changes;
-- new OAuth/security scope;
-- major architecture fork.
+- OAuth/security scope changes;
+- broad strategic phase fork.
+
+## Every task requires exit condition
+
+Before any task or PR begins, define:
+
+1. task name;
+2. purpose;
+3. allowed scope;
+4. forbidden scope;
+5. expected changed files/areas;
+6. tests/validation required;
+7. exit condition;
+8. stop condition;
+9. next task after completion.
+
+If the exit condition cannot be defined, do not start. If the exit condition is met, stop. Do not keep expanding the task.
 
 ## Immediate next PR requirements
 
-The next PR must name:
-
-- exact branch;
-- exact purpose;
-- expected changed files;
-- forbidden areas;
-- tests required;
-- merge condition;
-- which Memory V1 exit condition it advances.
-
-The current NEXT queue item is PR-J: Memory V1 closeout and next-phase gate.
+The queue must contain exactly one `NEXT` item. The current `NEXT` item must be a concrete Memory V1 Visible Behavior implementation slice, not vague “continue memory” work and not hidden M1-B foundation work.
 
 ## Loop prevention
 
-No cycle may report vague work such as “continue M1,” “improve memory,” “harden the system,” or “review the docs.” The cycle must name the current `NEXT` queue item from `.hermes/NEXT_PR_QUEUE.md` and either ship it, open a PR for it, produce concrete changed files for it, or name the exact blocker and owner/action.
+No cycle may report vague work such as “continue M1,” “continue Memory V1,” “improve memory,” “harden the system,” “recommend next phase,” or “review the docs.” The cycle must name the current `NEXT` queue item from `.hermes/NEXT_PR_QUEUE.md` and either ship it, open a PR for it, produce concrete changed files for it, or name the exact blocker and owner/action.
