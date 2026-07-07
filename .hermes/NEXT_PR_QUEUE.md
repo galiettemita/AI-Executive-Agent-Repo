@@ -4,26 +4,22 @@ Harness anchor loaded: BREVIO-HARNESS-V1-NO-CIRCLING-FAST-SHIPPING
 
 There must be exactly one item marked `NEXT`. No cycle may say “continue M1” or “continue Memory V1” vaguely. Move the marker only after the current item is merged or explicitly blocked with owner/action.
 
-## NEXT — PR-2: Explicit “remember this” visible memory path
+## NEXT — PR-3: “Why did you remember/use that?” explanation
 
-- **Exact branch:** `memory-v1-remember-this-visible-path`
-- **Purpose:** Allow Brevio to handle explicit user memory intent in the smallest safe way. Example behavior: when a user says something like “remember that I prefer short summaries,” Brevio stores or routes that as an explicit preference memory with source/audit metadata.
+- **Exact branch:** `memory-v1-visible-why-remembered`
+- **Purpose:** Expose a small explanation path so Brevio can explain memory use in a human-readable, privacy-safe way.
 - **Memory V1 Visible Behavior exit condition advanced:**
-  1. remember explicit user preferences;
-  2. retrieve relevant memories safely;
+  3. explain why a memory was used;
   5. prove source/audit metadata;
   6. prevent cross-user leakage;
   7. expose at least one visible memory behavior to the user.
 - **Allowed files/areas:**
-  - explicit command/intent parsing for explicit memory only;
-  - typed memory or existing `memory_signals` path;
-  - source/audit metadata;
-  - targeted tests;
+  - visible memory explanation helper or adapter for explicit preferences;
+  - source/audit metadata formatting;
+  - targeted tests proving human-readable explanation behavior;
   - narrow dormant helpers only when directly tied to this visible behavior.
 - **Forbidden files/areas:**
-  - implicit memory from all messages;
-  - autonomous background memory writes;
-  - broad runtime ranking changes;
+  - product runtime activation beyond the narrow visible-memory explanation surface;
   - DB migrations;
   - new tables/schema changes;
   - production deploy;
@@ -32,20 +28,16 @@ There must be exactly one item marked `NEXT`. No cycle may say “continue M1”
   - Tool Gateway;
   - browser automation/action tools;
   - broad HMR rewrite;
-  - OAuth/security scope changes.
+  - OAuth/security scope changes;
+  - broad strategic phase fork.
 - **Expected changed files:** a small implementation/test slice in the existing memory-visible behavior area; no broad docs/harness changes.
-- **Tests required:** explicit remember intent test; cross-user isolation test; source/audit metadata test; no migration/new table proof; no private value leak proof; CI for exact PR commit.
+- **Tests required:** user-facing explanation is human-readable; no private audit leakage; source/audit metadata proof; cross-user isolation proof; deleted/tombstoned memories are not explained; CI for exact PR commit.
 - **Merge condition:** PR exists, CI green for exact PR commit, diff stays inside approved Memory V1 visible behavior scope, no forbidden surfaces touched.
-- **Exit condition:** PR merged and local `main` synced; explicit remember intent is proven by tests and the saved preference can participate in safe visible recall.
-- **Stop condition:** Stop and report owner/action if implementation requires migration/new table, implicit/global memory capture, production deploy, OAuth/security scope change, or activation of Calendar/Composio/Tool Gateway/browser/action tools.
-- **Founder approval needed?** No for narrow helper/test-level explicit memory behavior; yes before production deploy, new external scopes, irreversible data changes, or broad runtime activation.
+- **Exit condition:** PR merged and local `main` synced; explanation path proves why a visible memory was remembered/used without leaking private values.
+- **Stop condition:** Stop and report owner/action if implementation requires migration/new table, production deploy, OAuth/security scope change, or activation of Calendar/Composio/Tool Gateway/browser/action tools.
+- **Founder approval needed?** No for narrow helper/test-level explanation behavior; yes before production deploy, new external scopes, irreversible data changes, or broad runtime activation.
 
 ## Planned
-
-### PR-3: “Why did you remember/use that?” explanation
-
-- **Purpose:** Expose a small explanation path so Brevio can explain memory use.
-- **Exit condition:** user-facing explanation is human-readable; no private audit leakage; tests pass; CI green; PR merged.
 
 ### PR-4: “Forget/correct this” narrow path
 
@@ -54,11 +46,17 @@ There must be exactly one item marked `NEXT`. No cycle may say “continue M1”
 
 ## Completed
 
+### PR-2: Explicit “remember this” visible memory path
+
+- **Purpose:** Allow Brevio to handle explicit user memory intent in the smallest safe way.
+- **Status:** Satisfied on `main` before this queue advance. `rememberVisibleExplicitPreference` exists in `apps/fomo/src/memory/typed-memory-visible-recall.ts`, and targeted tests pass in `apps/fomo/src/memory/typed-memory-visible-recall.test.ts`.
+- **Done condition met:** Explicit remember intent is tested; cross-user isolation is tested; source/audit metadata is tested; no migration/new table path is touched; private values are redacted from human-facing output; saved preferences participate in safe visible recall/explain/correct/forget.
+
 ### PR-1: Memory V1 phase contract and first visible behavior slice
 
 - **Purpose:** Transition the active phase from M1-B / Memory V1 closeout to Memory V1 Visible Behavior and define the first implementation PR.
-- **Status:** In progress in the current phase/queue-only PR.
-- **Done condition:** active phase says Memory V1 Visible Behavior; exactly one NEXT item remains; first implementation PR is named clearly; verifier passes; CI passes; PR merged; local main synced.
+- **Status:** Completed in PR #91, canonical commit `f50ede20c7646b80be2844f174b0022afd8b4ef5`, merged as `2e0f9411321c1c42bb97468f59b17574689f8ced`.
+- **Done condition met:** active phase says Memory V1 Visible Behavior; exactly one NEXT item remains; first implementation PR was named clearly; verifier passed; CI passed; PR merged; local main synced.
 
 ### M1-B / Memory V1 foundation closeout
 
