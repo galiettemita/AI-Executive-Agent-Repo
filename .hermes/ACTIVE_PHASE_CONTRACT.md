@@ -4,7 +4,7 @@ Harness anchor loaded: BREVIO-HARNESS-V1-NO-CIRCLING-FAST-SHIPPING
 
 ## Current phase
 
-Memory V1 — visible explicit-preference memory.
+Memory V1 closeout — visible explicit-preference memory is implemented; close the phase evidence and gate the next phase before new runtime behavior.
 
 ## Phase objective
 
@@ -21,6 +21,17 @@ Memory V1 is done when Brevio can:
 5. prove source/audit metadata;
 6. prevent cross-user leakage;
 7. expose at least one visible memory behavior to the user.
+
+## Current closeout evidence
+
+Memory V1 implementation evidence is complete on `main` through commit `1eb1f54ba5e1e00d2bdd4d0a95689ac1d3fc7f18`:
+
+- PR-F added visible explicit-preference recall.
+- PR-G added why-used explanation.
+- PR-H added forget/correct behavior.
+- PR-I added remember-this save behavior and tests the full remember → recall → explain → correct/forget loop without runtime activation.
+
+Closeout PR-J must only reconcile tracked phase/queue state and must not add runtime behavior.
 
 ## Startup-speed rule
 
@@ -69,6 +80,8 @@ The next PR must name:
 - tests required;
 - merge condition;
 - which Memory V1 exit condition it advances.
+
+The current NEXT queue item is PR-J: Memory V1 closeout and next-phase gate.
 
 ## Loop prevention
 
