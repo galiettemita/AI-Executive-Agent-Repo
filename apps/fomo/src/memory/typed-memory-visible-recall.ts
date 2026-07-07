@@ -285,6 +285,16 @@ export function explainVisibleExplicitPreferenceUse(
   });
 }
 
+export async function explainVisibleExplicitPreferenceMemoryUse(
+  store: Pick<TypedMemoryStore, 'listActive'>,
+  userId: string,
+  query: VisibleExplicitPreferenceRecallQuery = {}
+): Promise<VisibleMemoryWhyUsedExplanation | null> {
+  const recall = await recallVisibleExplicitPreference(store, userId, query);
+  if (recall === null) return null;
+  return explainVisibleExplicitPreferenceUse(recall);
+}
+
 export async function forgetVisibleExplicitPreference(
   store: Pick<TypedMemoryStore, 'listActive' | 'retract'>,
   userId: string,
