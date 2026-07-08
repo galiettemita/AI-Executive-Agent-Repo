@@ -108,6 +108,32 @@ A cycle succeeds only if at least one happens:
 
 Definition of done: every implementation/review plan must include an explicit merge decision: merge now, merge after named checks, do not merge because of named blocker, or close/stale because obsolete. Completed branch work should not sit unmerged. After implementation is verified, Hermes must inspect the diff/PR, confirm tests/lint/build/CI or clearly separate pre-existing failures, confirm founding-doc/phase alignment, merge into `main`, and read back the post-merge state. Do not merge if validation is failing due to the branch, if the branch conflicts with founding docs/current approval state, if production/live activation lacks required approval, or if the merge would hide unresolved blockers.
 
+### Permanent GitHub auth, PR, and sync rules
+
+GitHub auth must remain connected once established. Repeated GitHub auth failure is a Brevio harness/tooling failure, not a fresh product blocker. The durable target is that the Hermes cron/operator environment can fetch/pull, push branches, open PRs, read/check CI, merge when allowed, and pull latest `main` after merge.
+
+Before citing GitHub auth as a blocker, run `.hermes/check-github-auth.sh` from the Brevio backend. The preflight defaults to the launchd/operator environment (`HOME=/Users/galiettemita`) instead of the current Hermes profile HOME. If the current chat profile HOME lacks `gh` auth but the operator HOME passes, classify the mismatch as profile HOME/tooling context mismatch and use the operator HOME for GitHub operations.
+
+Repeated failures must be classified immediately as one of: Terminal has auth but Hermes/launchd cannot access it; `gh` binary/path differs between Terminal and launchd; Git credential helper is missing; macOS Keychain credential is inaccessible to the non-interactive Hermes process; HTTPS auth is missing or unavailable non-interactively; SSH key is missing or not registered with GitHub; remote URL is wrong; GitHub MCP works but local CLI does not.
+
+Preferred durable local path is HTTPS plus macOS Keychain: `gh auth setup-git`, `git config --global credential.helper osxkeychain`, HTTPS `origin`, `git ls-remote origin HEAD`, and `git push --dry-run origin main`. Do not paste tokens into chat/logs, commit secrets, or store GitHub credentials in the repo. If a one-time browser/key approval is required, give Galiette the exact command/UI step and stop only for that action.
+
+If local git/gh push fails but GitHub MCP can safely publish an exact text diff, use MCP fallback for safe text-only diffs: create branch, apply exact diff/final file contents, open PR, verify remote PR diff matches local intended diff, wait for CI, merge, then sync local main. Do not use text-only MCP fallback for binary files such as PDFs unless the tool explicitly supports binary-safe upload; binary files require normal git push or a binary-safe upload path.
+
+Every PR must end with merge-to-main and local sync before the next task starts. A PR workflow is incomplete until: PR exists; PR diff is reviewed; required local validation is done; GitHub CI passes; PR is merged into `main`; local repo switches to `main`; local `main` pulls latest `origin/main`; local `main` equals `origin/main`; working tree is clean or only approved intentional untracked operator files remain; NEXT queue advances only after merge/sync; and the next task starts only from fresh synced `main`.
+
+Standard closeout sequence after every PR:
+
+```bash
+git checkout main
+git pull --ff-only origin main
+git status --short --branch
+git rev-parse HEAD
+git rev-parse origin/main
+```
+
+Every task exit condition involving a PR must include merge/sync proof that local `main` equals `origin/main`. Do not start a new task from an unmerged branch, stack new product work on an unpublished branch, leave a completed PR open and begin the next PR, or report a task complete before the PR is merged and local main is synced.
+
 ### Living mistake rulebook
 
 Brevio operating mistakes and Galiette corrective feedback are logged in `docs/SKILLS.md`. At the start of every Brevio autonomous session/cycle, Hermes must read it with the founding docs and operating contract. When Galiette corrects Hermes/Codex/Claude, append a dated entry with the exact error, root cause, abstraction, new rule, and verification/operating hook. Corrections should become institutional knowledge: prompt updates, checks, tests, validators, or review rules when possible.
