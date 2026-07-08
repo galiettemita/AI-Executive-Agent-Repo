@@ -8,13 +8,17 @@ import {
   type NewTypedMemoryRow
 } from './typed-memory.ts';
 import {
+  answerVisibleMemoryCorrectCommand,
   answerVisibleMemoryExplanationCommand,
+  answerVisibleMemoryForgetCommand,
   answerVisibleMemoryReviewCommand,
   correctVisibleExplicitPreference,
   explainVisibleExplicitPreferenceMemoryUse,
   explainVisibleExplicitPreferenceUse,
   forgetVisibleExplicitPreference,
+  isVisibleMemoryCorrectCommandText,
   isVisibleMemoryExplanationCommandText,
+  isVisibleMemoryForgetCommandText,
   isVisibleMemoryReviewCommandText,
   rememberVisibleExplicitPreference,
   recallVisibleExplicitPreference,
@@ -442,6 +446,238 @@ describe('Memory V1 visible explicit-preference recall', () => {
       await answerVisibleMemoryExplanationCommand(store, 'u1', 'Why did you use it?', { attribute: 'tombstoned' }),
       null
     );
+  });
+
+  it('answers forget-that commands through the explicit-preference forget helper', async () => {
+    const store = new InMemoryTypedMemoryStore();
+    await store.write(
+      preference({
+        user_id: 'u1',
+        value: 'alice@example.com evenings only',
+        source_ref: 'reply:private-forget-command-ref'
+      })
+    );
+    await store.write(
+      preference({
+        user_id: 'u2',
+        value: 'other-user private forget value alice@example.com',
+        source_ref: 'reply:other-user-forget-command-secret',
+        updated_at: '2026-06-27T12:00:00.000Z'
+      })
+    );
+
+    const result = await answerVisibleMemoryForgetCommand(store, 'u1', 'Forget that preference', {
+      attribute: 'alert_timing'
+    });
+    assert.ok(result);
+    const json = JSON.stringify(result);
+
+    assert.equal(result.action, 'forget_visible_explicit_preference');
+    assert.equal(result.user_id, 'u1');
+    assert.equal(result.answer, result.forget.message);
+    assert.deepEqual(result.audit_metadata, {
+      memory_kind: 'preference',
+      matched_intent: 'memory_forget',
+      scope_key: 'preference:alert_timing',
+      forgotten_row_id: 1
+    });
+    assert.equal(result.forget.forgotten, true);
+    assert.equal(Object.isFrozen(result), true);
+    assert.equal(Object.isFrozen(result.audit_metadata), true);
+    assert.equal(await recallVisibleExplicitPreference(store, 'u1', { attribute: 'alert_timing' }), null);
+    assert.equal(
+      (await recallVisibleExplicitPreference(store, 'u2', { attribute: 'alert_timing' }))?.preference_summary,
+      'alert timing: [redacted]'
+    );
+    assert.equal(json.includes('alice@example.com'), false);
+    assert.equal(json.includes('private-forget-command-ref'), false);
+    assert.equal(json.includes('u2'), false);
+    assert.equal(json.includes('other-user private forget value'), false);
+    assert.equal(json.includes('other-user-forget-command-secret'), false);
+  });
+
+  it('answers correct-that commands through the explicit-preference correct helper', async () => {
+    const store = new InMemoryTypedMemoryStore();
+    await store.write(
+      preference({
+        user_id: 'u1',
+        value: 'alice@example.com evenings only',
+        source_ref: 'reply:private-correct-command-ref'
+      })
+    );
+    await store.write(
+      preference({
+        user_id: 'u2',
+        value: 'other-user private correct value alice@example.com',
+        source_ref: 'reply:other-user-correct-command-secret',
+        updated_at: '2026-06-27T12:00:00.000Z'
+      })
+    );
+
+    const result = await answerVisibleMemoryCorrectCommand(
+      store,
+      'u1',
+      'Correct that preference',
+      { attribute: 'alert_timing' },
+      {
+        correctedValue: 'morning',
+        updatedAt: '2026-06-28T09:00:00.000Z',
+        sourceRef: 'reply:private-correction-command-ref'
+      }
+    );
+    assert.ok(result);
+    const json = JSON.stringify(result);
+
+    assert.equal(result.action, 'correct_visible_explicit_preference');
+    assert.equal(result.user_id, 'u1');
+    assert.equal(result.answer, result.correction.message);
+    assert.deepEqual(result.audit_metadata, {
+      memory_kind: 'preference',
+      matched_intent: 'memory_correct',
+      scope_key: 'preference:alert_timing',
+      previous_row_id: 1,
+      corrected_row_id: 1,
+      source: 'user_stated',
+      updated_at: '2026-06-28T09:00:00.000Z'
+    });
+    assert.equal((await recallVisibleExplicitPreference(store, 'u1', { attribute: 'alert_timing' }))?.preference_summary, 'alert timing: morning');
+    assert.equal(
+      (await recallVisibleExplicitPreference(store, 'u2', { attribute: 'alert_timing' }))?.preference_summary,
+      'alert timing: [redacted]'
+    );
+    assert.equal(Object.isFrozen(result), true);
+    assert.equal(Object.isFrozen(result.audit_metadata), true);
+    assert.equal(json.includes('alice@example.com'), false);
+    assert.equal(json.includes('private-correct-command-ref'), false);
+    assert.equal(json.includes('private-correction-command-ref'), false);
+    assert.equal(json.includes('morning'), false);
+    assert.equal(json.includes('u2'), false);
+    assert.equal(json.includes('other-user private correct value'), false);
+    assert.equal(json.includes('other-user-correct-command-secret'), false);
+  });
+
+  it('only routes forget/correct memory commands and leaves unknown or remember-this text alone', async () => {
+    const store = new InMemoryTypedMemoryStore();
+    await store.write(preference({ value: 'morning' }));
+
+    assert.equal(isVisibleMemoryForgetCommandText('Forget that preference'), true);
+    assert.equal(isVisibleMemoryForgetCommandText('Please forget my memory'), true);
+    assert.equal(isVisibleMemoryForgetCommandText('Stop remembering it'), true);
+    assert.equal(isVisibleMemoryForgetCommandText('Remember this: I prefer mornings'), false);
+    assert.equal(isVisibleMemoryForgetCommandText('please save that I prefer mornings'), false);
+    assert.equal(isVisibleMemoryForgetCommandText('Can you help me with my inbox?'), false);
+
+    assert.equal(isVisibleMemoryCorrectCommandText('Correct that preference'), true);
+    assert.equal(isVisibleMemoryCorrectCommandText('Update my memory'), true);
+    assert.equal(isVisibleMemoryCorrectCommandText('That saved preference is wrong'), true);
+    assert.equal(isVisibleMemoryCorrectCommandText('Remember this: I prefer mornings'), false);
+    assert.equal(isVisibleMemoryCorrectCommandText('please save that I prefer mornings'), false);
+    assert.equal(isVisibleMemoryCorrectCommandText('Can you help me with my inbox?'), false);
+
+    assert.equal(
+      await answerVisibleMemoryForgetCommand(store, 'u1', 'Can you help me with my inbox?', {
+        attribute: 'alert_timing'
+      }),
+      null
+    );
+    assert.equal(
+      await answerVisibleMemoryForgetCommand(store, 'u1', 'Remember this: I prefer mornings', {
+        attribute: 'alert_timing'
+      }),
+      null
+    );
+    assert.equal(
+      await answerVisibleMemoryCorrectCommand(
+        store,
+        'u1',
+        'Can you help me with my inbox?',
+        { attribute: 'alert_timing' },
+        { correctedValue: 'evening' }
+      ),
+      null
+    );
+    assert.equal(
+      await answerVisibleMemoryCorrectCommand(
+        store,
+        'u1',
+        'Remember this: I prefer mornings',
+        { attribute: 'alert_timing' },
+        { correctedValue: 'evening' }
+      ),
+      null
+    );
+  });
+
+  it('keeps the forget/correct command adapters on the same inactive-memory and cross-user exclusion path', async () => {
+    const store = new InMemoryTypedMemoryStore();
+    await store.write(preference({ value: 'morning', updated_at: '2026-06-25T10:00:00.000Z' }));
+    await store.write(
+      preference({
+        user_id: 'u2',
+        value: 'other-user forget-correct command secret alice@example.com',
+        source_ref: 'reply:other-user-forget-correct-command'
+      })
+    );
+    await store.write(preference({ scope_key: 'preference:low', attribute: 'low', confidence: 'low' }));
+    await store.write(
+      preference({
+        scope_key: 'preference:stale',
+        attribute: 'stale',
+        value: 'should not change through command',
+        stale_marked_at: '2026-06-25T00:00:00.000Z'
+      })
+    );
+    await store.write(preference({ scope_key: 'preference:retracted', attribute: 'retracted', retracted: true }));
+    await store.write(preference({ scope_key: 'preference:tombstoned', attribute: 'tombstoned', superseded_by: 99 }));
+
+    const forget = await answerVisibleMemoryForgetCommand(store, 'u1', 'Forget that preference', {
+      attribute: 'stale'
+    });
+    assert.equal(forget, null);
+    const correct = await answerVisibleMemoryCorrectCommand(
+      store,
+      'u1',
+      'Correct that preference',
+      { attribute: 'tombstoned' },
+      { correctedValue: 'evening', updatedAt: '2026-06-28T09:00:00.000Z' }
+    );
+    assert.equal(correct, null);
+    assert.equal(
+      await answerVisibleMemoryForgetCommand(store, 'u1', 'Forget that preference', {
+        attribute: 'low'
+      }),
+      null
+    );
+    assert.equal(
+      await answerVisibleMemoryCorrectCommand(
+        store,
+        'u1',
+        'Correct that preference',
+        { attribute: 'retracted' },
+        { correctedValue: 'evening', updatedAt: '2026-06-28T09:00:00.000Z' }
+      ),
+      null
+    );
+
+    const activeCorrection = await answerVisibleMemoryCorrectCommand(
+      store,
+      'u1',
+      'Correct that preference',
+      { attribute: 'alert_timing' },
+      { correctedValue: 'evening', updatedAt: '2026-06-28T09:00:00.000Z' }
+    );
+    assert.ok(activeCorrection);
+    const json = JSON.stringify(activeCorrection);
+
+    assert.equal(activeCorrection.audit_metadata.scope_key, 'preference:alert_timing');
+    assert.equal(json.includes('u2'), false);
+    assert.equal(json.includes('other-user forget-correct command secret'), false);
+    assert.equal(json.includes('alice@example.com'), false);
+    assert.equal(json.includes('other-user-forget-correct-command'), false);
+    assert.equal(json.includes('should not change through command'), false);
+    assert.equal(json.includes('stale'), false);
+    assert.equal(json.includes('retracted'), false);
+    assert.equal(json.includes('tombstoned'), false);
   });
 
   it('remembers a user-stated explicit preference, then recalls, explains, corrects, and forgets it', async () => {

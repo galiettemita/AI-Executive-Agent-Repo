@@ -80,6 +80,35 @@ export interface VisibleMemoryExplanationCommandResult {
   };
 }
 
+export interface VisibleMemoryForgetCommandResult {
+  readonly action: 'forget_visible_explicit_preference';
+  readonly user_id: string;
+  readonly answer: string;
+  readonly forget: VisiblePreferenceForgetResult;
+  readonly audit_metadata: {
+    readonly memory_kind: 'preference';
+    readonly matched_intent: 'memory_forget';
+    readonly scope_key: string;
+    readonly forgotten_row_id?: number;
+  };
+}
+
+export interface VisibleMemoryCorrectCommandResult {
+  readonly action: 'correct_visible_explicit_preference';
+  readonly user_id: string;
+  readonly answer: string;
+  readonly correction: VisiblePreferenceCorrectResult;
+  readonly audit_metadata: {
+    readonly memory_kind: 'preference';
+    readonly matched_intent: 'memory_correct';
+    readonly scope_key: string;
+    readonly previous_row_id?: number;
+    readonly corrected_row_id?: number;
+    readonly source: Extract<TypedMemorySource, 'user_provided' | 'user_stated'>;
+    readonly updated_at: string;
+  };
+}
+
 export interface VisiblePreferenceRememberOptions {
   readonly attribute: string;
   readonly value: UserPreferenceMemory['value'];
@@ -348,6 +377,42 @@ export function isVisibleMemoryExplanationCommandText(text: string): boolean {
   ].some((pattern) => pattern.test(normalized));
 }
 
+export function isVisibleMemoryForgetCommandText(text: string): boolean {
+  const normalized = normalizedVisibleMemoryCommandText(text);
+  if (normalized.length === 0) return false;
+
+  if (/^(please )?(remember|save) (this|that)\b/.test(normalized)) return false;
+  if (/^(can you|could you|please) (remember|save)\b/.test(normalized)) return false;
+
+  return [
+    /^forget (that|this|it|my memory|my preference)$/,
+    /^forget that (saved )?(memory|preference)$/,
+    /^please forget (that|this|it|my memory|my preference)$/,
+    /^(delete|remove) (that|this|it|my memory|my preference)$/,
+    /^(delete|remove) that (saved )?(memory|preference)$/,
+    /^stop remembering (that|this|it|my memory|my preference)$/,
+    /^can you forget (that|this|it|my memory|my preference)$/
+  ].some((pattern) => pattern.test(normalized));
+}
+
+export function isVisibleMemoryCorrectCommandText(text: string): boolean {
+  const normalized = normalizedVisibleMemoryCommandText(text);
+  if (normalized.length === 0) return false;
+
+  if (/^(please )?(remember|save) (this|that)\b/.test(normalized)) return false;
+  if (/^(can you|could you|please) (remember|save)\b/.test(normalized)) return false;
+
+  return [
+    /^correct (that|this|it|my memory|my preference)$/,
+    /^correct that (saved )?(memory|preference)$/,
+    /^please correct (that|this|it|my memory|my preference)$/,
+    /^(update|change) (that|this|it|my memory|my preference)$/,
+    /^(update|change) that (saved )?(memory|preference)$/,
+    /^that (memory|preference) is wrong$/,
+    /^that saved (memory|preference) is wrong$/
+  ].some((pattern) => pattern.test(normalized));
+}
+
 export async function answerVisibleMemoryReviewCommand(
   store: Pick<TypedMemoryStore, 'listActive'>,
   userId: string,
@@ -391,6 +456,60 @@ export async function answerVisibleMemoryExplanationCommand(
     audit_metadata: Object.freeze({
       memory_kind: 'preference' as const,
       matched_intent: 'memory_explanation' as const
+    })
+  });
+}
+
+export async function answerVisibleMemoryForgetCommand(
+  store: Pick<TypedMemoryStore, 'listActive' | 'retract'>,
+  userId: string,
+  text: string,
+  query: VisibleExplicitPreferenceRecallQuery
+): Promise<VisibleMemoryForgetCommandResult | null> {
+  if (!isVisibleMemoryForgetCommandText(text)) return null;
+
+  const forget = await forgetVisibleExplicitPreference(store, userId, query);
+  if (forget === null) return null;
+
+  return Object.freeze({
+    action: 'forget_visible_explicit_preference' as const,
+    user_id: userId,
+    answer: forget.message,
+    forget,
+    audit_metadata: Object.freeze({
+      memory_kind: 'preference' as const,
+      matched_intent: 'memory_forget' as const,
+      scope_key: forget.audit_metadata.scope_key,
+      forgotten_row_id: forget.audit_metadata.forgotten_row_id
+    })
+  });
+}
+
+export async function answerVisibleMemoryCorrectCommand(
+  store: Pick<TypedMemoryStore, 'listActive' | 'write'>,
+  userId: string,
+  text: string,
+  query: VisibleExplicitPreferenceRecallQuery,
+  options: VisiblePreferenceCorrectOptions
+): Promise<VisibleMemoryCorrectCommandResult | null> {
+  if (!isVisibleMemoryCorrectCommandText(text)) return null;
+
+  const correction = await correctVisibleExplicitPreference(store, userId, query, options);
+  if (correction === null) return null;
+
+  return Object.freeze({
+    action: 'correct_visible_explicit_preference' as const,
+    user_id: userId,
+    answer: correction.message,
+    correction,
+    audit_metadata: Object.freeze({
+      memory_kind: 'preference' as const,
+      matched_intent: 'memory_correct' as const,
+      scope_key: correction.audit_metadata.scope_key,
+      previous_row_id: correction.audit_metadata.previous_row_id,
+      corrected_row_id: correction.audit_metadata.corrected_row_id,
+      source: correction.audit_metadata.source,
+      updated_at: correction.audit_metadata.updated_at
     })
   });
 }
