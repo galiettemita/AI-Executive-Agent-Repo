@@ -8,10 +8,12 @@ import {
   type NewTypedMemoryRow
 } from './typed-memory.ts';
 import {
+  answerVisibleMemoryReviewCommand,
   correctVisibleExplicitPreference,
   explainVisibleExplicitPreferenceMemoryUse,
   explainVisibleExplicitPreferenceUse,
   forgetVisibleExplicitPreference,
+  isVisibleMemoryReviewCommandText,
   rememberVisibleExplicitPreference,
   recallVisibleExplicitPreference,
   reviewVisibleExplicitPreferences
@@ -214,6 +216,118 @@ describe('Memory V1 visible explicit-preference recall', () => {
     assert.equal(Object.isFrozen(review), true);
     assert.equal(Object.isFrozen(review.preferences), true);
     assert.equal(Object.isFrozen(review.audit_metadata), true);
+  });
+
+  it('answers what-do-you-remember style commands through the explicit-preference review helper', async () => {
+    const store = new InMemoryTypedMemoryStore();
+    await store.write(
+      preference({
+        user_id: 'u1',
+        value: 'alice@example.com evenings only',
+        source_ref: 'reply:private-review-command-ref'
+      })
+    );
+    await store.write(
+      preference({
+        user_id: 'u1',
+        scope_key: 'preference:quietness_preference',
+        attribute: 'quietness_preference',
+        value: { max_per_day: 2, hidden_note: 'do not leak command payload' },
+        source_ref: 'memory_signal:quietness-command-secret-ref',
+        updated_at: '2026-06-26T12:00:00.000Z'
+      })
+    );
+    await store.write(
+      preference({
+        user_id: 'u2',
+        value: 'other-user private command value alice@example.com',
+        source_ref: 'reply:other-user-command-secret',
+        updated_at: '2026-06-27T12:00:00.000Z'
+      })
+    );
+
+    const result = await answerVisibleMemoryReviewCommand(store, 'u1', 'What do you remember about me?');
+    assert.ok(result);
+    const json = JSON.stringify(result);
+
+    assert.deepEqual(result.review.preferences.map((item) => item.preference_summary), [
+      'quietness preference: saved structured preference',
+      'alert timing: [redacted]'
+    ]);
+    assert.equal(result.action, 'review_visible_explicit_preferences');
+    assert.equal(result.user_id, 'u1');
+    assert.equal(result.answer, result.review.answer);
+    assert.deepEqual(result.audit_metadata, {
+      memory_kind: 'preference',
+      matched_intent: 'memory_review',
+      returned_count: 2,
+      row_ids: [2, 1],
+      scope_keys: ['preference:quietness_preference', 'preference:alert_timing']
+    });
+    assert.equal(result.review.preferences[0]?.source_metadata.source_ref_type, 'memory_signal');
+    assert.equal(result.review.preferences[1]?.source_metadata.source_ref_type, 'reply');
+    assert.equal(Object.isFrozen(result), true);
+    assert.equal(Object.isFrozen(result.audit_metadata), true);
+    assert.equal(json.includes('alice@example.com'), false);
+    assert.equal(json.includes('private-review-command-ref'), false);
+    assert.equal(json.includes('quietness-command-secret-ref'), false);
+    assert.equal(json.includes('do not leak command payload'), false);
+    assert.equal(json.includes('u2'), false);
+    assert.equal(json.includes('other-user private command value'), false);
+    assert.equal(json.includes('other-user-command-secret'), false);
+  });
+
+  it('only routes review-style memory commands and leaves unknown or remember-this text alone', async () => {
+    const store = new InMemoryTypedMemoryStore();
+    await store.write(preference({ value: 'morning' }));
+
+    assert.equal(isVisibleMemoryReviewCommandText('What have you saved about me?'), true);
+    assert.equal(isVisibleMemoryReviewCommandText('List my saved preferences'), true);
+    assert.equal(isVisibleMemoryReviewCommandText('Do you remember anything about me?'), true);
+    assert.equal(isVisibleMemoryReviewCommandText('Remember this: I prefer mornings'), false);
+    assert.equal(isVisibleMemoryReviewCommandText('please save that I prefer mornings'), false);
+    assert.equal(isVisibleMemoryReviewCommandText('Can you help me with my inbox?'), false);
+
+    assert.equal(await answerVisibleMemoryReviewCommand(store, 'u1', 'Can you help me with my inbox?'), null);
+    assert.equal(await answerVisibleMemoryReviewCommand(store, 'u1', 'Remember this: I prefer mornings'), null);
+  });
+
+  it('keeps the review command adapter on the same inactive-memory and cross-user exclusion path', async () => {
+    const store = new InMemoryTypedMemoryStore();
+    await store.write(preference({ value: 'morning', updated_at: '2026-06-25T10:00:00.000Z' }));
+    await store.write(
+      preference({
+        user_id: 'u2',
+        value: 'other-user command secret alice@example.com',
+        source_ref: 'reply:other-user-review-command'
+      })
+    );
+    await store.write(preference({ scope_key: 'preference:low', attribute: 'low', confidence: 'low' }));
+    await store.write(
+      preference({
+        scope_key: 'preference:stale',
+        attribute: 'stale',
+        value: 'should not route through command',
+        stale_marked_at: '2026-06-25T00:00:00.000Z'
+      })
+    );
+    await store.write(preference({ scope_key: 'preference:retracted', attribute: 'retracted', retracted: true }));
+    await store.write(preference({ scope_key: 'preference:tombstoned', attribute: 'tombstoned', superseded_by: 99 }));
+
+    const result = await answerVisibleMemoryReviewCommand(store, 'u1', 'What does Brevio remember about me?');
+    assert.ok(result);
+    const json = JSON.stringify(result);
+
+    assert.deepEqual(result.review.preferences.map((item) => item.preference_summary), ['alert timing: morning']);
+    assert.equal(result.audit_metadata.returned_count, 1);
+    assert.equal(json.includes('u2'), false);
+    assert.equal(json.includes('other-user command secret'), false);
+    assert.equal(json.includes('alice@example.com'), false);
+    assert.equal(json.includes('other-user-review-command'), false);
+    assert.equal(json.includes('should not route through command'), false);
+    assert.equal(json.includes('stale'), false);
+    assert.equal(json.includes('retracted'), false);
+    assert.equal(json.includes('tombstoned'), false);
   });
 
   it('remembers a user-stated explicit preference, then recalls, explains, corrects, and forgets it', async () => {

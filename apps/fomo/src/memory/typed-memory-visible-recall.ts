@@ -55,6 +55,20 @@ export interface VisibleExplicitPreferenceReview {
   };
 }
 
+export interface VisibleMemoryReviewCommandResult {
+  readonly action: 'review_visible_explicit_preferences';
+  readonly user_id: string;
+  readonly answer: string;
+  readonly review: VisibleExplicitPreferenceReview;
+  readonly audit_metadata: {
+    readonly memory_kind: 'preference';
+    readonly matched_intent: 'memory_review';
+    readonly returned_count: number;
+    readonly row_ids: readonly number[];
+    readonly scope_keys: readonly string[];
+  };
+}
+
 export interface VisiblePreferenceRememberOptions {
   readonly attribute: string;
   readonly value: UserPreferenceMemory['value'];
@@ -274,6 +288,57 @@ export async function reviewVisibleExplicitPreferences(
           .filter((rowId): rowId is number => typeof rowId === 'number')
       ),
       scope_keys: Object.freeze(preferences.map((preference) => preference.audit_metadata.scope_key))
+    })
+  });
+}
+
+function normalizedVisibleMemoryCommandText(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[’']/g, '')
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+export function isVisibleMemoryReviewCommandText(text: string): boolean {
+  const normalized = normalizedVisibleMemoryCommandText(text);
+  if (normalized.length === 0) return false;
+
+  if (/^(please )?(remember|save) (this|that)\b/.test(normalized)) return false;
+  if (/^(can you|could you|please) (remember|save)\b/.test(normalized)) return false;
+
+  return [
+    /^what (do|can) you remember( about me)?$/,
+    /^what (does|can) brevio remember( about me)?$/,
+    /^what have you (remembered|saved)( about me)?$/,
+    /^what (memories|preferences) do you have( for me| about me)?$/,
+    /^(show|list|tell me) (my )?(memories|saved preferences)$/,
+    /^(show|list|tell me) what you (remember|saved)( about me)?$/,
+    /^do you remember anything about me$/
+  ].some((pattern) => pattern.test(normalized));
+}
+
+export async function answerVisibleMemoryReviewCommand(
+  store: Pick<TypedMemoryStore, 'listActive'>,
+  userId: string,
+  text: string,
+  query: VisibleExplicitPreferenceRecallQuery = {}
+): Promise<VisibleMemoryReviewCommandResult | null> {
+  if (!isVisibleMemoryReviewCommandText(text)) return null;
+
+  const review = await reviewVisibleExplicitPreferences(store, userId, query);
+  return Object.freeze({
+    action: 'review_visible_explicit_preferences' as const,
+    user_id: userId,
+    answer: review.answer,
+    review,
+    audit_metadata: Object.freeze({
+      memory_kind: 'preference' as const,
+      matched_intent: 'memory_review' as const,
+      returned_count: review.audit_metadata.returned_count,
+      row_ids: review.audit_metadata.row_ids,
+      scope_keys: review.audit_metadata.scope_keys
     })
   });
 }
