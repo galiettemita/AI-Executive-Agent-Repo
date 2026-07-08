@@ -9,6 +9,7 @@ import {
 } from './typed-memory.ts';
 import {
   correctVisibleExplicitPreference,
+  explainVisibleExplicitPreferenceMemoryUse,
   explainVisibleExplicitPreferenceUse,
   forgetVisibleExplicitPreference,
   rememberVisibleExplicitPreference,
@@ -403,6 +404,69 @@ describe('Memory V1 visible explicit-preference recall', () => {
     assert.deepEqual(
       explainVisibleExplicitPreferenceUse(firstRecall),
       explainVisibleExplicitPreferenceUse(secondRecall)
+    );
+  });
+
+  it('answers why remembered/used through a scoped helper without explaining unsafe memories', async () => {
+    const store = new InMemoryTypedMemoryStore();
+    await store.write(
+      preference({
+        user_id: 'u1',
+        value: 'alice@example.com evenings only',
+        source_ref: 'reply:private-source-ref',
+        updated_at: '2026-06-25T12:00:00.000Z'
+      })
+    );
+    await store.write(
+      preference({
+        user_id: 'u2',
+        value: 'other-user private value alice@example.com',
+        source_ref: 'reply:other-user-private-source',
+        updated_at: '2026-06-25T13:00:00.000Z'
+      })
+    );
+    await store.write(
+      preference({
+        user_id: 'u1',
+        scope_key: 'preference:deleted',
+        attribute: 'deleted',
+        value: 'should not explain',
+        retracted: true
+      })
+    );
+    await store.write(
+      preference({
+        user_id: 'u1',
+        scope_key: 'preference:tombstoned',
+        attribute: 'tombstoned',
+        value: 'should not explain either',
+        superseded_by: 999
+      })
+    );
+
+    const explanation = await explainVisibleExplicitPreferenceMemoryUse(store, 'u1', {
+      attribute: 'alert_timing'
+    });
+    assert.ok(explanation);
+    const json = JSON.stringify(explanation);
+
+    assert.match(explanation.answer, /matched the saved alert timing preference/);
+    assert.match(explanation.source, /prior user reply/);
+    assert.match(explanation.audit, /high-confidence preference metadata/);
+    assert.match(explanation.safety, /scoped to this user/);
+    assert.equal(json.includes('alice@example.com'), false);
+    assert.equal(json.includes('private-source-ref'), false);
+    assert.equal(json.includes('u2'), false);
+    assert.equal(json.includes('other-user private value'), false);
+    assert.equal(json.includes('other-user-private-source'), false);
+    assert.equal(json.includes('should not explain'), false);
+    assert.equal(
+      await explainVisibleExplicitPreferenceMemoryUse(store, 'u1', { attribute: 'deleted' }),
+      null
+    );
+    assert.equal(
+      await explainVisibleExplicitPreferenceMemoryUse(store, 'u1', { attribute: 'tombstoned' }),
+      null
     );
   });
 
