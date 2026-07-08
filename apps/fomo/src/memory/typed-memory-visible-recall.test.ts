@@ -13,7 +13,8 @@ import {
   explainVisibleExplicitPreferenceUse,
   forgetVisibleExplicitPreference,
   rememberVisibleExplicitPreference,
-  recallVisibleExplicitPreference
+  recallVisibleExplicitPreference,
+  reviewVisibleExplicitPreferences
 } from './typed-memory-visible-recall.ts';
 
 function preference(overrides: Record<string, unknown> = {}): NewTypedMemoryRow {
@@ -35,6 +36,186 @@ function preference(overrides: Record<string, unknown> = {}): NewTypedMemoryRow 
 }
 
 describe('Memory V1 visible explicit-preference recall', () => {
+  it('reviews active explicit preferences without leaking private raw values or cross-user data', async () => {
+    const store = new InMemoryTypedMemoryStore();
+    await store.write(
+      preference({
+        user_id: 'u1',
+        value: 'alice@example.com evenings only',
+        source_ref: 'reply:private-source-ref'
+      })
+    );
+    await store.write(
+      preference({
+        user_id: 'u1',
+        scope_key: 'preference:quietness_preference',
+        attribute: 'quietness_preference',
+        value: { max_per_day: 2, hidden_note: 'do not leak nested private text' },
+        source_ref: 'memory_signal:quietness_preference:secret-raw-ref',
+        updated_at: '2026-06-26T12:00:00.000Z'
+      })
+    );
+    await store.write(
+      preference({
+        user_id: 'u2',
+        value: 'other user secret alice@example.com',
+        source_ref: 'reply:other-user-private-source',
+        updated_at: '2026-06-27T12:00:00.000Z'
+      })
+    );
+
+    const review = await reviewVisibleExplicitPreferences(store, 'u1');
+    const json = JSON.stringify(review);
+
+    assert.deepEqual(review.preferences.map((item) => item.preference_summary), [
+      'quietness preference: saved structured preference',
+      'alert timing: [redacted]'
+    ]);
+    assert.match(
+      review.answer,
+      /I remember these active explicit preferences for you: quietness preference: saved structured preference; alert timing: \[redacted\]\./
+    );
+    assert.deepEqual(review.audit_metadata, {
+      memory_kind: 'preference',
+      returned_count: 2,
+      row_ids: [2, 1],
+      scope_keys: ['preference:quietness_preference', 'preference:alert_timing']
+    });
+    assert.equal(review.preferences[0]?.source_metadata.source_ref_type, 'memory_signal');
+    assert.equal(review.preferences[1]?.source_metadata.source_ref_type, 'reply');
+    assert.equal(Object.isFrozen(review), true);
+    assert.equal(Object.isFrozen(review.preferences), true);
+    assert.equal(Object.isFrozen(review.audit_metadata), true);
+    assert.equal(json.includes('alice@example.com'), false);
+    assert.equal(json.includes('private-source-ref'), false);
+    assert.equal(json.includes('secret-raw-ref'), false);
+    assert.equal(json.includes('hidden_note'), false);
+    assert.equal(json.includes('do not leak nested private text'), false);
+    assert.equal(json.includes('u2'), false);
+    assert.equal(json.includes('other user secret'), false);
+    assert.equal(json.includes('other-user-private-source'), false);
+  });
+
+  it('excludes unsafe inactive and non-explicit memories from visible preference review', async () => {
+    const store = new InMemoryTypedMemoryStore();
+    await store.write(preference({ value: 'morning', updated_at: '2026-06-25T10:00:00.000Z' }));
+    await store.write(
+      preference({
+        scope_key: 'preference:stale',
+        attribute: 'stale',
+        value: 'should not review',
+        stale_marked_at: '2026-06-25T00:00:00.000Z'
+      })
+    );
+    await store.write(
+      preference({
+        scope_key: 'preference:retracted',
+        attribute: 'retracted',
+        value: 'should not review',
+        retracted: true
+      })
+    );
+    await store.write(
+      preference({
+        scope_key: 'preference:tombstoned',
+        attribute: 'tombstoned',
+        value: 'should not review',
+        superseded_by: 99
+      })
+    );
+    await store.write(
+      preference({
+        scope_key: 'preference:low',
+        attribute: 'low',
+        value: 'should not review',
+        confidence: 'low'
+      })
+    );
+    await store.write(
+      preference({
+        scope_key: 'preference:feedback',
+        attribute: 'feedback',
+        value: 'should not review',
+        source: 'feedback_derived'
+      })
+    );
+
+    const review = await reviewVisibleExplicitPreferences(store, 'u1');
+    const json = JSON.stringify(review);
+
+    assert.deepEqual(review.preferences.map((item) => item.preference_summary), ['alert timing: morning']);
+    assert.equal(review.audit_metadata.returned_count, 1);
+    assert.equal(json.includes('should not review'), false);
+    assert.equal(json.includes('stale'), false);
+    assert.equal(json.includes('retracted'), false);
+    assert.equal(json.includes('tombstoned'), false);
+    assert.equal(json.includes('feedback'), false);
+  });
+
+  it('reviews explicit preferences from memory_signals bridge without raw source refs or private payloads', async () => {
+    const memoryStore = new InMemoryMemorySignalStore();
+    await memoryStore.upsert({
+      user_id: 'u1',
+      kind: 'quietness_preference',
+      scope_key: null,
+      detail: { max_per_day: 4, private_note: 'do not leak bridged payload' },
+      source: 'user_confirmed',
+      updated_at: '2026-06-25T14:00:00.000Z'
+    });
+    await memoryStore.upsert({
+      user_id: 'u1',
+      kind: 'timing_preference',
+      scope_key: null,
+      detail: { preferred_window: 'late', private_note: 'do not leak timing payload' },
+      source: 'feedback_derived',
+      updated_at: '2026-06-25T15:00:00.000Z'
+    });
+    await memoryStore.upsert({
+      user_id: 'u2',
+      kind: 'quietness_preference',
+      scope_key: null,
+      detail: { max_per_day: 1, private_note: 'other user private payload' },
+      source: 'user_confirmed',
+      updated_at: '2026-06-25T16:00:00.000Z'
+    });
+    const store = new MemorySignalsBackedTypedMemoryStore(memoryStore);
+
+    const review = await reviewVisibleExplicitPreferences(store, 'u1');
+    const json = JSON.stringify(review);
+
+    assert.deepEqual(review.preferences.map((item) => item.preference_summary), [
+      'quietness preference: saved structured preference'
+    ]);
+    assert.equal(review.preferences[0]?.source_metadata.source_ref_type, 'memory_signal');
+    assert.deepEqual(review.audit_metadata.scope_keys, ['signal:quietness_preference']);
+    assert.equal(json.includes('do not leak bridged payload'), false);
+    assert.equal(json.includes('do not leak timing payload'), false);
+    assert.equal(json.includes('memory_signal:quietness_preference'), false);
+    assert.equal(json.includes('other user private payload'), false);
+    assert.equal(json.includes('u2'), false);
+  });
+
+  it('returns a safe empty review answer when no explicit preferences are available', async () => {
+    const store = new InMemoryTypedMemoryStore();
+
+    const review = await reviewVisibleExplicitPreferences(store, 'u1');
+
+    assert.deepEqual(review, {
+      user_id: 'u1',
+      answer: 'I do not have any active explicit preferences saved for you that are safe to show here.',
+      preferences: [],
+      audit_metadata: {
+        memory_kind: 'preference',
+        returned_count: 0,
+        row_ids: [],
+        scope_keys: []
+      }
+    });
+    assert.equal(Object.isFrozen(review), true);
+    assert.equal(Object.isFrozen(review.preferences), true);
+    assert.equal(Object.isFrozen(review.audit_metadata), true);
+  });
+
   it('remembers a user-stated explicit preference, then recalls, explains, corrects, and forgets it', async () => {
     const store = new InMemoryTypedMemoryStore();
 
