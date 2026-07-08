@@ -4,10 +4,10 @@ Harness anchor loaded: BREVIO-HARNESS-V1-NO-CIRCLING-FAST-SHIPPING
 
 There must be exactly one item marked `NEXT`. No cycle may say “continue M1” or “continue Memory V1” vaguely. Move the marker only after the current item is merged or explicitly blocked with owner/action.
 
-## NEXT — PR-5: “What do you remember?” explicit-preference review path
+## NEXT — PR-6: “What do you remember?” command adapter for explicit-preference review
 
-- **Exact branch:** `memory-v1-visible-memory-review-path`
-- **Purpose:** Let a user review the explicit preferences Brevio can safely remember for them, without exposing private raw values or cross-user data.
+- **Exact branch:** `memory-v1-visible-memory-review-command-adapter`
+- **Purpose:** Add the smallest safe command-adapter path that recognizes a user asking what Brevio remembers and returns the existing explicit-preference review helper output, without live provider activation or exposing private raw values/cross-user data.
 - **Memory V1 Visible Behavior exit condition advanced:**
   2. retrieve relevant memories safely;
   3. explain why a memory was used;
@@ -15,12 +15,13 @@ There must be exactly one item marked `NEXT`. No cycle may say “continue M1”
   6. prevent cross-user leakage;
   7. expose at least one visible memory behavior to the user.
 - **Allowed files/areas:**
-  - visible explicit-preference review/list helper in the existing memory-visible behavior area;
-  - source/audit metadata formatting for review output;
-  - targeted tests proving active explicit preferences are reviewable and unsafe/inactive/cross-user memories are excluded;
+  - narrow dormant command/intent adapter in the existing memory-visible behavior area;
+  - tests proving “what do you remember?”-style requests resolve to explicit-preference review output;
+  - tests proving unknown/non-memory text does not trigger memory review;
+  - tests proving unsafe/inactive/cross-user memories remain excluded through the adapter;
   - narrow dormant helpers only when directly tied to this visible behavior.
 - **Forbidden files/areas:**
-  - product runtime activation beyond the narrow visible-memory review surface;
+  - live provider or production runtime activation beyond the narrow dormant command adapter;
   - DB migrations;
   - new tables/schema changes;
   - production deploy;
@@ -32,13 +33,19 @@ There must be exactly one item marked `NEXT`. No cycle may say “continue M1”
   - OAuth/security scope changes;
   - broad strategic phase fork.
 - **Expected changed files:** a small implementation/test slice in the existing memory-visible behavior area; no broad docs/harness changes.
-- **Tests required:** review/list tests pass; deleted/tombstoned/retracted/stale/low-confidence memories are excluded; cross-user isolation proof; source/audit proof; private values and raw source refs do not leak; existing remember/recall/explain/forget/correct tests still pass; CI for exact PR commit.
+- **Tests required:** command-adapter tests pass; review/list tests still pass; deleted/tombstoned/retracted/stale/low-confidence memories are excluded; cross-user isolation proof; source/audit proof; private values and raw source refs do not leak; existing remember/recall/explain/forget/correct tests still pass; CI for exact PR commit.
 - **Merge condition:** PR exists, CI green for exact PR commit, diff stays inside approved Memory V1 visible behavior scope, no forbidden surfaces touched.
-- **Exit condition:** PR merged and local `main` synced; user can safely ask what explicit preferences Brevio remembers without exposing private values.
+- **Exit condition:** PR merged and local `main` synced; the dormant visible-memory command adapter can safely answer review-style memory questions from explicit preferences without exposing private values.
 - **Stop condition:** Stop and report owner/action if implementation requires migration/new table, production deploy, OAuth/security scope change, or activation of Calendar/Composio/Tool Gateway/browser/action tools.
-- **Founder approval needed?** No for narrow helper/test-level review behavior; yes before production deploy, new external scopes, irreversible data changes, or broad runtime activation.
+- **Founder approval needed?** No for narrow dormant helper/test-level command adapter; yes before production deploy, new external scopes, irreversible data changes, or broad runtime activation.
 
 ## Completed
+
+### PR-5: “What do you remember?” explicit-preference review path
+
+- **Purpose:** Let a user review the explicit preferences Brevio can safely remember for them, without exposing private raw values or cross-user data.
+- **Status:** Completed in PR #97, canonical commit `a09575e7fbf13e418a4271d929dcf7b0465b8717`, merged as `340e54b4429455f7f82a48a0b63fde82806cc7c5`.
+- **Done condition met:** `reviewVisibleExplicitPreferences` exists in `apps/fomo/src/memory/typed-memory-visible-recall.ts`; targeted tests prove active explicit preferences are reviewable; stale/retracted/tombstoned/low-confidence/feedback-derived/cross-user memories are excluded; source/audit metadata is summarized; private values and raw source refs do not leak; CI passed; PR merged; local main synced.
 
 ### PR-4: “Forget/correct this” narrow path
 
