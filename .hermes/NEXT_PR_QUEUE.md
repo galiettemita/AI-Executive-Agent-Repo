@@ -4,22 +4,23 @@ Harness anchor loaded: BREVIO-HARNESS-V1-NO-CIRCLING-FAST-SHIPPING
 
 There must be exactly one item marked `NEXT`. No cycle may say “continue M1” or “continue Memory V1” vaguely. Move the marker only after the current item is merged or explicitly blocked with owner/action.
 
-## NEXT — PR-4: “Forget/correct this” narrow path
+## NEXT — PR-5: “What do you remember?” explicit-preference review path
 
-- **Exact branch:** `memory-v1-visible-forget-correct-path`
-- **Purpose:** Allow the user to correct or remove explicit memory safely through the narrow visible Memory V1 path.
+- **Exact branch:** `memory-v1-visible-memory-review-path`
+- **Purpose:** Let a user review the explicit preferences Brevio can safely remember for them, without exposing private raw values or cross-user data.
 - **Memory V1 Visible Behavior exit condition advanced:**
-  4. forget or correct a memory;
+  2. retrieve relevant memories safely;
+  3. explain why a memory was used;
   5. prove source/audit metadata;
   6. prevent cross-user leakage;
   7. expose at least one visible memory behavior to the user.
 - **Allowed files/areas:**
-  - visible forget/correct helper or adapter for explicit preferences;
-  - source/audit metadata formatting;
-  - targeted tests proving corrected memories replace old memories and forgotten memories stop surfacing;
+  - visible explicit-preference review/list helper in the existing memory-visible behavior area;
+  - source/audit metadata formatting for review output;
+  - targeted tests proving active explicit preferences are reviewable and unsafe/inactive/cross-user memories are excluded;
   - narrow dormant helpers only when directly tied to this visible behavior.
 - **Forbidden files/areas:**
-  - product runtime activation beyond the narrow visible-memory forget/correct surface;
+  - product runtime activation beyond the narrow visible-memory review surface;
   - DB migrations;
   - new tables/schema changes;
   - production deploy;
@@ -30,14 +31,20 @@ There must be exactly one item marked `NEXT`. No cycle may say “continue M1”
   - broad HMR rewrite;
   - OAuth/security scope changes;
   - broad strategic phase fork.
-- **Expected changed files:** a small implementation/test slice in the existing memory-visible behavior area, or queue-only if already satisfied on `main`; no broad docs/harness changes.
-- **Tests required:** forget/correct tests pass; deleted/tombstoned memories are not retrieved or explained; corrected preference replaces old preference in recall; forgotten preference no longer appears; audit/source proof remains; cross-user isolation proof; no private value leak proof; CI for exact PR commit.
+- **Expected changed files:** a small implementation/test slice in the existing memory-visible behavior area; no broad docs/harness changes.
+- **Tests required:** review/list tests pass; deleted/tombstoned/retracted/stale/low-confidence memories are excluded; cross-user isolation proof; source/audit proof; private values and raw source refs do not leak; existing remember/recall/explain/forget/correct tests still pass; CI for exact PR commit.
 - **Merge condition:** PR exists, CI green for exact PR commit, diff stays inside approved Memory V1 visible behavior scope, no forbidden surfaces touched.
-- **Exit condition:** PR merged and local `main` synced; visible forget/correct path proves user control over explicit preference memory without leaking private values.
+- **Exit condition:** PR merged and local `main` synced; user can safely ask what explicit preferences Brevio remembers without exposing private values.
 - **Stop condition:** Stop and report owner/action if implementation requires migration/new table, production deploy, OAuth/security scope change, or activation of Calendar/Composio/Tool Gateway/browser/action tools.
-- **Founder approval needed?** No for narrow helper/test-level forget/correct behavior; yes before production deploy, new external scopes, irreversible data changes, or broad runtime activation.
+- **Founder approval needed?** No for narrow helper/test-level review behavior; yes before production deploy, new external scopes, irreversible data changes, or broad runtime activation.
 
 ## Completed
+
+### PR-4: “Forget/correct this” narrow path
+
+- **Purpose:** Allow the user to correct or remove explicit memory safely through the narrow visible Memory V1 path.
+- **Status:** Satisfied on `main` before queue advance. `forgetVisibleExplicitPreference` and `correctVisibleExplicitPreference` exist in `apps/fomo/src/memory/typed-memory-visible-recall.ts`, and targeted tests pass in `apps/fomo/src/memory/typed-memory-visible-recall.test.ts`.
+- **Done condition met:** visible explicit-preference forget/correct helpers are tested; corrected preferences replace old recall; forgotten preferences stop surfacing; deleted/tombstoned/inactive memories are not retrieved or explained; cross-user isolation is tested; source/audit metadata remains available; private values and raw source refs are not exposed; no migration/new table/runtime activation path is touched.
 
 ### PR-3: “Why did you remember/use that?” explanation
 
