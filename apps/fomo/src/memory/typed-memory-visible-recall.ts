@@ -43,6 +43,18 @@ export interface VisibleMemoryWhyUsedExplanation {
   readonly safety: string;
 }
 
+export interface VisibleExplicitPreferenceReview {
+  readonly user_id: string;
+  readonly answer: string;
+  readonly preferences: readonly VisibleExplicitPreferenceRecall[];
+  readonly audit_metadata: {
+    readonly memory_kind: 'preference';
+    readonly returned_count: number;
+    readonly row_ids: readonly number[];
+    readonly scope_keys: readonly string[];
+  };
+}
+
 export interface VisiblePreferenceRememberOptions {
   readonly attribute: string;
   readonly value: UserPreferenceMemory['value'];
@@ -169,27 +181,10 @@ function visiblePreferenceScopeKey(attribute: string): string {
   return `preference:${normalized}`;
 }
 
-export async function recallVisibleExplicitPreference(
-  store: Pick<TypedMemoryStore, 'listActive'>,
+function visibleRecallFromPreference(
   userId: string,
-  query: VisibleExplicitPreferenceRecallQuery = {}
-): Promise<VisibleExplicitPreferenceRecall | null> {
-  const rows = await readTypedMemory(store, userId, {
-    kinds: ['preference'],
-    scopeKeys: query.scopeKeys,
-    sources: query.sources ?? ['user_provided', 'user_stated', 'founder_default'],
-    minConfidence: query.minConfidence ?? 'medium',
-    limit: 10
-  });
-
-  const preference = rows.find(
-    (row): row is UserPreferenceMemory =>
-      row.kind === 'preference' &&
-      row.superseded_by === null &&
-      (query.attribute === undefined || row.attribute === query.attribute)
-  );
-  if (preference === undefined) return null;
-
+  preference: UserPreferenceMemory
+): VisibleExplicitPreferenceRecall {
   const label = humanizePreferenceAttribute(preference.attribute);
   const value = safeUserVisiblePreferenceValue(preference.value);
   const preferenceSummary = `${label}: ${value}`;
@@ -212,6 +207,73 @@ export async function recallVisibleExplicitPreference(
       memory_kind: 'preference' as const,
       row_id: preference.id,
       scope_key: preference.scope_key
+    })
+  });
+}
+
+export async function recallVisibleExplicitPreference(
+  store: Pick<TypedMemoryStore, 'listActive'>,
+  userId: string,
+  query: VisibleExplicitPreferenceRecallQuery = {}
+): Promise<VisibleExplicitPreferenceRecall | null> {
+  const rows = await readTypedMemory(store, userId, {
+    kinds: ['preference'],
+    scopeKeys: query.scopeKeys,
+    sources: query.sources ?? ['user_provided', 'user_stated', 'founder_default'],
+    minConfidence: query.minConfidence ?? 'medium',
+    limit: 10
+  });
+
+  const preference = rows.find(
+    (row): row is UserPreferenceMemory =>
+      row.kind === 'preference' &&
+      row.superseded_by === null &&
+      (query.attribute === undefined || row.attribute === query.attribute)
+  );
+  if (preference === undefined) return null;
+
+  return visibleRecallFromPreference(userId, preference);
+}
+
+export async function reviewVisibleExplicitPreferences(
+  store: Pick<TypedMemoryStore, 'listActive'>,
+  userId: string,
+  query: VisibleExplicitPreferenceRecallQuery = {}
+): Promise<VisibleExplicitPreferenceReview> {
+  const rows = await readTypedMemory(store, userId, {
+    kinds: ['preference'],
+    scopeKeys: query.scopeKeys,
+    sources: query.sources ?? ['user_provided', 'user_stated', 'founder_default'],
+    minConfidence: query.minConfidence ?? 'medium',
+    limit: 25
+  });
+  const preferences = rows
+    .filter(
+      (row): row is UserPreferenceMemory =>
+        row.kind === 'preference' &&
+        row.superseded_by === null &&
+        (query.attribute === undefined || row.attribute === query.attribute)
+    )
+    .map((preference) => visibleRecallFromPreference(userId, preference));
+  const summaries = preferences.map((preference) => preference.preference_summary);
+  const answer =
+    preferences.length === 0
+      ? 'I do not have any active explicit preferences saved for you that are safe to show here.'
+      : `I remember these active explicit preferences for you: ${summaries.join('; ')}.`;
+
+  return Object.freeze({
+    user_id: userId,
+    answer,
+    preferences: Object.freeze(preferences),
+    audit_metadata: Object.freeze({
+      memory_kind: 'preference' as const,
+      returned_count: preferences.length,
+      row_ids: Object.freeze(
+        preferences
+          .map((preference) => preference.audit_metadata.row_id)
+          .filter((rowId): rowId is number => typeof rowId === 'number')
+      ),
+      scope_keys: Object.freeze(preferences.map((preference) => preference.audit_metadata.scope_key))
     })
   });
 }
