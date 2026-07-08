@@ -69,6 +69,17 @@ export interface VisibleMemoryReviewCommandResult {
   };
 }
 
+export interface VisibleMemoryExplanationCommandResult {
+  readonly action: 'explain_visible_explicit_preference_use';
+  readonly user_id: string;
+  readonly answer: string;
+  readonly explanation: VisibleMemoryWhyUsedExplanation;
+  readonly audit_metadata: {
+    readonly memory_kind: 'preference';
+    readonly matched_intent: 'memory_explanation';
+  };
+}
+
 export interface VisiblePreferenceRememberOptions {
   readonly attribute: string;
   readonly value: UserPreferenceMemory['value'];
@@ -319,6 +330,24 @@ export function isVisibleMemoryReviewCommandText(text: string): boolean {
   ].some((pattern) => pattern.test(normalized));
 }
 
+export function isVisibleMemoryExplanationCommandText(text: string): boolean {
+  const normalized = normalizedVisibleMemoryCommandText(text);
+  if (normalized.length === 0) return false;
+
+  if (/^(please )?(remember|save) (this|that)\b/.test(normalized)) return false;
+  if (/^(can you|could you|please) (remember|save)\b/.test(normalized)) return false;
+
+  return [
+    /^why did you (remember|save|use) (that|this|it|my memory|my preference)$/,
+    /^why did brevio (remember|save|use) (that|this|it|my memory|my preference)$/,
+    /^why do you remember (that|this|it|my preference)$/,
+    /^why does brevio remember (that|this|it|my preference)$/,
+    /^why was (that|this|it|my memory|my preference) (remembered|saved|used)$/,
+    /^(explain|tell me) why you (remembered|saved|used) (that|this|it|my memory|my preference)$/,
+    /^(explain|tell me) why brevio (remembered|saved|used) (that|this|it|my memory|my preference)$/
+  ].some((pattern) => pattern.test(normalized));
+}
+
 export async function answerVisibleMemoryReviewCommand(
   store: Pick<TypedMemoryStore, 'listActive'>,
   userId: string,
@@ -339,6 +368,29 @@ export async function answerVisibleMemoryReviewCommand(
       returned_count: review.audit_metadata.returned_count,
       row_ids: review.audit_metadata.row_ids,
       scope_keys: review.audit_metadata.scope_keys
+    })
+  });
+}
+
+export async function answerVisibleMemoryExplanationCommand(
+  store: Pick<TypedMemoryStore, 'listActive'>,
+  userId: string,
+  text: string,
+  query: VisibleExplicitPreferenceRecallQuery = {}
+): Promise<VisibleMemoryExplanationCommandResult | null> {
+  if (!isVisibleMemoryExplanationCommandText(text)) return null;
+
+  const explanation = await explainVisibleExplicitPreferenceMemoryUse(store, userId, query);
+  if (explanation === null) return null;
+
+  return Object.freeze({
+    action: 'explain_visible_explicit_preference_use' as const,
+    user_id: userId,
+    answer: explanation.answer,
+    explanation,
+    audit_metadata: Object.freeze({
+      memory_kind: 'preference' as const,
+      matched_intent: 'memory_explanation' as const
     })
   });
 }
