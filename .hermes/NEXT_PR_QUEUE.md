@@ -4,19 +4,19 @@ Harness anchor loaded: BREVIO-HARNESS-V1-NO-CIRCLING-FAST-SHIPPING
 
 There must be exactly one item marked `NEXT`. No cycle may say “continue M1” or “continue Memory V1” vaguely. Move the marker only after the current item is merged or explicitly blocked with owner/action.
 
-## NEXT — PR-7: “Why did you remember/use that?” command adapter for explicit-preference explanation
+## NEXT — PR-8: “Forget/correct that” command adapter for explicit preferences
 
-- **Exact branch:** `memory-v1-visible-memory-explain-command-adapter`
-- **Purpose:** Add the smallest safe command-adapter path that recognizes a user asking why Brevio remembered or used a saved preference and returns the existing visible explicit-preference explanation helper output, without live provider activation or exposing private raw values/cross-user data.
+- **Exact branch:** `memory-v1-visible-memory-forget-correct-command-adapter`
+- **Purpose:** Add the smallest safe dormant command-adapter path that recognizes a user asking Brevio to forget or correct a saved explicit preference and routes to the existing visible explicit-preference forget/correct helpers, without live provider activation or exposing private raw values/cross-user data.
 - **Memory V1 Visible Behavior exit condition advanced:**
-  3. explain why a memory was used;
+  4. forget or correct a memory;
   5. prove source/audit metadata;
   6. prevent cross-user leakage;
   7. expose at least one visible memory behavior to the user.
 - **Allowed files/areas:**
   - narrow dormant command/intent adapter in the existing memory-visible behavior area;
-  - tests proving “why did you remember/use that?”-style requests resolve to explicit-preference explanation output;
-  - tests proving unknown/non-memory text does not trigger memory explanation;
+  - tests proving “forget that preference” and “correct that preference”-style requests resolve to explicit-preference forget/correct helper output when an attribute/query is supplied;
+  - tests proving unknown/non-memory text does not trigger forget/correct behavior;
   - tests proving unsafe/inactive/cross-user memories remain excluded through the adapter;
   - narrow dormant helpers only when directly tied to this visible behavior.
 - **Forbidden files/areas:**
@@ -32,13 +32,19 @@ There must be exactly one item marked `NEXT`. No cycle may say “continue M1”
   - OAuth/security scope changes;
   - broad strategic phase fork.
 - **Expected changed files:** a small implementation/test slice in the existing memory-visible behavior area; no broad docs/harness changes.
-- **Tests required:** command-adapter tests pass; existing review/list tests still pass; deleted/tombstoned/retracted/stale/low-confidence memories are excluded; cross-user isolation proof; source/audit proof; private values and raw source refs do not leak; existing remember/recall/explain/forget/correct tests still pass; CI for exact PR commit.
+- **Tests required:** command-adapter tests pass; existing remember/recall/review/explain/forget/correct tests still pass; deleted/tombstoned/retracted/stale/low-confidence memories are excluded; cross-user isolation proof; source/audit proof; private values and raw source refs do not leak; CI for exact PR commit.
 - **Merge condition:** PR exists, CI green for exact PR commit, diff stays inside approved Memory V1 visible behavior scope, no forbidden surfaces touched.
-- **Exit condition:** PR merged and local `main` synced; the dormant visible-memory command adapter can safely answer explanation-style memory questions from explicit preferences without exposing private values.
+- **Exit condition:** PR merged and local `main` synced; the dormant visible-memory command adapter can safely forget/correct explicit preferences without exposing private values.
 - **Stop condition:** Stop and report owner/action if implementation requires migration/new table, production deploy, OAuth/security scope change, or activation of Calendar/Composio/Tool Gateway/browser/action tools.
 - **Founder approval needed?** No for narrow dormant helper/test-level command adapter; yes before production deploy, new external scopes, irreversible data changes, or broad runtime activation.
 
 ## Completed
+
+### PR-7: “Why did you remember/use that?” command adapter for explicit-preference explanation
+
+- **Purpose:** Add the smallest safe command-adapter path that recognizes a user asking why Brevio remembered or used a saved preference and returns the existing visible explicit-preference explanation helper output, without live provider activation or exposing private raw values/cross-user data.
+- **Status:** Completed in PR #101, canonical commit `22c2d167573fdbda51e14cc1fdffa882d40609c3`, merged as `69005f8b1fe2790f69ead38831460ce1209c7333`.
+- **Done condition met:** `answerVisibleMemoryExplanationCommand` and `isVisibleMemoryExplanationCommandText` exist in `apps/fomo/src/memory/typed-memory-visible-recall.ts`; targeted tests prove why-remembered/why-used requests route to explicit-preference explanation output; unknown and remember-this text do not trigger explanation; inactive, stale, retracted, tombstoned, low-confidence, and cross-user memories remain excluded; private values and raw source refs do not leak; CI passed; PR merged; local main synced.
 
 ### PR-6: “What do you remember?” command adapter for explicit-preference review
 
