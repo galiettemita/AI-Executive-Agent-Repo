@@ -8,11 +8,13 @@ import {
   type NewTypedMemoryRow
 } from './typed-memory.ts';
 import {
+  answerVisibleMemoryExplanationCommand,
   answerVisibleMemoryReviewCommand,
   correctVisibleExplicitPreference,
   explainVisibleExplicitPreferenceMemoryUse,
   explainVisibleExplicitPreferenceUse,
   forgetVisibleExplicitPreference,
+  isVisibleMemoryExplanationCommandText,
   isVisibleMemoryReviewCommandText,
   rememberVisibleExplicitPreference,
   recallVisibleExplicitPreference,
@@ -328,6 +330,118 @@ describe('Memory V1 visible explicit-preference recall', () => {
     assert.equal(json.includes('stale'), false);
     assert.equal(json.includes('retracted'), false);
     assert.equal(json.includes('tombstoned'), false);
+  });
+
+  it('answers why-remembered or why-used commands through the explicit-preference explanation helper', async () => {
+    const store = new InMemoryTypedMemoryStore();
+    await store.write(
+      preference({
+        user_id: 'u1',
+        value: 'alice@example.com evenings only',
+        source_ref: 'reply:private-explain-command-ref'
+      })
+    );
+    await store.write(
+      preference({
+        user_id: 'u2',
+        value: 'other-user private command value alice@example.com',
+        source_ref: 'reply:other-user-explain-command-secret',
+        updated_at: '2026-06-27T12:00:00.000Z'
+      })
+    );
+
+    const result = await answerVisibleMemoryExplanationCommand(
+      store,
+      'u1',
+      'Why did you remember that?',
+      { attribute: 'alert_timing' }
+    );
+    assert.ok(result);
+    const json = JSON.stringify(result);
+
+    assert.equal(result.action, 'explain_visible_explicit_preference_use');
+    assert.equal(result.user_id, 'u1');
+    assert.equal(result.answer, result.explanation.answer);
+    assert.deepEqual(result.audit_metadata, {
+      memory_kind: 'preference',
+      matched_intent: 'memory_explanation'
+    });
+    assert.match(result.explanation.answer, /matched the saved alert timing preference/);
+    assert.match(result.explanation.source, /prior user reply/);
+    assert.match(result.explanation.audit, /high-confidence preference metadata/);
+    assert.match(result.explanation.safety, /scoped to this user/);
+    assert.equal(Object.isFrozen(result), true);
+    assert.equal(Object.isFrozen(result.audit_metadata), true);
+    assert.equal(json.includes('alice@example.com'), false);
+    assert.equal(json.includes('private-explain-command-ref'), false);
+    assert.equal(json.includes('u2'), false);
+    assert.equal(json.includes('other-user private command value'), false);
+    assert.equal(json.includes('other-user-explain-command-secret'), false);
+  });
+
+  it('only routes explanation-style memory commands and leaves unknown or remember-this text alone', async () => {
+    const store = new InMemoryTypedMemoryStore();
+    await store.write(preference({ value: 'morning' }));
+
+    assert.equal(isVisibleMemoryExplanationCommandText('Why did you remember that?'), true);
+    assert.equal(isVisibleMemoryExplanationCommandText('Why did Brevio use my preference?'), true);
+    assert.equal(isVisibleMemoryExplanationCommandText('Explain why you used it'), true);
+    assert.equal(isVisibleMemoryExplanationCommandText('Remember this: I prefer mornings'), false);
+    assert.equal(isVisibleMemoryExplanationCommandText('please save that I prefer mornings'), false);
+    assert.equal(isVisibleMemoryExplanationCommandText('Can you help me with my inbox?'), false);
+
+    assert.equal(await answerVisibleMemoryExplanationCommand(store, 'u1', 'Can you help me with my inbox?'), null);
+    assert.equal(await answerVisibleMemoryExplanationCommand(store, 'u1', 'Remember this: I prefer mornings'), null);
+  });
+
+  it('keeps the explanation command adapter on the same inactive-memory and cross-user exclusion path', async () => {
+    const store = new InMemoryTypedMemoryStore();
+    await store.write(preference({ value: 'morning', updated_at: '2026-06-25T10:00:00.000Z' }));
+    await store.write(
+      preference({
+        user_id: 'u2',
+        value: 'other-user explanation command secret alice@example.com',
+        source_ref: 'reply:other-user-explain-command'
+      })
+    );
+    await store.write(preference({ scope_key: 'preference:low', attribute: 'low', confidence: 'low' }));
+    await store.write(
+      preference({
+        scope_key: 'preference:stale',
+        attribute: 'stale',
+        value: 'should not explain through command',
+        stale_marked_at: '2026-06-25T00:00:00.000Z'
+      })
+    );
+    await store.write(preference({ scope_key: 'preference:retracted', attribute: 'retracted', retracted: true }));
+    await store.write(preference({ scope_key: 'preference:tombstoned', attribute: 'tombstoned', superseded_by: 99 }));
+
+    const result = await answerVisibleMemoryExplanationCommand(
+      store,
+      'u1',
+      'Tell me why Brevio used my preference',
+      { attribute: 'alert_timing' }
+    );
+    assert.ok(result);
+    const json = JSON.stringify(result);
+
+    assert.match(result.explanation.answer, /matched the saved alert timing preference/);
+    assert.equal(json.includes('u2'), false);
+    assert.equal(json.includes('other-user explanation command secret'), false);
+    assert.equal(json.includes('alice@example.com'), false);
+    assert.equal(json.includes('other-user-explain-command'), false);
+    assert.equal(json.includes('should not explain through command'), false);
+    assert.equal(json.includes('stale'), false);
+    assert.equal(json.includes('retracted'), false);
+    assert.equal(json.includes('tombstoned'), false);
+    assert.equal(
+      await answerVisibleMemoryExplanationCommand(store, 'u1', 'Why did you use it?', { attribute: 'stale' }),
+      null
+    );
+    assert.equal(
+      await answerVisibleMemoryExplanationCommand(store, 'u1', 'Why did you use it?', { attribute: 'tombstoned' }),
+      null
+    );
   });
 
   it('remembers a user-stated explicit preference, then recalls, explains, corrects, and forgets it', async () => {
