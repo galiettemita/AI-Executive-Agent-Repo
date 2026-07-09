@@ -4,7 +4,49 @@ Harness anchor loaded: BREVIO-HARNESS-V1-NO-CIRCLING-FAST-SHIPPING
 
 There must be exactly one item marked `NEXT`. No cycle may say “continue M1” or “continue Memory V1” vaguely. Move the marker only after the current item is merged or explicitly blocked with owner/action.
 
-## NEXT — PR-13: Disabled visible memory command handler seam
+## NEXT — PR-14: Disabled visible memory command handler app-level adapter seam
+
+- **Exact branch:** `memory-v1-visible-memory-command-handler-app-adapter-disabled-seam`
+- **Purpose:** Add the smallest safe disabled-by-default app-level adapter seam around `handleVisibleMemoryCommandFromCaller` so a future runtime caller can pass explicit memory-command text and caller-supplied parsed remember/query/correction context through one stable request/response envelope, without activating any live provider path, parsing arbitrary private text into memory, or changing current user-facing behavior.
+- **Memory V1 Visible Behavior exit condition advanced:**
+  1. remember explicit user preferences;
+  2. retrieve relevant memories safely;
+  3. explain why a memory was used;
+  4. forget or correct a memory;
+  5. prove source/audit metadata;
+  6. prevent cross-user leakage;
+  7. expose at least one visible memory behavior to the user.
+- **Allowed files/areas:**
+  - narrow disabled-by-default adapter/type surface around `handleVisibleMemoryCommandFromCaller`;
+  - tests proving the adapter default is disabled and does not read/write/retract memory;
+  - tests proving enabled adapter calls the existing handler only with explicit caller-supplied parsed context;
+  - tests proving unknown/non-memory text and missing parsed context remain no-ops;
+  - tests proving adapter response/audit metadata exclude private raw values/source refs;
+  - tests proving user scoping and no cross-user leakage;
+  - narrow queue advancement after PR-13.
+- **Forbidden files/areas:**
+  - production/runtime activation beyond a disabled test-level seam;
+  - freeform LLM parsing of arbitrary user text into persisted memory;
+  - DB migrations;
+  - new tables/schema changes;
+  - production deploy;
+  - Calendar live activation;
+  - Composio runtime;
+  - Tool Gateway;
+  - browser automation/action tools;
+  - broad HMR rewrite;
+  - OAuth/security scope changes;
+  - broad strategic phase fork.
+- **Expected changed files:** a small implementation/test slice in the existing FOMO memory-visible behavior area; no broad docs/harness changes except queue advancement after PR-13.
+- **Tests required:** new disabled app-level adapter seam tests pass; existing visible memory remember/recall/review/explain/forget/correct/router/caller/unified caller/handler tests still pass; full lint/test/build and CI for exact PR commit.
+- **Merge condition:** PR exists, CI green for exact PR commit, diff stays inside approved Memory V1 visible behavior scope, no forbidden surfaces touched.
+- **Exit condition:** PR merged and local `main` synced; a future app/runtime caller can use one disabled-by-default adapter seam for remember/review/explain/forget/correct only when explicitly enabled and supplied caller context, without live activation or private/cross-user leakage.
+- **Stop condition:** Stop and report owner/action if implementation requires migration/new table, production deploy, OAuth/security scope change, freeform LLM memory parsing, or activation of Calendar/Composio/Tool Gateway/browser/action tools.
+- **Founder approval needed?** No for a narrow disabled-by-default adapter/test-level seam; yes before production deploy, new external scopes, irreversible data changes, freeform memory extraction/parsing, or broad runtime activation.
+
+## Completed
+
+### PR-13: Disabled visible memory command handler seam
 
 - **Exact branch:** `memory-v1-visible-memory-command-handler-disabled-seam`
 - **Purpose:** Add the smallest safe disabled-by-default command-handler seam that can call `routeUnifiedVisibleMemoryCommandFromCaller` when an explicit caller enables it and supplies parsed remember/query/correction context, returning a stable user-facing response envelope plus audit-safe metadata without activating any live provider path or parsing arbitrary private text into memory.
@@ -43,8 +85,8 @@ There must be exactly one item marked `NEXT`. No cycle may say “continue M1”
 - **Exit condition:** PR merged and local `main` synced; an external caller can use one disabled-by-default handler seam for remember/review/explain/forget/correct only when explicitly enabled and supplied caller context, without live activation or private/cross-user leakage.
 - **Stop condition:** Stop and report owner/action if implementation requires migration/new table, production deploy, OAuth/security scope change, freeform LLM memory parsing, or activation of Calendar/Composio/Tool Gateway/browser/action tools.
 - **Founder approval needed?** No for a narrow disabled-by-default helper/test-level handler seam; yes before production deploy, new external scopes, irreversible data changes, freeform memory extraction/parsing, or broad runtime activation.
-
-## Completed
+- **Status:** Completed in PR #109, branch `memory-v1-visible-memory-command-handler-disabled-seam`, canonical commit `e41f25f746524380512a192f6e853904d5da7c53`, merged as `3e70c9a18bc4b35aa584ab04a2db50b6bcf89446`.
+- **Done condition met:** `handleVisibleMemoryCommandFromCaller`, `VisibleMemoryCommandHandlerContext`, `VisibleMemoryCommandHandlerResult`, and `VisibleMemoryCommandHandlerStatus` exist in `apps/fomo/src/memory/typed-memory-visible-recall.ts`; targeted tests prove the handler is disabled by default without reads/writes/retractions; enabled handler routes remember/review/explain/forget/correct only with explicit caller-supplied parsed context; unknown/non-memory text and missing parsed context are no-ops; user scoping and no cross-user leakage are preserved; inactive, stale, retracted, tombstoned, low-confidence, and cross-user memories remain excluded; private values and raw source refs do not leak; targeted test command passed on merge commit `3e70c9a1`; PR merged; local main synced.
 
 ### PR-12: Unified visible memory command caller seam
 
