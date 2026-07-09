@@ -4,10 +4,10 @@ Harness anchor loaded: BREVIO-HARNESS-V1-NO-CIRCLING-FAST-SHIPPING
 
 There must be exactly one item marked `NEXT`. No cycle may say “continue M1” or “continue Memory V1” vaguely. Move the marker only after the current item is merged or explicitly blocked with owner/action.
 
-## NEXT — PR-9: Visible memory command router for explicit preferences
+## NEXT — PR-10: Visible memory command router integration seam
 
-- **Exact branch:** `memory-v1-visible-memory-command-router`
-- **Purpose:** Add the smallest safe dormant router that receives a user memory-command text plus explicit caller-supplied query/options and routes to the existing visible explicit-preference review, explanation, forget, and correct command adapters without live provider activation or exposing private raw values/cross-user data.
+- **Exact branch:** `memory-v1-visible-memory-router-integration-seam`
+- **Purpose:** Add the smallest safe dormant integration seam that lets a caller pass explicit user memory-command text plus caller-supplied query/correction context into the visible-memory command router from outside the memory module, without activating a live provider path or changing production behavior.
 - **Memory V1 Visible Behavior exit condition advanced:**
   2. retrieve relevant memories safely;
   3. explain why a memory was used;
@@ -16,14 +16,13 @@ There must be exactly one item marked `NEXT`. No cycle may say “continue M1”
   6. prevent cross-user leakage;
   7. expose at least one visible memory behavior to the user.
 - **Allowed files/areas:**
-  - narrow dormant router in the existing memory-visible behavior area;
-  - tests proving review/explain/forget/correct command texts route to the existing helper outputs when required query/options are supplied;
-  - tests proving unknown/non-memory text returns null and does not write/retract;
-  - tests proving missing correction options do not trigger correction;
-  - tests proving unsafe/inactive/cross-user memories remain excluded through the router;
-  - narrow types/helpers only when directly tied to this visible behavior.
+  - narrow dormant integration seam/type surface around the existing visible memory command router;
+  - tests proving the seam delegates review/explain/forget/correct commands to the router with explicit caller-supplied context;
+  - tests proving unknown/non-memory text is a no-op and destructive commands require explicit query/correction context;
+  - tests proving unsafe/inactive/cross-user memories and private raw values/source refs remain excluded;
+  - narrow docs/queue advancement after PR-9.
 - **Forbidden files/areas:**
-  - live provider or production runtime activation beyond the narrow dormant router;
+  - production/runtime activation beyond a dormant integration seam;
   - DB migrations;
   - new tables/schema changes;
   - production deploy;
@@ -34,14 +33,20 @@ There must be exactly one item marked `NEXT`. No cycle may say “continue M1”
   - broad HMR rewrite;
   - OAuth/security scope changes;
   - broad strategic phase fork.
-- **Expected changed files:** a small implementation/test slice in `apps/fomo/src/memory/typed-memory-visible-recall.ts` and `apps/fomo/src/memory/typed-memory-visible-recall.test.ts`; no broad docs/harness changes except queue advancement after PR-8.
-- **Tests required:** command-router tests pass; existing remember/recall/review/explain/forget/correct command-adapter tests still pass; deleted/tombstoned/retracted/stale/low-confidence memories are excluded; cross-user isolation proof; source/audit proof; private values and raw source refs do not leak; CI for exact PR commit.
+- **Expected changed files:** a small implementation/test slice in the existing FOMO memory-visible behavior area; no broad docs/harness changes except queue advancement after PR-9.
+- **Tests required:** new seam tests pass; existing visible memory router/remember/recall/review/explain/forget/correct tests still pass; full lint/test/build and CI for exact PR commit.
 - **Merge condition:** PR exists, CI green for exact PR commit, diff stays inside approved Memory V1 visible behavior scope, no forbidden surfaces touched.
-- **Exit condition:** PR merged and local `main` synced; the dormant visible-memory command router safely delegates explicit-preference review/explain/forget/correct commands without exposing private values.
+- **Exit condition:** PR merged and local `main` synced; an external caller can use the dormant router seam safely without live activation or private/cross-user leakage.
 - **Stop condition:** Stop and report owner/action if implementation requires migration/new table, production deploy, OAuth/security scope change, or activation of Calendar/Composio/Tool Gateway/browser/action tools.
-- **Founder approval needed?** No for narrow dormant helper/test-level command router; yes before production deploy, new external scopes, irreversible data changes, or broad runtime activation.
+- **Founder approval needed?** No for a narrow dormant helper/test-level integration seam; yes before production deploy, new external scopes, irreversible data changes, or broad runtime activation.
 
 ## Completed
+
+### PR-9: Visible memory command router for explicit preferences
+
+- **Purpose:** Add the smallest safe dormant router that receives a user memory-command text plus explicit caller-supplied query/options and routes to the existing visible explicit-preference review, explanation, forget, and correct command adapters without live provider activation or exposing private raw values/cross-user data.
+- **Status:** Completed in PR #104, branch `memory-v1-visible-memory-command-router`, canonical commit `5b64a4d03b9f31b3c080609eaa17174ef435025d`, merged as `504f4a9036bd78af063835a53470b11076d36cfd`.
+- **Done condition met:** `routeVisibleMemoryCommand` exists in `apps/fomo/src/memory/typed-memory-visible-recall.ts`; targeted tests prove review/explain/forget/correct command texts route to existing helper outputs when required query/options are supplied; unknown and remember-this text do not trigger writes/retractions; correction requires correction options; inactive, stale, retracted, tombstoned, low-confidence, and cross-user memories remain excluded; private values and raw source refs do not leak; CI passed for head commit `5b64a4d0`; PR merged; local main synced.
 
 ### PR-8: “Forget/correct that” command adapter for explicit preferences
 
