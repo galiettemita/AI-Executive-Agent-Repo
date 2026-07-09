@@ -4,7 +4,49 @@ Harness anchor loaded: BREVIO-HARNESS-V1-NO-CIRCLING-FAST-SHIPPING
 
 There must be exactly one item marked `NEXT`. No cycle may say “continue M1” or “continue Memory V1” vaguely. Move the marker only after the current item is merged or explicitly blocked with owner/action.
 
-## NEXT — PR-12: Unified visible memory command caller seam
+## NEXT — PR-13: Disabled visible memory command handler seam
+
+- **Exact branch:** `memory-v1-visible-memory-command-handler-disabled-seam`
+- **Purpose:** Add the smallest safe disabled-by-default command-handler seam that can call `routeUnifiedVisibleMemoryCommandFromCaller` when an explicit caller enables it and supplies parsed remember/query/correction context, returning a stable user-facing response envelope plus audit-safe metadata without activating any live provider path or parsing arbitrary private text into memory.
+- **Memory V1 Visible Behavior exit condition advanced:**
+  1. remember explicit user preferences;
+  2. retrieve relevant memories safely;
+  3. explain why a memory was used;
+  4. forget or correct a memory;
+  5. prove source/audit metadata;
+  6. prevent cross-user leakage;
+  7. expose at least one visible memory behavior to the user.
+- **Allowed files/areas:**
+  - narrow disabled-by-default handler/type surface around `routeUnifiedVisibleMemoryCommandFromCaller`;
+  - tests proving disabled/default handler is a no-op and does not write/retract/read live memory behavior unexpectedly;
+  - tests proving enabled handler routes remember/review/explain/forget/correct only with explicit caller-supplied parsed context;
+  - tests proving unknown/non-memory text and missing parsed context are no-ops;
+  - tests proving response and audit metadata exclude private raw values/source refs;
+  - tests proving user scoping and no cross-user leakage;
+  - narrow queue advancement after PR-12.
+- **Forbidden files/areas:**
+  - production/runtime activation beyond a disabled test-level seam;
+  - freeform LLM parsing of arbitrary user text into persisted memory;
+  - DB migrations;
+  - new tables/schema changes;
+  - production deploy;
+  - Calendar live activation;
+  - Composio runtime;
+  - Tool Gateway;
+  - browser automation/action tools;
+  - broad HMR rewrite;
+  - OAuth/security scope changes;
+  - broad strategic phase fork.
+- **Expected changed files:** a small implementation/test slice in the existing FOMO memory-visible behavior area; no broad docs/harness changes except queue advancement after PR-12.
+- **Tests required:** new disabled handler seam tests pass; existing visible memory remember/recall/review/explain/forget/correct/router/caller/unified caller tests still pass; full lint/test/build and CI for exact PR commit.
+- **Merge condition:** PR exists, CI green for exact PR commit, diff stays inside approved Memory V1 visible behavior scope, no forbidden surfaces touched.
+- **Exit condition:** PR merged and local `main` synced; an external caller can use one disabled-by-default handler seam for remember/review/explain/forget/correct only when explicitly enabled and supplied caller context, without live activation or private/cross-user leakage.
+- **Stop condition:** Stop and report owner/action if implementation requires migration/new table, production deploy, OAuth/security scope change, freeform LLM memory parsing, or activation of Calendar/Composio/Tool Gateway/browser/action tools.
+- **Founder approval needed?** No for a narrow disabled-by-default helper/test-level handler seam; yes before production deploy, new external scopes, irreversible data changes, freeform memory extraction/parsing, or broad runtime activation.
+
+## Completed
+
+### PR-12: Unified visible memory command caller seam
 
 - **Exact branch:** `memory-v1-visible-memory-unified-caller-seam`
 - **Purpose:** Add the smallest safe dormant caller seam that accepts explicit memory-command text plus caller-supplied parsed remember/query/correction context and routes remember/review/explain/forget/correct through the existing visible memory helpers, without activating a live provider path or parsing arbitrary private text into memory.
@@ -43,8 +85,8 @@ There must be exactly one item marked `NEXT`. No cycle may say “continue M1”
 - **Exit condition:** PR merged and local `main` synced; an external caller can use one dormant visible-memory command seam for remember/review/explain/forget/correct only with explicit caller-supplied context, without live activation or private/cross-user leakage.
 - **Stop condition:** Stop and report owner/action if implementation requires migration/new table, production deploy, OAuth/security scope change, freeform LLM memory parsing, or activation of Calendar/Composio/Tool Gateway/browser/action tools.
 - **Founder approval needed?** No for a narrow dormant helper/test-level integration seam; yes before production deploy, new external scopes, irreversible data changes, freeform memory extraction/parsing, or broad runtime activation.
-
-## Completed
+- **Status:** Completed in PR #108, branch `memory-v1-visible-memory-unified-caller-seam`, canonical commit `f165c0993fd2e69a654529c510d35e1bc8bd6d6e`, merged as `2368f382122c2a57a5f54797f37d5b1514d612fd`.
+- **Done condition met:** `routeUnifiedVisibleMemoryCommandFromCaller`, `UnifiedVisibleMemoryCommandCallerContext`, and `UnifiedVisibleMemoryCommandCallerResult` exist in `apps/fomo/src/memory/typed-memory-visible-recall.ts`; targeted tests prove remember/review/explain/forget/correct route through one dormant caller seam only with explicit caller-supplied parsed context; unknown/non-memory text and missing parsed context are no-ops; user scoping and no cross-user leakage are preserved; inactive, stale, retracted, tombstoned, low-confidence, and cross-user memories remain excluded; private values and raw source refs do not leak; CI passed for head commit `f165c099`; PR merged; local main synced.
 
 ### PR-11: Visible memory remember command caller seam
 

@@ -185,6 +185,37 @@ export type UnifiedVisibleMemoryCommandCallerResult =
   | VisibleMemoryRememberCommandResult
   | VisibleMemoryCommandRouterResult;
 
+export interface VisibleMemoryCommandHandlerContext extends UnifiedVisibleMemoryCommandCallerContext {
+  readonly enabled?: boolean;
+}
+
+export type VisibleMemoryCommandHandlerStatus = 'disabled' | 'no_memory_command' | 'handled';
+
+export interface VisibleMemoryCommandHandlerResult {
+  readonly handled: boolean;
+  readonly status: VisibleMemoryCommandHandlerStatus;
+  readonly user_id: string;
+  readonly response: {
+    readonly text: string | null;
+  };
+  readonly command_result: UnifiedVisibleMemoryCommandCallerResult | null;
+  readonly audit_metadata: {
+    readonly memory_kind: 'preference';
+    readonly handler: 'visible_memory_command_handler';
+    readonly enabled: boolean;
+    readonly matched_action?: UnifiedVisibleMemoryCommandCallerResult['action'];
+    readonly matched_intent?:
+      | 'memory_remember'
+      | 'memory_review'
+      | 'memory_explanation'
+      | 'memory_forget'
+      | 'memory_correct';
+    readonly returned_count?: number;
+    readonly row_ids?: readonly number[];
+    readonly scope_keys?: readonly string[];
+  };
+}
+
 export interface VisiblePreferenceForgetResult {
   readonly action: 'forgot';
   readonly user_id: string;
@@ -571,6 +602,80 @@ export async function routeUnifiedVisibleMemoryCommandFromCaller(
     text: context.text,
     query: context.query,
     correction: context.correction
+  });
+}
+
+function visibleMemoryCommandHandlerMatchedIntent(
+  result: UnifiedVisibleMemoryCommandCallerResult
+): NonNullable<VisibleMemoryCommandHandlerResult['audit_metadata']['matched_intent']> {
+  return result.audit_metadata.matched_intent;
+}
+
+function visibleMemoryCommandHandlerAuditMetadata(
+  context: VisibleMemoryCommandHandlerContext,
+  result: UnifiedVisibleMemoryCommandCallerResult | null
+): VisibleMemoryCommandHandlerResult['audit_metadata'] {
+  if (result === null) {
+    return Object.freeze({
+      memory_kind: 'preference' as const,
+      handler: 'visible_memory_command_handler' as const,
+      enabled: context.enabled === true
+    });
+  }
+
+  const audit = result.audit_metadata;
+  const metadata: VisibleMemoryCommandHandlerResult['audit_metadata'] = {
+    memory_kind: 'preference' as const,
+    handler: 'visible_memory_command_handler' as const,
+    enabled: true,
+    matched_action: result.action,
+    matched_intent: visibleMemoryCommandHandlerMatchedIntent(result)
+  };
+  if ('returned_count' in audit) {
+    return Object.freeze({
+      ...metadata,
+      returned_count: audit.returned_count,
+      row_ids: audit.row_ids,
+      scope_keys: audit.scope_keys
+    });
+  }
+  return Object.freeze(metadata);
+}
+
+export async function handleVisibleMemoryCommandFromCaller(
+  store: Pick<TypedMemoryStore, 'listActive' | 'retract' | 'write'>,
+  context: VisibleMemoryCommandHandlerContext
+): Promise<VisibleMemoryCommandHandlerResult> {
+  if (context.enabled !== true) {
+    return Object.freeze({
+      handled: false,
+      status: 'disabled' as const,
+      user_id: context.userId,
+      response: Object.freeze({ text: null }),
+      command_result: null,
+      audit_metadata: visibleMemoryCommandHandlerAuditMetadata(context, null)
+    });
+  }
+
+  const commandResult = await routeUnifiedVisibleMemoryCommandFromCaller(store, context);
+  if (commandResult === null) {
+    return Object.freeze({
+      handled: false,
+      status: 'no_memory_command' as const,
+      user_id: context.userId,
+      response: Object.freeze({ text: null }),
+      command_result: null,
+      audit_metadata: visibleMemoryCommandHandlerAuditMetadata(context, null)
+    });
+  }
+
+  return Object.freeze({
+    handled: true,
+    status: 'handled' as const,
+    user_id: context.userId,
+    response: Object.freeze({ text: commandResult.answer }),
+    command_result: commandResult,
+    audit_metadata: visibleMemoryCommandHandlerAuditMetadata(context, commandResult)
   });
 }
 
