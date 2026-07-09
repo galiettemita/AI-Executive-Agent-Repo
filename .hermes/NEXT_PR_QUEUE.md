@@ -4,7 +4,49 @@ Harness anchor loaded: BREVIO-HARNESS-V1-NO-CIRCLING-FAST-SHIPPING
 
 There must be exactly one item marked `NEXT`. No cycle may say “continue M1” or “continue Memory V1” vaguely. Move the marker only after the current item is merged or explicitly blocked with owner/action.
 
-## NEXT — PR-14: Disabled visible memory command handler app-level adapter seam
+## NEXT — PR-15: Disabled visible memory command app adapter audit-event seam
+
+- **Exact branch:** `memory-v1-visible-memory-command-app-adapter-audit-disabled-seam`
+- **Purpose:** Add the smallest safe disabled-by-default audit-event seam around `handleVisibleMemoryCommandAppAdapterRequest` so a future runtime caller can record sanitized visible-memory command outcomes through one stable audit envelope, without activating any live provider path, persisting raw private memory values/source refs, parsing arbitrary private text into memory, or changing current user-facing behavior.
+- **Memory V1 Visible Behavior exit condition advanced:**
+  1. remember explicit user preferences;
+  2. retrieve relevant memories safely;
+  3. explain why a memory was used;
+  4. forget or correct a memory;
+  5. prove source/audit metadata;
+  6. prevent cross-user leakage;
+  7. expose at least one visible memory behavior to the user.
+- **Allowed files/areas:**
+  - narrow disabled-by-default audit helper/type surface around `handleVisibleMemoryCommandAppAdapterRequest`;
+  - tests proving the audit seam default is disabled and does not read/write/retract memory or write audit events;
+  - tests proving enabled audit seam records only sanitized structural adapter outcome metadata;
+  - tests proving unknown/non-memory text and missing parsed context remain no-ops with safe audit status only;
+  - tests proving audit metadata excludes private raw values, source refs, arbitrary command text, and cross-user data;
+  - tests proving user scoping and no cross-user leakage;
+  - narrow queue advancement after PR-14.
+- **Forbidden files/areas:**
+  - production/runtime activation beyond a disabled test-level seam;
+  - freeform LLM parsing of arbitrary user text into persisted memory;
+  - DB migrations;
+  - new tables/schema changes;
+  - production deploy;
+  - Calendar live activation;
+  - Composio runtime;
+  - Tool Gateway;
+  - browser automation/action tools;
+  - broad HMR rewrite;
+  - OAuth/security scope changes;
+  - broad strategic phase fork.
+- **Expected changed files:** a small implementation/test slice in the existing FOMO memory-visible behavior area; no broad docs/harness changes except queue advancement after PR-14.
+- **Tests required:** new disabled audit-event seam tests pass; existing visible memory remember/recall/review/explain/forget/correct/router/caller/unified caller/handler/app-adapter tests still pass; full lint/test/build and CI for exact PR commit.
+- **Merge condition:** PR exists, CI green for exact PR commit, diff stays inside approved Memory V1 visible behavior scope, no forbidden surfaces touched.
+- **Exit condition:** PR merged and local `main` synced; a future app/runtime caller can opt into one disabled-by-default audit seam for visible-memory command outcomes, recording only sanitized structural metadata without live activation or private/cross-user leakage.
+- **Stop condition:** Stop and report owner/action if implementation requires migration/new table, production deploy, OAuth/security scope change, freeform LLM memory parsing, raw command text/private values in audit, or activation of Calendar/Composio/Tool Gateway/browser/action tools.
+- **Founder approval needed?** No for a narrow disabled-by-default audit helper/test-level seam; yes before production deploy, new external scopes, irreversible data changes, freeform memory extraction/parsing, raw private audit persistence, or broad runtime activation.
+
+## Completed
+
+### PR-14: Disabled visible memory command handler app-level adapter seam
 
 - **Exact branch:** `memory-v1-visible-memory-command-handler-app-adapter-disabled-seam`
 - **Purpose:** Add the smallest safe disabled-by-default app-level adapter seam around `handleVisibleMemoryCommandFromCaller` so a future runtime caller can pass explicit memory-command text and caller-supplied parsed remember/query/correction context through one stable request/response envelope, without activating any live provider path, parsing arbitrary private text into memory, or changing current user-facing behavior.
@@ -43,8 +85,8 @@ There must be exactly one item marked `NEXT`. No cycle may say “continue M1”
 - **Exit condition:** PR merged and local `main` synced; a future app/runtime caller can use one disabled-by-default adapter seam for remember/review/explain/forget/correct only when explicitly enabled and supplied caller context, without live activation or private/cross-user leakage.
 - **Stop condition:** Stop and report owner/action if implementation requires migration/new table, production deploy, OAuth/security scope change, freeform LLM memory parsing, or activation of Calendar/Composio/Tool Gateway/browser/action tools.
 - **Founder approval needed?** No for a narrow disabled-by-default adapter/test-level seam; yes before production deploy, new external scopes, irreversible data changes, freeform memory extraction/parsing, or broad runtime activation.
-
-## Completed
+- **Status:** Completed in PR #111, branch `memory-v1-visible-memory-command-handler-app-adapter-disabled-seam`, canonical commit `d5949ae072ffa162a513f3fa9c74d33cb4b2adc0`, merged as `70a009189564b84d26a94025bc7914b78387a571`.
+- **Done condition met:** `handleVisibleMemoryCommandAppAdapterRequest`, `VisibleMemoryCommandAppAdapterRequest`, `VisibleMemoryCommandAppAdapterResult`, and `VisibleMemoryCommandAppAdapterStatus` exist in `apps/fomo/src/memory/typed-memory-visible-recall.ts`; targeted tests prove the app adapter is disabled by default without reads/writes/retractions; enabled adapter routes remember/review/explain/forget/correct through the existing handler only with explicit caller-supplied parsed context; unknown/non-memory text and missing parsed context are no-ops; user scoping and no cross-user leakage are preserved; inactive, stale, retracted, tombstoned, low-confidence, and cross-user memories remain excluded; private values and raw source refs do not leak; CI passed for head commit `d5949ae`; PR merged as `70a00918`; local main synced.
 
 ### PR-13: Disabled visible memory command handler seam
 
