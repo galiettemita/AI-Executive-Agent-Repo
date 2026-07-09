@@ -120,6 +120,13 @@ export interface VisibleMemoryCommandRouterOptions {
   readonly correction?: VisiblePreferenceCorrectOptions;
 }
 
+export interface VisibleMemoryCommandCallerContext {
+  readonly userId: string;
+  readonly text: string;
+  readonly query?: VisibleExplicitPreferenceRecallQuery;
+  readonly correction?: VisiblePreferenceCorrectOptions;
+}
+
 export interface VisiblePreferenceRememberOptions {
   readonly attribute: string;
   readonly value: UserPreferenceMemory['value'];
@@ -465,6 +472,16 @@ export async function routeVisibleMemoryCommand(
   }
 
   return null;
+}
+
+export async function routeVisibleMemoryCommandFromCaller(
+  store: Pick<TypedMemoryStore, 'listActive' | 'retract' | 'write'>,
+  context: VisibleMemoryCommandCallerContext
+): Promise<VisibleMemoryCommandRouterResult | null> {
+  return routeVisibleMemoryCommand(store, context.userId, context.text, {
+    query: context.query,
+    correction: context.correction
+  });
 }
 
 export async function answerVisibleMemoryReviewCommand(
