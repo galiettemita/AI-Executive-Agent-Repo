@@ -19,8 +19,10 @@ import {
   isVisibleMemoryCorrectCommandText,
   isVisibleMemoryExplanationCommandText,
   isVisibleMemoryForgetCommandText,
+  isVisibleMemoryRememberCommandText,
   isVisibleMemoryReviewCommandText,
   rememberVisibleExplicitPreference,
+  rememberVisibleExplicitPreferenceFromCaller,
   recallVisibleExplicitPreference,
   reviewVisibleExplicitPreferences,
   routeVisibleMemoryCommand,
@@ -1011,6 +1013,149 @@ describe('Memory V1 visible explicit-preference recall', () => {
       }),
       null
     );
+  });
+
+  it('routes caller-supplied remember-this context through the dormant explicit-preference seam', async () => {
+    const store = new InMemoryTypedMemoryStore();
+
+    assert.equal(isVisibleMemoryRememberCommandText('Remember this: I prefer mornings'), true);
+    assert.equal(isVisibleMemoryRememberCommandText('Please save that I prefer mornings'), true);
+    assert.equal(isVisibleMemoryRememberCommandText('Can you remember my alert timing?'), true);
+    assert.equal(isVisibleMemoryRememberCommandText('What do you remember about me?'), false);
+    assert.equal(isVisibleMemoryRememberCommandText('Forget that preference'), false);
+
+    const remembered = await rememberVisibleExplicitPreferenceFromCaller(store, {
+      userId: 'u1',
+      text: 'Remember this: I prefer mornings',
+      parsedPreference: {
+        attribute: 'alert_timing',
+        value: 'alice@example.com mornings only',
+        updatedAt: '2026-06-30T09:00:00.000Z',
+        sourceRef: 'reply:private-remember-caller-ref'
+      }
+    });
+    assert.ok(remembered);
+    const json = JSON.stringify(remembered);
+
+    assert.equal(remembered.action, 'remember_visible_explicit_preference');
+    assert.equal(remembered.user_id, 'u1');
+    assert.equal(remembered.answer, remembered.remember.message);
+    assert.deepEqual(remembered.audit_metadata, {
+      memory_kind: 'preference',
+      matched_intent: 'memory_remember',
+      scope_key: 'preference:alert_timing',
+      remembered_row_id: 1,
+      source: 'user_stated',
+      confidence: 'high',
+      updated_at: '2026-06-30T09:00:00.000Z'
+    });
+    assert.equal(Object.isFrozen(remembered), true);
+    assert.equal(Object.isFrozen(remembered.audit_metadata), true);
+    assert.equal(json.includes('alice@example.com'), false);
+    assert.equal(json.includes('mornings only'), false);
+    assert.equal(json.includes('private-remember-caller-ref'), false);
+
+    const recalled = await recallVisibleExplicitPreference(store, 'u1', { attribute: 'alert_timing' });
+    assert.equal(recalled?.preference_summary, 'alert timing: [redacted]');
+    assert.equal(recalled?.source_metadata.source_ref_type, 'reply');
+  });
+
+  it('keeps remember caller seam inert without caller-supplied parsed preference context', async () => {
+    class CountingStore extends InMemoryTypedMemoryStore {
+      writeCount = 0;
+
+      override async write(input: NewTypedMemoryRow) {
+        this.writeCount += 1;
+        return super.write(input);
+      }
+    }
+
+    const store = new CountingStore();
+
+    assert.equal(
+      await rememberVisibleExplicitPreferenceFromCaller(store, {
+        userId: 'u1',
+        text: 'Can you help me with my inbox?',
+        parsedPreference: { attribute: 'alert_timing', value: 'morning' }
+      }),
+      null
+    );
+    assert.equal(
+      await rememberVisibleExplicitPreferenceFromCaller(store, {
+        userId: 'u1',
+        text: 'What do you remember about me?',
+        parsedPreference: { attribute: 'alert_timing', value: 'morning' }
+      }),
+      null
+    );
+    assert.equal(
+      await rememberVisibleExplicitPreferenceFromCaller(store, {
+        userId: 'u1',
+        text: 'Why did you use that?',
+        parsedPreference: { attribute: 'alert_timing', value: 'morning' }
+      }),
+      null
+    );
+    assert.equal(
+      await rememberVisibleExplicitPreferenceFromCaller(store, {
+        userId: 'u1',
+        text: 'Forget that preference',
+        parsedPreference: { attribute: 'alert_timing', value: 'morning' }
+      }),
+      null
+    );
+    assert.equal(
+      await rememberVisibleExplicitPreferenceFromCaller(store, {
+        userId: 'u1',
+        text: 'Correct that preference',
+        parsedPreference: { attribute: 'alert_timing', value: 'morning' }
+      }),
+      null
+    );
+    assert.equal(
+      await rememberVisibleExplicitPreferenceFromCaller(store, {
+        userId: 'u1',
+        text: 'Remember this: I prefer mornings'
+      }),
+      null
+    );
+
+    assert.equal(store.writeCount, 0);
+    assert.equal(await recallVisibleExplicitPreference(store, 'u1', { attribute: 'alert_timing' }), null);
+  });
+
+  it('keeps remember caller seam scoped to one user without leaking other-user/private material', async () => {
+    const store = new InMemoryTypedMemoryStore();
+
+    await rememberVisibleExplicitPreferenceFromCaller(store, {
+      userId: 'u1',
+      text: 'Remember this: I prefer mornings',
+      parsedPreference: {
+        attribute: 'alert_timing',
+        value: 'morning',
+        updatedAt: '2026-06-30T09:00:00.000Z'
+      }
+    });
+    await rememberVisibleExplicitPreferenceFromCaller(store, {
+      userId: 'u2',
+      text: 'Remember this: I prefer midnight',
+      parsedPreference: {
+        attribute: 'alert_timing',
+        value: 'other user secret alice@example.com',
+        updatedAt: '2026-06-30T10:00:00.000Z',
+        sourceRef: 'reply:other-user-remember-caller-ref'
+      }
+    });
+
+    const recall = await recallVisibleExplicitPreference(store, 'u1', { attribute: 'alert_timing' });
+    const json = JSON.stringify(recall);
+
+    assert.equal(recall?.user_id, 'u1');
+    assert.equal(recall?.preference_summary, 'alert timing: morning');
+    assert.equal(json.includes('u2'), false);
+    assert.equal(json.includes('other user secret'), false);
+    assert.equal(json.includes('alice@example.com'), false);
+    assert.equal(json.includes('other-user-remember-caller-ref'), false);
   });
 
   it('remembers a user-stated explicit preference, then recalls, explains, corrects, and forgets it', async () => {
