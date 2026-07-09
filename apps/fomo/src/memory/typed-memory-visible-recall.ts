@@ -133,6 +133,14 @@ export interface VisibleMemoryRememberCallerContext {
   readonly parsedPreference?: VisiblePreferenceRememberOptions;
 }
 
+export interface UnifiedVisibleMemoryCommandCallerContext {
+  readonly userId: string;
+  readonly text: string;
+  readonly parsedPreference?: VisiblePreferenceRememberOptions;
+  readonly query?: VisibleExplicitPreferenceRecallQuery;
+  readonly correction?: VisiblePreferenceCorrectOptions;
+}
+
 export interface VisiblePreferenceRememberOptions {
   readonly attribute: string;
   readonly value: UserPreferenceMemory['value'];
@@ -172,6 +180,10 @@ export interface VisibleMemoryRememberCommandResult {
     readonly updated_at: string;
   };
 }
+
+export type UnifiedVisibleMemoryCommandCallerResult =
+  | VisibleMemoryRememberCommandResult
+  | VisibleMemoryCommandRouterResult;
 
 export interface VisiblePreferenceForgetResult {
   readonly action: 'forgot';
@@ -540,6 +552,25 @@ export async function rememberVisibleExplicitPreferenceFromCaller(
       confidence: remember.audit_metadata.confidence,
       updated_at: remember.audit_metadata.updated_at
     })
+  });
+}
+
+export async function routeUnifiedVisibleMemoryCommandFromCaller(
+  store: Pick<TypedMemoryStore, 'listActive' | 'retract' | 'write'>,
+  context: UnifiedVisibleMemoryCommandCallerContext
+): Promise<UnifiedVisibleMemoryCommandCallerResult | null> {
+  const remember = await rememberVisibleExplicitPreferenceFromCaller(store, {
+    userId: context.userId,
+    text: context.text,
+    parsedPreference: context.parsedPreference
+  });
+  if (remember !== null) return remember;
+
+  return routeVisibleMemoryCommandFromCaller(store, {
+    userId: context.userId,
+    text: context.text,
+    query: context.query,
+    correction: context.correction
   });
 }
 
