@@ -127,6 +127,12 @@ export interface VisibleMemoryCommandCallerContext {
   readonly correction?: VisiblePreferenceCorrectOptions;
 }
 
+export interface VisibleMemoryRememberCallerContext {
+  readonly userId: string;
+  readonly text: string;
+  readonly parsedPreference?: VisiblePreferenceRememberOptions;
+}
+
 export interface VisiblePreferenceRememberOptions {
   readonly attribute: string;
   readonly value: UserPreferenceMemory['value'];
@@ -143,6 +149,22 @@ export interface VisiblePreferenceRememberResult {
   readonly message: string;
   readonly audit_metadata: {
     readonly memory_kind: 'preference';
+    readonly scope_key: string;
+    readonly remembered_row_id?: number;
+    readonly source: Extract<TypedMemorySource, 'user_provided' | 'user_stated'>;
+    readonly confidence: Extract<TypedMemoryConfidence, 'medium' | 'high'>;
+    readonly updated_at: string;
+  };
+}
+
+export interface VisibleMemoryRememberCommandResult {
+  readonly action: 'remember_visible_explicit_preference';
+  readonly user_id: string;
+  readonly answer: string;
+  readonly remember: VisiblePreferenceRememberResult;
+  readonly audit_metadata: {
+    readonly memory_kind: 'preference';
+    readonly matched_intent: 'memory_remember';
     readonly scope_key: string;
     readonly remembered_row_id?: number;
     readonly source: Extract<TypedMemorySource, 'user_provided' | 'user_stated'>;
@@ -431,6 +453,18 @@ export function isVisibleMemoryCorrectCommandText(text: string): boolean {
   ].some((pattern) => pattern.test(normalized));
 }
 
+export function isVisibleMemoryRememberCommandText(text: string): boolean {
+  const normalized = normalizedVisibleMemoryCommandText(text);
+  if (normalized.length === 0) return false;
+
+  return [
+    /^(please )?(remember|save) (this|that|it)\b/,
+    /^(can you|could you|please) (remember|save)\b/,
+    /^(please )?(remember|save) that i\b/,
+    /^(please )?(remember|save) my\b/
+  ].some((pattern) => pattern.test(normalized));
+}
+
 function hasExplicitVisibleMemoryCommandQuery(
   query: VisibleExplicitPreferenceRecallQuery | undefined
 ): query is VisibleExplicitPreferenceRecallQuery {
@@ -481,6 +515,31 @@ export async function routeVisibleMemoryCommandFromCaller(
   return routeVisibleMemoryCommand(store, context.userId, context.text, {
     query: context.query,
     correction: context.correction
+  });
+}
+
+export async function rememberVisibleExplicitPreferenceFromCaller(
+  store: Pick<TypedMemoryStore, 'write'>,
+  context: VisibleMemoryRememberCallerContext
+): Promise<VisibleMemoryRememberCommandResult | null> {
+  if (!isVisibleMemoryRememberCommandText(context.text)) return null;
+  if (context.parsedPreference === undefined) return null;
+
+  const remember = await rememberVisibleExplicitPreference(store, context.userId, context.parsedPreference);
+  return Object.freeze({
+    action: 'remember_visible_explicit_preference' as const,
+    user_id: context.userId,
+    answer: remember.message,
+    remember,
+    audit_metadata: Object.freeze({
+      memory_kind: 'preference' as const,
+      matched_intent: 'memory_remember' as const,
+      scope_key: remember.audit_metadata.scope_key,
+      remembered_row_id: remember.audit_metadata.remembered_row_id,
+      source: remember.audit_metadata.source,
+      confidence: remember.audit_metadata.confidence,
+      updated_at: remember.audit_metadata.updated_at
+    })
   });
 }
 
