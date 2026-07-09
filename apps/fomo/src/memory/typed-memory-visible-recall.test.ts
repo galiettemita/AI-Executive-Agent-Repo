@@ -16,6 +16,7 @@ import {
   explainVisibleExplicitPreferenceMemoryUse,
   explainVisibleExplicitPreferenceUse,
   forgetVisibleExplicitPreference,
+  handleVisibleMemoryCommandAppAdapterRequest,
   handleVisibleMemoryCommandFromCaller,
   isVisibleMemoryCorrectCommandText,
   isVisibleMemoryExplanationCommandText,
@@ -1657,6 +1658,309 @@ describe('Memory V1 visible explicit-preference recall', () => {
         query: { attribute: 'tombstoned' },
         correction: { correctedValue: 'evening', updatedAt: '2026-07-02T10:00:00.000Z' }
       }).then((handlerResult) => handlerResult.command_result),
+      null
+    );
+  });
+
+  it('keeps the app-level visible memory command adapter disabled by default without reading, writing, or retracting', async () => {
+    class CountingStore extends InMemoryTypedMemoryStore {
+      listCount = 0;
+      writeCount = 0;
+      retractCount = 0;
+
+      override async listActive(...args: Parameters<InMemoryTypedMemoryStore['listActive']>) {
+        this.listCount += 1;
+        return super.listActive(...args);
+      }
+
+      override async write(input: NewTypedMemoryRow) {
+        this.writeCount += 1;
+        return super.write(input);
+      }
+
+      override async retract(
+        userId: string,
+        kind: Parameters<InMemoryTypedMemoryStore['retract']>[1],
+        scopeKey: string,
+        supersededBy: number | null = null
+      ) {
+        this.retractCount += 1;
+        return super.retract(userId, kind, scopeKey, supersededBy);
+      }
+    }
+
+    const store = new CountingStore();
+    await store.write(preference({ value: 'morning' }));
+    store.listCount = 0;
+    store.writeCount = 0;
+
+    const result = await handleVisibleMemoryCommandAppAdapterRequest(store, {
+      userId: 'u1',
+      text: 'Remember this: I prefer afternoons',
+      parsedPreference: {
+        attribute: 'alert_timing',
+        value: 'alice@example.com afternoons only',
+        sourceRef: 'reply:private-disabled-app-adapter-ref'
+      }
+    });
+
+    assert.deepEqual(result, {
+      handled: false,
+      status: 'disabled',
+      user_id: 'u1',
+      response: { text: null },
+      command_result: null,
+      audit_metadata: {
+        memory_kind: 'preference',
+        adapter: 'visible_memory_command_app_adapter',
+        enabled: false,
+        handler_status: 'disabled'
+      }
+    });
+    assert.equal(Object.isFrozen(result), true);
+    assert.equal(Object.isFrozen(result.response), true);
+    assert.equal(Object.isFrozen(result.audit_metadata), true);
+    assert.equal(store.listCount, 0);
+    assert.equal(store.writeCount, 0);
+    assert.equal(store.retractCount, 0);
+    assert.equal(
+      (await recallVisibleExplicitPreference(store, 'u1', { attribute: 'alert_timing' }))?.preference_summary,
+      'alert timing: morning'
+    );
+    const json = JSON.stringify(result);
+    assert.equal(json.includes('alice@example.com'), false);
+    assert.equal(json.includes('afternoons only'), false);
+    assert.equal(json.includes('private-disabled-app-adapter-ref'), false);
+  });
+
+  it('routes enabled app-level adapter requests through the disabled handler seam with explicit caller context only', async () => {
+    const store = new InMemoryTypedMemoryStore();
+
+    const remembered = await handleVisibleMemoryCommandAppAdapterRequest(store, {
+      enabled: true,
+      userId: 'u1',
+      text: 'Remember this: I prefer mornings',
+      parsedPreference: {
+        attribute: 'alert_timing',
+        value: 'alice@example.com mornings only',
+        updatedAt: '2026-07-03T09:00:00.000Z',
+        sourceRef: 'reply:private-app-adapter-remember-ref'
+      }
+    });
+    assert.equal(remembered.handled, true);
+    assert.equal(remembered.status, 'handled');
+    assert.equal(remembered.command_result?.action, 'remember_visible_explicit_preference');
+    assert.equal(remembered.response.text, remembered.command_result?.answer);
+    assert.deepEqual(remembered.audit_metadata, {
+      memory_kind: 'preference',
+      adapter: 'visible_memory_command_app_adapter',
+      enabled: true,
+      handler_status: 'handled',
+      matched_action: 'remember_visible_explicit_preference',
+      matched_intent: 'memory_remember'
+    });
+    assert.equal(JSON.stringify(remembered).includes('alice@example.com'), false);
+    assert.equal(JSON.stringify(remembered).includes('mornings only'), false);
+    assert.equal(JSON.stringify(remembered).includes('private-app-adapter-remember-ref'), false);
+
+    const review = await handleVisibleMemoryCommandAppAdapterRequest(store, {
+      enabled: true,
+      userId: 'u1',
+      text: 'What do you remember about me?',
+      query: { attribute: 'alert_timing' }
+    });
+    assert.equal(review.handled, true);
+    assert.equal(review.command_result?.action, 'review_visible_explicit_preferences');
+    assert.equal(review.response.text?.includes('[redacted]'), true);
+    assert.deepEqual(review.audit_metadata, {
+      memory_kind: 'preference',
+      adapter: 'visible_memory_command_app_adapter',
+      enabled: true,
+      handler_status: 'handled',
+      matched_action: 'review_visible_explicit_preferences',
+      matched_intent: 'memory_review',
+      returned_count: 1,
+      row_ids: [1],
+      scope_keys: ['preference:alert_timing']
+    });
+
+    const explanation = await handleVisibleMemoryCommandAppAdapterRequest(store, {
+      enabled: true,
+      userId: 'u1',
+      text: 'Why did you use that?',
+      query: { attribute: 'alert_timing' }
+    });
+    assert.equal(explanation.handled, true);
+    assert.equal(explanation.command_result?.action, 'explain_visible_explicit_preference_use');
+
+    const correction = await handleVisibleMemoryCommandAppAdapterRequest(store, {
+      enabled: true,
+      userId: 'u1',
+      text: 'Correct that preference',
+      query: { attribute: 'alert_timing' },
+      correction: {
+        correctedValue: 'evening',
+        updatedAt: '2026-07-03T10:00:00.000Z',
+        sourceRef: 'reply:private-app-adapter-correction-ref'
+      }
+    });
+    assert.equal(correction.handled, true);
+    assert.equal(correction.command_result?.action, 'correct_visible_explicit_preference');
+    assert.equal(JSON.stringify(correction).includes('private-app-adapter-correction-ref'), false);
+    assert.equal(JSON.stringify(correction).includes('evening'), false);
+
+    const forget = await handleVisibleMemoryCommandAppAdapterRequest(store, {
+      enabled: true,
+      userId: 'u1',
+      text: 'Forget that preference',
+      query: { attribute: 'alert_timing' }
+    });
+    assert.equal(forget.handled, true);
+    assert.equal(forget.command_result?.action, 'forget_visible_explicit_preference');
+    assert.equal(await recallVisibleExplicitPreference(store, 'u1', { attribute: 'alert_timing' }), null);
+  });
+
+  it('keeps enabled app-level adapter unknown text and missing parsed context as no-ops', async () => {
+    class CountingStore extends InMemoryTypedMemoryStore {
+      writeCount = 0;
+      retractCount = 0;
+
+      override async write(input: NewTypedMemoryRow) {
+        this.writeCount += 1;
+        return super.write(input);
+      }
+
+      override async retract(
+        userId: string,
+        kind: Parameters<InMemoryTypedMemoryStore['retract']>[1],
+        scopeKey: string,
+        supersededBy: number | null = null
+      ) {
+        this.retractCount += 1;
+        return super.retract(userId, kind, scopeKey, supersededBy);
+      }
+    }
+
+    const store = new CountingStore();
+    await store.write(preference({ value: 'morning' }));
+    store.writeCount = 0;
+
+    const unknown = await handleVisibleMemoryCommandAppAdapterRequest(store, {
+      enabled: true,
+      userId: 'u1',
+      text: 'Can you help me with my inbox?',
+      parsedPreference: { attribute: 'alert_timing', value: 'should not write' },
+      query: { attribute: 'alert_timing' },
+      correction: { correctedValue: 'should not correct' }
+    });
+    assert.equal(unknown.handled, false);
+    assert.equal(unknown.status, 'no_memory_command');
+    assert.deepEqual(unknown.audit_metadata, {
+      memory_kind: 'preference',
+      adapter: 'visible_memory_command_app_adapter',
+      enabled: true,
+      handler_status: 'no_memory_command'
+    });
+
+    assert.equal(
+      await handleVisibleMemoryCommandAppAdapterRequest(store, {
+        enabled: true,
+        userId: 'u1',
+        text: 'Remember this: I prefer afternoons'
+      }).then((adapterResult) => adapterResult.command_result),
+      null
+    );
+    assert.equal(
+      await handleVisibleMemoryCommandAppAdapterRequest(store, {
+        enabled: true,
+        userId: 'u1',
+        text: 'Forget that preference'
+      }).then((adapterResult) => adapterResult.command_result),
+      null
+    );
+    assert.equal(
+      await handleVisibleMemoryCommandAppAdapterRequest(store, {
+        enabled: true,
+        userId: 'u1',
+        text: 'Correct that preference',
+        query: { attribute: 'alert_timing' }
+      }).then((adapterResult) => adapterResult.command_result),
+      null
+    );
+
+    assert.equal(store.writeCount, 0);
+    assert.equal(store.retractCount, 0);
+    assert.equal(
+      (await recallVisibleExplicitPreference(store, 'u1', { attribute: 'alert_timing' }))?.preference_summary,
+      'alert timing: morning'
+    );
+  });
+
+  it('keeps enabled app-level adapter user-scoped and excludes unsafe or cross-user memory results', async () => {
+    const store = new InMemoryTypedMemoryStore();
+    await store.write(preference({ value: 'morning', updated_at: '2026-06-25T10:00:00.000Z' }));
+    await store.write(
+      preference({
+        user_id: 'u2',
+        value: 'other-user app adapter secret alice@example.com',
+        source_ref: 'reply:other-user-app-adapter-secret'
+      })
+    );
+    await store.write(preference({ scope_key: 'preference:low', attribute: 'low', confidence: 'low' }));
+    await store.write(
+      preference({
+        scope_key: 'preference:stale',
+        attribute: 'stale',
+        value: 'should not route through app adapter',
+        stale_marked_at: '2026-06-25T00:00:00.000Z'
+      })
+    );
+    await store.write(preference({ scope_key: 'preference:retracted', attribute: 'retracted', retracted: true }));
+    await store.write(preference({ scope_key: 'preference:tombstoned', attribute: 'tombstoned', superseded_by: 99 }));
+
+    const review = await handleVisibleMemoryCommandAppAdapterRequest(store, {
+      enabled: true,
+      userId: 'u1',
+      text: 'List my saved preferences'
+    });
+    assert.equal(review.handled, true);
+    assert.equal(review.command_result?.action, 'review_visible_explicit_preferences');
+    const reviewJson = JSON.stringify(review);
+    assert.equal(reviewJson.includes('u2'), false);
+    assert.equal(reviewJson.includes('other-user app adapter secret'), false);
+    assert.equal(reviewJson.includes('alice@example.com'), false);
+    assert.equal(reviewJson.includes('other-user-app-adapter-secret'), false);
+    assert.equal(reviewJson.includes('should not route through app adapter'), false);
+    assert.equal(reviewJson.includes('stale'), false);
+    assert.equal(reviewJson.includes('retracted'), false);
+    assert.equal(reviewJson.includes('tombstoned'), false);
+
+    assert.equal(
+      await handleVisibleMemoryCommandAppAdapterRequest(store, {
+        enabled: true,
+        userId: 'u1',
+        text: 'Why did you use it?',
+        query: { attribute: 'stale' }
+      }).then((adapterResult) => adapterResult.command_result),
+      null
+    );
+    assert.equal(
+      await handleVisibleMemoryCommandAppAdapterRequest(store, {
+        enabled: true,
+        userId: 'u1',
+        text: 'Forget that preference',
+        query: { attribute: 'retracted' }
+      }).then((adapterResult) => adapterResult.command_result),
+      null
+    );
+    assert.equal(
+      await handleVisibleMemoryCommandAppAdapterRequest(store, {
+        enabled: true,
+        userId: 'u1',
+        text: 'Correct that preference',
+        query: { attribute: 'tombstoned' },
+        correction: { correctedValue: 'evening', updatedAt: '2026-07-03T10:00:00.000Z' }
+      }).then((adapterResult) => adapterResult.command_result),
       null
     );
   });
