@@ -4,23 +4,26 @@ Harness anchor loaded: BREVIO-HARNESS-V1-NO-CIRCLING-FAST-SHIPPING
 
 There must be exactly one item marked `NEXT`. No cycle may say “continue M1” or “continue Memory V1” vaguely. Move the marker only after the current item is merged or explicitly blocked with owner/action.
 
-## NEXT — PR-8: “Forget/correct that” command adapter for explicit preferences
+## NEXT — PR-9: Visible memory command router for explicit preferences
 
-- **Exact branch:** `memory-v1-visible-memory-forget-correct-command-adapter`
-- **Purpose:** Add the smallest safe dormant command-adapter path that recognizes a user asking Brevio to forget or correct a saved explicit preference and routes to the existing visible explicit-preference forget/correct helpers, without live provider activation or exposing private raw values/cross-user data.
+- **Exact branch:** `memory-v1-visible-memory-command-router`
+- **Purpose:** Add the smallest safe dormant router that receives a user memory-command text plus explicit caller-supplied query/options and routes to the existing visible explicit-preference review, explanation, forget, and correct command adapters without live provider activation or exposing private raw values/cross-user data.
 - **Memory V1 Visible Behavior exit condition advanced:**
+  2. retrieve relevant memories safely;
+  3. explain why a memory was used;
   4. forget or correct a memory;
   5. prove source/audit metadata;
   6. prevent cross-user leakage;
   7. expose at least one visible memory behavior to the user.
 - **Allowed files/areas:**
-  - narrow dormant command/intent adapter in the existing memory-visible behavior area;
-  - tests proving “forget that preference” and “correct that preference”-style requests resolve to explicit-preference forget/correct helper output when an attribute/query is supplied;
-  - tests proving unknown/non-memory text does not trigger forget/correct behavior;
-  - tests proving unsafe/inactive/cross-user memories remain excluded through the adapter;
-  - narrow dormant helpers only when directly tied to this visible behavior.
+  - narrow dormant router in the existing memory-visible behavior area;
+  - tests proving review/explain/forget/correct command texts route to the existing helper outputs when required query/options are supplied;
+  - tests proving unknown/non-memory text returns null and does not write/retract;
+  - tests proving missing correction options do not trigger correction;
+  - tests proving unsafe/inactive/cross-user memories remain excluded through the router;
+  - narrow types/helpers only when directly tied to this visible behavior.
 - **Forbidden files/areas:**
-  - live provider or production runtime activation beyond the narrow dormant command adapter;
+  - live provider or production runtime activation beyond the narrow dormant router;
   - DB migrations;
   - new tables/schema changes;
   - production deploy;
@@ -31,14 +34,20 @@ There must be exactly one item marked `NEXT`. No cycle may say “continue M1”
   - broad HMR rewrite;
   - OAuth/security scope changes;
   - broad strategic phase fork.
-- **Expected changed files:** a small implementation/test slice in the existing memory-visible behavior area; no broad docs/harness changes.
-- **Tests required:** command-adapter tests pass; existing remember/recall/review/explain/forget/correct tests still pass; deleted/tombstoned/retracted/stale/low-confidence memories are excluded; cross-user isolation proof; source/audit proof; private values and raw source refs do not leak; CI for exact PR commit.
+- **Expected changed files:** a small implementation/test slice in `apps/fomo/src/memory/typed-memory-visible-recall.ts` and `apps/fomo/src/memory/typed-memory-visible-recall.test.ts`; no broad docs/harness changes except queue advancement after PR-8.
+- **Tests required:** command-router tests pass; existing remember/recall/review/explain/forget/correct command-adapter tests still pass; deleted/tombstoned/retracted/stale/low-confidence memories are excluded; cross-user isolation proof; source/audit proof; private values and raw source refs do not leak; CI for exact PR commit.
 - **Merge condition:** PR exists, CI green for exact PR commit, diff stays inside approved Memory V1 visible behavior scope, no forbidden surfaces touched.
-- **Exit condition:** PR merged and local `main` synced; the dormant visible-memory command adapter can safely forget/correct explicit preferences without exposing private values.
+- **Exit condition:** PR merged and local `main` synced; the dormant visible-memory command router safely delegates explicit-preference review/explain/forget/correct commands without exposing private values.
 - **Stop condition:** Stop and report owner/action if implementation requires migration/new table, production deploy, OAuth/security scope change, or activation of Calendar/Composio/Tool Gateway/browser/action tools.
-- **Founder approval needed?** No for narrow dormant helper/test-level command adapter; yes before production deploy, new external scopes, irreversible data changes, or broad runtime activation.
+- **Founder approval needed?** No for narrow dormant helper/test-level command router; yes before production deploy, new external scopes, irreversible data changes, or broad runtime activation.
 
 ## Completed
+
+### PR-8: “Forget/correct that” command adapter for explicit preferences
+
+- **Purpose:** Add the smallest safe dormant command-adapter path that recognizes a user asking Brevio to forget or correct a saved explicit preference and routes to the existing visible explicit-preference forget/correct helpers, without live provider activation or exposing private raw values/cross-user data.
+- **Status:** Completed in PR #103, branch `memory-v1-visible-memory-forget-correct-command-adapter`, canonical commit `5076f3d2e07eaeb269c805b31d938ce97dd41fa4`, merged as `2e674bc0b439695fc9f033334d0a588ac8ac813d`.
+- **Done condition met:** `answerVisibleMemoryForgetCommand`, `answerVisibleMemoryCorrectCommand`, `isVisibleMemoryForgetCommandText`, and `isVisibleMemoryCorrectCommandText` exist in `apps/fomo/src/memory/typed-memory-visible-recall.ts`; targeted tests prove forget-that and correct-that requests route to explicit-preference helper output when an attribute/query is supplied; unknown and remember-this text do not trigger forget/correct; inactive, stale, retracted, tombstoned, low-confidence, and cross-user memories remain excluded; private values and raw source refs do not leak; CI passed for merge commit `2e674bc0`; PR merged; local main synced.
 
 ### PR-7: “Why did you remember/use that?” command adapter for explicit-preference explanation
 

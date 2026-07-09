@@ -109,6 +109,17 @@ export interface VisibleMemoryCorrectCommandResult {
   };
 }
 
+export type VisibleMemoryCommandRouterResult =
+  | VisibleMemoryReviewCommandResult
+  | VisibleMemoryExplanationCommandResult
+  | VisibleMemoryForgetCommandResult
+  | VisibleMemoryCorrectCommandResult;
+
+export interface VisibleMemoryCommandRouterOptions {
+  readonly query?: VisibleExplicitPreferenceRecallQuery;
+  readonly correction?: VisiblePreferenceCorrectOptions;
+}
+
 export interface VisiblePreferenceRememberOptions {
   readonly attribute: string;
   readonly value: UserPreferenceMemory['value'];
@@ -411,6 +422,49 @@ export function isVisibleMemoryCorrectCommandText(text: string): boolean {
     /^that (memory|preference) is wrong$/,
     /^that saved (memory|preference) is wrong$/
   ].some((pattern) => pattern.test(normalized));
+}
+
+function hasExplicitVisibleMemoryCommandQuery(
+  query: VisibleExplicitPreferenceRecallQuery | undefined
+): query is VisibleExplicitPreferenceRecallQuery {
+  if (query === undefined) return false;
+  if (typeof query.attribute === 'string' && query.attribute.trim().length > 0) return true;
+  if (query.scopeKeys !== undefined && query.scopeKeys.length > 0) return true;
+  return false;
+}
+
+export async function routeVisibleMemoryCommand(
+  store: Pick<TypedMemoryStore, 'listActive' | 'retract' | 'write'>,
+  userId: string,
+  text: string,
+  options: VisibleMemoryCommandRouterOptions = {}
+): Promise<VisibleMemoryCommandRouterResult | null> {
+  const query = options.query ?? {};
+
+  const review = await answerVisibleMemoryReviewCommand(store, userId, text, query);
+  if (review !== null) return review;
+
+  const explanation = await answerVisibleMemoryExplanationCommand(store, userId, text, query);
+  if (explanation !== null) return explanation;
+
+  const explicitQuery = options.query;
+  if (hasExplicitVisibleMemoryCommandQuery(explicitQuery)) {
+    const forget = await answerVisibleMemoryForgetCommand(store, userId, text, explicitQuery);
+    if (forget !== null) return forget;
+
+    if (options.correction !== undefined) {
+      const correction = await answerVisibleMemoryCorrectCommand(
+        store,
+        userId,
+        text,
+        explicitQuery,
+        options.correction
+      );
+      if (correction !== null) return correction;
+    }
+  }
+
+  return null;
 }
 
 export async function answerVisibleMemoryReviewCommand(
