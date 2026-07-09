@@ -4,7 +4,45 @@ Harness anchor loaded: BREVIO-HARNESS-V1-NO-CIRCLING-FAST-SHIPPING
 
 There must be exactly one item marked `NEXT`. No cycle may say “continue M1” or “continue Memory V1” vaguely. Move the marker only after the current item is merged or explicitly blocked with owner/action.
 
-## NEXT — PR-10: Visible memory command router integration seam
+## NEXT — PR-11: Visible memory remember command caller seam
+
+- **Exact branch:** `memory-v1-visible-memory-remember-caller-seam`
+- **Purpose:** Add the smallest safe dormant caller seam for explicit “remember this” memory intent, where an outside caller supplies already-parsed preference attribute/value/source context and the seam delegates to the existing visible explicit-preference remember helper without activating a live provider path or parsing arbitrary private text into memory.
+- **Memory V1 Visible Behavior exit condition advanced:**
+  1. remember explicit user preferences;
+  5. prove source/audit metadata;
+  6. prevent cross-user leakage;
+  7. expose at least one visible memory behavior to the user.
+- **Allowed files/areas:**
+  - narrow dormant integration seam/type surface around `rememberVisibleExplicitPreference`;
+  - tests proving caller-supplied parsed preference context is required before any write;
+  - tests proving unknown/non-memory text, review/explain/forget/correct text, and missing parsed preference context are no-ops;
+  - tests proving source/audit metadata is safe and private raw values/source refs are excluded from user-visible/audit-safe output;
+  - tests proving user scoping and no cross-user leakage;
+  - narrow queue advancement after PR-10.
+- **Forbidden files/areas:**
+  - production/runtime activation beyond a dormant integration seam;
+  - freeform LLM parsing of arbitrary user text into persisted memory;
+  - DB migrations;
+  - new tables/schema changes;
+  - production deploy;
+  - Calendar live activation;
+  - Composio runtime;
+  - Tool Gateway;
+  - browser automation/action tools;
+  - broad HMR rewrite;
+  - OAuth/security scope changes;
+  - broad strategic phase fork.
+- **Expected changed files:** a small implementation/test slice in the existing FOMO memory-visible behavior area; no broad docs/harness changes except queue advancement after PR-10.
+- **Tests required:** new remember caller seam tests pass; existing visible memory remember/recall/review/explain/forget/correct/router tests still pass; full lint/test/build and CI for exact PR commit.
+- **Merge condition:** PR exists, CI green for exact PR commit, diff stays inside approved Memory V1 visible behavior scope, no forbidden surfaces touched.
+- **Exit condition:** PR merged and local `main` synced; an external caller can use a dormant remember-this seam only with explicit caller-supplied parsed preference context, without live activation or private/cross-user leakage.
+- **Stop condition:** Stop and report owner/action if implementation requires migration/new table, production deploy, OAuth/security scope change, freeform LLM memory parsing, or activation of Calendar/Composio/Tool Gateway/browser/action tools.
+- **Founder approval needed?** No for a narrow dormant helper/test-level integration seam; yes before production deploy, new external scopes, irreversible data changes, freeform memory extraction/parsing, or broad runtime activation.
+
+## Completed
+
+### PR-10: Visible memory command router integration seam
 
 - **Exact branch:** `memory-v1-visible-memory-router-integration-seam`
 - **Purpose:** Add the smallest safe dormant integration seam that lets a caller pass explicit user memory-command text plus caller-supplied query/correction context into the visible-memory command router from outside the memory module, without activating a live provider path or changing production behavior.
@@ -38,9 +76,8 @@ There must be exactly one item marked `NEXT`. No cycle may say “continue M1”
 - **Merge condition:** PR exists, CI green for exact PR commit, diff stays inside approved Memory V1 visible behavior scope, no forbidden surfaces touched.
 - **Exit condition:** PR merged and local `main` synced; an external caller can use the dormant router seam safely without live activation or private/cross-user leakage.
 - **Stop condition:** Stop and report owner/action if implementation requires migration/new table, production deploy, OAuth/security scope change, or activation of Calendar/Composio/Tool Gateway/browser/action tools.
-- **Founder approval needed?** No for a narrow dormant helper/test-level integration seam; yes before production deploy, new external scopes, irreversible data changes, or broad runtime activation.
-
-## Completed
+- **Status:** Completed in PR #106, branch `memory-v1-visible-memory-router-integration-seam`, canonical commit `edf3cb7941e30b20ea2960ebdc4cfe46e2e80dd1`, merged as `e93608de6232dd7131cab4092b3f6cdf03601c4d`.
+- **Done condition met:** `routeVisibleMemoryCommandFromCaller` and `VisibleMemoryCommandCallerContext` exist in `apps/fomo/src/memory/typed-memory-visible-recall.ts`; targeted tests prove caller context delegates review/explain/forget/correct commands to the router with explicit query/correction context; unknown and remember-this text remain no-ops; destructive commands require explicit caller-supplied context; inactive, stale, retracted, tombstoned, low-confidence, and cross-user memories remain excluded; private values and raw source refs do not leak; CI passed for head commit `edf3cb79`; PR merged; local main synced.
 
 ### PR-9: Visible memory command router for explicit preferences
 
