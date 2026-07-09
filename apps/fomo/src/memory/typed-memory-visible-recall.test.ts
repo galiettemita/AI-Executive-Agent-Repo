@@ -22,7 +22,8 @@ import {
   isVisibleMemoryReviewCommandText,
   rememberVisibleExplicitPreference,
   recallVisibleExplicitPreference,
-  reviewVisibleExplicitPreferences
+  reviewVisibleExplicitPreferences,
+  routeVisibleMemoryCommand
 } from './typed-memory-visible-recall.ts';
 
 function preference(overrides: Record<string, unknown> = {}): NewTypedMemoryRow {
@@ -678,6 +679,170 @@ describe('Memory V1 visible explicit-preference recall', () => {
     assert.equal(json.includes('stale'), false);
     assert.equal(json.includes('retracted'), false);
     assert.equal(json.includes('tombstoned'), false);
+  });
+
+  it('routes visible memory commands to review, explanation, forget, and correct adapters', async () => {
+    const reviewStore = new InMemoryTypedMemoryStore();
+    await reviewStore.write(preference({ value: 'alice@example.com evenings only' }));
+
+    const review = await routeVisibleMemoryCommand(reviewStore, 'u1', 'What do you remember about me?', {
+      query: { attribute: 'alert_timing' }
+    });
+    assert.ok(review);
+    assert.equal(review.action, 'review_visible_explicit_preferences');
+    assert.equal(review.answer.includes('[redacted]'), true);
+
+    const explanation = await routeVisibleMemoryCommand(reviewStore, 'u1', 'Why did you use that?', {
+      query: { attribute: 'alert_timing' }
+    });
+    assert.ok(explanation);
+    assert.equal(explanation.action, 'explain_visible_explicit_preference_use');
+    assert.match(explanation.answer, /matched the saved alert timing preference/);
+
+    const forgetStore = new InMemoryTypedMemoryStore();
+    await forgetStore.write(preference({ value: 'evening' }));
+    const forget = await routeVisibleMemoryCommand(forgetStore, 'u1', 'Forget that preference', {
+      query: { attribute: 'alert_timing' }
+    });
+    assert.ok(forget);
+    assert.equal(forget.action, 'forget_visible_explicit_preference');
+    assert.equal(await recallVisibleExplicitPreference(forgetStore, 'u1', { attribute: 'alert_timing' }), null);
+
+    const correctStore = new InMemoryTypedMemoryStore();
+    await correctStore.write(preference({ value: 'evening' }));
+    const correction = await routeVisibleMemoryCommand(correctStore, 'u1', 'Correct that preference', {
+      query: { attribute: 'alert_timing' },
+      correction: {
+        correctedValue: 'morning',
+        updatedAt: '2026-06-28T09:00:00.000Z',
+        sourceRef: 'reply:private-router-correction-ref'
+      }
+    });
+    assert.ok(correction);
+    assert.equal(correction.action, 'correct_visible_explicit_preference');
+    assert.equal(
+      (await recallVisibleExplicitPreference(correctStore, 'u1', { attribute: 'alert_timing' }))?.preference_summary,
+      'alert timing: morning'
+    );
+    const json = JSON.stringify(correction);
+    assert.equal(json.includes('private-router-correction-ref'), false);
+    assert.equal(json.includes('morning'), false);
+  });
+
+  it('returns null for unknown or non-memory text without writing or retracting', async () => {
+    class CountingStore extends InMemoryTypedMemoryStore {
+      writeCount = 0;
+      retractCount = 0;
+
+      override async write(input: NewTypedMemoryRow) {
+        this.writeCount += 1;
+        return super.write(input);
+      }
+
+      override async retract(
+        userId: string,
+        kind: Parameters<InMemoryTypedMemoryStore['retract']>[1],
+        scopeKey: string,
+        supersededBy: number | null = null
+      ) {
+        this.retractCount += 1;
+        return super.retract(userId, kind, scopeKey, supersededBy);
+      }
+    }
+
+    const store = new CountingStore();
+    await store.write(preference({ value: 'morning' }));
+    store.writeCount = 0;
+
+    assert.equal(await routeVisibleMemoryCommand(store, 'u1', 'Can you help me with my inbox?'), null);
+    assert.equal(await routeVisibleMemoryCommand(store, 'u1', 'Remember this: I prefer mornings'), null);
+    assert.equal(await routeVisibleMemoryCommand(store, 'u1', 'Forget that preference'), null);
+
+    assert.equal(store.writeCount, 0);
+    assert.equal(store.retractCount, 0);
+    assert.equal(
+      (await recallVisibleExplicitPreference(store, 'u1', { attribute: 'alert_timing' }))?.preference_summary,
+      'alert timing: morning'
+    );
+  });
+
+  it('does not trigger correction through the router when correction options are missing', async () => {
+    class CountingStore extends InMemoryTypedMemoryStore {
+      writeCount = 0;
+
+      override async write(input: NewTypedMemoryRow) {
+        this.writeCount += 1;
+        return super.write(input);
+      }
+    }
+
+    const store = new CountingStore();
+    await store.write(preference({ value: 'evening' }));
+    store.writeCount = 0;
+
+    const result = await routeVisibleMemoryCommand(store, 'u1', 'Correct that preference', {
+      query: { attribute: 'alert_timing' }
+    });
+
+    assert.equal(result, null);
+    assert.equal(store.writeCount, 0);
+    assert.equal(
+      (await recallVisibleExplicitPreference(store, 'u1', { attribute: 'alert_timing' }))?.preference_summary,
+      'alert timing: evening'
+    );
+  });
+
+  it('keeps router results on the same unsafe-memory and cross-user exclusion path', async () => {
+    const store = new InMemoryTypedMemoryStore();
+    await store.write(preference({ value: 'morning', updated_at: '2026-06-25T10:00:00.000Z' }));
+    await store.write(
+      preference({
+        user_id: 'u2',
+        value: 'other-user router secret alice@example.com',
+        source_ref: 'reply:other-user-router-secret'
+      })
+    );
+    await store.write(preference({ scope_key: 'preference:low', attribute: 'low', confidence: 'low' }));
+    await store.write(
+      preference({
+        scope_key: 'preference:stale',
+        attribute: 'stale',
+        value: 'should not route',
+        stale_marked_at: '2026-06-25T00:00:00.000Z'
+      })
+    );
+    await store.write(preference({ scope_key: 'preference:retracted', attribute: 'retracted', retracted: true }));
+    await store.write(preference({ scope_key: 'preference:tombstoned', attribute: 'tombstoned', superseded_by: 99 }));
+
+    const review = await routeVisibleMemoryCommand(store, 'u1', 'List my saved preferences');
+    assert.ok(review);
+    assert.equal(review.action, 'review_visible_explicit_preferences');
+    const reviewJson = JSON.stringify(review);
+    assert.deepEqual(review.review.preferences.map((item) => item.preference_summary), ['alert timing: morning']);
+    assert.equal(reviewJson.includes('u2'), false);
+    assert.equal(reviewJson.includes('other-user router secret'), false);
+    assert.equal(reviewJson.includes('alice@example.com'), false);
+    assert.equal(reviewJson.includes('other-user-router-secret'), false);
+    assert.equal(reviewJson.includes('should not route'), false);
+    assert.equal(reviewJson.includes('stale'), false);
+    assert.equal(reviewJson.includes('retracted'), false);
+    assert.equal(reviewJson.includes('tombstoned'), false);
+
+    assert.equal(
+      await routeVisibleMemoryCommand(store, 'u1', 'Why did you use it?', { query: { attribute: 'stale' } }),
+      null
+    );
+    assert.equal(
+      await routeVisibleMemoryCommand(store, 'u1', 'Forget that preference', { query: { attribute: 'retracted' } }),
+      null
+    );
+    assert.equal(
+      await routeVisibleMemoryCommand(store, 'u1', 'Correct that preference', {
+        query: { attribute: 'tombstoned' },
+        correction: { correctedValue: 'evening', updatedAt: '2026-06-28T09:00:00.000Z' }
+      }),
+      null
+    );
   });
 
   it('remembers a user-stated explicit preference, then recalls, explains, corrects, and forgets it', async () => {
