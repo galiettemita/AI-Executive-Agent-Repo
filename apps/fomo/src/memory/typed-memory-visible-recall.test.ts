@@ -29,7 +29,8 @@ import {
   reviewVisibleExplicitPreferences,
   routeUnifiedVisibleMemoryCommandFromCaller,
   routeVisibleMemoryCommand,
-  routeVisibleMemoryCommandFromCaller
+  routeVisibleMemoryCommandFromCaller,
+  type VisibleMemoryCommandAppAdapterAuditEvent
 } from './typed-memory-visible-recall.ts';
 
 function preference(overrides: Record<string, unknown> = {}): NewTypedMemoryRow {
@@ -1894,6 +1895,213 @@ describe('Memory V1 visible explicit-preference recall', () => {
       (await recallVisibleExplicitPreference(store, 'u1', { attribute: 'alert_timing' }))?.preference_summary,
       'alert timing: morning'
     );
+  });
+
+  it('keeps the app-level adapter audit-event seam disabled by default without recording audit events', async () => {
+    class CountingStore extends InMemoryTypedMemoryStore {
+      listCount = 0;
+      writeCount = 0;
+      retractCount = 0;
+
+      override async listActive(...args: Parameters<InMemoryTypedMemoryStore['listActive']>) {
+        this.listCount += 1;
+        return super.listActive(...args);
+      }
+
+      override async write(input: NewTypedMemoryRow) {
+        this.writeCount += 1;
+        return super.write(input);
+      }
+
+      override async retract(
+        userId: string,
+        kind: Parameters<InMemoryTypedMemoryStore['retract']>[1],
+        scopeKey: string,
+        supersededBy: number | null = null
+      ) {
+        this.retractCount += 1;
+        return super.retract(userId, kind, scopeKey, supersededBy);
+      }
+    }
+
+    const store = new CountingStore();
+    const events: VisibleMemoryCommandAppAdapterAuditEvent[] = [];
+    await store.write(preference({ value: 'morning' }));
+    store.listCount = 0;
+    store.writeCount = 0;
+
+    const result = await handleVisibleMemoryCommandAppAdapterRequest(store, {
+      userId: 'u1',
+      text: 'Remember this: I prefer afternoons',
+      parsedPreference: {
+        attribute: 'alert_timing',
+        value: 'alice@example.com afternoons only',
+        sourceRef: 'reply:private-audit-disabled-ref'
+      },
+      audit: {
+        record: (event) => events.push(event)
+      }
+    });
+
+    assert.equal(result.status, 'disabled');
+    assert.deepEqual(events, []);
+    assert.equal(store.listCount, 0);
+    assert.equal(store.writeCount, 0);
+    assert.equal(store.retractCount, 0);
+    assert.equal(
+      (await recallVisibleExplicitPreference(store, 'u1', { attribute: 'alert_timing' }))?.preference_summary,
+      'alert timing: morning'
+    );
+  });
+
+  it('records enabled app-level adapter audit events with sanitized structural outcome metadata only', async () => {
+    const store = new InMemoryTypedMemoryStore();
+    const events: VisibleMemoryCommandAppAdapterAuditEvent[] = [];
+
+    const remembered = await handleVisibleMemoryCommandAppAdapterRequest(store, {
+      enabled: true,
+      userId: 'u1',
+      text: 'Remember this: I prefer mornings',
+      parsedPreference: {
+        attribute: 'alert_timing',
+        value: 'alice@example.com mornings only',
+        updatedAt: '2026-07-04T09:00:00.000Z',
+        sourceRef: 'reply:private-audit-remember-ref'
+      },
+      audit: {
+        enabled: true,
+        record: (event) => events.push(event)
+      }
+    });
+
+    assert.equal(remembered.handled, true);
+    assert.equal(events.length, 1);
+    assert.deepEqual(events[0], {
+      action: 'visible_memory_command.app_adapter.outcome',
+      actor_user_id: 'u1',
+      target: 'visible_memory_command_app_adapter',
+      result: 'success',
+      detail: {
+        memory_kind: 'preference',
+        adapter: 'visible_memory_command_app_adapter',
+        enabled: true,
+        handled: true,
+        status: 'handled',
+        matched_action: 'remember_visible_explicit_preference',
+        matched_intent: 'memory_remember'
+      }
+    });
+    assert.equal(Object.isFrozen(events[0]), true);
+    assert.equal(Object.isFrozen(events[0]?.detail), true);
+
+    await store.write(
+      preference({
+        user_id: 'u2',
+        value: 'other-user audit seam secret alice@example.com',
+        source_ref: 'reply:other-user-audit-seam-secret',
+        updated_at: '2026-07-04T10:00:00.000Z'
+      })
+    );
+
+    await handleVisibleMemoryCommandAppAdapterRequest(store, {
+      enabled: true,
+      userId: 'u1',
+      text: 'What do you remember about me?',
+      query: { attribute: 'alert_timing' },
+      audit: {
+        enabled: true,
+        record: (event) => events.push(event)
+      }
+    });
+
+    assert.deepEqual(events[1], {
+      action: 'visible_memory_command.app_adapter.outcome',
+      actor_user_id: 'u1',
+      target: 'visible_memory_command_app_adapter',
+      result: 'success',
+      detail: {
+        memory_kind: 'preference',
+        adapter: 'visible_memory_command_app_adapter',
+        enabled: true,
+        handled: true,
+        status: 'handled',
+        matched_action: 'review_visible_explicit_preferences',
+        matched_intent: 'memory_review',
+        returned_count: 1,
+        row_ids: [1],
+        scope_keys: ['preference:alert_timing']
+      }
+    });
+
+    const json = JSON.stringify(events);
+    assert.equal(json.includes('Remember this'), false);
+    assert.equal(json.includes('What do you remember'), false);
+    assert.equal(json.includes('alice@example.com'), false);
+    assert.equal(json.includes('mornings only'), false);
+    assert.equal(json.includes('private-audit-remember-ref'), false);
+    assert.equal(json.includes('u2'), false);
+    assert.equal(json.includes('other-user audit seam secret'), false);
+    assert.equal(json.includes('other-user-audit-seam-secret'), false);
+  });
+
+  it('records safe no-op audit statuses for unknown text and missing parsed context only when explicitly enabled', async () => {
+    class CountingStore extends InMemoryTypedMemoryStore {
+      writeCount = 0;
+      retractCount = 0;
+
+      override async write(input: NewTypedMemoryRow) {
+        this.writeCount += 1;
+        return super.write(input);
+      }
+
+      override async retract(
+        userId: string,
+        kind: Parameters<InMemoryTypedMemoryStore['retract']>[1],
+        scopeKey: string,
+        supersededBy: number | null = null
+      ) {
+        this.retractCount += 1;
+        return super.retract(userId, kind, scopeKey, supersededBy);
+      }
+    }
+
+    const store = new CountingStore();
+    const events: VisibleMemoryCommandAppAdapterAuditEvent[] = [];
+    await store.write(preference({ value: 'morning' }));
+    store.writeCount = 0;
+
+    await handleVisibleMemoryCommandAppAdapterRequest(store, {
+      enabled: true,
+      userId: 'u1',
+      text: 'Can you help me with my inbox?',
+      parsedPreference: { attribute: 'alert_timing', value: 'should not write' },
+      query: { attribute: 'alert_timing' },
+      correction: { correctedValue: 'should not correct' },
+      audit: {
+        enabled: true,
+        record: (event) => events.push(event)
+      }
+    });
+    await handleVisibleMemoryCommandAppAdapterRequest(store, {
+      enabled: true,
+      userId: 'u1',
+      text: 'Remember this: I prefer afternoons',
+      audit: {
+        enabled: true,
+        record: (event) => events.push(event)
+      }
+    });
+
+    assert.deepEqual(events.map((event) => event.detail.status), ['no_memory_command', 'no_memory_command']);
+    assert.deepEqual(events.map((event) => event.result), ['noop', 'noop']);
+    assert.deepEqual(events.map((event) => event.detail.handled), [false, false]);
+    assert.equal(store.writeCount, 0);
+    assert.equal(store.retractCount, 0);
+    const json = JSON.stringify(events);
+    assert.equal(json.includes('Can you help me'), false);
+    assert.equal(json.includes('Remember this'), false);
+    assert.equal(json.includes('should not write'), false);
+    assert.equal(json.includes('should not correct'), false);
   });
 
   it('keeps enabled app-level adapter user-scoped and excludes unsafe or cross-user memory results', async () => {

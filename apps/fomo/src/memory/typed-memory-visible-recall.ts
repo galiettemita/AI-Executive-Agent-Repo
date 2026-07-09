@@ -216,8 +216,42 @@ export interface VisibleMemoryCommandHandlerResult {
   };
 }
 
+export interface VisibleMemoryCommandAppAdapterAuditEvent {
+  readonly action: 'visible_memory_command.app_adapter.outcome';
+  readonly actor_user_id: string;
+  readonly target: 'visible_memory_command_app_adapter';
+  readonly result: 'success' | 'noop';
+  readonly detail: {
+    readonly memory_kind: 'preference';
+    readonly adapter: 'visible_memory_command_app_adapter';
+    readonly enabled: boolean;
+    readonly handled: boolean;
+    readonly status: VisibleMemoryCommandAppAdapterStatus;
+    readonly matched_action?: UnifiedVisibleMemoryCommandCallerResult['action'];
+    readonly matched_intent?:
+      | 'memory_remember'
+      | 'memory_review'
+      | 'memory_explanation'
+      | 'memory_forget'
+      | 'memory_correct';
+    readonly returned_count?: number;
+    readonly row_ids?: readonly number[];
+    readonly scope_keys?: readonly string[];
+  };
+}
+
+export type VisibleMemoryCommandAppAdapterAuditEventRecorder = (
+  event: VisibleMemoryCommandAppAdapterAuditEvent
+) => void | Promise<void>;
+
+export interface VisibleMemoryCommandAppAdapterAuditOptions {
+  readonly enabled?: boolean;
+  readonly record?: VisibleMemoryCommandAppAdapterAuditEventRecorder;
+}
+
 export interface VisibleMemoryCommandAppAdapterRequest extends UnifiedVisibleMemoryCommandCallerContext {
   readonly enabled?: boolean;
+  readonly audit?: VisibleMemoryCommandAppAdapterAuditOptions;
 }
 
 export type VisibleMemoryCommandAppAdapterStatus = VisibleMemoryCommandHandlerStatus;
@@ -728,6 +762,32 @@ function visibleMemoryCommandAppAdapterAuditMetadata(
   });
 }
 
+function visibleMemoryCommandAppAdapterAuditEvent(
+  result: VisibleMemoryCommandAppAdapterResult
+): VisibleMemoryCommandAppAdapterAuditEvent {
+  const audit = result.audit_metadata;
+  const detail: VisibleMemoryCommandAppAdapterAuditEvent['detail'] = {
+    memory_kind: 'preference' as const,
+    adapter: 'visible_memory_command_app_adapter' as const,
+    enabled: audit.enabled,
+    handled: result.handled,
+    status: result.status,
+    ...(audit.matched_action !== undefined ? { matched_action: audit.matched_action } : {}),
+    ...(audit.matched_intent !== undefined ? { matched_intent: audit.matched_intent } : {}),
+    ...(audit.returned_count !== undefined ? { returned_count: audit.returned_count } : {}),
+    ...(audit.row_ids !== undefined ? { row_ids: audit.row_ids } : {}),
+    ...(audit.scope_keys !== undefined ? { scope_keys: audit.scope_keys } : {})
+  };
+
+  return Object.freeze({
+    action: 'visible_memory_command.app_adapter.outcome' as const,
+    actor_user_id: result.user_id,
+    target: 'visible_memory_command_app_adapter' as const,
+    result: result.handled ? ('success' as const) : ('noop' as const),
+    detail: Object.freeze(detail)
+  });
+}
+
 export async function handleVisibleMemoryCommandAppAdapterRequest(
   store: Pick<TypedMemoryStore, 'listActive' | 'retract' | 'write'>,
   request: VisibleMemoryCommandAppAdapterRequest
@@ -741,7 +801,7 @@ export async function handleVisibleMemoryCommandAppAdapterRequest(
     correction: request.correction
   });
 
-  return Object.freeze({
+  const result = Object.freeze({
     handled: handlerResult.handled,
     status: handlerResult.status,
     user_id: handlerResult.user_id,
@@ -749,6 +809,12 @@ export async function handleVisibleMemoryCommandAppAdapterRequest(
     command_result: handlerResult.command_result,
     audit_metadata: visibleMemoryCommandAppAdapterAuditMetadata(handlerResult)
   });
+
+  if (request.audit?.enabled === true && request.audit.record !== undefined) {
+    await request.audit.record(visibleMemoryCommandAppAdapterAuditEvent(result));
+  }
+
+  return result;
 }
 
 export async function answerVisibleMemoryReviewCommand(
