@@ -4,7 +4,49 @@ Harness anchor loaded: BREVIO-HARNESS-V1-NO-CIRCLING-FAST-SHIPPING
 
 There must be exactly one item marked `NEXT`. No cycle may say “continue M1” or “continue Memory V1” vaguely. Move the marker only after the current item is merged or explicitly blocked with owner/action.
 
-## NEXT — PR-15: Disabled visible memory command app adapter audit-event seam
+## NEXT — PR-16: Disabled visible memory command app adapter audit-store recorder seam
+
+- **Exact branch:** `memory-v1-visible-memory-command-app-adapter-audit-store-disabled-seam`
+- **Purpose:** Add the smallest safe disabled-by-default recorder helper that adapts `VisibleMemoryCommandAppAdapterAuditEvent` into the existing FOMO audit store shape, so a future runtime caller can opt into writing sanitized visible-memory command outcome audit rows through one stable store bridge without activating any live provider path, persisting raw private memory values/source refs, parsing arbitrary private text into memory, or changing current user-facing behavior.
+- **Memory V1 Visible Behavior exit condition advanced:**
+  1. remember explicit user preferences;
+  2. retrieve relevant memories safely;
+  3. explain why a memory was used;
+  4. forget or correct a memory;
+  5. prove source/audit metadata;
+  6. prevent cross-user leakage;
+  7. expose at least one visible memory behavior to the user.
+- **Allowed files/areas:**
+  - narrow disabled-by-default audit-store recorder/helper/type surface around the existing `VisibleMemoryCommandAppAdapterAuditEvent` seam;
+  - tests proving the recorder default is disabled and does not write audit events;
+  - tests proving enabled recorder writes only sanitized structural adapter outcome metadata to the existing audit store shape;
+  - tests proving unknown/non-memory text and missing parsed context remain no-ops with safe audit status only;
+  - tests proving audit metadata excludes private raw values, source refs, arbitrary command text, and cross-user data;
+  - tests proving user scoping and no cross-user leakage;
+  - narrow queue advancement after PR-15.
+- **Forbidden files/areas:**
+  - production/runtime activation beyond a disabled test-level seam;
+  - freeform LLM parsing of arbitrary user text into persisted memory;
+  - DB migrations;
+  - new tables/schema changes;
+  - production deploy;
+  - Calendar live activation;
+  - Composio runtime;
+  - Tool Gateway;
+  - browser automation/action tools;
+  - broad HMR rewrite;
+  - OAuth/security scope changes;
+  - broad strategic phase fork.
+- **Expected changed files:** a small implementation/test slice in the existing FOMO memory-visible behavior and audit type area; no broad docs/harness changes except queue advancement after PR-15.
+- **Tests required:** new disabled audit-store recorder seam tests pass; existing visible memory remember/recall/review/explain/forget/correct/router/caller/unified caller/handler/app-adapter/audit-event tests still pass; full lint/test/build and CI for exact PR commit.
+- **Merge condition:** PR exists, CI green for exact PR commit, diff stays inside approved Memory V1 visible behavior scope, no forbidden surfaces touched.
+- **Exit condition:** PR merged and local `main` synced; a future app/runtime caller can opt into one disabled-by-default audit-store recorder for visible-memory command outcomes, writing only sanitized structural metadata without live activation or private/cross-user leakage.
+- **Stop condition:** Stop and report owner/action if implementation requires migration/new table, production deploy, OAuth/security scope change, freeform LLM memory parsing, raw command text/private values in audit, or activation of Calendar/Composio/Tool Gateway/browser/action tools.
+- **Founder approval needed?** No for a narrow disabled-by-default audit-store helper/test-level seam; yes before production deploy, new external scopes, irreversible data changes, freeform memory extraction/parsing, raw private audit persistence, or broad runtime activation.
+
+## Completed
+
+### PR-15: Disabled visible memory command app adapter audit-event seam
 
 - **Exact branch:** `memory-v1-visible-memory-command-app-adapter-audit-disabled-seam`
 - **Purpose:** Add the smallest safe disabled-by-default audit-event seam around `handleVisibleMemoryCommandAppAdapterRequest` so a future runtime caller can record sanitized visible-memory command outcomes through one stable audit envelope, without activating any live provider path, persisting raw private memory values/source refs, parsing arbitrary private text into memory, or changing current user-facing behavior.
@@ -43,8 +85,8 @@ There must be exactly one item marked `NEXT`. No cycle may say “continue M1”
 - **Exit condition:** PR merged and local `main` synced; a future app/runtime caller can opt into one disabled-by-default audit seam for visible-memory command outcomes, recording only sanitized structural metadata without live activation or private/cross-user leakage.
 - **Stop condition:** Stop and report owner/action if implementation requires migration/new table, production deploy, OAuth/security scope change, freeform LLM memory parsing, raw command text/private values in audit, or activation of Calendar/Composio/Tool Gateway/browser/action tools.
 - **Founder approval needed?** No for a narrow disabled-by-default audit helper/test-level seam; yes before production deploy, new external scopes, irreversible data changes, freeform memory extraction/parsing, raw private audit persistence, or broad runtime activation.
-
-## Completed
+- **Status:** Completed in PR #113, branch `memory-v1-visible-memory-command-app-adapter-audit-disabled-seam`, canonical commit `0b9faf2b9f6f1eb7b57030e34bfd77e37974f959`, merged as `3af23b09bfd03928e7cd7ed5b27a1b7e72327b09`.
+- **Done condition met:** `VisibleMemoryCommandAppAdapterAuditEvent`, `VisibleMemoryCommandAppAdapterAuditEventRecorder`, and `VisibleMemoryCommandAppAdapterAuditOptions` exist in `apps/fomo/src/memory/typed-memory-visible-recall.ts`; `handleVisibleMemoryCommandAppAdapterRequest` accepts an optional disabled-by-default audit seam; targeted tests prove no audit event records when disabled/default, enabled audit records only sanitized structural adapter outcome metadata, unknown/non-memory text and missing parsed context remain safe no-ops, user scoping and no cross-user leakage are preserved, and private raw values/source refs/arbitrary command text do not leak; CI passed for head commit `0b9faf2b`; PR merged as `3af23b09`; local main synced.
 
 ### PR-14: Disabled visible memory command handler app-level adapter seam
 
