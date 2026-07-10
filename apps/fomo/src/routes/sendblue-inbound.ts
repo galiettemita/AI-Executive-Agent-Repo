@@ -89,6 +89,7 @@ import { type RankResultStore } from '../memory/rank-results.js';
 import {
   createVisibleMemoryCommandAppAdapterAuditStoreRecorder,
   handleVisibleMemoryCommandAppAdapterRequest,
+  type VisibleMemoryCommandAppAdapterResult,
   type VisibleExplicitPreferenceRecallQuery,
   type VisiblePreferenceCorrectOptions,
   type VisiblePreferenceRememberOptions
@@ -251,6 +252,7 @@ export interface SendBlueInboundRouteDeps {
     readonly store?: Parameters<typeof handleVisibleMemoryCommandAppAdapterRequest>[0];
     readonly context?: SendBlueInboundVisibleMemoryCommandContext;
     readonly contextResolver?: SendBlueInboundVisibleMemoryCommandContextResolver;
+    readonly response?: SendBlueInboundVisibleMemoryCommandResponseOptions;
   };
 
   // Optional clock for tests.
@@ -273,6 +275,25 @@ export interface SendBlueInboundVisibleMemoryCommandContextResolverInput {
 export type SendBlueInboundVisibleMemoryCommandContextResolver = (
   input: SendBlueInboundVisibleMemoryCommandContextResolverInput
 ) => Promise<SendBlueInboundVisibleMemoryCommandContext | null> | SendBlueInboundVisibleMemoryCommandContext | null;
+
+export interface SendBlueInboundVisibleMemoryCommandResponseEnvelope {
+  readonly handled: boolean;
+  readonly status: VisibleMemoryCommandAppAdapterResult['status'];
+  readonly user_id: string;
+  readonly response: {
+    readonly text: string | null;
+  };
+  readonly audit_metadata: VisibleMemoryCommandAppAdapterResult['audit_metadata'];
+}
+
+export type SendBlueInboundVisibleMemoryCommandResponseRecorder = (
+  envelope: SendBlueInboundVisibleMemoryCommandResponseEnvelope
+) => void | Promise<void>;
+
+export interface SendBlueInboundVisibleMemoryCommandResponseOptions {
+  readonly enabled?: boolean;
+  readonly record?: SendBlueInboundVisibleMemoryCommandResponseRecorder;
+}
 
 /* ---------------------------------------------------------------------- */
 /* HTTP response shape                                                    */
@@ -647,7 +668,7 @@ async function maybeHandleVisibleMemoryCommand(
   );
   if (!resolvedContext) return;
 
-  await handleVisibleMemoryCommandAppAdapterRequest(seam.store, {
+  const appAdapterResult = await handleVisibleMemoryCommandAppAdapterRequest(seam.store, {
     enabled: true,
     userId,
     text: resolvedContext.text,
@@ -664,6 +685,27 @@ async function maybeHandleVisibleMemoryCommand(
     }
   });
 
+  await recordSendBlueInboundVisibleMemoryCommandResponse(seam.response, appAdapterResult);
+}
+
+function sendBlueInboundVisibleMemoryCommandResponseEnvelope(
+  result: VisibleMemoryCommandAppAdapterResult
+): SendBlueInboundVisibleMemoryCommandResponseEnvelope {
+  return Object.freeze({
+    handled: result.handled,
+    status: result.status,
+    user_id: result.user_id,
+    response: Object.freeze({ text: result.response.text }),
+    audit_metadata: result.audit_metadata
+  });
+}
+
+async function recordSendBlueInboundVisibleMemoryCommandResponse(
+  options: SendBlueInboundVisibleMemoryCommandResponseOptions | undefined,
+  result: VisibleMemoryCommandAppAdapterResult
+): Promise<void> {
+  if (options?.enabled !== true || options.record === undefined) return;
+  await options.record(sendBlueInboundVisibleMemoryCommandResponseEnvelope(result));
 }
 
 async function resolveSendBlueInboundVisibleMemoryCommandContext(

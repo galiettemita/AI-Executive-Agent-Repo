@@ -4,7 +4,51 @@ Harness anchor loaded: BREVIO-HARNESS-V1-NO-CIRCLING-FAST-SHIPPING
 
 There must be exactly one item marked `NEXT`. No cycle may say “continue M1” or “continue Memory V1” vaguely. Move the marker only after the current item is merged or explicitly blocked with owner/action.
 
-## NEXT — PR-18: Disabled SendBlue inbound visible memory command context resolver seam
+## NEXT — PR-19: Disabled SendBlue inbound visible memory command response seam
+
+- **Exact branch:** `memory-v1-sendblue-inbound-visible-memory-command-response-disabled-seam`
+- **Purpose:** Add the smallest safe disabled-by-default SendBlue inbound response seam that can capture the visible-memory command app adapter result in a deterministic, caller-inspectable envelope for future reply rendering, without sending any outbound message, changing current HTTP responses, parsing arbitrary private inbound text into memory, or changing production behavior.
+- **Memory V1 Visible Behavior exit condition advanced:**
+  1. remember explicit user preferences;
+  2. retrieve relevant memories safely;
+  3. explain why a memory was used;
+  4. forget or correct a memory;
+  5. prove source/audit metadata;
+  6. prevent cross-user leakage;
+  7. expose at least one visible memory behavior to the user.
+- **Allowed files/areas:**
+  - narrow disabled-by-default SendBlue inbound visible-memory response type/helper around the existing PR-17/PR-18 `visibleMemoryCommand` boundary;
+  - tests proving the response seam default is absent/inert and preserves current HTTP response shape;
+  - tests proving enabled test-level seam captures only sanitized structural adapter result metadata and safe user-facing response text from the app adapter result;
+  - tests proving no outbound SendBlue send occurs and no production runtime activation occurs;
+  - tests proving STOP/START, existing reply parsing, why/explain handling, state transitions, and sanitized audit behavior are not regressed;
+  - tests proving private values/source refs/arbitrary inbound text/cross-user data do not leak through response metadata;
+  - narrow queue advancement after PR-18.
+- **Forbidden files/areas:**
+  - production/runtime activation beyond a disabled-by-default seam;
+  - sending any outbound memory command response over SendBlue;
+  - changing the existing public HTTP response shape unless the seam is explicitly test-enabled;
+  - freeform LLM parsing of arbitrary user text into persisted memory;
+  - DB migrations;
+  - new tables/schema changes;
+  - production deploy;
+  - Calendar live activation;
+  - Composio runtime;
+  - Tool Gateway;
+  - browser automation/action tools;
+  - broad HMR rewrite;
+  - OAuth/security scope changes;
+  - broad strategic phase fork.
+- **Expected changed files:** a small implementation/test slice in the existing SendBlue inbound route tests/route and visible-memory adapter boundary; no broad docs/harness changes except queue advancement after PR-18.
+- **Tests required:** targeted SendBlue inbound visible-memory response seam tests pass; existing sendblue-inbound/why/explain tests still pass; existing typed-memory visible-recall tests still pass if adapter types change; full lint/test/build and CI for exact PR commit.
+- **Merge condition:** PR exists, CI green for exact PR commit, diff stays inside approved Memory V1 visible behavior scope, no forbidden surfaces touched, disabled/default path remains inert and no outbound response is sent.
+- **Exit condition:** PR merged and local `main` synced; SendBlue inbound has a disabled-by-default, test-proven response seam that can expose a sanitized visible-memory command adapter result to a future caller without live activation, outbound send, private/cross-user leakage, or regression of existing reply/STOP/explain behavior.
+- **Stop condition:** Stop and report owner/action if implementation requires migration/new table, production deploy, OAuth/security scope change, freeform LLM memory parsing, raw command text/private values in audit/response metadata, live default activation, outbound SendBlue send, or activation of Calendar/Composio/Tool Gateway/browser/action tools.
+- **Founder approval needed?** No for a narrow disabled-by-default response seam and tests; yes before production deploy, new external scopes, irreversible data changes, freeform memory extraction/parsing, raw private audit/response persistence, outbound memory command send, live default activation, or broad runtime activation.
+
+## Completed
+
+### PR-18: Disabled SendBlue inbound visible memory command context resolver seam
 
 - **Exact branch:** `memory-v1-sendblue-inbound-visible-memory-command-context-resolver-disabled-seam`
 - **Purpose:** Add the smallest safe disabled-by-default resolver seam that can supply deterministic, caller-provided visible-memory command context to the PR-17 SendBlue inbound adapter integration, so a future runtime caller has one explicit boundary for remember/review/explain/forget/correct context without parsing arbitrary private inbound text into memory or changing current production behavior.
@@ -43,8 +87,8 @@ There must be exactly one item marked `NEXT`. No cycle may say “continue M1”
 - **Exit condition:** PR merged and local `main` synced; SendBlue inbound has a disabled-by-default, test-proven context resolver seam feeding the visible-memory command adapter only explicit caller-supplied context without live activation, private/cross-user leakage, or regression of existing reply/STOP/explain behavior.
 - **Stop condition:** Stop and report owner/action if implementation requires migration/new table, production deploy, OAuth/security scope change, freeform LLM memory parsing, raw command text/private values in audit, live default activation, or activation of Calendar/Composio/Tool Gateway/browser/action tools.
 - **Founder approval needed?** No for a narrow disabled-by-default resolver seam and tests; yes before production deploy, new external scopes, irreversible data changes, freeform memory extraction/parsing, raw private audit persistence, live default activation, or broad runtime activation.
-
-## Completed
+- **Status:** Completed in PR #119, branch `memory-v1-sendblue-inbound-visible-memory-command-context-resolver-disabled-seam`, canonical commit `6e0987dd5990b74829bec16f88dd26494099ebf7`, merged as `a928f182dbf10a3e61de835abd3cf14505fe14f6`.
+- **Done condition met:** `SendBlueInboundVisibleMemoryCommandContextResolver`, `SendBlueInboundVisibleMemoryCommandContextResolverInput`, and `visibleMemoryCommand.contextResolver` exist in `apps/fomo/src/routes/sendblue-inbound.ts`; targeted tests prove missing context/resolver remains inert, enabled resolver receives only user id/parsed intent/time and not inbound freeform text, resolver-supplied remember/query/correction context is caller-provided, STOP/START do not resolve context, user scoping and private/cross-user leak exclusion are preserved, and sanitized audit metadata excludes private values/source refs/freeform inbound text; CI passed for head commit `6e0987dd`; PR merged as `a928f182`; local main synced.
 
 ### PR-17: Disabled SendBlue inbound visible memory command adapter integration seam
 
