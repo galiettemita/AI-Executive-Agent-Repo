@@ -4,7 +4,48 @@ Harness anchor loaded: BREVIO-HARNESS-V1-NO-CIRCLING-FAST-SHIPPING
 
 There must be exactly one item marked `NEXT`. No cycle may say “continue M1” or “continue Memory V1” vaguely. Move the marker only after the current item is merged or explicitly blocked with owner/action.
 
-## NEXT — PR-16: Disabled visible memory command app adapter audit-store recorder seam
+## NEXT — PR-17: Disabled SendBlue inbound visible memory command adapter integration seam
+
+- **Exact branch:** `memory-v1-sendblue-inbound-visible-memory-command-adapter-disabled-seam`
+- **Purpose:** Add the smallest safe disabled-by-default integration seam that lets the SendBlue inbound route call the existing visible-memory command app adapter only when explicitly enabled and supplied deterministic/caller-provided memory command context, so Memory V1 can move toward a real user-visible memory command surface without changing current production behavior, parsing arbitrary private text into memory, or bypassing existing STOP/reply-parser/explain behavior.
+- **Memory V1 Visible Behavior exit condition advanced:**
+  1. remember explicit user preferences;
+  2. retrieve relevant memories safely;
+  3. explain why a memory was used;
+  4. forget or correct a memory;
+  5. prove source/audit metadata;
+  6. prevent cross-user leakage;
+  7. expose at least one visible memory behavior to the user.
+- **Allowed files/areas:**
+  - narrow disabled-by-default SendBlue inbound/app route integration seam around the existing `handleVisibleMemoryCommandAppAdapterRequest` helper;
+  - tests proving the default path is bit-compatible/inert when the seam is disabled or deps are absent;
+  - tests proving enabled test-level seam calls the adapter only with explicit caller-supplied parsed/query/correction context, not freeform LLM memory extraction;
+  - tests proving STOP, existing reply parsing, why/explain handling, state transitions, and sanitized audit behavior are not regressed;
+  - tests proving user scoping, private-value/source-ref redaction, and no cross-user leakage;
+  - narrow queue advancement after PR-16.
+- **Forbidden files/areas:**
+  - production/runtime activation beyond a disabled-by-default seam;
+  - freeform LLM parsing of arbitrary user text into persisted memory;
+  - DB migrations;
+  - new tables/schema changes;
+  - production deploy;
+  - Calendar live activation;
+  - Composio runtime;
+  - Tool Gateway;
+  - browser automation/action tools;
+  - broad HMR rewrite;
+  - OAuth/security scope changes;
+  - broad strategic phase fork.
+- **Expected changed files:** a small implementation/test slice in the existing SendBlue inbound route tests/route and visible-memory adapter boundary; no broad docs/harness changes except queue advancement after PR-16.
+- **Tests required:** targeted SendBlue inbound visible-memory seam tests pass; existing sendblue-inbound/why/explain tests still pass; existing typed-memory visible-recall tests still pass if adapter types change; full lint/test/build and CI for exact PR commit.
+- **Merge condition:** PR exists, CI green for exact PR commit, diff stays inside approved Memory V1 visible behavior scope, no forbidden surfaces touched, disabled/default path remains inert.
+- **Exit condition:** PR merged and local `main` synced; SendBlue inbound has a disabled-by-default, test-proven seam into the visible-memory command adapter without live activation, private/cross-user leakage, or regression of existing reply/STOP/explain behavior.
+- **Stop condition:** Stop and report owner/action if implementation requires migration/new table, production deploy, OAuth/security scope change, freeform LLM memory parsing, raw command text/private values in audit, live default activation, or activation of Calendar/Composio/Tool Gateway/browser/action tools.
+- **Founder approval needed?** No for a narrow disabled-by-default route integration seam and tests; yes before production deploy, new external scopes, irreversible data changes, freeform memory extraction/parsing, raw private audit persistence, live default activation, or broad runtime activation.
+
+## Completed
+
+### PR-16: Disabled visible memory command app adapter audit-store recorder seam
 
 - **Exact branch:** `memory-v1-visible-memory-command-app-adapter-audit-store-disabled-seam`
 - **Purpose:** Add the smallest safe disabled-by-default recorder helper that adapts `VisibleMemoryCommandAppAdapterAuditEvent` into the existing FOMO audit store shape, so a future runtime caller can opt into writing sanitized visible-memory command outcome audit rows through one stable store bridge without activating any live provider path, persisting raw private memory values/source refs, parsing arbitrary private text into memory, or changing current user-facing behavior.
@@ -43,8 +84,8 @@ There must be exactly one item marked `NEXT`. No cycle may say “continue M1”
 - **Exit condition:** PR merged and local `main` synced; a future app/runtime caller can opt into one disabled-by-default audit-store recorder for visible-memory command outcomes, writing only sanitized structural metadata without live activation or private/cross-user leakage.
 - **Stop condition:** Stop and report owner/action if implementation requires migration/new table, production deploy, OAuth/security scope change, freeform LLM memory parsing, raw command text/private values in audit, or activation of Calendar/Composio/Tool Gateway/browser/action tools.
 - **Founder approval needed?** No for a narrow disabled-by-default audit-store helper/test-level seam; yes before production deploy, new external scopes, irreversible data changes, freeform memory extraction/parsing, raw private audit persistence, or broad runtime activation.
-
-## Completed
+- **Status:** Completed in PR #115, branch `memory-v1-visible-memory-command-app-adapter-audit-store-disabled-seam`, canonical commit `2faee860a42a0208e1829b7e6271780874f738f5`, merged as `8e16a709ed0848e4806bb7e64243c1e342780fd9`.
+- **Done condition met:** `createVisibleMemoryCommandAppAdapterAuditStoreRecorder` and `VisibleMemoryCommandAppAdapterAuditStoreRecorderOptions` exist in `apps/fomo/src/memory/typed-memory-visible-recall.ts`; `visible_memory_command.app_adapter.outcome` is registered in `apps/fomo/src/core/audit.ts`; targeted tests prove default-disabled no-write behavior, enabled sanitized structural audit-store writes, safe no-op statuses, user scoping, and private/cross-user leak exclusion; CI passed for head commit `2faee860`; PR merged as `8e16a709`; local main synced.
 
 ### PR-15: Disabled visible memory command app adapter audit-event seam
 
