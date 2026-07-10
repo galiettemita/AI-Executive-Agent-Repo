@@ -8,6 +8,11 @@ import { InMemoryAlertStore } from '../memory/alerts.ts';
 import { InMemoryFeedbackStore } from '../memory/feedback-events.ts';
 import { InMemoryInboundReplyStore } from '../memory/inbound-replies.ts';
 import { InMemoryMemorySignalStore } from '../memory/memory-signals.ts';
+import {
+  InMemoryTypedMemoryStore,
+  type NewTypedMemoryRow
+} from '../memory/typed-memory.ts';
+import { recallVisibleExplicitPreference } from '../memory/typed-memory-visible-recall.ts';
 import { InMemoryRankResultStore } from '../memory/rank-results.ts';
 import {
   type ReplyParseResult,
@@ -26,6 +31,7 @@ const FOUNDER_USER = 'founder';
 
 interface HarnessOverrides {
   readonly killSwitches?: KillSwitches;
+  readonly visibleMemoryCommand?: SendBlueInboundRouteDeps['visibleMemoryCommand'];
   // Stub parser. Defaults to returning unclear (so the route's path
   // for unmatched/unclear can be tested without a router).
   readonly parser?: (req: ReplyParserRequest) => Promise<ReplyParseResult>;
@@ -84,7 +90,8 @@ function buildHarness(overrides: HarnessOverrides = {}) {
     memoryStore,
     auditStore,
     senderHashKey,
-    replyParser: { parse: parser }
+    replyParser: { parse: parser },
+    visibleMemoryCommand: overrides.visibleMemoryCommand
   };
   return {
     deps,
@@ -554,6 +561,212 @@ describe('handleSendBlueInbound — unclear (fail-safe; no state transition)', (
     assert.equal(await h.feedbackStore.recent(FOUNDER_USER, 50).then((rows) => rows.length), 0);
     const audits = await h.auditStore.recent(FOUNDER_USER, 50);
     assert.ok(audits.find((e) => e.action === 'fomo.sendblue.reply_unclear'));
+  });
+});
+
+/* ====================================================================== */
+/* Memory V1 visible memory command adapter seam (disabled by default)     */
+/* ====================================================================== */
+
+describe('handleSendBlueInbound — disabled visible memory command adapter seam', () => {
+  class CountingTypedMemoryStore extends InMemoryTypedMemoryStore {
+    listCount = 0;
+    writeCount = 0;
+    retractCount = 0;
+
+    override async listActive(...args: Parameters<InMemoryTypedMemoryStore['listActive']>) {
+      this.listCount += 1;
+      return super.listActive(...args);
+    }
+
+    override async write(input: NewTypedMemoryRow) {
+      this.writeCount += 1;
+      return super.write(input);
+    }
+
+    override async retract(
+      userId: string,
+      kind: Parameters<InMemoryTypedMemoryStore['retract']>[1],
+      scopeKey: string,
+      supersededBy: number | null = null
+    ) {
+      this.retractCount += 1;
+      return super.retract(userId, kind, scopeKey, supersededBy);
+    }
+  }
+
+  it('is inert when absent or disabled and preserves the existing SendBlue reply path', async () => {
+    const store = new CountingTypedMemoryStore();
+    const h = buildHarness({
+      visibleMemoryCommand: {
+        enabled: false,
+        store,
+        context: {
+          text: 'Remember this: I prefer mornings',
+          parsedPreference: {
+            attribute: 'alert_timing',
+            value: 'alice@example.com mornings only',
+            sourceRef: 'reply:private-disabled-sendblue-memory-ref'
+          }
+        }
+      },
+      parser: async () =>
+        Object.freeze({
+          ok: true as const,
+          source: 'classifier' as const,
+          classification: Object.freeze({
+            intent: 'snooze' as const,
+            confidence: 0.9,
+            reason: 'snooze',
+            snooze_hint: 'tomorrow' as const
+          }),
+          model_name: 'mock',
+          prompt_version: 'reply-parser-v0.1.0',
+          latency_ms: 1,
+          input_tokens: 1,
+          output_tokens: 1,
+          estimated_cost_usd: 0,
+          low_confidence_forced_unclear: false
+        })
+    });
+    await seedSentAlert(h, 'alert-memory-disabled-1');
+
+    const r = await handleSendBlueInbound(
+      { body: inboundBody({ content: 'tomorrow' }), secretHeaderValue: WEBHOOK_SECRET },
+      h.deps
+    );
+
+    assert.equal(r.status, 200);
+    assert.equal(await h.transitions.currentState('alert-memory-disabled-1'), 'snoozed');
+    assert.equal(store.listCount, 0);
+    assert.equal(store.writeCount, 0);
+    assert.equal(store.retractCount, 0);
+    assert.equal(
+      (await h.auditStore.recent(FOUNDER_USER, 50)).some(
+        (event) => event.action === 'visible_memory_command.app_adapter.outcome'
+      ),
+      false
+    );
+  });
+
+  it('when enabled, calls the app adapter only with caller-supplied memory context, not inbound freeform text', async () => {
+    const store = new CountingTypedMemoryStore();
+    const INBOUND_PRIVATE_TEXT = 'freeform inbound text alice@example.com must not become memory';
+    const h = buildHarness({
+      visibleMemoryCommand: {
+        enabled: true,
+        store,
+        context: {
+          text: 'Remember this: I prefer mornings',
+          parsedPreference: {
+            attribute: 'alert_timing',
+            value: 'mornings',
+            updatedAt: '2026-07-09T12:00:00.000Z',
+            sourceRef: 'reply:private-sendblue-memory-command-ref'
+          }
+        }
+      }
+    });
+
+    const r = await handleSendBlueInbound(
+      { body: inboundBody({ content: INBOUND_PRIVATE_TEXT }), secretHeaderValue: WEBHOOK_SECRET },
+      h.deps
+    );
+
+    assert.equal(r.status, 200);
+    const recall = await recallVisibleExplicitPreference(store, FOUNDER_USER, {
+      attribute: 'alert_timing'
+    });
+    assert.equal(recall?.preference_summary, 'alert timing: mornings');
+    assert.equal(store.writeCount, 1);
+    const audits = await h.auditStore.recent(FOUNDER_USER, 50);
+    const memoryAudit = audits.find(
+      (event) => event.action === 'visible_memory_command.app_adapter.outcome'
+    );
+    assert.ok(memoryAudit);
+    assert.equal((memoryAudit.detail as { status?: string }).status, 'handled');
+    const auditJson = JSON.stringify(memoryAudit.detail);
+    assert.equal(auditJson.includes(INBOUND_PRIVATE_TEXT), false);
+    assert.equal(auditJson.includes('alice@example.com'), false);
+    assert.equal(auditJson.includes('mornings'), false);
+    assert.equal(auditJson.includes('private-sendblue-memory-command-ref'), false);
+  });
+
+  it('does not invoke memory command handling for STOP even when enabled context is supplied', async () => {
+    const store = new CountingTypedMemoryStore();
+    const h = buildHarness({
+      visibleMemoryCommand: {
+        enabled: true,
+        store,
+        context: {
+          text: 'Remember this: I prefer mornings',
+          parsedPreference: { attribute: 'alert_timing', value: 'mornings' }
+        }
+      },
+      parser: async () => Object.freeze({ ok: true as const, source: 'deterministic' as const, intent: 'stop' as const })
+    });
+
+    const r = await handleSendBlueInbound(
+      { body: inboundBody({ content: 'STOP' }), secretHeaderValue: WEBHOOK_SECRET },
+      h.deps
+    );
+
+    assert.equal(r.status, 200);
+    assert.equal((await h.memoryStore.get(FOUNDER_USER, 'stop_active', null))?.detail.active, true);
+    assert.equal(store.writeCount, 0);
+    assert.equal(store.listCount, 0);
+    assert.equal(
+      (await h.auditStore.recent(FOUNDER_USER, 50)).some(
+        (event) => event.action === 'visible_memory_command.app_adapter.outcome'
+      ),
+      false
+    );
+  });
+
+  it('keeps enabled route-level review scoped to the resolved user and sanitized audit metadata', async () => {
+    const store = new CountingTypedMemoryStore();
+    await store.write({
+      user_id: 'other-user',
+      kind: 'preference',
+      scope_key: 'preference:alert_timing',
+      attribute: 'alert_timing',
+      value: 'other-user secret alice@example.com',
+      source: 'user_stated',
+      source_ref: 'reply:other-user-secret-ref',
+      confidence: 'high',
+      stale_marked_at: null,
+      retracted: false,
+      superseded_by: null,
+      updated_at: '2026-07-09T11:00:00.000Z'
+    });
+    store.writeCount = 0;
+    const h = buildHarness({
+      visibleMemoryCommand: {
+        enabled: true,
+        store,
+        context: {
+          text: 'What do you remember about me?',
+          query: { attribute: 'alert_timing' }
+        }
+      }
+    });
+
+    const r = await handleSendBlueInbound(
+      { body: inboundBody({ content: 'memory review please' }), secretHeaderValue: WEBHOOK_SECRET },
+      h.deps
+    );
+
+    assert.equal(r.status, 200);
+    assert.equal(store.writeCount, 0);
+    const memoryAudit = (await h.auditStore.recent(FOUNDER_USER, 50)).find(
+      (event) => event.action === 'visible_memory_command.app_adapter.outcome'
+    );
+    assert.ok(memoryAudit);
+    assert.equal((memoryAudit.detail as { returned_count?: number }).returned_count, 0);
+    const allAuditJson = JSON.stringify(await h.auditStore.recent(FOUNDER_USER, 50));
+    assert.equal(allAuditJson.includes('other-user'), false);
+    assert.equal(allAuditJson.includes('alice@example.com'), false);
+    assert.equal(allAuditJson.includes('other-user-secret-ref'), false);
   });
 });
 
