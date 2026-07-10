@@ -252,6 +252,7 @@ export interface SendBlueInboundRouteDeps {
     readonly store?: Parameters<typeof handleVisibleMemoryCommandAppAdapterRequest>[0];
     readonly context?: SendBlueInboundVisibleMemoryCommandContext;
     readonly contextResolver?: SendBlueInboundVisibleMemoryCommandContextResolver;
+    readonly contextParser?: SendBlueInboundVisibleMemoryCommandContextParserOptions;
     readonly response?: SendBlueInboundVisibleMemoryCommandResponseOptions;
   };
 
@@ -275,6 +276,22 @@ export interface SendBlueInboundVisibleMemoryCommandContextResolverInput {
 export type SendBlueInboundVisibleMemoryCommandContextResolver = (
   input: SendBlueInboundVisibleMemoryCommandContextResolverInput
 ) => Promise<SendBlueInboundVisibleMemoryCommandContext | null> | SendBlueInboundVisibleMemoryCommandContext | null;
+
+export interface SendBlueInboundVisibleMemoryCommandContextParserInput {
+  readonly userId: string;
+  readonly text: string;
+  readonly parsedIntent: ReplyIntent | 'stop' | 'start' | 'unparsed';
+  readonly now: Date;
+}
+
+export type SendBlueInboundVisibleMemoryCommandContextParser = (
+  input: SendBlueInboundVisibleMemoryCommandContextParserInput
+) => SendBlueInboundVisibleMemoryCommandContext | null;
+
+export interface SendBlueInboundVisibleMemoryCommandContextParserOptions {
+  readonly enabled?: boolean;
+  readonly parse?: SendBlueInboundVisibleMemoryCommandContextParser;
+}
 
 export interface SendBlueInboundVisibleMemoryCommandResponseEnvelope {
   readonly handled: boolean;
@@ -629,6 +646,7 @@ export async function handleSendBlueInbound(
   await maybeHandleVisibleMemoryCommand(
     deps,
     userId,
+    extracted.content,
     parseResult,
     now
   );
@@ -643,6 +661,7 @@ export async function handleSendBlueInbound(
 async function maybeHandleVisibleMemoryCommand(
   deps: SendBlueInboundRouteDeps,
   userId: string,
+  inboundText: string,
   parseResult: ReplyParseResult,
   now: () => Date
 ): Promise<void> {
@@ -663,6 +682,7 @@ async function maybeHandleVisibleMemoryCommand(
   const resolvedContext = await resolveSendBlueInboundVisibleMemoryCommandContext(
     seam,
     userId,
+    inboundText,
     parseResult,
     now
   );
@@ -711,23 +731,140 @@ async function recordSendBlueInboundVisibleMemoryCommandResponse(
 async function resolveSendBlueInboundVisibleMemoryCommandContext(
   seam: NonNullable<SendBlueInboundRouteDeps['visibleMemoryCommand']>,
   userId: string,
+  inboundText: string,
   parseResult: ReplyParseResult,
   now: () => Date
 ): Promise<SendBlueInboundVisibleMemoryCommandContext | null> {
   if (seam.context) return seam.context;
-  if (!seam.contextResolver) return null;
 
-  const parsedIntent = parseResult.ok
-    ? parseResult.source === 'deterministic'
-      ? parseResult.intent
-      : parseResult.classification.intent
-    : 'unparsed';
+  const parsedIntent = sendBlueInboundVisibleMemoryParsedIntent(parseResult);
+
+  const parsedContext = parseSendBlueInboundVisibleMemoryCommandContext(seam.contextParser, {
+    userId,
+    text: inboundText,
+    parsedIntent,
+    now: now()
+  });
+  if (parsedContext) return parsedContext;
+
+  if (!seam.contextResolver) return null;
 
   return seam.contextResolver({
     userId,
     parsedIntent,
     now: now()
   });
+}
+
+function sendBlueInboundVisibleMemoryParsedIntent(
+  parseResult: ReplyParseResult
+): ReplyIntent | 'stop' | 'start' | 'unparsed' {
+  if (!parseResult.ok) return 'unparsed';
+  if (parseResult.source === 'deterministic') return parseResult.intent;
+  return parseResult.classification.intent;
+}
+
+function parseSendBlueInboundVisibleMemoryCommandContext(
+  options: SendBlueInboundVisibleMemoryCommandContextParserOptions | undefined,
+  input: SendBlueInboundVisibleMemoryCommandContextParserInput
+): SendBlueInboundVisibleMemoryCommandContext | null {
+  if (options?.enabled !== true) return null;
+  const parser = options.parse ?? parseSendBlueInboundVisibleMemoryExactCommandContext;
+  return parser(input);
+}
+
+export function parseSendBlueInboundVisibleMemoryExactCommandContext(
+  input: SendBlueInboundVisibleMemoryCommandContextParserInput
+): SendBlueInboundVisibleMemoryCommandContext | null {
+  const text = normalizeSendBlueInboundVisibleMemoryCommandText(input.text);
+  if (text.length === 0) return null;
+
+  const remember = /^remember preference ([a-z0-9_:-]{1,80}): (.+)$/i.exec(text);
+  if (remember) {
+    const attribute = normalizeSendBlueInboundVisibleMemoryCommandAttribute(remember[1]);
+    const value = normalizeSendBlueInboundVisibleMemoryCommandValue(remember[2]);
+    if (!attribute || value === null) return null;
+    return Object.freeze({
+      text: 'Remember this preference',
+      parsedPreference: Object.freeze({
+        attribute,
+        value,
+        sourceRef: 'reply:sendblue-visible-memory-exact-command',
+        source: 'user_stated' as const,
+        confidence: 'high' as const,
+        updatedAt: input.now.toISOString()
+      })
+    });
+  }
+
+  const review = /^review memory(?: ([a-z0-9_:-]{1,80}))?$/i.exec(text);
+  if (review) {
+    const attribute = normalizeSendBlueInboundVisibleMemoryCommandAttribute(review[1]);
+    return Object.freeze({
+      text: 'What do you remember about me?',
+      ...(attribute ? { query: Object.freeze({ attribute }) } : {})
+    });
+  }
+
+  const explain = /^explain memory ([a-z0-9_:-]{1,80})$/i.exec(text);
+  if (explain) {
+    const attribute = normalizeSendBlueInboundVisibleMemoryCommandAttribute(explain[1]);
+    if (!attribute) return null;
+    return Object.freeze({
+      text: 'Why did you remember that?',
+      query: Object.freeze({ attribute })
+    });
+  }
+
+  const forget = /^forget memory ([a-z0-9_:-]{1,80})$/i.exec(text);
+  if (forget) {
+    const attribute = normalizeSendBlueInboundVisibleMemoryCommandAttribute(forget[1]);
+    if (!attribute) return null;
+    return Object.freeze({
+      text: 'Forget that preference',
+      query: Object.freeze({ attribute })
+    });
+  }
+
+  const correct = /^correct memory ([a-z0-9_:-]{1,80}): (.+)$/i.exec(text);
+  if (correct) {
+    const attribute = normalizeSendBlueInboundVisibleMemoryCommandAttribute(correct[1]);
+    const correctedValue = normalizeSendBlueInboundVisibleMemoryCommandValue(correct[2]);
+    if (!attribute || correctedValue === null) return null;
+    return Object.freeze({
+      text: 'Correct that preference',
+      query: Object.freeze({ attribute }),
+      correction: Object.freeze({
+        correctedValue,
+        sourceRef: 'reply:sendblue-visible-memory-exact-command',
+        source: 'user_stated' as const,
+        updatedAt: input.now.toISOString()
+      })
+    });
+  }
+
+  return null;
+}
+
+function normalizeSendBlueInboundVisibleMemoryCommandText(text: string): string {
+  return text.replace(/\s+/g, ' ').trim();
+}
+
+function normalizeSendBlueInboundVisibleMemoryCommandAttribute(
+  attribute: string | undefined
+): string | null {
+  if (attribute === undefined) return null;
+  const normalized = attribute.trim().toLowerCase();
+  if (!/^[a-z0-9_:-]{1,80}$/.test(normalized)) return null;
+  if (normalized.includes('@')) return null;
+  return normalized;
+}
+
+function normalizeSendBlueInboundVisibleMemoryCommandValue(value: string | undefined): string | null {
+  if (value === undefined) return null;
+  const normalized = value.replace(/\s+/g, ' ').trim();
+  if (normalized.length === 0 || normalized.length > 240) return null;
+  return normalized;
 }
 
 /* ---------------------------------------------------------------------- */
