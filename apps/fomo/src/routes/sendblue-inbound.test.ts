@@ -21,7 +21,8 @@ import {
 import {
   handleSendBlueInbound,
   type SendBlueInboundRouteDeps,
-  type SendBlueInboundVisibleMemoryCommandContext
+  type SendBlueInboundVisibleMemoryCommandContext,
+  type SendBlueInboundVisibleMemoryCommandResponseEnvelope
 } from './sendblue-inbound.ts';
 
 const WEBHOOK_SECRET = 'shh-test-sb-webhook-secret-from-dashboard';
@@ -695,10 +696,17 @@ describe('handleSendBlueInbound — disabled visible memory command adapter seam
 
   it('is inert when enabled without direct context or resolver context', async () => {
     const store = new CountingTypedMemoryStore();
+    const capturedResponses: SendBlueInboundVisibleMemoryCommandResponseEnvelope[] = [];
     const h = buildHarness({
       visibleMemoryCommand: {
         enabled: true,
-        store
+        store,
+        response: {
+          enabled: true,
+          record: (envelope) => {
+            capturedResponses.push(envelope);
+          }
+        }
       }
     });
 
@@ -711,12 +719,119 @@ describe('handleSendBlueInbound — disabled visible memory command adapter seam
     assert.equal(store.writeCount, 0);
     assert.equal(store.listCount, 0);
     assert.equal(store.retractCount, 0);
+    assert.deepEqual(capturedResponses, []);
+    assert.deepEqual(JSON.parse(r.body), { ok: true, intent: 'unclear', source: 'classifier' });
     assert.equal(
       (await h.auditStore.recent(FOUNDER_USER, 50)).some(
         (event) => event.action === 'visible_memory_command.app_adapter.outcome'
       ),
       false
     );
+  });
+
+  it('captures a sanitized visible-memory app-adapter response only when the response seam is enabled', async () => {
+    const store = new CountingTypedMemoryStore();
+    await store.write({
+      user_id: FOUNDER_USER,
+      kind: 'preference',
+      scope_key: 'preference:alert_timing',
+      attribute: 'alert_timing',
+      value: 'founder private mornings alice@example.com',
+      source: 'user_stated',
+      source_ref: 'reply:founder-private-response-ref',
+      confidence: 'high',
+      stale_marked_at: null,
+      retracted: false,
+      superseded_by: null,
+      updated_at: '2026-07-09T11:00:00.000Z'
+    } as NewTypedMemoryRow);
+    await store.write({
+      user_id: 'other-user',
+      kind: 'preference',
+      scope_key: 'preference:alert_timing',
+      attribute: 'alert_timing',
+      value: 'other-user private evenings alice@example.com',
+      source: 'user_stated',
+      source_ref: 'reply:other-user-private-response-ref',
+      confidence: 'high',
+      stale_marked_at: null,
+      retracted: false,
+      superseded_by: null,
+      updated_at: '2026-07-09T12:00:00.000Z'
+    } as NewTypedMemoryRow);
+    store.writeCount = 0;
+    const capturedResponses: SendBlueInboundVisibleMemoryCommandResponseEnvelope[] = [];
+    const INBOUND_PRIVATE_TEXT = 'raw inbound asks memory alice@example.com';
+    const h = buildHarness({
+      visibleMemoryCommand: {
+        enabled: true,
+        store,
+        context: {
+          text: 'What do you remember about me?',
+          query: { attribute: 'alert_timing' }
+        },
+        response: {
+          enabled: true,
+          record: (envelope) => {
+            capturedResponses.push(envelope);
+          }
+        }
+      }
+    });
+
+    const r = await handleSendBlueInbound(
+      { body: inboundBody({ content: INBOUND_PRIVATE_TEXT }), secretHeaderValue: WEBHOOK_SECRET },
+      h.deps
+    );
+
+    assert.equal(r.status, 200);
+    assert.deepEqual(JSON.parse(r.body), { ok: true, intent: 'unclear', source: 'classifier' });
+    assert.equal(capturedResponses.length, 1);
+    assert.equal(capturedResponses[0]!.handled, true);
+    assert.equal(capturedResponses[0]!.status, 'handled');
+    assert.equal(capturedResponses[0]!.user_id, FOUNDER_USER);
+    assert.equal(capturedResponses[0]!.audit_metadata.matched_intent, 'memory_review');
+    assert.equal(capturedResponses[0]!.audit_metadata.returned_count, 1);
+    assert.equal(capturedResponses[0]!.response.text?.includes('[redacted]'), true);
+    assert.equal('command_result' in capturedResponses[0]!, false);
+    const responseJson = JSON.stringify(capturedResponses);
+    assert.equal(responseJson.includes(INBOUND_PRIVATE_TEXT), false);
+    assert.equal(responseJson.includes('alice@example.com'), false);
+    assert.equal(responseJson.includes('founder private mornings'), false);
+    assert.equal(responseJson.includes('founder-private-response-ref'), false);
+    assert.equal(responseJson.includes('other-user'), false);
+    assert.equal(responseJson.includes('other-user-private-response-ref'), false);
+  });
+
+  it('does not capture a response when the response seam is disabled', async () => {
+    const store = new CountingTypedMemoryStore();
+    const capturedResponses: SendBlueInboundVisibleMemoryCommandResponseEnvelope[] = [];
+    const h = buildHarness({
+      visibleMemoryCommand: {
+        enabled: true,
+        store,
+        context: {
+          text: 'Remember this: I prefer mornings',
+          parsedPreference: { attribute: 'alert_timing', value: 'mornings' }
+        },
+        response: {
+          enabled: false,
+          record: (envelope) => {
+            capturedResponses.push(envelope);
+          }
+        }
+      }
+    });
+
+    const r = await handleSendBlueInbound(
+      { body: inboundBody({ content: 'memory command' }), secretHeaderValue: WEBHOOK_SECRET },
+      h.deps
+    );
+
+    assert.equal(r.status, 200);
+    assert.equal(store.writeCount, 1);
+    assert.deepEqual(capturedResponses, []);
+    assert.deepEqual(JSON.parse(r.body), { ok: true, intent: 'unclear', source: 'classifier' });
   });
 
   it('resolver supplies only caller-provided parsed context and never receives inbound freeform text', async () => {
@@ -906,6 +1021,7 @@ describe('handleSendBlueInbound — disabled visible memory command adapter seam
 
   it('does not invoke memory command handling for STOP even when enabled context is supplied', async () => {
     const store = new CountingTypedMemoryStore();
+    const capturedResponses: SendBlueInboundVisibleMemoryCommandResponseEnvelope[] = [];
     const h = buildHarness({
       visibleMemoryCommand: {
         enabled: true,
@@ -913,6 +1029,12 @@ describe('handleSendBlueInbound — disabled visible memory command adapter seam
         context: {
           text: 'Remember this: I prefer mornings',
           parsedPreference: { attribute: 'alert_timing', value: 'mornings' }
+        },
+        response: {
+          enabled: true,
+          record: (envelope) => {
+            capturedResponses.push(envelope);
+          }
         }
       },
       parser: async () => Object.freeze({ ok: true as const, source: 'deterministic' as const, intent: 'stop' as const })
@@ -927,6 +1049,7 @@ describe('handleSendBlueInbound — disabled visible memory command adapter seam
     assert.equal((await h.memoryStore.get(FOUNDER_USER, 'stop_active', null))?.detail.active, true);
     assert.equal(store.writeCount, 0);
     assert.equal(store.listCount, 0);
+    assert.deepEqual(capturedResponses, []);
     assert.equal(
       (await h.auditStore.recent(FOUNDER_USER, 50)).some(
         (event) => event.action === 'visible_memory_command.app_adapter.outcome'
