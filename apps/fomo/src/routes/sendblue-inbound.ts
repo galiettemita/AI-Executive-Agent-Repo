@@ -87,6 +87,13 @@ import {
 } from '../memory/memory-signals.js';
 import { type RankResultStore } from '../memory/rank-results.js';
 import {
+  createVisibleMemoryCommandAppAdapterAuditStoreRecorder,
+  handleVisibleMemoryCommandAppAdapterRequest,
+  type VisibleExplicitPreferenceRecallQuery,
+  type VisiblePreferenceCorrectOptions,
+  type VisiblePreferenceRememberOptions
+} from '../memory/typed-memory-visible-recall.js';
+import {
   type ReplyParseResult,
   type ReplyParserRequest,
   computeSnoozeDurationSeconds
@@ -234,8 +241,26 @@ export interface SendBlueInboundRouteDeps {
     send: (input: import('../adapters/sendblue/client.js').SendInput) => Promise<import('../adapters/sendblue/client.js').SendOutcome>;
   };
 
+  // Memory V1 PR-17 — disabled-by-default visible memory command seam.
+  // This is intentionally NOT a parser. The route may call the app adapter
+  // only when a caller explicitly enables the seam, supplies a typed-memory
+  // store, and supplies deterministic/caller-provided command context. The
+  // inbound SendBlue freeform text is never parsed into memory here.
+  readonly visibleMemoryCommand?: {
+    readonly enabled?: boolean;
+    readonly store?: Parameters<typeof handleVisibleMemoryCommandAppAdapterRequest>[0];
+    readonly context?: SendBlueInboundVisibleMemoryCommandContext;
+  };
+
   // Optional clock for tests.
   readonly now?: () => Date;
+}
+
+export interface SendBlueInboundVisibleMemoryCommandContext {
+  readonly text: string;
+  readonly parsedPreference?: VisiblePreferenceRememberOptions;
+  readonly query?: VisibleExplicitPreferenceRecallQuery;
+  readonly correction?: VisiblePreferenceCorrectOptions;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -569,11 +594,57 @@ export async function handleSendBlueInbound(
     return jsonResponse(500, { error: 'internal' });
   }
 
+  await maybeHandleVisibleMemoryCommand(
+    deps,
+    userId,
+    parseResult,
+    now
+  );
+
   return jsonResponse(200, {
     ok: true,
     intent: routeOutcome.classified_intent,
     source: routeOutcome.source
   });
+}
+
+async function maybeHandleVisibleMemoryCommand(
+  deps: SendBlueInboundRouteDeps,
+  userId: string,
+  parseResult: ReplyParseResult,
+  now: () => Date
+): Promise<void> {
+  const seam = deps.visibleMemoryCommand;
+  if (!seam?.enabled || !seam.store || !seam.context) return;
+
+  // Compliance commands stay load-bearing and separate. Even if a caller
+  // supplied memory-command context, STOP/START must not invoke memory command
+  // handling or bypass the existing deterministic enforcement path.
+  if (
+    parseResult.ok &&
+    parseResult.source === 'deterministic' &&
+    (parseResult.intent === 'stop' || parseResult.intent === 'start')
+  ) {
+    return;
+  }
+
+  await handleVisibleMemoryCommandAppAdapterRequest(seam.store, {
+    enabled: true,
+    userId,
+    text: seam.context.text,
+    parsedPreference: seam.context.parsedPreference,
+    query: seam.context.query,
+    correction: seam.context.correction,
+    audit: {
+      enabled: true,
+      record: createVisibleMemoryCommandAppAdapterAuditStoreRecorder({
+        enabled: true,
+        auditStore: deps.auditStore,
+        occurredAt: now().toISOString()
+      })
+    }
+  });
+
 }
 
 /* ---------------------------------------------------------------------- */
