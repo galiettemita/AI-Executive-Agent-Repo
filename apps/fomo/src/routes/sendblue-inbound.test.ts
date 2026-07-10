@@ -20,7 +20,8 @@ import {
 } from '../reply-parser/index.ts';
 import {
   handleSendBlueInbound,
-  type SendBlueInboundRouteDeps
+  type SendBlueInboundRouteDeps,
+  type SendBlueInboundVisibleMemoryCommandContext
 } from './sendblue-inbound.ts';
 
 const WEBHOOK_SECRET = 'shh-test-sb-webhook-secret-from-dashboard';
@@ -692,6 +693,217 @@ describe('handleSendBlueInbound — disabled visible memory command adapter seam
     assert.equal(auditJson.includes('private-sendblue-memory-command-ref'), false);
   });
 
+  it('is inert when enabled without direct context or resolver context', async () => {
+    const store = new CountingTypedMemoryStore();
+    const h = buildHarness({
+      visibleMemoryCommand: {
+        enabled: true,
+        store
+      }
+    });
+
+    const r = await handleSendBlueInbound(
+      { body: inboundBody({ content: 'Remember this: I prefer evenings' }), secretHeaderValue: WEBHOOK_SECRET },
+      h.deps
+    );
+
+    assert.equal(r.status, 200);
+    assert.equal(store.writeCount, 0);
+    assert.equal(store.listCount, 0);
+    assert.equal(store.retractCount, 0);
+    assert.equal(
+      (await h.auditStore.recent(FOUNDER_USER, 50)).some(
+        (event) => event.action === 'visible_memory_command.app_adapter.outcome'
+      ),
+      false
+    );
+  });
+
+  it('resolver supplies only caller-provided parsed context and never receives inbound freeform text', async () => {
+    const store = new CountingTypedMemoryStore();
+    const resolverInputs: unknown[] = [];
+    const INBOUND_PRIVATE_TEXT = 'raw inbound says remember alice@example.com as the secret value';
+    const h = buildHarness({
+      visibleMemoryCommand: {
+        enabled: true,
+        store,
+        contextResolver: (input): SendBlueInboundVisibleMemoryCommandContext => {
+          resolverInputs.push(input);
+          return {
+            text: 'Remember this: I prefer afternoon alerts',
+            parsedPreference: {
+              attribute: 'alert_timing',
+              value: 'afternoons',
+              sourceRef: 'reply:private-resolver-ref'
+            }
+          };
+        }
+      },
+      parser: async () =>
+        Object.freeze({
+          ok: true as const,
+          source: 'classifier' as const,
+          classification: Object.freeze({
+            intent: 'unclear' as const,
+            confidence: 0.3,
+            reason: 'unclear',
+            snooze_hint: null
+          }),
+          model_name: 'mock',
+          prompt_version: 'reply-parser-v0.1.0',
+          latency_ms: 1,
+          input_tokens: 1,
+          output_tokens: 1,
+          estimated_cost_usd: 0,
+          low_confidence_forced_unclear: false
+        })
+    });
+
+    const r = await handleSendBlueInbound(
+      { body: inboundBody({ content: INBOUND_PRIVATE_TEXT }), secretHeaderValue: WEBHOOK_SECRET },
+      h.deps
+    );
+
+    assert.equal(r.status, 200);
+    assert.equal(store.writeCount, 1);
+    const resolverInput = resolverInputs[0] as { userId?: unknown; parsedIntent?: unknown; now?: unknown };
+    assert.equal(resolverInputs.length, 1);
+    assert.equal(resolverInput.userId, FOUNDER_USER);
+    assert.equal(resolverInput.parsedIntent, 'unclear');
+    assert.ok(resolverInput.now instanceof Date);
+    const resolverInputJson = JSON.stringify(resolverInputs);
+    assert.equal(resolverInputJson.includes(INBOUND_PRIVATE_TEXT), false);
+    assert.equal(resolverInputJson.includes('alice@example.com'), false);
+
+    const recall = await recallVisibleExplicitPreference(store, FOUNDER_USER, {
+      attribute: 'alert_timing'
+    });
+    assert.equal(recall?.preference_summary, 'alert timing: afternoons');
+    const auditJson = JSON.stringify(await h.auditStore.recent(FOUNDER_USER, 50));
+    assert.equal(auditJson.includes(INBOUND_PRIVATE_TEXT), false);
+    assert.equal(auditJson.includes('alice@example.com'), false);
+    assert.equal(auditJson.includes('afternoons'), false);
+    assert.equal(auditJson.includes('private-resolver-ref'), false);
+  });
+
+  it('resolver can supply caller-provided query context without leaking cross-user/private memory', async () => {
+    const store = new CountingTypedMemoryStore();
+    await store.write({
+      user_id: FOUNDER_USER,
+      kind: 'preference',
+      scope_key: 'preference:alert_timing',
+      attribute: 'alert_timing',
+      value: 'founder private mornings alice@example.com',
+      source: 'user_stated',
+      source_ref: 'reply:founder-private-resolver-query-ref',
+      confidence: 'high',
+      stale_marked_at: null,
+      retracted: false,
+      superseded_by: null,
+      updated_at: '2026-07-09T11:00:00.000Z'
+    } as NewTypedMemoryRow);
+    await store.write({
+      user_id: 'other-user',
+      kind: 'preference',
+      scope_key: 'preference:alert_timing',
+      attribute: 'alert_timing',
+      value: 'other-user private evenings alice@example.com',
+      source: 'user_stated',
+      source_ref: 'reply:other-user-private-resolver-query-ref',
+      confidence: 'high',
+      stale_marked_at: null,
+      retracted: false,
+      superseded_by: null,
+      updated_at: '2026-07-09T12:00:00.000Z'
+    } as NewTypedMemoryRow);
+    store.writeCount = 0;
+    const INBOUND_PRIVATE_TEXT = 'raw inbound asks for memory alice@example.com';
+    const h = buildHarness({
+      visibleMemoryCommand: {
+        enabled: true,
+        store,
+        contextResolver: (): SendBlueInboundVisibleMemoryCommandContext => ({
+          text: 'What do you remember about me?',
+          query: { attribute: 'alert_timing' }
+        })
+      }
+    });
+
+    const r = await handleSendBlueInbound(
+      { body: inboundBody({ content: INBOUND_PRIVATE_TEXT }), secretHeaderValue: WEBHOOK_SECRET },
+      h.deps
+    );
+
+    assert.equal(r.status, 200);
+    assert.equal(store.writeCount, 0);
+    assert.equal(store.listCount, 1);
+    const memoryAudit = (await h.auditStore.recent(FOUNDER_USER, 50)).find(
+      (event) => event.action === 'visible_memory_command.app_adapter.outcome'
+    );
+    assert.ok(memoryAudit);
+    assert.equal((memoryAudit.detail as { returned_count?: number }).returned_count, 1);
+    const auditJson = JSON.stringify(await h.auditStore.recent(FOUNDER_USER, 50));
+    assert.equal(auditJson.includes(INBOUND_PRIVATE_TEXT), false);
+    assert.equal(auditJson.includes('alice@example.com'), false);
+    assert.equal(auditJson.includes('founder-private-resolver-query-ref'), false);
+    assert.equal(auditJson.includes('other-user'), false);
+    assert.equal(auditJson.includes('other-user-private-resolver-query-ref'), false);
+  });
+
+  it('resolver can supply caller-provided correction context without deriving values from inbound text', async () => {
+    const store = new CountingTypedMemoryStore();
+    await store.write({
+      user_id: FOUNDER_USER,
+      kind: 'preference',
+      scope_key: 'preference:alert_timing',
+      attribute: 'alert_timing',
+      value: 'evenings',
+      source: 'user_stated',
+      source_ref: 'reply:private-old-resolver-correction-ref',
+      confidence: 'high',
+      stale_marked_at: null,
+      retracted: false,
+      superseded_by: null,
+      updated_at: '2026-07-09T11:00:00.000Z'
+    } as NewTypedMemoryRow);
+    store.writeCount = 0;
+    const INBOUND_PRIVATE_TEXT = 'raw inbound says correct alice@example.com to secret late nights';
+    const h = buildHarness({
+      visibleMemoryCommand: {
+        enabled: true,
+        store,
+        contextResolver: (): SendBlueInboundVisibleMemoryCommandContext => ({
+          text: 'Correct that preference',
+          query: { attribute: 'alert_timing' },
+          correction: {
+            correctedValue: 'mornings',
+            sourceRef: 'reply:private-new-resolver-correction-ref',
+            updatedAt: '2026-07-09T13:00:00.000Z'
+          }
+        })
+      }
+    });
+
+    const r = await handleSendBlueInbound(
+      { body: inboundBody({ content: INBOUND_PRIVATE_TEXT }), secretHeaderValue: WEBHOOK_SECRET },
+      h.deps
+    );
+
+    assert.equal(r.status, 200);
+    assert.equal(store.writeCount, 1);
+    const recall = await recallVisibleExplicitPreference(store, FOUNDER_USER, {
+      attribute: 'alert_timing'
+    });
+    assert.equal(recall?.preference_summary, 'alert timing: mornings');
+    const auditJson = JSON.stringify(await h.auditStore.recent(FOUNDER_USER, 50));
+    assert.equal(auditJson.includes(INBOUND_PRIVATE_TEXT), false);
+    assert.equal(auditJson.includes('alice@example.com'), false);
+    assert.equal(auditJson.includes('late nights'), false);
+    assert.equal(auditJson.includes('mornings'), false);
+    assert.equal(auditJson.includes('private-old-resolver-correction-ref'), false);
+    assert.equal(auditJson.includes('private-new-resolver-correction-ref'), false);
+  });
+
   it('does not invoke memory command handling for STOP even when enabled context is supplied', async () => {
     const store = new CountingTypedMemoryStore();
     const h = buildHarness({
@@ -723,6 +935,65 @@ describe('handleSendBlueInbound — disabled visible memory command adapter seam
     );
   });
 
+  it('does not resolve memory command context for STOP', async () => {
+    const store = new CountingTypedMemoryStore();
+    let resolverCount = 0;
+    const h = buildHarness({
+      visibleMemoryCommand: {
+        enabled: true,
+        store,
+        contextResolver: () => {
+          resolverCount += 1;
+          return {
+            text: 'Remember this: I prefer mornings',
+            parsedPreference: { attribute: 'alert_timing', value: 'mornings' }
+          };
+        }
+      },
+      parser: async () => Object.freeze({ ok: true as const, source: 'deterministic' as const, intent: 'stop' as const })
+    });
+
+    const r = await handleSendBlueInbound(
+      { body: inboundBody({ content: 'STOP' }), secretHeaderValue: WEBHOOK_SECRET },
+      h.deps
+    );
+
+    assert.equal(r.status, 200);
+    assert.equal(resolverCount, 0);
+    assert.equal(store.writeCount, 0);
+    assert.equal(store.listCount, 0);
+  });
+
+  it('does not resolve memory command context for START', async () => {
+    const store = new CountingTypedMemoryStore();
+    let resolverCount = 0;
+    const h = buildHarness({
+      visibleMemoryCommand: {
+        enabled: true,
+        store,
+        contextResolver: () => {
+          resolverCount += 1;
+          return {
+            text: 'Remember this: I prefer mornings',
+            parsedPreference: { attribute: 'alert_timing', value: 'mornings' }
+          };
+        }
+      },
+      parser: async () => Object.freeze({ ok: true as const, source: 'deterministic' as const, intent: 'start' as const })
+    });
+
+    const r = await handleSendBlueInbound(
+      { body: inboundBody({ content: 'START' }), secretHeaderValue: WEBHOOK_SECRET },
+      h.deps
+    );
+
+    assert.equal(r.status, 200);
+    assert.equal(resolverCount, 0);
+    assert.equal(store.writeCount, 0);
+    assert.equal(store.listCount, 0);
+    assert.equal((await h.memoryStore.get(FOUNDER_USER, 'stop_active', null))?.detail.active, false);
+  });
+
   it('keeps enabled route-level review scoped to the resolved user and sanitized audit metadata', async () => {
     const store = new CountingTypedMemoryStore();
     await store.write({
@@ -738,7 +1009,7 @@ describe('handleSendBlueInbound — disabled visible memory command adapter seam
       retracted: false,
       superseded_by: null,
       updated_at: '2026-07-09T11:00:00.000Z'
-    });
+    } as NewTypedMemoryRow);
     store.writeCount = 0;
     const h = buildHarness({
       visibleMemoryCommand: {

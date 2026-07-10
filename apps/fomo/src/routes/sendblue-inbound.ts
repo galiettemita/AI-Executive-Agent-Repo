@@ -250,6 +250,7 @@ export interface SendBlueInboundRouteDeps {
     readonly enabled?: boolean;
     readonly store?: Parameters<typeof handleVisibleMemoryCommandAppAdapterRequest>[0];
     readonly context?: SendBlueInboundVisibleMemoryCommandContext;
+    readonly contextResolver?: SendBlueInboundVisibleMemoryCommandContextResolver;
   };
 
   // Optional clock for tests.
@@ -262,6 +263,16 @@ export interface SendBlueInboundVisibleMemoryCommandContext {
   readonly query?: VisibleExplicitPreferenceRecallQuery;
   readonly correction?: VisiblePreferenceCorrectOptions;
 }
+
+export interface SendBlueInboundVisibleMemoryCommandContextResolverInput {
+  readonly userId: string;
+  readonly parsedIntent: ReplyIntent | 'stop' | 'start' | 'unparsed';
+  readonly now: Date;
+}
+
+export type SendBlueInboundVisibleMemoryCommandContextResolver = (
+  input: SendBlueInboundVisibleMemoryCommandContextResolverInput
+) => Promise<SendBlueInboundVisibleMemoryCommandContext | null> | SendBlueInboundVisibleMemoryCommandContext | null;
 
 /* ---------------------------------------------------------------------- */
 /* HTTP response shape                                                    */
@@ -615,7 +626,7 @@ async function maybeHandleVisibleMemoryCommand(
   now: () => Date
 ): Promise<void> {
   const seam = deps.visibleMemoryCommand;
-  if (!seam?.enabled || !seam.store || !seam.context) return;
+  if (!seam?.enabled || !seam.store) return;
 
   // Compliance commands stay load-bearing and separate. Even if a caller
   // supplied memory-command context, STOP/START must not invoke memory command
@@ -628,13 +639,21 @@ async function maybeHandleVisibleMemoryCommand(
     return;
   }
 
+  const resolvedContext = await resolveSendBlueInboundVisibleMemoryCommandContext(
+    seam,
+    userId,
+    parseResult,
+    now
+  );
+  if (!resolvedContext) return;
+
   await handleVisibleMemoryCommandAppAdapterRequest(seam.store, {
     enabled: true,
     userId,
-    text: seam.context.text,
-    parsedPreference: seam.context.parsedPreference,
-    query: seam.context.query,
-    correction: seam.context.correction,
+    text: resolvedContext.text,
+    parsedPreference: resolvedContext.parsedPreference,
+    query: resolvedContext.query,
+    correction: resolvedContext.correction,
     audit: {
       enabled: true,
       record: createVisibleMemoryCommandAppAdapterAuditStoreRecorder({
@@ -645,6 +664,28 @@ async function maybeHandleVisibleMemoryCommand(
     }
   });
 
+}
+
+async function resolveSendBlueInboundVisibleMemoryCommandContext(
+  seam: NonNullable<SendBlueInboundRouteDeps['visibleMemoryCommand']>,
+  userId: string,
+  parseResult: ReplyParseResult,
+  now: () => Date
+): Promise<SendBlueInboundVisibleMemoryCommandContext | null> {
+  if (seam.context) return seam.context;
+  if (!seam.contextResolver) return null;
+
+  const parsedIntent = parseResult.ok
+    ? parseResult.source === 'deterministic'
+      ? parseResult.intent
+      : parseResult.classification.intent
+    : 'unparsed';
+
+  return seam.contextResolver({
+    userId,
+    parsedIntent,
+    now: now()
+  });
 }
 
 /* ---------------------------------------------------------------------- */
