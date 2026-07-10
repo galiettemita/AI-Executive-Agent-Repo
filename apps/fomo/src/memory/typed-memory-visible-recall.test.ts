@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
+import { InMemoryAuditStore } from '../core/audit.ts';
 import { InMemoryMemorySignalStore } from './memory-signals.ts';
 import {
   InMemoryTypedMemoryStore,
@@ -13,6 +14,7 @@ import {
   answerVisibleMemoryForgetCommand,
   answerVisibleMemoryReviewCommand,
   correctVisibleExplicitPreference,
+  createVisibleMemoryCommandAppAdapterAuditStoreRecorder,
   explainVisibleExplicitPreferenceMemoryUse,
   explainVisibleExplicitPreferenceUse,
   forgetVisibleExplicitPreference,
@@ -2098,6 +2100,218 @@ describe('Memory V1 visible explicit-preference recall', () => {
     assert.equal(store.writeCount, 0);
     assert.equal(store.retractCount, 0);
     const json = JSON.stringify(events);
+    assert.equal(json.includes('Can you help me'), false);
+    assert.equal(json.includes('Remember this'), false);
+    assert.equal(json.includes('should not write'), false);
+    assert.equal(json.includes('should not correct'), false);
+  });
+
+  it('keeps the app-adapter audit-store recorder disabled by default without writing audit rows', async () => {
+    const memoryStore = new InMemoryTypedMemoryStore();
+    const auditStore = new InMemoryAuditStore();
+    await memoryStore.write(preference({ value: 'morning' }));
+
+    await handleVisibleMemoryCommandAppAdapterRequest(memoryStore, {
+      enabled: true,
+      userId: 'u1',
+      text: 'What do you remember about me?',
+      query: { attribute: 'alert_timing' },
+      audit: {
+        enabled: true,
+        record: createVisibleMemoryCommandAppAdapterAuditStoreRecorder({ auditStore })
+      }
+    });
+
+    assert.deepEqual(await auditStore.recent('u1'), []);
+  });
+
+  it('writes enabled app-adapter outcomes to the audit store with sanitized structural metadata only', async () => {
+    const memoryStore = new InMemoryTypedMemoryStore();
+    const auditStore = new InMemoryAuditStore();
+
+    await handleVisibleMemoryCommandAppAdapterRequest(memoryStore, {
+      enabled: true,
+      userId: 'u1',
+      text: 'Remember this: I prefer mornings',
+      parsedPreference: {
+        attribute: 'alert_timing',
+        value: 'alice@example.com mornings only',
+        updatedAt: '2026-07-04T09:00:00.000Z',
+        sourceRef: 'reply:private-audit-store-remember-ref'
+      },
+      audit: {
+        enabled: true,
+        record: createVisibleMemoryCommandAppAdapterAuditStoreRecorder({
+          enabled: true,
+          auditStore,
+          occurredAt: '2026-07-04T09:01:00.000Z'
+        })
+      }
+    });
+
+    await memoryStore.write(
+      preference({
+        user_id: 'u2',
+        value: 'other-user audit-store seam secret alice@example.com',
+        source_ref: 'reply:other-user-audit-store-seam-secret',
+        updated_at: '2026-07-04T10:00:00.000Z'
+      })
+    );
+
+    await handleVisibleMemoryCommandAppAdapterRequest(memoryStore, {
+      enabled: true,
+      userId: 'u1',
+      text: 'What do you remember about me?',
+      query: { attribute: 'alert_timing' },
+      audit: {
+        enabled: true,
+        record: createVisibleMemoryCommandAppAdapterAuditStoreRecorder({
+          enabled: true,
+          auditStore,
+          occurredAt: '2026-07-04T09:02:00.000Z'
+        })
+      }
+    });
+
+    assert.deepEqual(await auditStore.recent('u2'), []);
+    const entries = await auditStore.recent('u1');
+    assert.equal(entries.length, 2);
+    assert.deepEqual(
+      entries.map((entry) => ({
+        occurred_at: entry.occurred_at,
+        actor_user_id: entry.actor_user_id,
+        actor_ip: entry.actor_ip,
+        actor_user_agent: entry.actor_user_agent,
+        action: entry.action,
+        target: entry.target,
+        result: entry.result,
+        detail: entry.detail
+      })),
+      [
+        {
+          occurred_at: '2026-07-04T09:02:00.000Z',
+          actor_user_id: 'u1',
+          actor_ip: null,
+          actor_user_agent: null,
+          action: 'visible_memory_command.app_adapter.outcome',
+          target: 'visible_memory_command_app_adapter',
+          result: 'success',
+          detail: {
+            memory_kind: 'preference',
+            adapter: 'visible_memory_command_app_adapter',
+            enabled: true,
+            handled: true,
+            status: 'handled',
+            matched_action: 'review_visible_explicit_preferences',
+            matched_intent: 'memory_review',
+            returned_count: 1,
+            row_ids: [1],
+            scope_keys: ['preference:alert_timing']
+          }
+        },
+        {
+          occurred_at: '2026-07-04T09:01:00.000Z',
+          actor_user_id: 'u1',
+          actor_ip: null,
+          actor_user_agent: null,
+          action: 'visible_memory_command.app_adapter.outcome',
+          target: 'visible_memory_command_app_adapter',
+          result: 'success',
+          detail: {
+            memory_kind: 'preference',
+            adapter: 'visible_memory_command_app_adapter',
+            enabled: true,
+            handled: true,
+            status: 'handled',
+            matched_action: 'remember_visible_explicit_preference',
+            matched_intent: 'memory_remember'
+          }
+        }
+      ]
+    );
+
+    const json = JSON.stringify(entries);
+    assert.equal(json.includes('Remember this'), false);
+    assert.equal(json.includes('What do you remember'), false);
+    assert.equal(json.includes('alice@example.com'), false);
+    assert.equal(json.includes('mornings only'), false);
+    assert.equal(json.includes('private-audit-store-remember-ref'), false);
+    assert.equal(json.includes('u2'), false);
+    assert.equal(json.includes('other-user audit-store seam secret'), false);
+    assert.equal(json.includes('other-user-audit-store-seam-secret'), false);
+  });
+
+  it('writes safe no-op audit-store statuses for unknown text and missing parsed context only when explicitly enabled', async () => {
+    class CountingStore extends InMemoryTypedMemoryStore {
+      writeCount = 0;
+      retractCount = 0;
+
+      override async write(input: NewTypedMemoryRow) {
+        this.writeCount += 1;
+        return super.write(input);
+      }
+
+      override async retract(
+        userId: string,
+        kind: Parameters<InMemoryTypedMemoryStore['retract']>[1],
+        scopeKey: string,
+        supersededBy: number | null = null
+      ) {
+        this.retractCount += 1;
+        return super.retract(userId, kind, scopeKey, supersededBy);
+      }
+    }
+
+    const memoryStore = new CountingStore();
+    const auditStore = new InMemoryAuditStore();
+    await memoryStore.write(preference({ value: 'morning' }));
+    memoryStore.writeCount = 0;
+
+    await handleVisibleMemoryCommandAppAdapterRequest(memoryStore, {
+      enabled: true,
+      userId: 'u1',
+      text: 'Can you help me with my inbox?',
+      parsedPreference: { attribute: 'alert_timing', value: 'should not write' },
+      query: { attribute: 'alert_timing' },
+      correction: { correctedValue: 'should not correct' },
+      audit: {
+        enabled: true,
+        record: createVisibleMemoryCommandAppAdapterAuditStoreRecorder({ enabled: true, auditStore })
+      }
+    });
+    await handleVisibleMemoryCommandAppAdapterRequest(memoryStore, {
+      enabled: true,
+      userId: 'u1',
+      text: 'Remember this: I prefer afternoons',
+      audit: {
+        enabled: true,
+        record: createVisibleMemoryCommandAppAdapterAuditStoreRecorder({ enabled: true, auditStore })
+      }
+    });
+
+    const entries = await auditStore.recent('u1');
+    assert.deepEqual(
+      entries.map((entry) => entry.detail),
+      [
+        {
+          memory_kind: 'preference',
+          adapter: 'visible_memory_command_app_adapter',
+          enabled: true,
+          handled: false,
+          status: 'no_memory_command'
+        },
+        {
+          memory_kind: 'preference',
+          adapter: 'visible_memory_command_app_adapter',
+          enabled: true,
+          handled: false,
+          status: 'no_memory_command'
+        }
+      ]
+    );
+    assert.equal(memoryStore.writeCount, 0);
+    assert.equal(memoryStore.retractCount, 0);
+    const json = JSON.stringify(entries);
     assert.equal(json.includes('Can you help me'), false);
     assert.equal(json.includes('Remember this'), false);
     assert.equal(json.includes('should not write'), false);

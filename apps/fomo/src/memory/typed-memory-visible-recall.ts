@@ -1,3 +1,4 @@
+import type { AuditStore } from '../core/audit.js';
 import {
   readTypedMemory,
   type NewTypedMemoryRow,
@@ -247,6 +248,12 @@ export type VisibleMemoryCommandAppAdapterAuditEventRecorder = (
 export interface VisibleMemoryCommandAppAdapterAuditOptions {
   readonly enabled?: boolean;
   readonly record?: VisibleMemoryCommandAppAdapterAuditEventRecorder;
+}
+
+export interface VisibleMemoryCommandAppAdapterAuditStoreRecorderOptions {
+  readonly enabled?: boolean;
+  readonly auditStore?: Pick<AuditStore, 'write'>;
+  readonly occurredAt?: string;
 }
 
 export interface VisibleMemoryCommandAppAdapterRequest extends UnifiedVisibleMemoryCommandCallerContext {
@@ -786,6 +793,25 @@ function visibleMemoryCommandAppAdapterAuditEvent(
     result: result.handled ? ('success' as const) : ('noop' as const),
     detail: Object.freeze(detail)
   });
+}
+
+export function createVisibleMemoryCommandAppAdapterAuditStoreRecorder(
+  options: VisibleMemoryCommandAppAdapterAuditStoreRecorderOptions = {}
+): VisibleMemoryCommandAppAdapterAuditEventRecorder {
+  return async (event) => {
+    if (options.enabled !== true || options.auditStore === undefined) return;
+
+    await options.auditStore.write({
+      actor_user_id: event.actor_user_id,
+      actor_ip: null,
+      actor_user_agent: null,
+      action: event.action,
+      target: event.target,
+      result: 'success',
+      detail: event.detail,
+      ...(options.occurredAt !== undefined ? { occurred_at: options.occurredAt } : {})
+    });
+  };
 }
 
 export async function handleVisibleMemoryCommandAppAdapterRequest(
