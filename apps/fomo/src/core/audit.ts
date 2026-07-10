@@ -420,7 +420,12 @@ export type AuditAction =
   // never the memory content. `brevio.memory.retraction_recorded` records the
   // retraction/supersession event. No consumer surface reads this facade yet.
   | 'brevio.memory.retrieved'
-  | 'brevio.memory.retraction_recorded';
+  | 'brevio.memory.retraction_recorded'
+  // Memory V1 visible command app-adapter audit-store seam. Disabled by
+  // default; enabled callers write structural outcome metadata only. Detail
+  // never includes raw command text, memory values, source refs, or cross-user
+  // memory content.
+  | 'visible_memory_command.app_adapter.outcome';
 
 // Phase 3G.1 — runtime registry of every FOMO-namespaced audit
 // action. Used by the 3G.1 evidence script (and any future ops
@@ -504,7 +509,9 @@ export const FOMO_AUDIT_ACTIONS = [
   'brevio.explain.served',
   // M1 no-migration typed-memory facade.
   'brevio.memory.retrieved',
-  'brevio.memory.retraction_recorded'
+  'brevio.memory.retraction_recorded',
+  // Memory V1 visible command app-adapter audit-store seam.
+  'visible_memory_command.app_adapter.outcome'
 ] as const satisfies readonly AuditAction[];
 
 export type AuditResult = 'success' | 'failure';
