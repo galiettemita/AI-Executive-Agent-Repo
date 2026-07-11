@@ -20,6 +20,7 @@ import {
 } from '../reply-parser/index.ts';
 import {
   handleSendBlueInbound,
+  parseSendBlueInboundVisibleMemoryExactCommandContext,
   type SendBlueInboundRouteDeps,
   type SendBlueInboundVisibleMemoryCommandContext,
   type SendBlueInboundVisibleMemoryCommandResponseEnvelope
@@ -1161,6 +1162,279 @@ describe('handleSendBlueInbound — disabled visible memory command adapter seam
     assert.equal(allAuditJson.includes('other-user'), false);
     assert.equal(allAuditJson.includes('alice@example.com'), false);
     assert.equal(allAuditJson.includes('other-user-secret-ref'), false);
+  });
+  it('exact-command parser helper accepts only explicit visible-memory command forms', () => {
+    const baseInput = Object.freeze({
+      userId: FOUNDER_USER,
+      parsedIntent: 'unclear' as const,
+      now: new Date('2026-07-10T12:00:00.000Z')
+    });
+
+    assert.deepEqual(
+      parseSendBlueInboundVisibleMemoryExactCommandContext({
+        ...baseInput,
+        text: 'remember preference alert_timing: mornings only'
+      }),
+      {
+        text: 'Remember this preference',
+        parsedPreference: {
+          attribute: 'alert_timing',
+          value: 'mornings only',
+          sourceRef: 'reply:sendblue-visible-memory-exact-command',
+          source: 'user_stated',
+          confidence: 'high',
+          updatedAt: '2026-07-10T12:00:00.000Z'
+        }
+      }
+    );
+    assert.deepEqual(
+      parseSendBlueInboundVisibleMemoryExactCommandContext({ ...baseInput, text: 'review memory alert_timing' }),
+      { text: 'What do you remember about me?', query: { attribute: 'alert_timing' } }
+    );
+    assert.deepEqual(
+      parseSendBlueInboundVisibleMemoryExactCommandContext({ ...baseInput, text: 'explain memory alert_timing' }),
+      { text: 'Why did you remember that?', query: { attribute: 'alert_timing' } }
+    );
+    assert.deepEqual(
+      parseSendBlueInboundVisibleMemoryExactCommandContext({ ...baseInput, text: 'forget memory alert_timing' }),
+      { text: 'Forget that preference', query: { attribute: 'alert_timing' } }
+    );
+    assert.deepEqual(
+      parseSendBlueInboundVisibleMemoryExactCommandContext({
+        ...baseInput,
+        text: 'correct memory alert_timing: afternoons'
+      }),
+      {
+        text: 'Correct that preference',
+        query: { attribute: 'alert_timing' },
+        correction: {
+          correctedValue: 'afternoons',
+          sourceRef: 'reply:sendblue-visible-memory-exact-command',
+          source: 'user_stated',
+          updatedAt: '2026-07-10T12:00:00.000Z'
+        }
+      }
+    );
+
+    for (const text of [
+      'I like mornings',
+      'please remember that I like mornings',
+      'remember preference alert_timing',
+      'remember preference alice@example.com: mornings',
+      'correct memory alert_timing',
+      'why did you remember that?',
+      'STOP',
+      'START'
+    ]) {
+      assert.equal(
+        parseSendBlueInboundVisibleMemoryExactCommandContext({ ...baseInput, text }),
+        null,
+        `expected non-exact text to be ignored: ${text}`
+      );
+    }
+  });
+
+  it('is inert when the exact-command context parser is absent or disabled', async () => {
+    const store = new CountingTypedMemoryStore();
+    const capturedResponses: SendBlueInboundVisibleMemoryCommandResponseEnvelope[] = [];
+    const h = buildHarness({
+      visibleMemoryCommand: {
+        enabled: true,
+        store,
+        contextParser: { enabled: false },
+        response: {
+          enabled: true,
+          record: (envelope) => {
+            capturedResponses.push(envelope);
+          }
+        }
+      }
+    });
+
+    const r = await handleSendBlueInbound(
+      { body: inboundBody({ content: 'remember preference alert_timing: mornings' }), secretHeaderValue: WEBHOOK_SECRET },
+      h.deps
+    );
+
+    assert.equal(r.status, 200);
+    assert.deepEqual(JSON.parse(r.body), { ok: true, intent: 'unclear', source: 'classifier' });
+    assert.equal(store.writeCount, 0);
+    assert.equal(store.listCount, 0);
+    assert.equal(store.retractCount, 0);
+    assert.deepEqual(capturedResponses, []);
+    assert.equal(
+      (await h.auditStore.recent(FOUNDER_USER, 50)).some(
+        (event) => event.action === 'visible_memory_command.app_adapter.outcome'
+      ),
+      false
+    );
+  });
+
+  it('when test-enabled, parses exact remember commands without changing the public HTTP response shape or leaking private values', async () => {
+    const store = new CountingTypedMemoryStore();
+    const capturedResponses: SendBlueInboundVisibleMemoryCommandResponseEnvelope[] = [];
+    const h = buildHarness({
+      visibleMemoryCommand: {
+        enabled: true,
+        store,
+        contextParser: { enabled: true },
+        response: {
+          enabled: true,
+          record: (envelope) => {
+            capturedResponses.push(envelope);
+          }
+        }
+      }
+    });
+    const INBOUND_PRIVATE_COMMAND = 'remember preference alert_timing: mornings alice@example.com';
+
+    const r = await handleSendBlueInbound(
+      { body: inboundBody({ content: INBOUND_PRIVATE_COMMAND }), secretHeaderValue: WEBHOOK_SECRET },
+      h.deps
+    );
+
+    assert.equal(r.status, 200);
+    assert.deepEqual(JSON.parse(r.body), { ok: true, intent: 'unclear', source: 'classifier' });
+    assert.equal(store.writeCount, 1);
+    assert.equal(capturedResponses.length, 1);
+    assert.equal(capturedResponses[0]!.handled, true);
+    assert.equal(capturedResponses[0]!.audit_metadata.matched_intent, 'memory_remember');
+    assert.equal(capturedResponses[0]!.response.text?.includes('mornings'), false);
+    const auditJson = JSON.stringify(await h.auditStore.recent(FOUNDER_USER, 50));
+    const responseJson = JSON.stringify(capturedResponses);
+    assert.equal(auditJson.includes(INBOUND_PRIVATE_COMMAND), false);
+    assert.equal(auditJson.includes('alice@example.com'), false);
+    assert.equal(auditJson.includes('mornings'), false);
+    assert.equal(auditJson.includes('sendblue-visible-memory-exact-command'), false);
+    assert.equal(responseJson.includes(INBOUND_PRIVATE_COMMAND), false);
+    assert.equal(responseJson.includes('alice@example.com'), false);
+    assert.equal(responseJson.includes('mornings'), false);
+    assert.equal(responseJson.includes('sendblue-visible-memory-exact-command'), false);
+  });
+
+  it('when test-enabled, parses exact review/explain/forget/correct commands with user scoping and no cross-user leakage', async () => {
+    const store = new CountingTypedMemoryStore();
+    await store.write({
+      user_id: FOUNDER_USER,
+      kind: 'preference',
+      scope_key: 'preference:alert_timing',
+      attribute: 'alert_timing',
+      value: 'founder private mornings alice@example.com',
+      source: 'user_stated',
+      source_ref: 'reply:founder-private-exact-parser-ref',
+      confidence: 'high',
+      stale_marked_at: null,
+      retracted: false,
+      superseded_by: null,
+      updated_at: '2026-07-09T11:00:00.000Z'
+    } as NewTypedMemoryRow);
+    await store.write({
+      user_id: 'other-user',
+      kind: 'preference',
+      scope_key: 'preference:alert_timing',
+      attribute: 'alert_timing',
+      value: 'other-user private evenings alice@example.com',
+      source: 'user_stated',
+      source_ref: 'reply:other-user-private-exact-parser-ref',
+      confidence: 'high',
+      stale_marked_at: null,
+      retracted: false,
+      superseded_by: null,
+      updated_at: '2026-07-09T12:00:00.000Z'
+    } as NewTypedMemoryRow);
+    store.writeCount = 0;
+    const capturedResponses: SendBlueInboundVisibleMemoryCommandResponseEnvelope[] = [];
+    const h = buildHarness({
+      visibleMemoryCommand: {
+        enabled: true,
+        store,
+        contextParser: { enabled: true },
+        response: {
+          enabled: true,
+          record: (envelope) => {
+            capturedResponses.push(envelope);
+          }
+        }
+      }
+    });
+
+    for (const content of [
+      'review memory alert_timing',
+      'explain memory alert_timing',
+      'correct memory alert_timing: afternoons',
+      'forget memory alert_timing'
+    ]) {
+      const r = await handleSendBlueInbound(
+        { body: inboundBody({ content, message_handle: `sb-${content.split(' ')[0]}` }), secretHeaderValue: WEBHOOK_SECRET },
+        h.deps
+      );
+      assert.equal(r.status, 200);
+      assert.deepEqual(JSON.parse(r.body), { ok: true, intent: 'unclear', source: 'classifier' });
+    }
+
+    assert.equal(capturedResponses.length, 4);
+    assert.deepEqual(
+      capturedResponses.map((response) => response.audit_metadata.matched_intent),
+      ['memory_review', 'memory_explanation', 'memory_correct', 'memory_forget']
+    );
+    const auditJson = JSON.stringify(await h.auditStore.recent(FOUNDER_USER, 100));
+    const responseJson = JSON.stringify(capturedResponses);
+    for (const forbidden of [
+      'alice@example.com',
+      'founder private mornings',
+      'founder-private-exact-parser-ref',
+      'other-user',
+      'other-user private evenings',
+      'other-user-private-exact-parser-ref',
+      'afternoons',
+      'sendblue-visible-memory-exact-command'
+    ]) {
+      assert.equal(auditJson.includes(forbidden), false, `audit leaked ${forbidden}`);
+      assert.equal(responseJson.includes(forbidden), false, `response leaked ${forbidden}`);
+    }
+  });
+
+  it('does not parse STOP or START through the exact-command context parser', async () => {
+    for (const command of ['STOP', 'START'] as const) {
+      const store = new CountingTypedMemoryStore();
+      let parserCount = 0;
+      const h = buildHarness({
+        visibleMemoryCommand: {
+          enabled: true,
+          store,
+          contextParser: {
+            enabled: true,
+            parse: () => {
+              parserCount += 1;
+              return {
+                text: 'Remember this preference',
+                parsedPreference: { attribute: 'alert_timing', value: 'mornings' }
+              };
+            }
+          }
+        },
+        parser: async () =>
+          Object.freeze({
+            ok: true as const,
+            source: 'deterministic' as const,
+            intent: command.toLowerCase() as 'stop' | 'start'
+          })
+      });
+
+      const r = await handleSendBlueInbound(
+        { body: inboundBody({ content: command }), secretHeaderValue: WEBHOOK_SECRET },
+        h.deps
+      );
+
+      assert.equal(r.status, 200);
+      assert.equal(parserCount, 0);
+      assert.equal(store.writeCount, 0);
+      assert.equal(store.listCount, 0);
+      assert.equal(
+        (await h.memoryStore.get(FOUNDER_USER, 'stop_active', null))?.detail.active,
+        command === 'STOP'
+      );
+    }
   });
 });
 
