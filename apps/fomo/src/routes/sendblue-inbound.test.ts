@@ -20,12 +20,14 @@ import {
 } from '../reply-parser/index.ts';
 import {
   createSendBlueInboundVisibleMemoryCommandReplyDeliveryCandidate,
+  dispatchSendBlueInboundVisibleMemoryCommandReplyDeliveryCandidate,
   handleSendBlueInbound,
   parseSendBlueInboundVisibleMemoryExactCommandContext,
   renderSendBlueInboundVisibleMemoryCommandReplyText,
   type SendBlueInboundRouteDeps,
   type SendBlueInboundVisibleMemoryCommandContext,
   type SendBlueInboundVisibleMemoryCommandReplyDeliveryCandidate,
+  type SendBlueInboundVisibleMemoryCommandReplyDeliveryDispatchResult,
   type SendBlueInboundVisibleMemoryCommandReplyText,
   type SendBlueInboundVisibleMemoryCommandResponseEnvelope
 } from './sendblue-inbound.ts';
@@ -1804,6 +1806,297 @@ describe('handleSendBlueInbound — disabled visible memory command adapter seam
     ]) {
       assert.equal(responseAndAuditJson.includes(forbidden), false, `delivery candidate seam leaked ${forbidden}`);
     }
+  });
+
+  it('reply delivery dispatch helper uses only an injected transport and returns sanitized metadata', async () => {
+    const candidate = createSendBlueInboundVisibleMemoryCommandReplyDeliveryCandidate({
+      to: FOUNDER_PHONE,
+      reply: {
+        text: 'Safe delivery text from renderer.',
+        metadata: {
+          renderer: 'sendblue_visible_memory_command_reply_text_renderer',
+          memory_kind: 'preference',
+          handled: true,
+          status: 'handled',
+          matched_intent: 'memory_review',
+          returned_count: 1
+        }
+      }
+    });
+    assert.notEqual(candidate, null);
+    const transported: SendBlueInboundVisibleMemoryCommandReplyDeliveryCandidate[] = [];
+
+    const result = await dispatchSendBlueInboundVisibleMemoryCommandReplyDeliveryCandidate({
+      candidate: candidate!,
+      transport: {
+        dispatch: (dispatchCandidate) => {
+          transported.push(dispatchCandidate);
+        }
+      }
+    });
+
+    assert.deepEqual(transported, [candidate]);
+    assert.deepEqual(result, {
+      dispatched: true,
+      metadata: {
+        dispatcher: 'sendblue_visible_memory_command_reply_delivery_dispatch',
+        delivery_candidate_renderer: 'sendblue_visible_memory_command_reply_delivery_candidate',
+        reply_text_renderer: 'sendblue_visible_memory_command_reply_text_renderer',
+        memory_kind: 'preference',
+        handled: true,
+        status: 'handled',
+        matched_intent: 'memory_review',
+        returned_count: 1,
+        to_slug: '3459',
+        text_bytes: Buffer.byteLength('Safe delivery text from renderer.', 'utf8')
+      }
+    });
+    const metadataJson = JSON.stringify(result.metadata);
+    assert.equal(metadataJson.includes(FOUNDER_PHONE), false);
+    assert.equal(metadataJson.includes('Safe delivery text from renderer.'), false);
+  });
+
+  it('reply delivery dispatch seam is inert by default and without an injected transport', async () => {
+    const store = new CountingTypedMemoryStore();
+    const transported: SendBlueInboundVisibleMemoryCommandReplyDeliveryCandidate[] = [];
+    const dispatchResults: SendBlueInboundVisibleMemoryCommandReplyDeliveryDispatchResult[] = [];
+    const h = buildHarness({
+      visibleMemoryCommand: {
+        enabled: true,
+        store,
+        contextParser: { enabled: true },
+        response: {
+          enabled: true,
+          replyText: {
+            enabled: true,
+            deliveryCandidate: {
+              enabled: true,
+              dispatch: {
+                enabled: false,
+                transport: {
+                  dispatch: (candidate) => {
+                    transported.push(candidate);
+                  }
+                },
+                record: (result) => {
+                  dispatchResults.push(result);
+                }
+              }
+            }
+          }
+        }
+      }
+    });
+
+    const r = await handleSendBlueInbound(
+      { body: inboundBody({ content: 'review memory alert_timing' }), secretHeaderValue: WEBHOOK_SECRET },
+      h.deps
+    );
+
+    assert.equal(r.status, 200);
+    assert.deepEqual(JSON.parse(r.body), { ok: true, intent: 'unclear', source: 'classifier' });
+    assert.deepEqual(transported, []);
+    assert.deepEqual(dispatchResults, []);
+
+    const hWithoutTransport = buildHarness({
+      visibleMemoryCommand: {
+        enabled: true,
+        store: new CountingTypedMemoryStore(),
+        contextParser: { enabled: true },
+        response: {
+          enabled: true,
+          replyText: {
+            enabled: true,
+            deliveryCandidate: {
+              enabled: true,
+              dispatch: {
+                enabled: true,
+                record: (result) => {
+                  dispatchResults.push(result);
+                }
+              }
+            }
+          }
+        }
+      }
+    });
+
+    const rWithoutTransport = await handleSendBlueInbound(
+      { body: inboundBody({ content: 'review memory alert_timing' }), secretHeaderValue: WEBHOOK_SECRET },
+      hWithoutTransport.deps
+    );
+
+    assert.equal(rWithoutTransport.status, 200);
+    assert.deepEqual(JSON.parse(rWithoutTransport.body), { ok: true, intent: 'unclear', source: 'classifier' });
+    assert.deepEqual(transported, []);
+    assert.deepEqual(dispatchResults, []);
+  });
+
+  it('when test-enabled, dispatches delivery candidates without exposing private values, dispatch text, source refs, inbound text, cross-user data, or full phone in metadata', async () => {
+    const store = new CountingTypedMemoryStore();
+    await store.write({
+      user_id: FOUNDER_USER,
+      kind: 'preference',
+      scope_key: 'preference:alert_timing',
+      attribute: 'alert_timing',
+      value: 'founder private dispatch mornings alice@example.com',
+      source: 'user_stated',
+      source_ref: 'reply:founder-private-dispatch-ref',
+      confidence: 'high',
+      stale_marked_at: null,
+      retracted: false,
+      superseded_by: null,
+      updated_at: '2026-07-09T11:00:00.000Z'
+    } as NewTypedMemoryRow);
+    await store.write({
+      user_id: 'other-user',
+      kind: 'preference',
+      scope_key: 'preference:alert_timing',
+      attribute: 'alert_timing',
+      value: 'other-user private dispatch evenings alice@example.com',
+      source: 'user_stated',
+      source_ref: 'reply:other-user-private-dispatch-ref',
+      confidence: 'high',
+      stale_marked_at: null,
+      retracted: false,
+      superseded_by: null,
+      updated_at: '2026-07-09T12:00:00.000Z'
+    } as NewTypedMemoryRow);
+    store.writeCount = 0;
+    const transported: SendBlueInboundVisibleMemoryCommandReplyDeliveryCandidate[] = [];
+    const dispatchResults: SendBlueInboundVisibleMemoryCommandReplyDeliveryDispatchResult[] = [];
+    const h = buildHarness({
+      visibleMemoryCommand: {
+        enabled: true,
+        store,
+        contextParser: { enabled: true },
+        response: {
+          enabled: true,
+          replyText: {
+            enabled: true,
+            deliveryCandidate: {
+              enabled: true,
+              dispatch: {
+                enabled: true,
+                transport: {
+                  dispatch: (candidate) => {
+                    transported.push(candidate);
+                  }
+                },
+                record: (result) => {
+                  dispatchResults.push(result);
+                }
+              }
+            }
+          }
+        }
+      }
+    });
+
+    for (const content of [
+      'review memory alert_timing',
+      'explain memory alert_timing',
+      'forget memory alert_timing'
+    ]) {
+      const r = await handleSendBlueInbound(
+        { body: inboundBody({ content, message_handle: `sb-dispatch-${content.split(' ')[0]}` }), secretHeaderValue: WEBHOOK_SECRET },
+        h.deps
+      );
+      assert.equal(r.status, 200);
+      assert.deepEqual(JSON.parse(r.body), { ok: true, intent: 'unclear', source: 'classifier' });
+    }
+
+    assert.equal(transported.length, 3);
+    assert.equal(dispatchResults.length, 3);
+    assert.deepEqual(
+      dispatchResults.map((result) => result.metadata.matched_intent),
+      ['memory_review', 'memory_explanation', 'memory_forget']
+    );
+    assert.equal(dispatchResults.every((result) => result.metadata.to_slug === '3459'), true);
+    assert.equal(dispatchResults.every((result) => result.metadata.text_bytes > 0), true);
+    const responseAndAuditJson = JSON.stringify({
+      audits: await h.auditStore.recent(FOUNDER_USER, 50),
+      dispatchMetadata: dispatchResults.map((result) => result.metadata)
+    });
+    for (const forbidden of [
+      FOUNDER_PHONE,
+      'founder private dispatch mornings',
+      'founder-private-dispatch-ref',
+      'other-user',
+      'other-user private dispatch evenings',
+      'other-user-private-dispatch-ref',
+      'sendblue-visible-memory-exact-command',
+      'review memory alert_timing',
+      'explain memory alert_timing',
+      'forget memory alert_timing',
+      ...transported.map((candidate) => candidate.text)
+    ]) {
+      assert.equal(responseAndAuditJson.includes(forbidden), false, `delivery dispatch seam leaked ${forbidden}`);
+    }
+  });
+
+  it('does not attempt delivery dispatch for empty, unhandled, or missing delivery candidates', async () => {
+    const transported: SendBlueInboundVisibleMemoryCommandReplyDeliveryCandidate[] = [];
+    const dispatchResults: SendBlueInboundVisibleMemoryCommandReplyDeliveryDispatchResult[] = [];
+    const baseReply: SendBlueInboundVisibleMemoryCommandReplyText = {
+      text: 'safe text',
+      metadata: {
+        renderer: 'sendblue_visible_memory_command_reply_text_renderer',
+        memory_kind: 'preference',
+        handled: true,
+        status: 'handled'
+      }
+    };
+
+    for (const reply of [
+      { ...baseReply, text: '   ' },
+      { ...baseReply, metadata: { ...baseReply.metadata, handled: false, status: 'no_memory_command' as const } }
+    ]) {
+      const candidate = createSendBlueInboundVisibleMemoryCommandReplyDeliveryCandidate({
+        to: FOUNDER_PHONE,
+        reply
+      });
+      assert.equal(candidate, null);
+    }
+
+    const h = buildHarness({
+      visibleMemoryCommand: {
+        enabled: true,
+        store: new CountingTypedMemoryStore(),
+        contextParser: { enabled: true },
+        response: {
+          enabled: true,
+          replyText: {
+            enabled: true,
+            deliveryCandidate: {
+              enabled: true,
+              create: () => null,
+              dispatch: {
+                enabled: true,
+                transport: {
+                  dispatch: (candidate) => {
+                    transported.push(candidate);
+                  }
+                },
+                record: (result) => {
+                  dispatchResults.push(result);
+                }
+              }
+            }
+          }
+        }
+      }
+    });
+
+    const r = await handleSendBlueInbound(
+      { body: inboundBody({ content: 'review memory alert_timing' }), secretHeaderValue: WEBHOOK_SECRET },
+      h.deps
+    );
+
+    assert.equal(r.status, 200);
+    assert.deepEqual(JSON.parse(r.body), { ok: true, intent: 'unclear', source: 'classifier' });
+    assert.deepEqual(transported, []);
+    assert.deepEqual(dispatchResults, []);
   });
 });
 

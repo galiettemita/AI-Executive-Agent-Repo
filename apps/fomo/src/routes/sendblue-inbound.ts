@@ -333,6 +333,24 @@ export interface SendBlueInboundVisibleMemoryCommandReplyDeliveryCandidate {
   };
 }
 
+export interface SendBlueInboundVisibleMemoryCommandReplyDeliveryDispatchResult {
+  readonly dispatched: true;
+  readonly metadata: {
+    readonly dispatcher: 'sendblue_visible_memory_command_reply_delivery_dispatch';
+    readonly delivery_candidate_renderer: SendBlueInboundVisibleMemoryCommandReplyDeliveryCandidate['metadata']['renderer'];
+    readonly reply_text_renderer: SendBlueInboundVisibleMemoryCommandReplyDeliveryCandidate['metadata']['reply_text_renderer'];
+    readonly memory_kind: 'preference';
+    readonly handled: true;
+    readonly status: VisibleMemoryCommandAppAdapterResult['status'];
+    readonly matched_intent?: NonNullable<
+      VisibleMemoryCommandAppAdapterResult['audit_metadata']['matched_intent']
+    >;
+    readonly returned_count?: number;
+    readonly to_slug: string;
+    readonly text_bytes: number;
+  };
+}
+
 export type SendBlueInboundVisibleMemoryCommandReplyTextRecorder = (
   reply: SendBlueInboundVisibleMemoryCommandReplyText
 ) => void | Promise<void>;
@@ -352,10 +370,27 @@ export type SendBlueInboundVisibleMemoryCommandReplyDeliveryCandidateCreator = (
   }
 ) => SendBlueInboundVisibleMemoryCommandReplyDeliveryCandidate | null;
 
+export interface SendBlueInboundVisibleMemoryCommandReplyDeliveryDispatchTransport {
+  readonly dispatch: (
+    candidate: SendBlueInboundVisibleMemoryCommandReplyDeliveryCandidate
+  ) => void | Promise<void>;
+}
+
+export type SendBlueInboundVisibleMemoryCommandReplyDeliveryDispatchRecorder = (
+  result: SendBlueInboundVisibleMemoryCommandReplyDeliveryDispatchResult
+) => void | Promise<void>;
+
+export interface SendBlueInboundVisibleMemoryCommandReplyDeliveryDispatchOptions {
+  readonly enabled?: boolean;
+  readonly transport?: SendBlueInboundVisibleMemoryCommandReplyDeliveryDispatchTransport;
+  readonly record?: SendBlueInboundVisibleMemoryCommandReplyDeliveryDispatchRecorder;
+}
+
 export interface SendBlueInboundVisibleMemoryCommandReplyDeliveryCandidateOptions {
   readonly enabled?: boolean;
   readonly create?: SendBlueInboundVisibleMemoryCommandReplyDeliveryCandidateCreator;
   readonly record?: SendBlueInboundVisibleMemoryCommandReplyDeliveryCandidateRecorder;
+  readonly dispatch?: SendBlueInboundVisibleMemoryCommandReplyDeliveryDispatchOptions;
 }
 
 export interface SendBlueInboundVisibleMemoryCommandReplyTextRendererOptions {
@@ -843,6 +878,34 @@ export function createSendBlueInboundVisibleMemoryCommandReplyDeliveryCandidate(
   });
 }
 
+export async function dispatchSendBlueInboundVisibleMemoryCommandReplyDeliveryCandidate(
+  input: {
+    readonly candidate: SendBlueInboundVisibleMemoryCommandReplyDeliveryCandidate;
+    readonly transport: SendBlueInboundVisibleMemoryCommandReplyDeliveryDispatchTransport;
+  }
+): Promise<SendBlueInboundVisibleMemoryCommandReplyDeliveryDispatchResult> {
+  await input.transport.dispatch(input.candidate);
+  return Object.freeze({
+    dispatched: true as const,
+    metadata: Object.freeze({
+      dispatcher: 'sendblue_visible_memory_command_reply_delivery_dispatch' as const,
+      delivery_candidate_renderer: input.candidate.metadata.renderer,
+      reply_text_renderer: input.candidate.metadata.reply_text_renderer,
+      memory_kind: 'preference' as const,
+      handled: true as const,
+      status: input.candidate.metadata.status,
+      ...(input.candidate.metadata.matched_intent !== undefined
+        ? { matched_intent: input.candidate.metadata.matched_intent }
+        : {}),
+      ...(input.candidate.metadata.returned_count !== undefined
+        ? { returned_count: input.candidate.metadata.returned_count }
+        : {}),
+      to_slug: phoneSlug(input.candidate.to),
+      text_bytes: Buffer.byteLength(input.candidate.text, 'utf8')
+    })
+  });
+}
+
 async function recordSendBlueInboundVisibleMemoryCommandReplyText(
   options: SendBlueInboundVisibleMemoryCommandReplyTextRendererOptions | undefined,
   envelope: SendBlueInboundVisibleMemoryCommandResponseEnvelope,
@@ -866,11 +929,28 @@ async function recordSendBlueInboundVisibleMemoryCommandReplyDeliveryCandidate(
   reply: SendBlueInboundVisibleMemoryCommandReplyText,
   fromNumber: string
 ): Promise<void> {
-  if (options?.enabled !== true || options.record === undefined) return;
+  if (options?.enabled !== true) return;
   const create = options.create ?? createSendBlueInboundVisibleMemoryCommandReplyDeliveryCandidate;
   const candidate = create({ reply, to: fromNumber });
   if (candidate === null) return;
-  await options.record(candidate);
+  if (options.record !== undefined) {
+    await options.record(candidate);
+  }
+  await recordSendBlueInboundVisibleMemoryCommandReplyDeliveryDispatch(options.dispatch, candidate);
+}
+
+async function recordSendBlueInboundVisibleMemoryCommandReplyDeliveryDispatch(
+  options: SendBlueInboundVisibleMemoryCommandReplyDeliveryDispatchOptions | undefined,
+  candidate: SendBlueInboundVisibleMemoryCommandReplyDeliveryCandidate
+): Promise<void> {
+  if (options?.enabled !== true || options.transport === undefined) return;
+  const result = await dispatchSendBlueInboundVisibleMemoryCommandReplyDeliveryCandidate({
+    candidate,
+    transport: options.transport
+  });
+  if (options.record !== undefined) {
+    await options.record(result);
+  }
 }
 
 function normalizeSendBlueInboundVisibleMemoryCommandReplyText(text: string | null): string | null {
