@@ -4,7 +4,48 @@ Harness anchor loaded: BREVIO-HARNESS-V1-NO-CIRCLING-FAST-SHIPPING
 
 There must be exactly one item marked `NEXT`. No cycle may say “continue M1” or “continue Memory V1” vaguely. Move the marker only after the current item is merged or explicitly blocked with owner/action.
 
-## NEXT — PR-23: Disabled SendBlue visible-memory command reply delivery dispatch seam
+## NEXT — Founder gate for PR-24: SendBlue visible-memory command reply live delivery activation
+
+- **Exact branch after approval:** `memory-v1-sendblue-visible-memory-command-reply-live-delivery-activation`
+- **Purpose:** Activate the already-built visible-memory SendBlue command reply path for real delivery only after founder approval of the exact live behavior, using the PR-19 through PR-23 seams and existing safety invariants, so explicit remember/review/explain/forget/correct memory commands can receive visible replies without broad runtime expansion.
+- **Memory V1 Visible Behavior exit condition advanced:**
+  1. remember explicit user preferences;
+  2. retrieve relevant memories safely;
+  3. explain why a memory was used;
+  4. forget or correct a memory;
+  5. prove source/audit metadata;
+  6. prevent cross-user leakage;
+  7. expose at least one visible memory behavior to the user.
+- **Allowed after explicit founder approval:**
+  - narrow production wiring for the exact visible-memory command reply path only;
+  - real SendBlue delivery for explicit memory command replies only;
+  - kill-switch/default-off activation controls if required by the approved rollout;
+  - tests proving exact-command-only behavior, no freeform parsing, STOP/START preservation, public response-shape expectations, cross-user isolation, tombstone/deletion exclusion, and no private/full-phone/raw-command/dispatch-text leakage;
+  - smoke plan and rollback/disable command for live delivery.
+- **Forbidden without fresh founder approval:**
+  - any live activation work, real SendBlue outbound wiring, or outbound memory command send;
+  - persisting full phone numbers, raw command text, private memory values, source refs, or dispatch text;
+  - freeform LLM parsing or rendering of arbitrary user text into memory;
+  - DB migrations;
+  - new tables/schema changes;
+  - production deploy;
+  - Calendar live activation;
+  - Composio runtime;
+  - Tool Gateway;
+  - browser automation/action tools;
+  - broad HMR rewrite;
+  - OAuth/security scope changes;
+  - broad strategic phase fork.
+- **Expected changed files after approval:** narrow SendBlue inbound route/bootstrap/tests around the already-built visible-memory command parser → adapter → response → renderer → delivery candidate → dispatch path; no DB migrations/new tables/broad docs/harness work.
+- **Tests required after approval:** targeted SendBlue inbound visible-memory live-delivery activation tests; existing sendblue-inbound/why/explain tests; full lint/test/build; CI for exact PR commit; smoke proof before production rollout if deployment is requested.
+- **Merge condition after approval:** PR exists, CI green for exact PR commit, diff stays inside approved Memory V1 visible behavior scope, exact founder-approved live behavior only, no forbidden surfaces touched, safety gates/defaults/kill-switches proven, and no full phone/private memory data/raw command/source refs/dispatch text exposed in audit/HTTP metadata.
+- **Exit condition:** Galiette gives an explicit approval phrase for the exact live SendBlue visible-memory command reply delivery behavior, then PR-24 is implemented, verified, merged, and local `main` synced; or this queue item remains blocked with owner/action.
+- **Stop condition:** Stop and report owner/action if founder approval is absent or if implementation requires migration/new table, production deploy beyond the approved rollout, OAuth/security scope change, freeform LLM memory parsing/rendering, raw command text/private values/source refs/full phone numbers/dispatch text in audit/response metadata, Calendar/Composio/Tool Gateway/browser/action tools, or broad strategic phase fork.
+- **Founder approval needed?** Yes. Exact approval needed before PR-24 implementation: approve live SendBlue delivery of sanitized visible-memory command replies for explicit remember/review/explain/forget/correct commands, including real outbound SendBlue wiring/sends and any runtime activation or production rollout instructions.
+
+## Completed
+
+### PR-23: Disabled SendBlue visible-memory command reply delivery dispatch seam
 
 - **Exact branch:** `memory-v1-sendblue-visible-memory-command-reply-delivery-dispatch-disabled-seam`
 - **Purpose:** Add the smallest safe disabled-by-default dispatch seam that can consume the PR-22 sanitized visible-memory command reply delivery candidate through an injected test transport and return deterministic caller-inspectable dispatch metadata for a future founder-approved SendBlue send step, without wiring the real SendBlue client, sending any outbound message, changing current HTTP responses, enabling production runtime behavior, or exposing raw private memory values/source refs/full phone numbers in logs/audit metadata.
@@ -46,8 +87,8 @@ There must be exactly one item marked `NEXT`. No cycle may say “continue M1”
 - **Exit condition:** PR merged and local `main` synced; SendBlue inbound has a disabled-by-default, test-proven dispatch seam that can consume a safe deterministic visible-memory command reply candidate through injected test transport for a future founder-approved delivery PR without live activation, outbound send, private/cross-user leakage, full-phone persistence, or regression of existing reply/STOP/explain behavior.
 - **Stop condition:** Stop and report owner/action if implementation requires migration/new table, production deploy, OAuth/security scope change, freeform LLM memory parsing/rendering, raw command text/private values/source refs/full phone numbers/dispatch text in audit/response metadata, live default activation, real SendBlue outbound wiring, outbound SendBlue send, or activation of Calendar/Composio/Tool Gateway/browser/action tools.
 - **Founder approval needed?** No for a narrow disabled-by-default dispatch seam using only injected test transport and tests; yes before production deploy, new external scopes, irreversible data changes, freeform memory extraction/parsing/rendering, raw private audit/response persistence, real SendBlue outbound wiring, outbound memory command send, live default activation, or broad runtime activation.
-
-## Completed
+- **Status:** Completed in PR #128, branch `memory-v1-sendblue-visible-memory-command-reply-delivery-dispatch-disabled-seam`, canonical commit `0ff1e1a52d438513c0ebf9477744b7741ae01a3c`, merged as `c6ca1dda7a62ffe979dd811a453cf9875c08d391`.
+- **Done condition met:** `SendBlueInboundVisibleMemoryCommandReplyDeliveryDispatchResult`, `SendBlueInboundVisibleMemoryCommandReplyDeliveryDispatchTransport`, `SendBlueInboundVisibleMemoryCommandReplyDeliveryDispatchOptions`, and `dispatchSendBlueInboundVisibleMemoryCommandReplyDeliveryCandidate` exist in `apps/fomo/src/routes/sendblue-inbound.ts`; targeted tests prove the dispatch seam is inert by default and without injected transport, test-enabled dispatch uses sanitized delivery candidates and injected in-memory transport, empty/unhandled/missing candidates do not dispatch, the public HTTP response shape is preserved, and private values/source refs/raw inbound text/cross-user data/full phone numbers/dispatch text are excluded from audit/HTTP metadata; CI passed for head commit `0ff1e1a5`; PR merged as `c6ca1dda`; local main synced.
 
 ### PR-22: Disabled SendBlue visible-memory command reply delivery candidate seam
 
