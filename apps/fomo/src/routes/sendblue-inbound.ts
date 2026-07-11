@@ -303,6 +303,34 @@ export interface SendBlueInboundVisibleMemoryCommandResponseEnvelope {
   readonly audit_metadata: VisibleMemoryCommandAppAdapterResult['audit_metadata'];
 }
 
+export interface SendBlueInboundVisibleMemoryCommandReplyText {
+  readonly text: string | null;
+  readonly metadata: {
+    readonly renderer: 'sendblue_visible_memory_command_reply_text_renderer';
+    readonly memory_kind: 'preference';
+    readonly handled: boolean;
+    readonly status: VisibleMemoryCommandAppAdapterResult['status'];
+    readonly matched_intent?: NonNullable<
+      VisibleMemoryCommandAppAdapterResult['audit_metadata']['matched_intent']
+    >;
+    readonly returned_count?: number;
+  };
+}
+
+export type SendBlueInboundVisibleMemoryCommandReplyTextRecorder = (
+  reply: SendBlueInboundVisibleMemoryCommandReplyText
+) => void | Promise<void>;
+
+export type SendBlueInboundVisibleMemoryCommandReplyTextRenderer = (
+  envelope: SendBlueInboundVisibleMemoryCommandResponseEnvelope
+) => SendBlueInboundVisibleMemoryCommandReplyText;
+
+export interface SendBlueInboundVisibleMemoryCommandReplyTextRendererOptions {
+  readonly enabled?: boolean;
+  readonly render?: SendBlueInboundVisibleMemoryCommandReplyTextRenderer;
+  readonly record?: SendBlueInboundVisibleMemoryCommandReplyTextRecorder;
+}
+
 export type SendBlueInboundVisibleMemoryCommandResponseRecorder = (
   envelope: SendBlueInboundVisibleMemoryCommandResponseEnvelope
 ) => void | Promise<void>;
@@ -310,6 +338,7 @@ export type SendBlueInboundVisibleMemoryCommandResponseRecorder = (
 export interface SendBlueInboundVisibleMemoryCommandResponseOptions {
   readonly enabled?: boolean;
   readonly record?: SendBlueInboundVisibleMemoryCommandResponseRecorder;
+  readonly replyText?: SendBlueInboundVisibleMemoryCommandReplyTextRendererOptions;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -724,8 +753,45 @@ async function recordSendBlueInboundVisibleMemoryCommandResponse(
   options: SendBlueInboundVisibleMemoryCommandResponseOptions | undefined,
   result: VisibleMemoryCommandAppAdapterResult
 ): Promise<void> {
+  if (options?.enabled !== true) return;
+  const envelope = sendBlueInboundVisibleMemoryCommandResponseEnvelope(result);
+  if (options.record !== undefined) {
+    await options.record(envelope);
+  }
+  await recordSendBlueInboundVisibleMemoryCommandReplyText(options.replyText, envelope);
+}
+
+export function renderSendBlueInboundVisibleMemoryCommandReplyText(
+  envelope: SendBlueInboundVisibleMemoryCommandResponseEnvelope
+): SendBlueInboundVisibleMemoryCommandReplyText {
+  const text = envelope.handled ? normalizeSendBlueInboundVisibleMemoryCommandReplyText(envelope.response.text) : null;
+  const audit = envelope.audit_metadata;
+  return Object.freeze({
+    text,
+    metadata: Object.freeze({
+      renderer: 'sendblue_visible_memory_command_reply_text_renderer' as const,
+      memory_kind: 'preference' as const,
+      handled: envelope.handled,
+      status: envelope.status,
+      ...(audit.matched_intent !== undefined ? { matched_intent: audit.matched_intent } : {}),
+      ...(audit.returned_count !== undefined ? { returned_count: audit.returned_count } : {})
+    })
+  });
+}
+
+async function recordSendBlueInboundVisibleMemoryCommandReplyText(
+  options: SendBlueInboundVisibleMemoryCommandReplyTextRendererOptions | undefined,
+  envelope: SendBlueInboundVisibleMemoryCommandResponseEnvelope
+): Promise<void> {
   if (options?.enabled !== true || options.record === undefined) return;
-  await options.record(sendBlueInboundVisibleMemoryCommandResponseEnvelope(result));
+  const render = options.render ?? renderSendBlueInboundVisibleMemoryCommandReplyText;
+  await options.record(render(envelope));
+}
+
+function normalizeSendBlueInboundVisibleMemoryCommandReplyText(text: string | null): string | null {
+  if (text === null) return null;
+  const normalized = text.replace(/\s+/g, ' ').trim();
+  return normalized.length > 0 ? normalized : null;
 }
 
 async function resolveSendBlueInboundVisibleMemoryCommandContext(

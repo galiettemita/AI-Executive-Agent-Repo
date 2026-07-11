@@ -21,8 +21,10 @@ import {
 import {
   handleSendBlueInbound,
   parseSendBlueInboundVisibleMemoryExactCommandContext,
+  renderSendBlueInboundVisibleMemoryCommandReplyText,
   type SendBlueInboundRouteDeps,
   type SendBlueInboundVisibleMemoryCommandContext,
+  type SendBlueInboundVisibleMemoryCommandReplyText,
   type SendBlueInboundVisibleMemoryCommandResponseEnvelope
 } from './sendblue-inbound.ts';
 
@@ -1434,6 +1436,183 @@ describe('handleSendBlueInbound — disabled visible memory command adapter seam
         (await h.memoryStore.get(FOUNDER_USER, 'stop_active', null))?.detail.active,
         command === 'STOP'
       );
+    }
+  });
+
+  it('reply-text renderer helper uses only sanitized app-adapter response text and structural metadata', () => {
+    const rendered = renderSendBlueInboundVisibleMemoryCommandReplyText({
+      handled: true,
+      status: 'handled',
+      user_id: FOUNDER_USER,
+      response: { text: '  Safe reply text from adapter.\nNo raw command payload.  ' },
+      audit_metadata: {
+        memory_kind: 'preference',
+        adapter: 'visible_memory_command_app_adapter',
+        enabled: true,
+        handler_status: 'handled',
+        matched_action: 'review_visible_explicit_preferences',
+        matched_intent: 'memory_review',
+        returned_count: 1,
+        row_ids: [123],
+        scope_keys: ['preference:alert_timing']
+      }
+    });
+
+    assert.deepEqual(rendered, {
+      text: 'Safe reply text from adapter. No raw command payload.',
+      metadata: {
+        renderer: 'sendblue_visible_memory_command_reply_text_renderer',
+        memory_kind: 'preference',
+        handled: true,
+        status: 'handled',
+        matched_intent: 'memory_review',
+        returned_count: 1
+      }
+    });
+    const renderedJson = JSON.stringify(rendered);
+    assert.equal(renderedJson.includes('row_ids'), false);
+    assert.equal(renderedJson.includes('scope_keys'), false);
+    assert.equal(renderedJson.includes('preference:alert_timing'), false);
+
+    assert.deepEqual(
+      renderSendBlueInboundVisibleMemoryCommandReplyText({
+        handled: false,
+        status: 'no_memory_command',
+        user_id: FOUNDER_USER,
+        response: { text: 'must not render when unhandled' },
+        audit_metadata: {
+          memory_kind: 'preference',
+          adapter: 'visible_memory_command_app_adapter',
+          enabled: true,
+          handler_status: 'no_memory_command'
+        }
+      }),
+      {
+        text: null,
+        metadata: {
+          renderer: 'sendblue_visible_memory_command_reply_text_renderer',
+          memory_kind: 'preference',
+          handled: false,
+          status: 'no_memory_command'
+        }
+      }
+    );
+  });
+
+  it('reply-text renderer seam is inert by default and does not change the public HTTP response shape', async () => {
+    const store = new CountingTypedMemoryStore();
+    const capturedReplies: SendBlueInboundVisibleMemoryCommandReplyText[] = [];
+    const h = buildHarness({
+      visibleMemoryCommand: {
+        enabled: true,
+        store,
+        contextParser: { enabled: true },
+        response: {
+          enabled: true,
+          record: () => undefined,
+          replyText: {
+            enabled: false,
+            record: (reply) => {
+              capturedReplies.push(reply);
+            }
+          }
+        }
+      }
+    });
+
+    const r = await handleSendBlueInbound(
+      { body: inboundBody({ content: 'remember preference alert_timing: mornings' }), secretHeaderValue: WEBHOOK_SECRET },
+      h.deps
+    );
+
+    assert.equal(r.status, 200);
+    assert.deepEqual(JSON.parse(r.body), { ok: true, intent: 'unclear', source: 'classifier' });
+    assert.deepEqual(capturedReplies, []);
+    assert.equal(store.writeCount, 1);
+  });
+
+  it('when test-enabled, renders deterministic reply text for remember/review/explain/correct/forget without leaking private or cross-user data', async () => {
+    const store = new CountingTypedMemoryStore();
+    await store.write({
+      user_id: FOUNDER_USER,
+      kind: 'preference',
+      scope_key: 'preference:alert_timing',
+      attribute: 'alert_timing',
+      value: 'founder private mornings alice@example.com',
+      source: 'user_stated',
+      source_ref: 'reply:founder-private-renderer-ref',
+      confidence: 'high',
+      stale_marked_at: null,
+      retracted: false,
+      superseded_by: null,
+      updated_at: '2026-07-09T11:00:00.000Z'
+    } as NewTypedMemoryRow);
+    await store.write({
+      user_id: 'other-user',
+      kind: 'preference',
+      scope_key: 'preference:alert_timing',
+      attribute: 'alert_timing',
+      value: 'other-user private evenings alice@example.com',
+      source: 'user_stated',
+      source_ref: 'reply:other-user-private-renderer-ref',
+      confidence: 'high',
+      stale_marked_at: null,
+      retracted: false,
+      superseded_by: null,
+      updated_at: '2026-07-09T12:00:00.000Z'
+    } as NewTypedMemoryRow);
+    store.writeCount = 0;
+    const capturedReplies: SendBlueInboundVisibleMemoryCommandReplyText[] = [];
+    const h = buildHarness({
+      visibleMemoryCommand: {
+        enabled: true,
+        store,
+        contextParser: { enabled: true },
+        response: {
+          enabled: true,
+          replyText: {
+            enabled: true,
+            record: (reply) => {
+              capturedReplies.push(reply);
+            }
+          }
+        }
+      }
+    });
+
+    for (const content of [
+      'remember preference digest_style: concise alice@example.com',
+      'review memory alert_timing',
+      'explain memory alert_timing',
+      'correct memory alert_timing: afternoons',
+      'forget memory alert_timing'
+    ]) {
+      const r = await handleSendBlueInbound(
+        { body: inboundBody({ content, message_handle: `sb-render-${content.split(' ')[0]}` }), secretHeaderValue: WEBHOOK_SECRET },
+        h.deps
+      );
+      assert.equal(r.status, 200);
+      assert.deepEqual(JSON.parse(r.body), { ok: true, intent: 'unclear', source: 'classifier' });
+    }
+
+    assert.deepEqual(
+      capturedReplies.map((reply) => reply.metadata.matched_intent),
+      ['memory_remember', 'memory_review', 'memory_explanation', 'memory_correct', 'memory_forget']
+    );
+    assert.equal(capturedReplies.every((reply) => reply.text !== null), true);
+    assert.equal(capturedReplies.some((reply) => reply.text?.includes('[redacted]')), true);
+    const renderedJson = JSON.stringify(capturedReplies);
+    for (const forbidden of [
+      'founder private mornings',
+      'other-user',
+      'other-user private evenings',
+      'founder-private-renderer-ref',
+      'other-user-private-renderer-ref',
+      'sendblue-visible-memory-exact-command',
+      'concise alice@example.com',
+      'afternoons'
+    ]) {
+      assert.equal(renderedJson.includes(forbidden), false, `reply renderer leaked ${forbidden}`);
     }
   });
 });
