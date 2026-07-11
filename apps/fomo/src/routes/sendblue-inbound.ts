@@ -317,6 +317,22 @@ export interface SendBlueInboundVisibleMemoryCommandReplyText {
   };
 }
 
+export interface SendBlueInboundVisibleMemoryCommandReplyDeliveryCandidate {
+  readonly to: string;
+  readonly text: string;
+  readonly metadata: {
+    readonly renderer: 'sendblue_visible_memory_command_reply_delivery_candidate';
+    readonly reply_text_renderer: SendBlueInboundVisibleMemoryCommandReplyText['metadata']['renderer'];
+    readonly memory_kind: 'preference';
+    readonly handled: true;
+    readonly status: VisibleMemoryCommandAppAdapterResult['status'];
+    readonly matched_intent?: NonNullable<
+      VisibleMemoryCommandAppAdapterResult['audit_metadata']['matched_intent']
+    >;
+    readonly returned_count?: number;
+  };
+}
+
 export type SendBlueInboundVisibleMemoryCommandReplyTextRecorder = (
   reply: SendBlueInboundVisibleMemoryCommandReplyText
 ) => void | Promise<void>;
@@ -325,10 +341,28 @@ export type SendBlueInboundVisibleMemoryCommandReplyTextRenderer = (
   envelope: SendBlueInboundVisibleMemoryCommandResponseEnvelope
 ) => SendBlueInboundVisibleMemoryCommandReplyText;
 
+export type SendBlueInboundVisibleMemoryCommandReplyDeliveryCandidateRecorder = (
+  candidate: SendBlueInboundVisibleMemoryCommandReplyDeliveryCandidate
+) => void | Promise<void>;
+
+export type SendBlueInboundVisibleMemoryCommandReplyDeliveryCandidateCreator = (
+  input: {
+    readonly reply: SendBlueInboundVisibleMemoryCommandReplyText;
+    readonly to: string;
+  }
+) => SendBlueInboundVisibleMemoryCommandReplyDeliveryCandidate | null;
+
+export interface SendBlueInboundVisibleMemoryCommandReplyDeliveryCandidateOptions {
+  readonly enabled?: boolean;
+  readonly create?: SendBlueInboundVisibleMemoryCommandReplyDeliveryCandidateCreator;
+  readonly record?: SendBlueInboundVisibleMemoryCommandReplyDeliveryCandidateRecorder;
+}
+
 export interface SendBlueInboundVisibleMemoryCommandReplyTextRendererOptions {
   readonly enabled?: boolean;
   readonly render?: SendBlueInboundVisibleMemoryCommandReplyTextRenderer;
   readonly record?: SendBlueInboundVisibleMemoryCommandReplyTextRecorder;
+  readonly deliveryCandidate?: SendBlueInboundVisibleMemoryCommandReplyDeliveryCandidateOptions;
 }
 
 export type SendBlueInboundVisibleMemoryCommandResponseRecorder = (
@@ -675,6 +709,7 @@ export async function handleSendBlueInbound(
   await maybeHandleVisibleMemoryCommand(
     deps,
     userId,
+    extracted.fromNumber,
     extracted.content,
     parseResult,
     now
@@ -690,6 +725,7 @@ export async function handleSendBlueInbound(
 async function maybeHandleVisibleMemoryCommand(
   deps: SendBlueInboundRouteDeps,
   userId: string,
+  fromNumber: string,
   inboundText: string,
   parseResult: ReplyParseResult,
   now: () => Date
@@ -734,7 +770,7 @@ async function maybeHandleVisibleMemoryCommand(
     }
   });
 
-  await recordSendBlueInboundVisibleMemoryCommandResponse(seam.response, appAdapterResult);
+  await recordSendBlueInboundVisibleMemoryCommandResponse(seam.response, appAdapterResult, fromNumber);
 }
 
 function sendBlueInboundVisibleMemoryCommandResponseEnvelope(
@@ -751,14 +787,15 @@ function sendBlueInboundVisibleMemoryCommandResponseEnvelope(
 
 async function recordSendBlueInboundVisibleMemoryCommandResponse(
   options: SendBlueInboundVisibleMemoryCommandResponseOptions | undefined,
-  result: VisibleMemoryCommandAppAdapterResult
+  result: VisibleMemoryCommandAppAdapterResult,
+  fromNumber: string
 ): Promise<void> {
   if (options?.enabled !== true) return;
   const envelope = sendBlueInboundVisibleMemoryCommandResponseEnvelope(result);
   if (options.record !== undefined) {
     await options.record(envelope);
   }
-  await recordSendBlueInboundVisibleMemoryCommandReplyText(options.replyText, envelope);
+  await recordSendBlueInboundVisibleMemoryCommandReplyText(options.replyText, envelope, fromNumber);
 }
 
 export function renderSendBlueInboundVisibleMemoryCommandReplyText(
@@ -779,13 +816,61 @@ export function renderSendBlueInboundVisibleMemoryCommandReplyText(
   });
 }
 
+export function createSendBlueInboundVisibleMemoryCommandReplyDeliveryCandidate(
+  input: {
+    readonly reply: SendBlueInboundVisibleMemoryCommandReplyText;
+    readonly to: string;
+  }
+): SendBlueInboundVisibleMemoryCommandReplyDeliveryCandidate | null {
+  const text = normalizeSendBlueInboundVisibleMemoryCommandReplyText(input.reply.text);
+  if (!input.reply.metadata.handled || text === null) return null;
+  return Object.freeze({
+    to: input.to,
+    text,
+    metadata: Object.freeze({
+      renderer: 'sendblue_visible_memory_command_reply_delivery_candidate' as const,
+      reply_text_renderer: input.reply.metadata.renderer,
+      memory_kind: 'preference' as const,
+      handled: true as const,
+      status: input.reply.metadata.status,
+      ...(input.reply.metadata.matched_intent !== undefined
+        ? { matched_intent: input.reply.metadata.matched_intent }
+        : {}),
+      ...(input.reply.metadata.returned_count !== undefined
+        ? { returned_count: input.reply.metadata.returned_count }
+        : {})
+    })
+  });
+}
+
 async function recordSendBlueInboundVisibleMemoryCommandReplyText(
   options: SendBlueInboundVisibleMemoryCommandReplyTextRendererOptions | undefined,
-  envelope: SendBlueInboundVisibleMemoryCommandResponseEnvelope
+  envelope: SendBlueInboundVisibleMemoryCommandResponseEnvelope,
+  fromNumber: string
+): Promise<void> {
+  if (options?.enabled !== true) return;
+  const render = options.render ?? renderSendBlueInboundVisibleMemoryCommandReplyText;
+  const reply = render(envelope);
+  if (options.record !== undefined) {
+    await options.record(reply);
+  }
+  await recordSendBlueInboundVisibleMemoryCommandReplyDeliveryCandidate(
+    options.deliveryCandidate,
+    reply,
+    fromNumber
+  );
+}
+
+async function recordSendBlueInboundVisibleMemoryCommandReplyDeliveryCandidate(
+  options: SendBlueInboundVisibleMemoryCommandReplyDeliveryCandidateOptions | undefined,
+  reply: SendBlueInboundVisibleMemoryCommandReplyText,
+  fromNumber: string
 ): Promise<void> {
   if (options?.enabled !== true || options.record === undefined) return;
-  const render = options.render ?? renderSendBlueInboundVisibleMemoryCommandReplyText;
-  await options.record(render(envelope));
+  const create = options.create ?? createSendBlueInboundVisibleMemoryCommandReplyDeliveryCandidate;
+  const candidate = create({ reply, to: fromNumber });
+  if (candidate === null) return;
+  await options.record(candidate);
 }
 
 function normalizeSendBlueInboundVisibleMemoryCommandReplyText(text: string | null): string | null {
